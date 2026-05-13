@@ -1002,9 +1002,27 @@ button:disabled {
   font-size: 17px;
 }
 
-.desktop-summary-card small {
+.desktop-summary-card.small {
   color: var(--muted-strong);
   font-size: 11.5px;
+}
+
+.desktop-summary-card.hide-after {
+  animation: summary-card-fade 2.4s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes summary-card-fade {
+  0%,
+  42% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
 }
 
 .desktop-icons {
