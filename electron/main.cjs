@@ -426,9 +426,11 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
 
   activeConnections.delete(connectionId);
 
-  if (activeConnection.terminalStream) {
-    activeConnection.terminalStream.removeAllListeners();
-    activeConnection.terminalStream.end();
+  if (activeConnection.terminalSessions) {
+    for (const stream of activeConnection.terminalSessions.values()) {
+      stream.removeAllListeners();
+      stream.end();
+    }
   }
 
   await closeServer(activeConnection.socksServer);
@@ -459,6 +461,16 @@ function validateMutableRemotePath(rawPath) {
   }
 
   return remotePath;
+}
+
+function validateTerminalId(rawTerminalId) {
+  const terminalId = readBoundedString(rawTerminalId, '终端标识', 120);
+
+  if (!/^[a-zA-Z0-9:_-]+$/.test(terminalId)) {
+    throw new Error('终端标识无效。');
+  }
+
+  return terminalId;
 }
 
 function getSftpEntryType(attrs) {
@@ -765,7 +777,7 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
       partition,
       displayHost,
       connectedAt: new Date().toISOString(),
-      terminalStream: null,
+      terminalSessions: new Map(),
     };
 
     activeConnections.set(id, activeConnection);
@@ -794,38 +806,65 @@ registerIpcHandler('connection:disconnect', async (_event, connectionId) => {
   return true;
 });
 
-registerIpcHandler('connection:start-terminal', async (event, connectionId) => {
-  const activeConnection = getActiveConnection(connectionId);
+registerIpcHandler('connection:get-ipc-capabilities', async () => ({
+  terminalSessions: true,
+}));
 
-  if (activeConnection.terminalStream && !activeConnection.terminalStream.destroyed) {
+registerIpcHandler('connection:start-terminal', async (event, connectionId, rawTerminalId, rawColumns, rawRows) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const terminalId = validateTerminalId(rawTerminalId);
+  const columns = Number(rawColumns) || 100;
+  const rows = Number(rawRows) || 30;
+
+  if (!Number.isInteger(columns) || !Number.isInteger(rows) || columns < 20 || rows < 5 || columns > 300 || rows > 120) {
+    throw new Error('终端尺寸无效。');
+  }
+
+  const existingStream = activeConnection.terminalSessions.get(terminalId);
+
+  if (existingStream && !existingStream.destroyed) {
     return true;
   }
 
   await new Promise((resolve, reject) => {
-    activeConnection.client.shell({ term: 'xterm-256color', cols: 100, rows: 30 }, (error, stream) => {
+    let settled = false;
+    const startTimer = setTimeout(() => {
+      settled = true;
+      reject(new Error('终端启动超时：远程服务器未返回交互式 Shell。'));
+    }, 15000);
+
+    activeConnection.client.shell({ term: 'xterm-256color', cols: columns, rows }, (error, stream) => {
+      if (settled) {
+        stream?.end();
+        return;
+      }
+
+      settled = true;
+      clearTimeout(startTimer);
+
       if (error) {
         reject(error);
         return;
       }
 
-      activeConnection.terminalStream = stream;
+      activeConnection.terminalSessions.set(terminalId, stream);
       stream.on('data', (chunk) => {
         if (!event.sender.isDestroyed()) {
-          event.sender.send('terminal:data', { connectionId, data: chunk.toString('utf8') });
+          event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
         }
       });
       stream.stderr.on('data', (chunk) => {
         if (!event.sender.isDestroyed()) {
-          event.sender.send('terminal:data', { connectionId, data: chunk.toString('utf8') });
+          event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
         }
       });
       stream.once('close', () => {
-        if (activeConnection.terminalStream === stream) {
-          activeConnection.terminalStream = null;
+        if (activeConnection.terminalSessions.get(terminalId) === stream) {
+          activeConnection.terminalSessions.delete(terminalId);
         }
 
         if (!event.sender.isDestroyed()) {
-          event.sender.send('terminal:exit', { connectionId });
+          event.sender.send('terminal:exit', { connectionId, terminalId });
         }
       });
       resolve();
@@ -835,10 +874,12 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId) => {
   return true;
 });
 
-registerIpcHandler('connection:write-terminal', async (_event, connectionId, rawData) => {
+registerIpcHandler('connection:write-terminal', async (_event, connectionId, rawTerminalId, rawData) => {
   const activeConnection = getActiveConnection(connectionId);
+  const terminalId = validateTerminalId(rawTerminalId);
+  const terminalStream = activeConnection.terminalSessions.get(terminalId);
 
-  if (!activeConnection.terminalStream || activeConnection.terminalStream.destroyed) {
+  if (!terminalStream || terminalStream.destroyed) {
     throw new Error('终端尚未启动。');
   }
 
@@ -846,12 +887,13 @@ registerIpcHandler('connection:write-terminal', async (_event, connectionId, raw
     throw new Error('终端输入无效。');
   }
 
-  activeConnection.terminalStream.write(rawData);
+  terminalStream.write(rawData);
   return true;
 });
 
-registerIpcHandler('connection:resize-terminal', async (_event, connectionId, rawColumns, rawRows) => {
+registerIpcHandler('connection:resize-terminal', async (_event, connectionId, rawTerminalId, rawColumns, rawRows) => {
   const activeConnection = getActiveConnection(connectionId);
+  const terminalId = validateTerminalId(rawTerminalId);
   const columns = Number(rawColumns);
   const rows = Number(rawRows);
 
@@ -859,8 +901,24 @@ registerIpcHandler('connection:resize-terminal', async (_event, connectionId, ra
     throw new Error('终端尺寸无效。');
   }
 
-  if (activeConnection.terminalStream?.setWindow) {
-    activeConnection.terminalStream.setWindow(rows, columns, 0, 0);
+  const terminalStream = activeConnection.terminalSessions.get(terminalId);
+
+  if (terminalStream?.setWindow) {
+    terminalStream.setWindow(rows, columns, 0, 0);
+  }
+
+  return true;
+});
+
+registerIpcHandler('connection:close-terminal', async (_event, connectionId, rawTerminalId) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const terminalId = validateTerminalId(rawTerminalId);
+  const terminalStream = activeConnection.terminalSessions.get(terminalId);
+
+  if (terminalStream) {
+    activeConnection.terminalSessions.delete(terminalId);
+    terminalStream.removeAllListeners();
+    terminalStream.end();
   }
 
   return true;

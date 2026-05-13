@@ -7,15 +7,9 @@ const ungroupedKey = '__ungrouped__';
 
 const navigationItems = [
   { key: 'H', label: '主机', active: true },
-  { key: 'K', label: '钥匙串' },
-  { key: 'P', label: '代理' },
-  { key: 'F', label: '端口转发' },
-  { key: 'C', label: '代码片段' },
-  { key: 'N', label: '已知主机' },
+  { key: 'K', label: '密钥' },
   { key: 'L', label: '日志' },
 ];
-
-const plannedFeatures = ['SFTP', '终端', '串口', '密钥', '代理'];
 
 interface Host {
   id: string;
@@ -631,18 +625,7 @@ function App() {
   return (
     <div className="app-shell">
       <header className="top-chrome drag-region">
-        <div className="workspace-tabs" aria-label="工作区标签">
-          <button type="button" className="workspace-tab active">Vaults</button>
-          <button type="button" className="workspace-tab">SFTP</button>
-          <button type="button" className="workspace-tab add-tab" aria-label="新增工作区">+</button>
-        </div>
-
-        <div className="chrome-tools" aria-label="全局工具">
-          <span>AI</span>
-          <span>通知</span>
-          <span>同步</span>
-          <span>设置</span>
-        </div>
+        <div className="workspace-title">GUI-SSH</div>
 
         {showWindowControls ? (
           <div className="titlebar-controls no-drag">
@@ -697,8 +680,6 @@ function App() {
             </div>
 
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
-            <button type="button" className="command-button muted">终端</button>
-            <button type="button" className="command-button muted">串口</button>
           </div>
 
           <section className="vault-content">
@@ -787,20 +768,6 @@ function App() {
               )}
             </section>
 
-            <section className="feature-plan">
-              <div className="section-heading">
-                <h2>后续功能区</h2>
-                <span>布局预留</span>
-              </div>
-              <div className="plan-grid">
-                {plannedFeatures.map((feature) => (
-                  <div key={feature} className="plan-card">
-                    <strong>{feature}</strong>
-                    <span>待接入</span>
-                  </div>
-                ))}
-              </div>
-            </section>
           </section>
 
           {isEditorOpen ? (

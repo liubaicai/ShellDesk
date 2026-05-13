@@ -1,13 +1,80 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+
+import RemoteDesktopShell from './RemoteDesktopShell';
 
 const desktopApps = [
-  { key: 'terminal', label: '终端', icon: '⌘', description: 'SSH Shell' },
+  { key: 'terminal', label: '终端', icon: '>_', description: 'SSH Shell' },
   { key: 'browser', label: '浏览器', icon: '◎', description: '远程源请求' },
-  { key: 'files', label: '文件管理器', icon: '▣', description: 'SFTP 浏览' },
-  { key: 'monitor', label: '资源监视器', icon: '◌', description: '服务器状态' },
+  { key: 'files', label: '文件管理器', icon: '📁', description: 'SFTP 浏览' },
+  { key: 'monitor', label: '资源监视器', icon: '▱', description: '服务器状态' },
 ] as const;
 
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
+
+const desktopShortcuts: ReadonlyArray<{
+  key: string;
+  label: string;
+  icon: string;
+  appKey?: DesktopAppKey;
+}> = [
+  { key: 'computer', label: '此电脑', icon: '🖥️', appKey: 'files' },
+  { key: 'database', label: '数据库', icon: '🗄️', appKey: 'browser' },
+  { key: 'terminal', label: '终端', icon: '>_', appKey: 'terminal' },
+  { key: 'auth', label: '授权应用', icon: '🔐', appKey: 'browser' },
+  { key: 'trash', label: '回收站', icon: '🗑️', appKey: 'files' },
+  { key: 'tools', label: '实用工具', icon: '🧰', appKey: 'monitor' },
+  { key: 'files', label: '文件', icon: '📁', appKey: 'files' },
+  { key: 'settings', label: '设置', icon: '⚙️', appKey: 'monitor' },
+  { key: 'tasks', label: '任务管理器', icon: '📈', appKey: 'monitor' },
+  { key: 'apps', label: '应用中心', icon: '◇', appKey: 'browser' },
+  { key: 'site', label: '网站搭建', icon: '🌐', appKey: 'browser' },
+];
+
+interface DesktopWindowFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type DesktopWindowInteractionMode = 'move' | 'resize';
+
+interface DesktopWindowPointerState {
+  pointerId: number;
+  mode: DesktopWindowInteractionMode;
+  originX: number;
+  originY: number;
+  startFrame: DesktopWindowFrame;
+  surfaceWidth: number;
+  surfaceHeight: number;
+}
+
+const windowEdgePadding = 14;
+const windowDockSafeArea = 92;
+const windowMinWidth = 360;
+const windowMinHeight = 260;
+const defaultWindowFrame: DesktopWindowFrame = {
+  x: 174,
+  y: 66,
+  width: 860,
+  height: 560,
+};
+
+function clampWindowFrame(frame: DesktopWindowFrame, surfaceWidth: number, surfaceHeight: number): DesktopWindowFrame {
+  const maxWidth = Math.max(windowMinWidth, surfaceWidth - windowEdgePadding * 2);
+  const maxHeight = Math.max(windowMinHeight, surfaceHeight - windowEdgePadding - windowDockSafeArea);
+  const width = Math.min(Math.max(frame.width, windowMinWidth), maxWidth);
+  const height = Math.min(Math.max(frame.height, windowMinHeight), maxHeight);
+  const maxX = Math.max(windowEdgePadding, surfaceWidth - windowEdgePadding - width);
+  const maxY = Math.max(windowEdgePadding, surfaceHeight - windowDockSafeArea - height);
+
+  return {
+    x: Math.min(Math.max(frame.x, windowEdgePadding), maxX),
+    y: Math.min(Math.max(frame.y, windowEdgePadding), maxY),
+    width,
+    height,
+  };
+}
 
 export interface RemoteConnectionInfo {
   id: string;
@@ -173,12 +240,41 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
   const [isStatusLoading, setIsStatusLoading] = useState(false);
   const terminalOutputRef = useRef<HTMLPreElement | null>(null);
   const browserViewRef = useRef<HTMLElement | null>(null);
+  const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const isRefreshingStatusRef = useRef(false);
+  const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
+  const [windowFrame, setWindowFrame] = useState(defaultWindowFrame);
   const activeDesktopApp = desktopApps.find((app) => app.key === activeApp) ?? desktopApps[0];
+  const desktopWindowStyle: CSSProperties = {
+    width: windowFrame.width,
+    height: windowFrame.height,
+    transform: `translate3d(${windowFrame.x}px, ${windowFrame.y}px, 0)`,
+  };
 
   const appendTerminalOutput = (value: string) => {
     setTerminalOutput((currentOutput) => `${currentOutput}${value}`.slice(-60000));
   };
+
+  useEffect(() => {
+    const surface = desktopSurfaceRef.current;
+
+    if (!surface || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) {
+        return;
+      }
+
+      const { width, height } = entry.contentRect;
+      setWindowFrame((currentFrame) => clampWindowFrame(currentFrame, width, height));
+    });
+
+    resizeObserver.observe(surface);
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!window.guiSSH?.connections || !window.guiSSH.events) {
@@ -199,7 +295,7 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
     });
 
     window.guiSSH.connections
-      .startTerminal(connection.id)
+      .startTerminal(connection.id, 'legacy-terminal', 100, 30)
       .then(() => {
         if (!disposed) {
           appendTerminalOutput('终端已连接。\n');
@@ -317,7 +413,7 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
     const command = terminalInput;
     setTerminalInput('');
 
-    window.guiSSH.connections.writeTerminal(connection.id, `${command}\n`).catch((error: unknown) => {
+    window.guiSSH.connections.writeTerminal(connection.id, 'legacy-terminal', `${command}\n`).catch((error: unknown) => {
       appendTerminalOutput(`\n发送失败：${getErrorMessage(error)}\n`);
     });
   };
@@ -398,6 +494,80 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
+  };
+
+  const activateDesktopShortcut = (appKey?: DesktopAppKey) => {
+    if (appKey) {
+      setActiveApp(appKey);
+    }
+  };
+
+  const startWindowInteraction = (event: ReactPointerEvent<HTMLElement>, mode: DesktopWindowInteractionMode) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const surface = desktopSurfaceRef.current;
+
+    if (!surface) {
+      return;
+    }
+
+    const surfaceRect = surface.getBoundingClientRect();
+    const startFrame = clampWindowFrame(windowFrame, surfaceRect.width, surfaceRect.height);
+
+    windowPointerStateRef.current = {
+      pointerId: event.pointerId,
+      mode,
+      originX: event.clientX,
+      originY: event.clientY,
+      startFrame,
+      surfaceWidth: surfaceRect.width,
+      surfaceHeight: surfaceRect.height,
+    };
+
+    setWindowFrame(startFrame);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const updateWindowInteraction = (event: ReactPointerEvent<HTMLElement>) => {
+    const pointerState = windowPointerStateRef.current;
+
+    if (!pointerState || pointerState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - pointerState.originX;
+    const deltaY = event.clientY - pointerState.originY;
+    const nextFrame = pointerState.mode === 'move'
+      ? {
+          ...pointerState.startFrame,
+          x: pointerState.startFrame.x + deltaX,
+          y: pointerState.startFrame.y + deltaY,
+        }
+      : {
+          ...pointerState.startFrame,
+          width: pointerState.startFrame.width + deltaX,
+          height: pointerState.startFrame.height + deltaY,
+        };
+
+    setWindowFrame(clampWindowFrame(nextFrame, pointerState.surfaceWidth, pointerState.surfaceHeight));
+    event.preventDefault();
+  };
+
+  const finishWindowInteraction = (event: ReactPointerEvent<HTMLElement>) => {
+    const pointerState = windowPointerStateRef.current;
+
+    if (!pointerState || pointerState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    windowPointerStateRef.current = null;
   };
 
   const renderActiveApp = () => {
@@ -528,7 +698,7 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
         </div>
       </div>
 
-      <section className="remote-desktop-surface no-drag">
+      <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
         <div className="desktop-summary-card hide-after" onAnimationEnd={(event) => event.currentTarget.style.display = 'none'}>
           <span>已连接</span>
           <strong>{connection.host.name}</strong>
@@ -536,21 +706,27 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
         </div>
 
         <div className="desktop-icons" aria-label="桌面应用">
-          {desktopApps.map((app) => (
+          {desktopShortcuts.map((shortcut) => (
             <button
-              key={app.key}
+              key={shortcut.key}
               type="button"
-              className={activeApp === app.key ? 'active' : ''}
-              onClick={() => setActiveApp(app.key)}
+              className={shortcut.appKey === activeApp ? 'active' : ''}
+              onClick={() => activateDesktopShortcut(shortcut.appKey)}
             >
-              <span>{app.icon}</span>
-              <strong>{app.label}</strong>
+              <span>{shortcut.icon}</span>
+              <strong>{shortcut.label}</strong>
             </button>
           ))}
         </div>
 
-        <section className="desktop-window" aria-label={activeDesktopApp.label}>
-          <header className="desktop-window-titlebar">
+        <section className="desktop-window" aria-label={activeDesktopApp.label} style={desktopWindowStyle}>
+          <header
+            className="desktop-window-titlebar"
+            onPointerDown={(event) => startWindowInteraction(event, 'move')}
+            onPointerMove={updateWindowInteraction}
+            onPointerUp={finishWindowInteraction}
+            onPointerCancel={finishWindowInteraction}
+          >
             <div className="traffic-lights" aria-hidden="true">
               <span className="red" />
               <span className="yellow" />
@@ -562,6 +738,14 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
             </div>
           </header>
           <div className="desktop-window-body">{renderActiveApp()}</div>
+          <div
+            className="desktop-window-resize-handle"
+            onPointerDown={(event) => startWindowInteraction(event, 'resize')}
+            onPointerMove={updateWindowInteraction}
+            onPointerUp={finishWindowInteraction}
+            onPointerCancel={finishWindowInteraction}
+            aria-hidden="true"
+          />
         </section>
 
         <nav className="mac-dock" aria-label="远程桌面 Dock">
@@ -582,4 +766,4 @@ function RemoteDesktop({ connection, onDisconnect }: RemoteDesktopProps) {
   );
 }
 
-export default RemoteDesktop;
+export default RemoteDesktopShell;

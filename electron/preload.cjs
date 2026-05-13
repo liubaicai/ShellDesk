@@ -30,10 +30,30 @@ contextBridge.exposeInMainWorld('guiSSH', {
   connections: {
     connect: connectHost,
     disconnect: (connectionId) => ipcRenderer.invoke('connection:disconnect', connectionId),
-    startTerminal: (connectionId) => ipcRenderer.invoke('connection:start-terminal', connectionId),
-    writeTerminal: (connectionId, data) => ipcRenderer.invoke('connection:write-terminal', connectionId, data),
-    resizeTerminal: (connectionId, columns, rows) =>
-      ipcRenderer.invoke('connection:resize-terminal', connectionId, columns, rows),
+    getIpcCapabilities: () => ipcRenderer.invoke('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
+    startTerminal: (connectionId, terminalId, columns, rows, options) => {
+      if (options?.legacy) {
+        return ipcRenderer.invoke('connection:start-terminal', connectionId);
+      }
+
+      return ipcRenderer.invoke('connection:start-terminal', connectionId, terminalId, columns, rows);
+    },
+    writeTerminal: (connectionId, terminalId, data, options) => {
+      if (options?.legacy) {
+        return ipcRenderer.invoke('connection:write-terminal', connectionId, data);
+      }
+
+      return ipcRenderer.invoke('connection:write-terminal', connectionId, terminalId, data);
+    },
+    resizeTerminal: (connectionId, terminalId, columns, rows, options) => {
+      if (options?.legacy) {
+        return ipcRenderer.invoke('connection:resize-terminal', connectionId, columns, rows);
+      }
+
+      return ipcRenderer.invoke('connection:resize-terminal', connectionId, terminalId, columns, rows);
+    },
+    closeTerminal: (connectionId, terminalId) =>
+      ipcRenderer.invoke('connection:close-terminal', connectionId, terminalId).catch(() => false),
     listDirectory: (connectionId, remotePath) => ipcRenderer.invoke('connection:list-directory', connectionId, remotePath),
     createDirectory: (connectionId, remotePath) => ipcRenderer.invoke('connection:create-directory', connectionId, remotePath),
     deletePath: (connectionId, remotePath, entryType) =>

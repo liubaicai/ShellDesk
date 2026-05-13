@@ -58,12 +58,39 @@ interface GuiSshRemoteStatusReport {
   }>;
 }
 
+interface GuiSshIpcCapabilities {
+  terminalSessions: boolean;
+}
+
+interface GuiSshTerminalIpcOptions {
+  legacy?: boolean;
+}
+
 interface GuiSshConnectionControls {
   connect: (host: GuiSshHostConnectionRequest) => Promise<GuiSshConnectionInfo>;
   disconnect: (connectionId: string) => Promise<boolean>;
-  startTerminal: (connectionId: string) => Promise<boolean>;
-  writeTerminal: (connectionId: string, data: string) => Promise<boolean>;
-  resizeTerminal: (connectionId: string, columns: number, rows: number) => Promise<boolean>;
+  getIpcCapabilities: () => Promise<GuiSshIpcCapabilities>;
+  startTerminal: (
+    connectionId: string,
+    terminalId: string,
+    columns: number,
+    rows: number,
+    options?: GuiSshTerminalIpcOptions,
+  ) => Promise<boolean>;
+  writeTerminal: (
+    connectionId: string,
+    terminalId: string,
+    data: string,
+    options?: GuiSshTerminalIpcOptions,
+  ) => Promise<boolean>;
+  resizeTerminal: (
+    connectionId: string,
+    terminalId: string,
+    columns: number,
+    rows: number,
+    options?: GuiSshTerminalIpcOptions,
+  ) => Promise<boolean>;
+  closeTerminal: (connectionId: string, terminalId: string) => Promise<boolean>;
   listDirectory: (connectionId: string, remotePath: string) => Promise<GuiSshRemoteDirectoryResult>;
   createDirectory: (connectionId: string, remotePath: string) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
@@ -71,8 +98,8 @@ interface GuiSshConnectionControls {
 }
 
 interface GuiSshEventControls {
-  onTerminalData: (callback: (payload: { connectionId: string; data: string }) => void) => () => void;
-  onTerminalExit: (callback: (payload: { connectionId: string }) => void) => () => void;
+  onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
+  onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
 }
 
