@@ -68,6 +68,7 @@ interface GuiSshTerminalIpcOptions {
 
 interface GuiSshConnectionControls {
   connect: (host: GuiSshHostConnectionRequest) => Promise<GuiSshConnectionInfo>;
+  getInfo: (connectionId: string) => Promise<GuiSshConnectionInfo>;
   disconnect: (connectionId: string) => Promise<boolean>;
   getIpcCapabilities: () => Promise<GuiSshIpcCapabilities>;
   startTerminal: (

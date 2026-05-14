@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
   },
   connections: {
     connect: connectHost,
+    getInfo: (connectionId) => ipcRenderer.invoke('connection:get-info', connectionId),
     disconnect: (connectionId) => ipcRenderer.invoke('connection:disconnect', connectionId),
     getIpcCapabilities: () => ipcRenderer.invoke('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
     startTerminal: (connectionId, terminalId, columns, rows, options) => {

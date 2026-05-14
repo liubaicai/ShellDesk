@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
-import RemoteDesktop from './RemoteDesktop';
+import RemoteDesktop from './RemoteDesktopShell';
 import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import KeysPage from './pages/KeysPage';
@@ -432,6 +432,10 @@ function getHostGroupKey(host: Host) {
   return host.group || ungroupedKey;
 }
 
+function readWindowConnectionId() {
+  return new URLSearchParams(window.location.search).get('connectionId')?.trim() ?? '';
+}
+
 function App() {
   const [hosts, setHosts] = useState<Host[]>(readStoredHosts);
   const [sshKeys, setSshKeys] = useState<SshKey[]>(readStoredSshKeys);
@@ -451,6 +455,8 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
+  const [windowConnectionId] = useState(readWindowConnectionId);
+  const [windowConnectionError, setWindowConnectionError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [credentialHostId, setCredentialHostId] = useState<string | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
@@ -458,6 +464,10 @@ function App() {
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const showWindowControls = Boolean(windowControls) && platform !== 'darwin';
+  const isConnectionWindow = Boolean(windowConnectionId);
+  const titlebarConnectionAddress = connection
+    ? `${connection.host.username}@${connection.host.address}:${connection.host.port}`
+    : '';
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
   const selectedHost = hosts.find((host) => host.id === selectedHostId) ?? hosts[0] ?? null;
@@ -515,6 +525,37 @@ function App() {
   const getSelectedSshKey = (host: Host) => sshKeys.find((key) => key.id === host.keyId) ?? null;
 
   useEffect(() => {
+    if (!windowConnectionId) {
+      return;
+    }
+
+    if (!window.guiSSH?.connections) {
+      setWindowConnectionError('当前运行环境不支持连接窗口。');
+      return;
+    }
+
+    let disposed = false;
+
+    window.guiSSH.connections
+      .getInfo(windowConnectionId)
+      .then((nextConnection) => {
+        if (!disposed) {
+          setConnection(nextConnection);
+          setWindowConnectionError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setWindowConnectionError(getErrorMessage(error));
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [windowConnectionId]);
+
+  useEffect(() => {
     window.localStorage.setItem(hostsStorageKey, JSON.stringify(hosts));
   }, [hosts]);
 
@@ -546,11 +587,17 @@ function App() {
 
     return window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
       if (payload.connectionId === connection.id) {
+        const message = payload.reason || 'SSH 连接已断开。';
         setConnection(null);
-        setStatusMessage(payload.reason || 'SSH 连接已断开。');
+        setStatusMessage(message);
+        setWindowConnectionError(message);
+
+        if (isConnectionWindow) {
+          void windowControls?.close();
+        }
       }
     });
-  }, [connection]);
+  }, [connection, isConnectionWindow, windowControls]);
 
   const minimizeWindow = () => {
     void windowControls?.minimize();
@@ -847,8 +894,13 @@ function App() {
         }
       }
 
-      setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
-      setStatusMessage(`已连接：${host.name}`);
+      if (isConnectionWindow) {
+        setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
+        setStatusMessage(`已连接：${host.name}`);
+      } else {
+        setStatusMessage(`已打开连接窗口：${host.name}`);
+      }
+
       closeCredentialDialog();
       return true;
     } catch (error) {
@@ -899,23 +951,6 @@ function App() {
     await connectHost(credentialHost, credentialForm);
   };
 
-  const disconnectCurrentHost = async () => {
-    if (!connection) {
-      return;
-    }
-
-    const closedConnection = connection;
-    setConnection(null);
-    setStatusMessage(`正在断开 ${closedConnection.host.name}...`);
-
-    try {
-      await window.guiSSH?.connections.disconnect(closedConnection.id);
-      setStatusMessage(`已断开：${closedConnection.host.name}`);
-    } catch (error) {
-      setStatusMessage(`断开连接失败：${getErrorMessage(error)}`);
-    }
-  };
-
   const clearFilters = () => {
     setActiveGroupKey(null);
     setSearchQuery('');
@@ -924,7 +959,17 @@ function App() {
   return (
     <div className="app-shell">
       <header className="top-chrome drag-region">
-        <div className="workspace-title">GUI-SSH</div>
+        <div className="workspace-title">
+          {connection ? (
+            <>
+              <strong>GUI-SSH Desktop</strong>
+              <span>{titlebarConnectionAddress}</span>
+              <span>SOCKS :{connection.proxyPort}</span>
+            </>
+          ) : (
+            'GUI-SSH'
+          )}
+        </div>
 
         {showWindowControls ? (
           <div className="titlebar-controls no-drag">
@@ -938,7 +983,18 @@ function App() {
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
 
       {connection ? (
-        <RemoteDesktop connection={connection} onDisconnect={disconnectCurrentHost} />
+        <RemoteDesktop connection={connection} />
+      ) : isConnectionWindow ? (
+        <main className="vault-page no-drag">
+          <div className="empty-state">
+            <span>{windowConnectionError ? 'CLOSED' : 'OPENING'}</span>
+            <h3>{windowConnectionError ? '连接窗口不可用' : '正在打开连接窗口'}</h3>
+            <p>{windowConnectionError || '正在读取 SSH 连接信息。'}</p>
+            {windowConnectionError ? (
+              <button type="button" className="command-button" onClick={closeWindow}>关闭窗口</button>
+            ) : null}
+          </div>
+        </main>
       ) : (
       <div className="app-layout">
         <aside className="side-nav">

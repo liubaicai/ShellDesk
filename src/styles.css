@@ -100,10 +100,29 @@ textarea {
 }
 
 .workspace-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
   color: var(--text);
   font-size: 13px;
   font-weight: 850;
   letter-spacing: -0.01em;
+}
+
+.workspace-title strong {
+  flex: 0 0 auto;
+  font: inherit;
+}
+
+.workspace-title span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .titlebar-controls {
@@ -1195,41 +1214,10 @@ button:disabled {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-rows: 34px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   background: #0b111a;
 }
 
-.remote-menubar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0 18px;
-  background: rgba(10, 16, 24, 0.82);
-  backdrop-filter: blur(20px);
-}
-
-.remote-menu-left,
-.remote-menu-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.remote-menu-left strong {
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.remote-menu-left span,
-.remote-menu-right span {
-  color: var(--muted-strong);
-  font-size: 12px;
-}
-
-.remote-menu-right button,
 .browser-toolbar button,
 .file-toolbar button,
 .mac-dock button,
@@ -1238,14 +1226,6 @@ button:disabled {
   background: rgba(255, 255, 255, 0.09);
   color: var(--text);
   cursor: pointer;
-}
-
-.remote-menu-right button {
-  height: 26px;
-  border-radius: 999px;
-  padding: 0 12px;
-  font-size: 12px;
-  font-weight: 750;
 }
 
 .remote-desktop-surface {
@@ -2051,15 +2031,6 @@ button.explorer-row {
   .host-card {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .remote-menubar {
-    padding: 0 10px;
-  }
-
-  .remote-menu-left span,
-  .remote-menu-right span {
-    display: none;
   }
 
   .desktop-icons {
