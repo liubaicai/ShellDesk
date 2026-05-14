@@ -972,6 +972,14 @@ textarea {
   font-weight: 850;
 }
 
+.settings-caption {
+  margin: -2px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
 .settings-card {
   overflow: hidden;
   border: 1px solid var(--border);

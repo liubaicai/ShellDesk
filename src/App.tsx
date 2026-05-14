@@ -461,6 +461,7 @@ function App() {
   const [credentialHostId, setCredentialHostId] = useState<string | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
+  const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const showWindowControls = Boolean(windowControls) && platform !== 'darwin';
@@ -956,6 +957,76 @@ function App() {
     setSearchQuery('');
   };
 
+  const exportConfig = async () => {
+    if (!window.guiSSH?.files.exportConfig) {
+      setStatusMessage('当前运行环境不支持导出配置。');
+      return;
+    }
+
+    setIsConfigTransferPending(true);
+
+    try {
+      const filePath = await window.guiSSH.files.exportConfig({ hosts, sshKeys });
+
+      if (!filePath) {
+        return;
+      }
+
+      setStatusMessage(`已导出 ${hosts.length} 台主机和 ${sshKeys.length} 把密钥。`);
+    } catch (error) {
+      setStatusMessage(`导出失败：${getErrorMessage(error)}`);
+    } finally {
+      setIsConfigTransferPending(false);
+    }
+  };
+
+  const importConfig = async () => {
+    if (!window.guiSSH?.files.importConfig) {
+      setStatusMessage('当前运行环境不支持导入配置。');
+      return;
+    }
+
+    setIsConfigTransferPending(true);
+
+    try {
+      const importedConfig = await window.guiSSH.files.importConfig();
+
+      if (!importedConfig) {
+        return;
+      }
+
+      const importedHosts = importedConfig.hosts.filter(isStoredHost).map(normalizeStoredHost);
+      const importedKeys = importedConfig.sshKeys.filter(isStoredSshKey);
+
+      if (!importedHosts.length && !importedKeys.length) {
+        setStatusMessage('导入文件中没有可用配置。');
+        return;
+      }
+
+      closeEditor();
+      closeKeyEditor();
+      closeCredentialDialog();
+      setHosts((currentHosts) => {
+        const importedHostIds = new Set(importedHosts.map((host) => host.id));
+        return [...importedHosts, ...currentHosts.filter((host) => !importedHostIds.has(host.id))];
+      });
+      setSshKeys((currentKeys) => {
+        const importedKeyIds = new Set(importedKeys.map((key) => key.id));
+        return [...importedKeys, ...currentKeys.filter((key) => !importedKeyIds.has(key.id))];
+      });
+
+      if (importedHosts.length) {
+        setSelectedHostId(importedHosts[0].id);
+      }
+
+      setStatusMessage(`已导入 ${importedHosts.length} 台主机和 ${importedKeys.length} 把密钥。`);
+    } catch (error) {
+      setStatusMessage(`导入失败：${getErrorMessage(error)}`);
+    } finally {
+      setIsConfigTransferPending(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <header className="top-chrome drag-region">
@@ -1157,7 +1228,13 @@ function App() {
           ) : activePage === 'logs' ? (
             <LogsPage />
           ) : (
-            <SettingsPage />
+            <SettingsPage
+              hostCount={hosts.length}
+              keyCount={sshKeys.length}
+              isConfigTransferPending={isConfigTransferPending}
+              onImportConfig={importConfig}
+              onExportConfig={exportConfig}
+            />
           )}
 
           {isEditorOpen && activePage === 'hosts' ? (

@@ -7,6 +7,10 @@ const { Client } = require('ssh2');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
+const configBundleFormat = 'gui-ssh-config';
+const configBundleVersion = 1;
+const maxConfigImportBytes = 20 * 1024 * 1024;
+const maxPrivateKeyBytes = 1024 * 1024;
 
 nativeTheme.themeSource = 'dark';
 
@@ -122,6 +126,259 @@ function validateHostRequest(rawHost) {
       authMethod: rawHost.authMethod,
     },
     sshConfig,
+  };
+}
+
+function readTimestampString(value, label) {
+  return readBoundedString(value, label, 64);
+}
+
+function readStringList(value, label, maxItems, maxItemLength) {
+  if (!Array.isArray(value) || value.length > maxItems) {
+    throw new Error(`${label}无效。`);
+  }
+
+  return value.map((item) => readBoundedString(item, label, maxItemLength, { required: false }));
+}
+
+function readStoredKeyRecord(rawKey) {
+  if (!isPlainObject(rawKey)) {
+    throw new Error('密钥数据无效。');
+  }
+
+  return {
+    id: readBoundedString(rawKey.id, '密钥 ID', 128),
+    name: readBoundedString(rawKey.name, '密钥名称', 80),
+    keyPath: readBoundedString(rawKey.keyPath, 'SSH 私钥路径', 1024),
+    passphrase: readBoundedString(rawKey.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    createdAt: readTimestampString(rawKey.createdAt, '密钥创建时间'),
+    updatedAt: readTimestampString(rawKey.updatedAt, '密钥更新时间'),
+  };
+}
+
+function readStoredHostRecord(rawHost) {
+  if (!isPlainObject(rawHost)) {
+    throw new Error('主机数据无效。');
+  }
+
+  const authMethod = rawHost.authMethod;
+
+  if (authMethod !== 'password' && authMethod !== 'key') {
+    throw new Error('主机登录方式无效。');
+  }
+
+  const port = Number(rawHost.port);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('主机端口无效。');
+  }
+
+  const host = {
+    id: readBoundedString(rawHost.id, '主机 ID', 128),
+    name: readBoundedString(rawHost.name, '主机名称', 80),
+    address: readBoundedString(rawHost.address, '主机地址', 255),
+    port,
+    username: readBoundedString(rawHost.username, '用户名', 128),
+    authMethod,
+    password: readBoundedString(rawHost.password ?? '', 'SSH 密码', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    keyId: readBoundedString(rawHost.keyId ?? '', '密钥 ID', 128, { required: false }),
+    keyPath: readBoundedString(rawHost.keyPath ?? '', 'SSH 私钥路径', 1024, { required: false }),
+    passphrase: readBoundedString(rawHost.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    group: readBoundedString(rawHost.group ?? '', '分组', 120, { required: false }),
+    tags: readStringList(rawHost.tags ?? [], '主机标签', 8, 256),
+    note: readBoundedString(rawHost.note ?? '', '备注', 20000, {
+      required: false,
+      rejectLineBreaks: false,
+    }),
+    createdAt: readTimestampString(rawHost.createdAt, '主机创建时间'),
+    updatedAt: readTimestampString(rawHost.updatedAt, '主机更新时间'),
+  };
+
+  if (host.authMethod === 'key' && !host.keyId && !host.keyPath) {
+    throw new Error(`主机「${host.name}」缺少私钥信息。`);
+  }
+
+  if (host.authMethod === 'password') {
+    host.keyId = '';
+    host.keyPath = '';
+    host.passphrase = '';
+  } else {
+    host.password = '';
+  }
+
+  return host;
+}
+
+function readConfigExportPayload(rawPayload) {
+  if (!isPlainObject(rawPayload) || !Array.isArray(rawPayload.hosts) || !Array.isArray(rawPayload.sshKeys)) {
+    throw new Error('导出配置数据无效。');
+  }
+
+  return {
+    hosts: rawPayload.hosts.map((host) => readStoredHostRecord(host)),
+    sshKeys: rawPayload.sshKeys.map((key) => readStoredKeyRecord(key)),
+  };
+}
+
+function getStableSyntheticKeyId(host) {
+  return `host-key-${crypto.createHash('sha256').update(`${host.id}:${host.keyPath}`).digest('hex').slice(0, 16)}`;
+}
+
+function buildConfigBundle(hosts, sshKeys) {
+  const keysById = new Map(sshKeys.map((key) => [key.id, key]));
+  const keysByPath = new Map(sshKeys.map((key) => [key.keyPath, key]));
+  const exportedKeys = [...sshKeys];
+  const exportedKeyIds = new Set(exportedKeys.map((key) => key.id));
+
+  const exportedHosts = hosts.map((host) => {
+    if (host.authMethod !== 'key') {
+      return { ...host, password: host.password, keyId: '', keyPath: '', passphrase: '' };
+    }
+
+    const matchedKey = (host.keyId && keysById.get(host.keyId)) || (host.keyPath && keysByPath.get(host.keyPath));
+
+    if (matchedKey) {
+      return {
+        ...host,
+        password: '',
+        keyId: matchedKey.id,
+        keyPath: matchedKey.keyPath,
+        passphrase: host.passphrase || matchedKey.passphrase,
+      };
+    }
+
+    const syntheticKey = {
+      id: getStableSyntheticKeyId(host),
+      name: `${host.name} 私钥`,
+      keyPath: host.keyPath,
+      passphrase: host.passphrase,
+      createdAt: host.createdAt,
+      updatedAt: host.updatedAt,
+    };
+
+    if (!exportedKeyIds.has(syntheticKey.id)) {
+      exportedKeys.push(syntheticKey);
+      exportedKeyIds.add(syntheticKey.id);
+      keysById.set(syntheticKey.id, syntheticKey);
+      keysByPath.set(syntheticKey.keyPath, syntheticKey);
+    }
+
+    return {
+      ...host,
+      password: '',
+      keyId: syntheticKey.id,
+      keyPath: syntheticKey.keyPath,
+      passphrase: syntheticKey.passphrase,
+    };
+  });
+
+  const bundledKeys = exportedKeys.map((key) => {
+    const privateKey = fs.readFileSync(key.keyPath);
+
+    if (!privateKey.length || privateKey.length > maxPrivateKeyBytes) {
+      throw new Error(`私钥「${key.name}」内容无效或超过大小限制。`);
+    }
+
+    return {
+      ...key,
+      privateKeyBase64: privateKey.toString('base64'),
+    };
+  });
+
+  return {
+    format: configBundleFormat,
+    version: configBundleVersion,
+    exportedAt: new Date().toISOString(),
+    hosts: exportedHosts,
+    sshKeys: bundledKeys,
+  };
+}
+
+function readPrivateKeyBuffer(base64Value) {
+  const value = readBoundedString(base64Value, 'SSH 私钥内容', 2 * 1024 * 1024, { trim: false });
+
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
+    throw new Error('SSH 私钥内容无效。');
+  }
+
+  const privateKey = Buffer.from(value, 'base64');
+
+  if (!privateKey.length || privateKey.length > maxPrivateKeyBytes) {
+    throw new Error('SSH 私钥内容无效或超过大小限制。');
+  }
+
+  return privateKey;
+}
+
+function readConfigImportPayload(rawPayload) {
+  if (!isPlainObject(rawPayload) || rawPayload.format !== configBundleFormat || !Array.isArray(rawPayload.hosts) || !Array.isArray(rawPayload.sshKeys)) {
+    throw new Error('不是受支持的 GUI-SSH 完整备份文件。');
+  }
+
+  if (rawPayload.version !== configBundleVersion) {
+    throw new Error('备份文件版本不受支持。');
+  }
+
+  return {
+    hosts: rawPayload.hosts.map((host) => readStoredHostRecord(host)),
+    sshKeys: rawPayload.sshKeys.map((key) => {
+      const nextKey = readStoredKeyRecord(key);
+      return {
+        ...nextKey,
+        privateKey: readPrivateKeyBuffer(key.privateKeyBase64),
+      };
+    }),
+  };
+}
+
+function getSafeFileSegment(value, fallback) {
+  const safeValue = value
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  return safeValue || fallback;
+}
+
+function getPrivateKeyExtension(keyPath) {
+  const extension = path.extname(keyPath).toLowerCase();
+  return /^[.a-z0-9_-]{1,12}$/.test(extension) && extension !== '.' ? extension : '.key';
+}
+
+function restoreImportedPrivateKey(importedKey) {
+  const directoryPath = path.join(app.getPath('userData'), 'imported-keys');
+  const safeName = getSafeFileSegment(importedKey.name, 'ssh-key');
+  const safeId = getSafeFileSegment(importedKey.id, 'key');
+  const filePath = path.join(directoryPath, `${safeName}-${safeId}${getPrivateKeyExtension(importedKey.keyPath)}`);
+
+  fs.mkdirSync(directoryPath, { recursive: true });
+  fs.writeFileSync(filePath, importedKey.privateKey, { mode: 0o600 });
+
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // ignore chmod failures on platforms that do not honor POSIX permissions
+  }
+
+  return {
+    id: importedKey.id,
+    name: importedKey.name,
+    keyPath: filePath,
+    passphrase: importedKey.passphrase,
+    createdAt: importedKey.createdAt,
+    updatedAt: importedKey.updatedAt,
   };
 }
 
@@ -814,6 +1071,83 @@ ipcMain.handle('dialog:select-private-key', async (event) => {
   }
 
   return result.filePaths[0] ?? '';
+});
+
+registerIpcHandler('config:export', async (event, rawPayload) => {
+  const { hosts, sshKeys } = readConfigExportPayload(rawPayload);
+  const bundle = buildConfigBundle(hosts, sshKeys);
+  const window = getSenderWindow(event);
+  const defaultPath = path.join(app.getPath('documents'), `gui-ssh-config-${new Date().toISOString().slice(0, 10)}.json`);
+  const result = await dialog.showSaveDialog(window ?? undefined, {
+    title: '导出完整主机配置',
+    defaultPath,
+    filters: [{ name: 'GUI-SSH Config', extensions: ['json'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return '';
+  }
+
+  fs.writeFileSync(result.filePath, JSON.stringify(bundle, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+
+  return result.filePath;
+});
+
+registerIpcHandler('config:import', async (event) => {
+  const window = getSenderWindow(event);
+  const result = await dialog.showOpenDialog(window ?? undefined, {
+    title: '导入完整主机配置',
+    properties: ['openFile'],
+    filters: [{ name: 'GUI-SSH Config', extensions: ['json'] }],
+  });
+
+  if (result.canceled) {
+    return null;
+  }
+
+  const filePath = result.filePaths[0];
+
+  if (!filePath) {
+    return null;
+  }
+
+  const stats = fs.statSync(filePath);
+
+  if (!stats.size || stats.size > maxConfigImportBytes) {
+    throw new Error('备份文件为空或超过大小限制。');
+  }
+
+  const importedPayload = readConfigImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+  const restoredKeys = importedPayload.sshKeys.map((key) => restoreImportedPrivateKey(key));
+  const restoredKeysById = new Map(restoredKeys.map((key) => [key.id, key]));
+  const restoredKeysBySourcePath = new Map(importedPayload.sshKeys.map((key, index) => [key.keyPath, restoredKeys[index]]));
+  const hosts = importedPayload.hosts.map((host) => {
+    if (host.authMethod !== 'key') {
+      return { ...host, keyId: '', keyPath: '', passphrase: '' };
+    }
+
+    const restoredKey = restoredKeysById.get(host.keyId) || restoredKeysBySourcePath.get(host.keyPath);
+
+    if (!restoredKey) {
+      throw new Error(`主机「${host.name}」缺少对应私钥。`);
+    }
+
+    return {
+      ...host,
+      password: '',
+      keyId: restoredKey.id,
+      keyPath: restoredKey.keyPath,
+      passphrase: host.passphrase || restoredKey.passphrase,
+    };
+  });
+
+  return {
+    hosts,
+    sshKeys: restoredKeys,
+  };
 });
 
 ipcMain.handle('connection:connect', async (_event, rawHost) => {

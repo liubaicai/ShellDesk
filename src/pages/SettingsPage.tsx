@@ -14,7 +14,21 @@ const settingsSections = [
 const lightThemeColors = ['#e8edf5', '#ffffff', '#f4f1ea', '#f8fbff', '#eef7f8', '#fbf7f0', '#f9f8ff'];
 const darkThemeColors = ['#05070b', '#111827', '#0c1320', '#171717', '#141b25', '#0f1117', '#0d1b14'];
 
-function SettingsPage() {
+interface SettingsPageProps {
+  hostCount: number;
+  keyCount: number;
+  isConfigTransferPending: boolean;
+  onImportConfig: () => void;
+  onExportConfig: () => void;
+}
+
+function SettingsPage({
+  hostCount,
+  keyCount,
+  isConfigTransferPending,
+  onImportConfig,
+  onExportConfig,
+}: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState('appearance');
   const [theme, setTheme] = useState<'light' | 'system' | 'dark'>('dark');
   const [useAccentColor, setUseAccentColor] = useState(false);
@@ -167,6 +181,41 @@ function SettingsPage() {
                 <input className="settings-toggle" type="checkbox" defaultChecked />
               </label>
             </div>
+          </section>
+
+          <section className="settings-section">
+            <h2>配置备份</h2>
+            <div className="settings-card">
+              <div className="settings-row">
+                <span>
+                  <strong>完整导出</strong>
+                  <small>导出 {hostCount} 台主机与 {keyCount} 把密钥，包含密码、私钥内容与密钥口令。</small>
+                </span>
+                <button
+                  type="button"
+                  className="command-button"
+                  onClick={onExportConfig}
+                  disabled={isConfigTransferPending}
+                >
+                  {isConfigTransferPending ? '处理中...' : '导出配置'}
+                </button>
+              </div>
+              <div className="settings-row">
+                <span>
+                  <strong>导入配置</strong>
+                  <small>从完整备份恢复主机与密钥，已导入私钥会保存到本机应用目录。</small>
+                </span>
+                <button
+                  type="button"
+                  className="command-button"
+                  onClick={onImportConfig}
+                  disabled={isConfigTransferPending}
+                >
+                  {isConfigTransferPending ? '处理中...' : '导入配置'}
+                </button>
+              </div>
+            </div>
+            <p className="settings-caption">导出的 JSON 包含明文敏感信息，请仅保存在可信位置。</p>
           </section>
         </div>
       </section>

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
   },
   files: {
     selectPrivateKeyFile: () => ipcRenderer.invoke('dialog:select-private-key'),
+    importConfig: () => ipcRenderer.invoke('config:import'),
+    exportConfig: (payload) => ipcRenderer.invoke('config:export', payload),
   },
   connections: {
     connect: connectHost,

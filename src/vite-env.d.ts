@@ -15,6 +15,45 @@ interface GuiSshWindowControls {
 
 interface GuiSshFileControls {
   selectPrivateKeyFile: () => Promise<string>;
+  importConfig: () => Promise<GuiSshConfigImportResult | null>;
+  exportConfig: (payload: GuiSshConfigExportPayload) => Promise<string>;
+}
+
+interface GuiSshStoredKeyRecord {
+  id: string;
+  name: string;
+  keyPath: string;
+  passphrase: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GuiSshStoredHostRecord {
+  id: string;
+  name: string;
+  address: string;
+  port: number;
+  username: string;
+  authMethod: 'password' | 'key';
+  password: string;
+  keyId: string;
+  keyPath: string;
+  passphrase: string;
+  group: string;
+  tags: string[];
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GuiSshConfigExportPayload {
+  hosts: GuiSshStoredHostRecord[];
+  sshKeys: GuiSshStoredKeyRecord[];
+}
+
+interface GuiSshConfigImportResult {
+  hosts: GuiSshStoredHostRecord[];
+  sshKeys: GuiSshStoredKeyRecord[];
 }
 
 interface GuiSshHostConnectionRequest {
