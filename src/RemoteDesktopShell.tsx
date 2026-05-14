@@ -365,7 +365,6 @@ function RemoteDesktopShell({ connection }: RemoteDesktopProps) {
                 </div>
                 <div className="desktop-window-title">
                   <strong>{appInfo.label}</strong>
-                  <small>{appInfo.description}</small>
                 </div>
               </header>
               <div className="desktop-window-body">{renderWindowContent(desktopWindow)}</div>

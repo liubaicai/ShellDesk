@@ -40,7 +40,7 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
       lineHeight: 1.2,
       scrollback: 10000,
       theme: {
-        background: '#05090f',
+        background: '#000000',
         foreground: '#d7fbe8',
         cursor: '#8cf7d5',
         selectionBackground: '#29546f',
@@ -61,7 +61,6 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.focus();
-    terminal.writeln('正在启动 SSH 终端...');
 
     const getTerminalSize = () => {
       try {
@@ -139,7 +138,6 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
     animationFrame = window.requestAnimationFrame(() => {
       const { columns, rows } = getTerminalSize();
       lastSizeRef.current = { columns, rows };
-      terminal.writeln('正在申请远程 Shell...');
       startWarningTimer = window.setTimeout(() => {
         if (!disposed && !isTerminalReadyRef.current) {
           terminal.writeln('\r\n终端仍在启动：远程服务器尚未返回 Shell，请检查服务器是否允许交互式登录。');
@@ -174,7 +172,6 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
           }
 
           isTerminalReadyRef.current = true;
-          terminal.writeln('\r\n终端已连接。');
           fitAndSyncSize();
           terminal.focus();
         })

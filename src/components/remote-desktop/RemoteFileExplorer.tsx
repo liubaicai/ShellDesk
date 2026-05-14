@@ -241,7 +241,6 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
 
         <section className="explorer-main" aria-label="远程文件列表">
           {filesError ? <div className="error-banner">{filesError}</div> : null}
-          {isFilesLoading ? <div className="empty-inline">正在读取远程目录...</div> : null}
 
           <div className="explorer-table" role="table">
             <div className="explorer-row explorer-header" role="row">
