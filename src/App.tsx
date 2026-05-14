@@ -1,18 +1,23 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
-import RemoteDesktop, { type RemoteConnectionInfo } from './RemoteDesktop';
+import RemoteDesktop from './RemoteDesktop';
+import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
+import type { RemoteConnectionInfo } from './components/remote-desktop/types';
+import KeysPage from './pages/KeysPage';
+import LogsPage from './pages/LogsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const hostsStorageKey = 'gui-ssh:hosts';
 const keysStorageKey = 'gui-ssh:keys';
 const ungroupedKey = '__ungrouped__';
 
-const navigationItems = [
-  { page: 'hosts', key: 'H', label: '主机' },
-  { page: 'keys', key: 'K', label: '密钥' },
-  { page: 'logs', key: 'L', label: '日志' },
-] as const;
+type AppPage = 'hosts' | 'keys' | 'logs' | 'settings';
 
-type AppPage = (typeof navigationItems)[number]['page'];
+const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon: NavIconName; label: string }> = [
+  { page: 'hosts', icon: 'hosts', label: '主机' },
+  { page: 'keys', icon: 'keys', label: '密钥' },
+  { page: 'logs', icon: 'logs', label: '日志' },
+];
 
 interface SshKey {
   id: string;
@@ -945,18 +950,25 @@ function App() {
           <nav className="feature-nav" aria-label="功能导航">
             {navigationItems.map((item) => (
               <button
-                key={item.label}
+                key={item.page}
                 type="button"
                 className={`feature-nav-item ${activePage === item.page ? 'active' : ''}`}
                 onClick={() => setActivePage(item.page)}
               >
-                <span>{item.key}</span>
+                <span className="nav-icon"><NavIcon name={item.icon} /></span>
                 {item.label}
               </button>
             ))}
           </nav>
 
-          <button type="button" className="settings-entry">设置</button>
+          <button
+            type="button"
+            className={`settings-entry ${activePage === 'settings' ? 'active' : ''}`}
+            onClick={() => setActivePage('settings')}
+          >
+            <span className="nav-icon"><NavIcon name="settings" /></span>
+            设置
+          </button>
         </aside>
 
         <main className="vault-page">
@@ -1076,68 +1088,20 @@ function App() {
           </section>
             </>
           ) : activePage === 'keys' ? (
-            <>
-              <div className="command-bar no-drag key-command-bar">
-                <label className="global-search">
-                  <span>查找</span>
-                  <input
-                    type="search"
-                    placeholder="查找密钥名称或私钥路径"
-                    value={keySearchQuery}
-                    onChange={(event) => setKeySearchQuery(event.target.value)}
-                  />
-                </label>
-
-                <button type="button" className="command-button" onClick={importPrivateKey}>导入密钥</button>
-                <button type="button" className="primary-action" onClick={openCreateKey}>+ 新建密钥</button>
-              </div>
-
-              <section className="vault-content">
-                <div className="content-filter-row">
-                  <button type="button" className={`filter-tab ${!keySearchQuery ? 'active' : ''}`} onClick={() => setKeySearchQuery('')}>
-                    密钥列表
-                  </button>
-                  <span>{filteredKeys.length} 个密钥</span>
-                </div>
-                {filteredKeys.length ? (
-                  <div className="key-grid">
-                    {filteredKeys.map((key) => (
-                      <article key={key.id} className="key-card">
-                        <span className="key-card-icon">🔑</span>
-                        <span className="key-card-summary">
-                          <strong>{key.name}</strong>
-                          <small>{key.keyPath}</small>
-                          <em>{key.passphrase ? '口令已保存' : '无口令'}</em>
-                        </span>
-                        <div className="key-card-actions">
-                          <button type="button" onClick={() => startEditingKey(key)}>编辑</button>
-                          <button type="button" className="danger-text" onClick={() => deleteSshKey(key)}>删除</button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <span>KEYS</span>
-                    <h3>{sshKeys.length ? '没有匹配的密钥' : '密钥列表为空'}</h3>
-                    <p>{sshKeys.length ? '清空搜索后再试。' : '点击“新建密钥”或“导入密钥”添加第一把 SSH 私钥。'}</p>
-                  </div>
-                )}
-              </section>
-            </>
+            <KeysPage
+              keySearchQuery={keySearchQuery}
+              filteredKeys={filteredKeys}
+              sshKeys={sshKeys}
+              onSearchChange={setKeySearchQuery}
+              onImportPrivateKey={importPrivateKey}
+              onCreateKey={openCreateKey}
+              onEditKey={startEditingKey}
+              onDeleteKey={deleteSshKey}
+            />
+          ) : activePage === 'logs' ? (
+            <LogsPage />
           ) : (
-            <>
-              <div className="command-bar no-drag simple-command-bar">
-                <strong>日志</strong>
-              </div>
-              <section className="vault-content">
-                <div className="empty-state">
-                  <span>LOGS</span>
-                  <h3>暂无日志</h3>
-                  <p>连接、密钥和操作日志后续会显示在这里。</p>
-                </div>
-              </section>
-            </>
+            <SettingsPage />
           )}
 
           {isEditorOpen && activePage === 'hosts' ? (
