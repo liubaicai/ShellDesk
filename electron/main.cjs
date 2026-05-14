@@ -425,6 +425,7 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   }
 
   activeConnections.delete(connectionId);
+  const connectionWindow = activeConnection.window;
 
   if (activeConnection.terminalSessions) {
     for (const stream of activeConnection.terminalSessions.values()) {
@@ -440,6 +441,11 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   }
 
   notifyConnectionClosed(connectionId, reason);
+
+  if (connectionWindow && !connectionWindow.isDestroyed()) {
+    connectionWindow.close();
+  }
+
   return true;
 }
 
@@ -658,6 +664,46 @@ function getSenderWindow(event) {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
+function configureAppWindow(appWindow) {
+  appWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      void shell.openExternal(url);
+    }
+
+    return { action: 'deny' };
+  });
+
+  appWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isSafeNavigation(url)) {
+      event.preventDefault();
+    }
+  });
+}
+
+function loadAppWindow(appWindow, query = {}) {
+  if (devServerUrl) {
+    const appUrl = new URL(devServerUrl);
+
+    for (const [key, value] of Object.entries(query)) {
+      appUrl.searchParams.set(key, value);
+    }
+
+    void appWindow.loadURL(appUrl.toString());
+  } else {
+    void appWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { query });
+  }
+}
+
+function toConnectionInfo(activeConnection) {
+  return {
+    id: activeConnection.id,
+    partition: activeConnection.partition,
+    proxyPort: activeConnection.proxyPort,
+    connectedAt: activeConnection.connectedAt,
+    host: activeConnection.displayHost,
+  };
+}
+
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1180,
@@ -685,25 +731,47 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://') || url.startsWith('http://')) {
-      void shell.openExternal(url);
-    }
+  configureAppWindow(mainWindow);
+  loadAppWindow(mainWindow);
+}
 
-    return { action: 'deny' };
+function createConnectionWindow(activeConnection) {
+  const connectionTitle = `${activeConnection.displayHost.username}@${activeConnection.displayHost.address}:${activeConnection.displayHost.port}`;
+  const connectionWindow = new BrowserWindow({
+    width: 1240,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    show: false,
+    title: `GUI-SSH - ${connectionTitle} - SOCKS :${activeConnection.proxyPort}`,
+    backgroundColor: '#0b1017',
+    autoHideMenuBar: true,
+    frame: process.platform === 'darwin',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: { x: 16, y: 15 },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: true,
+    },
   });
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!isSafeNavigation(url)) {
-      event.preventDefault();
+  activeConnection.window = connectionWindow;
+  connectionWindow.once('ready-to-show', () => {
+    connectionWindow.show();
+  });
+  connectionWindow.on('closed', () => {
+    const currentConnection = activeConnections.get(activeConnection.id);
+
+    if (currentConnection?.window === connectionWindow) {
+      void closeActiveConnection(activeConnection.id, '连接窗口已关闭。');
     }
   });
-
-  if (devServerUrl) {
-    void mainWindow.loadURL(devServerUrl);
-  } else {
-    void mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
-  }
+  configureAppWindow(connectionWindow);
+  loadAppWindow(connectionWindow, { connectionId: activeConnection.id });
 }
 
 ipcMain.handle('window:minimize', (event) => {
@@ -784,16 +852,11 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
     client.once('close', () => {
       void closeActiveConnection(id, 'SSH 连接已断开。', true);
     });
+    createConnectionWindow(activeConnection);
 
     return {
       ok: true,
-      connection: {
-        id,
-        partition,
-        proxyPort: port,
-        connectedAt: activeConnection.connectedAt,
-        host: displayHost,
-      },
+      connection: toConnectionInfo(activeConnection),
     };
   } catch (error) {
     client?.end();
@@ -804,6 +867,10 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
 registerIpcHandler('connection:disconnect', async (_event, connectionId) => {
   await closeActiveConnection(connectionId, '已断开 SSH 连接。');
   return true;
+});
+
+registerIpcHandler('connection:get-info', async (_event, connectionId) => {
+  return toConnectionInfo(getActiveConnection(connectionId));
 });
 
 registerIpcHandler('connection:get-ipc-capabilities', async () => ({

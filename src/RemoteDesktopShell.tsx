@@ -14,7 +14,6 @@ type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
-  onDisconnect: () => void;
 }
 
 interface DesktopWindowFrame {
@@ -110,7 +109,7 @@ function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
 }
 
-function RemoteDesktopShell({ connection, onDisconnect }: RemoteDesktopProps) {
+function RemoteDesktopShell({ connection }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
   const windowSequenceRef = useRef(0);
@@ -314,17 +313,6 @@ function RemoteDesktopShell({ connection, onDisconnect }: RemoteDesktopProps) {
 
   return (
     <main className="remote-desktop-page">
-      <div className="remote-menubar drag-region">
-        <div className="remote-menu-left">
-          <strong>GUI-SSH Desktop</strong>
-          <span>{connection.host.username}@{connection.host.address}:{connection.host.port}</span>
-        </div>
-        <div className="remote-menu-right no-drag">
-          <span>SOCKS :{connection.proxyPort}</span>
-          <button type="button" onClick={onDisconnect}>断开连接</button>
-        </div>
-      </div>
-
       <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
         <div className="desktop-icons" aria-label="桌面应用">
           {desktopApps.map((app) => (
