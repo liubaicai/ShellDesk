@@ -3,13 +3,134 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import RemoteDesktop, { type RemoteConnectionInfo } from './RemoteDesktop';
 
 const hostsStorageKey = 'gui-ssh:hosts';
+const keysStorageKey = 'gui-ssh:keys';
 const ungroupedKey = '__ungrouped__';
 
 const navigationItems = [
-  { key: 'H', label: '主机', active: true },
-  { key: 'K', label: '密钥' },
-  { key: 'L', label: '日志' },
-];
+  { page: 'hosts', key: 'H', label: '主机' },
+  { page: 'keys', key: 'K', label: '密钥' },
+  { page: 'logs', key: 'L', label: '日志' },
+] as const;
+
+type AppPage = (typeof navigationItems)[number]['page'];
+
+interface SshKey {
+  id: string;
+  name: string;
+  keyPath: string;
+  passphrase: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface KeyFormState {
+  name: string;
+  keyPath: string;
+  passphrase: string;
+}
+
+const emptyKeyForm: KeyFormState = {
+  name: '',
+  keyPath: '',
+  passphrase: '',
+};
+
+const keyPathSeparators = /[\\/]+/;
+
+function getKeyNameFromPath(keyPath: string) {
+  const fileName = keyPath.split(keyPathSeparators).filter(Boolean).pop() ?? 'SSH Key';
+  return fileName.replace(/\.(pem|key|ppk|openssh)$/i, '') || fileName;
+}
+
+function isStoredSshKey(value: unknown): value is SshKey {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const key = value as Partial<SshKey>;
+  return (
+    typeof key.id === 'string' &&
+    typeof key.name === 'string' &&
+    typeof key.keyPath === 'string' &&
+    typeof key.passphrase === 'string' &&
+    typeof key.createdAt === 'string' &&
+    typeof key.updatedAt === 'string'
+  );
+}
+
+function readStoredSshKeys(): SshKey[] {
+  try {
+    const rawKeys = window.localStorage.getItem(keysStorageKey);
+
+    if (!rawKeys) {
+      return [];
+    }
+
+    const parsedKeys: unknown = JSON.parse(rawKeys);
+
+    if (!Array.isArray(parsedKeys)) {
+      return [];
+    }
+
+    return parsedKeys.filter(isStoredSshKey);
+  } catch {
+    return [];
+  }
+}
+
+function validateKeyForm(form: KeyFormState, keys: SshKey[], editingKeyId: string | null) {
+  const name = form.name.trim();
+  const keyPath = form.keyPath.trim();
+
+  if (!name) {
+    return '请输入密钥名称。';
+  }
+
+  if (!keyPath) {
+    return '请选择私钥文件。';
+  }
+
+  if (name.length > 80 || keyPath.length > 1024 || form.passphrase.length > 4096) {
+    return '密钥信息长度超出限制。';
+  }
+
+  if (keys.some((key) => key.id !== editingKeyId && key.keyPath === keyPath)) {
+    return '该私钥文件已在密钥列表中。';
+  }
+
+  return '';
+}
+
+function createSshKeyFromForm(form: KeyFormState): SshKey {
+  const now = new Date().toISOString();
+
+  return {
+    id: createId(),
+    name: form.name.trim(),
+    keyPath: form.keyPath.trim(),
+    passphrase: form.passphrase,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function updateSshKeyFromForm(key: SshKey, form: KeyFormState): SshKey {
+  return {
+    ...key,
+    name: form.name.trim(),
+    keyPath: form.keyPath.trim(),
+    passphrase: form.passphrase,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function toKeyFormState(key: SshKey): KeyFormState {
+  return {
+    name: key.name,
+    keyPath: key.keyPath,
+    passphrase: key.passphrase,
+  };
+}
 
 interface Host {
   id: string;
@@ -19,6 +140,7 @@ interface Host {
   username: string;
   authMethod: AuthMethod;
   password: string;
+  keyId: string;
   keyPath: string;
   passphrase: string;
   group: string;
@@ -28,8 +150,8 @@ interface Host {
   updatedAt: string;
 }
 
-type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyPath' | 'passphrase'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyPath' | 'passphrase'>>;
+type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase'>>;
 
 interface HostFormState {
   name: string;
@@ -38,6 +160,7 @@ interface HostFormState {
   username: string;
   authMethod: AuthMethod;
   password: string;
+  keyId: string;
   keyPath: string;
   passphrase: string;
   group: string;
@@ -72,6 +195,7 @@ const emptyHostForm: HostFormState = {
   username: '',
   authMethod: 'password',
   password: '',
+  keyId: '',
   keyPath: '',
   passphrase: '',
   group: '',
@@ -137,14 +261,6 @@ function getAuthLabel(host: Pick<Host, 'authMethod' | 'password' | 'keyPath' | '
   return host.password ? '密码登录 · 已保存' : '密码登录';
 }
 
-function getAuthBadgeLabel(host: Pick<Host, 'authMethod' | 'password'>) {
-  if (host.authMethod === 'key') {
-    return '密钥';
-  }
-
-  return host.password ? '密码已保存' : '密码';
-}
-
 function isStoredHost(value: unknown): value is StoredHost {
   if (!value || typeof value !== 'object') {
     return false;
@@ -172,6 +288,7 @@ function normalizeStoredHost(host: StoredHost): Host {
     ...host,
     authMethod: getAuthMethod(host.authMethod),
     password: typeof host.password === 'string' ? host.password : '',
+    keyId: typeof host.keyId === 'string' ? host.keyId : '',
     keyPath: typeof host.keyPath === 'string' ? host.keyPath : '',
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
   };
@@ -197,8 +314,9 @@ function readStoredHosts(): Host[] {
   }
 }
 
-function validateHostForm(form: HostFormState) {
+function validateHostForm(form: HostFormState, keys: SshKey[]) {
   const port = Number(form.port);
+  const selectedKey = keys.find((key) => key.id === form.keyId);
 
   if (!form.name.trim()) {
     return '请输入主机名称。';
@@ -228,8 +346,8 @@ function validateHostForm(form: HostFormState) {
     return '用户名不能超过 128 个字符。';
   }
 
-  if (form.authMethod === 'key' && !form.keyPath.trim()) {
-    return '选择密钥登录时需要选择私钥文件。';
+  if (form.authMethod === 'key' && !selectedKey) {
+    return '选择密钥登录时需要选择已有密钥。';
   }
 
   if (form.password.length > 4096) {
@@ -247,7 +365,7 @@ function validateHostForm(form: HostFormState) {
   return '';
 }
 
-function createHostFromForm(form: HostFormState): Host {
+function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Host {
   const now = new Date().toISOString();
 
   return {
@@ -258,8 +376,9 @@ function createHostFromForm(form: HostFormState): Host {
     username: form.username.trim(),
     authMethod: form.authMethod,
     password: form.authMethod === 'password' ? form.password : '',
-    keyPath: form.authMethod === 'key' ? form.keyPath.trim() : '',
-    passphrase: form.authMethod === 'key' ? form.passphrase : '',
+    keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
+    keyPath: form.authMethod === 'key' ? selectedKey?.keyPath ?? '' : '',
+    passphrase: form.authMethod === 'key' ? selectedKey?.passphrase ?? '' : '',
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -268,7 +387,7 @@ function createHostFromForm(form: HostFormState): Host {
   };
 }
 
-function updateHostFromForm(host: Host, form: HostFormState): Host {
+function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey | null): Host {
   return {
     ...host,
     name: form.name.trim(),
@@ -277,8 +396,9 @@ function updateHostFromForm(host: Host, form: HostFormState): Host {
     username: form.username.trim(),
     authMethod: form.authMethod,
     password: form.authMethod === 'password' ? form.password : '',
-    keyPath: form.authMethod === 'key' ? form.keyPath.trim() : '',
-    passphrase: form.authMethod === 'key' ? form.passphrase : '',
+    keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
+    keyPath: form.authMethod === 'key' ? selectedKey?.keyPath ?? '' : '',
+    passphrase: form.authMethod === 'key' ? selectedKey?.passphrase ?? '' : '',
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -294,6 +414,7 @@ function toFormState(host: Host): HostFormState {
     username: host.username,
     authMethod: host.authMethod,
     password: host.password,
+    keyId: host.keyId,
     keyPath: host.keyPath,
     passphrase: host.passphrase,
     group: host.group,
@@ -308,13 +429,20 @@ function getHostGroupKey(host: Host) {
 
 function App() {
   const [hosts, setHosts] = useState<Host[]>(readStoredHosts);
+  const [sshKeys, setSshKeys] = useState<SshKey[]>(readStoredSshKeys);
   const [form, setForm] = useState<HostFormState>(emptyHostForm);
+  const [keyForm, setKeyForm] = useState<KeyFormState>(emptyKeyForm);
   const [editingHostId, setEditingHostId] = useState<string | null>(null);
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<AppPage>('hosts');
   const [searchQuery, setSearchQuery] = useState('');
+  const [keySearchQuery, setKeySearchQuery] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+  const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
@@ -326,6 +454,7 @@ function App() {
   const windowControls = window.guiSSH?.window;
   const showWindowControls = Boolean(windowControls) && platform !== 'darwin';
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
+  const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
   const selectedHost = hosts.find((host) => host.id === selectedHostId) ?? hosts[0] ?? null;
   const credentialHost = hosts.find((host) => host.id === credentialHostId) ?? null;
 
@@ -351,23 +480,42 @@ function App() {
     const query = searchQuery.trim().toLowerCase();
 
     return hosts.filter((host) => {
+      const hostKey = sshKeys.find((key) => key.id === host.keyId);
       const matchesGroup = !activeGroupKey || getHostGroupKey(host) === activeGroupKey;
       const matchesQuery =
         !query ||
-        [host.name, host.address, host.username, host.group, host.note, host.keyPath, getAuthLabel(host), ...host.tags]
+        [host.name, host.address, host.username, host.group, host.note, hostKey?.name, hostKey?.keyPath, host.keyPath, getAuthLabel(host), ...host.tags]
           .join(' ')
           .toLowerCase()
           .includes(query);
 
       return matchesGroup && matchesQuery;
     });
-  }, [activeGroupKey, hosts, searchQuery]);
+  }, [activeGroupKey, hosts, searchQuery, sshKeys]);
+
+  const filteredKeys = useMemo(() => {
+    const query = keySearchQuery.trim().toLowerCase();
+
+    return sshKeys.filter((key) => {
+      if (!query) {
+        return true;
+      }
+
+      return [key.name, key.keyPath].join(' ').toLowerCase().includes(query);
+    });
+  }, [keySearchQuery, sshKeys]);
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
+
+  const getSelectedSshKey = (host: Host) => sshKeys.find((key) => key.id === host.keyId) ?? null;
 
   useEffect(() => {
     window.localStorage.setItem(hostsStorageKey, JSON.stringify(hosts));
   }, [hosts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(keysStorageKey, JSON.stringify(sshKeys));
+  }, [sshKeys]);
 
   useEffect(() => {
     if (selectedHostId && hosts.some((host) => host.id === selectedHostId)) {
@@ -417,6 +565,12 @@ function App() {
     setFormError('');
   };
 
+  const resetKeyForm = () => {
+    setKeyForm(emptyKeyForm);
+    setEditingKeyId(null);
+    setKeyFormError('');
+  };
+
   const openCreateHost = () => {
     resetForm();
     setIsEditorOpen(true);
@@ -427,20 +581,131 @@ function App() {
     setIsEditorOpen(false);
   };
 
+  const openCreateKey = () => {
+    resetKeyForm();
+    setIsKeyEditorOpen(true);
+    setActivePage('keys');
+  };
+
+  const closeKeyEditor = () => {
+    resetKeyForm();
+    setIsKeyEditorOpen(false);
+  };
+
   const updateFormField = <Field extends keyof HostFormState>(field: Field, value: HostFormState[Field]) => {
     setForm((currentForm) => ({ ...currentForm, [field]: value }));
     setFormError('');
   };
 
-  const selectPrivateKeyFile = async () => {
+  const updateKeyFormField = <Field extends keyof KeyFormState>(field: Field, value: KeyFormState[Field]) => {
+    setKeyForm((currentForm) => ({ ...currentForm, [field]: value }));
+    setKeyFormError('');
+  };
+
+  const selectKeyFileForKeyForm = async () => {
     const filePath = await window.guiSSH?.files.selectPrivateKeyFile();
 
     if (!filePath) {
       return;
     }
 
-    updateFormField('authMethod', 'key');
-    updateFormField('keyPath', filePath);
+    setKeyForm((currentForm) => ({
+      ...currentForm,
+      keyPath: filePath,
+      name: currentForm.name.trim() ? currentForm.name : getKeyNameFromPath(filePath),
+    }));
+    setKeyFormError('');
+  };
+
+  const importPrivateKey = async () => {
+    const filePath = await window.guiSSH?.files.selectPrivateKeyFile();
+
+    if (!filePath) {
+      return;
+    }
+
+    if (sshKeys.some((key) => key.keyPath === filePath)) {
+      setStatusMessage('该私钥文件已在密钥列表中。');
+      return;
+    }
+
+    const nextKey = createSshKeyFromForm({
+      name: getKeyNameFromPath(filePath),
+      keyPath: filePath,
+      passphrase: '',
+    });
+
+    setSshKeys((currentKeys) => [nextKey, ...currentKeys]);
+    setStatusMessage(`已导入密钥：${nextKey.name}`);
+  };
+
+  const submitKey = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const validationError = validateKeyForm(keyForm, sshKeys, editingKeyId);
+
+    if (validationError) {
+      setKeyFormError(validationError);
+      return;
+    }
+
+    if (editingKey) {
+      const updatedKey = updateSshKeyFromForm(editingKey, keyForm);
+      setSshKeys((currentKeys) => currentKeys.map((key) => (key.id === editingKey.id ? updatedKey : key)));
+      setHosts((currentHosts) => currentHosts.map((host) => (
+        host.keyId === editingKey.id
+          ? { ...host, keyPath: updatedKey.keyPath, passphrase: updatedKey.passphrase, updatedAt: new Date().toISOString() }
+          : host
+      )));
+      setStatusMessage(`已更新密钥：${updatedKey.name}`);
+    } else {
+      const nextKey = createSshKeyFromForm(keyForm);
+      setSshKeys((currentKeys) => [nextKey, ...currentKeys]);
+      setStatusMessage(`已新增密钥：${nextKey.name}`);
+    }
+
+    closeKeyEditor();
+  };
+
+  const startEditingKey = (key: SshKey) => {
+    setEditingKeyId(key.id);
+    setKeyForm(toKeyFormState(key));
+    setKeyFormError('');
+    setIsKeyEditorOpen(true);
+  };
+
+  const deleteSshKey = (key: SshKey) => {
+    const relatedHosts = hosts.filter((host) => host.keyId === key.id);
+    const message = relatedHosts.length
+      ? `确认删除密钥「${key.name}」？${relatedHosts.length} 台主机正在使用该密钥，删除后会切换为密码登录。`
+      : `确认删除密钥「${key.name}」？`;
+
+    if (!window.confirm(message)) {
+      return;
+    }
+
+    setSshKeys((currentKeys) => currentKeys.filter((currentKey) => currentKey.id !== key.id));
+
+    if (relatedHosts.length) {
+      setHosts((currentHosts) => currentHosts.map((host) => (
+        host.keyId === key.id
+          ? {
+              ...host,
+              authMethod: 'password',
+              keyId: '',
+              keyPath: '',
+              passphrase: '',
+              updatedAt: new Date().toISOString(),
+            }
+          : host
+      )));
+    }
+
+    if (editingKeyId === key.id) {
+      closeKeyEditor();
+    }
+
+    setStatusMessage(`已删除密钥：${key.name}`);
   };
 
   const updateCredentialField = <Field extends keyof CredentialFormState>(
@@ -452,10 +717,12 @@ function App() {
   };
 
   const openCredentialDialog = (host: Host, message = '') => {
+    const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
+
     setCredentialHostId(host.id);
     setCredentialForm({
       password: host.password,
-      passphrase: host.passphrase,
+      passphrase: selectedKey?.passphrase ?? host.passphrase,
       saveCredential: true,
     });
     setCredentialError(message);
@@ -470,7 +737,8 @@ function App() {
   const submitHost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const validationError = validateHostForm(form);
+    const selectedKey = sshKeys.find((key) => key.id === form.keyId) ?? null;
+    const validationError = validateHostForm(form, sshKeys);
 
     if (validationError) {
       setFormError(validationError);
@@ -478,12 +746,12 @@ function App() {
     }
 
     if (editingHost) {
-      const updatedHost = updateHostFromForm(editingHost, form);
+      const updatedHost = updateHostFromForm(editingHost, form, selectedKey);
       setHosts((currentHosts) => currentHosts.map((host) => (host.id === editingHost.id ? updatedHost : host)));
       setSelectedHostId(updatedHost.id);
       setStatusMessage(`已更新主机：${updatedHost.name}`);
     } else {
-      const nextHost = createHostFromForm(form);
+      const nextHost = createHostFromForm(form, selectedKey);
       setHosts((currentHosts) => [nextHost, ...currentHosts]);
       setSelectedHostId(nextHost.id);
       setStatusMessage(`已添加主机：${nextHost.name}`);
@@ -493,9 +761,11 @@ function App() {
   };
 
   const startEditingHost = (host: Host) => {
+    const matchedKey = host.keyId ? null : sshKeys.find((key) => key.keyPath === host.keyPath);
+
     setEditingHostId(host.id);
     setSelectedHostId(host.id);
-    setForm(toFormState(host));
+    setForm({ ...toFormState(host), keyId: host.keyId || matchedKey?.id || '' });
     setFormError('');
     setIsEditorOpen(true);
   };
@@ -524,13 +794,25 @@ function App() {
       return false;
     }
 
+    const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
+
+    if (host.authMethod === 'key' && !selectedKey && !host.keyPath) {
+      setStatusMessage('该主机未选择有效密钥。');
+      return false;
+    }
+
     const hostForConnection: Host = credentials
       ? {
           ...host,
           password: host.authMethod === 'password' ? credentials.password : host.password,
+          keyPath: host.authMethod === 'key' ? selectedKey?.keyPath ?? host.keyPath : '',
           passphrase: host.authMethod === 'key' ? credentials.passphrase : host.passphrase,
         }
-      : host;
+      : {
+          ...host,
+          keyPath: host.authMethod === 'key' ? selectedKey?.keyPath ?? host.keyPath : '',
+          passphrase: host.authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
+        };
 
     setIsConnecting(true);
     setStatusMessage(`正在连接 ${host.name}...`);
@@ -545,12 +827,19 @@ function App() {
               ? {
                   ...currentHost,
                   password: host.authMethod === 'password' ? credentials.password : currentHost.password,
-                  passphrase: host.authMethod === 'key' ? credentials.passphrase : currentHost.passphrase,
                   updatedAt: new Date().toISOString(),
                 }
               : currentHost,
           ),
         );
+
+        if (host.authMethod === 'key' && selectedKey) {
+          setSshKeys((currentKeys) => currentKeys.map((key) => (
+            key.id === selectedKey.id
+              ? { ...key, passphrase: credentials.passphrase, updatedAt: new Date().toISOString() }
+              : key
+          )));
+        }
       }
 
       setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
@@ -579,6 +868,11 @@ function App() {
 
     if (selectedHost.authMethod === 'password' && !selectedHost.password) {
       openCredentialDialog(selectedHost, '请输入该主机的 SSH 密码后连接。');
+      return;
+    }
+
+    if (selectedHost.authMethod === 'key' && !getSelectedSshKey(selectedHost) && !selectedHost.keyPath) {
+      setStatusMessage('该主机未选择有效密钥，请先编辑主机。');
       return;
     }
 
@@ -636,6 +930,8 @@ function App() {
         ) : null}
       </header>
 
+      {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
+
       {connection ? (
         <RemoteDesktop connection={connection} onDisconnect={disconnectCurrentHost} />
       ) : (
@@ -648,7 +944,12 @@ function App() {
 
           <nav className="feature-nav" aria-label="功能导航">
             {navigationItems.map((item) => (
-              <button key={item.label} type="button" className={`feature-nav-item ${item.active ? 'active' : ''}`}>
+              <button
+                key={item.label}
+                type="button"
+                className={`feature-nav-item ${activePage === item.page ? 'active' : ''}`}
+                onClick={() => setActivePage(item.page)}
+              >
                 <span>{item.key}</span>
                 {item.label}
               </button>
@@ -659,6 +960,8 @@ function App() {
         </aside>
 
         <main className="vault-page">
+          {activePage === 'hosts' ? (
+            <>
           <div className="command-bar no-drag">
             <label className="global-search">
               <span>查找</span>
@@ -689,9 +992,6 @@ function App() {
               </button>
               <span>{activeGroupName ? `当前分组：${activeGroupName}` : `${hosts.length} 台主机`}</span>
             </div>
-
-            {statusMessage ? <div className="status-banner">{statusMessage}</div> : null}
-
             <section className="vault-section">
               <div className="section-heading">
                 <h2>分组</h2>
@@ -749,13 +1049,18 @@ function App() {
                           <strong>{host.name}</strong>
                           <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
                           <span>{host.group || '未分组'} · {host.tags.length ? host.tags.join(' / ') : '无标签'}</span>
-                          <em className={`auth-badge ${host.authMethod}`}>{getAuthBadgeLabel(host)}</em>
                         </span>
+                        {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
+                          <span className="credential-icon" title={host.authMethod === 'key' ? '密钥登录' : '密码已保存'}>🔑</span>
+                        ) : null}
                       </button>
-                      <div className="host-card-actions">
-                        <button type="button" onClick={() => startEditingHost(host)}>编辑</button>
-                        <button type="button" className="danger-text" onClick={() => deleteHost(host)}>删除</button>
-                      </div>
+                      <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
+                        <summary aria-label="主机操作">⋯</summary>
+                        <div className="host-card-menu-panel">
+                          <button type="button" onClick={() => startEditingHost(host)}>编辑</button>
+                          <button type="button" className="danger-text" onClick={() => deleteHost(host)}>删除</button>
+                        </div>
+                      </details>
                     </article>
                   ))}
                 </div>
@@ -769,8 +1074,73 @@ function App() {
             </section>
 
           </section>
+            </>
+          ) : activePage === 'keys' ? (
+            <>
+              <div className="command-bar no-drag key-command-bar">
+                <label className="global-search">
+                  <span>查找</span>
+                  <input
+                    type="search"
+                    placeholder="查找密钥名称或私钥路径"
+                    value={keySearchQuery}
+                    onChange={(event) => setKeySearchQuery(event.target.value)}
+                  />
+                </label>
 
-          {isEditorOpen ? (
+                <button type="button" className="command-button" onClick={importPrivateKey}>导入密钥</button>
+                <button type="button" className="primary-action" onClick={openCreateKey}>+ 新建密钥</button>
+              </div>
+
+              <section className="vault-content">
+                <div className="content-filter-row">
+                  <button type="button" className={`filter-tab ${!keySearchQuery ? 'active' : ''}`} onClick={() => setKeySearchQuery('')}>
+                    密钥列表
+                  </button>
+                  <span>{filteredKeys.length} 个密钥</span>
+                </div>
+                {filteredKeys.length ? (
+                  <div className="key-grid">
+                    {filteredKeys.map((key) => (
+                      <article key={key.id} className="key-card">
+                        <span className="key-card-icon">🔑</span>
+                        <span className="key-card-summary">
+                          <strong>{key.name}</strong>
+                          <small>{key.keyPath}</small>
+                          <em>{key.passphrase ? '口令已保存' : '无口令'}</em>
+                        </span>
+                        <div className="key-card-actions">
+                          <button type="button" onClick={() => startEditingKey(key)}>编辑</button>
+                          <button type="button" className="danger-text" onClick={() => deleteSshKey(key)}>删除</button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <span>KEYS</span>
+                    <h3>{sshKeys.length ? '没有匹配的密钥' : '密钥列表为空'}</h3>
+                    <p>{sshKeys.length ? '清空搜索后再试。' : '点击“新建密钥”或“导入密钥”添加第一把 SSH 私钥。'}</p>
+                  </div>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              <div className="command-bar no-drag simple-command-bar">
+                <strong>日志</strong>
+              </div>
+              <section className="vault-content">
+                <div className="empty-state">
+                  <span>LOGS</span>
+                  <h3>暂无日志</h3>
+                  <p>连接、密钥和操作日志后续会显示在这里。</p>
+                </div>
+              </section>
+            </>
+          )}
+
+          {isEditorOpen && activePage === 'hosts' ? (
             <aside className="editor-panel no-drag" aria-label={editingHost ? '编辑主机' : '新建主机'}>
               <div className="editor-header">
                 <span>
@@ -830,6 +1200,7 @@ function App() {
                       className={form.authMethod === 'password' ? 'active' : ''}
                       onClick={() => {
                         updateFormField('authMethod', 'password');
+                        updateFormField('keyId', '');
                         updateFormField('keyPath', '');
                         updateFormField('passphrase', '');
                       }}
@@ -846,32 +1217,25 @@ function App() {
                       }}
                     >
                       <strong>密钥登录</strong>
-                      <small>选择私钥文件</small>
+                      <small>选择密钥库中的已有密钥</small>
                     </button>
                   </div>
                 </div>
 
                 {form.authMethod === 'key' ? (
-                  <>
-                    <label className="field">
-                      <span>私钥文件</span>
-                      <div className="file-picker-row">
-                        <input value={form.keyPath} readOnly placeholder="请选择 SSH 私钥文件" />
-                        <button type="button" className="command-button" onClick={selectPrivateKeyFile}>
-                          选择文件
-                        </button>
-                      </div>
-                    </label>
-                    <label className="field">
-                      <span>密钥口令（可选）</span>
-                      <input
-                        type="password"
-                        value={form.passphrase}
-                        onChange={(event) => updateFormField('passphrase', event.target.value)}
-                        placeholder="私钥加密时填写"
-                      />
-                    </label>
-                  </>
+                  <label className="field">
+                    <span>选择密钥</span>
+                    <select
+                      value={form.keyId}
+                      onChange={(event) => updateFormField('keyId', event.target.value)}
+                    >
+                      <option value="">请选择已有密钥</option>
+                      {sshKeys.map((key) => (
+                        <option key={key.id} value={key.id}>{key.name} · {key.keyPath}</option>
+                      ))}
+                    </select>
+                    {!sshKeys.length ? <small className="field-note">请先到“密钥”页面新建或导入密钥。</small> : null}
+                  </label>
                 ) : (
                   <label className="field">
                     <span>密码</span>
@@ -922,6 +1286,57 @@ function App() {
             </aside>
           ) : null}
 
+          {isKeyEditorOpen && activePage === 'keys' ? (
+            <aside className="editor-panel no-drag" aria-label={editingKey ? '编辑密钥' : '新建密钥'}>
+              <div className="editor-header">
+                <span>
+                  <strong>{editingKey ? '编辑密钥' : '新建密钥'}</strong>
+                  <small>{editingKey ? editingKey.name : '保存 SSH 私钥引用'}</small>
+                </span>
+                <button type="button" onClick={closeKeyEditor} aria-label="关闭密钥表单">×</button>
+              </div>
+
+              <form className="host-form" onSubmit={submitKey}>
+                <label className="field">
+                  <span>密钥名称</span>
+                  <input
+                    value={keyForm.name}
+                    maxLength={80}
+                    onChange={(event) => updateKeyFormField('name', event.target.value)}
+                    placeholder="例如：Production Key"
+                  />
+                </label>
+
+                <label className="field">
+                  <span>私钥文件</span>
+                  <div className="file-picker-row">
+                    <input value={keyForm.keyPath} readOnly placeholder="请选择 SSH 私钥文件" />
+                    <button type="button" className="command-button" onClick={selectKeyFileForKeyForm}>
+                      选择文件
+                    </button>
+                  </div>
+                </label>
+
+                <label className="field">
+                  <span>密钥口令（可选）</span>
+                  <input
+                    type="password"
+                    value={keyForm.passphrase}
+                    onChange={(event) => updateKeyFormField('passphrase', event.target.value)}
+                    placeholder="私钥加密时填写"
+                  />
+                </label>
+
+                {keyFormError ? <div className="error-banner">{keyFormError}</div> : null}
+
+                <div className="form-actions">
+                  <button type="submit" className="primary-action">{editingKey ? '保存修改' : '保存密钥'}</button>
+                  <button type="button" className="command-button" onClick={resetKeyForm}>清空</button>
+                </div>
+              </form>
+            </aside>
+          ) : null}
+
           {credentialHost ? (
             <aside className="credential-panel no-drag" aria-label="连接凭据">
               <div className="editor-header">
@@ -946,7 +1361,9 @@ function App() {
                   </label>
                 ) : (
                   <>
-                    <div className="credential-note">当前使用私钥登录：{credentialHost.keyPath}</div>
+                    <div className="credential-note">
+                      当前使用密钥登录：{getSelectedSshKey(credentialHost)?.name ?? credentialHost.keyPath}
+                    </div>
                     <label className="field">
                       <span>密钥口令（私钥加密时填写）</span>
                       <input

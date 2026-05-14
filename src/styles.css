@@ -73,6 +73,7 @@ textarea {
 }
 
 .app-shell {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
@@ -234,6 +235,15 @@ textarea {
   background: #141b25;
 }
 
+.key-command-bar {
+  grid-template-columns: minmax(320px, 1fr) auto auto;
+}
+
+.simple-command-bar {
+  grid-template-columns: minmax(0, 1fr);
+  color: var(--muted-strong);
+}
+
 .global-search {
   display: flex;
   height: 42px;
@@ -271,7 +281,6 @@ textarea {
 .command-button,
 .primary-action,
 .view-switch button,
-.host-card-actions button,
 .editor-header button {
   height: 40px;
   border: 1px solid var(--border);
@@ -292,7 +301,6 @@ textarea {
 .command-button:hover,
 .primary-action:hover,
 .view-switch button:hover,
-.host-card-actions button:hover,
 .editor-header button:hover {
   border-color: var(--border-strong);
   transform: translateY(-1px);
@@ -370,14 +378,22 @@ textarea {
   font-size: 12px;
 }
 
-.status-banner {
-  margin-bottom: 14px;
+.status-toast {
+  position: absolute;
+  top: 49px;
+  right: 18px;
+  z-index: 1000;
+  max-width: min(420px, calc(100% - 36px));
   border: 1px solid rgba(67, 199, 255, 0.24);
   border-radius: 12px;
-  padding: 10px 12px;
-  background: rgba(67, 199, 255, 0.08);
+  padding: 10px 14px;
+  background: rgba(12, 23, 34, 0.92);
   color: #c6efff;
   font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
 }
 
 .vault-section {
@@ -520,6 +536,7 @@ textarea {
 
 .host-summary {
   min-width: 0;
+  flex: 1;
 }
 
 .host-summary strong,
@@ -530,25 +547,16 @@ textarea {
   white-space: nowrap;
 }
 
-.auth-badge {
-  display: inline-flex;
-  width: fit-content;
-  margin-top: 7px;
-  border: 1px solid rgba(67, 199, 255, 0.26);
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: rgba(67, 199, 255, 0.09);
-  color: #b9ecff;
-  font-size: 10.5px;
-  font-style: normal;
-  font-weight: 750;
-  line-height: 1.4;
-}
-
-.auth-badge.key {
-  border-color: rgba(119, 244, 197, 0.26);
+.credential-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(119, 244, 197, 0.22);
+  border-radius: 9px;
   background: rgba(119, 244, 197, 0.08);
-  color: #c6ffeb;
+  font-size: 13px;
 }
 
 .host-summary small {
@@ -556,24 +564,64 @@ textarea {
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
 }
 
-.host-card-actions {
-  display: inline-flex;
+.host-card-menu {
+  position: relative;
   flex: 0 0 auto;
-  gap: 7px;
-  opacity: 0.76;
 }
 
-.host-card:hover .host-card-actions,
-.host-card.selected .host-card-actions {
-  opacity: 1;
+.host-card-menu summary {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #202733;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  list-style: none;
 }
 
-.host-card-actions button {
+.host-card-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.host-card-menu[open] summary,
+.host-card-menu summary:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.host-card-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  display: grid;
+  min-width: 112px;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 6px;
+  background: #151d28;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
+}
+
+.host-card-menu-panel button,
+.key-card-actions button {
   height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   padding: 0 9px;
   background: #202733;
   color: var(--muted-strong);
+  cursor: pointer;
   font-size: 11.5px;
+  font-weight: 750;
+  text-align: left;
 }
 
 .danger-text {
@@ -719,6 +767,7 @@ textarea {
 }
 
 .field input,
+.field select,
 .field textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -730,9 +779,14 @@ textarea {
   font-weight: 500;
 }
 
-.field input {
+.field input,
+.field select {
   height: 40px;
   padding: 0 12px;
+}
+
+.field select {
+  appearance: none;
 }
 
 .field textarea {
@@ -742,9 +796,78 @@ textarea {
 }
 
 .field input:focus,
+.field select:focus,
 .field textarea:focus {
   border-color: rgba(67, 199, 255, 0.5);
   box-shadow: 0 0 0 3px rgba(67, 199, 255, 0.1);
+}
+
+.field-note {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.key-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.key-card-icon {
+  display: grid;
+  width: 45px;
+  height: 45px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(119, 244, 197, 0.1);
+  color: #c6ffeb;
+  font-size: 18px;
+}
+
+.key-card-summary {
+  min-width: 0;
+  flex: 1;
+}
+
+.key-card-summary strong,
+.key-card-summary small,
+.key-card-summary em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-card-summary strong {
+  font-size: 13.5px;
+}
+
+.key-card-summary small,
+.key-card-summary em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+.key-card-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 7px;
 }
 
 .field input[readonly] {
@@ -930,56 +1053,6 @@ button:disabled {
   content: "";
   filter: blur(4px);
   pointer-events: none;
-}
-
-.desktop-summary-card {
-  position: absolute;
-  top: 24px;
-  right: 28px;
-  z-index: 2;
-  display: grid;
-  min-width: 210px;
-  gap: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
-  padding: 14px 16px;
-  background: rgba(10, 16, 24, 0.58);
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
-}
-
-.desktop-summary-card span {
-  color: #8cf7d5;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-}
-
-.desktop-summary-card strong {
-  font-size: 17px;
-}
-
-.desktop-summary-card small {
-  color: var(--muted-strong);
-  font-size: 11.5px;
-}
-
-.desktop-summary-card.hide-after {
-  animation: summary-card-fade 2.4s ease forwards;
-  pointer-events: none;
-}
-
-@keyframes summary-card-fade {
-  0%,
-  42% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
 }
 
 .desktop-icons {
@@ -1692,9 +1765,6 @@ button.explorer-row {
     grid-template-columns: minmax(260px, 1fr) auto auto auto;
   }
 
-  .desktop-summary-card {
-    display: none;
-  }
 }
 
 @media (max-width: 860px) {
@@ -1742,10 +1812,6 @@ button.explorer-row {
   .host-card {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .host-card-actions {
-    justify-content: flex-end;
   }
 
   .remote-menubar {

@@ -971,12 +971,6 @@ function RemoteDesktopShell({ connection, onDisconnect }: RemoteDesktopProps) {
       </div>
 
       <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
-        <div className="desktop-summary-card hide-after" onAnimationEnd={(event) => event.currentTarget.style.display = 'none'}>
-          <span>已连接</span>
-          <strong>{connection.host.name}</strong>
-          <small>连接时间 {formatDateTime(connection.connectedAt)}</small>
-        </div>
-
         <div className="desktop-icons" aria-label="桌面应用">
           {desktopApps.map((app) => (
             <button
