@@ -15,14 +15,39 @@ interface SettingsTabDef {
   description: string;
 }
 
-const SETTINGS_TABS: SettingsTabDef[] = [
-  { key: 'systeminfo', label: '系统信息', icon: '\u{1F4BB}', description: '硬件和软件系统概况' },
-  { key: 'network', label: '网络和网卡', icon: '\u{1F310}', description: '网络接口、IP 地址、DNS 配置' },
-  { key: 'mirrors', label: '镜像源', icon: '\u{1F3EA}', description: 'APT / YUM 软件包镜像源配置' },
-  { key: 'update', label: '系统更新', icon: '\u{1F504}', description: '系统软件包更新与升级' },
-  { key: 'hosts', label: 'Hosts 管理', icon: '\u{1F4CB}', description: '管理 /etc/hosts 主机映射' },
-  { key: 'route', label: '路由管理', icon: '\u{1F6E3}\uFE0F', description: '查看和管理路由表' },
-  { key: 'disk', label: '磁盘和挂载点', icon: '\u{1F4BD}', description: '磁盘分区、挂载点、使用情况' },
+interface SettingsGroup {
+  label: string;
+  tabs: SettingsTabDef[];
+}
+
+const SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    label: '系统',
+    tabs: [
+      { key: 'systeminfo', label: '系统信息', icon: '\u{1F4BB}', description: '硬件和软件系统概况' },
+      { key: 'update', label: '系统更新', icon: '\u{1F504}', description: '系统软件包更新与升级' },
+    ],
+  },
+  {
+    label: '网络',
+    tabs: [
+      { key: 'network', label: '网络和网卡', icon: '\u{1F310}', description: '网络接口、IP 地址、DNS 配置' },
+      { key: 'hosts', label: 'Hosts 管理', icon: '\u{1F4CB}', description: '管理 /etc/hosts 主机映射' },
+      { key: 'route', label: '路由管理', icon: '\u{1F6E3}\uFE0F', description: '查看和管理路由表' },
+    ],
+  },
+  {
+    label: '软件',
+    tabs: [
+      { key: 'mirrors', label: '镜像源', icon: '\u{1F3EA}', description: 'APT / YUM 软件包镜像源配置' },
+    ],
+  },
+  {
+    label: '存储',
+    tabs: [
+      { key: 'disk', label: '磁盘和挂载点', icon: '\u{1F4BD}', description: '磁盘分区、挂载点、使用情况' },
+    ],
+  },
 ];
 
 interface CommandResult {
@@ -1117,19 +1142,24 @@ function RemoteSettings({ connectionId }: RemoteSettingsProps) {
   return (
     <div className="settings-pane">
       <nav className="settings-sidebar" aria-label="设置导航">
-        {SETTINGS_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            className={`settings-nav-item ${activeTab === tab.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            <span className="settings-nav-icon">{tab.icon}</span>
-            <div className="settings-nav-text">
-              <strong>{tab.label}</strong>
-              <small>{tab.description}</small>
-            </div>
-          </button>
+        {SETTINGS_GROUPS.map((group) => (
+          <div key={group.label}>
+            <div className="settings-sidebar-group-label">{group.label}</div>
+            {group.tabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`settings-nav-item ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                <span className="settings-nav-icon">{tab.icon}</span>
+                <div className="settings-nav-text">
+                  <strong>{tab.label}</strong>
+                  <small>{tab.description}</small>
+                </div>
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="settings-main">

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { formatDateTime, getErrorMessage } from './desktopUtils';
-
 interface RemoteMonitorProps {
   connectionId: string;
 }
@@ -9,16 +7,6 @@ interface RemoteMonitorProps {
 interface TimeSeriesPoint {
   time: number;
   value: number;
-}
-
-interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  user: string;
-  cpu: number;
-  mem: number;
-  rss: number;
-  command: string;
 }
 
 const MAX_POINTS = 60;
@@ -169,281 +157,90 @@ function SimpleLineChart({ data, color, fillColor, unit, minValue = 0, maxValue 
   );
 }
 
-// ─── Process Table ────────────────────────────────────────────────────────
-
-interface ProcessTableProps {
-  processes: ProcessInfo[];
-  isLoading: boolean;
-  error: string;
-  onKill: (pid: number) => void;
-  onRefresh: () => void;
-}
-
-function ProcessTable({ processes, isLoading, error, onKill, onRefresh }: ProcessTableProps) {
-  const [killingPid, setKillingPid] = useState<number | null>(null);
-
-  const handleKill = async (pid: number) => {
-    setKillingPid(pid);
-    try {
-      await onKill(pid);
-    } finally {
-      setKillingPid(null);
-    }
-  };
-
-  return (
-    <div className="monitor-process-section">
-      <div className="process-section-head">
-        <h3 className="process-section-title">进程管理</h3>
-        <button type="button" className="monitor-refresh-btn" onClick={onRefresh} disabled={isLoading}>
-          {isLoading ? '读取中...' : '刷新进程'}
-        </button>
-      </div>
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      <div className="process-table-wrap">
-        <table className="process-table">
-          <thead>
-            <tr>
-              <th>PID</th>
-              <th>PPID</th>
-              <th>用户</th>
-              <th>CPU%</th>
-              <th>内存%</th>
-              <th>RSS (KB)</th>
-              <th className="process-command-col">命令</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {processes.length === 0 && !isLoading ? (
-              <tr>
-                <td colSpan={8} className="process-empty">暂无进程数据</td>
-              </tr>
-            ) : (
-              processes.map((proc) => (
-                <tr key={proc.pid}>
-                  <td className="process-pid">{proc.pid}</td>
-                  <td>{proc.ppid}</td>
-                  <td>{proc.user}</td>
-                  <td className={proc.cpu > 50 ? 'process-highlight' : ''}>{proc.cpu.toFixed(1)}</td>
-                  <td className={proc.mem > 50 ? 'process-highlight' : ''}>{proc.mem.toFixed(1)}</td>
-                  <td>{proc.rss.toLocaleString()}</td>
-                  <td className="process-command-col" title={proc.command}>{proc.command}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="process-kill-btn"
-                      onClick={() => handleKill(proc.pid)}
-                      disabled={killingPid === proc.pid}
-                    >
-                      {killingPid === proc.pid ? '...' : '终止'}
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Monitor Component ──────────────────────────────────────────────
 
 export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
-  const [hostname, setHostname] = useState('');
-  const [kernel, setKernel] = useState('');
-  const [uptimeLine, setUptimeLine] = useState('');
-
   const [cpuData, setCpuData] = useState<TimeSeriesPoint[]>([]);
   const [memData, setMemData] = useState<TimeSeriesPoint[]>([]);
   const [netRxData, setNetRxData] = useState<TimeSeriesPoint[]>([]);
   const [netTxData, setNetTxData] = useState<TimeSeriesPoint[]>([]);
-  const [diskData, setDiskData] = useState<TimeSeriesPoint[]>([]);
-
-  const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const [processError, setProcessError] = useState('');
-  const [isProcessLoading, setIsProcessLoading] = useState(false);
-
-  const [statusError, setStatusError] = useState('');
-  const [refreshedAt, setRefreshedAt] = useState('');
 
   const prevNetRxRef = useRef<number | null>(null);
   const prevNetTxRef = useRef<number | null>(null);
+  const isPollingRef = useRef(false);
 
   // ── collect one data point for charts ────────────────────────────────
   const collectMetrics = useCallback(async () => {
     const api = window.guiSSH?.connections;
-    if (!api) return;
+    if (!api || isPollingRef.current) return;
 
+    isPollingRef.current = true;
     const now = Date.now();
 
     try {
-      const [cpuResult, memResult, diskResult, netResult] = await Promise.allSettled([
-        api.runCommand(connectionId, "cat /proc/loadavg 2>/dev/null | awk '{print $1*100}' || echo 0"),
-        api.runCommand(connectionId, "free 2>/dev/null | awk '/^Mem:/ {printf \"%.1f\", $3/$2*100}' || echo 0"),
-        api.runCommand(connectionId, "df / 2>/dev/null | awk 'NR==2 {gsub(/%/,\"\"); print $5}' || echo 0"),
-        api.runCommand(connectionId, "cat /proc/net/dev 2>/dev/null | awk 'NR>2 && !/^ *lo:/ {rx+=$2; tx+=$10} END {print rx, tx}' || echo '0 0'"),
-      ]);
+      const commands = [
+        { key: 'cpu', cmd: "cat /proc/loadavg 2>/dev/null | awk '{print $1*100}' || echo 0" },
+        { key: 'mem', cmd: "free 2>/dev/null | awk '/^Mem:/ {printf \"%.1f\", $3/$2*100}' || echo 0" },
+        { key: 'net', cmd: "cat /proc/net/dev 2>/dev/null | awk 'NR>2 && !/^ *lo:/ {rx+=$2; tx+=$10} END {print rx, tx}' || echo '0 0'" },
+      ];
 
-      // CPU
-      if (cpuResult.status === 'fulfilled') {
-        const val = parseFloat(cpuResult.value.stdout) || 0;
-        setCpuData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: Math.min(val, 100 * 8) }]);
-      }
+      for (const { key, cmd } of commands) {
+        try {
+          const result = await api.runCommand(connectionId, cmd);
+          const stdout = result.stdout || '';
 
-      // Memory
-      if (memResult.status === 'fulfilled') {
-        const val = parseFloat(memResult.value.stdout) || 0;
-        setMemData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: val }]);
-      }
+          switch (key) {
+            case 'cpu': {
+              const val = parseFloat(stdout) || 0;
+              setCpuData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: Math.min(val, 100 * 8) }]);
+              break;
+            }
+            case 'mem': {
+              const val = parseFloat(stdout) || 0;
+              setMemData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: val }]);
+              break;
+            }
+            case 'net': {
+              const parts = stdout.trim().split(/\s+/);
+              const rx = parseInt(parts[0], 10) || 0;
+              const tx = parseInt(parts[1], 10) || 0;
 
-      // Disk
-      if (diskResult.status === 'fulfilled') {
-        const val = parseFloat(diskResult.value.stdout) || 0;
-        setDiskData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: val }]);
-      }
+              if (prevNetRxRef.current !== null) {
+                const rxDelta = (rx - prevNetRxRef.current) / (POLL_INTERVAL_MS / 1000);
+                const txDelta = (tx - prevNetTxRef.current!) / (POLL_INTERVAL_MS / 1000);
+                setNetRxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: rxDelta / 1024 }]);
+                setNetTxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: txDelta / 1024 }]);
+              }
 
-      // Network - compute deltas
-      if (netResult.status === 'fulfilled') {
-        const parts = netResult.value.stdout.trim().split(/\s+/);
-        const rx = parseInt(parts[0], 10) || 0;
-        const tx = parseInt(parts[1], 10) || 0;
-
-        if (prevNetRxRef.current !== null) {
-          const rxDelta = (rx - prevNetRxRef.current) / (POLL_INTERVAL_MS / 1000);
-          const txDelta = (tx - prevNetTxRef.current!) / (POLL_INTERVAL_MS / 1000);
-          setNetRxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: rxDelta / 1024 }]);
-          setNetTxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: txDelta / 1024 }]);
+              prevNetRxRef.current = rx;
+              prevNetTxRef.current = tx;
+              break;
+            }
+          }
+        } catch {
+          // 单个命令失败不影响其他
         }
-
-        prevNetRxRef.current = rx;
-        prevNetTxRef.current = tx;
       }
-    } catch {
-      // silently ignore individual failures
-    }
-  }, [connectionId]);
-
-  // ── fetch host info ──────────────────────────────────────────────────
-  const fetchHostInfo = useCallback(async () => {
-    const api = window.guiSSH?.connections;
-    if (!api) return;
-
-    try {
-      const report = await api.getStatus(connectionId);
-      setRefreshedAt(report.refreshedAt);
-
-      const items = report.items ?? [];
-      setHostname(items.find((i) => i.key === 'hostname')?.value?.split('\n')[0]?.trim() || '远程主机');
-      setKernel(items.find((i) => i.key === 'kernel')?.value?.split('\n')[0]?.trim() || '');
-      setUptimeLine(items.find((i) => i.key === 'uptime')?.value?.split('\n')[0]?.trim() || '');
-      setStatusError('');
-    } catch (error) {
-      setStatusError(getErrorMessage(error));
-    }
-  }, [connectionId]);
-
-  // ── fetch process list ───────────────────────────────────────────────
-  const fetchProcesses = useCallback(async () => {
-    const api = window.guiSSH?.connections;
-    if (!api) return;
-
-    setIsProcessLoading(true);
-    setProcessError('');
-
-    try {
-      const result = await api.runCommand(
-        connectionId,
-        'ps -eo pid,ppid,user,%cpu,%mem,rss,comm --sort=-%cpu --no-headers 2>/dev/null | head -40',
-      );
-
-      const lines = result.stdout.trim().split('\n').filter(Boolean);
-      const parsed: ProcessInfo[] = [];
-
-      for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 7) continue;
-        parsed.push({
-          pid: parseInt(parts[0], 10),
-          ppid: parseInt(parts[1], 10),
-          user: parts[2],
-          cpu: parseFloat(parts[3]) || 0,
-          mem: parseFloat(parts[4]) || 0,
-          rss: parseInt(parts[5], 10) || 0,
-          command: parts.slice(6).join(' '),
-        });
-      }
-
-      setProcesses(parsed);
-    } catch (error) {
-      setProcessError(getErrorMessage(error));
-      setProcesses([]);
     } finally {
-      setIsProcessLoading(false);
+      isPollingRef.current = false;
     }
   }, [connectionId]);
-
-  const killProcess = useCallback(async (pid: number) => {
-    const api = window.guiSSH?.connections;
-    if (!api) return;
-
-    try {
-      await api.runCommand(connectionId, `kill -9 ${pid} 2>/dev/null || kill ${pid} 2>/dev/null`);
-      await fetchProcesses();
-    } catch (error) {
-      setProcessError(getErrorMessage(error));
-    }
-  }, [connectionId, fetchProcesses]);
 
   // ── polling ──────────────────────────────────────────────────────────
   useEffect(() => {
-    void fetchHostInfo();
     void collectMetrics();
-    void fetchProcesses();
 
     const metricsTimer = setInterval(collectMetrics, POLL_INTERVAL_MS);
-    const hostTimer = setInterval(fetchHostInfo, 15000);
-    const processTimer = setInterval(fetchProcesses, 10000);
 
     return () => {
       clearInterval(metricsTimer);
-      clearInterval(hostTimer);
-      clearInterval(processTimer);
     };
-  }, [connectionId, fetchHostInfo, collectMetrics, fetchProcesses]);
+  }, [connectionId, collectMetrics]);
 
   // ── render ───────────────────────────────────────────────────────────
   return (
     <div className="monitor-pane">
       <div className="monitor-shell">
-        <header className="monitor-header">
-          <div className="monitor-header-left">
-            <div className="monitor-title-area">
-              <span className="monitor-pulse-dot" />
-              <span className="monitor-kicker">系统监视器</span>
-            </div>
-            <strong className="monitor-hostname">{hostname}</strong>
-            <div className="monitor-host-meta">
-              {kernel ? <span className="monitor-meta-tag">{kernel}</span> : null}
-              {uptimeLine ? <span className="monitor-meta-tag">{uptimeLine}</span> : null}
-            </div>
-          </div>
-          <div className="monitor-header-right">
-            <div className="monitor-refresh-info">
-              <small>{refreshedAt ? `刷新于 ${formatDateTime(refreshedAt)}` : '等待首次读取'}</small>
-            </div>
-            <button type="button" className="monitor-refresh-btn" onClick={fetchHostInfo}>
-              手动刷新
-            </button>
-          </div>
-        </header>
-
-        {statusError ? <div className="error-banner">{statusError}</div> : null}
-
         <section className="monitor-charts-grid">
           <SimpleLineChart
             data={cpuData}
@@ -477,23 +274,7 @@ export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
             maxValue={Math.max(1024, ...netTxData.map((p) => p.value)) || 1024}
             label="网络上传"
           />
-          <SimpleLineChart
-            data={diskData}
-            color="#c084fc"
-            fillColor="rgba(192,132,252,0.12)"
-            unit="%"
-            maxValue={100}
-            label="磁盘占用"
-          />
         </section>
-
-        <ProcessTable
-          processes={processes}
-          isLoading={isProcessLoading}
-          error={processError}
-          onKill={killProcess}
-          onRefresh={fetchProcesses}
-        />
       </div>
     </div>
   );

@@ -1480,16 +1480,16 @@ async function getRemoteStatus(client) {
     { key: 'network', label: '网络接口', command: 'ip -brief address 2>/dev/null || ifconfig 2>/dev/null || echo unavailable' },
   ];
 
-  const items = await Promise.all(
-    commands.map(async (item) => {
-      try {
-        const value = await execRemoteCommand(client, item.command);
-        return { key: item.key, label: item.label, value: value || '无输出' };
-      } catch (error) {
-        return { key: item.key, label: item.label, value: `读取失败：${toErrorMessage(error)}` };
-      }
-    }),
-  );
+  // 串行执行避免 SSH channel 耗尽
+  const items = [];
+  for (const item of commands) {
+    try {
+      const value = await execRemoteCommand(client, item.command);
+      items.push({ key: item.key, label: item.label, value: value || '无输出' });
+    } catch (error) {
+      items.push({ key: item.key, label: item.label, value: `读取失败：${toErrorMessage(error)}` });
+    }
+  }
 
   return { refreshedAt: new Date().toISOString(), items };
 }
