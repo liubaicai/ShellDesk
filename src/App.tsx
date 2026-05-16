@@ -231,6 +231,18 @@ interface ConnectionClosedPayload {
   reason?: string;
 }
 
+export type LogCategory = 'connection' | 'host' | 'key' | 'config' | 'system';
+export type LogLevel = 'info' | 'success' | 'warning' | 'error';
+
+export interface LogEntry {
+  id: string;
+  timestamp: string;
+  category: LogCategory;
+  level: LogLevel;
+  message: string;
+  detail: string;
+}
+
 interface CredentialFormState {
   password: string;
   passphrase: string;
@@ -689,6 +701,7 @@ function App() {
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPersistedCollectionsRef = useRef('');
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
@@ -918,6 +931,7 @@ function App() {
     return window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
       if (payload.connectionId === connection.id) {
         const message = payload.reason || 'SSH 连接已断开。';
+        addLog('connection', 'warning', `连接断开：${connection.host.address}`, message);
         setConnection(null);
         setStatusMessage(message);
         setWindowConnectionError(message);
@@ -944,6 +958,25 @@ function App() {
       }).catch(() => undefined);
     });
   }, [isConnectionWindow, vaultControls]);
+
+  const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '') => {
+    setLogs((current) => {
+      const entry: LogEntry = {
+        id: createId(),
+        timestamp: new Date().toISOString(),
+        category,
+        level,
+        message,
+        detail,
+      };
+      const next = [entry, ...current];
+      return next.length > 500 ? next.slice(0, 500) : next;
+    });
+  };
+
+  const clearLogs = () => {
+    setLogs([]);
+  };
 
   const minimizeWindow = () => {
     void windowControls?.minimize();
@@ -1052,6 +1085,7 @@ function App() {
     if (editingKey) {
       const updatedKey = updateSshKeyFromForm(editingKey, keyForm);
       setSshKeys((currentKeys) => currentKeys.map((key) => (key.id === editingKey.id ? updatedKey : key)));
+      addLog('key', 'success', `更新密钥：${updatedKey.name}`);
       setStatusMessage(`已更新密钥：${updatedKey.name}`);
       closeKeyEditor();
       return;
@@ -1078,6 +1112,7 @@ function App() {
     action
       .then(({ snapshot, key }) => {
         applyVaultSnapshot(snapshot);
+        addLog('key', 'success', keyEditorMode === 'generate' ? `生成密钥：${key.name}` : `导入密钥：${key.name}`);
         setStatusMessage(keyEditorMode === 'generate' ? `已生成密钥：${key.name}` : `已导入密钥：${key.name}`);
         closeKeyEditor();
       })
@@ -1140,6 +1175,7 @@ function App() {
       closeKeyEditor();
     }
 
+    addLog('key', 'info', `删除密钥：${key.name}`, relatedHosts.length ? `关联 ${relatedHosts.length} 台主机已切换为密码登录` : '');
     setStatusMessage(`已删除密钥：${key.name}`);
   };
 
@@ -1183,10 +1219,12 @@ function App() {
     if (editingHost) {
       const updatedHost = updateHostFromForm(editingHost, form, selectedKey);
       setHosts((currentHosts) => currentHosts.map((host) => (host.id === editingHost.id ? updatedHost : host)));
+      addLog('host', 'success', `更新主机：${updatedHost.name}`, `${updatedHost.username}@${updatedHost.address}:${updatedHost.port}`);
       setStatusMessage(`已更新主机：${updatedHost.name}`);
     } else {
       const nextHost = createHostFromForm(form, selectedKey);
       setHosts((currentHosts) => [nextHost, ...currentHosts]);
+      addLog('host', 'success', `添加主机：${nextHost.name}`, `${nextHost.username}@${nextHost.address}:${nextHost.port}`);
       setStatusMessage(`已添加主机：${nextHost.name}`);
     }
 
@@ -1207,6 +1245,7 @@ function App() {
 
     const nextHosts = hosts.filter((currentHost) => currentHost.id !== host.id);
     setHosts(nextHosts);
+    addLog('host', 'info', `删除主机：${host.name}`, `${host.username}@${host.address}:${host.port}`);
     setStatusMessage(`已删除主机：${host.name}`);
 
     if (editingHostId === host.id) {
@@ -1278,8 +1317,10 @@ function App() {
 
       if (isConnectionWindow) {
         setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
+        addLog('connection', 'success', `连接成功：${host.name}`, `${host.username}@${host.address}:${host.port}`);
         setStatusMessage(`已连接：${host.name}`);
       } else {
+        addLog('connection', 'success', `打开连接窗口：${host.name}`, `${host.username}@${host.address}:${host.port}`);
         setStatusMessage(`已打开连接窗口：${host.name}`);
       }
 
@@ -1287,6 +1328,7 @@ function App() {
       return true;
     } catch (error) {
       const message = getErrorMessage(error);
+      addLog('connection', 'error', `连接失败：${host.name}`, `${host.username}@${host.address}:${host.port} — ${message}`);
       setStatusMessage(`连接失败：${message}`);
 
       if (isAuthFailureMessage(message)) {
@@ -1390,7 +1432,9 @@ function App() {
       }
 
       setStatusMessage(`已导出 ${hosts.length} 台主机、${sshKeys.length} 把密钥和 ${bookmarkCount} 条书签。`);
+      addLog('config', 'success', '导出配置', `${hosts.length} 台主机、${sshKeys.length} 把密钥、${bookmarkCount} 条书签`);
     } catch (error) {
+      addLog('config', 'error', '导出配置失败', getErrorMessage(error));
       setStatusMessage(`导出失败：${getErrorMessage(error)}`);
     } finally {
       setIsConfigTransferPending(false);
@@ -1422,7 +1466,9 @@ function App() {
       closeCredentialDialog();
       applyVaultSnapshot(importedConfig);
       setStatusMessage(`已导入 ${importedConfig.hosts.length} 台主机、${importedConfig.sshKeys.length} 把密钥和 ${importedConfig.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0)} 条书签。`);
+      addLog('config', 'success', '导入配置', `${importedConfig.hosts.length} 台主机、${importedConfig.sshKeys.length} 把密钥`);
     } catch (error) {
+      addLog('config', 'error', '导入配置失败', getErrorMessage(error));
       setStatusMessage(`导入失败：${getErrorMessage(error)}`);
     } finally {
       setIsConfigTransferPending(false);
@@ -1650,7 +1696,7 @@ function App() {
               onCopyPublicKey={copyPublicKey}
             />
           ) : activePage === 'logs' ? (
-            <LogsPage />
+            <LogsPage logs={logs} onClearLogs={clearLogs} />
           ) : (
             <SettingsPage
               hostCount={hosts.length}
