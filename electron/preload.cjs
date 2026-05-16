@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     decompress: (connectionId, archivePath, destDir) => ipcRenderer.invoke('connection:decompress', connectionId, archivePath, destDir),
     statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),
     getStatus: (connectionId) => ipcRenderer.invoke('connection:get-status', connectionId),
+    runCommand: (connectionId, command) => ipcRenderer.invoke('connection:run-command', connectionId, command),
     mysqlConnect: (connectionId, config) => ipcRenderer.invoke('connection:mysql-connect', connectionId, config),
     mysqlDisconnect: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-disconnect', connectionId, mysqlId),
     mysqlDatabases: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-databases', connectionId, mysqlId),

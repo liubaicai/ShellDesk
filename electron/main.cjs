@@ -2254,6 +2254,32 @@ function execSshCommand(client, command) {
   });
 }
 
+function execRemoteCommandRaw(client, command) {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      let stdout = '';
+      let stderr = '';
+
+      stream.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+      stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      stream.on('close', (code) => {
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
+      });
+    });
+  });
+}
+
+registerIpcHandler('connection:run-command', async (_event, connectionId, rawCommand) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const command = readBoundedString(rawCommand, '命令', 4096, { rejectLineBreaks: false });
+  return execRemoteCommandRaw(activeConnection.client, command);
+});
+
 registerIpcHandler('connection:compress', async (_event, connectionId, rawSourcePaths, rawFormat, rawDestPath) => {
   const activeConnection = getActiveConnection(connectionId);
 

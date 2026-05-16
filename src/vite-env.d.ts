@@ -217,6 +217,7 @@ interface GuiSshConnectionControls {
     accessedAt: string;
   }>;
   getStatus: (connectionId: string) => Promise<GuiSshRemoteStatusReport>;
+  runCommand: (connectionId: string, command: string) => Promise<{ stdout: string; stderr: string; code: number }>;
   mysqlConnect: (connectionId: string, config: GuiSshMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
