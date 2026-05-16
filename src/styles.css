@@ -482,8 +482,7 @@ textarea {
 }
 
 .group-card.active,
-.group-card:hover,
-.host-card.selected {
+.group-card:hover {
   border-color: rgba(67, 199, 255, 0.42);
   background: #141d28;
 }
@@ -557,6 +556,7 @@ textarea {
   background: transparent;
   cursor: pointer;
   padding: 0;
+  padding-left: 14px;
   padding-right: 18px;
   text-align: left;
 }
@@ -584,7 +584,7 @@ textarea {
   display: grid;
   position: absolute;
   top: 8px;
-  right: 52px;
+  left: 8px;
   width: 18px;
   height: 18px;
   place-items: center;

@@ -516,6 +516,149 @@ function readWindowConnectionId() {
   return new URLSearchParams(window.location.search).get('connectionId')?.trim() ?? '';
 }
 
+function tokenizeQuickConnectInput(value: string) {
+  return Array.from(value.matchAll(/"([^"]*)"|'([^']*)'|[^\s]+/g), (match) => match[1] ?? match[2] ?? match[0]);
+}
+
+function isValidQuickConnectPort(value: string) {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+function parseQuickConnectDestination(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const atIndex = trimmedValue.lastIndexOf('@');
+  const userPart = atIndex >= 0 ? trimmedValue.slice(0, atIndex).trim() : '';
+  const hostPart = atIndex >= 0 ? trimmedValue.slice(atIndex + 1).trim() : trimmedValue;
+  const lastColonIndex = hostPart.lastIndexOf(':');
+  const hasPortSuffix = lastColonIndex > 0 && hostPart.indexOf(']') === -1;
+  const address = hasPortSuffix ? hostPart.slice(0, lastColonIndex).trim() : hostPart.trim();
+  const portText = hasPortSuffix ? hostPart.slice(lastColonIndex + 1).trim() : '';
+
+  if (!userPart || !address) {
+    return null;
+  }
+
+  if (portText && !isValidQuickConnectPort(portText)) {
+    return null;
+  }
+
+  return {
+    username: userPart,
+    address,
+    port: portText ? Number(portText) : 22,
+    keyPath: '',
+  };
+}
+
+function parseQuickConnectCommand(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (!trimmedValue.startsWith('ssh ')) {
+    return parseQuickConnectDestination(trimmedValue);
+  }
+
+  const tokens = tokenizeQuickConnectInput(trimmedValue);
+
+  if (!tokens.length || tokens[0] !== 'ssh') {
+    return null;
+  }
+
+  let username = '';
+  let address = '';
+  let port = 22;
+  let keyPath = '';
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token === '-p' || token === '-l' || token === '-i') {
+      const nextToken = tokens[index + 1];
+
+      if (!nextToken) {
+        return null;
+      }
+
+      if (token === '-p') {
+        if (!isValidQuickConnectPort(nextToken)) {
+          return null;
+        }
+
+        port = Number(nextToken);
+      } else if (token === '-l') {
+        username = nextToken.trim();
+      } else {
+        keyPath = nextToken.trim();
+      }
+
+      index += 1;
+      continue;
+    }
+
+    if (token.startsWith('-p') && token.length > 2) {
+      const inlinePort = token.slice(2);
+
+      if (!isValidQuickConnectPort(inlinePort)) {
+        return null;
+      }
+
+      port = Number(inlinePort);
+      continue;
+    }
+
+    if (token.startsWith('-l') && token.length > 2) {
+      username = token.slice(2).trim();
+      continue;
+    }
+
+    if (token.startsWith('-i') && token.length > 2) {
+      keyPath = token.slice(2).trim();
+      continue;
+    }
+
+    if (token.startsWith('-')) {
+      return null;
+    }
+
+    if (address) {
+      return null;
+    }
+
+    const destination = parseQuickConnectDestination(username ? `${username}@${token}` : token);
+
+    if (!destination) {
+      return null;
+    }
+
+    username = destination.username;
+    address = destination.address;
+
+    if (destination.port !== 22) {
+      port = destination.port;
+    }
+  }
+
+  if (!username || !address) {
+    return null;
+  }
+
+  return {
+    username,
+    address,
+    port,
+    keyPath,
+  };
+}
+
 function App() {
   const [hosts, setHosts] = useState<Host[]>(readStoredHosts);
   const [sshKeys, setSshKeys] = useState<SshKey[]>([]);
@@ -524,7 +667,6 @@ function App() {
   const [editingHostId, setEditingHostId] = useState<string | null>(null);
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [keyEditorMode, setKeyEditorMode] = useState<KeyEditorMode>('import');
-  const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('hosts');
   const [searchQuery, setSearchQuery] = useState('');
   const [keySearchQuery, setKeySearchQuery] = useState('');
@@ -543,7 +685,7 @@ function App() {
   const [windowConnectionId] = useState(readWindowConnectionId);
   const [windowConnectionError, setWindowConnectionError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [credentialHostId, setCredentialHostId] = useState<string | null>(null);
+  const [credentialHost, setCredentialHost] = useState<Host | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
@@ -558,8 +700,6 @@ function App() {
     : '';
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
-  const selectedHost = hosts.find((host) => host.id === selectedHostId) ?? hosts[0] ?? null;
-  const credentialHost = hosts.find((host) => host.id === credentialHostId) ?? null;
 
   const hostGroups = useMemo<HostGroup[]>(() => {
     const groups = new Map<string, HostGroup>();
@@ -735,14 +875,6 @@ function App() {
       cancelled = true;
     };
   }, [hosts, isVaultReady, settings, sshKeys, vaultControls]);
-
-  useEffect(() => {
-    if (selectedHostId && hosts.some((host) => host.id === selectedHostId)) {
-      return;
-    }
-
-    setSelectedHostId(hosts[0]?.id ?? null);
-  }, [hosts, selectedHostId]);
 
   useEffect(() => {
     if (!statusMessage) {
@@ -1022,7 +1154,7 @@ function App() {
   const openCredentialDialog = (host: Host, message = '') => {
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
 
-    setCredentialHostId(host.id);
+    setCredentialHost(host);
     setCredentialForm({
       password: host.password,
       passphrase: selectedKey?.passphrase ?? host.passphrase,
@@ -1032,7 +1164,7 @@ function App() {
   };
 
   const closeCredentialDialog = () => {
-    setCredentialHostId(null);
+    setCredentialHost(null);
     setCredentialForm(emptyCredentialForm);
     setCredentialError('');
   };
@@ -1051,12 +1183,10 @@ function App() {
     if (editingHost) {
       const updatedHost = updateHostFromForm(editingHost, form, selectedKey);
       setHosts((currentHosts) => currentHosts.map((host) => (host.id === editingHost.id ? updatedHost : host)));
-      setSelectedHostId(updatedHost.id);
       setStatusMessage(`已更新主机：${updatedHost.name}`);
     } else {
       const nextHost = createHostFromForm(form, selectedKey);
       setHosts((currentHosts) => [nextHost, ...currentHosts]);
-      setSelectedHostId(nextHost.id);
       setStatusMessage(`已添加主机：${nextHost.name}`);
     }
 
@@ -1065,7 +1195,6 @@ function App() {
 
   const startEditingHost = (host: Host) => {
     setEditingHostId(host.id);
-    setSelectedHostId(host.id);
     setForm(toFormState(host));
     setFormError('');
     setIsEditorOpen(true);
@@ -1079,10 +1208,6 @@ function App() {
     const nextHosts = hosts.filter((currentHost) => currentHost.id !== host.id);
     setHosts(nextHosts);
     setStatusMessage(`已删除主机：${host.name}`);
-
-    if (selectedHostId === host.id) {
-      setSelectedHostId(nextHosts[0]?.id ?? null);
-    }
 
     if (editingHostId === host.id) {
       closeEditor();
@@ -1105,7 +1230,7 @@ function App() {
 
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
 
-    if (host.authMethod === 'key' && !selectedKey && !host.keyId) {
+    if (host.authMethod === 'key' && !selectedKey && !host.keyId && !host.keyPath) {
       setStatusMessage('该主机未选择有效密钥。');
       return false;
     }
@@ -1114,10 +1239,12 @@ function App() {
       ? {
           ...host,
           password: host.authMethod === 'password' ? credentials.password : host.password,
+          keyPath: host.authMethod === 'key' ? host.keyPath : '',
           passphrase: host.authMethod === 'key' ? credentials.passphrase : host.passphrase,
         }
       : {
           ...host,
+          keyPath: host.authMethod === 'key' ? host.keyPath : '',
           passphrase: host.authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
         };
 
@@ -1172,23 +1299,50 @@ function App() {
     }
   };
 
-  const connectSelectedHost = async () => {
-    if (!selectedHost) {
-      setStatusMessage('请先选择一台主机。');
+  const connectCommandBarInput = async () => {
+    const parsedCommand = parseQuickConnectCommand(searchQuery);
+
+    if (!parsedCommand) {
+      setStatusMessage('请输入合法 SSH 命令，例如 ssh user@host、ssh -p 2222 user@host 或 user@host。');
       return;
     }
 
-    if (selectedHost.authMethod === 'password' && !selectedHost.password) {
-      openCredentialDialog(selectedHost, '请输入该主机的 SSH 密码后连接。');
+    const matchedHost = hosts.find((host) => (
+      host.address === parsedCommand.address &&
+      host.port === parsedCommand.port &&
+      host.username === parsedCommand.username
+    ));
+
+    if (matchedHost && !parsedCommand.keyPath) {
+      await connectHost(matchedHost);
       return;
     }
 
-    if (selectedHost.authMethod === 'key' && !getSelectedSshKey(selectedHost) && !selectedHost.keyId) {
-      setStatusMessage('该主机未选择有效密钥，请先编辑主机。');
+    const now = new Date().toISOString();
+    const quickConnectHost: Host = {
+      id: `quick-connect:${parsedCommand.username}@${parsedCommand.address}:${parsedCommand.port}`,
+      name: `${parsedCommand.username}@${parsedCommand.address}`,
+      address: parsedCommand.address,
+      port: parsedCommand.port,
+      username: parsedCommand.username,
+      authMethod: parsedCommand.keyPath ? 'key' : 'password',
+      password: '',
+      keyId: '',
+      keyPath: parsedCommand.keyPath,
+      passphrase: '',
+      group: '',
+      tags: [],
+      note: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (quickConnectHost.authMethod === 'password') {
+      openCredentialDialog(quickConnectHost, '请输入该连接的 SSH 密码后继续。');
       return;
     }
 
-    await connectHost(selectedHost);
+    await connectHost(quickConnectHost);
   };
 
   const submitCredentialConnection = async (event: FormEvent<HTMLFormElement>) => {
@@ -1267,9 +1421,6 @@ function App() {
       closeKeyEditor();
       closeCredentialDialog();
       applyVaultSnapshot(importedConfig);
-      if (importedConfig.hosts.length) {
-        setSelectedHostId(importedConfig.hosts[0].id);
-      }
       setStatusMessage(`已导入 ${importedConfig.hosts.length} 台主机、${importedConfig.sshKeys.length} 把密钥和 ${importedConfig.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0)} 条书签。`);
     } catch (error) {
       setStatusMessage(`导入失败：${getErrorMessage(error)}`);
@@ -1360,10 +1511,16 @@ function App() {
                 placeholder="查找主机或 ssh user@hostname / ssh -p 2222 user@host"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void connectCommandBarInput();
+                  }
+                }}
               />
             </label>
 
-            <button type="button" className="command-button" onClick={connectSelectedHost} disabled={isConnecting}>
+            <button type="button" className="command-button" onClick={connectCommandBarInput} disabled={isConnecting}>
               {isConnecting ? '连接中...' : '连接'}
             </button>
 
@@ -1421,10 +1578,8 @@ function App() {
                   {filteredHosts.map((host) => (
                     <article
                       key={host.id}
-                      className={`host-card ${selectedHost?.id === host.id ? 'selected' : ''}`}
+                      className="host-card"
                       onDoubleClick={() => {
-                        setSelectedHostId(host.id);
-
                         if (host.authMethod === 'password' && !host.password) {
                           openCredentialDialog(host, '请输入该主机的 SSH 密码后连接。');
                           return;
@@ -1433,7 +1588,7 @@ function App() {
                         void connectHost(host);
                       }}
                     >
-                      <button type="button" className="host-card-main" onClick={() => setSelectedHostId(host.id)}>
+                      <button type="button" className="host-card-main">
                         <span className="host-avatar">S</span>
                         <span className="host-summary">
                           <strong>{host.name}</strong>
