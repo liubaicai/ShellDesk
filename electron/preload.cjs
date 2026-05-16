@@ -26,8 +26,18 @@ contextBridge.exposeInMainWorld('guiSSH', {
   },
   files: {
     selectPrivateKeyFile: () => ipcRenderer.invoke('dialog:select-private-key'),
+    selectPublicKeyFile: () => ipcRenderer.invoke('dialog:select-public-key'),
     importConfig: () => ipcRenderer.invoke('config:import'),
-    exportConfig: (payload) => ipcRenderer.invoke('config:export', payload),
+    exportConfig: () => ipcRenderer.invoke('config:export'),
+  },
+  vault: {
+    getSnapshot: () => ipcRenderer.invoke('vault:get-snapshot'),
+    saveCollections: (payload) => ipcRenderer.invoke('vault:save-collections', payload),
+    migrateLegacyData: (payload) => ipcRenderer.invoke('vault:migrate-legacy-data', payload),
+    importKeyPair: (payload) => ipcRenderer.invoke('vault:import-key-pair', payload),
+    generateRsaKeyPair: (payload) => ipcRenderer.invoke('vault:generate-rsa-key-pair', payload),
+    getBookmarks: (scope) => ipcRenderer.invoke('vault:get-bookmarks', scope),
+    saveBookmarks: (scope, bookmarks) => ipcRenderer.invoke('vault:save-bookmarks', scope, bookmarks),
   },
   connections: {
     connect: connectHost,
@@ -67,5 +77,6 @@ contextBridge.exposeInMainWorld('guiSSH', {
     onTerminalData: (callback) => onIpc('terminal:data', callback),
     onTerminalExit: (callback) => onIpc('terminal:exit', callback),
     onConnectionClosed: (callback) => onIpc('connection:closed', callback),
+    onVaultChanged: (callback) => onIpc('vault:changed', callback),
   },
 });

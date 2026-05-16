@@ -8,9 +8,10 @@ import { getErrorMessage } from './desktopUtils';
 interface RemoteTerminalProps {
   connectionId: string;
   terminalId: string;
+  settings: GuiSshAppSettings;
 }
 
-function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
+function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -34,11 +35,11 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
     const terminal = new XTerminal({
       allowTransparency: true,
       cursorBlink: true,
-      cursorStyle: 'block',
+      cursorStyle: settings.terminalCursorStyle,
       fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
-      fontSize: 13,
+      fontSize: settings.terminalFontSize,
       lineHeight: 1.2,
-      scrollback: 10000,
+      scrollback: settings.terminalScrollback,
       theme: {
         background: '#000000',
         foreground: '#d7fbe8',
@@ -61,6 +62,61 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.focus();
+
+    const handleTerminalContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+
+      if (terminal.hasSelection()) {
+        const selection = terminal.getSelection();
+
+        if (!selection) {
+          terminal.focus();
+          return;
+        }
+
+        navigator.clipboard.writeText(selection).catch((error: unknown) => {
+          terminal.writeln(`\r\n复制失败：${getErrorMessage(error)}`);
+        });
+        terminal.focus();
+        return;
+      }
+
+      if (!isTerminalReadyRef.current) {
+        terminal.focus();
+        return;
+      }
+
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (!text) {
+            terminal.focus();
+            return;
+          }
+
+          terminal.focus();
+          terminal.paste(text);
+        })
+        .catch((error: unknown) => {
+          terminal.writeln(`\r\n粘贴失败：${getErrorMessage(error)}`);
+        });
+    };
+
+    host.addEventListener('contextmenu', handleTerminalContextMenu);
+
+    const selectionDisposable = terminal.onSelectionChange(() => {
+      if (!settings.terminalCopyOnSelect || !terminal.hasSelection()) {
+        return;
+      }
+
+      const selection = terminal.getSelection();
+
+      if (!selection) {
+        return;
+      }
+
+      navigator.clipboard.writeText(selection).catch(() => undefined);
+    });
 
     const getTerminalSize = () => {
       try {
@@ -193,17 +249,19 @@ function RemoteTerminal({ connectionId, terminalId }: RemoteTerminalProps) {
       window.cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
       inputDisposable.dispose();
+      selectionDisposable.dispose();
       removeTerminalData();
       removeTerminalExit();
       if (supportsTerminalIpcOptions && !useLegacyTerminalIpcRef.current) {
         api.connections.closeTerminal(connectionId, terminalId).catch(() => undefined);
       }
 
+      host.removeEventListener('contextmenu', handleTerminalContextMenu);
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [connectionId, terminalId]);
+  }, [connectionId, settings, terminalId]);
 
   return (
     <div className="terminal-pane xterm-terminal-pane">

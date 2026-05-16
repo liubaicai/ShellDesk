@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, session, shell } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -8,11 +8,35 @@ const { Client } = require('ssh2');
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
 const configBundleFormat = 'gui-ssh-config';
-const configBundleVersion = 1;
+const configBundleVersion = 2;
 const maxConfigImportBytes = 20 * 1024 * 1024;
 const maxPrivateKeyBytes = 1024 * 1024;
+const maxVaultBytes = 25 * 1024 * 1024;
+const vaultFileName = 'vault.json';
+const vaultFormat = 'gui-ssh-vault';
+const vaultSchemaVersion = 1;
+const bookmarkScopePrefix = 'gui-ssh:browser-bookmarks:';
+const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
+const uiFontChoices = ['Space Grotesk', 'Segoe UI', 'Inter'];
+let vaultCache = null;
 
 nativeTheme.themeSource = 'dark';
+
+function createDefaultSettings() {
+  return {
+    language: 'zh-CN',
+    interfaceFont: 'Space Grotesk',
+    theme: 'dark',
+    accentColor: accentColorChoices[0],
+    defaultHostView: 'grid',
+    rememberPasswords: true,
+    rememberKeyPassphrases: true,
+    terminalFontSize: 13,
+    terminalCursorStyle: 'block',
+    terminalScrollback: 10000,
+    terminalCopyOnSelect: true,
+  };
+}
 
 function toErrorMessage(error) {
   if (error instanceof Error && error.message) {
@@ -72,60 +96,114 @@ function readBoundedString(value, label, maxLength, options = {}) {
   return nextValue;
 }
 
-function validateHostRequest(rawHost) {
-  if (!isPlainObject(rawHost)) {
-    throw new Error('主机信息无效。');
+function readBoolean(value, label, fallback) {
+  if (typeof value === 'boolean') {
+    return value;
   }
 
-  const name = readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false });
-  const host = readBoundedString(rawHost.address, '主机地址', 255);
-  const username = readBoundedString(rawHost.username, '用户名', 128);
-  const port = Number(rawHost.port);
-
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('端口必须是 1 到 65535 之间的整数。');
+  if (typeof fallback === 'boolean') {
+    return fallback;
   }
 
-  if (rawHost.authMethod !== 'password' && rawHost.authMethod !== 'key') {
-    throw new Error('登录方式无效。');
+  throw new Error(`${label}无效。`);
+}
+
+function readIntegerInRange(value, label, minValue, maxValue, fallback) {
+  const nextValue = Number(value);
+
+  if (Number.isInteger(nextValue) && nextValue >= minValue && nextValue <= maxValue) {
+    return nextValue;
   }
 
-  const sshConfig = {
-    host,
-    port,
-    username,
-    readyTimeout: 15000,
-    keepaliveInterval: 10000,
-    keepaliveCountMax: 3,
+  if (typeof fallback === 'number') {
+    return fallback;
+  }
+
+  throw new Error(`${label}无效。`);
+}
+
+function readColorHex(value, label, fallback) {
+  if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
+    return value.toLowerCase();
+  }
+
+  if (typeof fallback === 'string') {
+    return fallback;
+  }
+
+  throw new Error(`${label}无效。`);
+}
+
+function getVaultFilePath() {
+  return path.join(app.getPath('userData'), vaultFileName);
+}
+
+function getVaultStorageInfo() {
+  const protectedStorage = safeStorage.isEncryptionAvailable();
+
+  return {
+    path: getVaultFilePath(),
+    protected: protectedStorage,
+    protectionLabel: protectedStorage ? '已使用系统凭据加密保存' : '当前系统不支持加密，改为本地文件权限保护',
   };
+}
 
-  if (rawHost.authMethod === 'password') {
-    const password = readBoundedString(rawHost.password ?? '', 'SSH 密码', 4096, {
-      trim: false,
-      rejectLineBreaks: false,
-    });
-    sshConfig.password = password;
-  } else {
-    const keyPath = readBoundedString(rawHost.keyPath, 'SSH 私钥路径', 1024);
-    sshConfig.privateKey = fs.readFileSync(keyPath);
+function ensurePrivateKeyText(privateKey, label) {
+  const value = readBoundedString(privateKey, label, maxPrivateKeyBytes, {
+    trim: false,
+    rejectLineBreaks: false,
+  });
 
-    if (typeof rawHost.passphrase === 'string' && rawHost.passphrase) {
-      sshConfig.passphrase = readBoundedString(rawHost.passphrase, 'SSH 密钥口令', 4096, {
-        trim: false,
-        rejectLineBreaks: false,
-      });
-    }
+  if (!/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(value)) {
+    throw new Error(`${label}无效。`);
+  }
+
+  return value;
+}
+
+function ensurePublicKeyText(publicKey) {
+  return readBoundedString(publicKey ?? '', 'SSH 公钥', 128 * 1024, {
+    required: false,
+    trim: true,
+    rejectLineBreaks: false,
+  });
+}
+
+function readAppSettings(rawSettings) {
+  const defaults = createDefaultSettings();
+
+  if (!isPlainObject(rawSettings)) {
+    return defaults;
   }
 
   return {
-    displayHost: {
-      name: name || host,
-      address: host,
-      port,
-      username,
-      authMethod: rawHost.authMethod,
-    },
-    sshConfig,
+    language: rawSettings.language === 'en-US' ? 'en-US' : 'zh-CN',
+    interfaceFont: uiFontChoices.includes(rawSettings.interfaceFont) ? rawSettings.interfaceFont : defaults.interfaceFont,
+    theme: rawSettings.theme === 'light' || rawSettings.theme === 'system' ? rawSettings.theme : defaults.theme,
+    accentColor: readColorHex(rawSettings.accentColor, '强调色', defaults.accentColor),
+    defaultHostView: rawSettings.defaultHostView === 'list' ? 'list' : 'grid',
+    rememberPasswords: readBoolean(rawSettings.rememberPasswords, '记住密码', defaults.rememberPasswords),
+    rememberKeyPassphrases: readBoolean(
+      rawSettings.rememberKeyPassphrases,
+      '记住密钥口令',
+      defaults.rememberKeyPassphrases,
+    ),
+    terminalFontSize: readIntegerInRange(rawSettings.terminalFontSize, '终端字号', 11, 20, defaults.terminalFontSize),
+    terminalCursorStyle: rawSettings.terminalCursorStyle === 'bar' || rawSettings.terminalCursorStyle === 'underline'
+      ? rawSettings.terminalCursorStyle
+      : defaults.terminalCursorStyle,
+    terminalScrollback: readIntegerInRange(
+      rawSettings.terminalScrollback,
+      '终端滚动缓冲区',
+      1000,
+      50000,
+      defaults.terminalScrollback,
+    ),
+    terminalCopyOnSelect: readBoolean(
+      rawSettings.terminalCopyOnSelect,
+      '终端选中复制',
+      defaults.terminalCopyOnSelect,
+    ),
   };
 }
 
@@ -146,10 +224,15 @@ function readStoredKeyRecord(rawKey) {
     throw new Error('密钥数据无效。');
   }
 
+  const source = rawKey.source === 'generated' ? 'generated' : 'imported';
+
   return {
     id: readBoundedString(rawKey.id, '密钥 ID', 128),
     name: readBoundedString(rawKey.name, '密钥名称', 80),
-    keyPath: readBoundedString(rawKey.keyPath, 'SSH 私钥路径', 1024),
+    source,
+    algorithm: readBoundedString(rawKey.algorithm ?? '', '密钥算法', 64, { required: false }) || (source === 'generated' ? 'RSA' : 'SSH'),
+    fingerprint: readBoundedString(rawKey.fingerprint ?? '', '密钥指纹', 160, { required: false }),
+    publicKey: ensurePublicKeyText(rawKey.publicKey ?? ''),
     passphrase: readBoundedString(rawKey.passphrase ?? '', 'SSH 密钥口令', 4096, {
       required: false,
       trim: false,
@@ -157,6 +240,15 @@ function readStoredKeyRecord(rawKey) {
     }),
     createdAt: readTimestampString(rawKey.createdAt, '密钥创建时间'),
     updatedAt: readTimestampString(rawKey.updatedAt, '密钥更新时间'),
+  };
+}
+
+function readVaultKeyRecord(rawKey) {
+  const key = readStoredKeyRecord(rawKey);
+
+  return {
+    ...key,
+    privateKey: ensurePrivateKeyText(rawKey.privateKey, 'SSH 私钥内容'),
   };
 }
 
@@ -221,105 +313,627 @@ function readStoredHostRecord(rawHost) {
   return host;
 }
 
-function readConfigExportPayload(rawPayload) {
-  if (!isPlainObject(rawPayload) || !Array.isArray(rawPayload.hosts) || !Array.isArray(rawPayload.sshKeys)) {
-    throw new Error('导出配置数据无效。');
+function readBrowserBookmark(rawBookmark) {
+  if (!isPlainObject(rawBookmark)) {
+    throw new Error('浏览器书签无效。');
   }
 
   return {
-    hosts: rawPayload.hosts.map((host) => readStoredHostRecord(host)),
-    sshKeys: rawPayload.sshKeys.map((key) => readStoredKeyRecord(key)),
+    id: readBoundedString(rawBookmark.id, '书签 ID', 128),
+    title: readBoundedString(rawBookmark.title, '书签名称', 200),
+    url: readBoundedString(rawBookmark.url, '书签地址', 4096),
+    createdAt: readTimestampString(rawBookmark.createdAt, '书签创建时间'),
+    updatedAt: readTimestampString(rawBookmark.updatedAt, '书签更新时间'),
   };
 }
 
-function getStableSyntheticKeyId(host) {
-  return `host-key-${crypto.createHash('sha256').update(`${host.id}:${host.keyPath}`).digest('hex').slice(0, 16)}`;
+function readBookmarkCollection(rawCollection) {
+  if (!isPlainObject(rawCollection)) {
+    throw new Error('书签分组无效。');
+  }
+
+  const bookmarks = Array.isArray(rawCollection.bookmarks)
+    ? rawCollection.bookmarks.map((bookmark) => readBrowserBookmark(bookmark))
+    : [];
+
+  return {
+    scope: readBoundedString(rawCollection.scope, '书签范围', 255),
+    bookmarks,
+    updatedAt: readTimestampString(rawCollection.updatedAt ?? new Date().toISOString(), '书签更新时间'),
+  };
 }
 
-function buildConfigBundle(hosts, sshKeys) {
-  const keysById = new Map(sshKeys.map((key) => [key.id, key]));
-  const keysByPath = new Map(sshKeys.map((key) => [key.keyPath, key]));
-  const exportedKeys = [...sshKeys];
-  const exportedKeyIds = new Set(exportedKeys.map((key) => key.id));
+function createEmptyVault() {
+  return {
+    version: vaultSchemaVersion,
+    hosts: [],
+    sshKeys: [],
+    settings: createDefaultSettings(),
+    browserBookmarks: [],
+  };
+}
 
-  const exportedHosts = hosts.map((host) => {
-    if (host.authMethod !== 'key') {
-      return { ...host, password: host.password, keyId: '', keyPath: '', passphrase: '' };
-    }
+function readVaultPayload(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('本地数据无效。');
+  }
 
-    const matchedKey = (host.keyId && keysById.get(host.keyId)) || (host.keyPath && keysByPath.get(host.keyPath));
+  return {
+    version: vaultSchemaVersion,
+    hosts: Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : [],
+    sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readVaultKeyRecord(key)) : [],
+    settings: readAppSettings(rawPayload.settings),
+    browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
+      ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
+      : [],
+  };
+}
 
-    if (matchedKey) {
-      return {
-        ...host,
-        password: '',
-        keyId: matchedKey.id,
-        keyPath: matchedKey.keyPath,
-        passphrase: host.passphrase || matchedKey.passphrase,
+function readPersistedVaultWrapper(rawPayload) {
+  if (!isPlainObject(rawPayload) || rawPayload.format !== vaultFormat || rawPayload.version !== vaultSchemaVersion) {
+    throw new Error('本地数据格式不受支持。');
+  }
+
+  if (rawPayload.protected) {
+    const encrypted = readBoundedString(rawPayload.ciphertext, '本地数据密文', 8 * 1024 * 1024, { trim: false });
+    const decrypted = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+    return readVaultPayload(JSON.parse(decrypted));
+  }
+
+  return readVaultPayload(rawPayload.payload);
+}
+
+function writeVaultToDisk(vault) {
+  const vaultPath = getVaultFilePath();
+  const payloadJson = JSON.stringify(vault);
+  const storageInfo = getVaultStorageInfo();
+  const wrapper = storageInfo.protected
+    ? {
+        format: vaultFormat,
+        version: vaultSchemaVersion,
+        protected: true,
+        ciphertext: safeStorage.encryptString(payloadJson).toString('base64'),
+      }
+    : {
+        format: vaultFormat,
+        version: vaultSchemaVersion,
+        protected: false,
+        payload: vault,
       };
-    }
 
-    const syntheticKey = {
-      id: getStableSyntheticKeyId(host),
-      name: `${host.name} 私钥`,
-      keyPath: host.keyPath,
-      passphrase: host.passphrase,
-      createdAt: host.createdAt,
-      updatedAt: host.updatedAt,
+  fs.mkdirSync(path.dirname(vaultPath), { recursive: true });
+  fs.writeFileSync(vaultPath, JSON.stringify(wrapper, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+}
+
+function getVault() {
+  if (vaultCache) {
+    return vaultCache;
+  }
+
+  const vaultPath = getVaultFilePath();
+
+  if (!fs.existsSync(vaultPath)) {
+    vaultCache = createEmptyVault();
+    return vaultCache;
+  }
+
+  const stats = fs.statSync(vaultPath);
+
+  if (!stats.size || stats.size > maxVaultBytes) {
+    throw new Error('本地数据文件为空或超过大小限制。');
+  }
+
+  vaultCache = readPersistedVaultWrapper(JSON.parse(fs.readFileSync(vaultPath, 'utf8')));
+  return vaultCache;
+}
+
+function setVault(nextVault) {
+  const normalizedVault = readVaultPayload(nextVault);
+  vaultCache = normalizedVault;
+  writeVaultToDisk(normalizedVault);
+  return normalizedVault;
+}
+
+function notifyVaultChanged(payload) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.webContents.isDestroyed()) {
+      window.webContents.send('vault:changed', payload);
+    }
+  }
+}
+
+function toRendererKeyRecord(key) {
+  return {
+    id: key.id,
+    name: key.name,
+    source: key.source,
+    algorithm: key.algorithm,
+    fingerprint: key.fingerprint,
+    publicKey: key.publicKey,
+    passphrase: key.passphrase,
+    createdAt: key.createdAt,
+    updatedAt: key.updatedAt,
+  };
+}
+
+function createVaultSnapshot(vault = getVault()) {
+  return {
+    hosts: vault.hosts,
+    sshKeys: vault.sshKeys.map((key) => toRendererKeyRecord(key)),
+    settings: vault.settings,
+    browserBookmarks: vault.browserBookmarks,
+    storage: getVaultStorageInfo(),
+  };
+}
+
+function upsertVaultCollections(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('本地数据无效。');
+  }
+
+  const currentVault = getVault();
+  const nextHosts = Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : currentVault.hosts;
+  const nextSettings = rawPayload.settings === undefined ? currentVault.settings : readAppSettings(rawPayload.settings);
+  const nextSshKeys = Array.isArray(rawPayload.sshKeys)
+    ? rawPayload.sshKeys.map((key) => {
+        const nextKey = readStoredKeyRecord(key);
+        const currentKey = currentVault.sshKeys.find((item) => item.id === nextKey.id);
+
+        if (!currentKey) {
+          throw new Error(`密钥「${nextKey.name}」缺少私钥内容，无法保存。`);
+        }
+
+        return {
+          ...currentKey,
+          ...nextKey,
+        };
+      })
+    : currentVault.sshKeys;
+
+  const nextVault = setVault({
+    ...currentVault,
+    hosts: nextHosts,
+    sshKeys: nextSshKeys,
+    settings: nextSettings,
+  });
+
+  notifyVaultChanged({ kind: 'vault' });
+  return createVaultSnapshot(nextVault);
+}
+
+function getKeyById(keyId) {
+  if (!keyId) {
+    return null;
+  }
+
+  return getVault().sshKeys.find((key) => key.id === keyId) ?? null;
+}
+
+function readLocalTextFile(filePath, label, maxBytes = maxPrivateKeyBytes) {
+  const absolutePath = readBoundedString(filePath, `${label}路径`, 2048);
+  const stats = fs.statSync(absolutePath);
+
+  if (!stats.isFile()) {
+    throw new Error(`${label}不存在。`);
+  }
+
+  if (!stats.size || stats.size > maxBytes) {
+    throw new Error(`${label}为空或超过大小限制。`);
+  }
+
+  return fs.readFileSync(absolutePath, 'utf8');
+}
+
+function readLegacyStoredKeyRecord(rawKey) {
+  if (!isPlainObject(rawKey)) {
+    throw new Error('密钥数据无效。');
+  }
+
+  return {
+    id: readBoundedString(rawKey.id, '密钥 ID', 128),
+    name: readBoundedString(rawKey.name, '密钥名称', 80),
+    keyPath: readBoundedString(rawKey.keyPath, 'SSH 私钥路径', 1024),
+    passphrase: readBoundedString(rawKey.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    createdAt: readTimestampString(rawKey.createdAt, '密钥创建时间'),
+    updatedAt: readTimestampString(rawKey.updatedAt, '密钥更新时间'),
+  };
+}
+
+function base64UrlToBuffer(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const paddingLength = (4 - (normalized.length % 4)) % 4;
+  return Buffer.from(`${normalized}${'='.repeat(paddingLength)}`, 'base64');
+}
+
+function encodeSshBuffer(buffer) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(buffer.length, 0);
+  return Buffer.concat([length, buffer]);
+}
+
+function encodeSshString(value) {
+  return encodeSshBuffer(Buffer.from(value, 'utf8'));
+}
+
+function createRsaOpenSshPublicKey(publicKeyObject) {
+  const jwk = publicKeyObject.export({ format: 'jwk' });
+
+  if (!jwk?.n || !jwk?.e) {
+    throw new Error('无法导出 RSA 公钥。');
+  }
+
+  const body = Buffer.concat([
+    encodeSshString('ssh-rsa'),
+    encodeSshBuffer(base64UrlToBuffer(jwk.e)),
+    encodeSshBuffer(base64UrlToBuffer(jwk.n)),
+  ]);
+
+  return `ssh-rsa ${body.toString('base64')}`;
+}
+
+function createPublicKeyFingerprint(publicKeyText) {
+  const trimmedValue = publicKeyText.trim();
+
+  if (!trimmedValue) {
+    return '';
+  }
+
+  const [algorithm, encodedKey] = trimmedValue.split(/\s+/, 3);
+
+  if (algorithm && encodedKey && /^ssh-|^ecdsa-|^sk-/.test(algorithm)) {
+    return `SHA256:${crypto.createHash('sha256').update(Buffer.from(encodedKey, 'base64')).digest('base64').replace(/=+$/u, '')}`;
+  }
+
+  try {
+    const publicKeyObject = crypto.createPublicKey(trimmedValue);
+    const der = publicKeyObject.export({ type: 'spki', format: 'der' });
+    return `SHA256:${crypto.createHash('sha256').update(der).digest('base64').replace(/=+$/u, '')}`;
+  } catch {
+    return '';
+  }
+}
+
+function deriveKeyDetails(privateKey, passphrase, rawPublicKey = '') {
+  const publicKey = ensurePublicKeyText(rawPublicKey);
+
+  if (publicKey) {
+    const algorithmToken = publicKey.trim().split(/\s+/, 1)[0];
+    return {
+      algorithm: algorithmToken ? algorithmToken.replace(/^ssh-/u, '').toUpperCase() : 'SSH',
+      publicKey,
+      fingerprint: createPublicKeyFingerprint(publicKey),
     };
+  }
 
-    if (!exportedKeyIds.has(syntheticKey.id)) {
-      exportedKeys.push(syntheticKey);
-      exportedKeyIds.add(syntheticKey.id);
-      keysById.set(syntheticKey.id, syntheticKey);
-      keysByPath.set(syntheticKey.keyPath, syntheticKey);
+  try {
+    const privateKeyObject = crypto.createPrivateKey({
+      key: privateKey,
+      format: 'pem',
+      passphrase: passphrase || undefined,
+    });
+    const publicKeyObject = crypto.createPublicKey(privateKeyObject);
+    let derivedPublicKey = '';
+
+    if (publicKeyObject.asymmetricKeyType === 'rsa') {
+      derivedPublicKey = createRsaOpenSshPublicKey(publicKeyObject);
     }
+
+    return {
+      algorithm: String(publicKeyObject.asymmetricKeyType || 'SSH').toUpperCase(),
+      publicKey: derivedPublicKey,
+      fingerprint: createPublicKeyFingerprint(derivedPublicKey),
+    };
+  } catch {
+    return {
+      algorithm: 'SSH',
+      publicKey: '',
+      fingerprint: '',
+    };
+  }
+}
+
+function createVaultKeyRecord({ name, privateKey, publicKey = '', passphrase = '', source = 'imported', createdAt }) {
+  const timestamp = createdAt || new Date().toISOString();
+  const nextPrivateKey = ensurePrivateKeyText(privateKey, 'SSH 私钥内容');
+  const nextPassphrase = readBoundedString(passphrase, 'SSH 密钥口令', 4096, {
+    required: false,
+    trim: false,
+    rejectLineBreaks: false,
+  });
+  const derivedDetails = deriveKeyDetails(nextPrivateKey, nextPassphrase, publicKey);
+
+  return {
+    id: crypto.randomUUID(),
+    name: readBoundedString(name, '密钥名称', 80),
+    source,
+    algorithm: derivedDetails.algorithm,
+    fingerprint: derivedDetails.fingerprint,
+    publicKey: derivedDetails.publicKey,
+    privateKey: nextPrivateKey,
+    passphrase: nextPassphrase,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function ensureNoDuplicateKey(nextKey, currentKeys, ignoreKeyId = '') {
+  const normalizedPrivateKey = nextKey.privateKey.trim();
+
+  for (const key of currentKeys) {
+    if (key.id === ignoreKeyId) {
+      continue;
+    }
+
+    if (key.privateKey.trim() === normalizedPrivateKey) {
+      throw new Error(`密钥「${key.name}」已经存在。`);
+    }
+
+    if (nextKey.fingerprint && key.fingerprint && key.fingerprint === nextKey.fingerprint) {
+      throw new Error(`密钥「${key.name}」已经存在。`);
+    }
+  }
+}
+
+function importKeyPairToVault(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('导入密钥参数无效。');
+  }
+
+  const privateKey = readLocalTextFile(rawPayload.privateKeyPath, 'SSH 私钥');
+  const publicKeyPath = readBoundedString(rawPayload.publicKeyPath ?? '', 'SSH 公钥路径', 2048, { required: false });
+  const publicKey = publicKeyPath ? readLocalTextFile(publicKeyPath, 'SSH 公钥', 128 * 1024) : '';
+  const nextKey = createVaultKeyRecord({
+    name: readBoundedString(rawPayload.name, '密钥名称', 80),
+    privateKey,
+    publicKey,
+    passphrase: readBoundedString(rawPayload.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    source: 'imported',
+  });
+  const currentVault = getVault();
+
+  ensureNoDuplicateKey(nextKey, currentVault.sshKeys);
+  const nextVault = setVault({
+    ...currentVault,
+    sshKeys: [nextKey, ...currentVault.sshKeys],
+  });
+
+  notifyVaultChanged({ kind: 'vault' });
+  return { snapshot: createVaultSnapshot(nextVault), key: toRendererKeyRecord(nextKey) };
+}
+
+function generateRsaKeyPairInVault(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('生成密钥参数无效。');
+  }
+
+  const name = readBoundedString(rawPayload.name, '密钥名称', 80);
+  const modulusLength = readIntegerInRange(rawPayload.modulusLength, 'RSA 位数', 2048, 4096);
+  const passphrase = readBoundedString(rawPayload.passphrase ?? '', 'SSH 密钥口令', 4096, {
+    required: false,
+    trim: false,
+    rejectLineBreaks: false,
+  });
+  const generatedPair = crypto.generateKeyPairSync('rsa', {
+    modulusLength,
+    publicKeyEncoding: {
+      type: 'spki',
+      format: 'pem',
+    },
+    privateKeyEncoding: passphrase
+      ? {
+          type: 'pkcs8',
+          format: 'pem',
+          cipher: 'aes-256-cbc',
+          passphrase,
+        }
+      : {
+          type: 'pkcs8',
+          format: 'pem',
+        },
+  });
+  const publicKeyObject = crypto.createPublicKey(generatedPair.publicKey);
+  const nextKey = createVaultKeyRecord({
+    name,
+    privateKey: generatedPair.privateKey,
+    publicKey: createRsaOpenSshPublicKey(publicKeyObject),
+    passphrase,
+    source: 'generated',
+  });
+  const currentVault = getVault();
+
+  ensureNoDuplicateKey(nextKey, currentVault.sshKeys);
+  const nextVault = setVault({
+    ...currentVault,
+    sshKeys: [nextKey, ...currentVault.sshKeys],
+  });
+
+  notifyVaultChanged({ kind: 'vault' });
+  return { snapshot: createVaultSnapshot(nextVault), key: toRendererKeyRecord(nextKey) };
+}
+
+function readLegacyBookmarkCollections(rawCollections) {
+  if (!Array.isArray(rawCollections)) {
+    return [];
+  }
+
+  return rawCollections.map((collection) => {
+    if (!isPlainObject(collection)) {
+      throw new Error('历史书签数据无效。');
+    }
+
+    const normalizedScope = readBoundedString(collection.scope, '书签范围', 255);
+    const bookmarks = Array.isArray(collection.bookmarks) ? collection.bookmarks.map((bookmark) => readBrowserBookmark(bookmark)) : [];
+
+    return {
+      scope: normalizedScope.startsWith(bookmarkScopePrefix)
+        ? normalizedScope.slice(bookmarkScopePrefix.length)
+        : normalizedScope,
+      bookmarks,
+      updatedAt: readTimestampString(collection.updatedAt ?? new Date().toISOString(), '书签更新时间'),
+    };
+  });
+}
+
+function migrateLegacyData(rawPayload) {
+  const currentVault = getVault();
+
+  if (currentVault.hosts.length || currentVault.sshKeys.length || currentVault.browserBookmarks.length) {
+    return createVaultSnapshot(currentVault);
+  }
+
+  if (!isPlainObject(rawPayload)) {
+    return createVaultSnapshot(currentVault);
+  }
+
+  const legacyHosts = Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : [];
+  const legacyKeys = Array.isArray(rawPayload.sshKeys)
+    ? rawPayload.sshKeys.map((key) => {
+        const legacyKey = readLegacyStoredKeyRecord(key);
+        const nextKey = createVaultKeyRecord({
+          name: legacyKey.name,
+          privateKey: readLocalTextFile(legacyKey.keyPath, `私钥「${legacyKey.name}」`),
+          passphrase: legacyKey.passphrase,
+          source: 'imported',
+          createdAt: legacyKey.createdAt,
+        });
+
+        nextKey.id = legacyKey.id;
+        nextKey.updatedAt = legacyKey.updatedAt;
+        return nextKey;
+      })
+    : [];
+  const bookmarkCollections = readLegacyBookmarkCollections(rawPayload.browserBookmarks ?? []);
+  const keysById = new Map(legacyKeys.map((key) => [key.id, key]));
+  const keysByName = new Map(legacyKeys.map((key) => [key.name, key]));
+  const nextHosts = legacyHosts.map((host) => {
+    if (host.authMethod !== 'key') {
+      return host;
+    }
+
+    const matchedKey = (host.keyId && keysById.get(host.keyId)) || keysByName.get(`${host.name} 私钥`);
 
     return {
       ...host,
-      password: '',
-      keyId: syntheticKey.id,
-      keyPath: syntheticKey.keyPath,
-      passphrase: syntheticKey.passphrase,
+      keyId: matchedKey?.id || host.keyId,
     };
   });
 
-  const bundledKeys = exportedKeys.map((key) => {
-    const privateKey = fs.readFileSync(key.keyPath);
+  const nextVault = setVault({
+    ...currentVault,
+    hosts: nextHosts,
+    sshKeys: legacyKeys,
+    settings: readAppSettings(rawPayload.settings),
+    browserBookmarks: bookmarkCollections,
+  });
 
-    if (!privateKey.length || privateKey.length > maxPrivateKeyBytes) {
-      throw new Error(`私钥「${key.name}」内容无效或超过大小限制。`);
+  notifyVaultChanged({ kind: 'vault' });
+  return createVaultSnapshot(nextVault);
+}
+
+function validateHostRequest(rawHost) {
+  if (!isPlainObject(rawHost)) {
+    throw new Error('主机信息无效。');
+  }
+
+  const name = readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false });
+  const host = readBoundedString(rawHost.address, '主机地址', 255);
+  const username = readBoundedString(rawHost.username, '用户名', 128);
+  const port = Number(rawHost.port);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('端口必须是 1 到 65535 之间的整数。');
+  }
+
+  if (rawHost.authMethod !== 'password' && rawHost.authMethod !== 'key') {
+    throw new Error('登录方式无效。');
+  }
+
+  const sshConfig = {
+    host,
+    port,
+    username,
+    readyTimeout: 15000,
+    keepaliveInterval: 10000,
+    keepaliveCountMax: 3,
+  };
+
+  if (rawHost.authMethod === 'password') {
+    const password = readBoundedString(rawHost.password ?? '', 'SSH 密码', 4096, {
+      trim: false,
+      rejectLineBreaks: false,
+    });
+    sshConfig.password = password;
+  } else {
+    const keyId = readBoundedString(rawHost.keyId ?? '', '密钥 ID', 128, { required: false });
+    const storedKey = keyId ? getKeyById(keyId) : null;
+    const inlinePrivateKey = typeof rawHost.privateKey === 'string' ? rawHost.privateKey : '';
+
+    if (storedKey) {
+      sshConfig.privateKey = storedKey.privateKey;
+    } else if (inlinePrivateKey) {
+      sshConfig.privateKey = ensurePrivateKeyText(inlinePrivateKey, 'SSH 私钥内容');
+    } else {
+      const keyPath = readBoundedString(rawHost.keyPath, 'SSH 私钥路径', 1024);
+      sshConfig.privateKey = fs.readFileSync(keyPath);
     }
 
-    return {
-      ...key,
-      privateKeyBase64: privateKey.toString('base64'),
-    };
-  });
+    const rawPassphrase = typeof rawHost.passphrase === 'string' ? rawHost.passphrase : storedKey?.passphrase ?? '';
+
+    if (rawPassphrase) {
+      sshConfig.passphrase = readBoundedString(rawPassphrase, 'SSH 密钥口令', 4096, {
+        trim: false,
+        rejectLineBreaks: false,
+      });
+    }
+  }
 
   return {
-    format: configBundleFormat,
-    version: configBundleVersion,
-    exportedAt: new Date().toISOString(),
-    hosts: exportedHosts,
-    sshKeys: bundledKeys,
+    displayHost: {
+      name: name || host,
+      address: host,
+      port,
+      username,
+      authMethod: rawHost.authMethod,
+    },
+    sshConfig,
   };
 }
 
-function readPrivateKeyBuffer(base64Value) {
+function readPrivateKeyTextFromBase64(base64Value) {
   const value = readBoundedString(base64Value, 'SSH 私钥内容', 2 * 1024 * 1024, { trim: false });
 
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
     throw new Error('SSH 私钥内容无效。');
   }
 
-  const privateKey = Buffer.from(value, 'base64');
+  const privateKeyText = Buffer.from(value, 'base64').toString('utf8');
+  return ensurePrivateKeyText(privateKeyText, 'SSH 私钥内容');
+}
 
-  if (!privateKey.length || privateKey.length > maxPrivateKeyBytes) {
-    throw new Error('SSH 私钥内容无效或超过大小限制。');
-  }
-
-  return privateKey;
+function buildConfigBundle(vault = getVault()) {
+  return {
+    format: configBundleFormat,
+    version: configBundleVersion,
+    exportedAt: new Date().toISOString(),
+    hosts: vault.hosts,
+    sshKeys: vault.sshKeys.map((key) => ({
+      ...toRendererKeyRecord(key),
+      privateKeyBase64: Buffer.from(key.privateKey, 'utf8').toString('base64'),
+    })),
+    settings: vault.settings,
+    browserBookmarks: vault.browserBookmarks,
+  };
 }
 
 function readConfigImportPayload(rawPayload) {
@@ -327,58 +941,35 @@ function readConfigImportPayload(rawPayload) {
     throw new Error('不是受支持的 GUI-SSH 完整备份文件。');
   }
 
-  if (rawPayload.version !== configBundleVersion) {
+  if (rawPayload.version !== 1 && rawPayload.version !== configBundleVersion) {
     throw new Error('备份文件版本不受支持。');
   }
 
-  return {
-    hosts: rawPayload.hosts.map((host) => readStoredHostRecord(host)),
-    sshKeys: rawPayload.sshKeys.map((key) => {
-      const nextKey = readStoredKeyRecord(key);
-      return {
-        ...nextKey,
-        privateKey: readPrivateKeyBuffer(key.privateKeyBase64),
-      };
-    }),
-  };
-}
+  const hosts = rawPayload.hosts.map((host) => readStoredHostRecord(host));
+  const sshKeys = rawPayload.sshKeys.map((key) => {
+    const isLegacyKey = typeof key.keyPath === 'string' && !('source' in key);
+    const baseKey = isLegacyKey ? readLegacyStoredKeyRecord(key) : readStoredKeyRecord(key);
+    const nextKey = createVaultKeyRecord({
+      name: baseKey.name,
+      privateKey: readPrivateKeyTextFromBase64(key.privateKeyBase64),
+      publicKey: typeof key.publicKey === 'string' ? key.publicKey : '',
+      passphrase: baseKey.passphrase,
+      source: typeof key.source === 'string' && key.source === 'generated' ? 'generated' : 'imported',
+      createdAt: baseKey.createdAt,
+    });
 
-function getSafeFileSegment(value, fallback) {
-  const safeValue = value
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-
-  return safeValue || fallback;
-}
-
-function getPrivateKeyExtension(keyPath) {
-  const extension = path.extname(keyPath).toLowerCase();
-  return /^[.a-z0-9_-]{1,12}$/.test(extension) && extension !== '.' ? extension : '.key';
-}
-
-function restoreImportedPrivateKey(importedKey) {
-  const directoryPath = path.join(app.getPath('userData'), 'imported-keys');
-  const safeName = getSafeFileSegment(importedKey.name, 'ssh-key');
-  const safeId = getSafeFileSegment(importedKey.id, 'key');
-  const filePath = path.join(directoryPath, `${safeName}-${safeId}${getPrivateKeyExtension(importedKey.keyPath)}`);
-
-  fs.mkdirSync(directoryPath, { recursive: true });
-  fs.writeFileSync(filePath, importedKey.privateKey, { mode: 0o600 });
-
-  try {
-    fs.chmodSync(filePath, 0o600);
-  } catch {
-    // ignore chmod failures on platforms that do not honor POSIX permissions
-  }
+    nextKey.id = baseKey.id;
+    nextKey.updatedAt = baseKey.updatedAt;
+    return nextKey;
+  });
 
   return {
-    id: importedKey.id,
-    name: importedKey.name,
-    keyPath: filePath,
-    passphrase: importedKey.passphrase,
-    createdAt: importedKey.createdAt,
-    updatedAt: importedKey.updatedAt,
+    hosts,
+    sshKeys,
+    settings: readAppSettings(rawPayload.settings),
+    browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
+      ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
+      : [],
   };
 }
 
@@ -1060,8 +1651,23 @@ ipcMain.handle('dialog:select-private-key', async (event) => {
   const result = await dialog.showOpenDialog(window ?? undefined, {
     title: '选择 SSH 私钥文件',
     properties: ['openFile'],
+    filters: [{ name: 'All Files', extensions: ['*'] }],
+  });
+
+  if (result.canceled) {
+    return '';
+  }
+
+  return result.filePaths[0] ?? '';
+});
+
+ipcMain.handle('dialog:select-public-key', async (event) => {
+  const window = getSenderWindow(event);
+  const result = await dialog.showOpenDialog(window ?? undefined, {
+    title: '选择 SSH 公钥文件',
+    properties: ['openFile'],
     filters: [
-      { name: 'SSH Private Keys', extensions: ['pem', 'key', 'ppk'] },
+      { name: 'SSH Public Keys', extensions: ['pub', 'txt'] },
       { name: 'All Files', extensions: ['*'] },
     ],
   });
@@ -1073,9 +1679,46 @@ ipcMain.handle('dialog:select-private-key', async (event) => {
   return result.filePaths[0] ?? '';
 });
 
-registerIpcHandler('config:export', async (event, rawPayload) => {
-  const { hosts, sshKeys } = readConfigExportPayload(rawPayload);
-  const bundle = buildConfigBundle(hosts, sshKeys);
+registerIpcHandler('vault:get-snapshot', async () => createVaultSnapshot());
+
+registerIpcHandler('vault:save-collections', async (_event, rawPayload) => upsertVaultCollections(rawPayload));
+
+registerIpcHandler('vault:migrate-legacy-data', async (_event, rawPayload) => migrateLegacyData(rawPayload));
+
+registerIpcHandler('vault:import-key-pair', async (_event, rawPayload) => importKeyPairToVault(rawPayload));
+
+registerIpcHandler('vault:generate-rsa-key-pair', async (_event, rawPayload) => generateRsaKeyPairInVault(rawPayload));
+
+registerIpcHandler('vault:get-bookmarks', async (_event, rawScope) => {
+  const scope = readBoundedString(rawScope, '书签范围', 255);
+  const bookmarks = getVault().browserBookmarks.find((collection) => collection.scope === scope)?.bookmarks ?? [];
+  return bookmarks;
+});
+
+registerIpcHandler('vault:save-bookmarks', async (_event, rawScope, rawBookmarks) => {
+  const scope = readBoundedString(rawScope, '书签范围', 255);
+  const bookmarks = Array.isArray(rawBookmarks) ? rawBookmarks.map((bookmark) => readBrowserBookmark(bookmark)) : [];
+  const currentVault = getVault();
+  const nextCollection = {
+    scope,
+    bookmarks,
+    updatedAt: new Date().toISOString(),
+  };
+  const nextBookmarkCollections = [
+    nextCollection,
+    ...currentVault.browserBookmarks.filter((collection) => collection.scope !== scope),
+  ].filter((collection) => collection.bookmarks.length);
+  const nextVault = setVault({
+    ...currentVault,
+    browserBookmarks: nextBookmarkCollections,
+  });
+
+  notifyVaultChanged({ kind: 'bookmarks', scope });
+  return nextVault.browserBookmarks.find((collection) => collection.scope === scope)?.bookmarks ?? [];
+});
+
+registerIpcHandler('config:export', async (event) => {
+  const bundle = buildConfigBundle();
   const window = getSenderWindow(event);
   const defaultPath = path.join(app.getPath('documents'), `gui-ssh-config-${new Date().toISOString().slice(0, 10)}.json`);
   const result = await dialog.showSaveDialog(window ?? undefined, {
@@ -1121,33 +1764,15 @@ registerIpcHandler('config:import', async (event) => {
   }
 
   const importedPayload = readConfigImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')));
-  const restoredKeys = importedPayload.sshKeys.map((key) => restoreImportedPrivateKey(key));
-  const restoredKeysById = new Map(restoredKeys.map((key) => [key.id, key]));
-  const restoredKeysBySourcePath = new Map(importedPayload.sshKeys.map((key, index) => [key.keyPath, restoredKeys[index]]));
-  const hosts = importedPayload.hosts.map((host) => {
-    if (host.authMethod !== 'key') {
-      return { ...host, keyId: '', keyPath: '', passphrase: '' };
-    }
-
-    const restoredKey = restoredKeysById.get(host.keyId) || restoredKeysBySourcePath.get(host.keyPath);
-
-    if (!restoredKey) {
-      throw new Error(`主机「${host.name}」缺少对应私钥。`);
-    }
-
-    return {
-      ...host,
-      password: '',
-      keyId: restoredKey.id,
-      keyPath: restoredKey.keyPath,
-      passphrase: host.passphrase || restoredKey.passphrase,
-    };
+  const nextVault = setVault({
+    hosts: importedPayload.hosts,
+    sshKeys: importedPayload.sshKeys,
+    settings: importedPayload.settings,
+    browserBookmarks: importedPayload.browserBookmarks,
   });
 
-  return {
-    hosts,
-    sshKeys: restoredKeys,
-  };
+  notifyVaultChanged({ kind: 'vault' });
+  return createVaultSnapshot(nextVault);
 });
 
 ipcMain.handle('connection:connect', async (_event, rawHost) => {

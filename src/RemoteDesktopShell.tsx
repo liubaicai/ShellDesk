@@ -14,6 +14,7 @@ type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
+  settings: GuiSshAppSettings;
 }
 
 interface DesktopWindowFrame {
@@ -31,6 +32,9 @@ interface DesktopWindowState {
   isMaximized: boolean;
   zIndex: number;
   terminalId?: string;
+  chromeTitle?: string;
+  chromeStatus?: string;
+  chromeTone?: 'idle' | 'loading' | 'error';
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -90,6 +94,7 @@ function getMaximizedWindowFrame(surfaceWidth: number, surfaceHeight: number) {
 function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: number): DesktopWindowState {
   const baseFrame = defaultWindowFrames[appKey];
   const offset = ((sequence - 1) % 7) * 28;
+  const isBrowserWindow = appKey === 'browser';
 
   return {
     id: `${appKey}-${sequence}`,
@@ -102,6 +107,9 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
     isMaximized: false,
     zIndex,
     terminalId: appKey === 'terminal' ? `terminal-${sequence}` : undefined,
+    chromeTitle: isBrowserWindow ? '127.0.0.1' : undefined,
+    chromeStatus: isBrowserWindow ? '已就绪' : undefined,
+    chromeTone: isBrowserWindow ? 'idle' : undefined,
   };
 }
 
@@ -109,7 +117,7 @@ function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
 }
 
-function RemoteDesktopShell({ connection }: RemoteDesktopProps) {
+function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
   const windowSequenceRef = useRef(0);
@@ -295,13 +303,41 @@ function RemoteDesktopShell({ connection }: RemoteDesktopProps) {
     windowPointerStateRef.current = null;
   };
 
+  const updateWindowChrome = (
+    windowId: string,
+    payload: { title: string; status: string; tone: 'idle' | 'loading' | 'error' },
+  ) => {
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+      desktopWindow.id === windowId
+        ? {
+            ...desktopWindow,
+            chromeTitle: payload.title,
+            chromeStatus: payload.status,
+            chromeTone: payload.tone,
+          }
+        : desktopWindow
+    )));
+  };
+
   const renderWindowContent = (desktopWindow: DesktopWindowState) => {
     if (desktopWindow.appKey === 'terminal') {
-      return <RemoteTerminal connectionId={connection.id} terminalId={desktopWindow.terminalId ?? desktopWindow.id} />;
+      return (
+        <RemoteTerminal
+          connectionId={connection.id}
+          terminalId={desktopWindow.terminalId ?? desktopWindow.id}
+          settings={settings}
+        />
+      );
     }
 
     if (desktopWindow.appKey === 'browser') {
-      return <RemoteBrowser partition={connection.partition} />;
+      return (
+        <RemoteBrowser
+          partition={connection.partition}
+          bookmarkScope={`${connection.host.username}@${connection.host.address}:${connection.host.port}`}
+          onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
+        />
+      );
     }
 
     if (desktopWindow.appKey === 'files') {
@@ -364,7 +400,21 @@ function RemoteDesktopShell({ connection }: RemoteDesktopProps) {
                   />
                 </div>
                 <div className="desktop-window-title">
-                  <strong>{appInfo.label}</strong>
+                  {desktopWindow.appKey === 'browser' ? (
+                    <>
+                      <span className="desktop-window-kicker">{appInfo.label}</span>
+                      <strong title={desktopWindow.chromeTitle || appInfo.label}>
+                        {desktopWindow.chromeTitle || appInfo.label}
+                      </strong>
+                      {desktopWindow.chromeStatus ? (
+                        <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
+                          {desktopWindow.chromeStatus}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <strong>{appInfo.label}</strong>
+                  )}
                 </div>
               </header>
               <div className="desktop-window-body">{renderWindowContent(desktopWindow)}</div>
