@@ -205,6 +205,8 @@ interface GuiSshConnectionControls {
   writeFile: (connectionId: string, remotePath: string, content: string) => Promise<boolean>;
   downloadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; filePath?: string; size?: number }>;
   uploadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; size?: number }>;
+  compress: (connectionId: string, sourcePaths: string[], format: string, destPath: string) => Promise<{ format: string; destPath: string }>;
+  decompress: (connectionId: string, archivePath: string, destDir?: string) => Promise<{ archivePath: string; destDir: string }>;
   statPath: (connectionId: string, remotePath: string) => Promise<{
     type: string;
     size: number;

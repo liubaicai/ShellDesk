@@ -2228,6 +2228,105 @@ registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   return getRemoteStatus(activeConnection.client);
 });
 
+// ─── Remote SSH command execution ───────────────────────────────────────────
+
+function execSshCommand(client, command) {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      let stdout = '';
+      let stderr = '';
+
+      stream.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+      stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      stream.on('close', (code) => {
+        if (code === 0) {
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
+        } else {
+          reject(new Error(stderr.trim() || `命令执行失败，退出码 ${code}`));
+        }
+      });
+    });
+  });
+}
+
+registerIpcHandler('connection:compress', async (_event, connectionId, rawSourcePaths, rawFormat, rawDestPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (!Array.isArray(rawSourcePaths) || rawSourcePaths.length === 0) {
+    throw new Error('请选择要压缩的文件。');
+  }
+
+  const sourcePaths = rawSourcePaths.map((p) => validateRemotePath(p));
+  const format = ['zip', 'tar', 'tar.gz', 'tgz', '7z'].includes(rawFormat) ? rawFormat : 'zip';
+  const destPath = validateMutableRemotePath(rawDestPath);
+
+  const escapedSources = sourcePaths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(' ');
+  const escapedDest = `'${destPath.replace(/'/g, "'\\''")}'`;
+
+  let command = '';
+
+  switch (format) {
+    case 'zip':
+      command = `zip -r ${escapedDest} ${escapedSources}`;
+      break;
+    case 'tar':
+      command = `tar cf ${escapedDest} ${escapedSources}`;
+      break;
+    case 'tar.gz':
+    case 'tgz':
+      command = `tar czf ${escapedDest} ${escapedSources}`;
+      break;
+    case '7z':
+      command = `7z a ${escapedDest} ${escapedSources}`;
+      break;
+    default:
+      command = `zip -r ${escapedDest} ${escapedSources}`;
+  }
+
+  await execSshCommand(activeConnection.client, command);
+  return { format, destPath };
+});
+
+registerIpcHandler('connection:decompress', async (_event, connectionId, rawArchivePath, rawDestDir) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const archivePath = validateRemotePath(rawArchivePath);
+  const archiveName = archivePath.split('/').pop() || '';
+  const escapedArchive = `'${archivePath.replace(/'/g, "'\\''")}'`;
+  const destDir = rawDestDir ? validateRemotePath(rawDestDir) : validateRemotePath(archivePath.replace(/\/[^/]*$/, '') || '.');
+  const escapedDest = `'${destDir.replace(/'/g, "'\\''")}'`;
+
+  let command = '';
+
+  if (archiveName.endsWith('.tar.gz') || archiveName.endsWith('.tgz')) {
+    command = `tar xzf ${escapedArchive} -C ${escapedDest}`;
+  } else if (archiveName.endsWith('.tar.bz2') || archiveName.endsWith('.tbz2')) {
+    command = `tar xjf ${escapedArchive} -C ${escapedDest}`;
+  } else if (archiveName.endsWith('.tar.xz') || archiveName.endsWith('.txz')) {
+    command = `tar xJf ${escapedArchive} -C ${escapedDest}`;
+  } else if (archiveName.endsWith('.tar')) {
+    command = `tar xf ${escapedArchive} -C ${escapedDest}`;
+  } else if (archiveName.endsWith('.zip')) {
+    command = `unzip -o ${escapedArchive} -d ${escapedDest}`;
+  } else if (archiveName.endsWith('.7z')) {
+    command = `7z x -o${escapedDest} ${escapedArchive} -y`;
+  } else if (archiveName.endsWith('.gz') && !archiveName.endsWith('.tar.gz')) {
+    const baseName = archiveName.replace(/\.gz$/, '');
+    command = `gunzip -c ${escapedArchive} > ${escapedDest}/${baseName}`;
+  } else if (archiveName.endsWith('.rar')) {
+    command = `unrar x -o+ ${escapedArchive} ${escapedDest}`;
+  } else {
+    throw new Error(`不支持的压缩格式：${archiveName}`);
+  }
+
+  await execSshCommand(activeConnection.client, command);
+  return { archivePath, destDir };
+});
+
 // ─── MySQL over SSH tunnel ──────────────────────────────────────────────────
 
 const activeMysqlConnections = new Map();

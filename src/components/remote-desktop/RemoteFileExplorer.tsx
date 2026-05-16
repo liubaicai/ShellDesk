@@ -111,6 +111,14 @@ function getFileExtension(name: string) {
   return dotIndex > 0 ? name.slice(dotIndex + 1).toLowerCase() : '';
 }
 
+function isArchiveFile(name: string) {
+  const lower = name.toLowerCase();
+  return lower.endsWith('.zip') || lower.endsWith('.tar') || lower.endsWith('.tar.gz') ||
+    lower.endsWith('.tgz') || lower.endsWith('.tar.bz2') || lower.endsWith('.tbz2') ||
+    lower.endsWith('.tar.xz') || lower.endsWith('.txz') || lower.endsWith('.7z') ||
+    lower.endsWith('.gz') || lower.endsWith('.rar');
+}
+
 function getFileIcon(entry: RemoteFileEntry) {
   if (entry.type === 'directory') {
     return '\u{1F4C1}';
@@ -572,6 +580,37 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     }
   }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
 
+  const compressEntries = useCallback(async (entries: RemoteFileEntry[], format: string) => {
+    closeContextMenu();
+    if (!entries.length || !window.guiSSH?.connections) return;
+
+    try {
+      setFilesError('');
+      const sourcePaths = entries.map((e) => joinRemotePath(remotePath, e.name));
+      const baseName = entries.length === 1 ? entries[0].name : `${entries.length}_files`;
+      const ext = format === 'zip' ? '.zip' : format === 'tar' ? '.tar' : format === 'tar.gz' ? '.tar.gz' : '.7z';
+      const destPath = joinRemotePath(remotePath, `${baseName}${ext}`);
+      await window.guiSSH.connections.compress(connectionId, sourcePaths, format, destPath);
+      refreshFiles();
+    } catch (error) {
+      setFilesError(getErrorMessage(error));
+    }
+  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+
+  const decompressEntry = useCallback(async (entry: RemoteFileEntry) => {
+    closeContextMenu();
+    if (!window.guiSSH?.connections) return;
+
+    try {
+      setFilesError('');
+      const archivePath = joinRemotePath(remotePath, entry.name);
+      await window.guiSSH.connections.decompress(connectionId, archivePath, remotePath);
+      refreshFiles();
+    } catch (error) {
+      setFilesError(getErrorMessage(error));
+    }
+  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+
   const handleKeydown = useCallback((event: ReactKeyboardEvent) => {
     if (renamingName || isCreatingNew) return;
 
@@ -813,6 +852,31 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                     下载
                   </button>
                 )}
+                {isArchiveFile(contextMenu.targetEntry.name) && contextMenu.targetEntry.type === 'file' && (
+                  <button type="button" role="menuitem" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
+                    解压缩
+                  </button>
+                )}
+                <div className="context-menu-item-has-submenu">
+                  <button type="button" role="menuitem">
+                    压缩为 ▸
+                  </button>
+                  <div className="context-submenu">
+                    {(() => {
+                      const targets = selectedNames.has(contextMenu.targetEntry!.name) && selectedNames.size > 1
+                        ? sortedEntries.filter((e) => selectedNames.has(e.name))
+                        : [contextMenu.targetEntry!];
+                      return (
+                        <>
+                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'zip')}>ZIP (.zip)</button>
+                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar.gz')}>TAR.GZ (.tar.gz)</button>
+                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar')}>TAR (.tar)</button>
+                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, '7z')}>7Z (.7z)</button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" className="danger-text" onClick={() => void deleteSelectedEntries(contextMenu.targetEntry ? [contextMenu.targetEntry] : undefined)}>
                   删除

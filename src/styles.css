@@ -2447,6 +2447,60 @@ button.explorer-row {
   background: #eef2f7;
 }
 
+.context-menu-item-has-submenu {
+  position: relative;
+}
+
+.context-menu-item-has-submenu > button {
+  width: 100%;
+}
+
+.context-menu-item-has-submenu > button::after {
+  margin-left: auto;
+  padding-left: 12px;
+  content: '▸';
+  font-size: 10px;
+  color: #8892a4;
+}
+
+.context-submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -5px;
+  min-width: 140px;
+  gap: 2px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 5px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.context-menu-item-has-submenu:hover > .context-submenu {
+  display: grid;
+}
+
+.context-submenu button {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 10px;
+  background: transparent;
+  color: #172033;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.context-submenu button:hover {
+  background: #eaf3ff;
+}
+
 .properties-dialog {
   position: fixed;
   top: 50%;
