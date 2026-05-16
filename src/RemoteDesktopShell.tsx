@@ -1,11 +1,12 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 
-import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteTerminal } from './components/remote-desktop';
+import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteNotepad, RemoteTerminal } from './components/remote-desktop';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
   { key: 'files', label: '文件管理', icon: '📁', description: 'Windows 风格 SFTP 资源管理器' },
   { key: 'terminal', label: '终端', icon: '>_', description: '交互式 SSH Shell' },
+  { key: 'notepad', label: '记事本', icon: '📝', description: '远程文件编辑器' },
   { key: 'browser', label: '浏览器', icon: '🌐', description: '远程源请求' },
   { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
 ] as const;
@@ -35,6 +36,7 @@ interface DesktopWindowState {
   chromeTitle?: string;
   chromeStatus?: string;
   chromeTone?: 'idle' | 'loading' | 'error';
+  notepadInitialPath?: string;
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -58,6 +60,7 @@ const windowMinHeight = 260;
 const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   files: { x: 172, y: 62, width: 920, height: 560 },
   terminal: { x: 206, y: 80, width: 780, height: 500 },
+  notepad: { x: 140, y: 50, width: 860, height: 580 },
   browser: { x: 190, y: 68, width: 940, height: 560 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
 };
@@ -166,6 +169,22 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     windowSequenceRef.current += 1;
     zIndexRef.current += 1;
     const nextWindow = createDesktopWindow(appKey, windowSequenceRef.current, zIndexRef.current);
+    const surface = desktopSurfaceRef.current;
+
+    if (surface) {
+      const surfaceRect = surface.getBoundingClientRect();
+      nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
+    }
+
+    setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
+    setFocusedWindowId(nextWindow.id);
+  };
+
+  const openNotepadFile = (filePath: string) => {
+    windowSequenceRef.current += 1;
+    zIndexRef.current += 1;
+    const nextWindow = createDesktopWindow('notepad', windowSequenceRef.current, zIndexRef.current);
+    nextWindow.notepadInitialPath = filePath;
     const surface = desktopSurfaceRef.current;
 
     if (surface) {
@@ -341,7 +360,11 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} />;
+      return <RemoteFileExplorer connectionId={connection.id} onOpenFile={openNotepadFile} />;
+    }
+
+    if (desktopWindow.appKey === 'notepad') {
+      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} />;
     }
 
     return <RemoteMonitor connectionId={connection.id} />;

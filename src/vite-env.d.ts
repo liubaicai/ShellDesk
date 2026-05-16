@@ -201,6 +201,8 @@ interface GuiSshConnectionControls {
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
   renamePath: (connectionId: string, oldPath: string, newPath: string) => Promise<boolean>;
   createFile: (connectionId: string, remotePath: string) => Promise<boolean>;
+  readFile: (connectionId: string, remotePath: string) => Promise<string>;
+  writeFile: (connectionId: string, remotePath: string, content: string) => Promise<boolean>;
   statPath: (connectionId: string, remotePath: string) => Promise<{
     type: string;
     size: number;

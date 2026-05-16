@@ -2070,10 +2070,70 @@ registerIpcHandler('connection:create-file', async (_event, connectionId, rawPat
   return true;
 });
 
+function readRemoteFile(client, remotePath) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      sftp.readFile(remotePath, 'utf8', (readError, content) => {
+        sftp.end();
+
+        if (readError) {
+          reject(readError);
+          return;
+        }
+
+        resolve(content);
+      });
+    });
+  });
+}
+
+function writeRemoteFile(client, remotePath, content) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      sftp.writeFile(remotePath, content, 'utf8', (writeError) => {
+        sftp.end();
+
+        if (writeError) {
+          reject(writeError);
+          return;
+        }
+
+        resolve(true);
+      });
+    });
+  });
+}
+
 registerIpcHandler('connection:stat-path', async (_event, connectionId, rawPath) => {
   const activeConnection = getActiveConnection(connectionId);
   const remotePath = validateRemotePath(rawPath);
   return await statRemotePath(activeConnection.client, remotePath);
+});
+
+registerIpcHandler('connection:read-file', async (_event, connectionId, rawPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const remotePath = validateRemotePath(rawPath);
+  return await readRemoteFile(activeConnection.client, remotePath);
+});
+
+registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath, content) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const remotePath = validateMutableRemotePath(rawPath);
+  if (typeof content !== 'string') {
+    throw new Error('文件内容必须是字符串。');
+  }
+  await writeRemoteFile(activeConnection.client, remotePath, content);
+  return true;
 });
 
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {

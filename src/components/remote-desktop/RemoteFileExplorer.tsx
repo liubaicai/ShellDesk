@@ -8,11 +8,14 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
+import { isTextFile } from './RemoteNotepad';
 
 interface RemoteFileExplorerProps {
   connectionId: string;
+  onOpenFile?: (filePath: string) => void;
 }
 
 interface RemoteFileEntry {
@@ -185,7 +188,7 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
-function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProps) {
   const [remotePath, setRemotePath] = useState('.');
   const [pathDraft, setPathDraft] = useState('.');
   const [fileEntries, setFileEntries] = useState<RemoteFileEntry[]>([]);
@@ -314,8 +317,10 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
   const openFileEntry = useCallback((entry: RemoteFileEntry) => {
     if (entry.type === 'directory') {
       navigateToPath(joinRemotePath(remotePath, entry.name));
+    } else if (entry.type === 'file' && isTextFile(entry.name) && onOpenFile) {
+      onOpenFile(joinRemotePath(remotePath, entry.name));
     }
-  }, [navigateToPath, remotePath]);
+  }, [navigateToPath, remotePath, onOpenFile]);
 
   const refreshFiles = useCallback(() => {
     setFilesRefreshToken((currentToken) => currentToken + 1);
@@ -599,19 +604,6 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
 
   return (
     <div className="file-pane explorer-pane" onKeyDown={handleKeydown} tabIndex={-1}>
-      <div className="explorer-ribbon">
-        <button type="button" onClick={() => navigateToPath(getParentRemotePath(remotePath))} title="返回上级目录">上级</button>
-        <button type="button" onClick={refreshFiles} title="刷新 (F5)">刷新</button>
-        <div className="ribbon-separator" />
-        <button type="button" onClick={() => startNewItem('file')} title="新建文件">新建文件</button>
-        <button type="button" onClick={() => startNewItem('folder')} title="新建文件夹">新建文件夹</button>
-        <div className="ribbon-separator" />
-        <button type="button" onClick={() => void deleteSelectedEntries()} disabled={!selectedNames.size} title="删除选中项目 (Delete)">删除</button>
-        <button type="button" onClick={() => { const t = sortedEntries.find((e) => selectedNames.has(e.name)); if (t) startRename(t); }} disabled={selectedNames.size !== 1} title="重命名 (F2)">重命名</button>
-        <div className="ribbon-spacer" />
-        {copiedPath ? <span className="ribbon-toast">已复制: {copiedPath}</span> : null}
-      </div>
-
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
         <span>路径</span>
         <div className="addressbar-breadcrumb-input">
@@ -760,7 +752,7 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
         </span>
       </div>
 
-      {contextMenu ? (
+      {contextMenu ? createPortal(
         <>
           <div className="context-menu-overlay" onClick={closeContextMenu} onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }} />
           <div
@@ -773,6 +765,14 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
                 {contextMenu.targetEntry.type === 'directory' && (
                   <button type="button" role="menuitem" onClick={() => { closeContextMenu(); openFileEntry(contextMenu.targetEntry!); }}>
                     打开
+                  </button>
+                )}
+                {contextMenu.targetEntry.type === 'file' && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
+                  <button type="button" role="menuitem" onClick={() => {
+                    closeContextMenu();
+                    onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name));
+                  }}>
+                    用记事本打开
                   </button>
                 )}
                 <button type="button" role="menuitem" onClick={() => startRename(contextMenu.targetEntry!)}>
@@ -805,10 +805,11 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
               </>
             )}
           </div>
-        </>
+        </>,
+        document.body,
       ) : null}
 
-      {propertiesEntry ? (
+      {propertiesEntry ? createPortal(
         <>
           <div className="context-menu-overlay" onClick={() => setPropertiesEntry(null)} />
           <div className="properties-dialog">
@@ -841,7 +842,8 @@ function RemoteFileExplorer({ connectionId }: RemoteFileExplorerProps) {
               <button type="button" className="properties-close-btn" onClick={() => setPropertiesEntry(null)}>确定</button>
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       ) : null}
     </div>
   );

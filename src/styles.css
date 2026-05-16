@@ -2090,10 +2090,9 @@ button:disabled {
   padding: 0;
   background: #f5f7fb;
   color: #172033;
-  grid-template-rows: 46px 42px minmax(0, 1fr) 28px;
+  grid-template-rows: 42px minmax(0, 1fr) 28px;
 }
 
-.explorer-ribbon,
 .explorer-addressbar,
 .explorer-statusbar {
   display: grid;
@@ -2102,7 +2101,6 @@ button:disabled {
   background: #ffffff;
 }
 
-.explorer-ribbon button,
 .explorer-addressbar button,
 .explorer-sidebar button {
   border: 1px solid transparent;
@@ -2114,13 +2112,11 @@ button:disabled {
   font-weight: 650;
 }
 
-.explorer-ribbon button,
 .explorer-addressbar button {
   height: 30px;
   padding: 0 10px;
 }
 
-.explorer-ribbon button:hover,
 .explorer-addressbar button:hover,
 .explorer-sidebar button:hover,
 .explorer-sidebar button.active {
@@ -3682,4 +3678,562 @@ button.explorer-row {
 
 [data-theme="light"] .host-grid.list .host-card {
   border-color: rgba(16, 32, 51, 0.1);
+}
+
+/* ── Remote Notepad ─────────────────────────────────── */
+
+.notepad-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.notepad-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.notepad-toolbar-group {
+  display: flex;
+  gap: 4px;
+}
+
+.notepad-tool-btn {
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.notepad-tool-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.notepad-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-height: 32px;
+}
+
+.notepad-tabs::-webkit-scrollbar {
+  height: 2px;
+}
+
+.notepad-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.notepad-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notepad-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+
+.notepad-tab-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notepad-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.notepad-tab-close:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.notepad-tab-add {
+  padding: 0 8px;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.notepad-find-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.notepad-find-label {
+  color: var(--muted-strong);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.notepad-find-input {
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  min-width: 180px;
+}
+
+.notepad-find-input:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.notepad-find-hint {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.notepad-error {
+  padding: 8px 12px;
+  background: var(--danger-soft);
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger-text-soft);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.notepad-loading {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notepad-editor-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notepad-line-numbers {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  min-width: 48px;
+  background: var(--surface-soft);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.notepad-line-numbers span {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 10px 0 6px;
+  text-align: right;
+  color: var(--muted);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.notepad-line-numbers span.active {
+  color: var(--accent);
+}
+
+.notepad-editor-container {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.notepad-highlight-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  pointer-events: none;
+  white-space: pre;
+  word-wrap: normal;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text);
+  background: transparent;
+}
+
+.notepad-highlight-layer code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.notepad-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+  word-wrap: normal;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+.notepad-textarea::selection {
+  background: rgba(67, 199, 255, 0.25);
+  color: transparent;
+}
+
+.notepad-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  background: var(--surface-soft);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.notepad-statusbar-path {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+  direction: rtl;
+  text-align: left;
+}
+
+/* highlight.js theme overrides (GitHub Dark style) */
+.notepad-highlight-layer .hljs-keyword { color: #ff7b72; }
+.notepad-highlight-layer .hljs-built_in { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-type { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-literal { color: #79c0ff; }
+.notepad-highlight-layer .hljs-number { color: #79c0ff; }
+.notepad-highlight-layer .hljs-string { color: #a5d6ff; }
+.notepad-highlight-layer .hljs-template-variable { color: #a5d6ff; }
+.notepad-highlight-layer .hljs-regexp { color: #a5d6ff; }
+.notepad-highlight-layer .hljs-symbol { color: #a5d6ff; }
+.notepad-highlight-layer .hljs-variable { color: #ffa657; }
+.notepad-highlight-layer .hljs-title { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-title.class_ { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-title.function_ { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-params { color: #c9d1d9; }
+.notepad-highlight-layer .hljs-comment { color: #8b949e; font-style: italic; }
+.notepad-highlight-layer .hljs-doctag { color: #ff7b72; }
+.notepad-highlight-layer .hljs-meta { color: #8b949e; }
+.notepad-highlight-layer .hljs-section { color: #79c0ff; font-weight: bold; }
+.notepad-highlight-layer .hljs-selector-tag { color: #7ee787; }
+.notepad-highlight-layer .hljs-selector-id { color: #79c0ff; }
+.notepad-highlight-layer .hljs-selector-class { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-selector-attr { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-selector-pseudo { color: #d2a8ff; }
+.notepad-highlight-layer .hljs-attr { color: #79c0ff; }
+.notepad-highlight-layer .hljs-attribute { color: #a5d6ff; }
+.notepad-highlight-layer .hljs-name { color: #7ee787; }
+.notepad-highlight-layer .hljs-tag { color: #7ee787; }
+.notepad-highlight-layer .hljs-addition { color: #aff5b4; background: rgba(46, 160, 67, 0.15); }
+.notepad-highlight-layer .hljs-deletion { color: #ffdcd7; background: rgba(248, 81, 73, 0.15); }
+.notepad-highlight-layer .hljs-link { color: #a5d6ff; text-decoration: underline; }
+.notepad-highlight-layer .hljs-emphasis { font-style: italic; }
+.notepad-highlight-layer .hljs-strong { font-weight: bold; }
+
+[data-theme="light"] .notepad-root {
+  background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-toolbar {
+  background: #f6f8fa;
+  border-bottom-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .notepad-tool-btn {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #656d76;
+}
+
+[data-theme="light"] .notepad-tool-btn:hover {
+  border-color: rgba(16, 32, 51, 0.2);
+  color: #1f2328;
+  background: #f3f4f6;
+}
+
+[data-theme="light"] .notepad-tabs {
+  background: #f6f8fa;
+  border-bottom-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .notepad-tab {
+  border-right-color: rgba(16, 32, 51, 0.08);
+  color: #656d76;
+}
+
+[data-theme="light"] .notepad-tab:hover {
+  background: rgba(16, 32, 51, 0.04);
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-tab.active {
+  background: #fff;
+  color: #1f2328;
+  border-bottom-color: #0969da;
+}
+
+[data-theme="light"] .notepad-tab-close:hover {
+  background: rgba(200, 48, 78, 0.08);
+  color: #c8304e;
+}
+
+[data-theme="light"] .notepad-find-bar {
+  background: #f6f8fa;
+  border-bottom-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .notepad-find-input {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-line-numbers {
+  background: #f6f8fa;
+  border-right-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .notepad-line-numbers span {
+  color: #8b949e;
+}
+
+[data-theme="light"] .notepad-line-numbers span.active {
+  color: #0969da;
+}
+
+[data-theme="light"] .notepad-textarea {
+  caret-color: #1f2328;
+}
+
+[data-theme="light"] .notepad-textarea::selection {
+  background: rgba(9, 105, 218, 0.2);
+}
+
+[data-theme="light"] .notepad-statusbar {
+  background: #f6f8fa;
+  border-top-color: rgba(16, 32, 51, 0.1);
+  color: #656d76;
+}
+
+[data-theme="light"] .notepad-error {
+  background: rgba(200, 48, 78, 0.06);
+  border-bottom-color: rgba(200, 48, 78, 0.2);
+  color: #c8304e;
+}
+
+/* light theme highlight.js overrides */
+[data-theme="light"] .notepad-highlight-layer .hljs-keyword { color: #cf222e; }
+[data-theme="light"] .notepad-highlight-layer .hljs-built_in { color: #8250df; }
+[data-theme="light"] .notepad-highlight-layer .hljs-type { color: #8250df; }
+[data-theme="light"] .notepad-highlight-layer .hljs-literal { color: #0550ae; }
+[data-theme="light"] .notepad-highlight-layer .hljs-number { color: #0550ae; }
+[data-theme="light"] .notepad-highlight-layer .hljs-string { color: #0a3069; }
+[data-theme="light"] .notepad-highlight-layer .hljs-template-variable { color: #0a3069; }
+[data-theme="light"] .notepad-highlight-layer .hljs-regexp { color: #0a3069; }
+[data-theme="light"] .notepad-highlight-layer .hljs-variable { color: #953800; }
+[data-theme="light"] .notepad-highlight-layer .hljs-title { color: #8250df; }
+[data-theme="light"] .notepad-highlight-layer .hljs-title.class_ { color: #8250df; }
+[data-theme="light"] .notepad-highlight-layer .hljs-title.function_ { color: #8250df; }
+[data-theme="light"] .notepad-highlight-layer .hljs-comment { color: #6e7781; font-style: italic; }
+[data-theme="light"] .notepad-highlight-layer .hljs-doctag { color: #cf222e; }
+[data-theme="light"] .notepad-highlight-layer .hljs-meta { color: #6e7781; }
+[data-theme="light"] .notepad-highlight-layer .hljs-section { color: #0550ae; font-weight: bold; }
+[data-theme="light"] .notepad-highlight-layer .hljs-selector-tag { color: #116329; }
+[data-theme="light"] .notepad-highlight-layer .hljs-attr { color: #0550ae; }
+[data-theme="light"] .notepad-highlight-layer .hljs-attribute { color: #0a3069; }
+[data-theme="light"] .notepad-highlight-layer .hljs-name { color: #116329; }
+[data-theme="light"] .notepad-highlight-layer .hljs-tag { color: #116329; }
+[data-theme="light"] .notepad-highlight-layer .hljs-addition { color: #116329; background: rgba(46, 160, 67, 0.1); }
+[data-theme="light"] .notepad-highlight-layer .hljs-deletion { color: #82071e; background: rgba(248, 81, 73, 0.1); }
+[data-theme="light"] .notepad-highlight-layer .hljs-link { color: #0a3069; }
+
+/* notepad modal dialogs */
+.notepad-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.notepad-modal {
+  width: min(420px, calc(100% - 32px));
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.notepad-modal-title {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notepad-modal-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-size: 13px;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  box-sizing: border-box;
+}
+
+.notepad-modal-input:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.notepad-modal-message {
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted-strong);
+  line-height: 1.5;
+}
+
+.notepad-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.notepad-modal-btn {
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notepad-modal-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.notepad-modal-btn.primary {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.notepad-modal-btn.primary:hover {
+  background: var(--accent-border);
+  color: var(--text);
+}
+
+[data-theme="light"] .notepad-modal {
+  border-color: rgba(16, 32, 51, 0.16);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.18);
+}
+
+[data-theme="light"] .notepad-modal-input {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-modal-btn {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #f6f8fa;
+  color: #656d76;
+}
+
+[data-theme="light"] .notepad-modal-btn.primary {
+  border-color: rgba(9, 105, 218, 0.4);
+  background: rgba(9, 105, 218, 0.08);
+  color: #0969da;
 }
