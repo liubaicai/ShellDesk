@@ -11,6 +11,9 @@ const desktopApps = [
   { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
 ] as const;
 
+/** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
+const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor'];
+
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
 interface RemoteDesktopProps {
@@ -456,17 +459,25 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
         })}
 
         <nav className="mac-dock" aria-label="远程桌面 Dock">
-          {desktopApps.map((app) => (
-            <button
-              key={app.key}
-              type="button"
-              className={focusedWindow?.appKey === app.key ? 'active' : ''}
-              onClick={() => openDesktopWindow(app.key)}
-              title={app.label}
-            >
-              {app.icon}
-            </button>
-          ))}
+          {(() => {
+            const openAppKeys = new Set(desktopWindows.map((w) => w.appKey));
+            const dockApps = [
+              ...desktopApps.filter((app) => dockPinnedApps.includes(app.key as DesktopAppKey)),
+              ...desktopApps.filter((app) => !dockPinnedApps.includes(app.key as DesktopAppKey) && openAppKeys.has(app.key)),
+            ];
+
+            return dockApps.map((app) => (
+              <button
+                key={app.key}
+                type="button"
+                className={focusedWindow?.appKey === app.key ? 'active' : ''}
+                onClick={() => openDesktopWindow(app.key)}
+                title={app.label}
+              >
+                {app.icon}
+              </button>
+            ));
+          })()}
         </nav>
       </section>
     </main>
