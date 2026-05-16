@@ -76,3 +76,4 @@ src/
 - **样式**：纯 CSS，无 CSS-in-JS / Tailwind，类名用 kebab-case
 - **依赖**：最小化，核心依赖仅 react、ssh2、xterm、highlight.js、mysql2
 - **错误处理**：`getErrorMessage(error)` 工具函数统一提取错误信息
+- **记事本文件打开**：采用黑名单机制（`BINARY_EXTENSIONS`），排除图片/音视频/压缩包/可执行文件/数据库/二进制文档等，其余文件均可用记事本打开

@@ -74,47 +74,78 @@ interface RemoteNotepadProps {
   initialFilePath?: string;
 }
 
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'md', 'markdown', 'rst',
-  'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
-  'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
-  'php', 'swift', 'kt', 'scala', 'lua', 'pl', 'r',
-  'html', 'htm', 'xml', 'svg', 'vue', 'svelte',
-  'css', 'scss', 'sass', 'less', 'styl',
-  'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env',
-  'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
-  'sql', 'graphql', 'gql',
-  'dockerfile', 'makefile', 'cmake',
-  'gitignore', 'gitattributes', 'editorconfig',
-  'log', 'csv', 'tsv',
-  'nginx', 'apache', 'htaccess',
-  'pem', 'key', 'crt', 'cer',
-  'diff', 'patch',
-  'xml', 'properties',
+/** 二进制文件扩展名黑名单，其他文件均允许用记事本打开 */
+const BINARY_EXTENSIONS = new Set([
+  // 图片
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'avif', 'tiff', 'tif',
+  'psd', 'ai', 'eps', 'raw', 'cr2', 'nef', 'arw', 'dng', 'heic', 'heif',
+  // 音频
+  'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'aiff', 'opus', 'mid', 'midi',
+  // 视频
+  'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp',
+  // 压缩/归档
+  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst', 'lz4', 'tgz', 'tbz2',
+  'cab', 'iso', 'dmg', 'img', 'wim', 'swm', 'esd',
+  // 可执行/编译
+  'exe', 'dll', 'so', 'dylib', 'bin', 'msi', 'app', 'deb', 'rpm', 'snap', 'flatpak',
+  'apk', 'ipa', 'war', 'jar', 'ear', 'class', 'pyc', 'pyo', 'whl',
+  'o', 'obj', 'a', 'lib', 'pdb',
+  // 数据库/二进制数据
+  'db', 'sqlite', 'sqlite3', 'mdb', 'accdb',
+  // 文档（二进制格式）
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
+  // 字体（二进制格式）
+  'woff', 'woff2', 'eot', 'ttc',
+  // 其他二进制
+  'dat', 'bin', 'sav', 'pickle', 'pkl', 'npy', 'npz', 'parquet', 'feather', 'arrow',
+  'pb', 'onnx', 'tflite', 'h5', 'hdf5', 'caffemodel',
+  'torrent', 'wasm',
+  'keystore', 'jks', 'truststore',
 ]);
 
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  ts: 'typescript', tsx: 'typescript',mts: 'typescript',
-  py: 'python', pyw: 'python',
-  html: 'html', htm: 'html', svg: 'xml', xml: 'xml', vue: 'xml', svelte: 'html',
-  css: 'css', scss: 'css', sass: 'css', less: 'css',
-  json: 'json', jsonc: 'json',
-  sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
+  ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
+  py: 'python', pyw: 'python', pyi: 'python',
+  html: 'html', htm: 'html', xhtml: 'html', svg: 'xml', xml: 'xml', vue: 'xml', svelte: 'html',
+  css: 'css', scss: 'css', sass: 'css', less: 'css', styl: 'css', stylus: 'css', pcss: 'css', postcss: 'css',
+  json: 'json', jsonc: 'json', json5: 'json',
+  sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', ksh: 'bash', csh: 'bash', tcsh: 'bash',
+  ps1: 'powershell', psm1: 'powershell', psd1: 'powershell',
   yaml: 'yaml', yml: 'yaml',
-  md: 'markdown', markdown: 'markdown',
-  sql: 'sql', graphql: 'sql', gql: 'sql',
+  md: 'markdown', markdown: 'markdown', mdx: 'markdown',
+  sql: 'sql', graphql: 'sql', gql: 'sql', prisma: 'sql',
   go: 'go',
   rs: 'rust',
   java: 'java',
   c: 'c', h: 'c',
-  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', hxx: 'cpp',
   php: 'php',
   rb: 'ruby',
-  ini: 'ini', cfg: 'ini', conf: 'ini', env: 'ini',
+  swift: 'swift',
+  kt: 'kotlin', kts: 'kotlin',
+  scala: 'scala',
+  lua: 'lua',
+  pl: 'perl', pm: 'perl',
+  r: 'r',
+  dart: 'dart',
+  zig: 'zig',
+  nim: 'nim',
+  ex: 'elixir', exs: 'elixir',
+  erl: 'erlang', hrl: 'erlang',
+  hs: 'haskell', lhs: 'haskell',
+  ml: 'ocaml', mli: 'ocaml',
+  clj: 'clojure', cljs: 'clojure',
+  lisp: 'lisp', el: 'lisp',
+  jl: 'julia',
+  ini: 'ini', cfg: 'ini', conf: 'ini', env: 'ini', cnf: 'ini',
+  toml: 'ini',
   nginx: 'nginx',
   dockerfile: 'dockerfile',
   diff: 'diff', patch: 'diff',
+  tex: 'latex', cls: 'latex', sty: 'latex', bib: 'bibtex', bibtex: 'bibtex',
+  bat: 'bat', cmd: 'bat',
+  properties: 'properties',
 };
 
 function getFileExtension(name: string): string {
@@ -136,7 +167,7 @@ function getLanguage(fileName: string): string {
 function isTextFile(fileName: string): boolean {
   const ext = getFileExtension(fileName);
   if (!ext && !fileName.includes('.')) return true;
-  return TEXT_EXTENSIONS.has(ext);
+  return !BINARY_EXTENSIONS.has(ext);
 }
 
 function getFileNameFromPath(filePath: string): string {
