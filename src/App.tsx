@@ -1673,12 +1673,13 @@ function App() {
                           <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
                           <span>{host.group || '未分组'} · {host.tags.length ? host.tags.join(' / ') : '无标签'}</span>
                         </span>
+                      </button>
+                      <span className="host-card-actions">
                         {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
                           <span className="credential-icon" title={host.authMethod === 'key' ? '密钥登录' : '密码已保存'}>🔑</span>
                         ) : null}
-                      </button>
-                      <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
-                        <summary aria-label="主机操作">⋯</summary>
+                        <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
+                          <summary aria-label="主机操作">⋯</summary>
                         <div className="host-card-menu-panel">
                           <button
                             type="button"
@@ -1701,6 +1702,7 @@ function App() {
                           </button>
                         </div>
                       </details>
+                      </span>
                     </article>
                   ))}
                 </div>

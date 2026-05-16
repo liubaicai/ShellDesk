@@ -611,19 +611,23 @@ textarea {
   white-space: nowrap;
 }
 
-.credential-icon {
-  display: grid;
+.host-card-actions {
   position: absolute;
   top: 8px;
-  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 2;
+}
+
+.credential-icon {
+  display: grid;
   width: 18px;
   height: 18px;
   place-items: center;
-  border: 1px solid var(--surface-success-border);
-  border-radius: 6px;
-  background: var(--surface-success-soft);
   color: var(--text-success);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1;
   pointer-events: none;
 }
@@ -640,15 +644,15 @@ textarea {
 
 .host-card-menu summary {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-control);
-  color: var(--muted-strong);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
   line-height: 1;
   list-style: none;
@@ -660,7 +664,6 @@ textarea {
 
 .host-card-menu[open] summary,
 .host-card-menu summary:hover {
-  border-color: var(--border-strong);
   color: var(--text);
 }
 
@@ -3451,8 +3454,6 @@ button.explorer-row {
 }
 
 [data-theme="light"] .credential-icon {
-  border-color: rgba(34, 160, 90, 0.22);
-  background: rgba(34, 160, 90, 0.08);
   color: #1a8a55;
 }
 
@@ -3461,8 +3462,6 @@ button.explorer-row {
 }
 
 [data-theme="light"] .host-card-menu summary {
-  border-color: rgba(16, 32, 51, 0.12);
-  background: var(--surface-control);
   color: var(--muted-strong);
 }
 
