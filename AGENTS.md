@@ -36,6 +36,7 @@ src/
       RemoteNotepad.tsx   # 远程记事本（highlight.js 代码高亮）
       RemoteBrowser.tsx   # webview 远程浏览器
       RemoteMonitor.tsx   # 系统状态监控
+      RemoteMySQL.tsx     # MySQL 数据库管理（SSH 隧道）
   pages/
     KeysPage.tsx    # SSH 密钥管理
     LogsPage.tsx    # 日志（占位）
@@ -73,5 +74,5 @@ src/
 - **状态管理**：无 Redux/Zustand，全用 React useState/useCallback/useMemo
 - **组件模式**：函数组件 + hooks，大组件不拆文件（如 App.tsx、RemoteFileExplorer.tsx）
 - **样式**：纯 CSS，无 CSS-in-JS / Tailwind，类名用 kebab-case
-- **依赖**：最小化，核心依赖仅 react、ssh2、xterm、highlight.js
+- **依赖**：最小化，核心依赖仅 react、ssh2、xterm、highlight.js、mysql2
 - **错误处理**：`getErrorMessage(error)` 工具函数统一提取错误信息

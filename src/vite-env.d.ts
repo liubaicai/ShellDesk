@@ -213,6 +213,50 @@ interface GuiSshConnectionControls {
     accessedAt: string;
   }>;
   getStatus: (connectionId: string) => Promise<GuiSshRemoteStatusReport>;
+  mysqlConnect: (connectionId: string, config: GuiSshMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
+  mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
+  mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
+  mysqlTables: (connectionId: string, mysqlId: string, database: string) => Promise<string[]>;
+  mysqlColumns: (connectionId: string, mysqlId: string, database: string, table: string) => Promise<GuiSshMysqlColumn[]>;
+  mysqlQuery: (connectionId: string, mysqlId: string, sql: string, database?: string) => Promise<GuiSshMysqlQueryResult>;
+  mysqlUpdateCell: (
+    connectionId: string,
+    mysqlId: string,
+    database: string,
+    table: string,
+    pkColumn: string,
+    pkValue: unknown,
+    column: string,
+    newValue: unknown,
+    pkColumns?: string[],
+    pkValues?: unknown[],
+  ) => Promise<{ affectedRows: number }>;
+}
+
+interface GuiSshMysqlConnectConfig {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database?: string;
+  mysqlId?: string;
+}
+
+interface GuiSshMysqlColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  key: string;
+  default: string | null;
+  extra: string;
+  comment: string;
+}
+
+interface GuiSshMysqlQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  affectedRows?: number;
+  insertId?: string;
 }
 
 interface GuiSshEventControls {

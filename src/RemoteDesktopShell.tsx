@@ -1,6 +1,6 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 
-import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteNotepad, RemoteTerminal } from './components/remote-desktop';
+import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteTerminal } from './components/remote-desktop';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
@@ -9,10 +9,11 @@ const desktopApps = [
   { key: 'notepad', label: '记事本', icon: '📝', description: '远程文件编辑器' },
   { key: 'browser', label: '浏览器', icon: '🌐', description: '远程源请求' },
   { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
+  { key: 'mysql', label: 'MySQL', icon: '🐬', description: 'MySQL 数据库管理' },
 ] as const;
 
 /** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
-const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor'];
+const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor', 'mysql'];
 
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
@@ -66,6 +67,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   notepad: { x: 140, y: 50, width: 860, height: 580 },
   browser: { x: 190, y: 68, width: 940, height: 560 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
+  mysql: { x: 100, y: 40, width: 1020, height: 620 },
 };
 
 function clampWindowFrame(frame: DesktopWindowFrame, surfaceWidth: number, surfaceHeight: number): DesktopWindowFrame {
@@ -368,6 +370,10 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
 
     if (desktopWindow.appKey === 'notepad') {
       return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} />;
+    }
+
+    if (desktopWindow.appKey === 'mysql') {
+      return <RemoteMySQL connectionId={connection.id} />;
     }
 
     return <RemoteMonitor connectionId={connection.id} />;

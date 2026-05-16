@@ -78,6 +78,14 @@ contextBridge.exposeInMainWorld('guiSSH', {
     writeFile: (connectionId, remotePath, content) => ipcRenderer.invoke('connection:write-file', connectionId, remotePath, content),
     statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),
     getStatus: (connectionId) => ipcRenderer.invoke('connection:get-status', connectionId),
+    mysqlConnect: (connectionId, config) => ipcRenderer.invoke('connection:mysql-connect', connectionId, config),
+    mysqlDisconnect: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-disconnect', connectionId, mysqlId),
+    mysqlDatabases: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-databases', connectionId, mysqlId),
+    mysqlTables: (connectionId, mysqlId, database) => ipcRenderer.invoke('connection:mysql-tables', connectionId, mysqlId, database),
+    mysqlColumns: (connectionId, mysqlId, database, table) => ipcRenderer.invoke('connection:mysql-columns', connectionId, mysqlId, database, table),
+    mysqlQuery: (connectionId, mysqlId, sql, database) => ipcRenderer.invoke('connection:mysql-query', connectionId, mysqlId, sql, database),
+    mysqlUpdateCell: (connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues) =>
+      ipcRenderer.invoke('connection:mysql-update-cell', connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues),
   },
   events: {
     onTerminalData: (callback) => onIpc('terminal:data', callback),

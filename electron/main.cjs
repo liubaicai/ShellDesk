@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
 const { Client } = require('ssh2');
+const mysql = require('mysql2/promise');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
@@ -1282,6 +1283,13 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
     }
   }
 
+  for (const [key, entry] of activeMysqlConnections) {
+    if (entry.connectionId === connectionId) {
+      activeMysqlConnections.delete(key);
+      entry.connection.end().catch(() => {});
+    }
+  }
+
   await closeServer(activeConnection.socksServer);
 
   if (!fromClientClose) {
@@ -2139,6 +2147,198 @@ registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   const activeConnection = getActiveConnection(connectionId);
   return getRemoteStatus(activeConnection.client);
+});
+
+// ─── MySQL over SSH tunnel ──────────────────────────────────────────────────
+
+const activeMysqlConnections = new Map();
+
+function getMysqlKey(connectionId, mysqlId) {
+  return `${connectionId}::${mysqlId}`;
+}
+
+function createMysqlTunnelStream(client, host, port) {
+  return new Promise((resolve, reject) => {
+    const sourcePort = Math.floor(Math.random() * 50000) + 10000;
+    client.forwardOut('127.0.0.1', sourcePort, host, port, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stream);
+    });
+  });
+}
+
+registerIpcHandler('connection:mysql-connect', async (_event, connectionId, rawConfig) => {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (!isPlainObject(rawConfig)) {
+    throw new Error('MySQL 连接配置无效。');
+  }
+
+  const mysqlHost = readBoundedString(rawConfig.host || '127.0.0.1', 'MySQL 主机', 256);
+  const mysqlPort = readIntegerInRange(rawConfig.port, 'MySQL 端口', 1, 65535, 3306);
+  const mysqlUser = readBoundedString(rawConfig.user || 'root', 'MySQL 用户名', 128);
+  const mysqlPassword = typeof rawConfig.password === 'string' ? rawConfig.password : '';
+  const mysqlDatabase = typeof rawConfig.database === 'string' && rawConfig.database
+    ? readBoundedString(rawConfig.database, 'MySQL 数据库', 256)
+    : undefined;
+  const mysqlId = readBoundedString(rawConfig.mysqlId || crypto.randomUUID(), 'MySQL 连接 ID', 128);
+  const key = getMysqlKey(connectionId, mysqlId);
+
+  const existing = activeMysqlConnections.get(key);
+
+  if (existing) {
+    try {
+      await existing.connection.query('SELECT 1');
+      return { mysqlId, alreadyConnected: true };
+    } catch {
+      activeMysqlConnections.delete(key);
+    }
+  }
+
+  const stream = await createMysqlTunnelStream(activeConnection.client, mysqlHost, mysqlPort);
+  const connection = await mysql.createConnection({
+    host: mysqlHost,
+    user: mysqlUser,
+    password: mysqlPassword,
+    database: mysqlDatabase,
+    stream,
+    connectTimeout: 15000,
+    charset: 'utf8mb4',
+  });
+
+  activeMysqlConnections.set(key, { connection, connectionId, mysqlId });
+
+  return { mysqlId };
+});
+
+registerIpcHandler('connection:mysql-disconnect', async (_event, connectionId, rawMysqlId) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (entry) {
+    activeMysqlConnections.delete(key);
+    await entry.connection.end().catch(() => {});
+  }
+
+  return true;
+});
+
+registerIpcHandler('connection:mysql-databases', async (_event, connectionId, rawMysqlId) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (!entry) {
+    throw new Error('MySQL 连接已断开。');
+  }
+
+  const [rows] = await entry.connection.query('SHOW DATABASES');
+  return rows.map((row) => row.Database || row.database || Object.values(row)[0]);
+});
+
+registerIpcHandler('connection:mysql-tables', async (_event, connectionId, rawMysqlId, rawDatabase) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const database = readBoundedString(rawDatabase, '数据库名', 256);
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (!entry) {
+    throw new Error('MySQL 连接已断开。');
+  }
+
+  const [rows] = await entry.connection.query('SHOW TABLES FROM ??', [database]);
+  return rows.map((row) => Object.values(row)[0]);
+});
+
+registerIpcHandler('connection:mysql-columns', async (_event, connectionId, rawMysqlId, rawDatabase, rawTable) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const database = readBoundedString(rawDatabase, '数据库名', 256);
+  const table = readBoundedString(rawTable, '表名', 256);
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (!entry) {
+    throw new Error('MySQL 连接已断开。');
+  }
+
+  const [rows] = await entry.connection.query(
+    'SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+    [database, table],
+  );
+
+  return rows.map((row) => ({
+    name: row.COLUMN_NAME,
+    type: row.COLUMN_TYPE,
+    nullable: row.IS_NULLABLE === 'YES',
+    key: row.COLUMN_KEY,
+    default: row.COLUMN_DEFAULT,
+    extra: row.EXTRA,
+    comment: row.COLUMN_COMMENT,
+  }));
+});
+
+registerIpcHandler('connection:mysql-query', async (_event, connectionId, rawMysqlId, rawSql, rawDatabase) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (!entry) {
+    throw new Error('MySQL 连接已断开。');
+  }
+
+  if (rawDatabase) {
+    const database = readBoundedString(rawDatabase, '数据库名', 256);
+    await entry.connection.query('USE ??', [database]);
+  }
+
+  const [rows, fields] = await entry.connection.query(sql);
+  const columnNames = fields ? fields.map((f) => f.name) : [];
+  const data = Array.isArray(rows) ? rows : [];
+  const affectedRows = typeof rows === 'object' && rows !== null && 'affectedRows' in rows
+    ? rows.affectedRows
+    : undefined;
+  const insertId = typeof rows === 'object' && rows !== null && 'insertId' in rows && rows.insertId
+    ? String(rows.insertId)
+    : undefined;
+
+  return { columns: columnNames, rows: data, affectedRows, insertId };
+});
+
+registerIpcHandler('connection:mysql-update-cell', async (_event, connectionId, rawMysqlId, rawDatabase, rawTable, rawPkColumn, rawPkValue, rawColumn, rawNewValue, rawPkColumns, rawPkValues) => {
+  const mysqlId = readBoundedString(rawMysqlId, 'MySQL 连接 ID', 128);
+  const database = readBoundedString(rawDatabase, '数据库名', 256);
+  const table = readBoundedString(rawTable, '表名', 256);
+  const column = readBoundedString(rawColumn, '列名', 256);
+  const key = getMysqlKey(connectionId, mysqlId);
+  const entry = activeMysqlConnections.get(key);
+
+  if (!entry) {
+    throw new Error('MySQL 连接已断开。');
+  }
+
+  await entry.connection.query('USE ??', [database]);
+
+  let whereClause;
+  let whereParams;
+
+  if (Array.isArray(rawPkColumns) && Array.isArray(rawPkValues) && rawPkColumns.length > 0) {
+    whereClause = rawPkColumns.map((col) => '?? = ?').join(' AND ');
+    whereParams = rawPkColumns.flatMap((col, i) => [col, rawPkValues[i]]);
+  } else {
+    whereClause = '?? = ?';
+    whereParams = [rawPkColumn, rawPkValue];
+  }
+
+  const sql = `UPDATE ?? SET ?? = ? WHERE ${whereClause}`;
+  const params = [`${database}.${table}`, column, rawNewValue === null ? null : rawNewValue, ...whereParams];
+  const [result] = await entry.connection.query(sql, params);
+
+  return { affectedRows: result.affectedRows };
 });
 
 app.on('web-contents-created', (_event, contents) => {
