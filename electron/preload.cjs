@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('guiSSH', {
     createDirectory: (connectionId, remotePath) => ipcRenderer.invoke('connection:create-directory', connectionId, remotePath),
     deletePath: (connectionId, remotePath, entryType) =>
       ipcRenderer.invoke('connection:delete-path', connectionId, remotePath, entryType),
+    renamePath: (connectionId, oldPath, newPath) =>
+      ipcRenderer.invoke('connection:rename-path', connectionId, oldPath, newPath),
+    createFile: (connectionId, remotePath) => ipcRenderer.invoke('connection:create-file', connectionId, remotePath),
+    statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),
     getStatus: (connectionId) => ipcRenderer.invoke('connection:get-status', connectionId),
   },
   events: {

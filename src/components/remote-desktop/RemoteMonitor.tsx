@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
 
@@ -22,7 +22,9 @@ interface MonitorMetric {
   label: string;
   value: string;
   detail: string;
+  icon: string;
   progress?: number;
+  progressColor?: string;
 }
 
 function getStatusLines(value: string) {
@@ -33,7 +35,7 @@ function getStatusLines(value: string) {
 }
 
 function getFirstStatusLine(value: string) {
-  return getStatusLines(value)[0] ?? '—';
+  return getStatusLines(value)[0] ?? '\u2014';
 }
 
 function clampProgress(value: number) {
@@ -44,7 +46,13 @@ function parseNumericToken(value: string) {
   return Number.parseFloat(value.replace(',', '.'));
 }
 
-function parseLoadMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> | null {
+function getProgressColor(progress: number) {
+  if (progress >= 90) return 'critical';
+  if (progress >= 70) return 'warning';
+  return 'normal';
+}
+
+function parseLoadMetric(value: string): Omit<MonitorMetric, 'key' | 'label' | 'icon'> | null {
   const match = value.match(/load averages?:\s*([0-9]+(?:[.,][0-9]+)?)[,\s]+([0-9]+(?:[.,][0-9]+)?)[,\s]+([0-9]+(?:[.,][0-9]+)?)/i);
 
   if (!match) {
@@ -53,15 +61,17 @@ function parseLoadMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> | 
 
   const [, oneMinute, fiveMinutes, fifteenMinutes] = match;
   const oneMinuteValue = parseNumericToken(oneMinute);
+  const progress = Number.isFinite(oneMinuteValue) ? clampProgress((oneMinuteValue / 2) * 100) : undefined;
 
   return {
     value: oneMinute,
-    detail: `5 分钟 ${fiveMinutes} · 15 分钟 ${fifteenMinutes}`,
-    progress: Number.isFinite(oneMinuteValue) ? clampProgress((oneMinuteValue / 2) * 100) : undefined,
+    detail: `5 分钟 ${fiveMinutes} \u00B7 15 分钟 ${fifteenMinutes}`,
+    progress,
+    progressColor: progress !== undefined ? getProgressColor(progress) : undefined,
   };
 }
 
-function parseMemoryMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> | null {
+function parseMemoryMetric(value: string): Omit<MonitorMetric, 'key' | 'label' | 'icon'> | null {
   const memoryLine = getStatusLines(value).find((line) => /^mem:/i.test(line));
 
   if (!memoryLine) {
@@ -82,10 +92,11 @@ function parseMemoryMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> 
     value: `${progress}%`,
     detail: `${Math.round(used)} / ${Math.round(total)} MB`,
     progress,
+    progressColor: getProgressColor(progress),
   };
 }
 
-function parseDiskMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> | null {
+function parseDiskMetric(value: string): Omit<MonitorMetric, 'key' | 'label' | 'icon'> | null {
   const lines = getStatusLines(value);
   const usageLine = lines.find((line, index) => index > 0 && /\d+%/.test(line));
 
@@ -102,17 +113,18 @@ function parseDiskMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> | 
 
   return {
     value: usage || getFirstStatusLine(value),
-    detail: [used && total ? `${used} / ${total}` : '', mountPath].filter(Boolean).join(' · '),
+    detail: [used && total ? `${used} / ${total}` : '', mountPath].filter(Boolean).join(' \u00B7 '),
     progress: Number.isFinite(progress) ? clampProgress(progress) : undefined,
+    progressColor: Number.isFinite(progress) ? getProgressColor(progress) : undefined,
   };
 }
 
-function parseNetworkMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> {
+function parseNetworkMetric(value: string): Omit<MonitorMetric, 'key' | 'label' | 'icon'> {
   const interfaces = getStatusLines(value).filter((line) => !/^lo\b/i.test(line));
   const preview = interfaces
     .slice(0, 2)
     .map((line) => line.replace(/\s+/g, ' '))
-    .join(' · ');
+    .join(' \u00B7 ');
 
   return {
     value: interfaces.length ? `${interfaces.length} 个接口` : '未识别',
@@ -120,18 +132,31 @@ function parseNetworkMetric(value: string): Omit<MonitorMetric, 'key' | 'label'>
   };
 }
 
-function createFallbackMetric(value: string): Omit<MonitorMetric, 'key' | 'label'> {
+function createFallbackMetric(value: string): Omit<MonitorMetric, 'key' | 'label' | 'icon'> {
   return {
     value: getFirstStatusLine(value),
-    detail: value.includes('\n') ? '查看下方详细信息' : '—',
+    detail: value.includes('\n') ? '查看下方详细信息' : '\u2014',
   };
 }
+
+const STATUS_ICONS: Record<string, string> = {
+  hostname: '\u{1F3E0}',
+  user: '\u{1F464}',
+  kernel: '\u2699\uFE0F',
+  uptime: '\u23F1\uFE0F',
+  disk: '\u{1F4BE}',
+  memory: '\u{1F9E0}',
+  network: '\u{1F310}',
+};
 
 function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
   const [statusReport, setStatusReport] = useState<RemoteStatusReport | null>(null);
   const [statusError, setStatusError] = useState('');
   const [isStatusLoading, setIsStatusLoading] = useState(false);
   const isRefreshingStatusRef = useRef(false);
+  const [refreshCountdown, setRefreshCountdown] = useState(8);
+  const countdownRef = useRef<number | null>(null);
+
   const statusItems = statusReport?.items ?? [];
   const hostnameValue = statusItems.find((item) => item.key === 'hostname')?.value ?? '';
   const userValue = statusItems.find((item) => item.key === 'user')?.value ?? '';
@@ -144,12 +169,13 @@ function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
   const memoryMetric = parseMemoryMetric(memoryValue) ?? createFallbackMetric(memoryValue);
   const diskMetric = parseDiskMetric(diskValue) ?? createFallbackMetric(diskValue);
   const networkMetric = parseNetworkMetric(networkValue);
-  const overviewMetrics: MonitorMetric[] = [
-    { key: 'load', label: '系统负载', ...loadMetric },
-    { key: 'memory', label: '内存占用', ...memoryMetric },
-    { key: 'disk', label: '根分区', ...diskMetric },
-    { key: 'network', label: '网络接口', ...networkMetric },
-  ];
+
+  const overviewMetrics: MonitorMetric[] = useMemo(() => [
+    { key: 'load', label: '系统负载', icon: '\u26A1', ...loadMetric },
+    { key: 'memory', label: '内存占用', icon: '\u{1F9E0}', ...memoryMetric },
+    { key: 'disk', label: '根分区', icon: '\u{1F4BE}', ...diskMetric },
+    { key: 'network', label: '网络接口', icon: '\u{1F310}', ...networkMetric },
+  ], [loadMetric, memoryMetric, diskMetric, networkMetric]);
 
   const refreshStatus = async () => {
     if (!window.guiSSH?.connections) {
@@ -179,62 +205,88 @@ function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
 
   useEffect(() => {
     void refreshStatus();
+    setRefreshCountdown(8);
+
     const refreshTimer = window.setInterval(() => {
       void refreshStatus();
+      setRefreshCountdown(8);
     }, 8000);
 
-    return () => window.clearInterval(refreshTimer);
+    countdownRef.current = window.setInterval(() => {
+      setRefreshCountdown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(refreshTimer);
+      if (countdownRef.current) window.clearInterval(countdownRef.current);
+    };
   }, [connectionId]);
+
+  const uptimeLine = getFirstStatusLine(uptimeValue);
 
   return (
     <div className="monitor-pane">
       <div className="monitor-shell">
-        <section className="monitor-hero">
-          <div className="monitor-hero-copy">
-            <span className="monitor-kicker">Remote System Monitor</span>
-            <strong>{getFirstStatusLine(hostnameValue) || '远程主机'}</strong>
-            <p>{getFirstStatusLine(kernelValue)}</p>
-            <div className="monitor-hero-meta">
-              <span>{userValue ? `用户 · ${getFirstStatusLine(userValue)}` : '用户信息待获取'}</span>
-              <span>{uptimeValue ? getFirstStatusLine(uptimeValue) : '等待运行状态'}</span>
+        <header className="monitor-header">
+          <div className="monitor-header-left">
+            <div className="monitor-title-area">
+              <span className="monitor-pulse-dot" />
+              <span className="monitor-kicker">系统监视器</span>
+            </div>
+            <strong className="monitor-hostname">{getFirstStatusLine(hostnameValue) || '远程主机'}</strong>
+            <div className="monitor-host-meta">
+              <span className="monitor-meta-tag">{getFirstStatusLine(kernelValue)}</span>
+              {userValue ? <span className="monitor-meta-tag">{getFirstStatusLine(userValue)}</span> : null}
+              {uptimeLine && uptimeLine !== '\u2014' ? <span className="monitor-meta-tag">{uptimeLine}</span> : null}
             </div>
           </div>
-
-          <div className="monitor-toolbar">
-            <span>{statusReport ? `刷新于 ${formatDateTime(statusReport.refreshedAt)}` : '等待首次读取'}</span>
-            <button type="button" className="command-button" onClick={refreshStatus} disabled={isStatusLoading}>
-              {isStatusLoading ? '刷新中...' : '刷新'}
+          <div className="monitor-header-right">
+            <div className="monitor-refresh-info">
+              <div className="monitor-countdown-bar">
+                <span style={{ width: `${(refreshCountdown / 8) * 100}%` }} />
+              </div>
+              <small>{statusReport ? `刷新于 ${formatDateTime(statusReport.refreshedAt)}` : '等待首次读取'}</small>
+            </div>
+            <button type="button" className="monitor-refresh-btn" onClick={refreshStatus} disabled={isStatusLoading}>
+              {isStatusLoading ? '刷新中...' : '手动刷新'}
             </button>
           </div>
-        </section>
+        </header>
 
         {statusError ? <div className="error-banner">{statusError}</div> : null}
 
         <section className="monitor-overview" aria-label="监控概览">
           {overviewMetrics.map((metric) => (
-            <article key={metric.key} className="monitor-metric-card">
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-              <small>{metric.detail}</small>
+            <article key={metric.key} className={`monitor-metric-card ${metric.progressColor ?? ''}`}>
+              <div className="metric-card-head">
+                <span className="metric-card-icon">{metric.icon}</span>
+                <span className="metric-card-label">{metric.label}</span>
+              </div>
+              <strong className="metric-card-value">{metric.value}</strong>
+              <small className="metric-card-detail">{metric.detail}</small>
               {typeof metric.progress === 'number' ? (
                 <div className="monitor-meter" aria-hidden="true">
-                  <span style={{ width: `${metric.progress}%` }} />
+                  <span className={metric.progressColor ?? 'normal'} style={{ width: `${metric.progress}%` }} />
                 </div>
               ) : null}
             </article>
           ))}
         </section>
 
-        <div className="status-grid">
-          {statusItems.map((item) => (
-            <article key={item.key} className={`status-card ${item.key === 'kernel' || item.key === 'network' ? 'wide' : ''}`}>
-              <div className="status-card-header">
-                <strong>{item.label}</strong>
-                <span>{item.key}</span>
-              </div>
-              <pre>{item.value}</pre>
-            </article>
-          ))}
+        <div className="monitor-detail-section">
+          <h3 className="monitor-detail-heading">系统详情</h3>
+          <div className="status-grid">
+            {statusItems.map((item) => (
+              <article key={item.key} className={`status-card ${item.key === 'kernel' || item.key === 'network' ? 'wide' : ''}`}>
+                <div className="status-card-header">
+                  <span className="status-card-icon">{STATUS_ICONS[item.key] ?? '\u{1F4CB}'}</span>
+                  <strong>{item.label}</strong>
+                  <span className="status-card-key">{item.key}</span>
+                </div>
+                <pre>{item.value}</pre>
+              </article>
+            ))}
+          </div>
         </div>
       </div>
     </div>

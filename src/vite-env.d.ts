@@ -199,6 +199,17 @@ interface GuiSshConnectionControls {
   listDirectory: (connectionId: string, remotePath: string) => Promise<GuiSshRemoteDirectoryResult>;
   createDirectory: (connectionId: string, remotePath: string) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
+  renamePath: (connectionId: string, oldPath: string, newPath: string) => Promise<boolean>;
+  createFile: (connectionId: string, remotePath: string) => Promise<boolean>;
+  statPath: (connectionId: string, remotePath: string) => Promise<{
+    type: string;
+    size: number;
+    mode: number;
+    owner: number;
+    group: number;
+    modifiedAt: string;
+    accessedAt: string;
+  }>;
   getStatus: (connectionId: string) => Promise<GuiSshRemoteStatusReport>;
 }
 

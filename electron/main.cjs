@@ -1973,6 +1973,109 @@ registerIpcHandler('connection:delete-path', async (_event, connectionId, rawPat
   return true;
 });
 
+function renameRemotePath(client, oldPath, newPath) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      sftp.rename(oldPath, newPath, (renameError) => {
+        sftp.end();
+
+        if (renameError) {
+          reject(renameError);
+          return;
+        }
+
+        resolve(true);
+      });
+    });
+  });
+}
+
+function createRemoteFile(client, remotePath) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      sftp.open(remotePath, 'w', (openError, handle) => {
+        if (openError) {
+          sftp.end();
+          reject(openError);
+          return;
+        }
+
+        sftp.closeHandle(handle, (closeError) => {
+          sftp.end();
+
+          if (closeError) {
+            reject(closeError);
+            return;
+          }
+
+          resolve(true);
+        });
+      });
+    });
+  });
+}
+
+function statRemotePath(client, remotePath) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      sftp.stat(remotePath, (statError, attrs) => {
+        sftp.end();
+
+        if (statError) {
+          reject(statError);
+          return;
+        }
+
+        resolve({
+          type: getSftpEntryType(attrs),
+          size: attrs.size ?? 0,
+          mode: attrs.mode ?? 0,
+          owner: attrs.uid ?? 0,
+          group: attrs.gid ?? 0,
+          modifiedAt: attrs.mtime ? new Date(attrs.mtime * 1000).toISOString() : '',
+          accessedAt: attrs.atime ? new Date(attrs.atime * 1000).toISOString() : '',
+        });
+      });
+    });
+  });
+}
+
+registerIpcHandler('connection:rename-path', async (_event, connectionId, rawOldPath, rawNewPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const oldPath = validateMutableRemotePath(rawOldPath);
+  const newPath = validateMutableRemotePath(rawNewPath);
+  await renameRemotePath(activeConnection.client, oldPath, newPath);
+  return true;
+});
+
+registerIpcHandler('connection:create-file', async (_event, connectionId, rawPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const remotePath = validateMutableRemotePath(rawPath);
+  await createRemoteFile(activeConnection.client, remotePath);
+  return true;
+});
+
+registerIpcHandler('connection:stat-path', async (_event, connectionId, rawPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const remotePath = validateRemotePath(rawPath);
+  return await statRemotePath(activeConnection.client, remotePath);
+});
+
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   const activeConnection = getActiveConnection(connectionId);
   return getRemoteStatus(activeConnection.client);
