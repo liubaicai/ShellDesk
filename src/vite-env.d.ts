@@ -203,6 +203,8 @@ interface GuiSshConnectionControls {
   createFile: (connectionId: string, remotePath: string) => Promise<boolean>;
   readFile: (connectionId: string, remotePath: string) => Promise<string>;
   writeFile: (connectionId: string, remotePath: string, content: string) => Promise<boolean>;
+  downloadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; filePath?: string; size?: number }>;
+  uploadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; size?: number }>;
   statPath: (connectionId: string, remotePath: string) => Promise<{
     type: string;
     size: number;

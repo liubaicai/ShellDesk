@@ -2144,6 +2144,85 @@ registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath
   return true;
 });
 
+function downloadRemoteFile(client, remotePath) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      const chunks = [];
+      const readStream = sftp.createReadStream(remotePath);
+
+      readStream.on('data', (chunk) => chunks.push(chunk));
+      readStream.on('error', (readError) => {
+        sftp.end();
+        reject(readError);
+      });
+      readStream.on('end', () => {
+        sftp.end();
+        resolve(Buffer.concat(chunks));
+      });
+    });
+  });
+}
+
+registerIpcHandler('connection:download-file', async (event, connectionId, rawPath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const remotePath = validateRemotePath(rawPath);
+  const remoteFileName = remotePath.split('/').pop() || 'download';
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+  const result = await dialog.showSaveDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
+    defaultPath: remoteFileName,
+    filters: [{ name: '所有文件', extensions: ['*'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { canceled: true };
+  }
+
+  const buffer = await downloadRemoteFile(activeConnection.client, remotePath);
+  fs.writeFileSync(result.filePath, buffer);
+  return { canceled: false, filePath: result.filePath, size: buffer.length };
+});
+
+registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemotePath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const currentPath = validateRemotePath(rawRemotePath);
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+  const result = await dialog.showOpenDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
+    properties: ['openFile'],
+    filters: [{ name: '所有文件', extensions: ['*'] }],
+  });
+
+  if (result.canceled || !result.filePaths.length) {
+    return { canceled: true };
+  }
+
+  const localPath = result.filePaths[0];
+  const fileName = localPath.split(/[/\\]/).pop() || 'upload';
+  const destPath = currentPath === '.' ? fileName
+    : currentPath === '/' ? `/${fileName}`
+    : `${currentPath.replace(/\/+$/, '')}/${fileName}`;
+  const targetRemotePath = validateMutableRemotePath(destPath);
+  const content = fs.readFileSync(localPath);
+
+  await new Promise((resolve, reject) => {
+    activeConnection.client.sftp((sftpError, sftp) => {
+      if (sftpError) { reject(sftpError); return; }
+      const writeStream = sftp.createWriteStream(targetRemotePath);
+      writeStream.on('error', (err) => { sftp.end(); reject(err); });
+      writeStream.on('close', () => { sftp.end(); resolve(); });
+      writeStream.end(content);
+    });
+  });
+
+  return { canceled: false, remotePath: targetRemotePath, size: content.length };
+});
+
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   const activeConnection = getActiveConnection(connectionId);
   return getRemoteStatus(activeConnection.client);

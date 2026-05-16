@@ -420,17 +420,6 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
                 onPointerUp={finishWindowInteraction}
                 onPointerCancel={finishWindowInteraction}
               >
-                <div className="traffic-lights" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
-                  <button type="button" className="red" aria-label="关闭窗口" title="关闭" onClick={() => closeDesktopWindow(desktopWindow.id)} />
-                  <span className="yellow" aria-hidden="true" />
-                  <button
-                    type="button"
-                    className="green"
-                    aria-label={desktopWindow.isMaximized ? '还原窗口' : '最大化窗口'}
-                    title={desktopWindow.isMaximized ? '还原' : '最大化'}
-                    onClick={() => toggleWindowMaximize(desktopWindow.id)}
-                  />
-                </div>
                 <div className="desktop-window-title">
                   {desktopWindow.appKey === 'browser' ? (
                     <>
@@ -447,6 +436,35 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
                   ) : (
                     <strong>{appInfo.label}</strong>
                   )}
+                </div>
+                <div className="win-titlebar-controls" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
+                  <button type="button" className="win-btn minimize" aria-label="最小化窗口" title="最小化" onClick={() => closeDesktopWindow(desktopWindow.id)}>
+                    <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="win-btn maximize"
+                    aria-label={desktopWindow.isMaximized ? '还原窗口' : '最大化窗口'}
+                    title={desktopWindow.isMaximized ? '还原' : '最大化'}
+                    onClick={() => toggleWindowMaximize(desktopWindow.id)}
+                  >
+                    {desktopWindow.isMaximized ? (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                        <rect x="0.5" y="2.5" width="7" height="7" rx="0.5" />
+                        <path d="M2.5 2.5V0.5H9.5V7.5H7.5" />
+                      </svg>
+                    ) : (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                        <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" />
+                      </svg>
+                    )}
+                  </button>
+                  <button type="button" className="win-btn close" aria-label="关闭窗口" title="关闭" onClick={() => closeDesktopWindow(desktopWindow.id)}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
+                      <line x1="1" y1="1" x2="9" y2="9" />
+                      <line x1="9" y1="1" x2="1" y2="9" />
+                    </svg>
+                  </button>
                 </div>
               </header>
               <div className="desktop-window-body">{renderWindowContent(desktopWindow)}</div>

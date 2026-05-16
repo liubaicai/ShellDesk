@@ -1402,13 +1402,13 @@ button:disabled {
 
 .desktop-window-titlebar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   box-sizing: border-box;
   height: 37px;
-  gap: 10px;
+  gap: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.11);
-  padding: 0 17px;
+  padding: 0;
   background: rgba(255, 255, 255, 0.06);
   cursor: grab;
   touch-action: none;
@@ -1419,39 +1419,39 @@ button:disabled {
   cursor: grabbing;
 }
 
-.traffic-lights {
-  display: inline-flex;
-  gap: 8px;
+.win-titlebar-controls {
+  display: flex;
+  height: 100%;
+  margin-left: auto;
 }
 
-.traffic-lights span,
-.traffic-lights button {
-  width: 12px;
-  height: 12px;
+.win-titlebar-controls .win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
   border: 0;
-  border-radius: 999px;
   padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
+  transition: background 0.1s, color 0.1s;
 }
 
-.traffic-lights span {
-  cursor: default;
+.win-titlebar-controls .win-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
-.traffic-lights .red {
-  background: #ff5f57;
+.win-titlebar-controls .win-btn.close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
-.traffic-lights .yellow {
-  background: #febc2e;
-}
-
-.traffic-lights .green {
-  background: #28c840;
-}
-
-.traffic-lights button:hover {
-  filter: brightness(1.15);
+.win-titlebar-controls .win-btn svg {
+  width: 10px;
+  height: 10px;
 }
 
 .desktop-window-titlebar strong {
@@ -1465,6 +1465,7 @@ button:disabled {
   align-items: center;
   gap: 9px;
   min-width: 0;
+  padding-left: 17px;
 }
 
 .desktop-window-title strong {
@@ -4236,6 +4237,20 @@ button.explorer-row {
   border-color: rgba(9, 105, 218, 0.4);
   background: rgba(9, 105, 218, 0.08);
   color: #0969da;
+}
+
+[data-theme="light"] .win-titlebar-controls .win-btn {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="light"] .win-titlebar-controls .win-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #000;
+}
+
+[data-theme="light"] .win-titlebar-controls .win-btn.close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 /* ─── MySQL ─────────────────────────────────────────────────────────────────── */

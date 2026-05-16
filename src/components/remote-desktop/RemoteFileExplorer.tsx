@@ -545,6 +545,33 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     }
   }, [closeContextMenu, connectionId, remotePath]);
 
+  const downloadFile = useCallback(async (entry: RemoteFileEntry) => {
+    closeContextMenu();
+    try {
+      setFilesError('');
+      const entryPath = joinRemotePath(remotePath, entry.name);
+      const result = await window.guiSSH?.connections.downloadFile(connectionId, entryPath);
+      if (!result?.canceled && result?.filePath) {
+        setFilesError('');
+      }
+    } catch (error) {
+      setFilesError(getErrorMessage(error));
+    }
+  }, [closeContextMenu, connectionId, remotePath]);
+
+  const uploadFile = useCallback(async () => {
+    closeContextMenu();
+    try {
+      setFilesError('');
+      const result = await window.guiSSH?.connections.uploadFile(connectionId, remotePath);
+      if (!result?.canceled) {
+        refreshFiles();
+      }
+    } catch (error) {
+      setFilesError(getErrorMessage(error));
+    }
+  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+
   const handleKeydown = useCallback((event: ReactKeyboardEvent) => {
     if (renamingName || isCreatingNew) return;
 
@@ -781,6 +808,11 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                 <button type="button" role="menuitem" onClick={() => copyEntryPath(contextMenu.targetEntry!)}>
                   复制路径
                 </button>
+                {contextMenu.targetEntry.type === 'file' && (
+                  <button type="button" role="menuitem" onClick={() => void downloadFile(contextMenu.targetEntry!)}>
+                    下载
+                  </button>
+                )}
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" className="danger-text" onClick={() => void deleteSelectedEntries(contextMenu.targetEntry ? [contextMenu.targetEntry] : undefined)}>
                   删除
@@ -802,6 +834,10 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                 <button type="button" role="menuitem" onClick={() => startNewItem('folder')}>
                   新建文件夹
                 </button>
+                <div className="context-menu-sep" />
+                <button type="button" role="menuitem" onClick={() => void uploadFile()}>
+                  上传文件
+                </button>
               </>
             )}
           </div>
@@ -815,7 +851,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
           <div className="properties-dialog">
             <div className="properties-header">
               <strong>{propertiesEntry.name}</strong>
-              <button type="button" onClick={() => setPropertiesEntry(null)}>\u2715</button>
+              <button type="button" onClick={() => setPropertiesEntry(null)}>&times;</button>
             </div>
             <div className="properties-body">
               {propertiesLoading ? (
