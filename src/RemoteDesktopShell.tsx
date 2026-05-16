@@ -13,7 +13,7 @@ const desktopApps = [
 ] as const;
 
 /** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
-const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor', 'mysql'];
+const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor'];
 
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
