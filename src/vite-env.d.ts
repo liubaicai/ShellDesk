@@ -7,6 +7,7 @@ type WebviewProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, H
   webpreferences?: string;
 };
 
+declare global {
 interface GuiSshWindowControls {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<boolean>;
@@ -15,14 +16,32 @@ interface GuiSshWindowControls {
 
 interface GuiSshFileControls {
   selectPrivateKeyFile: () => Promise<string>;
+  selectPublicKeyFile: () => Promise<string>;
   importConfig: () => Promise<GuiSshConfigImportResult | null>;
-  exportConfig: (payload: GuiSshConfigExportPayload) => Promise<string>;
+  exportConfig: () => Promise<string>;
+}
+
+interface GuiSshAppSettings {
+  language: 'zh-CN' | 'en-US';
+  interfaceFont: 'Space Grotesk' | 'Segoe UI' | 'Inter';
+  theme: 'light' | 'dark' | 'system';
+  accentColor: string;
+  defaultHostView: 'grid' | 'list';
+  rememberPasswords: boolean;
+  rememberKeyPassphrases: boolean;
+  terminalFontSize: number;
+  terminalCursorStyle: 'block' | 'bar' | 'underline';
+  terminalScrollback: number;
+  terminalCopyOnSelect: boolean;
 }
 
 interface GuiSshStoredKeyRecord {
   id: string;
   name: string;
-  keyPath: string;
+  source: 'imported' | 'generated';
+  algorithm: string;
+  fingerprint: string;
+  publicKey: string;
   passphrase: string;
   createdAt: string;
   updatedAt: string;
@@ -37,8 +56,8 @@ interface GuiSshStoredHostRecord {
   authMethod: 'password' | 'key';
   password: string;
   keyId: string;
-  keyPath: string;
-  passphrase: string;
+  keyPath?: string;
+  passphrase?: string;
   group: string;
   tags: string[];
   note: string;
@@ -46,14 +65,59 @@ interface GuiSshStoredHostRecord {
   updatedAt: string;
 }
 
-interface GuiSshConfigExportPayload {
-  hosts: GuiSshStoredHostRecord[];
-  sshKeys: GuiSshStoredKeyRecord[];
+interface GuiSshBrowserBookmark {
+  id: string;
+  title: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-interface GuiSshConfigImportResult {
+interface GuiSshBrowserBookmarkCollection {
+  scope: string;
+  bookmarks: GuiSshBrowserBookmark[];
+  updatedAt: string;
+}
+
+interface GuiSshStorageInfo {
+  path: string;
+  protected: boolean;
+  protectionLabel: string;
+}
+
+interface GuiSshVaultSnapshot {
   hosts: GuiSshStoredHostRecord[];
   sshKeys: GuiSshStoredKeyRecord[];
+  settings: GuiSshAppSettings;
+  browserBookmarks: GuiSshBrowserBookmarkCollection[];
+  storage: GuiSshStorageInfo;
+}
+
+interface GuiSshConfigImportResult extends GuiSshVaultSnapshot {}
+
+interface GuiSshVaultCollectionsPayload {
+  hosts: GuiSshStoredHostRecord[];
+  sshKeys: GuiSshStoredKeyRecord[];
+  settings: GuiSshAppSettings;
+}
+
+interface GuiSshVaultControls {
+  getSnapshot: () => Promise<GuiSshVaultSnapshot>;
+  saveCollections: (payload: GuiSshVaultCollectionsPayload) => Promise<GuiSshVaultSnapshot>;
+  migrateLegacyData: (payload: Partial<GuiSshVaultSnapshot>) => Promise<GuiSshVaultSnapshot>;
+  importKeyPair: (payload: {
+    name: string;
+    privateKeyPath: string;
+    publicKeyPath: string;
+    passphrase: string;
+  }) => Promise<{ snapshot: GuiSshVaultSnapshot; key: GuiSshStoredKeyRecord }>;
+  generateRsaKeyPair: (payload: {
+    name: string;
+    passphrase: string;
+    modulusLength: number;
+  }) => Promise<{ snapshot: GuiSshVaultSnapshot; key: GuiSshStoredKeyRecord }>;
+  getBookmarks: (scope: string) => Promise<GuiSshBrowserBookmark[]>;
+  saveBookmarks: (scope: string, bookmarks: GuiSshBrowserBookmark[]) => Promise<GuiSshBrowserBookmark[]>;
 }
 
 interface GuiSshHostConnectionRequest {
@@ -63,6 +127,7 @@ interface GuiSshHostConnectionRequest {
   username: string;
   authMethod: 'password' | 'key';
   password: string;
+  keyId: string;
   keyPath: string;
   passphrase: string;
 }
@@ -141,6 +206,7 @@ interface GuiSshEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
+  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;
 }
 
 interface GuiSshApi {
@@ -148,11 +214,10 @@ interface GuiSshApi {
   platform: NodeJS.Platform;
   window: GuiSshWindowControls;
   files: GuiSshFileControls;
+  vault: GuiSshVaultControls;
   connections: GuiSshConnectionControls;
   events: GuiSshEventControls;
 }
-
-declare global {
   namespace JSX {
     interface IntrinsicElements {
       webview: WebviewProps;

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import RemoteDesktop from './RemoteDesktopShell';
 import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
@@ -9,7 +9,21 @@ import SettingsPage from './pages/SettingsPage';
 
 const hostsStorageKey = 'gui-ssh:hosts';
 const keysStorageKey = 'gui-ssh:keys';
+const bookmarkStorageKeyPrefix = 'gui-ssh:browser-bookmarks:';
 const ungroupedKey = '__ungrouped__';
+const defaultAppSettings: GuiSshAppSettings = {
+  language: 'zh-CN',
+  interfaceFont: 'Space Grotesk',
+  theme: 'dark',
+  accentColor: '#43c7ff',
+  defaultHostView: 'grid',
+  rememberPasswords: true,
+  rememberKeyPassphrases: true,
+  terminalFontSize: 13,
+  terminalCursorStyle: 'block',
+  terminalScrollback: 10000,
+  terminalCopyOnSelect: true,
+};
 
 type AppPage = 'hosts' | 'keys' | 'logs' | 'settings';
 
@@ -22,6 +36,18 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
 interface SshKey {
   id: string;
   name: string;
+  source: 'imported' | 'generated';
+  algorithm: string;
+  fingerprint: string;
+  publicKey: string;
+  passphrase: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LegacyStoredKey {
+  id: string;
+  name: string;
   keyPath: string;
   passphrase: string;
   createdAt: string;
@@ -30,14 +56,18 @@ interface SshKey {
 
 interface KeyFormState {
   name: string;
-  keyPath: string;
+  privateKeyPath: string;
+  publicKeyPath: string;
   passphrase: string;
+  modulusLength: '2048' | '3072' | '4096';
 }
 
 const emptyKeyForm: KeyFormState = {
   name: '',
-  keyPath: '',
+  privateKeyPath: '',
+  publicKeyPath: '',
   passphrase: '',
+  modulusLength: '4096',
 };
 
 const keyPathSeparators = /[\\/]+/;
@@ -56,6 +86,25 @@ function isStoredSshKey(value: unknown): value is SshKey {
   return (
     typeof key.id === 'string' &&
     typeof key.name === 'string' &&
+    (key.source === 'imported' || key.source === 'generated') &&
+    typeof key.algorithm === 'string' &&
+    typeof key.fingerprint === 'string' &&
+    typeof key.publicKey === 'string' &&
+    typeof key.passphrase === 'string' &&
+    typeof key.createdAt === 'string' &&
+    typeof key.updatedAt === 'string'
+  );
+}
+
+function isLegacyStoredSshKey(value: unknown): value is LegacyStoredKey {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const key = value as Partial<LegacyStoredKey>;
+  return (
+    typeof key.id === 'string' &&
+    typeof key.name === 'string' &&
     typeof key.keyPath === 'string' &&
     typeof key.passphrase === 'string' &&
     typeof key.createdAt === 'string' &&
@@ -63,7 +112,7 @@ function isStoredSshKey(value: unknown): value is SshKey {
   );
 }
 
-function readStoredSshKeys(): SshKey[] {
+function readStoredSshKeys(): LegacyStoredKey[] {
   try {
     const rawKeys = window.localStorage.getItem(keysStorageKey);
 
@@ -77,53 +126,46 @@ function readStoredSshKeys(): SshKey[] {
       return [];
     }
 
-    return parsedKeys.filter(isStoredSshKey);
+    return parsedKeys.filter(isLegacyStoredSshKey);
   } catch {
     return [];
   }
 }
 
-function validateKeyForm(form: KeyFormState, keys: SshKey[], editingKeyId: string | null) {
+type KeyEditorMode = 'import' | 'generate' | 'edit';
+
+function validateKeyForm(form: KeyFormState, mode: KeyEditorMode) {
   const name = form.name.trim();
-  const keyPath = form.keyPath.trim();
 
   if (!name) {
     return '请输入密钥名称。';
   }
 
-  if (!keyPath) {
-    return '请选择私钥文件。';
-  }
-
-  if (name.length > 80 || keyPath.length > 1024 || form.passphrase.length > 4096) {
+  if (name.length > 80 || form.passphrase.length > 4096) {
     return '密钥信息长度超出限制。';
   }
 
-  if (keys.some((key) => key.id !== editingKeyId && key.keyPath === keyPath)) {
-    return '该私钥文件已在密钥列表中。';
+  if (mode === 'import') {
+    if (!form.privateKeyPath.trim()) {
+      return '请选择私钥文件。';
+    }
+
+    if (form.privateKeyPath.trim().length > 1024 || form.publicKeyPath.trim().length > 1024) {
+      return '密钥文件路径过长。';
+    }
+  }
+
+  if (mode === 'generate' && !['2048', '3072', '4096'].includes(form.modulusLength)) {
+    return 'RSA 位数无效。';
   }
 
   return '';
-}
-
-function createSshKeyFromForm(form: KeyFormState): SshKey {
-  const now = new Date().toISOString();
-
-  return {
-    id: createId(),
-    name: form.name.trim(),
-    keyPath: form.keyPath.trim(),
-    passphrase: form.passphrase,
-    createdAt: now,
-    updatedAt: now,
-  };
 }
 
 function updateSshKeyFromForm(key: SshKey, form: KeyFormState): SshKey {
   return {
     ...key,
     name: form.name.trim(),
-    keyPath: form.keyPath.trim(),
     passphrase: form.passphrase,
     updatedAt: new Date().toISOString(),
   };
@@ -132,8 +174,10 @@ function updateSshKeyFromForm(key: SshKey, form: KeyFormState): SshKey {
 function toKeyFormState(key: SshKey): KeyFormState {
   return {
     name: key.name,
-    keyPath: key.keyPath,
+    privateKeyPath: '',
+    publicKeyPath: '',
     passphrase: key.passphrase,
+    modulusLength: '4096',
   };
 }
 
@@ -254,13 +298,13 @@ function getAuthMethod(value: unknown): AuthMethod {
   return value === 'key' ? 'key' : 'password';
 }
 
-function getAuthLabel(host: Pick<Host, 'authMethod' | 'password' | 'keyPath' | 'passphrase'>) {
+function getAuthLabel(host: Pick<Host, 'authMethod' | 'password'>, key: SshKey | null) {
   if (host.authMethod === 'key') {
-    if (!host.keyPath) {
+    if (!key) {
       return '密钥登录';
     }
 
-    return host.passphrase ? `密钥 · ${host.keyPath} · 口令已保存` : `密钥 · ${host.keyPath}`;
+    return key.passphrase ? `密钥 · ${key.name} · 口令已保存` : `密钥 · ${key.name}`;
   }
 
   return host.password ? '密码登录 · 已保存' : '密码登录';
@@ -319,6 +363,50 @@ function readStoredHosts(): Host[] {
   }
 }
 
+function readLegacyBookmarkCollections(): GuiSshBrowserBookmarkCollection[] {
+  try {
+    return Object.keys(window.localStorage)
+      .filter((key) => key.startsWith(bookmarkStorageKeyPrefix))
+      .map((storageKey) => {
+        const rawValue = window.localStorage.getItem(storageKey);
+
+        if (!rawValue) {
+          return null;
+        }
+
+        const parsedValue: unknown = JSON.parse(rawValue);
+
+        if (!Array.isArray(parsedValue)) {
+          return null;
+        }
+
+        const bookmarks = parsedValue.filter((bookmark): bookmark is GuiSshBrowserBookmark => {
+          if (!bookmark || typeof bookmark !== 'object') {
+            return false;
+          }
+
+          const value = bookmark as Partial<GuiSshBrowserBookmark>;
+          return (
+            typeof value.id === 'string' &&
+            typeof value.title === 'string' &&
+            typeof value.url === 'string' &&
+            typeof value.createdAt === 'string' &&
+            typeof value.updatedAt === 'string'
+          );
+        });
+
+        return {
+          scope: storageKey.slice(bookmarkStorageKeyPrefix.length),
+          bookmarks,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+      .filter((collection): collection is GuiSshBrowserBookmarkCollection => Boolean(collection));
+  } catch {
+    return [];
+  }
+}
+
 function validateHostForm(form: HostFormState, keys: SshKey[]) {
   const port = Number(form.port);
   const selectedKey = keys.find((key) => key.id === form.keyId);
@@ -359,14 +447,6 @@ function validateHostForm(form: HostFormState, keys: SshKey[]) {
     return '密码长度不能超过 4096 个字符。';
   }
 
-  if (form.keyPath.length > 1024) {
-    return '密钥路径不能超过 1024 个字符。';
-  }
-
-  if (form.passphrase.length > 4096) {
-    return '密钥口令长度不能超过 4096 个字符。';
-  }
-
   return '';
 }
 
@@ -382,8 +462,8 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
     authMethod: form.authMethod,
     password: form.authMethod === 'password' ? form.password : '',
     keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
-    keyPath: form.authMethod === 'key' ? selectedKey?.keyPath ?? '' : '',
-    passphrase: form.authMethod === 'key' ? selectedKey?.passphrase ?? '' : '',
+    keyPath: '',
+    passphrase: '',
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -402,8 +482,8 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     authMethod: form.authMethod,
     password: form.authMethod === 'password' ? form.password : '',
     keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
-    keyPath: form.authMethod === 'key' ? selectedKey?.keyPath ?? '' : '',
-    passphrase: form.authMethod === 'key' ? selectedKey?.passphrase ?? '' : '',
+    keyPath: '',
+    passphrase: '',
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -438,11 +518,12 @@ function readWindowConnectionId() {
 
 function App() {
   const [hosts, setHosts] = useState<Host[]>(readStoredHosts);
-  const [sshKeys, setSshKeys] = useState<SshKey[]>(readStoredSshKeys);
+  const [sshKeys, setSshKeys] = useState<SshKey[]>([]);
   const [form, setForm] = useState<HostFormState>(emptyHostForm);
   const [keyForm, setKeyForm] = useState<KeyFormState>(emptyKeyForm);
   const [editingHostId, setEditingHostId] = useState<string | null>(null);
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [keyEditorMode, setKeyEditorMode] = useState<KeyEditorMode>('import');
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('hosts');
   const [searchQuery, setSearchQuery] = useState('');
@@ -452,7 +533,11 @@ function App() {
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultAppSettings.defaultHostView);
+  const [settings, setSettings] = useState<GuiSshAppSettings>(defaultAppSettings);
+  const [storageInfo, setStorageInfo] = useState<GuiSshStorageInfo | null>(null);
+  const [bookmarkCount, setBookmarkCount] = useState(0);
+  const [isVaultReady, setIsVaultReady] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
   const [windowConnectionId] = useState(readWindowConnectionId);
@@ -462,8 +547,10 @@ function App() {
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
+  const lastPersistedCollectionsRef = useRef('');
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
+  const vaultControls = window.guiSSH?.vault;
   const showWindowControls = Boolean(windowControls) && platform !== 'darwin';
   const isConnectionWindow = Boolean(windowConnectionId);
   const titlebarConnectionAddress = connection
@@ -496,11 +583,11 @@ function App() {
     const query = searchQuery.trim().toLowerCase();
 
     return hosts.filter((host) => {
-      const hostKey = sshKeys.find((key) => key.id === host.keyId);
+      const hostKey = sshKeys.find((key) => key.id === host.keyId) ?? null;
       const matchesGroup = !activeGroupKey || getHostGroupKey(host) === activeGroupKey;
       const matchesQuery =
         !query ||
-        [host.name, host.address, host.username, host.group, host.note, hostKey?.name, hostKey?.keyPath, host.keyPath, getAuthLabel(host), ...host.tags]
+        [host.name, host.address, host.username, host.group, host.note, hostKey?.name, hostKey?.fingerprint, hostKey?.algorithm, getAuthLabel(host, hostKey), ...host.tags]
           .join(' ')
           .toLowerCase()
           .includes(query);
@@ -517,13 +604,36 @@ function App() {
         return true;
       }
 
-      return [key.name, key.keyPath].join(' ').toLowerCase().includes(query);
+      return [key.name, key.algorithm, key.fingerprint].join(' ').toLowerCase().includes(query);
     });
   }, [keySearchQuery, sshKeys]);
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
 
   const getSelectedSshKey = (host: Host) => sshKeys.find((key) => key.id === host.keyId) ?? null;
+
+  const applyVaultSnapshot = (snapshot: GuiSshVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
+    const { updateCollections = true } = options;
+
+    if (updateCollections) {
+      const nextHosts = snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost);
+      const nextKeys = snapshot.sshKeys.filter(isStoredSshKey);
+
+      setHosts(nextHosts);
+      setSshKeys(nextKeys);
+      lastPersistedCollectionsRef.current = JSON.stringify({
+        hosts: nextHosts,
+        sshKeys: nextKeys,
+        settings: snapshot.settings,
+      });
+    }
+
+    setSettings(snapshot.settings);
+    setStorageInfo(snapshot.storage);
+    setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: GuiSshBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    setViewMode(snapshot.settings.defaultHostView);
+    setIsVaultReady(true);
+  };
 
   useEffect(() => {
     if (!windowConnectionId) {
@@ -557,12 +667,74 @@ function App() {
   }, [windowConnectionId]);
 
   useEffect(() => {
-    window.localStorage.setItem(hostsStorageKey, JSON.stringify(hosts));
-  }, [hosts]);
+    if (!vaultControls) {
+      setIsVaultReady(true);
+      return;
+    }
+
+    let disposed = false;
+
+    const loadSnapshot = async () => {
+      try {
+        const snapshot = !isConnectionWindow
+          ? await vaultControls.migrateLegacyData({
+              hosts: readStoredHosts(),
+              sshKeys: readStoredSshKeys() as unknown as GuiSshStoredKeyRecord[],
+              settings: defaultAppSettings,
+              browserBookmarks: readLegacyBookmarkCollections(),
+            })
+          : await vaultControls.getSnapshot();
+
+        if (!disposed) {
+          applyVaultSnapshot(snapshot);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setIsVaultReady(true);
+          setStatusMessage(`读取本地数据失败：${getErrorMessage(error)}`);
+        }
+      }
+    };
+
+    void loadSnapshot();
+
+    return () => {
+      disposed = true;
+    };
+  }, [isConnectionWindow, vaultControls]);
 
   useEffect(() => {
-    window.localStorage.setItem(keysStorageKey, JSON.stringify(sshKeys));
-  }, [sshKeys]);
+    if (!vaultControls || !isVaultReady) {
+      return;
+    }
+
+    const payload = { hosts, sshKeys, settings };
+    const serializedPayload = JSON.stringify(payload);
+
+    if (serializedPayload === lastPersistedCollectionsRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void vaultControls.saveCollections(payload).then((snapshot) => {
+      if (cancelled) {
+        return;
+      }
+
+      lastPersistedCollectionsRef.current = serializedPayload;
+      setStorageInfo(snapshot.storage);
+      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: GuiSshBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hosts, isVaultReady, settings, sshKeys, vaultControls]);
 
   useEffect(() => {
     if (selectedHostId && hosts.some((host) => host.id === selectedHostId)) {
@@ -582,6 +754,31 @@ function App() {
   }, [statusMessage]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const prefersLight = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches;
+    const effectiveTheme = settings.theme === 'system' ? (prefersLight ? 'light' : 'dark') : settings.theme;
+    const isLightTheme = effectiveTheme === 'light';
+
+    root.style.setProperty('--accent', settings.accentColor);
+    root.style.setProperty('--accent-strong', settings.accentColor);
+    root.style.setProperty('--bg', isLightTheme ? '#eef3f8' : '#0b111a');
+    root.style.setProperty('--chrome', isLightTheme ? '#f8fbff' : '#1b222b');
+    root.style.setProperty('--sidebar', isLightTheme ? '#dce5ef' : '#20262f');
+    root.style.setProperty('--sidebar-active', isLightTheme ? '#c8d5e4' : '#3a3f49');
+    root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111820');
+    root.style.setProperty('--surface-soft', isLightTheme ? '#f4f8fc' : '#161e28');
+    root.style.setProperty('--surface-strong', isLightTheme ? '#e9f0f7' : '#1a2330');
+    root.style.setProperty('--text', isLightTheme ? '#102033' : '#edf4ff');
+    root.style.setProperty('--muted', isLightTheme ? '#587089' : '#8b9aad');
+    root.style.setProperty('--muted-strong', isLightTheme ? '#38516d' : '#bfcede');
+    root.style.setProperty('--border', isLightTheme ? 'rgba(16, 32, 51, 0.12)' : 'rgba(139, 164, 195, 0.14)');
+    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(16, 32, 51, 0.2)' : 'rgba(139, 164, 195, 0.28)');
+    root.style.setProperty('--shadow', isLightTheme ? 'rgba(43, 67, 92, 0.18)' : 'rgba(0, 0, 0, 0.34)');
+    root.style.colorScheme = isLightTheme ? 'light' : 'dark';
+    document.body.style.fontFamily = `"${settings.interfaceFont}", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  }, [settings]);
+
+  useEffect(() => {
     if (!connection || !window.guiSSH?.events) {
       return;
     }
@@ -599,6 +796,22 @@ function App() {
       }
     });
   }, [connection, isConnectionWindow, windowControls]);
+
+  useEffect(() => {
+    if (!window.guiSSH?.events.onVaultChanged || !vaultControls) {
+      return;
+    }
+
+    return window.guiSSH.events.onVaultChanged((payload) => {
+      if (payload.kind !== 'bookmarks' && !isConnectionWindow) {
+        return;
+      }
+
+      void vaultControls.getSnapshot().then((snapshot) => {
+        applyVaultSnapshot(snapshot, { updateCollections: isConnectionWindow });
+      }).catch(() => undefined);
+    });
+  }, [isConnectionWindow, vaultControls]);
 
   const minimizeWindow = () => {
     void windowControls?.minimize();
@@ -636,6 +849,14 @@ function App() {
 
   const openCreateKey = () => {
     resetKeyForm();
+    setKeyEditorMode('generate');
+    setIsKeyEditorOpen(true);
+    setActivePage('keys');
+  };
+
+  const openImportKey = () => {
+    resetKeyForm();
+    setKeyEditorMode('import');
     setIsKeyEditorOpen(true);
     setActivePage('keys');
   };
@@ -655,7 +876,7 @@ function App() {
     setKeyFormError('');
   };
 
-  const selectKeyFileForKeyForm = async () => {
+  const selectPrivateKeyFileForKeyForm = async () => {
     const filePath = await window.guiSSH?.files.selectPrivateKeyFile();
 
     if (!filePath) {
@@ -664,38 +885,32 @@ function App() {
 
     setKeyForm((currentForm) => ({
       ...currentForm,
-      keyPath: filePath,
+      privateKeyPath: filePath,
+      publicKeyPath: currentForm.publicKeyPath || `${filePath}.pub`,
       name: currentForm.name.trim() ? currentForm.name : getKeyNameFromPath(filePath),
     }));
     setKeyFormError('');
   };
 
-  const importPrivateKey = async () => {
-    const filePath = await window.guiSSH?.files.selectPrivateKeyFile();
+  const selectPublicKeyFileForKeyForm = async () => {
+    const filePath = await window.guiSSH?.files.selectPublicKeyFile();
 
     if (!filePath) {
       return;
     }
 
-    if (sshKeys.some((key) => key.keyPath === filePath)) {
-      setStatusMessage('该私钥文件已在密钥列表中。');
-      return;
-    }
-
-    const nextKey = createSshKeyFromForm({
-      name: getKeyNameFromPath(filePath),
-      keyPath: filePath,
-      passphrase: '',
-    });
-
-    setSshKeys((currentKeys) => [nextKey, ...currentKeys]);
-    setStatusMessage(`已导入密钥：${nextKey.name}`);
+    setKeyForm((currentForm) => ({
+      ...currentForm,
+      publicKeyPath: filePath,
+    }));
+    setKeyFormError('');
   };
 
   const submitKey = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const validationError = validateKeyForm(keyForm, sshKeys, editingKeyId);
+    const mode = editingKey ? 'edit' : keyEditorMode;
+    const validationError = validateKeyForm(keyForm, mode);
 
     if (validationError) {
       setKeyFormError(validationError);
@@ -705,26 +920,60 @@ function App() {
     if (editingKey) {
       const updatedKey = updateSshKeyFromForm(editingKey, keyForm);
       setSshKeys((currentKeys) => currentKeys.map((key) => (key.id === editingKey.id ? updatedKey : key)));
-      setHosts((currentHosts) => currentHosts.map((host) => (
-        host.keyId === editingKey.id
-          ? { ...host, keyPath: updatedKey.keyPath, passphrase: updatedKey.passphrase, updatedAt: new Date().toISOString() }
-          : host
-      )));
       setStatusMessage(`已更新密钥：${updatedKey.name}`);
-    } else {
-      const nextKey = createSshKeyFromForm(keyForm);
-      setSshKeys((currentKeys) => [nextKey, ...currentKeys]);
-      setStatusMessage(`已新增密钥：${nextKey.name}`);
+      closeKeyEditor();
+      return;
     }
 
-    closeKeyEditor();
+    if (!vaultControls) {
+      setKeyFormError('当前运行环境不支持安全密钥库。');
+      return;
+    }
+
+    const action = keyEditorMode === 'generate'
+      ? vaultControls.generateRsaKeyPair({
+          name: keyForm.name.trim(),
+          passphrase: keyForm.passphrase,
+          modulusLength: Number(keyForm.modulusLength),
+        })
+      : vaultControls.importKeyPair({
+          name: keyForm.name.trim(),
+          privateKeyPath: keyForm.privateKeyPath.trim(),
+          publicKeyPath: keyForm.publicKeyPath.trim(),
+          passphrase: keyForm.passphrase,
+        });
+
+    action
+      .then(({ snapshot, key }) => {
+        applyVaultSnapshot(snapshot);
+        setStatusMessage(keyEditorMode === 'generate' ? `已生成密钥：${key.name}` : `已导入密钥：${key.name}`);
+        closeKeyEditor();
+      })
+      .catch((error: unknown) => {
+        setKeyFormError(getErrorMessage(error));
+      });
   };
 
   const startEditingKey = (key: SshKey) => {
     setEditingKeyId(key.id);
     setKeyForm(toKeyFormState(key));
+    setKeyEditorMode('edit');
     setKeyFormError('');
     setIsKeyEditorOpen(true);
+  };
+
+  const copyPublicKey = async (key: SshKey) => {
+    if (!key.publicKey) {
+      setStatusMessage(`密钥「${key.name}」当前没有可复制的公钥。`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(key.publicKey);
+      setStatusMessage(`已复制公钥：${key.name}`);
+    } catch (error) {
+      setStatusMessage(`复制失败：${getErrorMessage(error)}`);
+    }
   };
 
   const deleteSshKey = (key: SshKey) => {
@@ -748,6 +997,7 @@ function App() {
               keyId: '',
               keyPath: '',
               passphrase: '',
+              password: '',
               updatedAt: new Date().toISOString(),
             }
           : host
@@ -776,7 +1026,7 @@ function App() {
     setCredentialForm({
       password: host.password,
       passphrase: selectedKey?.passphrase ?? host.passphrase,
-      saveCredential: true,
+      saveCredential: host.authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
     });
     setCredentialError(message);
   };
@@ -814,11 +1064,9 @@ function App() {
   };
 
   const startEditingHost = (host: Host) => {
-    const matchedKey = host.keyId ? null : sshKeys.find((key) => key.keyPath === host.keyPath);
-
     setEditingHostId(host.id);
     setSelectedHostId(host.id);
-    setForm({ ...toFormState(host), keyId: host.keyId || matchedKey?.id || '' });
+    setForm(toFormState(host));
     setFormError('');
     setIsEditorOpen(true);
   };
@@ -841,6 +1089,14 @@ function App() {
     }
   };
 
+  const closeHostCardMenu = (trigger: HTMLElement | null) => {
+    const details = trigger?.closest('details');
+
+    if (details instanceof HTMLDetailsElement) {
+      details.open = false;
+    }
+  };
+
   const connectHost = async (host: Host, credentials?: CredentialFormState) => {
     if (!window.guiSSH?.connections) {
       setStatusMessage('当前运行环境不支持 SSH 连接。');
@@ -849,7 +1105,7 @@ function App() {
 
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
 
-    if (host.authMethod === 'key' && !selectedKey && !host.keyPath) {
+    if (host.authMethod === 'key' && !selectedKey && !host.keyId) {
       setStatusMessage('该主机未选择有效密钥。');
       return false;
     }
@@ -858,12 +1114,10 @@ function App() {
       ? {
           ...host,
           password: host.authMethod === 'password' ? credentials.password : host.password,
-          keyPath: host.authMethod === 'key' ? selectedKey?.keyPath ?? host.keyPath : '',
           passphrase: host.authMethod === 'key' ? credentials.passphrase : host.passphrase,
         }
       : {
           ...host,
-          keyPath: host.authMethod === 'key' ? selectedKey?.keyPath ?? host.keyPath : '',
           passphrase: host.authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
         };
 
@@ -929,7 +1183,7 @@ function App() {
       return;
     }
 
-    if (selectedHost.authMethod === 'key' && !getSelectedSshKey(selectedHost) && !selectedHost.keyPath) {
+    if (selectedHost.authMethod === 'key' && !getSelectedSshKey(selectedHost) && !selectedHost.keyId) {
       setStatusMessage('该主机未选择有效密钥，请先编辑主机。');
       return;
     }
@@ -957,6 +1211,15 @@ function App() {
     setSearchQuery('');
   };
 
+  const changeViewMode = (nextViewMode: ViewMode) => {
+    setViewMode(nextViewMode);
+    setSettings((currentSettings: GuiSshAppSettings) => (
+      currentSettings.defaultHostView === nextViewMode
+        ? currentSettings
+        : { ...currentSettings, defaultHostView: nextViewMode }
+    ));
+  };
+
   const exportConfig = async () => {
     if (!window.guiSSH?.files.exportConfig) {
       setStatusMessage('当前运行环境不支持导出配置。');
@@ -966,13 +1229,13 @@ function App() {
     setIsConfigTransferPending(true);
 
     try {
-      const filePath = await window.guiSSH.files.exportConfig({ hosts, sshKeys });
+      const filePath = await window.guiSSH.files.exportConfig();
 
       if (!filePath) {
         return;
       }
 
-      setStatusMessage(`已导出 ${hosts.length} 台主机和 ${sshKeys.length} 把密钥。`);
+      setStatusMessage(`已导出 ${hosts.length} 台主机、${sshKeys.length} 把密钥和 ${bookmarkCount} 条书签。`);
     } catch (error) {
       setStatusMessage(`导出失败：${getErrorMessage(error)}`);
     } finally {
@@ -995,10 +1258,7 @@ function App() {
         return;
       }
 
-      const importedHosts = importedConfig.hosts.filter(isStoredHost).map(normalizeStoredHost);
-      const importedKeys = importedConfig.sshKeys.filter(isStoredSshKey);
-
-      if (!importedHosts.length && !importedKeys.length) {
+      if (!importedConfig.hosts.length && !importedConfig.sshKeys.length) {
         setStatusMessage('导入文件中没有可用配置。');
         return;
       }
@@ -1006,20 +1266,11 @@ function App() {
       closeEditor();
       closeKeyEditor();
       closeCredentialDialog();
-      setHosts((currentHosts) => {
-        const importedHostIds = new Set(importedHosts.map((host) => host.id));
-        return [...importedHosts, ...currentHosts.filter((host) => !importedHostIds.has(host.id))];
-      });
-      setSshKeys((currentKeys) => {
-        const importedKeyIds = new Set(importedKeys.map((key) => key.id));
-        return [...importedKeys, ...currentKeys.filter((key) => !importedKeyIds.has(key.id))];
-      });
-
-      if (importedHosts.length) {
-        setSelectedHostId(importedHosts[0].id);
+      applyVaultSnapshot(importedConfig);
+      if (importedConfig.hosts.length) {
+        setSelectedHostId(importedConfig.hosts[0].id);
       }
-
-      setStatusMessage(`已导入 ${importedHosts.length} 台主机和 ${importedKeys.length} 把密钥。`);
+      setStatusMessage(`已导入 ${importedConfig.hosts.length} 台主机、${importedConfig.sshKeys.length} 把密钥和 ${importedConfig.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0)} 条书签。`);
     } catch (error) {
       setStatusMessage(`导入失败：${getErrorMessage(error)}`);
     } finally {
@@ -1054,7 +1305,7 @@ function App() {
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
 
       {connection ? (
-        <RemoteDesktop connection={connection} />
+        <RemoteDesktop connection={connection} settings={settings} />
       ) : isConnectionWindow ? (
         <main className="vault-page no-drag">
           <div className="empty-state">
@@ -1117,8 +1368,8 @@ function App() {
             </button>
 
             <div className="view-switch" aria-label="视图切换">
-              <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')}>网格</button>
-              <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>列表</button>
+              <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => changeViewMode('grid')}>网格</button>
+              <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => changeViewMode('list')}>列表</button>
             </div>
 
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
@@ -1196,8 +1447,25 @@ function App() {
                       <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
                         <summary aria-label="主机操作">⋯</summary>
                         <div className="host-card-menu-panel">
-                          <button type="button" onClick={() => startEditingHost(host)}>编辑</button>
-                          <button type="button" className="danger-text" onClick={() => deleteHost(host)}>删除</button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              closeHostCardMenu(event.currentTarget);
+                              startEditingHost(host);
+                            }}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-text"
+                            onClick={(event) => {
+                              closeHostCardMenu(event.currentTarget);
+                              deleteHost(host);
+                            }}
+                          >
+                            删除
+                          </button>
                         </div>
                       </details>
                     </article>
@@ -1220,10 +1488,11 @@ function App() {
               filteredKeys={filteredKeys}
               sshKeys={sshKeys}
               onSearchChange={setKeySearchQuery}
-              onImportPrivateKey={importPrivateKey}
+              onImportPrivateKey={openImportKey}
               onCreateKey={openCreateKey}
               onEditKey={startEditingKey}
               onDeleteKey={deleteSshKey}
+              onCopyPublicKey={copyPublicKey}
             />
           ) : activePage === 'logs' ? (
             <LogsPage />
@@ -1231,7 +1500,11 @@ function App() {
             <SettingsPage
               hostCount={hosts.length}
               keyCount={sshKeys.length}
+              bookmarkCount={bookmarkCount}
+              settings={settings}
+              storageInfo={storageInfo}
               isConfigTransferPending={isConfigTransferPending}
+              onSettingsChange={(nextSettings) => setSettings(nextSettings)}
               onImportConfig={importConfig}
               onExportConfig={exportConfig}
             />
@@ -1328,7 +1601,7 @@ function App() {
                     >
                       <option value="">请选择已有密钥</option>
                       {sshKeys.map((key) => (
-                        <option key={key.id} value={key.id}>{key.name} · {key.keyPath}</option>
+                        <option key={key.id} value={key.id}>{key.name} · {key.fingerprint || key.algorithm}</option>
                       ))}
                     </select>
                     {!sshKeys.length ? <small className="field-note">请先到“密钥”页面新建或导入密钥。</small> : null}
@@ -1387,8 +1660,8 @@ function App() {
             <aside className="editor-panel no-drag" aria-label={editingKey ? '编辑密钥' : '新建密钥'}>
               <div className="editor-header">
                 <span>
-                  <strong>{editingKey ? '编辑密钥' : '新建密钥'}</strong>
-                  <small>{editingKey ? editingKey.name : '保存 SSH 私钥引用'}</small>
+                  <strong>{editingKey ? '编辑密钥' : keyEditorMode === 'generate' ? '新建 RSA 密钥' : '导入密钥对'}</strong>
+                  <small>{editingKey ? editingKey.name : keyEditorMode === 'generate' ? '生成并保存到本地加密密钥库' : '读取现有密钥文件并复制到本地加密密钥库'}</small>
                 </span>
                 <button type="button" onClick={closeKeyEditor} aria-label="关闭密钥表单">×</button>
               </div>
@@ -1404,30 +1677,74 @@ function App() {
                   />
                 </label>
 
-                <label className="field">
-                  <span>私钥文件</span>
-                  <div className="file-picker-row">
-                    <input value={keyForm.keyPath} readOnly placeholder="请选择 SSH 私钥文件" />
-                    <button type="button" className="command-button" onClick={selectKeyFileForKeyForm}>
-                      选择文件
-                    </button>
-                  </div>
-                </label>
+                {!editingKey && keyEditorMode === 'generate' ? (
+                  <label className="field">
+                    <span>RSA 位数</span>
+                    <select
+                      value={keyForm.modulusLength}
+                      onChange={(event) => updateKeyFormField('modulusLength', event.target.value as KeyFormState['modulusLength'])}
+                    >
+                      <option value="2048">2048</option>
+                      <option value="3072">3072</option>
+                      <option value="4096">4096</option>
+                    </select>
+                  </label>
+                ) : null}
+
+                {!editingKey && keyEditorMode === 'import' ? (
+                  <>
+                    <label className="field">
+                      <span>私钥文件</span>
+                      <div className="file-picker-row">
+                        <input value={keyForm.privateKeyPath} readOnly placeholder="请选择 SSH 私钥文件" />
+                        <button type="button" className="command-button" onClick={selectPrivateKeyFileForKeyForm}>
+                          选择文件
+                        </button>
+                      </div>
+                    </label>
+
+                    <label className="field">
+                      <span>公钥文件（可选）</span>
+                      <div className="file-picker-row">
+                        <input value={keyForm.publicKeyPath} readOnly placeholder="可选，默认尝试使用同名 .pub 文件" />
+                        <button type="button" className="command-button" onClick={selectPublicKeyFileForKeyForm}>
+                          选择文件
+                        </button>
+                      </div>
+                    </label>
+                  </>
+                ) : null}
+
+                {editingKey ? (
+                  <>
+                    <label className="field">
+                      <span>算法</span>
+                      <input value={editingKey.algorithm || 'SSH'} readOnly />
+                    </label>
+
+                    <label className="field">
+                      <span>指纹</span>
+                      <input value={editingKey.fingerprint || '未生成'} readOnly />
+                    </label>
+                  </>
+                ) : null}
 
                 <label className="field">
-                  <span>密钥口令（可选）</span>
+                  <span>{editingKey ? '保存的解锁口令（可选）' : '密钥口令（可选）'}</span>
                   <input
                     type="password"
                     value={keyForm.passphrase}
                     onChange={(event) => updateKeyFormField('passphrase', event.target.value)}
-                    placeholder="私钥加密时填写"
+                    placeholder={editingKey ? '更新保存的解锁口令，不会重写私钥文件' : '私钥加密时填写'}
                   />
                 </label>
 
                 {keyFormError ? <div className="error-banner">{keyFormError}</div> : null}
 
                 <div className="form-actions">
-                  <button type="submit" className="primary-action">{editingKey ? '保存修改' : '保存密钥'}</button>
+                  <button type="submit" className="primary-action">
+                    {editingKey ? '保存修改' : keyEditorMode === 'generate' ? '生成并保存' : '导入并保存'}
+                  </button>
                   <button type="button" className="command-button" onClick={resetKeyForm}>清空</button>
                 </div>
               </form>
@@ -1459,7 +1776,7 @@ function App() {
                 ) : (
                   <>
                     <div className="credential-note">
-                      当前使用密钥登录：{getSelectedSshKey(credentialHost)?.name ?? credentialHost.keyPath}
+                      当前使用密钥登录：{getSelectedSshKey(credentialHost)?.name ?? '未命名密钥'}
                     </div>
                     <label className="field">
                       <span>密钥口令（私钥加密时填写）</span>
