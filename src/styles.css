@@ -3209,6 +3209,10 @@ button.explorer-row {
     right: 0;
     width: min(320px, calc(100vw - 56px));
   }
+
+  .hosts-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ===== Logs Page ===== */
@@ -6671,181 +6675,6 @@ button.explorer-row {
   color: #1f2328;
 }
 
-/* ===== Final Density Fixes ===== */
-
-.hosts-content {
-  grid-template-columns: 238px minmax(0, 1fr);
-}
-
-.hosts-group-panel {
-  padding: 16px 12px 20px 16px;
-}
-
-.host-grid.list {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.host-grid.grid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  align-items: start;
-}
-
-.host-grid.grid .host-card {
-  min-height: 0;
-  height: auto;
-  align-items: flex-start;
-  padding: 16px;
-}
-
-.host-grid.grid .host-card-main {
-  align-items: flex-start;
-  gap: 14px;
-  padding-right: 42px;
-}
-
-.host-grid.grid .host-avatar {
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-}
-
-.host-grid.grid .host-summary strong {
-  font-size: 15px;
-}
-
-.host-grid.grid .host-summary small {
-  font-size: 12px;
-}
-
-.host-grid.grid .host-card-tags {
-  gap: 6px;
-  margin-top: 7px !important;
-}
-
-.host-grid.grid .host-card-tags em {
-  min-height: 23px;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
-.host-grid.grid .host-connection-state {
-  font-size: 0;
-}
-
-.browser-toolbar {
-  grid-template-columns: 28px 28px 28px 28px minmax(160px, 1fr) auto;
-  min-height: 46px;
-  gap: 8px;
-  padding: 6px 10px;
-}
-
-.browser-toolbar button {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  font-size: 21px;
-}
-
-.browser-address-shell {
-  height: 32px;
-  gap: 8px;
-  border-radius: 16px;
-  padding: 0 11px;
-}
-
-.browser-security-icon {
-  font-size: 15px;
-}
-
-.browser-address-shell input,
-.browser-toolbar input {
-  font-size: 14px;
-}
-
-.browser-toolbar-actions {
-  gap: 6px;
-}
-
-.browser-bookmark-trigger,
-.browser-menu-button,
-.browser-kebab-button {
-  width: 28px !important;
-  height: 28px !important;
-  border-radius: 8px !important;
-  font-size: 20px !important;
-}
-
-.browser-menu-button {
-  font-size: 18px !important;
-}
-
-.browser-kebab-button {
-  font-size: 19px !important;
-}
-
-.explorer-pane {
-  grid-template-rows: 52px minmax(0, 1fr) 28px;
-}
-
-.explorer-addressbar {
-  grid-template-columns: auto minmax(180px, 1fr) minmax(150px, 220px) auto auto;
-  gap: 8px;
-  padding: 7px 12px;
-}
-
-.explorer-nav-buttons {
-  gap: 6px;
-}
-
-.explorer-nav-buttons button,
-.explorer-view-button,
-.explorer-go-button {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  font-size: 23px;
-}
-
-.addressbar-breadcrumb-input,
-.explorer-search {
-  height: 34px;
-  border-radius: 9px;
-}
-
-.addressbar-breadcrumb-input input {
-  border-radius: 9px;
-  padding: 0 11px;
-  font-size: 14px;
-}
-
-.breadcrumb-trail {
-  padding: 0 10px;
-}
-
-.breadcrumb-btn,
-.breadcrumb-sep {
-  font-size: 14px;
-}
-
-.explorer-search {
-  gap: 7px;
-  padding: 0 10px;
-}
-
-.explorer-search span {
-  font-size: 18px;
-}
-
-.explorer-search input {
-  font-size: 14px;
-}
-
-@media (max-width: 860px) {
-  .hosts-content {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* ===== 2026 UI Refresh ===== */
 
 :root {
@@ -8092,11 +7921,11 @@ button.explorer-row {
 }
 
 .hosts-content {
-  grid-template-columns: 282px minmax(0, 1fr);
+  grid-template-columns: 236px minmax(0, 1fr);
 }
 
 .hosts-group-panel {
-  padding: 18px 14px 22px 18px;
+  padding: 16px 12px 20px 16px;
 }
 
 .all-hosts-filter {
@@ -8238,6 +8067,52 @@ button.explorer-row {
   font-size: 20px;
 }
 
+.host-grid.grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 320px));
+  align-items: start;
+  justify-content: start;
+}
+
+.host-grid.grid .host-card {
+  min-height: 150px;
+  align-items: flex-start;
+  padding: 18px;
+}
+
+.host-grid.grid .host-card-main {
+  align-items: flex-start;
+  padding-right: 42px;
+}
+
+.host-grid.grid .host-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+}
+
+.host-grid.grid .host-summary strong {
+  font-size: 15px;
+}
+
+.host-grid.grid .host-summary small {
+  font-size: 12px;
+}
+
+.host-grid.grid .host-card-tags {
+  gap: 6px;
+  margin-top: 8px !important;
+}
+
+.host-grid.grid .host-card-tags em {
+  min-height: 23px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.host-grid.grid .host-connection-state {
+  font-size: 0;
+}
+
 .desktop-window {
   grid-template-rows: 42px minmax(0, 1fr);
   border-radius: 14px;
@@ -8329,60 +8204,60 @@ button.explorer-row {
 }
 
 .explorer-pane {
-  grid-template-rows: 66px minmax(0, 1fr) 32px;
+  grid-template-rows: 42px minmax(0, 1fr) 28px;
 }
 
 .explorer-addressbar {
-  grid-template-columns: auto minmax(220px, 1fr) minmax(170px, 240px) auto auto;
-  gap: 12px;
-  padding: 11px 16px;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(140px, 210px) auto auto;
+  gap: 7px;
+  padding: 5px 10px;
 }
 
 .explorer-nav-buttons {
-  gap: 10px;
+  gap: 5px;
 }
 
 .explorer-nav-buttons button,
 .explorer-view-button,
 .explorer-go-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  font-size: 28px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 20px;
 }
 
 .addressbar-breadcrumb-input,
 .explorer-search {
-  height: 42px;
-  border-radius: 10px;
+  height: 30px;
+  border-radius: 8px;
 }
 
 .addressbar-breadcrumb-input input {
-  border-radius: 10px;
-  padding: 0 13px;
-  font-size: 16px;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .breadcrumb-trail {
-  padding: 0 12px;
+  padding: 0 9px;
 }
 
 .breadcrumb-btn,
 .breadcrumb-sep {
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .explorer-search {
-  gap: 8px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 9px;
 }
 
 .explorer-search span {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .explorer-search input {
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .explorer-layout {
@@ -8486,6 +8361,79 @@ button.explorer-row {
   height: 42px;
   border-radius: 9px;
   font-size: 20px;
+}
+
+.browser-bookmark-trigger-wrap {
+  position: relative;
+}
+
+.browser-bookmark-popover {
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+  z-index: 10020;
+  width: min(320px, calc(100vw - 48px));
+  gap: 10px;
+  border-radius: 14px;
+  padding: 12px;
+  transform: none;
+}
+
+.browser-bookmark-popover::before {
+  right: 12px;
+}
+
+.browser-bookmark-popover-header strong {
+  font-size: 13px;
+}
+
+.browser-bookmark-field span {
+  font-size: 11px;
+}
+
+.browser-bookmark-field input {
+  height: 31px;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.browser-toolbar .browser-bookmark-popover button,
+.browser-bookmark-popover button {
+  width: auto !important;
+  min-width: 0;
+  height: 30px !important;
+  border-radius: 8px !important;
+  padding: 0 11px;
+  font-size: 12px !important;
+  line-height: 1;
+}
+
+.browser-toolbar .browser-bookmark-popover-header button,
+.browser-bookmark-popover-header button {
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0;
+  font-size: 20px !important;
+}
+
+.browser-bookmark-popover-actions {
+  gap: 8px;
+}
+
+.host-grid.grid .host-card {
+  min-height: 0;
+  height: auto;
+  padding: 16px;
+}
+
+.host-grid.grid .host-card-main {
+  gap: 14px;
+  padding-right: 42px;
+}
+
+.host-grid.grid .host-card-tags {
+  margin-top: 7px !important;
 }
 
 [data-theme="light"] .top-chrome {
@@ -8691,200 +8639,4 @@ button.explorer-row {
 
 [data-theme="light"] .sysinfo-card-value {
   color: #1f2328;
-}
-
-/* ===== Final Runtime Density Fixes ===== */
-
-.hosts-content {
-  grid-template-columns: 238px minmax(0, 1fr);
-}
-
-.hosts-group-panel {
-  padding: 16px 12px 20px 16px;
-}
-
-.host-grid.list {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.host-grid.grid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 320px));
-  align-items: start;
-  justify-content: start;
-}
-
-.host-grid.grid .host-card {
-  min-height: 150px;
-  align-items: flex-start;
-  padding: 18px;
-}
-
-.host-grid.grid .host-card-main {
-  align-items: flex-start;
-  padding-right: 42px;
-}
-
-.host-grid.grid .host-avatar {
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-}
-
-.host-grid.grid .host-summary strong {
-  font-size: 15px;
-}
-
-.host-grid.grid .host-summary small {
-  font-size: 12px;
-}
-
-.host-grid.grid .host-card-tags {
-  gap: 6px;
-  margin-top: 8px !important;
-}
-
-.host-grid.grid .host-card-tags em {
-  min-height: 23px;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
-.host-grid.grid .host-connection-state {
-  font-size: 0;
-}
-
-.explorer-pane {
-  grid-template-rows: 42px minmax(0, 1fr) 28px;
-}
-
-.explorer-addressbar {
-  grid-template-columns: auto minmax(180px, 1fr) minmax(140px, 210px) auto auto;
-  gap: 7px;
-  padding: 5px 10px;
-}
-
-.explorer-nav-buttons {
-  gap: 5px;
-}
-
-.explorer-nav-buttons button,
-.explorer-view-button,
-.explorer-go-button {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  font-size: 20px;
-}
-
-.addressbar-breadcrumb-input,
-.explorer-search {
-  height: 30px;
-  border-radius: 8px;
-}
-
-.addressbar-breadcrumb-input input {
-  border-radius: 8px;
-  padding: 0 10px;
-  font-size: 13px;
-}
-
-.breadcrumb-trail {
-  padding: 0 9px;
-}
-
-.breadcrumb-btn,
-.breadcrumb-sep {
-  font-size: 13px;
-}
-
-.explorer-search {
-  gap: 6px;
-  padding: 0 9px;
-}
-
-.explorer-search span {
-  font-size: 16px;
-}
-
-.explorer-search input {
-  font-size: 13px;
-}
-
-.browser-bookmark-trigger-wrap {
-  position: relative;
-}
-
-.browser-bookmark-popover {
-  top: calc(100% + 8px);
-  right: 0;
-  left: auto;
-  z-index: 10020;
-  width: min(320px, calc(100vw - 48px));
-  gap: 10px;
-  border-radius: 14px;
-  padding: 12px;
-  transform: none;
-}
-
-.browser-bookmark-popover::before {
-  right: 12px;
-}
-
-.browser-bookmark-popover-header strong {
-  font-size: 13px;
-}
-
-.browser-bookmark-field span {
-  font-size: 11px;
-}
-
-.browser-bookmark-field input {
-  height: 31px;
-  border-radius: 8px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
-.browser-toolbar .browser-bookmark-popover button,
-.browser-bookmark-popover button {
-  width: auto !important;
-  min-width: 0;
-  height: 30px !important;
-  border-radius: 8px !important;
-  padding: 0 11px;
-  font-size: 12px !important;
-  line-height: 1;
-}
-
-.browser-toolbar .browser-bookmark-popover-header button,
-.browser-bookmark-popover-header button {
-  width: 26px !important;
-  height: 26px !important;
-  padding: 0;
-  font-size: 20px !important;
-}
-
-.browser-bookmark-popover-actions {
-  gap: 8px;
-}
-
-.host-grid.grid .host-card {
-  min-height: 0;
-  height: auto;
-  padding: 16px;
-}
-
-.host-grid.grid .host-card-main {
-  gap: 14px;
-  padding-right: 42px;
-}
-
-.host-grid.grid .host-card-tags {
-  margin-top: 7px !important;
-}
-
-@media (max-width: 860px) {
-  .hosts-content {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
