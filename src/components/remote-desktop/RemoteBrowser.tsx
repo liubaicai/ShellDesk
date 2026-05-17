@@ -679,10 +679,11 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
             ⌂
           </button>
           <div className="browser-address-shell">
+            <span className="browser-security-icon" aria-hidden="true">▣</span>
             <input
               value={browserAddress}
               onChange={(event) => setBrowserAddress(event.target.value)}
-              placeholder="127.0.0.1 / 10.0.0.12:8080 / https://example.com"
+              placeholder="搜索或输入网址"
               autoCapitalize="off"
               spellCheck={false}
             />
@@ -745,14 +746,19 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
               ) : null}
             </div>
 
-            <button type="submit" className="browser-go-button">前往</button>
+            <button type="button" className="browser-menu-button" aria-label="浏览器菜单" title="菜单">
+              ☰
+            </button>
+            <button type="submit" className="browser-kebab-button" aria-label="打开地址" title="打开地址">
+              ⋮
+            </button>
           </div>
         </form>
 
+        {bookmarks.length ? (
         <div className="browser-bookmark-bar">
           <div className="browser-bookmark-list" aria-label="书签栏">
-            {bookmarks.length ? (
-              bookmarks.map((bookmark) => {
+            {bookmarks.map((bookmark) => {
                 const bookmarkStyle = {
                   '--bookmark-accent': getBookmarkAccent(bookmark.url),
                 } as CSSProperties;
@@ -790,12 +796,10 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
                     </button>
                   </div>
                 );
-              })
-            ) : (
-              <span className="browser-bookmark-empty">书签栏为空，点击地址栏右侧星标收藏当前页面。</span>
-            )}
+              })}
           </div>
         </div>
+        ) : null}
       </div>
 
       {bookmarkMenu && activeBookmarkMenuBookmark ? createPortal(

@@ -66,10 +66,10 @@ const windowMinWidth = 360;
 const windowMinHeight = 260;
 
 const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
-  files: { x: 172, y: 62, width: 920, height: 560 },
+  files: { x: 132, y: 54, width: 980, height: 580 },
   terminal: { x: 206, y: 80, width: 780, height: 500 },
   notepad: { x: 140, y: 50, width: 860, height: 580 },
-  browser: { x: 190, y: 68, width: 940, height: 560 },
+  browser: { x: 150, y: 58, width: 1000, height: 600 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
@@ -433,7 +433,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
           return (
             <section
               key={desktopWindow.id}
-              className={`desktop-window ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''}`}
+              className={`desktop-window desktop-window-${desktopWindow.appKey} ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''}`}
               aria-label={appInfo.label}
               style={desktopWindowStyle}
               onPointerDownCapture={() => bringWindowToFront(desktopWindow.id)}
