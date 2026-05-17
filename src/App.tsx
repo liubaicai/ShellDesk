@@ -16,7 +16,7 @@ const defaultAppSettings: GuiSshAppSettings = {
   interfaceFont: 'Space Grotesk',
   theme: 'dark',
   accentColor: '#43c7ff',
-  defaultHostView: 'grid',
+  defaultHostView: 'list',
   rememberPasswords: true,
   rememberKeyPassphrases: true,
   terminalFontSize: 13,
@@ -1635,10 +1635,10 @@ function App() {
             <>
           <div className="command-bar no-drag">
             <label className="global-search">
-              <span>查找</span>
+              <span className="search-icon" aria-hidden="true">⌕</span>
               <input
                 type="search"
-                placeholder="查找主机或 ssh user@hostname / ssh -p 2222 user@host"
+                placeholder="查找主机或快速连接（例如：ssh user@hostname -p 2222）"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 onKeyDown={(event) => {
@@ -1648,6 +1648,7 @@ function App() {
                   }
                 }}
               />
+              <kbd>Ctrl + K</kbd>
             </label>
 
             <button type="button" className="command-button" onClick={connectCommandBarInput} disabled={isConnecting}>
@@ -1662,21 +1663,22 @@ function App() {
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
           </div>
 
-          <section className="vault-content">
-            <div className="content-filter-row">
-              <button type="button" className={`filter-tab ${!activeGroupKey && !searchQuery ? 'active' : ''}`} onClick={clearFilters}>
-                全部主机
+          <section className="vault-content hosts-content">
+            <aside className="hosts-group-panel" aria-label="主机分组">
+              <button type="button" className={`filter-tab all-hosts-filter ${!activeGroupKey && !searchQuery ? 'active' : ''}`} onClick={clearFilters}>
+                <span>全部主机</span>
+                <b>{hosts.length}</b>
               </button>
-              <span>{activeGroupName ? `当前分组：${activeGroupName}` : `${hosts.length} 台主机`}</span>
-            </div>
-            <section className="vault-section">
-              <div className="section-heading">
+
+              <div className="section-heading group-panel-heading">
                 <h2>分组</h2>
-                <span>共 {hostGroups.length} 个</span>
+                <button type="button" className="group-add-button" onClick={openCreateHost} aria-label="新建主机">
+                  +
+                </button>
               </div>
 
               {hostGroups.length ? (
-                <div className="group-grid">
+                <div className="group-grid group-list">
                   {hostGroups.map((group) => (
                     <button
                       key={group.key}
@@ -1684,23 +1686,26 @@ function App() {
                       className={`group-card ${activeGroupKey === group.key ? 'active' : ''}`}
                       onClick={() => setActiveGroupKey(group.key)}
                     >
-                      <span className="group-icon">G</span>
-                      <span>
-                        <strong>{group.name}</strong>
-                        <small>{group.count} 台主机</small>
-                      </span>
+                      <span className="group-icon" aria-hidden="true">▱</span>
+                      <strong>{group.name}</strong>
+                      <small>{group.count}</small>
                     </button>
                   ))}
                 </div>
               ) : (
                 <div className="empty-inline">添加主机后会自动生成分组。</div>
               )}
-            </section>
+            </aside>
 
-            <section className="vault-section host-section">
-              <div className="section-heading">
-                <h2>主机</h2>
-                <span>{filteredHosts.length} 条 <b>0 个在线</b></span>
+            <section className="vault-section host-section hosts-list-panel">
+              <div className="section-heading host-list-heading">
+                <h2>{activeGroupName || '未分组'} <b>{filteredHosts.length}</b></h2>
+                <span>
+                  共 {filteredHosts.length} 个主机
+                  <button type="button" className="host-refresh-button" onClick={() => setHosts(readStoredHosts())} aria-label="刷新主机列表">
+                    ↻
+                  </button>
+                </span>
               </div>
 
               {filteredHosts.length ? (
@@ -1723,10 +1728,18 @@ function App() {
                         <span className="host-summary">
                           <strong>{host.name}</strong>
                           <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
-                          <span>{host.group || '未分组'} · {host.tags.length ? host.tags.join(' / ') : '无标签'}</span>
+                          <span className="host-card-tags">
+                            <em>SSH</em>
+                            <em>{host.group || '未分组'}</em>
+                            <em>{host.tags.length ? host.tags.join(' / ') : '无标签'}</em>
+                          </span>
                         </span>
                       </button>
                       <span className="host-card-actions">
+                        <span className="host-connection-state">
+                          <i aria-hidden="true" />
+                          就绪
+                        </span>
                         {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
                           <span className="credential-icon" title={host.authMethod === 'key' ? '密钥登录' : '密码已保存'}>🔑</span>
                         ) : null}

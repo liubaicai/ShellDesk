@@ -207,6 +207,7 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
 function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProps) {
   const [remotePath, setRemotePath] = useState('.');
   const [pathDraft, setPathDraft] = useState('.');
+  const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileEntries, setFileEntries] = useState<RemoteFileEntry[]>([]);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
   const [filesError, setFilesError] = useState('');
@@ -333,9 +334,26 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     return sorted;
   }, [fileEntries, sortField, sortDirection]);
 
+  const displayedEntries = useMemo(() => {
+    const query = fileSearchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return sortedEntries;
+    }
+
+    return sortedEntries.filter((entry) => {
+      const haystack = `${entry.name} ${getFileTypeLabel(entry)}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [fileSearchQuery, sortedEntries]);
+
   const navigateToPath = useCallback((nextPath: string) => {
     setRemotePath(nextPath.trim() || '.');
   }, []);
+
+  const navigateToParent = useCallback(() => {
+    navigateToPath(getParentRemotePath(remotePath));
+  }, [navigateToPath, remotePath]);
 
   const submitRemotePath = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -383,7 +401,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
         return next;
       });
     } else if (event.shiftKey && lastClickedName) {
-      const names = sortedEntries.map((e) => e.name);
+      const names = displayedEntries.map((e) => e.name);
       const anchorIndex = names.indexOf(lastClickedName);
       const currentIndex = names.indexOf(entry.name);
 
@@ -398,7 +416,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     }
 
     setLastClickedName(entry.name);
-  }, [closeContextMenu, lastClickedName, sortedEntries]);
+  }, [closeContextMenu, displayedEntries, lastClickedName]);
 
   const handleRowDoubleClick = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -651,13 +669,13 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       }
       case 'F2': {
         event.preventDefault();
-        const target = sortedEntries.find((e) => selectedNames.has(e.name));
+        const target = displayedEntries.find((e) => selectedNames.has(e.name));
         if (target) startRename(target);
         break;
       }
       case 'Enter': {
         event.preventDefault();
-        const target = sortedEntries.find((e) => selectedNames.has(e.name));
+        const target = displayedEntries.find((e) => selectedNames.has(e.name));
         if (target) openFileEntry(target);
         break;
       }
@@ -674,7 +692,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
         break;
       }
     }
-  }, [renamingName, isCreatingNew, deleteSelectedEntries, sortedEntries, selectedNames, startRename, openFileEntry, fileEntries, refreshFiles]);
+  }, [renamingName, isCreatingNew, deleteSelectedEntries, displayedEntries, selectedNames, startRename, openFileEntry, fileEntries, refreshFiles]);
 
   const breadcrumbSegments = useMemo(() => {
     const p = remotePath.trim();
@@ -700,7 +718,17 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
   return (
     <div className="file-pane explorer-pane" onKeyDown={handleKeydown} tabIndex={-1}>
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
-        <span>路径</span>
+        <div className="explorer-nav-buttons" aria-label="目录导航">
+          <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回">
+            ‹
+          </button>
+          <button type="button" disabled aria-label="前进" title="前进">
+            ›
+          </button>
+          <button type="button" onClick={() => navigateToPath('/home')} aria-label="打开 Home" title="Home">
+            ⌂
+          </button>
+        </div>
         <div className="addressbar-breadcrumb-input">
           <div className="breadcrumb-trail">
             {breadcrumbSegments.map((segment, index) => (
@@ -723,21 +751,33 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
             placeholder="输入路径后按回车..."
           />
         </div>
-        <button type="submit">转到</button>
+        <label className="explorer-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            value={fileSearchQuery}
+            onChange={(event) => setFileSearchQuery(event.target.value)}
+            placeholder="搜索"
+            spellCheck={false}
+          />
+        </label>
+        <button type="submit" className="explorer-go-button">转到</button>
+        <button type="button" className="explorer-view-button" aria-label="切换视图" title="视图">
+          ☷
+        </button>
       </form>
 
       <div className="explorer-layout">
         <aside className="explorer-sidebar" aria-label="快速访问">
           <div className="sidebar-section-title">快速访问</div>
-          <button type="button" className={remotePath === '.' ? 'active' : ''} onClick={() => navigateToPath('.')}>Home</button>
-          <button type="button" className={remotePath === '/' ? 'active' : ''} onClick={() => navigateToPath('/')}>根目录</button>
+          <button type="button" className={remotePath === '.' ? 'active' : ''} onClick={() => navigateToPath('.')}><span aria-hidden="true">⌂</span>Home</button>
+          <button type="button" className={remotePath === '/' ? 'active' : ''} onClick={() => navigateToPath('/')}><span aria-hidden="true">⌂</span>根目录</button>
           <div className="sidebar-section-title">常用目录</div>
-          <button type="button" onClick={() => navigateToPath('/home')}>/home</button>
-          <button type="button" onClick={() => navigateToPath('/tmp')}>/tmp</button>
-          <button type="button" onClick={() => navigateToPath('/var/log')}>/var/log</button>
-          <button type="button" onClick={() => navigateToPath('/etc')}>/etc</button>
-          <button type="button" onClick={() => navigateToPath('/opt')}>/opt</button>
-          <button type="button" onClick={() => navigateToPath('/usr/local')}>/usr/local</button>
+          <button type="button" onClick={() => navigateToPath('/home')}><span aria-hidden="true">□</span>/home</button>
+          <button type="button" onClick={() => navigateToPath('/tmp')}><span aria-hidden="true">□</span>/tmp</button>
+          <button type="button" onClick={() => navigateToPath('/var/log')}><span aria-hidden="true">□</span>/var/log</button>
+          <button type="button" onClick={() => navigateToPath('/etc')}><span aria-hidden="true">□</span>/etc</button>
+          <button type="button" onClick={() => navigateToPath('/opt')}><span aria-hidden="true">□</span>/opt</button>
+          <button type="button" onClick={() => navigateToPath('/usr/local')}><span aria-hidden="true">□</span>/usr/local</button>
         </aside>
 
         <section
@@ -756,7 +796,9 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
           {isCreatingNew ? (
             <div className="explorer-row new-item-row">
               <span className="explorer-name-cell">
-                <b>{isCreatingNew === 'folder' ? '\u{1F4C1}' : '\u{1F4C4}'}</b>
+                <b className={`file-kind-icon ${isCreatingNew === 'folder' ? 'directory' : 'file'}`}>
+                  {isCreatingNew === 'folder' ? '\u{1F4C1}' : '\u{1F4C4}'}
+                </b>
                 <input
                   ref={newItemInputRef}
                   className="inline-rename-input"
@@ -791,7 +833,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                 大小{sortIndicator('size')}
               </button>
             </div>
-            {sortedEntries.map((entry) => {
+            {displayedEntries.map((entry) => {
               const isRenaming = renamingName === entry.name;
 
               return (
@@ -805,7 +847,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                 >
                   {isRenaming ? (
                     <span className="explorer-name-cell">
-                      <b>{getFileIcon(entry)}</b>
+                      <b className={`file-kind-icon ${entry.type}`}>{getFileIcon(entry)}</b>
                       <input
                         ref={renameInputRef}
                         className="inline-rename-input"
@@ -822,7 +864,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                     </span>
                   ) : (
                     <span className="explorer-name-cell">
-                      <b>{getFileIcon(entry)}</b>
+                      <b className={`file-kind-icon ${entry.type}`}>{getFileIcon(entry)}</b>
                       {entry.name}
                     </span>
                   )}
@@ -834,12 +876,14 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
             })}
           </div>
 
-          {!isFilesLoading && !filesError && !fileEntries.length ? <div className="empty-inline">该目录为空。</div> : null}
+          {!isFilesLoading && !filesError && !displayedEntries.length ? (
+            <div className="empty-inline">{fileEntries.length ? '没有匹配的文件。' : '该目录为空。'}</div>
+          ) : null}
         </section>
       </div>
 
       <div className="explorer-statusbar">
-        <span>{fileEntries.length} 个项目</span>
+        <span>{fileSearchQuery ? `${displayedEntries.length} / ${fileEntries.length} 个项目` : `${fileEntries.length} 个项目`}</span>
         <span>
           {selectedNames.size > 0
             ? `已选择 ${selectedNames.size} 个项目${selectedNames.size === 1 ? ` \u2014 ${sortedEntries.find((e) => selectedNames.has(e.name))?.name ?? ''}` : ''}`
