@@ -6691,13 +6691,15 @@ button.explorer-row {
 }
 
 .host-grid.grid .host-card {
-  min-height: 150px;
+  min-height: 0;
+  height: auto;
   align-items: flex-start;
-  padding: 18px;
+  padding: 16px;
 }
 
 .host-grid.grid .host-card-main {
   align-items: flex-start;
+  gap: 14px;
   padding-right: 42px;
 }
 
@@ -6717,7 +6719,7 @@ button.explorer-row {
 
 .host-grid.grid .host-card-tags {
   gap: 6px;
-  margin-top: 8px !important;
+  margin-top: 7px !important;
 }
 
 .host-grid.grid .host-card-tags em {
@@ -8864,6 +8866,21 @@ button.explorer-row {
 
 .browser-bookmark-popover-actions {
   gap: 8px;
+}
+
+.host-grid.grid .host-card {
+  min-height: 0;
+  height: auto;
+  padding: 16px;
+}
+
+.host-grid.grid .host-card-main {
+  gap: 14px;
+  padding-right: 42px;
+}
+
+.host-grid.grid .host-card-tags {
+  margin-top: 7px !important;
 }
 
 @media (max-width: 860px) {
