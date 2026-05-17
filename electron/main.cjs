@@ -12,6 +12,8 @@ const configBundleFormat = 'gui-ssh-config';
 const configBundleVersion = 2;
 const maxConfigImportBytes = 20 * 1024 * 1024;
 const maxPrivateKeyBytes = 1024 * 1024;
+const maxRemoteTextFileBytes = 5 * 1024 * 1024;
+const maxRemoteTextWriteBytes = 10 * 1024 * 1024;
 const maxVaultBytes = 25 * 1024 * 1024;
 const vaultFileName = 'vault.json';
 const vaultFormat = 'gui-ssh-vault';
@@ -2086,21 +2088,45 @@ function readRemoteFile(client, remotePath) {
         return;
       }
 
-      sftp.readFile(remotePath, 'utf8', (readError, content) => {
-        sftp.end();
-
-        if (readError) {
-          reject(readError);
+      sftp.stat(remotePath, (statError, attrs) => {
+        if (statError) {
+          sftp.end();
+          reject(statError);
           return;
         }
 
-        resolve(content);
+        if (getSftpEntryType(attrs) !== 'file') {
+          sftp.end();
+          reject(new Error('只能用记事本打开远程文件。'));
+          return;
+        }
+
+        if ((attrs.size ?? 0) > maxRemoteTextFileBytes) {
+          sftp.end();
+          reject(new Error(`文件超过 ${Math.round(maxRemoteTextFileBytes / 1024 / 1024)} MB，请先下载后用本地编辑器打开。`));
+          return;
+        }
+
+        sftp.readFile(remotePath, 'utf8', (readError, content) => {
+          sftp.end();
+
+          if (readError) {
+            reject(readError);
+            return;
+          }
+
+          resolve(content);
+        });
       });
     });
   });
 }
 
 function writeRemoteFile(client, remotePath, content) {
+  if (Buffer.byteLength(content, 'utf8') > maxRemoteTextWriteBytes) {
+    throw new Error(`文件内容超过 ${Math.round(maxRemoteTextWriteBytes / 1024 / 1024)} MB，请使用上传功能替换大文件。`);
+  }
+
   return new Promise((resolve, reject) => {
     client.sftp((sftpError, sftp) => {
       if (sftpError) {
@@ -2144,7 +2170,7 @@ registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath
   return true;
 });
 
-function downloadRemoteFile(client, remotePath) {
+function downloadRemoteFileToPath(client, remotePath, localPath) {
   return new Promise((resolve, reject) => {
     client.sftp((sftpError, sftp) => {
       if (sftpError) {
@@ -2152,18 +2178,37 @@ function downloadRemoteFile(client, remotePath) {
         return;
       }
 
-      const chunks = [];
+      let settled = false;
+      let transferredBytes = 0;
       const readStream = sftp.createReadStream(remotePath);
+      const writeStream = fs.createWriteStream(localPath, { flags: 'w' });
 
-      readStream.on('data', (chunk) => chunks.push(chunk));
-      readStream.on('error', (readError) => {
+      const fail = (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         sftp.end();
-        reject(readError);
+        readStream.destroy();
+        writeStream.destroy();
+        reject(error);
+      };
+
+      readStream.on('data', (chunk) => {
+        transferredBytes += chunk.length;
       });
-      readStream.on('end', () => {
+      readStream.on('error', fail);
+      writeStream.on('error', fail);
+      writeStream.on('finish', () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         sftp.end();
-        resolve(Buffer.concat(chunks));
+        resolve(transferredBytes);
       });
+
+      readStream.pipe(writeStream);
     });
   });
 }
@@ -2183,9 +2228,8 @@ registerIpcHandler('connection:download-file', async (event, connectionId, rawPa
     return { canceled: true };
   }
 
-  const buffer = await downloadRemoteFile(activeConnection.client, remotePath);
-  fs.writeFileSync(result.filePath, buffer);
-  return { canceled: false, filePath: result.filePath, size: buffer.length };
+  const size = await downloadRemoteFileToPath(activeConnection.client, remotePath, result.filePath);
+  return { canceled: false, filePath: result.filePath, size };
 });
 
 registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemotePath) => {
@@ -2208,19 +2252,44 @@ registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemo
     : currentPath === '/' ? `/${fileName}`
     : `${currentPath.replace(/\/+$/, '')}/${fileName}`;
   const targetRemotePath = validateMutableRemotePath(destPath);
-  const content = fs.readFileSync(localPath);
+  const stats = fs.statSync(localPath);
+
+  if (!stats.isFile()) {
+    throw new Error('只能上传文件。');
+  }
 
   await new Promise((resolve, reject) => {
     activeConnection.client.sftp((sftpError, sftp) => {
       if (sftpError) { reject(sftpError); return; }
+      let settled = false;
+      const readStream = fs.createReadStream(localPath);
       const writeStream = sftp.createWriteStream(targetRemotePath);
-      writeStream.on('error', (err) => { sftp.end(); reject(err); });
-      writeStream.on('close', () => { sftp.end(); resolve(); });
-      writeStream.end(content);
+      const fail = (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        sftp.end();
+        readStream.destroy();
+        writeStream.destroy();
+        reject(error);
+      };
+
+      readStream.on('error', fail);
+      writeStream.on('error', fail);
+      writeStream.on('close', () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        sftp.end();
+        resolve();
+      });
+      readStream.pipe(writeStream);
     });
   });
 
-  return { canceled: false, remotePath: targetRemotePath, size: content.length };
+  return { canceled: false, remotePath: targetRemotePath, size: stats.size };
 });
 
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {

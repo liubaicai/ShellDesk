@@ -223,6 +223,10 @@ interface HostGroup {
   count: number;
 }
 
+type DeleteConfirmationRequest =
+  | { kind: 'host'; host: Host }
+  | { kind: 'ssh-key'; key: SshKey; relatedHostCount: number };
+
 type ViewMode = 'grid' | 'list';
 type AuthMethod = 'password' | 'key';
 
@@ -701,6 +705,7 @@ function App() {
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationRequest | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPersistedCollectionsRef = useRef('');
   const platform = window.guiSSH?.platform;
@@ -1177,14 +1182,11 @@ function App() {
 
   const deleteSshKey = (key: SshKey) => {
     const relatedHosts = hosts.filter((host) => host.keyId === key.id);
-    const message = relatedHosts.length
-      ? `确认删除密钥「${key.name}」？${relatedHosts.length} 台主机正在使用该密钥，删除后会切换为密码登录。`
-      : `确认删除密钥「${key.name}」？`;
+    setDeleteConfirmation({ kind: 'ssh-key', key, relatedHostCount: relatedHosts.length });
+  };
 
-    if (!window.confirm(message)) {
-      return;
-    }
-
+  const confirmDeleteSshKey = (key: SshKey) => {
+    const relatedHosts = hosts.filter((host) => host.keyId === key.id);
     setSshKeys((currentKeys) => currentKeys.filter((currentKey) => currentKey.id !== key.id));
 
     if (relatedHosts.length) {
@@ -1271,10 +1273,10 @@ function App() {
   };
 
   const deleteHost = (host: Host) => {
-    if (!window.confirm(`确认删除主机「${host.name}」？`)) {
-      return;
-    }
+    setDeleteConfirmation({ kind: 'host', host });
+  };
 
+  const confirmDeleteHost = (host: Host) => {
     const nextHosts = hosts.filter((currentHost) => currentHost.id !== host.id);
     setHosts(nextHosts);
     addLog('host', 'info', `删除主机：${host.name}`, `${host.username}@${host.address}:${host.port}`);
@@ -1283,6 +1285,20 @@ function App() {
     if (editingHostId === host.id) {
       closeEditor();
     }
+  };
+
+  const confirmPendingDelete = () => {
+    if (!deleteConfirmation) {
+      return;
+    }
+
+    if (deleteConfirmation.kind === 'ssh-key') {
+      confirmDeleteSshKey(deleteConfirmation.key);
+    } else {
+      confirmDeleteHost(deleteConfirmation.host);
+    }
+
+    setDeleteConfirmation(null);
   };
 
   const closeHostCardMenu = (trigger: HTMLElement | null) => {
@@ -2045,6 +2061,25 @@ function App() {
                 </div>
               </form>
             </aside>
+          ) : null}
+
+          {deleteConfirmation ? (
+            <div className="notepad-modal-overlay no-drag" role="presentation" onClick={() => setDeleteConfirmation(null)}>
+              <div className="notepad-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" onClick={(event) => event.stopPropagation()}>
+                <div id="delete-confirm-title" className="notepad-modal-title">确认删除</div>
+                <div className="notepad-modal-message">
+                  {deleteConfirmation.kind === 'ssh-key'
+                    ? deleteConfirmation.relatedHostCount
+                      ? `确认删除密钥「${deleteConfirmation.key.name}」？${deleteConfirmation.relatedHostCount} 台主机正在使用该密钥，删除后会切换为密码登录。`
+                      : `确认删除密钥「${deleteConfirmation.key.name}」？`
+                    : `确认删除主机「${deleteConfirmation.host.name}」？`}
+                </div>
+                <div className="notepad-modal-actions">
+                  <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmation(null)}>取消</button>
+                  <button type="button" className="notepad-modal-btn danger" onClick={confirmPendingDelete}>删除</button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </main>
       </div>

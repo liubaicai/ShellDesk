@@ -119,6 +119,14 @@ function isArchiveFile(name: string) {
     lower.endsWith('.gz') || lower.endsWith('.rar');
 }
 
+function getDeleteEntriesLabel(entries: RemoteFileEntry[]) {
+  const names = entries.map((entry) => entry.name).join('\u3001');
+
+  return entries.length === 1
+    ? `${entries[0].type === 'directory' ? '目录' : '文件'}\u300C${names}\u300D`
+    : `${entries.length} 个项目（${names}）`;
+}
+
 function getFileIcon(entry: RemoteFileEntry) {
   if (entry.type === 'directory') {
     return '\u{1F4C1}';
@@ -216,6 +224,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
   const [propertiesLoading, setPropertiesLoading] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [lastClickedName, setLastClickedName] = useState<string | null>(null);
+  const [deleteConfirmationEntries, setDeleteConfirmationEntries] = useState<RemoteFileEntry[] | null>(null);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
@@ -414,20 +423,23 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     });
   }, [closeContextMenu]);
 
-  const deleteSelectedEntries = useCallback(async (entries?: RemoteFileEntry[]) => {
+  const deleteSelectedEntries = useCallback((entries?: RemoteFileEntry[]) => {
     const targets = entries ?? sortedEntries.filter((e) => selectedNames.has(e.name));
 
     if (!targets.length) return;
 
-    const names = targets.map((e) => e.name).join('\u3001');
-    const label = targets.length === 1
-      ? `${targets[0].type === 'directory' ? '目录' : '文件'}\u300C${names}\u300D`
-      : `${targets.length} 个项目（${names}）`;
+    closeContextMenu();
+    setDeleteConfirmationEntries(targets);
+  }, [closeContextMenu, selectedNames, sortedEntries]);
 
-    if (!window.confirm(`确认删除远程${label}？此操作不可撤销。`)) return;
+  const confirmDeleteSelectedEntries = useCallback(async () => {
+    const targets = deleteConfirmationEntries;
+
+    if (!targets?.length) return;
 
     try {
       setFilesError('');
+      setDeleteConfirmationEntries(null);
       const errors: string[] = [];
 
       for (const entry of targets) {
@@ -447,7 +459,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [connectionId, remotePath, refreshFiles, selectedNames, sortedEntries]);
+  }, [connectionId, deleteConfirmationEntries, remotePath, refreshFiles]);
 
   const startRename = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -906,6 +918,28 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
             )}
           </div>
         </>,
+        document.body,
+      ) : null}
+
+      {deleteConfirmationEntries ? createPortal(
+        <div className="notepad-modal-overlay" role="presentation" onClick={() => setDeleteConfirmationEntries(null)}>
+          <div
+            className="notepad-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="explorer-delete-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div id="explorer-delete-confirm-title" className="notepad-modal-title">确认删除</div>
+            <div className="notepad-modal-message">
+              确认删除远程{getDeleteEntriesLabel(deleteConfirmationEntries)}？此操作不可撤销。
+            </div>
+            <div className="notepad-modal-actions">
+              <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmationEntries(null)}>取消</button>
+              <button type="button" className="notepad-modal-btn danger" onClick={() => void confirmDeleteSelectedEntries()}>删除</button>
+            </div>
+          </div>
+        </div>,
         document.body,
       ) : null}
 

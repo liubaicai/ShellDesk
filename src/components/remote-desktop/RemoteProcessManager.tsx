@@ -105,15 +105,21 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
   }, [autoRefresh, refresh]);
 
   const killProcess = async (pid: number) => {
+    if (!Number.isInteger(pid) || pid <= 0) {
+      setError('PID 无效。');
+      return;
+    }
+
+    const signal = SIGNALS.some((item) => item.value === selectedSignal) ? selectedSignal : '15';
     setKilling(pid);
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `kill -${selectedSignal} ${pid} 2>&1`);
+      const result = await runCmd(connectionId, `kill -${signal} ${pid} 2>&1`);
       if (result.code !== 0) {
         throw new Error(result.stderr || '终止进程失败，可能需要 root 权限。');
       }
-      setSuccess(`已向 PID ${pid} 发送 SIG${selectedSignal} 信号。`);
+      setSuccess(`已向 PID ${pid} 发送 SIG${signal} 信号。`);
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
