@@ -1125,16 +1125,17 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
         { key: 'boot', label: '启动模式', icon: '\u{1F504}', cmd: '[ -d /sys/firmware/efi ] && echo "UEFI" || echo "BIOS (Legacy)"' },
       ];
 
-      const results = await Promise.all(
-        cmds.map(async ({ key, label, icon, cmd }) => {
-          try {
-            const r = await runCmd(connectionId, cmd);
-            return { key, label, icon, value: (r.stdout || r.stderr || '无输出').trim() };
-          } catch {
-            return { key, label, icon, value: '获取失败' };
-          }
-        }),
-      );
+      const results: SysInfoItem[] = [];
+
+      // 串行执行，避免一次性打开过多 SSH channel 导致后面的检测项随机失败。
+      for (const { key, label, icon, cmd } of cmds) {
+        try {
+          const r = await runCmd(connectionId, cmd);
+          results.push({ key, label, icon, value: (r.stdout || r.stderr || '无输出').trim() });
+        } catch {
+          results.push({ key, label, icon, value: '获取失败' });
+        }
+      }
 
       setItems(results);
     } catch (err) {

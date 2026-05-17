@@ -1,4 +1,5 @@
 import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
 
@@ -22,6 +23,12 @@ interface BrowserBookmarkDraft {
   id: string | null;
   title: string;
   url: string;
+}
+
+interface BrowserBookmarkMenuState {
+  bookmarkId: string;
+  x: number;
+  y: number;
 }
 
 interface BrowserLoadCommitEvent extends Event {
@@ -181,14 +188,20 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
   const [canGoForward, setCanGoForward] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
   const [bookmarkDraft, setBookmarkDraft] = useState<BrowserBookmarkDraft | null>(null);
+  const [bookmarkMenu, setBookmarkMenu] = useState<BrowserBookmarkMenuState | null>(null);
   const browserViewRef = useRef<BrowserWebview | null>(null);
   const isWebviewReadyRef = useRef(false);
   const bookmarkTriggerRef = useRef<HTMLDivElement | null>(null);
   const bookmarkPopoverRef = useRef<HTMLDivElement | null>(null);
+  const bookmarkMenuPopoverRef = useRef<HTMLDivElement | null>(null);
+  const bookmarkMenuTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const lastPersistedBookmarksRef = useRef('');
   const areBookmarksReadyRef = useRef(false);
 
   const currentBookmark = bookmarks.find((bookmark) => areBrowserUrlsEquivalent(bookmark.url, currentUrl)) ?? null;
+  const activeBookmarkMenuBookmark = bookmarkMenu
+    ? bookmarks.find((bookmark) => bookmark.id === bookmarkMenu.bookmarkId) ?? null
+    : null;
 
   const syncNavigationState = (nextUrl?: string, nextTitle?: string) => {
     const webview = browserViewRef.current;
@@ -451,6 +464,39 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [bookmarkDraft]);
 
+  useEffect(() => {
+    if (!bookmarkMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      const trigger = bookmarkMenuTriggerRefs.current.get(bookmarkMenu.bookmarkId) ?? null;
+
+      if (
+        (trigger && trigger.contains(target)) ||
+        (bookmarkMenuPopoverRef.current && bookmarkMenuPopoverRef.current.contains(target))
+      ) {
+        return;
+      }
+
+      setBookmarkMenu(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setBookmarkMenu(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [bookmarkMenu]);
+
   const loadBrowserUrl = (value: string) => {
     const nextUrl = normalizeBrowserUrl(value);
     const webview = browserViewRef.current;
@@ -521,6 +567,30 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     setBookmarkDraft(null);
   };
 
+  const toggleBookmarkMenu = (bookmark: BrowserBookmark, element: HTMLButtonElement) => {
+    if (bookmarkMenu?.bookmarkId === bookmark.id) {
+      setBookmarkMenu(null);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const menuWidth = 126;
+    const menuHeight = 78;
+    const gap = 6;
+    const maxLeft = Math.max(12, window.innerWidth - menuWidth - 12);
+    const x = Math.min(Math.max(12, rect.right - menuWidth), maxLeft);
+    const prefersBottom = rect.bottom + gap + menuHeight <= window.innerHeight - 12;
+    const y = prefersBottom
+      ? rect.bottom + gap
+      : Math.max(12, rect.top - gap - menuHeight);
+
+    setBookmarkMenu({
+      bookmarkId: bookmark.id,
+      x,
+      y,
+    });
+  };
+
   const updateBookmarkDraftField = (field: keyof BrowserBookmarkDraft, value: string | null) => {
     setBookmarkDraft((currentDraft) => (
       currentDraft ? { ...currentDraft, [field]: value } : currentDraft
@@ -580,6 +650,7 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
 
   const deleteBookmark = (bookmarkId: string) => {
     setBookmarks((currentBookmarks) => currentBookmarks.filter((bookmark) => bookmark.id !== bookmarkId));
+    setBookmarkMenu((currentMenu) => (currentMenu?.bookmarkId === bookmarkId ? null : currentMenu));
 
     if (bookmarkDraft?.id === bookmarkId) {
       closeBookmarkDraft();
@@ -698,13 +769,25 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
                       </span>
                       <span className="browser-bookmark-label">{bookmark.title}</span>
                     </button>
-                    <details className="browser-bookmark-menu">
-                      <summary aria-label="书签操作">⋯</summary>
-                      <div className="browser-bookmark-menu-panel">
-                        <button type="button" onClick={() => openBookmarkDraft(bookmark)}>编辑</button>
-                        <button type="button" className="danger-text" onClick={() => deleteBookmark(bookmark.id)}>删除</button>
-                      </div>
-                    </details>
+                    <button
+                      ref={(element) => {
+                        if (element) {
+                          bookmarkMenuTriggerRefs.current.set(bookmark.id, element);
+                        } else {
+                          bookmarkMenuTriggerRefs.current.delete(bookmark.id);
+                        }
+                      }}
+                      type="button"
+                      className={`browser-bookmark-menu-button ${bookmarkMenu?.bookmarkId === bookmark.id ? 'active' : ''}`}
+                      aria-label="书签操作"
+                      title="书签操作"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleBookmarkMenu(bookmark, event.currentTarget);
+                      }}
+                    >
+                      ⋯
+                    </button>
                   </div>
                 );
               })
@@ -714,6 +797,36 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
           </div>
         </div>
       </div>
+
+      {bookmarkMenu && activeBookmarkMenuBookmark ? createPortal(
+        <div
+          ref={bookmarkMenuPopoverRef}
+          className="browser-bookmark-menu-panel browser-bookmark-menu-panel-floating"
+          style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
+          role="menu"
+          aria-label="书签操作菜单"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              openBookmarkDraft(activeBookmarkMenuBookmark);
+              setBookmarkMenu(null);
+            }}
+          >
+            编辑
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger-text"
+            onClick={() => deleteBookmark(activeBookmarkMenuBookmark.id)}
+          >
+            删除
+          </button>
+        </div>,
+        document.body,
+      ) : null}
 
       {loadError ? <div className="browser-error-banner">{loadError}</div> : null}
 
