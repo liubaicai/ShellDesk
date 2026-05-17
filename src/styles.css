@@ -5193,9 +5193,9 @@ button.explorer-row {
 
 /* notepad modal dialogs */
 .notepad-modal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 10000;
   display: grid;
   place-items: center;
   background: rgba(0, 0, 0, 0.45);
@@ -5278,6 +5278,17 @@ button.explorer-row {
   color: var(--text);
 }
 
+.notepad-modal-btn.danger {
+  border-color: rgba(248, 81, 73, 0.45);
+  background: rgba(248, 81, 73, 0.12);
+  color: #ff8f8a;
+}
+
+.notepad-modal-btn.danger:hover {
+  background: rgba(248, 81, 73, 0.22);
+  color: #ffd8d5;
+}
+
 [data-theme="light"] .notepad-modal {
   border-color: rgba(16, 32, 51, 0.16);
   background: #fff;
@@ -5300,6 +5311,12 @@ button.explorer-row {
   border-color: rgba(9, 105, 218, 0.4);
   background: rgba(9, 105, 218, 0.08);
   color: #0969da;
+}
+
+[data-theme="light"] .notepad-modal-btn.danger {
+  border-color: rgba(207, 34, 46, 0.32);
+  background: rgba(207, 34, 46, 0.08);
+  color: #cf222e;
 }
 
 [data-theme="light"] .win-titlebar-controls .win-btn {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
 
@@ -61,6 +62,18 @@ async function runCmd(connectionId: string, command: string): Promise<CommandRes
     throw new Error('当前运行环境不支持远程命令执行。');
   }
   return window.guiSSH.connections.runCommand(connectionId, command);
+}
+
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function isSafeHostname(value: string) {
+  return /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(value);
+}
+
+function isSafeNameserver(value: string) {
+  return /^[0-9A-Fa-f:.]{2,45}$/.test(value);
 }
 
 /* ─── Network ─────────────────────────────────────────────────────────────── */
@@ -134,6 +147,8 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
   const [editForm, setEditForm] = useState<IfaceEditState>({ method: 'dhcp', address: '', netmask: '', gateway: '' });
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [newDns, setNewDns] = useState('');
+  const [isHostnameDialogOpen, setIsHostnameDialogOpen] = useState(false);
+  const [hostnameDraft, setHostnameDraft] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -173,7 +188,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `ip link set ${ifaceName} ${bringUp ? 'up' : 'down'} 2>&1`);
+      const result = await runCmd(connectionId, `ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'} 2>&1`);
       if (result.code !== 0) throw new Error(result.stderr || '操作失败，可能需要 root 权限。');
       setSuccess(`接口 ${ifaceName} 已${bringUp ? '启用' : '禁用'}。`);
       await refresh();
@@ -204,16 +219,17 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setSuccess('');
     try {
       let cmd: string;
+      const ifaceArg = shellQuote(editingIface);
       if (editForm.method === 'dhcp') {
-        cmd = `dhclient -r ${editingIface} 2>/dev/null; dhclient ${editingIface} 2>&1 || echo "dhclient 不可用，请确认已安装"`;
+        cmd = `dhclient -r ${ifaceArg} 2>/dev/null; dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`;
       } else {
         if (!editForm.address) { setError('请输入 IP 地址。'); setActionLoading(null); return; }
         const prefix = editForm.netmask
           ? editForm.netmask.split('.').map((o) => Number.parseInt(o, 10)).reduce((p, oct) => p + (oct >>> 0).toString(2).replace(/0/g, '').length, 0)
           : 24;
-        cmd = `ip addr flush dev ${editingIface} 2>/dev/null; ip addr add ${editForm.address}/${prefix} dev ${editingIface} 2>&1`;
+        cmd = `ip addr flush dev ${ifaceArg} 2>/dev/null; ip addr add ${shellQuote(`${editForm.address}/${prefix}`)} dev ${ifaceArg} 2>&1`;
         if (editForm.gateway) {
-          cmd += ` && ip route replace default via ${editForm.gateway} dev ${editingIface} 2>&1`;
+          cmd += ` && ip route replace default via ${shellQuote(editForm.gateway)} dev ${ifaceArg} 2>&1`;
         }
       }
       const result = await runCmd(connectionId, cmd);
@@ -230,17 +246,32 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     }
   };
 
+  const openHostnameDialog = () => {
+    setHostnameDraft(hostname);
+    setError('');
+    setIsHostnameDialogOpen(true);
+  };
+
   const setHostnameCmd = async () => {
-    const name = prompt('请输入新的主机名') ?? '';
-    if (!name.trim()) return;
+    const name = hostnameDraft.trim();
+    if (!name) {
+      setError('请输入新的主机名。');
+      return;
+    }
+    if (!isSafeHostname(name)) {
+      setError('主机名只能包含字母、数字、点和短横线，且不能以点或短横线结尾。');
+      return;
+    }
+    setIsHostnameDialogOpen(false);
     setActionLoading('hostname');
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `hostnamectl set-hostname ${name.trim()} 2>&1 || hostname ${name.trim()} 2>&1`);
+      const quotedName = shellQuote(name);
+      const result = await runCmd(connectionId, `hostnamectl set-hostname ${quotedName} 2>&1 || hostname ${quotedName} 2>&1`);
       if (result.code !== 0) throw new Error(result.stderr || '设置主机名失败。');
-      setSuccess(`主机名已设置为 ${name.trim()}。`);
-      setHostname(name.trim());
+      setSuccess(`主机名已设置为 ${name}。`);
+      setHostname(name);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -251,10 +282,15 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
   const addDnsServer = async () => {
     const server = newDns.trim();
     if (!server) return;
+    if (!isSafeNameserver(server)) {
+      setError('DNS 服务器必须是 IPv4 或 IPv6 地址。');
+      return;
+    }
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `grep -q "^nameserver ${server}" /etc/resolv.conf 2>/dev/null && echo EXISTS || echo "nameserver ${server}" >> /etc/resolv.conf`);
+      const line = `nameserver ${server}`;
+      const result = await runCmd(connectionId, `grep -Fxq ${shellQuote(line)} /etc/resolv.conf 2>/dev/null && echo EXISTS || printf '%s\n' ${shellQuote(line)} >> /etc/resolv.conf`);
       if (result.stdout.trim() === 'EXISTS') {
         setSuccess(`${server} 已存在。`);
       } else {
@@ -271,7 +307,8 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      await runCmd(connectionId, `sed -i '/^nameserver ${server.replace(/\./g, '\\.')}$/d' /etc/resolv.conf`);
+      const line = `nameserver ${server}`;
+      await runCmd(connectionId, `tmp=$(mktemp) && grep -Fxv ${shellQuote(line)} /etc/resolv.conf > "$tmp"; rc=$?; if [ "$rc" -le 1 ]; then cat "$tmp" > /etc/resolv.conf; rc=0; fi; rm -f "$tmp"; exit "$rc"`);
       setSuccess(`已移除 DNS 服务器 ${server}。`);
       await refresh();
     } catch (err) {
@@ -299,7 +336,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
           <span className="settings-info-label">主机名</span>
           <strong className="settings-info-value">{hostname || '...'}</strong>
         </div>
-        <button type="button" className="settings-action-btn" onClick={setHostnameCmd} disabled={actionLoading === 'hostname'}>
+        <button type="button" className="settings-action-btn" onClick={openHostnameDialog} disabled={actionLoading === 'hostname'}>
           {actionLoading === 'hostname' ? '...' : '修改'}
         </button>
       </div>
@@ -428,6 +465,42 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
           <div className="net-iface-meta"><em>搜索域</em>{dnsSearch}</div>
         ) : null}
       </div>
+
+      {isHostnameDialogOpen ? createPortal(
+        <div className="notepad-modal-overlay" role="presentation" onClick={() => setIsHostnameDialogOpen(false)}>
+          <div
+            className="notepad-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hostname-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div id="hostname-dialog-title" className="notepad-modal-title">修改主机名</div>
+            <input
+              className="notepad-modal-input"
+              value={hostnameDraft}
+              onChange={(event) => setHostnameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void setHostnameCmd();
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setIsHostnameDialogOpen(false);
+                }
+              }}
+              autoFocus
+              placeholder="例如 server-01"
+            />
+            <div className="notepad-modal-actions">
+              <button type="button" className="notepad-modal-btn" onClick={() => setIsHostnameDialogOpen(false)}>取消</button>
+              <button type="button" className="notepad-modal-btn primary" onClick={() => void setHostnameCmd()}>保存</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }
@@ -742,8 +815,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const escaped = draft.replace(/'/g, "'\\''");
-      const result = await runCmd(connectionId, `echo '${escaped}' > /etc/hosts`);
+      const result = await runCmd(connectionId, `printf '%s' ${shellQuote(draft)} > /etc/hosts`);
       if (result.code !== 0) {
         throw new Error(result.stderr || '写入失败，可能需要 root 权限。');
       }
@@ -762,11 +834,15 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
       setError('请输入 IP 地址和主机名。');
       return;
     }
+    if (!isSafeNameserver(addIp.trim()) || !isSafeHostname(addHostname.trim())) {
+      setError('请输入有效的 IP 地址和主机名。');
+      return;
+    }
     setError('');
     setSuccess('');
     try {
       const line = `${addIp.trim()} ${addHostname.trim()}`;
-      const result = await runCmd(connectionId, `echo '${line}' >> /etc/hosts`);
+      const result = await runCmd(connectionId, `printf '%s\n' ${shellQuote(line)} >> /etc/hosts`);
       if (result.code !== 0) {
         throw new Error(result.stderr || '追加失败，可能需要 root 权限。');
       }
@@ -880,9 +956,9 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      let cmd = `ip route add ${addDest.trim()}`;
-      if (addGateway.trim()) cmd += ` via ${addGateway.trim()}`;
-      if (addDev.trim()) cmd += ` dev ${addDev.trim()}`;
+      let cmd = `ip route add ${shellQuote(addDest.trim())}`;
+      if (addGateway.trim()) cmd += ` via ${shellQuote(addGateway.trim())}`;
+      if (addDev.trim()) cmd += ` dev ${shellQuote(addDev.trim())}`;
       const result = await runCmd(connectionId, cmd);
       if (result.code !== 0) {
         throw new Error(result.stderr || '添加路由失败，可能需要 root 权限。');
@@ -905,7 +981,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `ip route del ${delDest.trim()} 2>&1`);
+      const result = await runCmd(connectionId, `ip route del ${shellQuote(delDest.trim())} 2>&1`);
       if (result.code !== 0) {
         throw new Error(result.stderr || '删除路由失败，可能需要 root 权限。');
       }
