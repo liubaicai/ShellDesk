@@ -5,6 +5,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
+const Redis = require('ioredis');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
@@ -1329,6 +1330,14 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
     if (entry.connectionId === connectionId) {
       activeMysqlConnections.delete(key);
       entry.connection.end().catch(() => {});
+    }
+  }
+
+  for (const [key, entry] of activeRedisConnections) {
+    if (entry.connectionId === connectionId) {
+      activeRedisConnections.delete(key);
+      entry.connection.disconnect();
+      entry.tunnelServer.close();
     }
   }
 
@@ -2660,6 +2669,184 @@ registerIpcHandler('connection:mysql-update-cell', async (_event, connectionId, 
   const [result] = await entry.connection.query(sql, params);
 
   return { affectedRows: result.affectedRows };
+});
+
+// ─── Redis over SSH tunnel ──────────────────────────────────────────────────
+
+const activeRedisConnections = new Map();
+
+function getRedisKey(connectionId, redisId) {
+  return `${connectionId}::${redisId}`;
+}
+
+function createRedisTunnel(client, redisHost, redisPort) {
+  return new Promise((resolve, reject) => {
+    const localPort = Math.floor(Math.random() * 50000) + 10000;
+    const localHost = '127.0.0.1';
+    const server = net.createServer((localSocket) => {
+      client.forwardOut(localHost, localPort, redisHost, redisPort, (error, remoteStream) => {
+        if (error) { localSocket.destroy(); return; }
+        localSocket.pipe(remoteStream).pipe(localSocket);
+        localSocket.on('error', () => {});
+        remoteStream.on('error', () => localSocket.destroy());
+      });
+    });
+    server.listen(localPort, localHost, () => {
+      resolve({ server, localPort, localHost });
+    });
+    server.on('error', reject);
+  });
+}
+
+registerIpcHandler('connection:redis-connect', async (_event, connectionId, rawConfig) => {
+  const activeConnection = getActiveConnection(connectionId);
+  if (!isPlainObject(rawConfig)) { throw new Error('Redis 连接配置无效。'); }
+  const redisHost = readBoundedString(rawConfig.host || '127.0.0.1', 'Redis 主机', 256);
+  const redisPort = readIntegerInRange(rawConfig.port, 'Redis 端口', 1, 65535, 6379);
+  const redisPassword = typeof rawConfig.password === 'string' ? rawConfig.password : undefined;
+  const redisDb = typeof rawConfig.db === 'number' ? rawConfig.db : (parseInt(rawConfig.db, 10) || 0);
+  const redisId = readBoundedString(rawConfig.redisId || crypto.randomUUID(), 'Redis 连接 ID', 128);
+  const key = getRedisKey(connectionId, redisId);
+  const existing = activeRedisConnections.get(key);
+  if (existing) {
+    try { await existing.connection.ping(); return { redisId, alreadyConnected: true }; }
+    catch { existing.tunnelServer.close(); activeRedisConnections.delete(key); }
+  }
+  const { server: tunnelServer, localPort } = await createRedisTunnel(activeConnection.client, redisHost, redisPort);
+  const redis = new Redis({
+    host: '127.0.0.1', port: localPort, password: redisPassword, db: redisDb,
+    lazyConnect: true, connectTimeout: 15000, maxRetriesPerRequest: 1,
+  });
+  await redis.connect();
+  activeRedisConnections.set(key, { connection: redis, connectionId, redisId, tunnelServer });
+  return { redisId };
+});
+
+registerIpcHandler('connection:redis-disconnect', async (_event, connectionId, rawRedisId) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const key = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(key);
+  if (entry) { activeRedisConnections.delete(key); entry.connection.disconnect(); entry.tunnelServer.close(); }
+  return true;
+});
+
+registerIpcHandler('connection:redis-keys', async (_event, connectionId, rawRedisId, rawPattern) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const pattern = typeof rawPattern === 'string' ? rawPattern : '*';
+  const key = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(key);
+  if (!entry) { throw new Error('Redis 连接已断开。'); }
+  const allKeys = [];
+  let cursor = '0';
+  do {
+    const [nextCursor, batch] = await entry.connection.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+    cursor = nextCursor;
+    allKeys.push(...batch);
+  } while (cursor !== '0');
+  const result = [];
+  const pipeline = entry.connection.pipeline();
+  for (const k of allKeys) { pipeline.type(k); pipeline.ttl(k); }
+  const pipelineResults = await pipeline.exec();
+  for (let i = 0; i < allKeys.length; i++) {
+    const typeErr = pipelineResults[i * 2][0];
+    const typeVal = pipelineResults[i * 2][1];
+    const ttlErr = pipelineResults[i * 2 + 1][0];
+    const ttlVal = pipelineResults[i * 2 + 1][1];
+    result.push({ name: allKeys[i], type: typeErr ? 'unknown' : (typeVal || 'none'), ttl: ttlErr ? -2 : ttlVal });
+  }
+  result.sort((a, b) => a.name.localeCompare(b.name));
+  return result;
+});
+
+registerIpcHandler('connection:redis-get-value', async (_event, connectionId, rawRedisId, rawKey) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const key = readBoundedString(rawKey, '键名', 1024);
+  const redisKey = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(redisKey);
+  if (!entry) { throw new Error('Redis 连接已断开。'); }
+  const type = await entry.connection.type(key);
+  let value;
+  switch (type) {
+    case 'string': value = await entry.connection.get(key); break;
+    case 'hash': value = await entry.connection.hgetall(key); break;
+    case 'list': value = await entry.connection.lrange(key, 0, -1); break;
+    case 'set': value = await entry.connection.smembers(key); break;
+    case 'zset': value = await entry.connection.zrange(key, 0, -1, 'WITHSCORES'); break;
+    case 'none': throw new Error(`键 "${key}" 不存在。`);
+    default: value = await entry.connection.call('DUMP', key); break;
+  }
+  return { type, value };
+});
+
+registerIpcHandler('connection:redis-set-value', async (_event, connectionId, rawRedisId, rawKey, rawValue, rawType) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const key = readBoundedString(rawKey, '键名', 1024);
+  const redisKey = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(redisKey);
+  if (!entry) { throw new Error('Redis 连接已断开。'); }
+  const type = typeof rawType === 'string' ? rawType : 'string';
+  const pipeline = entry.connection.pipeline();
+  pipeline.del(key);
+  switch (type) {
+    case 'string': pipeline.set(key, String(rawValue)); break;
+    case 'hash': {
+      if (typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)) {
+        pipeline.hset(key, rawValue);
+      }
+      break;
+    }
+    case 'list': {
+      if (Array.isArray(rawValue) && rawValue.length > 0) {
+        pipeline.rpush(key, ...rawValue);
+      }
+      break;
+    }
+    case 'set': {
+      if (Array.isArray(rawValue) && rawValue.length > 0) {
+        pipeline.sadd(key, ...rawValue);
+      }
+      break;
+    }
+    case 'zset': {
+      if (Array.isArray(rawValue)) {
+        const zsetArgs = [];
+        for (let i = 0; i < rawValue.length; i++) {
+          const item = rawValue[i];
+          if (typeof item === 'object' && item !== null && 'member' in item && 'score' in item) {
+            zsetArgs.push(item.score, item.member);
+          } else if (i % 2 === 0 && i + 1 < rawValue.length) {
+            zsetArgs.push(rawValue[i + 1], rawValue[i]);
+            i++;
+          }
+        }
+        if (zsetArgs.length > 0) pipeline.zadd(key, ...zsetArgs);
+      }
+      break;
+    }
+  }
+  await pipeline.exec();
+  return true;
+});
+
+registerIpcHandler('connection:redis-delete-key', async (_event, connectionId, rawRedisId, rawKey) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const key = readBoundedString(rawKey, '键名', 1024);
+  const redisKey = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(redisKey);
+  if (!entry) { throw new Error('Redis 连接已断开。'); }
+  await entry.connection.del(key);
+  return true;
+});
+
+registerIpcHandler('connection:redis-command', async (_event, connectionId, rawRedisId, rawCommand, rawArgs) => {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const command = readBoundedString(rawCommand, '命令', 256);
+  const key = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(key);
+  if (!entry) { throw new Error('Redis 连接已断开。'); }
+  const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
+  const result = await entry.connection.call(command, ...args);
+  return result;
 });
 
 app.on('web-contents-created', (_event, contents) => {

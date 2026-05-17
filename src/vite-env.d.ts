@@ -236,6 +236,13 @@ interface GuiSshConnectionControls {
     pkColumns?: string[],
     pkValues?: unknown[],
   ) => Promise<{ affectedRows: number }>;
+  redisConnect: (connectionId: string, config: GuiSshRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
+  redisDisconnect: (connectionId: string, redisId: string) => Promise<boolean>;
+  redisKeys: (connectionId: string, redisId: string, pattern?: string) => Promise<{ name: string; type: string; ttl: number }[]>;
+  redisGetValue: (connectionId: string, redisId: string, key: string) => Promise<{ type: string; value: unknown }>;
+  redisSetValue: (connectionId: string, redisId: string, key: string, value: unknown, type: string) => Promise<boolean>;
+  redisDeleteKey: (connectionId: string, redisId: string, key: string) => Promise<boolean>;
+  redisCommand: (connectionId: string, redisId: string, command: string, args: string[]) => Promise<unknown>;
 }
 
 interface GuiSshMysqlConnectConfig {
@@ -262,6 +269,14 @@ interface GuiSshMysqlQueryResult {
   rows: Record<string, unknown>[];
   affectedRows?: number;
   insertId?: string;
+}
+
+interface GuiSshRedisConnectConfig {
+  host?: string;
+  port?: number;
+  password?: string;
+  db?: number;
+  redisId?: string;
 }
 
 interface GuiSshLogEntry {
