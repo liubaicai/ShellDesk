@@ -56,7 +56,7 @@ src/
 - `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`（files/terminal/notepad/browser/monitor/mysql/procmanager/settings）
 - 窗口支持拖拽移动、缩放、最大化，使用 `transform: translate3d` 定位
 - **右键菜单/弹窗**必须用 `createPortal` 渲染到 `document.body`，否则受 `transform` 影响导致定位错乱
-- **Dock 栏规则**：`dockPinnedApps` 定义固定显示在底部 Dock 的应用（files/terminal/browser/monitor），其他应用（如 notepad、mysql）仅在桌面图标区显示，但当其窗口打开时会动态追加到 Dock 栏（关闭后消失）
+- **Dock 栏规则**：`dockPinnedApps` 定义固定显示在底部 Dock 的应用（files/terminal/browser），其他应用（如 notepad、mysql）仅在桌面图标区显示，但当其窗口打开时会动态追加到 Dock 栏（关闭后消失）
 
 ### Electron 沙箱限制
 - `prompt()` / `confirm()` / `alert()` 在 sandbox 模式下被禁用，返回 `null`

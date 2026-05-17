@@ -1,4 +1,5 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteSettings, RemoteTerminal } from './components/remote-desktop';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
@@ -15,7 +16,7 @@ const desktopApps = [
 ] as const;
 
 /** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
-const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser', 'monitor'];
+const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
 
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
@@ -136,6 +137,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const zIndexRef = useRef(0);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const [focusedWindowId, setFocusedWindowId] = useState('');
+  const [desktopContextMenu, setDesktopContextMenu] = useState<{ x: number; y: number; appKey: DesktopAppKey } | null>(null);
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId) ?? null;
 
   useEffect(() => {
@@ -392,15 +394,20 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   };
 
   return (
-    <main className="remote-desktop-page">
-      <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
-        <div className="desktop-icons" aria-label="桌面应用">
+    <>
+      <main className="remote-desktop-page">
+        <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
+          <div className="desktop-icons" aria-label="桌面应用">
           {desktopApps.map((app) => (
             <button
               key={app.key}
               type="button"
               className={focusedWindow?.appKey === app.key ? 'active' : ''}
-              onClick={() => openDesktopWindow(app.key)}
+              onDoubleClick={() => openDesktopWindow(app.key)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setDesktopContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key });
+              }}
             >
               <span>{app.icon}</span>
               <strong>{app.label}</strong>
@@ -517,6 +524,35 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
         </nav>
       </section>
     </main>
+
+    {desktopContextMenu ? createPortal(
+      <>
+        <div
+          className="context-menu-overlay"
+          onClick={() => setDesktopContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setDesktopContextMenu(null); }}
+        />
+        <div
+          className="context-menu"
+          style={{ left: desktopContextMenu!.x, top: desktopContextMenu!.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const { appKey } = desktopContextMenu!;
+              setDesktopContextMenu(null);
+              openDesktopWindow(appKey);
+            }}
+          >
+            打开
+          </button>
+        </div>
+      </>,
+      document.body,
+    ) : null}
+  </>
   );
 }
 

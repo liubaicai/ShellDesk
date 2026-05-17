@@ -1098,6 +1098,143 @@ interface SysInfoItem {
   detail?: string;
 }
 
+interface CpuInfoSummary {
+  model: string;
+  logicalCpus: string;
+  physicalCores: string;
+  threadsPerCore: string;
+  sockets: string;
+}
+
+interface MemoryInfoSummary {
+  total: string;
+  used: string;
+  free: string;
+  shared: string;
+  cache: string;
+  available: string;
+  usagePercent: number | null;
+}
+
+function parseColonSeparatedBlock(raw: string) {
+  const values = new Map<string, string>();
+
+  for (const line of raw.split(/\r?\n/)) {
+    const separatorIndex = line.indexOf(':');
+
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+
+    if (key && value) {
+      values.set(key, value);
+    }
+  }
+
+  return values;
+}
+
+function multiplyNumericStrings(left: string, right: string) {
+  const leftValue = Number.parseInt(left, 10);
+  const rightValue = Number.parseInt(right, 10);
+
+  if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
+    return '';
+  }
+
+  return String(leftValue * rightValue);
+}
+
+function parseHumanReadableBytes(raw: string) {
+  const match = raw.trim().match(/^([\d.]+)\s*([kmgtp]?i?)?b?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const value = Number.parseFloat(match[1]);
+
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const unit = (match[2] || '').toLowerCase();
+  const multipliers: Record<string, number> = {
+    '': 1,
+    k: 1024,
+    ki: 1024,
+    m: 1024 ** 2,
+    mi: 1024 ** 2,
+    g: 1024 ** 3,
+    gi: 1024 ** 3,
+    t: 1024 ** 4,
+    ti: 1024 ** 4,
+    p: 1024 ** 5,
+    pi: 1024 ** 5,
+  };
+
+  return value * (multipliers[unit] ?? 1);
+}
+
+function parseCpuInfoSummary(raw: string): CpuInfoSummary | null {
+  const values = parseColonSeparatedBlock(raw);
+  const model = values.get('Model name') ?? raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? '';
+  const logicalCpus = values.get('CPU(s)') ?? '';
+  const sockets = values.get('Socket(s)') ?? '';
+  const coresPerSocket = values.get('Core(s) per socket') ?? '';
+  const threadsPerCore = values.get('Thread(s) per core') ?? '';
+  const physicalCores = multiplyNumericStrings(sockets, coresPerSocket);
+
+  if (!model && !logicalCpus && !physicalCores && !threadsPerCore && !sockets) {
+    return null;
+  }
+
+  return {
+    model,
+    logicalCpus,
+    physicalCores,
+    threadsPerCore,
+    sockets,
+  };
+}
+
+function parseMemoryInfoSummary(raw: string): MemoryInfoSummary | null {
+  const memLine = raw.split(/\r?\n/).find((line) => /^Mem:\s+/i.test(line.trim()));
+
+  if (!memLine) {
+    return null;
+  }
+
+  const parts = memLine.trim().split(/\s+/);
+
+  if (parts.length < 7) {
+    return null;
+  }
+
+  const total = parts[1] ?? '';
+  const used = parts[2] ?? '';
+  const free = parts[3] ?? '';
+  const shared = parts[4] ?? '';
+  const cache = parts[5] ?? '';
+  const available = parts[6] ?? '';
+  const totalBytes = parseHumanReadableBytes(total);
+  const usedBytes = parseHumanReadableBytes(used);
+  const usagePercent = totalBytes && usedBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
+
+  return {
+    total,
+    used,
+    free,
+    shared,
+    cache,
+    available,
+    usagePercent,
+  };
+}
+
 function SystemInfoPanel({ connectionId }: { connectionId: string }) {
   const [items, setItems] = useState<SysInfoItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1158,6 +1295,85 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
     return [name, version].filter(Boolean).join(' ') || raw.split('\n')[0] || '未知';
   };
 
+  const renderStructuredSysInfoValue = (item: SysInfoItem) => {
+    if (item.key === 'cpu') {
+      const summary = parseCpuInfoSummary(item.value);
+
+      if (!summary) {
+        return <pre className="sysinfo-card-value">{item.value}</pre>;
+      }
+
+      return (
+        <div className="sysinfo-feature-block">
+          <div className="sysinfo-feature-title">{summary.model || 'CPU 信息'}</div>
+          <div className="sysinfo-metric-grid">
+            <div className="sysinfo-metric">
+              <span>逻辑 CPU</span>
+              <strong>{summary.logicalCpus || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>物理核心</span>
+              <strong>{summary.physicalCores || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>线程 / 核心</span>
+              <strong>{summary.threadsPerCore || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>CPU 插槽</span>
+              <strong>{summary.sockets || '--'}</strong>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (item.key === 'memory') {
+      const summary = parseMemoryInfoSummary(item.value);
+
+      if (!summary) {
+        return <pre className="sysinfo-card-value">{item.value}</pre>;
+      }
+
+      return (
+        <div className="sysinfo-feature-block">
+          <div className="sysinfo-memory-headline">
+            <strong>{summary.used}</strong>
+            <span>/ {summary.total}</span>
+          </div>
+          <div className="sysinfo-memory-caption">
+            {summary.usagePercent !== null ? `已用 ${summary.usagePercent}%` : '内存用量'}
+          </div>
+          {summary.usagePercent !== null ? (
+            <div className="sysinfo-memory-bar" aria-hidden="true">
+              <span className="sysinfo-memory-bar-fill" style={{ width: `${Math.max(6, Math.min(summary.usagePercent, 100))}%` }} />
+            </div>
+          ) : null}
+          <div className="sysinfo-metric-grid">
+            <div className="sysinfo-metric">
+              <span>可用</span>
+              <strong>{summary.available || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>空闲</span>
+              <strong>{summary.free || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>缓存</span>
+              <strong>{summary.cache || '--'}</strong>
+            </div>
+            <div className="sysinfo-metric">
+              <span>共享</span>
+              <strong>{summary.shared || '--'}</strong>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return <pre className="sysinfo-card-value">{item.value}</pre>;
+  };
+
   return (
     <div className="settings-panel-content">
       <div className="settings-panel-header">
@@ -1190,7 +1406,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
               <span className="sysinfo-card-icon">{item.icon}</span>
               <span className="sysinfo-card-label">{item.label}</span>
             </div>
-            <pre className="sysinfo-card-value">{item.value}</pre>
+            {renderStructuredSysInfoValue(item)}
           </article>
         ))}
       </div>

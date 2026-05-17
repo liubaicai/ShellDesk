@@ -696,6 +696,7 @@ function App() {
   const [storageInfo, setStorageInfo] = useState<GuiSshStorageInfo | null>(null);
   const [bookmarkCount, setBookmarkCount] = useState(0);
   const [isVaultReady, setIsVaultReady] = useState(false);
+  const [isLogsReady, setIsLogsReady] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
   const [windowConnectionId] = useState(readWindowConnectionId);
@@ -708,6 +709,7 @@ function App() {
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationRequest | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPersistedCollectionsRef = useRef('');
+  const lastPersistedLogsRef = useRef('');
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const vaultControls = window.guiSSH?.vault;
@@ -862,6 +864,22 @@ function App() {
   }, [isConnectionWindow, vaultControls]);
 
   useEffect(() => {
+    const logsControls = window.guiSSH?.logs;
+
+    if (!logsControls || !isVaultReady || isConnectionWindow) {
+      return;
+    }
+
+    void logsControls.getEntries().then((entries) => {
+      setLogs(entries as unknown as LogEntry[]);
+      lastPersistedLogsRef.current = JSON.stringify(entries);
+      setIsLogsReady(true);
+    }).catch(() => {
+      setIsLogsReady(true);
+    });
+  }, [isConnectionWindow, isVaultReady]);
+
+  useEffect(() => {
     if (!vaultControls || !isVaultReady) {
       return;
     }
@@ -893,6 +911,24 @@ function App() {
       cancelled = true;
     };
   }, [hosts, isVaultReady, settings, sshKeys, vaultControls]);
+
+  useEffect(() => {
+    const logsControls = window.guiSSH?.logs;
+
+    if (!logsControls || !isLogsReady || isConnectionWindow) {
+      return;
+    }
+
+    const serialized = JSON.stringify(logs);
+
+    if (serialized === lastPersistedLogsRef.current) {
+      return;
+    }
+
+    lastPersistedLogsRef.current = serialized;
+
+    void logsControls.saveEntries(logs as unknown as GuiSshLogEntry[]).catch(() => undefined);
+  }, [logs, isConnectionWindow, isLogsReady]);
 
   useEffect(() => {
     if (!statusMessage) {

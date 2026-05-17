@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('guiSSH', {
     getBookmarks: (scope) => ipcRenderer.invoke('vault:get-bookmarks', scope),
     saveBookmarks: (scope, bookmarks) => ipcRenderer.invoke('vault:save-bookmarks', scope, bookmarks),
   },
+  logs: {
+    getEntries: () => ipcRenderer.invoke('logs:get-entries'),
+    saveEntries: (entries) => ipcRenderer.invoke('logs:save-entries', entries),
+  },
   connections: {
     connect: connectHost,
     getInfo: (connectionId) => ipcRenderer.invoke('connection:get-info', connectionId),

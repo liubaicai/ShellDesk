@@ -264,6 +264,20 @@ interface GuiSshMysqlQueryResult {
   insertId?: string;
 }
 
+interface GuiSshLogEntry {
+  id: string;
+  timestamp: string;
+  category: 'connection' | 'host' | 'key' | 'config' | 'system';
+  level: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  detail: string;
+}
+
+interface GuiSshLogsControls {
+  getEntries: () => Promise<GuiSshLogEntry[]>;
+  saveEntries: (entries: GuiSshLogEntry[]) => Promise<GuiSshLogEntry[]>;
+}
+
 interface GuiSshEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
@@ -277,6 +291,7 @@ interface GuiSshApi {
   window: GuiSshWindowControls;
   files: GuiSshFileControls;
   vault: GuiSshVaultControls;
+  logs: GuiSshLogsControls;
   connections: GuiSshConnectionControls;
   events: GuiSshEventControls;
 }

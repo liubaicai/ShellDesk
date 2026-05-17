@@ -19,6 +19,8 @@ const vaultFileName = 'vault.json';
 const vaultFormat = 'gui-ssh-vault';
 const vaultSchemaVersion = 1;
 const bookmarkScopePrefix = 'gui-ssh:browser-bookmarks:';
+const logFileName = 'logs.json';
+const maxLogEntries = 500;
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
 const uiFontChoices = ['Space Grotesk', 'Segoe UI', 'Inter'];
 let vaultCache = null;
@@ -446,6 +448,44 @@ function notifyVaultChanged(payload) {
       window.webContents.send('vault:changed', payload);
     }
   }
+}
+
+// ─── Log persistence ────────────────────────────────────────────────────────
+
+function getLogFilePath() {
+  return path.join(app.getPath('userData'), logFileName);
+}
+
+function readLogEntries() {
+  const logPath = getLogFilePath();
+
+  if (!fs.existsSync(logPath)) {
+    return [];
+  }
+
+  try {
+    const raw = fs.readFileSync(logPath, 'utf8');
+    const entries = JSON.parse(raw);
+
+    if (!Array.isArray(entries)) {
+      return [];
+    }
+
+    return entries.slice(0, maxLogEntries);
+  } catch {
+    return [];
+  }
+}
+
+function writeLogEntries(entries) {
+  const logPath = getLogFilePath();
+  const trimmed = Array.isArray(entries) ? entries.slice(0, maxLogEntries) : [];
+
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify(trimmed, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
 }
 
 function toRendererKeyRecord(key) {
@@ -1690,6 +1730,14 @@ ipcMain.handle('dialog:select-public-key', async (event) => {
 });
 
 registerIpcHandler('vault:get-snapshot', async () => createVaultSnapshot());
+
+registerIpcHandler('logs:get-entries', async () => readLogEntries());
+
+registerIpcHandler('logs:save-entries', async (_event, rawEntries) => {
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  writeLogEntries(entries);
+  return readLogEntries();
+});
 
 registerIpcHandler('vault:save-collections', async (_event, rawPayload) => upsertVaultCollections(rawPayload));
 
