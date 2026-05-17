@@ -95,6 +95,13 @@ contextBridge.exposeInMainWorld('guiSSH', {
     mysqlQuery: (connectionId, mysqlId, sql, database) => ipcRenderer.invoke('connection:mysql-query', connectionId, mysqlId, sql, database),
     mysqlUpdateCell: (connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues) =>
       ipcRenderer.invoke('connection:mysql-update-cell', connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues),
+    redisConnect: (connectionId, config) => ipcRenderer.invoke('connection:redis-connect', connectionId, config),
+    redisDisconnect: (connectionId, redisId) => ipcRenderer.invoke('connection:redis-disconnect', connectionId, redisId),
+    redisKeys: (connectionId, redisId, pattern) => ipcRenderer.invoke('connection:redis-keys', connectionId, redisId, pattern),
+    redisGetValue: (connectionId, redisId, key) => ipcRenderer.invoke('connection:redis-get-value', connectionId, redisId, key),
+    redisSetValue: (connectionId, redisId, key, value, type) => ipcRenderer.invoke('connection:redis-set-value', connectionId, redisId, key, value, type),
+    redisDeleteKey: (connectionId, redisId, key) => ipcRenderer.invoke('connection:redis-delete-key', connectionId, redisId, key),
+    redisCommand: (connectionId, redisId, command, args) => ipcRenderer.invoke('connection:redis-command', connectionId, redisId, command, args),
   },
   events: {
     onTerminalData: (callback) => onIpc('terminal:data', callback),
