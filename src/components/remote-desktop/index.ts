@@ -3,5 +3,6 @@ export { default as RemoteFileExplorer } from './RemoteFileExplorer';
 export { default as RemoteMonitor } from './RemoteMonitor';
 export { default as RemoteMySQL } from './RemoteMySQL';
 export { default as RemoteNotepad, isTextFile } from './RemoteNotepad';
+export { default as RemoteProcessManager } from './RemoteProcessManager';
 export { default as RemoteSettings } from './RemoteSettings';
 export { default as RemoteTerminal } from './RemoteTerminal';
