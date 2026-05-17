@@ -205,6 +205,7 @@ interface GuiSshConnectionControls {
   writeFile: (connectionId: string, remotePath: string, content: string) => Promise<boolean>;
   downloadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; filePath?: string; size?: number }>;
   uploadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; size?: number }>;
+  cancelTransfer: (connectionId: string) => Promise<void>;
   compress: (connectionId: string, sourcePaths: string[], format: string, destPath: string) => Promise<{ format: string; destPath: string }>;
   decompress: (connectionId: string, archivePath: string, destDir?: string) => Promise<{ archivePath: string; destDir: string }>;
   statPath: (connectionId: string, remotePath: string) => Promise<{
@@ -293,11 +294,29 @@ interface GuiSshLogsControls {
   saveEntries: (entries: GuiSshLogEntry[]) => Promise<GuiSshLogEntry[]>;
 }
 
+interface GuiSshTransferProgress {
+  type: 'download' | 'upload';
+  fileName: string;
+  transferred: number;
+  total: number;
+}
+
+interface GuiSshTransferEndPayload {
+  type: 'download' | 'upload';
+  fileName: string;
+  transferred: number;
+  total: number;
+  success: boolean;
+  error?: string;
+}
+
 interface GuiSshEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;
+  onTransferProgress: (callback: (payload: GuiSshTransferProgress) => void) => () => void;
+  onTransferEnd: (callback: (payload: GuiSshTransferEndPayload) => void) => () => void;
 }
 
 interface GuiSshApi {

@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     writeFile: (connectionId, remotePath, content) => ipcRenderer.invoke('connection:write-file', connectionId, remotePath, content),
     downloadFile: (connectionId, remotePath) => ipcRenderer.invoke('connection:download-file', connectionId, remotePath),
     uploadFile: (connectionId, remotePath) => ipcRenderer.invoke('connection:upload-file', connectionId, remotePath),
+    cancelTransfer: (connectionId) => ipcRenderer.invoke('connection:cancel-transfer', connectionId),
     compress: (connectionId, sourcePaths, format, destPath) => ipcRenderer.invoke('connection:compress', connectionId, sourcePaths, format, destPath),
     decompress: (connectionId, archivePath, destDir) => ipcRenderer.invoke('connection:decompress', connectionId, archivePath, destDir),
     statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),
@@ -108,5 +109,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     onTerminalExit: (callback) => onIpc('terminal:exit', callback),
     onConnectionClosed: (callback) => onIpc('connection:closed', callback),
     onVaultChanged: (callback) => onIpc('vault:changed', callback),
+    onTransferProgress: (callback) => onIpc('transfer:progress', callback),
+    onTransferEnd: (callback) => onIpc('transfer:end', callback),
   },
 });

@@ -225,6 +225,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [lastClickedName, setLastClickedName] = useState<string | null>(null);
   const [deleteConfirmationEntries, setDeleteConfirmationEntries] = useState<RemoteFileEntry[] | null>(null);
+  const [transferProgress, setTransferProgress] = useState<{ type: 'download' | 'upload'; fileName: string; transferred: number; total: number } | null>(null);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
@@ -303,6 +304,16 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       copyTimerRef.current = setTimeout(() => setCopiedPath(null), 2000);
     }
   }, [copiedPath]);
+
+  useEffect(() => {
+    const unsubscribe = window.guiSSH?.events.onTransferProgress((payload) => {
+      setTransferProgress(payload);
+    });
+    const unsubEnd = window.guiSSH?.events.onTransferEnd(() => {
+      setTransferProgress(null);
+    });
+    return () => { unsubscribe?.(); unsubEnd?.(); };
+  }, []);
 
   const sortedEntries = useMemo(() => {
     const sorted = [...fileEntries].sort((a, b) => {
@@ -592,6 +603,12 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     }
   }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
 
+  const cancelTransfer = useCallback(async () => {
+    try {
+      await window.guiSSH?.connections.cancelTransfer(connectionId);
+    } catch { /* ignore */ }
+  }, [connectionId]);
+
   const compressEntries = useCallback(async (entries: RemoteFileEntry[], format: string) => {
     closeContextMenu();
     if (!entries.length || !window.guiSSH?.connections) return;
@@ -829,6 +846,31 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
             : '未选择项目'}
         </span>
       </div>
+
+      {transferProgress ? (
+        <div className="transfer-progress">
+          <div className="transfer-progress-info">
+            <span className="transfer-progress-label">
+              <button type="button" className="transfer-cancel-btn" onClick={() => void cancelTransfer()} title="取消传输">&times;</button>
+              {transferProgress.type === 'download' ? '下载' : '上传'} {transferProgress.fileName}
+            </span>
+            <span>
+              {formatBytes(transferProgress.transferred)}
+              {transferProgress.total > 0 ? ` / ${formatBytes(transferProgress.total)}` : ''}
+            </span>
+          </div>
+          <div className="transfer-progress-bar">
+            <div
+              className="transfer-progress-fill"
+              style={{
+                width: transferProgress.total > 0
+                  ? `${Math.round((transferProgress.transferred / transferProgress.total) * 100)}%`
+                  : '10%',
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {contextMenu ? createPortal(
         <>

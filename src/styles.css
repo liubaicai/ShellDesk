@@ -2237,6 +2237,66 @@ button.explorer-row {
   font-size: 11.5px;
 }
 
+.transfer-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 5px 10px;
+  background: rgba(67, 199, 255, 0.06);
+  border-top: 1px solid rgba(67, 199, 255, 0.15);
+}
+
+.transfer-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  color: #7e93aa;
+}
+
+.transfer-progress-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.transfer-progress-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(67, 199, 255, 0.12);
+  overflow: hidden;
+}
+
+.transfer-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #2196f3, #43c7ff);
+  transition: width 0.2s ease;
+}
+
+.transfer-cancel-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 3px;
+  padding: 0;
+  background: transparent;
+  color: #7e93aa;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.transfer-cancel-btn:hover {
+  background: rgba(255, 100, 100, 0.15);
+  color: #ff8f8a;
+}
+
 .explorer-ribbon {
   grid-template-columns: repeat(2, auto) minmax(0, 1fr);
   justify-content: start;
@@ -5410,6 +5470,32 @@ button.explorer-row {
 [data-theme="light"] .win-titlebar-controls .win-btn.close:hover {
   background: #e81123;
   color: #fff;
+}
+
+[data-theme="light"] .transfer-progress {
+  background: rgba(9, 105, 218, 0.04);
+  border-top-color: rgba(9, 105, 218, 0.12);
+}
+
+[data-theme="light"] .transfer-progress-info {
+  color: #656d76;
+}
+
+[data-theme="light"] .transfer-progress-bar {
+  background: rgba(9, 105, 218, 0.1);
+}
+
+[data-theme="light"] .transfer-progress-fill {
+  background: linear-gradient(90deg, #0969da, #43a4ff);
+}
+
+[data-theme="light"] .transfer-cancel-btn {
+  color: #656d76;
+}
+
+[data-theme="light"] .transfer-cancel-btn:hover {
+  background: rgba(207, 34, 46, 0.1);
+  color: #cf222e;
 }
 
 /* ─── MySQL ─────────────────────────────────────────────────────────────────── */

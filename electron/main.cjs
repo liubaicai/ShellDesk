@@ -2227,7 +2227,25 @@ registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath
   return true;
 });
 
-function downloadRemoteFileToPath(client, remotePath, localPath) {
+// ─── Active transfer tracking (for cancel) ───────────────────────────────────
+
+const activeStreams = new Map(); // connectionId -> { destroy: () => void }
+
+function destroyActiveStream(connectionId) {
+  const handle = activeStreams.get(connectionId);
+  if (handle) {
+    activeStreams.delete(connectionId);
+    handle.destroy();
+  }
+}
+
+registerIpcHandler('connection:cancel-transfer', (_event, connectionId) => {
+  destroyActiveStream(connectionId);
+});
+
+function downloadRemoteFileToPath(client, remotePath, localPath, sender, connectionId) {
+  destroyActiveStream(connectionId);
+
   return new Promise((resolve, reject) => {
     client.sftp((sftpError, sftp) => {
       if (sftpError) {
@@ -2235,35 +2253,69 @@ function downloadRemoteFileToPath(client, remotePath, localPath) {
         return;
       }
 
+      const fileName = remotePath.split('/').pop() || 'download';
       let settled = false;
       let transferredBytes = 0;
+      let totalBytes = 0;
+      let lastSent = 0;
       const readStream = sftp.createReadStream(remotePath);
       const writeStream = fs.createWriteStream(localPath, { flags: 'w' });
 
-      const fail = (error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        sftp.end();
+      const cleanup = () => {
+        activeStreams.delete(connectionId);
+        try { sftp.end(); } catch (_) { /* ignore */ }
         readStream.destroy();
         writeStream.destroy();
+      };
+
+      activeStreams.set(connectionId, { destroy: cleanup });
+
+      const sendEndAndResolve = (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (sender && !sender.isDestroyed()) {
+          sender.send('transfer:end', { type: 'download', fileName, transferred: transferredBytes, total: totalBytes, success: true });
+        }
+        resolve(value);
+      };
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (sender && !sender.isDestroyed()) {
+          sender.send('transfer:end', { type: 'download', fileName, transferred: transferredBytes, total: totalBytes, success: false, error: error?.message ?? String(error) });
+        }
         reject(error);
       };
 
+      const sendProgress = () => {
+        const now = Date.now();
+        if (sender && !sender.isDestroyed() && now - lastSent >= 100) {
+          lastSent = now;
+          sender.send('transfer:progress', {
+            type: 'download',
+            fileName,
+            transferred: transferredBytes,
+            total: totalBytes,
+          });
+        }
+      };
+
+      sftp.stat(remotePath, (statErr, stat) => {
+        if (!statErr && stat) {
+          totalBytes = stat.size;
+        }
+      });
+
       readStream.on('data', (chunk) => {
         transferredBytes += chunk.length;
+        sendProgress();
       });
       readStream.on('error', fail);
       writeStream.on('error', fail);
-      writeStream.on('finish', () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        sftp.end();
-        resolve(transferredBytes);
-      });
+      writeStream.on('finish', () => sendEndAndResolve(transferredBytes));
 
       readStream.pipe(writeStream);
     });
@@ -2285,7 +2337,7 @@ registerIpcHandler('connection:download-file', async (event, connectionId, rawPa
     return { canceled: true };
   }
 
-  const size = await downloadRemoteFileToPath(activeConnection.client, remotePath, result.filePath);
+  const size = await downloadRemoteFileToPath(activeConnection.client, remotePath, result.filePath, event.sender, connectionId);
   return { canceled: false, filePath: result.filePath, size };
 });
 
@@ -2315,33 +2367,67 @@ registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemo
     throw new Error('只能上传文件。');
   }
 
+  destroyActiveStream(connectionId);
+
   await new Promise((resolve, reject) => {
     activeConnection.client.sftp((sftpError, sftp) => {
       if (sftpError) { reject(sftpError); return; }
       let settled = false;
+      let transferredBytes = 0;
+      let lastSent = 0;
+      const totalBytes = stats.size;
       const readStream = fs.createReadStream(localPath);
       const writeStream = sftp.createWriteStream(targetRemotePath);
-      const fail = (error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        sftp.end();
+
+      const cleanup = () => {
+        activeStreams.delete(connectionId);
+        try { sftp.end(); } catch (_) { /* ignore */ }
         readStream.destroy();
         writeStream.destroy();
-        reject(error);
       };
 
+      activeStreams.set(connectionId, { destroy: cleanup });
+
+      const end = (success, errorMsg) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('transfer:end', {
+            type: 'upload',
+            fileName,
+            transferred: transferredBytes,
+            total: totalBytes,
+            success,
+            error: errorMsg,
+          });
+        }
+        if (success) resolve();
+        else reject(new Error(errorMsg ?? '传输已取消'));
+      };
+
+      const sendProgress = () => {
+        const now = Date.now();
+        if (!event.sender.isDestroyed() && now - lastSent >= 100) {
+          lastSent = now;
+          event.sender.send('transfer:progress', {
+            type: 'upload',
+            fileName,
+            transferred: transferredBytes,
+            total: totalBytes,
+          });
+        }
+      };
+
+      const fail = (error) => end(false, error?.message ?? String(error));
+
+      readStream.on('data', (chunk) => {
+        transferredBytes += chunk.length;
+        sendProgress();
+      });
       readStream.on('error', fail);
       writeStream.on('error', fail);
-      writeStream.on('close', () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        sftp.end();
-        resolve();
-      });
+      writeStream.on('close', () => end(true, null));
       readStream.pipe(writeStream);
     });
   });
