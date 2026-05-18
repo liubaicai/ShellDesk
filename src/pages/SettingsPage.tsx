@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
 const settingsSections = [
-  { key: 'general', label: '常规', icon: '▣' },
-  { key: 'appearance', label: '外观', icon: '◉' },
-  { key: 'terminal', label: '终端', icon: '▹' },
-  { key: 'security', label: '安全与存储', icon: '🔒' },
-  { key: 'backup', label: '备份与导入', icon: '⇅' },
+  { key: 'general', label: '常规', summary: '语言、字体、视图' },
+  { key: 'appearance', label: '外观', summary: '主题与强调色' },
+  { key: 'terminal', label: '终端', summary: '字号、光标、滚动' },
+  { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
+  { key: 'backup', label: '备份与导入', summary: '配置迁移' },
 ] as const;
 
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
@@ -49,16 +49,25 @@ function SettingsPage({
       </div>
 
       <section className="settings-page no-drag">
-        <aside className="settings-sidebar" aria-label="设置分类">
-          {settingsSections.map((section) => (
+        <aside className="settings-section-nav" aria-label="设置分类">
+          <div className="settings-section-nav-header">
+            <span>设置分类</span>
+            <small>{settingsSections.length} 项</small>
+          </div>
+
+          {settingsSections.map((section, index) => (
             <button
               key={section.key}
               type="button"
-              className={activeSection === section.key ? 'active' : ''}
+              className={`settings-section-nav-item ${activeSection === section.key ? 'active' : ''}`}
               onClick={() => setActiveSection(section.key)}
+              aria-current={activeSection === section.key ? 'page' : undefined}
             >
-              <span>{section.icon}</span>
-              {section.label}
+              <span className="settings-section-nav-index">{String(index + 1).padStart(2, '0')}</span>
+              <span className="settings-section-nav-copy">
+                <strong>{section.label}</strong>
+                <small>{section.summary}</small>
+              </span>
             </button>
           ))}
         </aside>
