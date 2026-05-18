@@ -1,9 +1,10 @@
 import { FitAddon } from '@xterm/addon-fit';
-import { Terminal as XTerminal } from '@xterm/xterm';
+import { type ITerminalOptions, Terminal as XTerminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef } from 'react';
 
 import { getErrorMessage } from './desktopUtils';
+import { buildTerminalFontStack, getTerminalTheme, toTerminalFontWeight } from './terminalPresets';
 
 interface RemoteTerminalProps {
   connectionId: string;
@@ -11,13 +12,69 @@ interface RemoteTerminalProps {
   settings: GuiSshAppSettings;
 }
 
+function buildTerminalOptions(settings: GuiSshAppSettings): ITerminalOptions {
+  return {
+    allowTransparency: true,
+    altClickMovesCursor: settings.terminalAltClickMovesCursor,
+    cursorBlink: settings.terminalCursorBlink,
+    cursorInactiveStyle: settings.terminalCursorInactiveStyle,
+    cursorStyle: settings.terminalCursorStyle,
+    customGlyphs: true,
+    fontFamily: buildTerminalFontStack(settings.terminalFontFamily),
+    fontSize: settings.terminalFontSize,
+    fontWeight: toTerminalFontWeight(settings.terminalFontWeight),
+    fontWeightBold: toTerminalFontWeight(settings.terminalFontWeightBold),
+    ignoreBracketedPasteMode: !settings.terminalBracketedPasteMode,
+    lineHeight: settings.terminalLineHeight,
+    minimumContrastRatio: settings.terminalMinimumContrastRatio,
+    screenReaderMode: settings.terminalScreenReaderMode,
+    scrollback: settings.terminalScrollback,
+    scrollOnEraseInDisplay: settings.terminalScrollOnEraseInDisplay,
+    scrollOnUserInput: settings.terminalScrollOnUserInput,
+    scrollSensitivity: settings.terminalScrollSensitivity,
+    fastScrollSensitivity: settings.terminalFastScrollSensitivity,
+    theme: { ...getTerminalTheme(settings.terminalTheme) },
+  };
+}
+
+function applyTerminalOptions(terminal: XTerminal, settings: GuiSshAppSettings) {
+  const { allowTransparency: _allowTransparency, ...terminalOptions } = buildTerminalOptions(settings);
+  terminal.options = terminalOptions;
+}
+
 function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const fitAndSyncSizeRef = useRef<(() => void) | null>(null);
   const lastSizeRef = useRef({ columns: 0, rows: 0 });
   const isTerminalReadyRef = useRef(false);
+  const settingsRef = useRef(settings);
   const useLegacyTerminalIpcRef = useRef(false);
+  const terminalTheme = getTerminalTheme(settings.terminalTheme);
+  const terminalPaneStyle = useMemo(() => ({
+    '--terminal-background': terminalTheme.background ?? '#181a24',
+    '--terminal-font-feature-settings': settings.terminalFontLigatures ? '"calt" 1, "liga" 1' : '"calt" 0, "liga" 0',
+    '--terminal-font-ligatures': settings.terminalFontLigatures ? 'normal' : 'none',
+  }) as CSSProperties, [settings.terminalFontLigatures, settings.terminalTheme, terminalTheme.background]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+    const terminal = terminalRef.current;
+
+    if (!terminal) {
+      return undefined;
+    }
+
+    applyTerminalOptions(terminal, settings);
+    const animationFrame = window.requestAnimationFrame(() => {
+      fitAndSyncSizeRef.current?.();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [settings]);
 
   useEffect(() => {
     const host = terminalHostRef.current;
@@ -32,29 +89,7 @@ function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalPr
     let startWarningTimer = 0;
     const supportsTerminalIpcOptions = typeof api.connections.getIpcCapabilities === 'function';
     isTerminalReadyRef.current = false;
-    const terminal = new XTerminal({
-      allowTransparency: true,
-      cursorBlink: true,
-      cursorStyle: settings.terminalCursorStyle,
-      fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
-      fontSize: settings.terminalFontSize,
-      lineHeight: 1.2,
-      scrollback: settings.terminalScrollback,
-      theme: {
-        background: '#000000',
-        foreground: '#d7fbe8',
-        cursor: '#8cf7d5',
-        selectionBackground: '#29546f',
-        black: '#111827',
-        red: '#ff6f8f',
-        green: '#8cf7d5',
-        yellow: '#ffe08a',
-        blue: '#43c7ff',
-        magenta: '#c084fc',
-        cyan: '#67e8f9',
-        white: '#edf4ff',
-      },
-    });
+    const terminal = new XTerminal(buildTerminalOptions(settingsRef.current));
     const fitAddon = new FitAddon();
 
     terminalRef.current = terminal;
@@ -86,6 +121,11 @@ function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalPr
         return;
       }
 
+      if (!settingsRef.current.terminalRightClickPaste) {
+        terminal.focus();
+        return;
+      }
+
       navigator.clipboard
         .readText()
         .then((text) => {
@@ -105,7 +145,7 @@ function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalPr
     host.addEventListener('contextmenu', handleTerminalContextMenu);
 
     const selectionDisposable = terminal.onSelectionChange(() => {
-      if (!settings.terminalCopyOnSelect || !terminal.hasSelection()) {
+      if (!settingsRef.current.terminalCopyOnSelect || !terminal.hasSelection()) {
         return;
       }
 
@@ -156,6 +196,7 @@ function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalPr
         resizeTerminal(connectionId, columns, rows).catch(() => undefined);
       }
     };
+    fitAndSyncSizeRef.current = fitAndSyncSize;
 
     const removeTerminalData = api.events.onTerminalData((payload) => {
       if (payload.connectionId === connectionId && (payload.terminalId === terminalId || !payload.terminalId)) {
@@ -260,11 +301,12 @@ function RemoteTerminal({ connectionId, terminalId, settings }: RemoteTerminalPr
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      fitAndSyncSizeRef.current = null;
     };
-  }, [connectionId, settings, terminalId]);
+  }, [connectionId, terminalId]);
 
   return (
-    <div className="terminal-pane xterm-terminal-pane">
+    <div className="terminal-pane xterm-terminal-pane" style={terminalPaneStyle}>
       <div ref={terminalHostRef} className="terminal-host" />
     </div>
   );

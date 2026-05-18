@@ -23,6 +23,29 @@ const bookmarkScopePrefix = 'gui-ssh:browser-bookmarks:';
 const logFileName = 'logs.json';
 const maxLogEntries = 500;
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
+const terminalFontFamilyChoices = [
+  'Cascadia Mono',
+  'JetBrains Mono',
+  'Fira Code',
+  'Consolas',
+  'LXGW WenKai Mono',
+  'Source Code Pro',
+  'Hack',
+  'Menlo',
+  'Monaco',
+  'Courier New',
+];
+const terminalThemeChoices = [
+  'guissh-dark',
+  'netcatty-dark',
+  'tokyo-night',
+  'dracula',
+  'monokai',
+  'solarized-light',
+  'netcatty-light',
+  'hacker-green',
+];
+const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underline', 'none'];
 const uiFontChoices = [
   'LXGW WenKai Mono',
   'Microsoft YaHei UI',
@@ -47,9 +70,26 @@ function createDefaultSettings() {
     rememberPasswords: true,
     rememberKeyPassphrases: true,
     terminalFontSize: 13,
+    terminalFontFamily: 'Cascadia Mono',
+    terminalFontWeight: 400,
+    terminalFontWeightBold: 700,
+    terminalFontLigatures: true,
+    terminalLineHeight: 1.2,
+    terminalTheme: 'guissh-dark',
+    terminalCursorBlink: true,
     terminalCursorStyle: 'block',
+    terminalCursorInactiveStyle: 'outline',
     terminalScrollback: 10000,
+    terminalScrollSensitivity: 1,
+    terminalFastScrollSensitivity: 5,
+    terminalScrollOnUserInput: true,
+    terminalScrollOnEraseInDisplay: true,
     terminalCopyOnSelect: true,
+    terminalRightClickPaste: true,
+    terminalAltClickMovesCursor: true,
+    terminalBracketedPasteMode: true,
+    terminalMinimumContrastRatio: 1,
+    terminalScreenReaderMode: false,
   };
 }
 
@@ -137,6 +177,20 @@ function readIntegerInRange(value, label, minValue, maxValue, fallback) {
   throw new Error(`${label}无效。`);
 }
 
+function readNumberInRange(value, label, minValue, maxValue, fallback) {
+  const nextValue = Number(value);
+
+  if (Number.isFinite(nextValue) && nextValue >= minValue && nextValue <= maxValue) {
+    return nextValue;
+  }
+
+  if (typeof fallback === 'number') {
+    return fallback;
+  }
+
+  throw new Error(`${label}无效。`);
+}
+
 function readColorHex(value, label, fallback) {
   if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
     return value.toLowerCase();
@@ -204,9 +258,37 @@ function readAppSettings(rawSettings) {
       defaults.rememberKeyPassphrases,
     ),
     terminalFontSize: readIntegerInRange(rawSettings.terminalFontSize, '终端字号', 11, 20, defaults.terminalFontSize),
+    terminalFontFamily: terminalFontFamilyChoices.includes(rawSettings.terminalFontFamily)
+      ? rawSettings.terminalFontFamily
+      : defaults.terminalFontFamily,
+    terminalFontWeight: readIntegerInRange(
+      rawSettings.terminalFontWeight,
+      '终端常规字重',
+      300,
+      600,
+      defaults.terminalFontWeight,
+    ),
+    terminalFontWeightBold: readIntegerInRange(
+      rawSettings.terminalFontWeightBold,
+      '终端粗体字重',
+      600,
+      800,
+      defaults.terminalFontWeightBold,
+    ),
+    terminalFontLigatures: readBoolean(
+      rawSettings.terminalFontLigatures,
+      '终端字体连字',
+      defaults.terminalFontLigatures,
+    ),
+    terminalLineHeight: readNumberInRange(rawSettings.terminalLineHeight, '终端行高', 1, 1.5, defaults.terminalLineHeight),
+    terminalTheme: terminalThemeChoices.includes(rawSettings.terminalTheme) ? rawSettings.terminalTheme : defaults.terminalTheme,
+    terminalCursorBlink: readBoolean(rawSettings.terminalCursorBlink, '终端光标闪烁', defaults.terminalCursorBlink),
     terminalCursorStyle: rawSettings.terminalCursorStyle === 'bar' || rawSettings.terminalCursorStyle === 'underline'
       ? rawSettings.terminalCursorStyle
       : defaults.terminalCursorStyle,
+    terminalCursorInactiveStyle: terminalCursorInactiveStyleChoices.includes(rawSettings.terminalCursorInactiveStyle)
+      ? rawSettings.terminalCursorInactiveStyle
+      : defaults.terminalCursorInactiveStyle,
     terminalScrollback: readIntegerInRange(
       rawSettings.terminalScrollback,
       '终端滚动缓冲区',
@@ -214,10 +296,61 @@ function readAppSettings(rawSettings) {
       50000,
       defaults.terminalScrollback,
     ),
+    terminalScrollSensitivity: readNumberInRange(
+      rawSettings.terminalScrollSensitivity,
+      '终端滚轮速度',
+      0.5,
+      5,
+      defaults.terminalScrollSensitivity,
+    ),
+    terminalFastScrollSensitivity: readIntegerInRange(
+      rawSettings.terminalFastScrollSensitivity,
+      '终端快速滚动速度',
+      2,
+      20,
+      defaults.terminalFastScrollSensitivity,
+    ),
+    terminalScrollOnUserInput: readBoolean(
+      rawSettings.terminalScrollOnUserInput,
+      '终端输入时滚到底部',
+      defaults.terminalScrollOnUserInput,
+    ),
+    terminalScrollOnEraseInDisplay: readBoolean(
+      rawSettings.terminalScrollOnEraseInDisplay,
+      '终端清屏保留历史',
+      defaults.terminalScrollOnEraseInDisplay,
+    ),
     terminalCopyOnSelect: readBoolean(
       rawSettings.terminalCopyOnSelect,
       '终端选中复制',
       defaults.terminalCopyOnSelect,
+    ),
+    terminalRightClickPaste: readBoolean(
+      rawSettings.terminalRightClickPaste,
+      '终端右键粘贴',
+      defaults.terminalRightClickPaste,
+    ),
+    terminalAltClickMovesCursor: readBoolean(
+      rawSettings.terminalAltClickMovesCursor,
+      '终端 Alt 单击移动光标',
+      defaults.terminalAltClickMovesCursor,
+    ),
+    terminalBracketedPasteMode: readBoolean(
+      rawSettings.terminalBracketedPasteMode,
+      '终端括号粘贴保护',
+      defaults.terminalBracketedPasteMode,
+    ),
+    terminalMinimumContrastRatio: readNumberInRange(
+      rawSettings.terminalMinimumContrastRatio,
+      '终端最小对比度',
+      1,
+      7,
+      defaults.terminalMinimumContrastRatio,
+    ),
+    terminalScreenReaderMode: readBoolean(
+      rawSettings.terminalScreenReaderMode,
+      '终端屏幕阅读器支持',
+      defaults.terminalScreenReaderMode,
     ),
   };
 }
