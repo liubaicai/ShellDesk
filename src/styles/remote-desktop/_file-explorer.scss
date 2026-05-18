@@ -199,7 +199,7 @@ button.explorer-row {
 .transfer-progress-fill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #2196f3, #43c7ff);
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 64%, #ffffff 36%));
   transition: width 0.2s ease;
 }
 

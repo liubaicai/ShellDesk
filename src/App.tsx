@@ -50,6 +50,32 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
   { page: 'logs', icon: 'logs', label: '日志' },
 ];
 
+function readHexColorChannels(hexColor: string) {
+  const match = /^#(?<red>[0-9a-f]{2})(?<green>[0-9a-f]{2})(?<blue>[0-9a-f]{2})$/i.exec(hexColor);
+
+  if (!match?.groups) {
+    return { red: 67, green: 199, blue: 255 };
+  }
+
+  return {
+    red: Number.parseInt(match.groups.red, 16),
+    green: Number.parseInt(match.groups.green, 16),
+    blue: Number.parseInt(match.groups.blue, 16),
+  };
+}
+
+function toRgba(hexColor: string, alpha: number) {
+  const { red, green, blue } = readHexColorChannels(hexColor);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function getReadableTextColor(hexColor: string) {
+  const { red, green, blue } = readHexColorChannels(hexColor);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
+  return luminance > 0.58 ? '#0b1220' : '#ffffff';
+}
+
 function HostGroupIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -995,9 +1021,12 @@ function App() {
     const prefersLight = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches;
     const effectiveTheme = settings.theme === 'system' ? (prefersLight ? 'light' : 'dark') : settings.theme;
     const isLightTheme = effectiveTheme === 'light';
+    const accentColor = settings.accentColor;
+    const accentContrast = getReadableTextColor(accentColor);
 
-    root.style.setProperty('--accent', settings.accentColor);
-    root.style.setProperty('--accent-strong', settings.accentColor);
+    root.style.setProperty('--accent', accentColor);
+    root.style.setProperty('--accent-strong', accentColor);
+    root.style.setProperty('--accent-contrast', accentContrast);
     root.style.setProperty('--bg', isLightTheme ? '#eef3f8' : '#0b111a');
     root.style.setProperty('--chrome', isLightTheme ? '#f8fafc' : '#1b222b');
     root.style.setProperty('--sidebar', isLightTheme ? '#e4ebf3' : '#20262f');
@@ -1031,11 +1060,11 @@ function App() {
     root.style.setProperty('--danger-soft', isLightTheme ? 'rgba(200, 48, 78, 0.08)' : 'rgba(255, 111, 143, 0.12)');
     root.style.setProperty('--danger-border', isLightTheme ? 'rgba(200, 48, 78, 0.32)' : 'rgba(255, 111, 143, 0.42)');
     root.style.setProperty('--danger-text-soft', isLightTheme ? '#c8304e' : '#ffd3dc');
-    root.style.setProperty('--focus-border', isLightTheme ? 'rgba(45, 140, 200, 0.5)' : 'rgba(67, 199, 255, 0.46)');
-    root.style.setProperty('--focus-ring', isLightTheme ? 'rgba(45, 140, 200, 0.1)' : 'rgba(67, 199, 255, 0.1)');
-    root.style.setProperty('--accent-soft', isLightTheme ? 'rgba(45, 140, 200, 0.12)' : 'rgba(67, 199, 255, 0.14)');
-    root.style.setProperty('--accent-border', isLightTheme ? 'rgba(45, 140, 200, 0.4)' : 'rgba(67, 199, 255, 0.42)');
-    root.style.setProperty('--accent-strong-border', isLightTheme ? 'rgba(45, 140, 200, 0.5)' : 'rgba(67, 199, 255, 0.56)');
+    root.style.setProperty('--focus-border', toRgba(accentColor, isLightTheme ? 0.5 : 0.46));
+    root.style.setProperty('--focus-ring', toRgba(accentColor, isLightTheme ? 0.1 : 0.12));
+    root.style.setProperty('--accent-soft', toRgba(accentColor, isLightTheme ? 0.12 : 0.16));
+    root.style.setProperty('--accent-border', toRgba(accentColor, isLightTheme ? 0.36 : 0.42));
+    root.style.setProperty('--accent-strong-border', toRgba(accentColor, isLightTheme ? 0.5 : 0.58));
     root.style.setProperty('--shadow', isLightTheme ? 'rgba(43, 67, 92, 0.12)' : 'rgba(0, 0, 0, 0.34)');
     root.style.setProperty('--shadow-soft', isLightTheme ? '0 6px 18px rgba(43, 67, 92, 0.08)' : '0 12px 28px rgba(0, 0, 0, 0.16)');
     root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(43, 67, 92, 0.16)' : '0 18px 36px rgba(0, 0, 0, 0.32)');

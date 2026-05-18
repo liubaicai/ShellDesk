@@ -94,9 +94,14 @@
 
 .primary-action {
   border-color: var(--accent-strong-border);
-  background: linear-gradient(180deg, #47c9ff, #26aef0);
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(67, 199, 255, 0.18);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 88%, #ffffff 12%),
+      color-mix(in srgb, var(--accent) 82%, #07111f 18%)
+    );
+  color: var(--accent-contrast);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .view-switch {
@@ -742,11 +747,17 @@
 }
 
 .primary-action {
-  border-color: rgba(83, 143, 245, 0.72);
-  background: linear-gradient(135deg, #2e87ff, #3471ff);
+  border-color: var(--accent-strong-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 92%, #ffffff 8%),
+      color-mix(in srgb, var(--accent) 80%, #07111f 20%)
+    );
+  color: var(--accent-contrast);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 18px 36px rgba(47, 116, 255, 0.32);
+    0 18px 36px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .view-switch {
@@ -765,9 +776,9 @@
 }
 
 .view-switch button.active {
-  background: rgba(52, 113, 255, 0.2);
-  color: #78b7ff;
-  box-shadow: inset 0 0 0 1px rgba(99, 155, 255, 0.12);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .hosts-content {
@@ -844,8 +855,8 @@
 
 .group-add-button:hover,
 .host-refresh-button:hover {
-  background: rgba(98, 168, 255, 0.12);
-  color: #b9d9ff;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .group-list {
@@ -869,8 +880,8 @@
 
 .group-card.active,
 .group-card:hover {
-  border-color: rgba(91, 151, 255, 0.12);
-  background: rgba(66, 123, 216, 0.16);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .group-icon {
@@ -998,7 +1009,7 @@
 }
 
 .host-card:hover {
-  border-color: rgba(98, 168, 255, 0.3);
+  border-color: var(--accent-border);
   background:
     linear-gradient(135deg, rgba(39, 54, 72, 0.84), rgba(21, 32, 45, 0.72)),
     var(--surface);

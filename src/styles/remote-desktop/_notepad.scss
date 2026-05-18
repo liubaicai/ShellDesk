@@ -367,7 +367,7 @@
 [data-theme="light"] .notepad-tab.active {
   background: #fff;
   color: #1f2328;
-  border-bottom-color: #0969da;
+  border-bottom-color: var(--accent);
 }
 
 [data-theme="light"] .notepad-tab-close:hover {
@@ -396,7 +396,7 @@
 }
 
 [data-theme="light"] .notepad-line-numbers span.active {
-  color: #0969da;
+  color: var(--accent);
 }
 
 [data-theme="light"] .notepad-textarea {
@@ -404,7 +404,7 @@
 }
 
 [data-theme="light"] .notepad-textarea::selection {
-  background: rgba(9, 105, 218, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 [data-theme="light"] .notepad-statusbar {
@@ -562,9 +562,9 @@
 }
 
 [data-theme="light"] .notepad-modal-btn.primary {
-  border-color: rgba(9, 105, 218, 0.4);
-  background: rgba(9, 105, 218, 0.08);
-  color: #0969da;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 [data-theme="light"] .notepad-modal-btn.danger {
@@ -588,8 +588,8 @@
 }
 
 [data-theme="light"] .transfer-progress {
-  background: rgba(9, 105, 218, 0.04);
-  border-top-color: rgba(9, 105, 218, 0.12);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-top-color: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 [data-theme="light"] .transfer-progress-info {
@@ -597,11 +597,11 @@
 }
 
 [data-theme="light"] .transfer-progress-bar {
-  background: rgba(9, 105, 218, 0.1);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 
 [data-theme="light"] .transfer-progress-fill {
-  background: linear-gradient(90deg, #0969da, #43a4ff);
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 64%, #ffffff 36%));
 }
 
 [data-theme="light"] .transfer-cancel-btn {

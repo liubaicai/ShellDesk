@@ -8,7 +8,7 @@ export const terminalFontFamilyChoices: ReadonlyArray<{
   { value: 'JetBrains Mono', label: 'JetBrains Mono' },
   { value: 'Fira Code', label: 'Fira Code' },
   { value: 'Consolas', label: 'Consolas' },
-  { value: 'LXGW WenKai Mono', label: 'LXGW WenKai Mono' },
+  { value: 'LXGW WenKai Mono', label: '霞鹜文楷' },
   { value: 'Source Code Pro', label: 'Source Code Pro' },
   { value: 'Hack', label: 'Hack' },
   { value: 'Menlo', label: 'Menlo' },

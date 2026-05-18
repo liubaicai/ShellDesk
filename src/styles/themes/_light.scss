@@ -12,6 +12,10 @@
   background: rgba(16, 32, 51, 0.06);
 }
 
+[data-theme="light"] .titlebar-controls button {
+  color: #344054;
+}
+
 [data-theme="light"] .titlebar-controls .danger:hover {
   background: rgba(255, 111, 143, 0.12);
   color: #d63a5e;
@@ -32,8 +36,8 @@
 }
 
 [data-theme="light"] .global-search:focus-within {
-  border-color: rgba(67, 159, 220, 0.5);
-  box-shadow: 0 0 0 3px rgba(67, 159, 220, 0.1);
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 [data-theme="light"] .command-button,
@@ -57,10 +61,15 @@
 }
 
 [data-theme="light"] .primary-action {
-  border-color: rgba(45, 140, 200, 0.5);
-  background: linear-gradient(180deg, #3baee0, #2a96cc);
-  color: #ffffff;
-  box-shadow: 0 8px 20px rgba(45, 140, 200, 0.2);
+  border-color: var(--accent-strong-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 88%, #ffffff 12%),
+      color-mix(in srgb, var(--accent) 78%, #0f172a 22%)
+    );
+  color: var(--accent-contrast);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 [data-theme="light"] .view-switch {
@@ -69,16 +78,16 @@
 }
 
 [data-theme="light"] .view-switch button.active {
-  background: rgba(45, 140, 200, 0.12);
-  color: #2090c8;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 [data-theme="light"] .filter-tab.active {
-  color: #2090c8;
+  color: var(--accent);
 }
 
 [data-theme="light"] .status-toast {
-  border-color: rgba(45, 140, 200, 0.28);
+  border-color: var(--accent-border);
   background: var(--toast-bg);
   color: var(--toast-text);
   box-shadow: 0 12px 32px rgba(43, 67, 92, 0.14);
@@ -92,13 +101,13 @@
 
 [data-theme="light"] .group-card.active,
 [data-theme="light"] .group-card:hover {
-  border-color: rgba(45, 140, 200, 0.4);
+  border-color: var(--accent-border);
   background: var(--surface-hover);
 }
 
 [data-theme="light"] .host-avatar {
   background: var(--surface-icon);
-  color: #2090c8;
+  color: var(--accent);
 }
 
 [data-theme="light"] .group-icon {
@@ -168,7 +177,7 @@
 }
 
 [data-theme="light"] .empty-state span {
-  color: #2090c8;
+  color: var(--accent);
 }
 
 [data-theme="light"] .editor-panel {
@@ -208,8 +217,8 @@
 [data-theme="light"] .field input:focus,
 [data-theme="light"] .field select:focus,
 [data-theme="light"] .field textarea:focus {
-  border-color: rgba(45, 140, 200, 0.5);
-  box-shadow: 0 0 0 3px rgba(45, 140, 200, 0.1);
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 [data-theme="light"] .auth-switch button {
@@ -218,9 +227,9 @@
 }
 
 [data-theme="light"] .auth-switch button.active {
-  border-color: rgba(45, 140, 200, 0.5);
-  background: rgba(45, 140, 200, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(45, 140, 200, 0.1);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 [data-theme="light"] .error-banner {
@@ -230,9 +239,9 @@
 }
 
 [data-theme="light"] .credential-note {
-  border-color: rgba(45, 140, 200, 0.25);
-  background: rgba(45, 140, 200, 0.06);
-  color: #1a6d94;
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
 }
 
 [data-theme="light"] .key-card {
@@ -275,7 +284,7 @@
 }
 
 [data-theme="light"] .settings-toggle:checked {
-  background: #2a96cc;
+  background: var(--accent);
 }
 
 [data-theme="light"] .settings-toggle:checked::after {
@@ -308,14 +317,14 @@
 }
 
 [data-theme="light"] .logs-filter-chip.active {
-  border-color: rgba(45, 140, 200, 0.45);
-  background: rgba(45, 140, 200, 0.1);
-  color: #2090c8;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 [data-theme="light"] .logs-filter-chip.active small {
-  background: rgba(45, 140, 200, 0.14);
-  color: #2090c8;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 [data-theme="light"] .log-entry {
@@ -327,8 +336,8 @@
 }
 
 [data-theme="light"] .log-level-indicator.info {
-  background: rgba(45, 140, 200, 0.12);
-  color: #1a6d94;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 [data-theme="light"] .log-level-indicator.success {
@@ -363,7 +372,7 @@
 
 [data-theme="light"] .monitor-pane {
   background:
-    radial-gradient(circle at top right, rgba(45, 140, 200, 0.08), transparent 28%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 9%, transparent), transparent 28%),
     linear-gradient(180deg, #f0f4f8, #e8ecf2);
 }
 

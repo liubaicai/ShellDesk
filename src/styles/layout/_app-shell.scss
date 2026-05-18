@@ -339,6 +339,11 @@
   font-size: 18px;
 }
 
+.titlebar-controls button[aria-label="最大化"] {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .app-layout {
   grid-template-columns: 238px minmax(0, 1fr);
 }

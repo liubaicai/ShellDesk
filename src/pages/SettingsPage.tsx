@@ -115,7 +115,7 @@ function SettingsPage({
                       value={settings.interfaceFont}
                       onChange={(event) => updateSetting('interfaceFont', event.target.value as GuiSshAppSettings['interfaceFont'])}
                     >
-                      <option value="LXGW WenKai Mono">LXGW WenKai Mono（本地）</option>
+                      <option value="LXGW WenKai Mono">霞鹜文楷</option>
                       <option value="Microsoft YaHei UI">微软雅黑 UI</option>
                       <option value="DengXian">等线</option>
                       <option value="SimSun">宋体</option>

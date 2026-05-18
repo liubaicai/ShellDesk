@@ -421,11 +421,11 @@
 }
 
 [data-theme="light"] .mysql-data-table tr:hover td {
-  background: rgba(9, 105, 218, 0.04);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 [data-theme="light"] .mysql-cell-input {
-  border-color: #0969da;
+  border-color: var(--focus-border);
   background: #fff;
   color: #1f2328;
 }
