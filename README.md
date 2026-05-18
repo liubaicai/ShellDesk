@@ -1,4 +1,4 @@
-# GUI-SSH
+# ShellDesk
 
 一个基于 Electron、React 与 TypeScript 的图形化 SSH 客户端原型。
 
@@ -125,7 +125,7 @@ pnpm preview
 ## 项目结构
 
 ```text
-GUISSH/
+ShellDesk/
 ├── electron/
 │   ├── main.cjs                        # Electron 主进程、SSH 连接、SOCKS5 代理、IPC
 │   └── preload.cjs                     # 预加载脚本与安全桥接

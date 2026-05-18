@@ -9,10 +9,10 @@ import { buildTerminalFontStack, getTerminalTheme, toTerminalFontWeight } from '
 interface RemoteTerminalProps {
   connectionId: string;
   terminalId: string;
-  settings: GuiSshAppSettings;
+  settings: ShellDeskAppSettings;
 }
 
-function buildTerminalOptions(settings: GuiSshAppSettings): ITerminalOptions {
+function buildTerminalOptions(settings: ShellDeskAppSettings): ITerminalOptions {
   return {
     allowTransparency: true,
     altClickMovesCursor: settings.terminalAltClickMovesCursor,
@@ -37,7 +37,7 @@ function buildTerminalOptions(settings: GuiSshAppSettings): ITerminalOptions {
   };
 }
 
-function applyTerminalOptions(terminal: XTerminal, settings: GuiSshAppSettings) {
+function applyTerminalOptions(terminal: XTerminal, settings: ShellDeskAppSettings) {
   const { allowTransparency: _allowTransparency, ...terminalOptions } = buildTerminalOptions(settings);
   terminal.options = terminalOptions;
 }

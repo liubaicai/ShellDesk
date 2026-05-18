@@ -23,7 +23,7 @@ type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
-  settings: GuiSshAppSettings;
+  settings: ShellDeskAppSettings;
 }
 
 interface DesktopWindowFrame {

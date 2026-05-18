@@ -8,11 +8,11 @@ import KeysPage from './pages/KeysPage';
 import LogsPage from './pages/LogsPage';
 import SettingsPage from './pages/SettingsPage';
 
-const hostsStorageKey = 'gui-ssh:hosts';
-const keysStorageKey = 'gui-ssh:keys';
-const bookmarkStorageKeyPrefix = 'gui-ssh:browser-bookmarks:';
+const hostsStorageKey = 'shelldesk:hosts';
+const keysStorageKey = 'shelldesk:keys';
+const bookmarkStorageKeyPrefix = 'shelldesk:browser-bookmarks:';
 const ungroupedKey = '__ungrouped__';
-const defaultAppSettings: GuiSshAppSettings = {
+const defaultAppSettings: ShellDeskAppSettings = {
   language: 'zh-CN',
   interfaceFont: 'LXGW WenKai Mono',
   theme: 'dark',
@@ -26,7 +26,7 @@ const defaultAppSettings: GuiSshAppSettings = {
   terminalFontWeightBold: 700,
   terminalFontLigatures: true,
   terminalLineHeight: 1.2,
-  terminalTheme: 'guissh-dark',
+  terminalTheme: 'shelldesk-dark',
   terminalCursorBlink: true,
   terminalCursorStyle: 'block',
   terminalCursorInactiveStyle: 'outline',
@@ -457,7 +457,7 @@ function readStoredHosts(): Host[] {
   }
 }
 
-function readLegacyBookmarkCollections(): GuiSshBrowserBookmarkCollection[] {
+function readLegacyBookmarkCollections(): ShellDeskBrowserBookmarkCollection[] {
   try {
     return Object.keys(window.localStorage)
       .filter((key) => key.startsWith(bookmarkStorageKeyPrefix))
@@ -474,12 +474,12 @@ function readLegacyBookmarkCollections(): GuiSshBrowserBookmarkCollection[] {
           return null;
         }
 
-        const bookmarks = parsedValue.filter((bookmark): bookmark is GuiSshBrowserBookmark => {
+        const bookmarks = parsedValue.filter((bookmark): bookmark is ShellDeskBrowserBookmark => {
           if (!bookmark || typeof bookmark !== 'object') {
             return false;
           }
 
-          const value = bookmark as Partial<GuiSshBrowserBookmark>;
+          const value = bookmark as Partial<ShellDeskBrowserBookmark>;
           return (
             typeof value.id === 'string' &&
             typeof value.title === 'string' &&
@@ -495,7 +495,7 @@ function readLegacyBookmarkCollections(): GuiSshBrowserBookmarkCollection[] {
           updatedAt: new Date().toISOString(),
         };
       })
-      .filter((collection): collection is GuiSshBrowserBookmarkCollection => Boolean(collection));
+      .filter((collection): collection is ShellDeskBrowserBookmarkCollection => Boolean(collection));
   } catch {
     return [];
   }
@@ -770,8 +770,8 @@ function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(defaultAppSettings.defaultHostView);
-  const [settings, setSettings] = useState<GuiSshAppSettings>(defaultAppSettings);
-  const [storageInfo, setStorageInfo] = useState<GuiSshStorageInfo | null>(null);
+  const [settings, setSettings] = useState<ShellDeskAppSettings>(defaultAppSettings);
+  const [storageInfo, setStorageInfo] = useState<ShellDeskStorageInfo | null>(null);
   const [bookmarkCount, setBookmarkCount] = useState(0);
   const [isVaultReady, setIsVaultReady] = useState(false);
   const [isLogsReady, setIsLogsReady] = useState(false);
@@ -850,7 +850,7 @@ function App() {
 
   const getSelectedSshKey = (host: Host) => sshKeys.find((key) => key.id === host.keyId) ?? null;
 
-  const applyVaultSnapshot = (snapshot: GuiSshVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
+  const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
     const { updateCollections = true } = options;
 
     if (updateCollections) {
@@ -868,7 +868,7 @@ function App() {
 
     setSettings(snapshot.settings);
     setStorageInfo(snapshot.storage);
-    setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: GuiSshBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
     setViewMode(snapshot.settings.defaultHostView);
     setIsVaultReady(true);
   };
@@ -917,7 +917,7 @@ function App() {
         const snapshot = !isConnectionWindow
           ? await vaultControls.migrateLegacyData({
               hosts: readStoredHosts(),
-              sshKeys: readStoredSshKeys() as unknown as GuiSshStoredKeyRecord[],
+              sshKeys: readStoredSshKeys() as unknown as ShellDeskStoredKeyRecord[],
               settings: defaultAppSettings,
               browserBookmarks: readLegacyBookmarkCollections(),
             })
@@ -978,7 +978,7 @@ function App() {
 
       lastPersistedCollectionsRef.current = serializedPayload;
       setStorageInfo(snapshot.storage);
-      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: GuiSshBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
     }).catch((error: unknown) => {
       if (!cancelled) {
         setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
@@ -1005,7 +1005,7 @@ function App() {
 
     lastPersistedLogsRef.current = serialized;
 
-    void logsControls.saveEntries(logs as unknown as GuiSshLogEntry[]).catch(() => undefined);
+    void logsControls.saveEntries(logs as unknown as ShellDeskLogEntry[]).catch(() => undefined);
   }, [logs, isConnectionWindow, isLogsReady]);
 
   useEffect(() => {
@@ -1576,7 +1576,7 @@ function App() {
 
   const changeViewMode = (nextViewMode: ViewMode) => {
     setViewMode(nextViewMode);
-    setSettings((currentSettings: GuiSshAppSettings) => (
+    setSettings((currentSettings: ShellDeskAppSettings) => (
       currentSettings.defaultHostView === nextViewMode
         ? currentSettings
         : { ...currentSettings, defaultHostView: nextViewMode }
@@ -1649,12 +1649,12 @@ function App() {
           <img className="app-window-icon" src={appIconUrl} alt="" />
           {connection ? (
             <>
-              <strong>GUI-SSH Desktop</strong>
+              <strong>ShellDesk</strong>
               <span>{titlebarConnectionAddress}</span>
               <span>SOCKS :{connection.proxyPort}</span>
             </>
           ) : (
-            'GUI-SSH'
+            'ShellDesk'
           )}
         </div>
 
@@ -1687,7 +1687,7 @@ function App() {
         <aside className="side-nav">
           <div className="brand-panel">
             <img className="brand-logo" src={appIconUrl} alt="" />
-            <strong>GUI-SSH</strong>
+            <strong>ShellDesk</strong>
           </div>
 
           <nav className="feature-nav" aria-label="功能导航">

@@ -28,9 +28,9 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
   const [dbTables, setDbTables] = useState<Record<string, string[]>>({});
   const [selectedTable, setSelectedTable] = useState<TableInfo | null>(null);
-  const [columns, setColumns] = useState<GuiSshMysqlColumn[]>([]);
+  const [columns, setColumns] = useState<ShellDeskMysqlColumn[]>([]);
   const [sql, setSql] = useState('');
-  const [queryResult, setQueryResult] = useState<GuiSshMysqlQueryResult | null>(null);
+  const [queryResult, setQueryResult] = useState<ShellDeskMysqlQueryResult | null>(null);
   const [queryError, setQueryError] = useState('');
   const [queryRunning, setQueryRunning] = useState(false);
   const [queryTime, setQueryTime] = useState(0);

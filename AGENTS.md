@@ -1,4 +1,4 @@
-# GUI-SSH — AI Agent Instructions
+# ShellDesk — AI Agent Instructions
 
 Electron + React 19 + TypeScript 图形化 SSH 客户端。pnpm 为包管理器。
 
@@ -17,7 +17,7 @@ pnpm release      # 构建 + electron-builder --win nsis
 ```
 electron/
   main.cjs        # 主进程：窗口管理、SSH 连接、SFTP、IPC handler
-  preload.cjs     # contextBridge 暴露 guiSSH API 到渲染进程
+  preload.cjs     # contextBridge 暴露 ShellDesk API 到渲染进程
 src/
   App.tsx         # 主页：主机列表、新建/编辑主机、导航、连接入口
   main.tsx        # React 入口
@@ -31,7 +31,7 @@ src/
     pages/          # 主机、密钥、日志、设置等页面样式
     remote-desktop/ # 远程桌面及各内置应用样式
     themes/         # 浅色主题与远程应用主题覆盖
-  vite-env.d.ts   # window.guiSSH 类型定义（GuiSshApi）
+  vite-env.d.ts   # window.ShellDesk 类型定义（ShellDeskApi）
   components/
     navigation/NavIcon.tsx
     remote-desktop/
@@ -54,9 +54,9 @@ src/
 
 ### IPC 通信模式
 - **主进程** `electron/main.cjs`：`registerIpcHandler('connection:xxx', handler)` 注册 IPC
-- **预加载** `electron/preload.cjs`：`contextBridge.exposeInMainWorld('guiSSH', {...})` 暴露 API
-- **渲染进程**：通过 `window.guiSSH.connections.xxx()` 调用
-- **类型定义** `src/vite-env.d.ts`：`GuiSshConnectionControls` 等接口
+- **预加载** `electron/preload.cjs`：`contextBridge.exposeInMainWorld('ShellDesk', {...})` 暴露 API
+- **渲染进程**：通过 `window.ShellDesk.connections.xxx()` 调用
+- **类型定义** `src/vite-env.d.ts`：`ShellDeskConnectionControls` 等接口
 - 新增 IPC 需 **三处同步修改**：main.cjs handler + preload.cjs bridge + vite-env.d.ts 类型
 
 ### 远程桌面窗口系统

@@ -1,7 +1,7 @@
 import type { FontWeight, ITheme } from '@xterm/xterm';
 
 export const terminalFontFamilyChoices: ReadonlyArray<{
-  value: GuiSshAppSettings['terminalFontFamily'];
+  value: ShellDeskAppSettings['terminalFontFamily'];
   label: string;
 }> = [
   { value: 'Cascadia Mono', label: 'Cascadia Mono' },
@@ -17,14 +17,14 @@ export const terminalFontFamilyChoices: ReadonlyArray<{
 ];
 
 export const terminalThemeChoices: ReadonlyArray<{
-  key: GuiSshAppSettings['terminalTheme'];
+  key: ShellDeskAppSettings['terminalTheme'];
   label: string;
   summary: string;
   theme: ITheme;
 }> = [
   {
-    key: 'guissh-dark',
-    label: 'GUI-SSH 暗色',
+    key: 'shelldesk-dark',
+    label: 'ShellDesk 暗色',
     summary: '高对比青绿，适合长时间 SSH 会话',
     theme: {
       background: '#181a24',
@@ -293,15 +293,15 @@ export const terminalBoldWeightChoices: ReadonlyArray<{ value: number; label: st
   { value: 800, label: '800 特粗' },
 ];
 
-export function getTerminalTheme(themeKey: GuiSshAppSettings['terminalTheme']): ITheme {
+export function getTerminalTheme(themeKey: ShellDeskAppSettings['terminalTheme']): ITheme {
   return terminalThemeChoices.find((themeChoice) => themeChoice.key === themeKey)?.theme ?? terminalThemeChoices[0].theme;
 }
 
-export function getTerminalThemeChoice(themeKey: GuiSshAppSettings['terminalTheme']) {
+export function getTerminalThemeChoice(themeKey: ShellDeskAppSettings['terminalTheme']) {
   return terminalThemeChoices.find((themeChoice) => themeChoice.key === themeKey) ?? terminalThemeChoices[0];
 }
 
-export function buildTerminalFontStack(fontFamily: GuiSshAppSettings['terminalFontFamily']) {
+export function buildTerminalFontStack(fontFamily: ShellDeskAppSettings['terminalFontFamily']) {
   const families = [
     fontFamily,
     'Cascadia Mono',

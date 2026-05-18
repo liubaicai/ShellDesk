@@ -13,20 +13,20 @@ type WebviewProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, H
 };
 
 declare global {
-interface GuiSshWindowControls {
+interface ShellDeskWindowControls {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<boolean>;
   close: () => Promise<void>;
 }
 
-interface GuiSshFileControls {
+interface ShellDeskFileControls {
   selectPrivateKeyFile: () => Promise<string>;
   selectPublicKeyFile: () => Promise<string>;
-  importConfig: () => Promise<GuiSshConfigImportResult | null>;
+  importConfig: () => Promise<ShellDeskConfigImportResult | null>;
   exportConfig: () => Promise<string>;
 }
 
-interface GuiSshAppSettings {
+interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
   interfaceFont:
     | 'LXGW WenKai Mono'
@@ -59,7 +59,7 @@ interface GuiSshAppSettings {
   terminalFontLigatures: boolean;
   terminalLineHeight: number;
   terminalTheme:
-    | 'guissh-dark'
+    | 'shelldesk-dark'
     | 'netcatty-dark'
     | 'tokyo-night'
     | 'dracula'
@@ -83,7 +83,7 @@ interface GuiSshAppSettings {
   terminalScreenReaderMode: boolean;
 }
 
-interface GuiSshStoredKeyRecord {
+interface ShellDeskStoredKeyRecord {
   id: string;
   name: string;
   source: 'imported' | 'generated';
@@ -95,7 +95,7 @@ interface GuiSshStoredKeyRecord {
   updatedAt: string;
 }
 
-interface GuiSshStoredHostRecord {
+interface ShellDeskStoredHostRecord {
   id: string;
   name: string;
   address: string;
@@ -113,7 +113,7 @@ interface GuiSshStoredHostRecord {
   updatedAt: string;
 }
 
-interface GuiSshBrowserBookmark {
+interface ShellDeskBrowserBookmark {
   id: string;
   title: string;
   url: string;
@@ -121,54 +121,54 @@ interface GuiSshBrowserBookmark {
   updatedAt: string;
 }
 
-interface GuiSshBrowserBookmarkCollection {
+interface ShellDeskBrowserBookmarkCollection {
   scope: string;
-  bookmarks: GuiSshBrowserBookmark[];
+  bookmarks: ShellDeskBrowserBookmark[];
   updatedAt: string;
 }
 
-interface GuiSshStorageInfo {
+interface ShellDeskStorageInfo {
   path: string;
   protected: boolean;
   protectionLabel: string;
 }
 
-interface GuiSshVaultSnapshot {
-  hosts: GuiSshStoredHostRecord[];
-  sshKeys: GuiSshStoredKeyRecord[];
-  settings: GuiSshAppSettings;
-  browserBookmarks: GuiSshBrowserBookmarkCollection[];
-  storage: GuiSshStorageInfo;
+interface ShellDeskVaultSnapshot {
+  hosts: ShellDeskStoredHostRecord[];
+  sshKeys: ShellDeskStoredKeyRecord[];
+  settings: ShellDeskAppSettings;
+  browserBookmarks: ShellDeskBrowserBookmarkCollection[];
+  storage: ShellDeskStorageInfo;
 }
 
-interface GuiSshConfigImportResult extends GuiSshVaultSnapshot {}
+interface ShellDeskConfigImportResult extends ShellDeskVaultSnapshot {}
 
-interface GuiSshVaultCollectionsPayload {
-  hosts: GuiSshStoredHostRecord[];
-  sshKeys: GuiSshStoredKeyRecord[];
-  settings: GuiSshAppSettings;
+interface ShellDeskVaultCollectionsPayload {
+  hosts: ShellDeskStoredHostRecord[];
+  sshKeys: ShellDeskStoredKeyRecord[];
+  settings: ShellDeskAppSettings;
 }
 
-interface GuiSshVaultControls {
-  getSnapshot: () => Promise<GuiSshVaultSnapshot>;
-  saveCollections: (payload: GuiSshVaultCollectionsPayload) => Promise<GuiSshVaultSnapshot>;
-  migrateLegacyData: (payload: Partial<GuiSshVaultSnapshot>) => Promise<GuiSshVaultSnapshot>;
+interface ShellDeskVaultControls {
+  getSnapshot: () => Promise<ShellDeskVaultSnapshot>;
+  saveCollections: (payload: ShellDeskVaultCollectionsPayload) => Promise<ShellDeskVaultSnapshot>;
+  migrateLegacyData: (payload: Partial<ShellDeskVaultSnapshot>) => Promise<ShellDeskVaultSnapshot>;
   importKeyPair: (payload: {
     name: string;
     privateKeyPath: string;
     publicKeyPath: string;
     passphrase: string;
-  }) => Promise<{ snapshot: GuiSshVaultSnapshot; key: GuiSshStoredKeyRecord }>;
+  }) => Promise<{ snapshot: ShellDeskVaultSnapshot; key: ShellDeskStoredKeyRecord }>;
   generateRsaKeyPair: (payload: {
     name: string;
     passphrase: string;
     modulusLength: number;
-  }) => Promise<{ snapshot: GuiSshVaultSnapshot; key: GuiSshStoredKeyRecord }>;
-  getBookmarks: (scope: string) => Promise<GuiSshBrowserBookmark[]>;
-  saveBookmarks: (scope: string, bookmarks: GuiSshBrowserBookmark[]) => Promise<GuiSshBrowserBookmark[]>;
+  }) => Promise<{ snapshot: ShellDeskVaultSnapshot; key: ShellDeskStoredKeyRecord }>;
+  getBookmarks: (scope: string) => Promise<ShellDeskBrowserBookmark[]>;
+  saveBookmarks: (scope: string, bookmarks: ShellDeskBrowserBookmark[]) => Promise<ShellDeskBrowserBookmark[]>;
 }
 
-interface GuiSshHostConnectionRequest {
+interface ShellDeskHostConnectionRequest {
   name: string;
   address: string;
   port: number;
@@ -180,15 +180,15 @@ interface GuiSshHostConnectionRequest {
   passphrase: string;
 }
 
-interface GuiSshConnectionInfo {
+interface ShellDeskConnectionInfo {
   id: string;
   partition: string;
   proxyPort: number;
   connectedAt: string;
-  host: Pick<GuiSshHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod'>;
+  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod'>;
 }
 
-interface GuiSshRemoteFileEntry {
+interface ShellDeskRemoteFileEntry {
   name: string;
   longname: string;
   type: 'directory' | 'file' | 'symlink';
@@ -196,12 +196,12 @@ interface GuiSshRemoteFileEntry {
   modifiedAt: string;
 }
 
-interface GuiSshRemoteDirectoryResult {
+interface ShellDeskRemoteDirectoryResult {
   path: string;
-  entries: GuiSshRemoteFileEntry[];
+  entries: ShellDeskRemoteFileEntry[];
 }
 
-interface GuiSshRemoteStatusReport {
+interface ShellDeskRemoteStatusReport {
   refreshedAt: string;
   items: Array<{
     key: string;
@@ -210,41 +210,41 @@ interface GuiSshRemoteStatusReport {
   }>;
 }
 
-interface GuiSshIpcCapabilities {
+interface ShellDeskIpcCapabilities {
   terminalSessions: boolean;
 }
 
-interface GuiSshTerminalIpcOptions {
+interface ShellDeskTerminalIpcOptions {
   legacy?: boolean;
 }
 
-interface GuiSshConnectionControls {
-  connect: (host: GuiSshHostConnectionRequest) => Promise<GuiSshConnectionInfo>;
-  getInfo: (connectionId: string) => Promise<GuiSshConnectionInfo>;
+interface ShellDeskConnectionControls {
+  connect: (host: ShellDeskHostConnectionRequest) => Promise<ShellDeskConnectionInfo>;
+  getInfo: (connectionId: string) => Promise<ShellDeskConnectionInfo>;
   disconnect: (connectionId: string) => Promise<boolean>;
-  getIpcCapabilities: () => Promise<GuiSshIpcCapabilities>;
+  getIpcCapabilities: () => Promise<ShellDeskIpcCapabilities>;
   startTerminal: (
     connectionId: string,
     terminalId: string,
     columns: number,
     rows: number,
-    options?: GuiSshTerminalIpcOptions,
+    options?: ShellDeskTerminalIpcOptions,
   ) => Promise<boolean>;
   writeTerminal: (
     connectionId: string,
     terminalId: string,
     data: string,
-    options?: GuiSshTerminalIpcOptions,
+    options?: ShellDeskTerminalIpcOptions,
   ) => Promise<boolean>;
   resizeTerminal: (
     connectionId: string,
     terminalId: string,
     columns: number,
     rows: number,
-    options?: GuiSshTerminalIpcOptions,
+    options?: ShellDeskTerminalIpcOptions,
   ) => Promise<boolean>;
   closeTerminal: (connectionId: string, terminalId: string) => Promise<boolean>;
-  listDirectory: (connectionId: string, remotePath: string) => Promise<GuiSshRemoteDirectoryResult>;
+  listDirectory: (connectionId: string, remotePath: string) => Promise<ShellDeskRemoteDirectoryResult>;
   createDirectory: (connectionId: string, remotePath: string) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
   renamePath: (connectionId: string, oldPath: string, newPath: string) => Promise<boolean>;
@@ -265,14 +265,14 @@ interface GuiSshConnectionControls {
     modifiedAt: string;
     accessedAt: string;
   }>;
-  getStatus: (connectionId: string) => Promise<GuiSshRemoteStatusReport>;
+  getStatus: (connectionId: string) => Promise<ShellDeskRemoteStatusReport>;
   runCommand: (connectionId: string, command: string) => Promise<{ stdout: string; stderr: string; code: number }>;
-  mysqlConnect: (connectionId: string, config: GuiSshMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
+  mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
   mysqlTables: (connectionId: string, mysqlId: string, database: string) => Promise<string[]>;
-  mysqlColumns: (connectionId: string, mysqlId: string, database: string, table: string) => Promise<GuiSshMysqlColumn[]>;
-  mysqlQuery: (connectionId: string, mysqlId: string, sql: string, database?: string) => Promise<GuiSshMysqlQueryResult>;
+  mysqlColumns: (connectionId: string, mysqlId: string, database: string, table: string) => Promise<ShellDeskMysqlColumn[]>;
+  mysqlQuery: (connectionId: string, mysqlId: string, sql: string, database?: string) => Promise<ShellDeskMysqlQueryResult>;
   mysqlUpdateCell: (
     connectionId: string,
     mysqlId: string,
@@ -285,7 +285,7 @@ interface GuiSshConnectionControls {
     pkColumns?: string[],
     pkValues?: unknown[],
   ) => Promise<{ affectedRows: number }>;
-  redisConnect: (connectionId: string, config: GuiSshRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
+  redisConnect: (connectionId: string, config: ShellDeskRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
   redisDisconnect: (connectionId: string, redisId: string) => Promise<boolean>;
   redisKeys: (connectionId: string, redisId: string, pattern?: string) => Promise<{ name: string; type: string; ttl: number }[]>;
   redisGetValue: (connectionId: string, redisId: string, key: string) => Promise<{ type: string; value: unknown }>;
@@ -294,7 +294,7 @@ interface GuiSshConnectionControls {
   redisCommand: (connectionId: string, redisId: string, command: string, args: string[]) => Promise<unknown>;
 }
 
-interface GuiSshMysqlConnectConfig {
+interface ShellDeskMysqlConnectConfig {
   host?: string;
   port?: number;
   user?: string;
@@ -303,7 +303,7 @@ interface GuiSshMysqlConnectConfig {
   mysqlId?: string;
 }
 
-interface GuiSshMysqlColumn {
+interface ShellDeskMysqlColumn {
   name: string;
   type: string;
   nullable: boolean;
@@ -313,14 +313,14 @@ interface GuiSshMysqlColumn {
   comment: string;
 }
 
-interface GuiSshMysqlQueryResult {
+interface ShellDeskMysqlQueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
   affectedRows?: number;
   insertId?: string;
 }
 
-interface GuiSshRedisConnectConfig {
+interface ShellDeskRedisConnectConfig {
   host?: string;
   port?: number;
   password?: string;
@@ -328,7 +328,7 @@ interface GuiSshRedisConnectConfig {
   redisId?: string;
 }
 
-interface GuiSshLogEntry {
+interface ShellDeskLogEntry {
   id: string;
   timestamp: string;
   category: 'connection' | 'host' | 'key' | 'config' | 'system';
@@ -337,19 +337,19 @@ interface GuiSshLogEntry {
   detail: string;
 }
 
-interface GuiSshLogsControls {
-  getEntries: () => Promise<GuiSshLogEntry[]>;
-  saveEntries: (entries: GuiSshLogEntry[]) => Promise<GuiSshLogEntry[]>;
+interface ShellDeskLogsControls {
+  getEntries: () => Promise<ShellDeskLogEntry[]>;
+  saveEntries: (entries: ShellDeskLogEntry[]) => Promise<ShellDeskLogEntry[]>;
 }
 
-interface GuiSshTransferProgress {
+interface ShellDeskTransferProgress {
   type: 'download' | 'upload';
   fileName: string;
   transferred: number;
   total: number;
 }
 
-interface GuiSshTransferEndPayload {
+interface ShellDeskTransferEndPayload {
   type: 'download' | 'upload';
   fileName: string;
   transferred: number;
@@ -358,24 +358,24 @@ interface GuiSshTransferEndPayload {
   error?: string;
 }
 
-interface GuiSshEventControls {
+interface ShellDeskEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;
-  onTransferProgress: (callback: (payload: GuiSshTransferProgress) => void) => () => void;
-  onTransferEnd: (callback: (payload: GuiSshTransferEndPayload) => void) => () => void;
+  onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
+  onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
 }
 
-interface GuiSshApi {
+interface ShellDeskApi {
   appName: string;
   platform: NodeJS.Platform;
-  window: GuiSshWindowControls;
-  files: GuiSshFileControls;
-  vault: GuiSshVaultControls;
-  logs: GuiSshLogsControls;
-  connections: GuiSshConnectionControls;
-  events: GuiSshEventControls;
+  window: ShellDeskWindowControls;
+  files: ShellDeskFileControls;
+  vault: ShellDeskVaultControls;
+  logs: ShellDeskLogsControls;
+  connections: ShellDeskConnectionControls;
+  events: ShellDeskEventControls;
 }
   namespace JSX {
     interface IntrinsicElements {
@@ -384,7 +384,7 @@ interface GuiSshApi {
   }
 
   interface Window {
-    guiSSH?: GuiSshApi;
+    guiSSH?: ShellDeskApi;
   }
 }
 

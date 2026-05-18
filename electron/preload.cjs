@@ -17,7 +17,7 @@ async function connectHost(host) {
 }
 
 contextBridge.exposeInMainWorld('guiSSH', {
-  appName: 'GUI-SSH',
+  appName: 'ShellDesk',
   platform: process.platform,
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),

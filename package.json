@@ -1,6 +1,6 @@
 {
-  "name": "gui-ssh",
-  "productName": "GUI-SSH",
+  "name": "ShellDesk",
+  "productName": "ShellDesk",
   "version": "0.1.0",
   "private": true,
   "description": "Blank Electron shell for a GUI SSH client.",
@@ -16,8 +16,8 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "build": {
-    "appId": "com.guissh.app",
-    "productName": "GUI-SSH",
+    "appId": "com.shelldesk.app",
+    "productName": "ShellDesk",
     "asar": true,
     "directories": {
       "output": "release"

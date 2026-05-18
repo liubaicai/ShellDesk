@@ -9,7 +9,7 @@ const Redis = require('ioredis');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
-const configBundleFormat = 'gui-ssh-config';
+const configBundleFormat = 'shelldesk-config';
 const configBundleVersion = 2;
 const maxConfigImportBytes = 20 * 1024 * 1024;
 const maxPrivateKeyBytes = 1024 * 1024;
@@ -17,9 +17,9 @@ const maxRemoteTextFileBytes = 5 * 1024 * 1024;
 const maxRemoteTextWriteBytes = 10 * 1024 * 1024;
 const maxVaultBytes = 25 * 1024 * 1024;
 const vaultFileName = 'vault.json';
-const vaultFormat = 'gui-ssh-vault';
+const vaultFormat = 'shelldesk-vault';
 const vaultSchemaVersion = 1;
-const bookmarkScopePrefix = 'gui-ssh:browser-bookmarks:';
+const bookmarkScopePrefix = 'shelldesk:browser-bookmarks:';
 const logFileName = 'logs.json';
 const maxLogEntries = 500;
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
@@ -36,7 +36,7 @@ const terminalFontFamilyChoices = [
   'Courier New',
 ];
 const terminalThemeChoices = [
-  'guissh-dark',
+  'shelldesk-dark',
   'netcatty-dark',
   'tokyo-night',
   'dracula',
@@ -58,7 +58,7 @@ const uiFontChoices = [
 ];
 let vaultCache = null;
 
-const appUserModelId = 'com.guissh.app';
+const appUserModelId = 'com.shelldesk.app';
 const appIconPath = app.isPackaged
   ? path.join(process.resourcesPath, 'app-icon.png')
   : path.join(__dirname, '..', 'src', 'assets', 'images', 'icon.png');
@@ -84,7 +84,7 @@ function createDefaultSettings() {
     terminalFontWeightBold: 700,
     terminalFontLigatures: true,
     terminalLineHeight: 1.2,
-    terminalTheme: 'guissh-dark',
+    terminalTheme: 'shelldesk-dark',
     terminalCursorBlink: true,
     terminalCursorStyle: 'block',
     terminalCursorInactiveStyle: 'outline',
@@ -1133,7 +1133,7 @@ function buildConfigBundle(vault = getVault()) {
 
 function readConfigImportPayload(rawPayload) {
   if (!isPlainObject(rawPayload) || rawPayload.format !== configBundleFormat || !Array.isArray(rawPayload.hosts) || !Array.isArray(rawPayload.sshKeys)) {
-    throw new Error('不是受支持的 GUI-SSH 完整备份文件。');
+    throw new Error('不是受支持的 ShellDesk 完整备份文件。');
   }
 
   if (rawPayload.version !== 1 && rawPayload.version !== configBundleVersion) {
@@ -1367,13 +1367,13 @@ async function handleSocksClient(client, socket) {
     }
 
     const target = `${destinationHost}:${destinationPort}`;
-    console.info(`[gui-ssh] SOCKS CONNECT ${target}`);
+    console.info(`[shelldesk] SOCKS CONNECT ${target}`);
 
     let stream;
     try {
       stream = await forwardOut(client, destinationHost, destinationPort);
     } catch (error) {
-      console.warn(`[gui-ssh] SOCKS CONNECT failed ${target}: ${toErrorMessage(error)}`);
+      console.warn(`[shelldesk] SOCKS CONNECT failed ${target}: ${toErrorMessage(error)}`);
       throw error;
     }
 
@@ -1769,7 +1769,7 @@ function createMainWindow() {
     minWidth: 940,
     minHeight: 620,
     show: false,
-    title: 'GUI-SSH',
+    title: 'ShellDesk',
     icon: appIconPath,
     backgroundColor: '#0b1017',
     autoHideMenuBar: true,
@@ -1802,7 +1802,7 @@ function createConnectionWindow(activeConnection) {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    title: `GUI-SSH - ${connectionTitle} - SOCKS :${activeConnection.proxyPort}`,
+    title: `ShellDesk - ${connectionTitle} - SOCKS :${activeConnection.proxyPort}`,
     icon: appIconPath,
     backgroundColor: '#0b1017',
     autoHideMenuBar: true,
@@ -1940,11 +1940,11 @@ registerIpcHandler('vault:save-bookmarks', async (_event, rawScope, rawBookmarks
 registerIpcHandler('config:export', async (event) => {
   const bundle = buildConfigBundle();
   const window = getSenderWindow(event);
-  const defaultPath = path.join(app.getPath('documents'), `gui-ssh-config-${new Date().toISOString().slice(0, 10)}.json`);
+  const defaultPath = path.join(app.getPath('documents'), `shelldesk-config-${new Date().toISOString().slice(0, 10)}.json`);
   const result = await dialog.showSaveDialog(window ?? undefined, {
     title: '导出完整主机配置',
     defaultPath,
-    filters: [{ name: 'GUI-SSH Config', extensions: ['json'] }],
+    filters: [{ name: 'ShellDesk Config', extensions: ['json'] }],
   });
 
   if (result.canceled || !result.filePath) {
@@ -1964,7 +1964,7 @@ registerIpcHandler('config:import', async (event) => {
   const result = await dialog.showOpenDialog(window ?? undefined, {
     title: '导入完整主机配置',
     properties: ['openFile'],
-    filters: [{ name: 'GUI-SSH Config', extensions: ['json'] }],
+    filters: [{ name: 'ShellDesk Config', extensions: ['json'] }],
   });
 
   if (result.canceled) {
@@ -2003,7 +2003,7 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
     client = await connectSshClient(sshConfig);
     const { server, port } = await createSocksProxy(client);
     const id = crypto.randomUUID();
-    const partition = `gui-ssh-${id}`;
+    const partition = `shelldesk-${id}`;
     const remoteSession = session.fromPartition(partition);
 
     await remoteSession.setProxy({
@@ -2013,7 +2013,7 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
     });
     const loopbackProxy = await remoteSession.resolveProxy('http://127.0.0.1/');
     const publicProxy = await remoteSession.resolveProxy('http://example.com/');
-    console.info(`[gui-ssh] webview proxy ${partition}: 127.0.0.1 => ${loopbackProxy}; example.com => ${publicProxy}`);
+    console.info(`[shelldesk] webview proxy ${partition}: 127.0.0.1 => ${loopbackProxy}; example.com => ${publicProxy}`);
     remoteSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
     const activeConnection = {

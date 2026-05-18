@@ -30,10 +30,10 @@ interface SettingsPageProps {
   hostCount: number;
   keyCount: number;
   bookmarkCount: number;
-  settings: GuiSshAppSettings;
-  storageInfo: GuiSshStorageInfo | null;
+  settings: ShellDeskAppSettings;
+  storageInfo: ShellDeskStorageInfo | null;
   isConfigTransferPending: boolean;
-  onSettingsChange: (settings: GuiSshAppSettings) => void;
+  onSettingsChange: (settings: ShellDeskAppSettings) => void;
   onImportConfig: () => void;
   onExportConfig: () => void;
 }
@@ -51,7 +51,7 @@ function SettingsPage({
 }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('general');
 
-  const updateSetting = <Field extends keyof GuiSshAppSettings>(field: Field, value: GuiSshAppSettings[Field]) => {
+  const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
       ...settings,
       [field]: value,
@@ -100,7 +100,7 @@ function SettingsPage({
                       <strong>语言</strong>
                       <small>选择应用界面语言</small>
                     </span>
-                    <select value={settings.language} onChange={(event) => updateSetting('language', event.target.value as GuiSshAppSettings['language'])}>
+                    <select value={settings.language} onChange={(event) => updateSetting('language', event.target.value as ShellDeskAppSettings['language'])}>
                       <option value="zh-CN">简体中文</option>
                       <option value="en-US">English</option>
                     </select>
@@ -113,7 +113,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.interfaceFont}
-                      onChange={(event) => updateSetting('interfaceFont', event.target.value as GuiSshAppSettings['interfaceFont'])}
+                      onChange={(event) => updateSetting('interfaceFont', event.target.value as ShellDeskAppSettings['interfaceFont'])}
                     >
                       <option value="LXGW WenKai Mono">霞鹜文楷</option>
                       <option value="Microsoft YaHei UI">微软雅黑 UI</option>
@@ -133,7 +133,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.defaultHostView}
-                      onChange={(event) => updateSetting('defaultHostView', event.target.value as GuiSshAppSettings['defaultHostView'])}
+                      onChange={(event) => updateSetting('defaultHostView', event.target.value as ShellDeskAppSettings['defaultHostView'])}
                     >
                       <option value="grid">网格</option>
                       <option value="list">列表</option>
@@ -228,7 +228,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.terminalTheme}
-                      onChange={(event) => updateSetting('terminalTheme', event.target.value as GuiSshAppSettings['terminalTheme'])}
+                      onChange={(event) => updateSetting('terminalTheme', event.target.value as ShellDeskAppSettings['terminalTheme'])}
                     >
                       {terminalThemeChoices.map((themeChoice) => (
                         <option key={themeChoice.key} value={themeChoice.key}>{themeChoice.label}</option>
@@ -267,7 +267,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.terminalFontFamily}
-                      onChange={(event) => updateSetting('terminalFontFamily', event.target.value as GuiSshAppSettings['terminalFontFamily'])}
+                      onChange={(event) => updateSetting('terminalFontFamily', event.target.value as ShellDeskAppSettings['terminalFontFamily'])}
                     >
                       {terminalFontFamilyChoices.map((fontChoice) => (
                         <option key={fontChoice.value} value={fontChoice.value}>{fontChoice.label}</option>
@@ -360,7 +360,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.terminalCursorStyle}
-                      onChange={(event) => updateSetting('terminalCursorStyle', event.target.value as GuiSshAppSettings['terminalCursorStyle'])}
+                      onChange={(event) => updateSetting('terminalCursorStyle', event.target.value as ShellDeskAppSettings['terminalCursorStyle'])}
                     >
                       <option value="block">块状</option>
                       <option value="bar">竖线</option>
@@ -375,7 +375,7 @@ function SettingsPage({
                     </span>
                     <select
                       value={settings.terminalCursorInactiveStyle}
-                      onChange={(event) => updateSetting('terminalCursorInactiveStyle', event.target.value as GuiSshAppSettings['terminalCursorInactiveStyle'])}
+                      onChange={(event) => updateSetting('terminalCursorInactiveStyle', event.target.value as ShellDeskAppSettings['terminalCursorInactiveStyle'])}
                     >
                       <option value="outline">描边</option>
                       <option value="block">块状</option>
