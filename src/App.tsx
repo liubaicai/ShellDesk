@@ -17,7 +17,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
   interfaceFont: 'LXGW WenKai Mono',
   theme: 'dark',
   accentColor: '#43c7ff',
-  defaultHostView: 'list',
+  defaultHostView: 'grid',
   rememberPasswords: true,
   rememberKeyPassphrases: true,
   terminalFontSize: 13,
