@@ -959,47 +959,128 @@ textarea {
 .settings-page {
   display: grid;
   min-height: 0;
-  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-columns: 258px minmax(0, 1fr);
   overflow: hidden;
   background: var(--surface);
 }
 
-.settings-sidebar {
-  display: grid;
+.settings-section-nav {
+  display: flex;
+  flex-direction: column;
   align-content: start;
-  gap: 7px;
+  gap: 8px;
   overflow: auto;
   border-right: 1px solid var(--border);
-  padding: 18px 14px;
-  background: var(--surface-soft);
+  padding: 18px 12px;
+  background:
+    linear-gradient(180deg, rgba(67, 199, 255, 0.035), transparent 38%),
+    color-mix(in srgb, var(--surface-soft) 72%, var(--surface) 28%);
 }
 
-.settings-sidebar button {
+.settings-section-nav-header {
   display: flex;
-  height: 38px;
   align-items: center;
-  gap: 11px;
-  border: 0;
-  border-radius: 9px;
-  padding: 0 10px;
+  justify-content: space-between;
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.settings-section-nav-header small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-section-nav-item {
+  position: relative;
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 10px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
   text-align: left;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
-.settings-sidebar button span {
+.settings-section-nav-item::before {
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: transparent;
+  content: '';
+  transition: background 140ms ease;
+}
+
+.settings-section-nav-index {
   display: grid;
-  width: 18px;
+  width: 32px;
+  height: 32px;
   place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-control) 82%, transparent);
   color: var(--muted);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 800;
 }
 
-.settings-sidebar button.active,
-.settings-sidebar button:hover {
-  background: var(--surface-strong);
+.settings-section-nav-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.settings-section-nav-copy strong,
+.settings-section-nav-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-section-nav-copy strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.settings-section-nav-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-section-nav-item:hover {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+  color: var(--text);
+}
+
+.settings-section-nav-item.active {
+  border-color: var(--accent-border);
+  background:
+    linear-gradient(90deg, var(--accent-soft), transparent 72%),
+    color-mix(in srgb, var(--surface-strong) 84%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.settings-section-nav-item.active::before {
+  background: var(--accent);
+}
+
+.settings-section-nav-item.active .settings-section-nav-index {
+  border-color: var(--accent-strong-border);
+  background: var(--accent-soft);
   color: var(--text);
 }
 
@@ -3160,13 +3241,28 @@ button.explorer-row {
   }
 
   .settings-page {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  .settings-sidebar button {
-    justify-content: center;
+  .settings-section-nav {
+    padding: 12px 8px;
+  }
+
+  .settings-section-nav-header,
+  .settings-section-nav-copy {
+    display: none;
+  }
+
+  .settings-section-nav-item {
+    min-height: 48px;
+    grid-template-columns: 1fr;
+    justify-items: center;
     padding: 0;
-    font-size: 0;
+  }
+
+  .settings-section-nav-index {
+    width: 34px;
+    height: 34px;
   }
 
   .settings-row {
