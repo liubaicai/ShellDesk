@@ -328,6 +328,15 @@
     linear-gradient(180deg, rgba(246, 249, 253, 0.96), rgba(231, 238, 247, 0.96));
 }
 
+[data-theme="light"] .mac-dock button.open::after {
+  background: rgba(23, 32, 51, 0.76);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="light"] .mac-dock button.minimized::after {
+  background: rgba(82, 97, 120, 0.42);
+}
+
 [data-theme="light"] .desktop-window-titlebar strong,
 [data-theme="light"] .browser-toolbar button,
 [data-theme="light"] .browser-address-shell input,

@@ -15,6 +15,7 @@
 }
 
 .mac-dock button {
+  position: relative;
   width: 48px;
   height: 48px;
   border-radius: 9px;
@@ -25,6 +26,26 @@
     transform 140ms ease,
     background 140ms ease,
     border-color 140ms ease;
+}
+
+.mac-dock button.open::after {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 0 0 2px rgba(14, 20, 30, 0.48);
+  content: "";
+}
+
+.mac-dock button.minimized {
+  opacity: 0.68;
+}
+
+.mac-dock button.minimized::after {
+  background: rgba(255, 255, 255, 0.46);
 }
 
 .mac-dock button.active,

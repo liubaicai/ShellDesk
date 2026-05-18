@@ -129,6 +129,12 @@
   box-shadow: 0 30px 96px rgba(0, 0, 0, 0.52);
 }
 
+.desktop-window.minimized {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .desktop-window.maximized {
   border-radius: 8px;
 }

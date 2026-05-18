@@ -39,6 +39,7 @@ interface DesktopWindowState {
   frame: DesktopWindowFrame;
   previousFrame?: DesktopWindowFrame;
   isMaximized: boolean;
+  isMinimized: boolean;
   zIndex: number;
   terminalId?: string;
   chromeTitle?: string;
@@ -120,6 +121,7 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
       y: baseFrame.y + offset,
     },
     isMaximized: false,
+    isMinimized: false,
     zIndex,
     terminalId: appKey === 'terminal' ? `terminal-${sequence}` : undefined,
     chromeTitle: isBrowserWindow ? '127.0.0.1' : undefined,
@@ -132,6 +134,23 @@ function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
 }
 
+function getTopDesktopWindow(
+  desktopWindows: DesktopWindowState[],
+  predicate: (desktopWindow: DesktopWindowState) => boolean = () => true,
+) {
+  return desktopWindows.reduce<DesktopWindowState | null>((currentTopWindow, desktopWindow) => {
+    if (!predicate(desktopWindow)) {
+      return currentTopWindow;
+    }
+
+    if (!currentTopWindow || desktopWindow.zIndex > currentTopWindow.zIndex) {
+      return desktopWindow;
+    }
+
+    return currentTopWindow;
+  }, null);
+}
+
 function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
@@ -140,7 +159,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [desktopContextMenu, setDesktopContextMenu] = useState<{ x: number; y: number; appKey: DesktopAppKey } | null>(null);
-  const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId) ?? null;
+  const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
 
   useEffect(() => {
     const surface = desktopSurfaceRef.current;
@@ -174,7 +193,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     const nextZIndex = zIndexRef.current;
     setFocusedWindowId(windowId);
     setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
-      desktopWindow.id === windowId ? { ...desktopWindow, zIndex: nextZIndex } : desktopWindow
+      desktopWindow.id === windowId ? { ...desktopWindow, isMinimized: false, zIndex: nextZIndex } : desktopWindow
     )));
   };
 
@@ -212,17 +231,38 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const closeDesktopWindow = (windowId: string) => {
     setDesktopWindows((currentWindows) => {
       const nextWindows = currentWindows.filter((desktopWindow) => desktopWindow.id !== windowId);
-      const nextFocusedWindow = nextWindows.reduce<DesktopWindowState | null>((currentTopWindow, desktopWindow) => {
-        if (!currentTopWindow || desktopWindow.zIndex > currentTopWindow.zIndex) {
-          return desktopWindow;
-        }
-
-        return currentTopWindow;
-      }, null);
+      const nextFocusedWindow = getTopDesktopWindow(nextWindows, (desktopWindow) => !desktopWindow.isMinimized);
 
       setFocusedWindowId(nextFocusedWindow?.id ?? '');
       return nextWindows;
     });
+  };
+
+  const minimizeDesktopWindow = (windowId: string) => {
+    windowPointerStateRef.current = null;
+    setDesktopWindows((currentWindows) => {
+      const nextWindows = currentWindows.map((desktopWindow) => (
+        desktopWindow.id === windowId ? { ...desktopWindow, isMinimized: true } : desktopWindow
+      ));
+      const nextFocusedWindow = getTopDesktopWindow(nextWindows, (desktopWindow) => !desktopWindow.isMinimized);
+
+      setFocusedWindowId(nextFocusedWindow?.id ?? '');
+      return nextWindows;
+    });
+  };
+
+  const activateDockApp = (appKey: DesktopAppKey) => {
+    const appWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === appKey);
+    const visibleWindow = getTopDesktopWindow(appWindows, (desktopWindow) => !desktopWindow.isMinimized);
+    const minimizedWindow = getTopDesktopWindow(appWindows, (desktopWindow) => desktopWindow.isMinimized);
+    const windowToActivate = visibleWindow ?? minimizedWindow;
+
+    if (windowToActivate) {
+      bringWindowToFront(windowToActivate.id);
+      return;
+    }
+
+    openDesktopWindow(appKey);
   };
 
   const toggleWindowMaximize = (windowId: string) => {
@@ -269,7 +309,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     const surface = desktopSurfaceRef.current;
     const desktopWindow = desktopWindows.find((currentWindow) => currentWindow.id === windowId);
 
-    if (!surface || !desktopWindow || desktopWindow.isMaximized) {
+    if (!surface || !desktopWindow || desktopWindow.isMaximized || desktopWindow.isMinimized) {
       return;
     }
 
@@ -433,8 +473,9 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
           return (
             <section
               key={desktopWindow.id}
-              className={`desktop-window desktop-window-${desktopWindow.appKey} ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''}`}
+              className={`desktop-window desktop-window-${desktopWindow.appKey} ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
               aria-label={appInfo.label}
+              aria-hidden={desktopWindow.isMinimized}
               style={desktopWindowStyle}
               onPointerDownCapture={() => bringWindowToFront(desktopWindow.id)}
             >
@@ -463,7 +504,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
                   )}
                 </div>
                 <div className="win-titlebar-controls" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
-                  <button type="button" className="win-btn minimize" aria-label="最小化窗口" title="最小化" onClick={() => closeDesktopWindow(desktopWindow.id)}>
+                  <button type="button" className="win-btn minimize" aria-label="最小化窗口" title="最小化" onClick={() => minimizeDesktopWindow(desktopWindow.id)}>
                     <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
                   </button>
                   <button
@@ -515,17 +556,35 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
               ...desktopApps.filter((app) => !dockPinnedApps.includes(app.key as DesktopAppKey) && openAppKeys.has(app.key)),
             ];
 
-            return dockApps.map((app) => (
-              <button
-                key={app.key}
-                type="button"
-                className={focusedWindow?.appKey === app.key ? 'active' : ''}
-                onClick={() => openDesktopWindow(app.key)}
-                title={app.label}
-              >
-                {app.icon}
-              </button>
-            ));
+            return dockApps.map((app) => {
+              const appWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === app.key);
+              const hasOpenWindows = appWindows.length > 0;
+              const hasVisibleWindows = appWindows.some((desktopWindow) => !desktopWindow.isMinimized);
+              const isMinimizedOnly = hasOpenWindows && !hasVisibleWindows;
+              const dockButtonClassName = [
+                focusedWindow?.appKey === app.key ? 'active' : '',
+                hasOpenWindows ? 'open' : '',
+                isMinimizedOnly ? 'minimized' : '',
+              ].filter(Boolean).join(' ');
+              const dockButtonLabel = isMinimizedOnly
+                ? `还原${app.label}`
+                : hasOpenWindows
+                  ? `切换到${app.label}`
+                  : `打开${app.label}`;
+
+              return (
+                <button
+                  key={app.key}
+                  type="button"
+                  className={dockButtonClassName}
+                  onClick={() => activateDockApp(app.key)}
+                  aria-label={dockButtonLabel}
+                  title={dockButtonLabel}
+                >
+                  {app.icon}
+                </button>
+              );
+            });
           })()}
         </nav>
       </section>
