@@ -1,5 +1,10 @@
 import type * as React from 'react';
 
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+
 type WebviewProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
   src?: string;
   partition?: string;

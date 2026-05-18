@@ -58,7 +58,16 @@ const uiFontChoices = [
 ];
 let vaultCache = null;
 
+const appUserModelId = 'com.guissh.app';
+const appIconPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'app-icon.png')
+  : path.join(__dirname, '..', 'src', 'assets', 'images', 'icon.png');
+
 nativeTheme.themeSource = 'dark';
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(appUserModelId);
+}
 
 function createDefaultSettings() {
   return {
@@ -1761,6 +1770,7 @@ function createMainWindow() {
     minHeight: 620,
     show: false,
     title: 'GUI-SSH',
+    icon: appIconPath,
     backgroundColor: '#0b1017',
     autoHideMenuBar: true,
     frame: process.platform === 'darwin',
@@ -1793,6 +1803,7 @@ function createConnectionWindow(activeConnection) {
     minHeight: 640,
     show: false,
     title: `GUI-SSH - ${connectionTitle} - SOCKS :${activeConnection.proxyPort}`,
+    icon: appIconPath,
     backgroundColor: '#0b1017',
     autoHideMenuBar: true,
     frame: process.platform === 'darwin',

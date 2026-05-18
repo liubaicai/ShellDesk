@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import RemoteDesktop from './RemoteDesktopShell';
+import appIconUrl from './assets/images/icon.png';
 import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import KeysPage from './pages/KeysPage';
@@ -1645,6 +1646,7 @@ function App() {
     <div className="app-shell">
       <header className="top-chrome drag-region">
         <div className="workspace-title">
+          <img className="app-window-icon" src={appIconUrl} alt="" />
           {connection ? (
             <>
               <strong>GUI-SSH Desktop</strong>
@@ -1684,7 +1686,7 @@ function App() {
       <div className="app-layout">
         <aside className="side-nav">
           <div className="brand-panel">
-            <span className="brand-logo">GS</span>
+            <img className="brand-logo" src={appIconUrl} alt="" />
             <strong>GUI-SSH</strong>
           </div>
 
