@@ -33,6 +33,40 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
   { page: 'logs', icon: 'logs', label: '日志' },
 ];
 
+function HostGroupIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M4.75 8.35c0-1.28 1.04-2.32 2.32-2.32h3.1l1.48 1.72h5.28c1.28 0 2.32 1.04 2.32 2.32v.8H4.75V8.35Z"
+        fill="currentColor"
+        opacity="0.2"
+      />
+      <path
+        d="M4.75 10.25h14.5v5.38c0 1.28-1.04 2.32-2.32 2.32H7.07a2.32 2.32 0 0 1-2.32-2.32v-5.38Z"
+        fill="currentColor"
+        opacity="0.32"
+      />
+      <path
+        d="M4.75 10.25V8.35c0-1.28 1.04-2.32 2.32-2.32h3.1l1.48 1.72h5.28c1.28 0 2.32 1.04 2.32 2.32v5.56c0 1.28-1.04 2.32-2.32 2.32H7.07a2.32 2.32 0 0 1-2.32-2.32v-5.38Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+      <path
+        d="M8.25 12.85h4.85M8.25 15.15h2.8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.55"
+      />
+      <path d="M15.2 14.95h2.3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+      <circle cx="16.35" cy="14.95" r="1.15" fill="currentColor" />
+    </svg>
+  );
+}
+
 interface SshKey {
   id: string;
   name: string;
@@ -1688,7 +1722,7 @@ function App() {
                       className={`group-card ${activeGroupKey === group.key ? 'active' : ''}`}
                       onClick={() => setActiveGroupKey(group.key)}
                     >
-                      <span className="group-icon" aria-hidden="true">▱</span>
+                      <span className="group-icon" aria-hidden="true"><HostGroupIcon /></span>
                       <strong>{group.name}</strong>
                       <small>{group.count}</small>
                     </button>
