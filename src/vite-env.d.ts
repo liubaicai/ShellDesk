@@ -23,7 +23,15 @@ interface GuiSshFileControls {
 
 interface GuiSshAppSettings {
   language: 'zh-CN' | 'en-US';
-  interfaceFont: 'Space Grotesk' | 'Segoe UI' | 'Inter';
+  interfaceFont:
+    | 'LXGW WenKai Mono'
+    | 'Microsoft YaHei UI'
+    | 'DengXian'
+    | 'SimSun'
+    | 'Arial'
+    | 'Verdana'
+    | 'Georgia'
+    | 'Times New Roman';
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
   defaultHostView: 'grid' | 'list';

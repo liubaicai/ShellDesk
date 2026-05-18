@@ -23,7 +23,16 @@ const bookmarkScopePrefix = 'gui-ssh:browser-bookmarks:';
 const logFileName = 'logs.json';
 const maxLogEntries = 500;
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
-const uiFontChoices = ['Space Grotesk', 'Segoe UI', 'Inter'];
+const uiFontChoices = [
+  'LXGW WenKai Mono',
+  'Microsoft YaHei UI',
+  'DengXian',
+  'SimSun',
+  'Arial',
+  'Verdana',
+  'Georgia',
+  'Times New Roman',
+];
 let vaultCache = null;
 
 nativeTheme.themeSource = 'dark';
@@ -31,7 +40,7 @@ nativeTheme.themeSource = 'dark';
 function createDefaultSettings() {
   return {
     language: 'zh-CN',
-    interfaceFont: 'Space Grotesk',
+    interfaceFont: 'LXGW WenKai Mono',
     theme: 'dark',
     accentColor: accentColorChoices[0],
     defaultHostView: 'grid',

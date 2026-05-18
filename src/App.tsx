@@ -13,7 +13,7 @@ const bookmarkStorageKeyPrefix = 'gui-ssh:browser-bookmarks:';
 const ungroupedKey = '__ungrouped__';
 const defaultAppSettings: GuiSshAppSettings = {
   language: 'zh-CN',
-  interfaceFont: 'Space Grotesk',
+  interfaceFont: 'LXGW WenKai Mono',
   theme: 'dark',
   accentColor: '#43c7ff',
   defaultHostView: 'list',
@@ -993,7 +993,9 @@ function App() {
     root.style.setProperty('--toggle-off', isLightTheme ? '#cdd6e0' : '#202938');
     root.style.colorScheme = isLightTheme ? 'light' : 'dark';
     root.setAttribute('data-theme', effectiveTheme);
-    document.body.style.fontFamily = `"${settings.interfaceFont}", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    const interfaceFontFamily = `"${settings.interfaceFont}", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    root.style.setProperty('--interface-font-family', interfaceFontFamily);
+    document.body.style.fontFamily = interfaceFontFamily;
   }, [settings]);
 
   useEffect(() => {
