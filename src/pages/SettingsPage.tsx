@@ -1,14 +1,30 @@
 import { useState } from 'react';
 
+import {
+  getTerminalThemeChoice,
+  terminalBoldWeightChoices,
+  terminalFontFamilyChoices,
+  terminalFontWeightChoices,
+  terminalThemeChoices,
+} from '../components/remote-desktop/terminalPresets';
+
 const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
   { key: 'appearance', label: '外观', summary: '主题与强调色' },
-  { key: 'terminal', label: '终端', summary: '字号、光标、滚动' },
+  { key: 'terminal', label: '终端', summary: '主题、字体、滚动' },
   { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
   { key: 'backup', label: '备份与导入', summary: '配置迁移' },
 ] as const;
 
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
+const terminalLineHeightChoices = [1, 1.1, 1.2, 1.3, 1.4];
+const terminalScrollSensitivityChoices = [0.5, 1, 1.5, 2, 3, 5];
+const terminalFastScrollSensitivityChoices = [2, 5, 8, 10, 15, 20];
+const terminalContrastChoices = [
+  { value: 1, label: '关闭' },
+  { value: 4.5, label: 'AA 4.5' },
+  { value: 7, label: 'AAA 7' },
+];
 
 interface SettingsPageProps {
   hostCount: number;
@@ -41,6 +57,7 @@ function SettingsPage({
       [field]: value,
     });
   };
+  const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
 
   return (
     <>
@@ -200,68 +217,345 @@ function SettingsPage({
           ) : null}
 
           {activeSection === 'terminal' ? (
-            <section className="settings-section">
-              <h2>终端体验</h2>
-              <div className="settings-card">
-                <label className="settings-row">
-                  <span>
-                    <strong>终端字号</strong>
-                    <small>影响 SSH Shell 中的字符大小</small>
-                  </span>
-                  <select
-                    value={settings.terminalFontSize}
-                    onChange={(event) => updateSetting('terminalFontSize', Number(event.target.value))}
-                  >
-                    {[11, 12, 13, 14, 15, 16, 18, 20].map((size) => (
-                      <option key={size} value={size}>{size}px</option>
-                    ))}
-                  </select>
-                </label>
+            <>
+              <section className="settings-section">
+                <h2>终端主题</h2>
+                <div className="settings-card">
+                  <label className="settings-row terminal-theme-row">
+                    <span>
+                      <strong>颜色主题</strong>
+                      <small>{selectedTerminalTheme.summary}</small>
+                    </span>
+                    <select
+                      value={settings.terminalTheme}
+                      onChange={(event) => updateSetting('terminalTheme', event.target.value as GuiSshAppSettings['terminalTheme'])}
+                    >
+                      {terminalThemeChoices.map((themeChoice) => (
+                        <option key={themeChoice.key} value={themeChoice.key}>{themeChoice.label}</option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label className="settings-row">
-                  <span>
-                    <strong>光标样式</strong>
-                    <small>控制终端中的输入光标形态</small>
-                  </span>
-                  <select
-                    value={settings.terminalCursorStyle}
-                    onChange={(event) => updateSetting('terminalCursorStyle', event.target.value as GuiSshAppSettings['terminalCursorStyle'])}
-                  >
-                    <option value="block">块状</option>
-                    <option value="bar">竖线</option>
-                    <option value="underline">下划线</option>
-                  </select>
-                </label>
+                  <div className="terminal-theme-preview" style={{ background: selectedTerminalTheme.theme.background, color: selectedTerminalTheme.theme.foreground }}>
+                    <div>
+                      <strong>{selectedTerminalTheme.label}</strong>
+                      <small>$ ssh user@host</small>
+                    </div>
+                    <div className="terminal-theme-swatches" aria-label="终端颜色预览">
+                      {[
+                        selectedTerminalTheme.theme.red,
+                        selectedTerminalTheme.theme.green,
+                        selectedTerminalTheme.theme.yellow,
+                        selectedTerminalTheme.theme.blue,
+                        selectedTerminalTheme.theme.magenta,
+                        selectedTerminalTheme.theme.cyan,
+                      ].map((color) => (
+                        <span key={color} style={{ background: color }} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
 
-                <label className="settings-row">
-                  <span>
-                    <strong>滚动缓冲区</strong>
-                    <small>保留更多历史输出会占用更多内存</small>
-                  </span>
-                  <select
-                    value={settings.terminalScrollback}
-                    onChange={(event) => updateSetting('terminalScrollback', Number(event.target.value))}
-                  >
-                    {[1000, 3000, 5000, 10000, 20000, 50000].map((value) => (
-                      <option key={value} value={value}>{value.toLocaleString('zh-CN')} 行</option>
-                    ))}
-                  </select>
-                </label>
+              <section className="settings-section">
+                <h2>字体与排版</h2>
+                <div className="settings-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>字体族</strong>
+                      <small>优先使用所选字体，不存在时回退到常见等宽字体</small>
+                    </span>
+                    <select
+                      value={settings.terminalFontFamily}
+                      onChange={(event) => updateSetting('terminalFontFamily', event.target.value as GuiSshAppSettings['terminalFontFamily'])}
+                    >
+                      {terminalFontFamilyChoices.map((fontChoice) => (
+                        <option key={fontChoice.value} value={fontChoice.value}>{fontChoice.label}</option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label className="settings-row">
-                  <span>
-                    <strong>选中即复制</strong>
-                    <small>右键仍然保留粘贴 / 复制行为</small>
-                  </span>
-                  <input
-                    className="settings-toggle"
-                    type="checkbox"
-                    checked={settings.terminalCopyOnSelect}
-                    onChange={(event) => updateSetting('terminalCopyOnSelect', event.target.checked)}
-                  />
-                </label>
-              </div>
-            </section>
+                  <label className="settings-row">
+                    <span>
+                      <strong>终端字号</strong>
+                      <small>影响 SSH Shell 中的字符大小</small>
+                    </span>
+                    <select
+                      value={settings.terminalFontSize}
+                      onChange={(event) => updateSetting('terminalFontSize', Number(event.target.value))}
+                    >
+                      {[11, 12, 13, 14, 15, 16, 18, 20].map((size) => (
+                        <option key={size} value={size}>{size}px</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>行高</strong>
+                      <small>行距越大，日志和长命令越容易扫读</small>
+                    </span>
+                    <select
+                      value={settings.terminalLineHeight}
+                      onChange={(event) => updateSetting('terminalLineHeight', Number(event.target.value))}
+                    >
+                      {terminalLineHeightChoices.map((value) => (
+                        <option key={value} value={value}>{value.toFixed(1)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>常规字重</strong>
+                      <small>控制普通输出的粗细</small>
+                    </span>
+                    <select
+                      value={settings.terminalFontWeight}
+                      onChange={(event) => updateSetting('terminalFontWeight', Number(event.target.value))}
+                    >
+                      {terminalFontWeightChoices.map((choice) => (
+                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>粗体字重</strong>
+                      <small>控制 sudo 提示、强调文本和 ANSI 粗体</small>
+                    </span>
+                    <select
+                      value={settings.terminalFontWeightBold}
+                      onChange={(event) => updateSetting('terminalFontWeightBold', Number(event.target.value))}
+                    >
+                      {terminalBoldWeightChoices.map((choice) => (
+                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>字体连字</strong>
+                      <small>对 Fira Code、JetBrains Mono 等字体启用编程连字</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalFontLigatures}
+                      onChange={(event) => updateSetting('terminalFontLigatures', event.target.checked)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h2>光标与滚动</h2>
+                <div className="settings-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>光标样式</strong>
+                      <small>控制终端中的输入光标形态</small>
+                    </span>
+                    <select
+                      value={settings.terminalCursorStyle}
+                      onChange={(event) => updateSetting('terminalCursorStyle', event.target.value as GuiSshAppSettings['terminalCursorStyle'])}
+                    >
+                      <option value="block">块状</option>
+                      <option value="bar">竖线</option>
+                      <option value="underline">下划线</option>
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>失焦光标</strong>
+                      <small>窗口失去焦点时的光标显示方式</small>
+                    </span>
+                    <select
+                      value={settings.terminalCursorInactiveStyle}
+                      onChange={(event) => updateSetting('terminalCursorInactiveStyle', event.target.value as GuiSshAppSettings['terminalCursorInactiveStyle'])}
+                    >
+                      <option value="outline">描边</option>
+                      <option value="block">块状</option>
+                      <option value="bar">竖线</option>
+                      <option value="underline">下划线</option>
+                      <option value="none">隐藏</option>
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>光标闪烁</strong>
+                      <small>关闭后光标保持静止，减少视觉干扰</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalCursorBlink}
+                      onChange={(event) => updateSetting('terminalCursorBlink', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>滚动缓冲区</strong>
+                      <small>保留更多历史输出会占用更多内存</small>
+                    </span>
+                    <select
+                      value={settings.terminalScrollback}
+                      onChange={(event) => updateSetting('terminalScrollback', Number(event.target.value))}
+                    >
+                      {[1000, 3000, 5000, 10000, 20000, 50000].map((value) => (
+                        <option key={value} value={value}>{value.toLocaleString('zh-CN')} 行</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>滚轮速度</strong>
+                      <small>控制普通滚动的速度倍率</small>
+                    </span>
+                    <select
+                      value={settings.terminalScrollSensitivity}
+                      onChange={(event) => updateSetting('terminalScrollSensitivity', Number(event.target.value))}
+                    >
+                      {terminalScrollSensitivityChoices.map((value) => (
+                        <option key={value} value={value}>{value}x</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>快速滚动速度</strong>
+                      <small>按住 Alt 滚轮时使用的速度倍率</small>
+                    </span>
+                    <select
+                      value={settings.terminalFastScrollSensitivity}
+                      onChange={(event) => updateSetting('terminalFastScrollSensitivity', Number(event.target.value))}
+                    >
+                      {terminalFastScrollSensitivityChoices.map((value) => (
+                        <option key={value} value={value}>{value}x</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>输入时滚到底部</strong>
+                      <small>在查看历史输出时输入命令会自动回到最新位置</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalScrollOnUserInput}
+                      onChange={(event) => updateSetting('terminalScrollOnUserInput', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>清屏保留历史</strong>
+                      <small>让 clear 等清屏动作把旧内容推入滚动历史</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalScrollOnEraseInDisplay}
+                      onChange={(event) => updateSetting('terminalScrollOnEraseInDisplay', event.target.checked)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h2>输入与辅助</h2>
+                <div className="settings-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>选中即复制</strong>
+                      <small>右键仍然保留粘贴 / 复制行为</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalCopyOnSelect}
+                      onChange={(event) => updateSetting('terminalCopyOnSelect', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>右键粘贴</strong>
+                      <small>没有选中文本时，右键直接粘贴剪贴板内容</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalRightClickPaste}
+                      onChange={(event) => updateSetting('terminalRightClickPaste', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Alt 单击移动光标</strong>
+                      <small>在支持的 Shell 编辑模式中快速定位输入光标</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalAltClickMovesCursor}
+                      onChange={(event) => updateSetting('terminalAltClickMovesCursor', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>括号粘贴保护</strong>
+                      <small>让支持的 Shell 能识别一次性粘贴内容，降低误执行风险</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalBracketedPasteMode}
+                      onChange={(event) => updateSetting('terminalBracketedPasteMode', event.target.checked)}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>最小对比度</strong>
+                      <small>自动增强低对比输出文本</small>
+                    </span>
+                    <select
+                      value={settings.terminalMinimumContrastRatio}
+                      onChange={(event) => updateSetting('terminalMinimumContrastRatio', Number(event.target.value))}
+                    >
+                      {terminalContrastChoices.map((choice) => (
+                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>屏幕阅读器支持</strong>
+                      <small>启用后会增加辅助 DOM，可能略微影响高频输出性能</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalScreenReaderMode}
+                      onChange={(event) => updateSetting('terminalScreenReaderMode', event.target.checked)}
+                    />
+                  </label>
+                </div>
+              </section>
+            </>
           ) : null}
 
           {activeSection === 'security' ? (

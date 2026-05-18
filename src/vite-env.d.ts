@@ -38,9 +38,44 @@ interface GuiSshAppSettings {
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
   terminalFontSize: number;
+  terminalFontFamily:
+    | 'Cascadia Mono'
+    | 'JetBrains Mono'
+    | 'Fira Code'
+    | 'Consolas'
+    | 'LXGW WenKai Mono'
+    | 'Source Code Pro'
+    | 'Hack'
+    | 'Menlo'
+    | 'Monaco'
+    | 'Courier New';
+  terminalFontWeight: number;
+  terminalFontWeightBold: number;
+  terminalFontLigatures: boolean;
+  terminalLineHeight: number;
+  terminalTheme:
+    | 'guissh-dark'
+    | 'netcatty-dark'
+    | 'tokyo-night'
+    | 'dracula'
+    | 'monokai'
+    | 'solarized-light'
+    | 'netcatty-light'
+    | 'hacker-green';
+  terminalCursorBlink: boolean;
   terminalCursorStyle: 'block' | 'bar' | 'underline';
+  terminalCursorInactiveStyle: 'outline' | 'block' | 'bar' | 'underline' | 'none';
   terminalScrollback: number;
+  terminalScrollSensitivity: number;
+  terminalFastScrollSensitivity: number;
+  terminalScrollOnUserInput: boolean;
+  terminalScrollOnEraseInDisplay: boolean;
   terminalCopyOnSelect: boolean;
+  terminalRightClickPaste: boolean;
+  terminalAltClickMovesCursor: boolean;
+  terminalBracketedPasteMode: boolean;
+  terminalMinimumContrastRatio: number;
+  terminalScreenReaderMode: boolean;
 }
 
 interface GuiSshStoredKeyRecord {

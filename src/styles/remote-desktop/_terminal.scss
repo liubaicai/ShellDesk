@@ -2,31 +2,53 @@
   display: grid;
   height: 100%;
   grid-template-rows: minmax(0, 1fr) 44px;
-  background: #000000;
+  background: transparent;
 }
 
 .xterm-terminal-pane {
   grid-template-rows: minmax(0, 1fr);
-  padding: 8px;
+  padding: 0;
 }
 
 .terminal-host {
   position: relative;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-radius: 0 0 9px 9px;
+  padding: 6px;
+  background: var(--terminal-background, #181a24);
 }
 
 .terminal-host .xterm {
+  width: 100%;
   height: 100%;
-  padding: 6px;
+  background: var(--terminal-background, #181a24) !important;
+  font-feature-settings: var(--terminal-font-feature-settings, "calt" 1, "liga" 1);
+  font-variant-ligatures: var(--terminal-font-ligatures, normal);
 }
 
 .terminal-host .xterm-viewport,
 .terminal-host .xterm-screen {
   border-radius: 5px;
+  background: var(--terminal-background, #181a24) !important;
+}
+
+.terminal-host .xterm-viewport,
+.terminal-host .xterm-screen,
+.terminal-host .xterm-screen canvas,
+.terminal-host .xterm-rows,
+.terminal-host .xterm-scroll-area {
+  background-color: var(--terminal-background, #181a24) !important;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar,
+.terminal-host .xterm-viewport::-webkit-scrollbar-track,
+.terminal-host .xterm-viewport::-webkit-scrollbar-corner {
+  background: var(--terminal-background, #181a24);
 }
 
 .terminal-host .xterm-selection div {
