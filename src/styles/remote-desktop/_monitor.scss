@@ -1,0 +1,298 @@
+.monitor-pane {
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+  background:
+    radial-gradient(circle at top right, rgba(67, 199, 255, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(6, 10, 16, 0.98));
+}
+
+.monitor-shell {
+  display: grid;
+  height: 100%;
+  align-content: start;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.monitor-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.monitor-header-left {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.monitor-title-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.monitor-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+  animation: monitor-pulse 2s ease-in-out infinite;
+}
+
+@keyframes monitor-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
+  50% { opacity: 0.6; box-shadow: 0 0 16px rgba(74, 222, 128, 0.3); }
+}
+
+.monitor-kicker {
+  color: #8edfff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.monitor-hostname {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-host-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.monitor-meta-tag {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted-strong);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-header-right {
+  display: grid;
+  align-self: stretch;
+  min-width: 200px;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.monitor-refresh-info {
+  display: grid;
+  gap: 6px;
+}
+
+.monitor-refresh-info small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.monitor-refresh-btn {
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.monitor-refresh-btn:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.monitor-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─── Charts Grid ──────────────────────────────────────────────────── */
+
+.monitor-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.monitor-chart-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 200px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 12px 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chart-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chart-card-label {
+  color: var(--muted-strong);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chart-card-value {
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.monitor-chart-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 150px;
+  border-radius: 6px;
+}
+
+/* ─── Process Table ────────────────────────────────────────────────── */
+
+.monitor-process-section {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.process-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.process-section-title {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.process-table-wrap {
+  overflow: auto;
+  max-height: 320px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.process-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.process-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted-strong);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.process-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.process-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.process-pid {
+  font-weight: 700;
+  color: var(--muted-strong);
+}
+
+.process-highlight {
+  color: #ef4444 !important;
+  font-weight: 700;
+}
+
+.process-command-col {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-kill-btn {
+  height: 22px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.process-kill-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.process-kill-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+

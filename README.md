@@ -62,6 +62,7 @@
 | 桌面框架 | Electron 40 |
 | 前端 | React 19 + TypeScript 5.9 |
 | 构建工具 | Vite 7 |
+| 样式 | Sass / SCSS + CSS 变量 |
 | SSH 能力 | ssh2 |
 | 终端渲染 | xterm.js |
 | 包管理 | pnpm |
@@ -133,7 +134,14 @@ GUISSH/
 │   ├── RemoteDesktop.tsx               # 远程桌面导出入口
 │   ├── RemoteDesktopShell.tsx          # 连接后的桌面式窗口容器
 │   ├── main.tsx                        # React 启动入口
-│   ├── styles.css                      # 全局样式
+│   ├── styles/
+│   │   ├── index.scss                  # 全局样式入口，按级联顺序聚合模块
+│   │   ├── _tokens.scss                # 字体、CSS 变量、主题 token
+│   │   ├── foundations/                # reset、基础元素、全局行为
+│   │   ├── layout/                     # 应用壳、顶部栏、侧边导航
+│   │   ├── pages/                      # 主机、密钥、日志、设置等页面样式
+│   │   ├── remote-desktop/             # 远程桌面及各内置应用样式
+│   │   └── themes/                     # 浅色主题与远程应用主题覆盖
 │   ├── components/
 │   │   ├── navigation/
 │   │   │   └── NavIcon.tsx             # 导航图标
@@ -154,6 +162,15 @@ GUISSH/
 ├── tsconfig.json
 └── vite.config.ts
 ```
+
+## 样式架构
+
+- React 入口 `src/main.tsx` 仅导入 `src/styles/index.scss`
+- `index.scss` 使用 Sass `@use` 聚合各功能模块，导入顺序即最终 CSS 级联顺序
+- 基础 token 与全局 reset 放在 `src/styles/_tokens.scss` 与 `src/styles/foundations/`
+- 页面级样式放在 `src/styles/pages/`，远程桌面窗口与内置应用样式放在 `src/styles/remote-desktop/`
+- 主题覆盖放在 `src/styles/themes/`
+- 当前视觉刷新与紧凑密度规则就近维护在对应模块文件末尾，不再使用全局 `overrides/` 补丁目录
 
 ## 后续方向
 

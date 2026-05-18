@@ -1,0 +1,466 @@
+/* ─── Light: Remote Settings ──────────────────────────────────────────────── */
+
+[data-theme="light"] .settings-pane {
+  background: #f5f7fb;
+}
+
+[data-theme="light"] .settings-sidebar {
+  border-right-color: rgba(16, 32, 51, 0.08);
+  background: #edf0f5;
+}
+
+[data-theme="light"] .settings-sidebar-group-label {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-nav-item {
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-nav-item:hover {
+  background: rgba(9, 105, 218, 0.04);
+}
+
+[data-theme="light"] .settings-nav-item.active {
+  border-color: rgba(9, 105, 218, 0.2);
+  background: rgba(9, 105, 218, 0.07);
+}
+
+[data-theme="light"] .settings-nav-icon {
+  background: rgba(16, 32, 51, 0.05);
+}
+
+[data-theme="light"] .settings-nav-item.active .settings-nav-icon {
+  background: rgba(9, 105, 218, 0.12);
+}
+
+[data-theme="light"] .settings-nav-text small {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-panel-header {
+  border-bottom-color: rgba(16, 32, 51, 0.08);
+}
+
+[data-theme="light"] .settings-action-btn {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #ffffff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-action-btn:hover:not(:disabled) {
+  background: #f0f3f8;
+  border-color: rgba(16, 32, 51, 0.18);
+}
+
+[data-theme="light"] .settings-action-btn.primary {
+  border-color: rgba(9, 105, 218, 0.3);
+  background: rgba(9, 105, 218, 0.07);
+  color: #0969da;
+}
+
+[data-theme="light"] .settings-action-btn.primary:hover:not(:disabled) {
+  background: rgba(9, 105, 218, 0.13);
+  box-shadow: 0 0 12px rgba(9, 105, 218, 0.06);
+}
+
+[data-theme="light"] .settings-action-btn.danger {
+  border-color: rgba(200, 50, 50, 0.25);
+  background: rgba(200, 50, 50, 0.05);
+  color: #c83232;
+}
+
+[data-theme="light"] .settings-action-btn.danger:hover:not(:disabled) {
+  background: rgba(200, 50, 50, 0.12);
+}
+
+[data-theme="light"] .settings-success-banner {
+  border-color: rgba(40, 167, 69, 0.22);
+  background: rgba(40, 167, 69, 0.05);
+  color: #1a7f37;
+}
+
+[data-theme="light"] .settings-info-card {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #ffffff;
+}
+
+[data-theme="light"] .settings-info-label {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-section h4 {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-output {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #f6f8fa;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-hint {
+  border-color: rgba(16, 32, 51, 0.08);
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-input {
+  border-color: rgba(16, 32, 51, 0.14);
+  background: #ffffff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-input:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.06);
+}
+
+[data-theme="light"] .settings-input::placeholder {
+  color: #8b949e;
+}
+
+[data-theme="light"] .settings-textarea {
+  border-color: rgba(16, 32, 51, 0.14);
+  background: #f6f8fa;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-textarea:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.06);
+}
+
+[data-theme="light"] .settings-mirror-btn {
+  border-color: rgba(16, 32, 51, 0.07);
+  background: #ffffff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-mirror-btn:hover:not(:disabled) {
+  border-color: rgba(9, 105, 218, 0.25);
+  background: rgba(9, 105, 218, 0.03);
+  box-shadow: 0 0 16px rgba(9, 105, 218, 0.04);
+}
+
+[data-theme="light"] .settings-mirror-btn small {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-select {
+  border-color: rgba(16, 32, 51, 0.14);
+  background: #ffffff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-select:focus {
+  border-color: #0969da;
+}
+
+[data-theme="light"] .net-iface-card {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #ffffff;
+}
+
+[data-theme="light"] .net-iface-card.up {
+  border-color: rgba(40, 167, 69, 0.2);
+}
+
+[data-theme="light"] .net-iface-card.down {
+  border-color: rgba(200, 50, 50, 0.15);
+}
+
+[data-theme="light"] .net-iface-state-dot.up {
+  background: #2da44e;
+  box-shadow: 0 0 6px rgba(45, 164, 78, 0.4);
+}
+
+[data-theme="light"] .net-iface-state-dot.down {
+  background: #cf222e;
+  box-shadow: 0 0 6px rgba(207, 34, 46, 0.3);
+}
+
+[data-theme="light"] .net-iface-state-tag.up {
+  background: rgba(40, 167, 69, 0.1);
+  color: #1a7f37;
+}
+
+[data-theme="light"] .net-iface-state-tag.down {
+  background: rgba(207, 34, 46, 0.08);
+  color: #cf222e;
+}
+
+[data-theme="light"] .net-iface-meta {
+  color: #1f2328;
+}
+
+[data-theme="light"] .net-iface-meta em {
+  color: #656d76;
+}
+
+[data-theme="light"] .dns-server-item {
+  border-color: rgba(16, 32, 51, 0.06);
+  background: #f6f8fa;
+}
+
+[data-theme="light"] .dns-server-item:hover {
+  border-color: rgba(16, 32, 51, 0.12);
+}
+
+[data-theme="light"] .dns-server-addr {
+  color: #0969da;
+}
+
+[data-theme="light"] .net-iface-edit {
+  border-top-color: rgba(16, 32, 51, 0.08);
+}
+
+/* ─── Light: System Info ────────────────────────────────────────────────── */
+
+[data-theme="light"] .sysinfo-hero {
+  border-color: rgba(9, 105, 218, 0.15);
+  background:
+    radial-gradient(ellipse at 15% 40%, rgba(9, 105, 218, 0.05), transparent 55%),
+    radial-gradient(ellipse at 85% 60%, rgba(130, 80, 223, 0.04), transparent 50%),
+    linear-gradient(135deg, rgba(16, 32, 51, 0.03), rgba(16, 32, 51, 0.01));
+}
+
+[data-theme="light"] .sysinfo-hero-icon {
+  background: linear-gradient(135deg, rgba(9, 105, 218, 0.15), rgba(130, 80, 223, 0.1));
+  box-shadow: 0 8px 24px rgba(9, 105, 218, 0.08);
+}
+
+[data-theme="light"] .sysinfo-hero-text strong {
+  color: #1f2328;
+}
+
+[data-theme="light"] .sysinfo-hero-text span {
+  color: #0969da;
+}
+
+[data-theme="light"] .sysinfo-card {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #ffffff;
+}
+
+[data-theme="light"] .sysinfo-card:hover {
+  border-color: rgba(9, 105, 218, 0.15);
+  background: #fafbfc;
+}
+
+[data-theme="light"] .sysinfo-card-icon {
+  background: rgba(16, 32, 51, 0.05);
+}
+
+[data-theme="light"] .sysinfo-card-label {
+  color: #656d76;
+}
+
+[data-theme="light"] .sysinfo-card-value {
+  color: #1f2328;
+}
+/* Current light theme finishing rules */
+
+[data-theme="light"] .top-chrome {
+  background:
+    linear-gradient(180deg, rgba(246, 249, 253, 0.92), rgba(231, 238, 247, 0.92)),
+    var(--chrome);
+}
+
+[data-theme="light"] .side-nav,
+[data-theme="light"] .vault-page {
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(45, 113, 219, 0.08), transparent 34%),
+    var(--surface-soft);
+}
+
+[data-theme="light"] .feature-nav-item,
+[data-theme="light"] .settings-entry,
+[data-theme="light"] .brand-panel strong {
+  color: #182335;
+}
+
+[data-theme="light"] .command-bar {
+  background: rgba(247, 249, 252, 0.82);
+}
+
+[data-theme="light"] .global-search,
+[data-theme="light"] .command-button,
+[data-theme="light"] .view-switch {
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(34, 55, 84, 0.08);
+}
+
+[data-theme="light"] .global-search input {
+  color: #172033;
+}
+
+[data-theme="light"] .global-search input::placeholder,
+[data-theme="light"] .global-search kbd {
+  color: #7b8797;
+}
+
+[data-theme="light"] .hosts-group-panel,
+[data-theme="light"] .host-card {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+[data-theme="light"] .group-panel-heading h2,
+[data-theme="light"] .host-list-heading h2,
+[data-theme="light"] .host-summary strong {
+  color: #172033;
+}
+
+[data-theme="light"] .group-card strong,
+[data-theme="light"] .host-summary small,
+[data-theme="light"] .host-card-tags em,
+[data-theme="light"] .host-list-heading > span {
+  color: #526178;
+}
+
+[data-theme="light"] .desktop-window,
+[data-theme="light"] .desktop-window-titlebar,
+[data-theme="light"] .browser-chrome,
+[data-theme="light"] .browser-toolbar,
+[data-theme="light"] .browser-bookmark-bar,
+[data-theme="light"] .explorer-addressbar,
+[data-theme="light"] .explorer-statusbar {
+  background:
+    linear-gradient(180deg, rgba(246, 249, 253, 0.96), rgba(231, 238, 247, 0.96));
+}
+
+[data-theme="light"] .desktop-window-titlebar strong,
+[data-theme="light"] .browser-toolbar button,
+[data-theme="light"] .browser-address-shell input,
+[data-theme="light"] .explorer-nav-buttons button,
+[data-theme="light"] .explorer-view-button,
+[data-theme="light"] .breadcrumb-btn,
+[data-theme="light"] .explorer-search input {
+  color: #172033 !important;
+}
+
+[data-theme="light"] .browser-address-shell,
+[data-theme="light"] .addressbar-breadcrumb-input,
+[data-theme="light"] .explorer-search {
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(34, 55, 84, 0.08);
+}
+
+[data-theme="light"] .explorer-pane,
+[data-theme="light"] .explorer-layout,
+[data-theme="light"] .explorer-main {
+  background: #edf2f8;
+}
+
+[data-theme="light"] .explorer-sidebar,
+[data-theme="light"] .explorer-table {
+  background: #ffffff;
+}
+
+[data-theme="light"] .explorer-row {
+  color: #344054;
+}
+
+[data-theme="light"] .explorer-header {
+  background: #eef3f8;
+  color: #657489;
+}
+
+[data-theme="light"] .sysinfo-feature-title {
+  color: #1f2328;
+}
+
+[data-theme="light"] .sysinfo-metric {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #f6f8fa;
+}
+
+[data-theme="light"] .sysinfo-metric span {
+  color: #656d76;
+}
+
+[data-theme="light"] .sysinfo-metric strong {
+  color: #1f2328;
+}
+
+[data-theme="light"] .sysinfo-memory-headline strong {
+  color: #1f2328;
+}
+
+[data-theme="light"] .sysinfo-memory-headline span {
+  color: #57606a;
+}
+
+[data-theme="light"] .sysinfo-memory-caption {
+  color: #0969da;
+}
+
+[data-theme="light"] .sysinfo-memory-bar {
+  background: rgba(9, 105, 218, 0.08);
+}
+
+[data-theme="light"] .sysinfo-memory-bar-fill {
+  background: linear-gradient(90deg, rgba(9, 105, 218, 0.72), rgba(46, 160, 67, 0.82));
+  box-shadow: 0 0 16px rgba(9, 105, 218, 0.14);
+}
+
+[data-theme="light"] .net-iface-meta small {
+  color: #656d76;
+}
+
+[data-theme="light"] .net-iface-meta.ipv4 {
+  color: #0969da;
+}
+
+[data-theme="light"] .net-iface-meta.ipv6 {
+  color: #8250df;
+}
+
+[data-theme="light"] .net-iface-edit {
+  border-top-color: rgba(16, 32, 51, 0.08);
+}
+
+[data-theme="light"] .net-edit-row label span {
+  color: #656d76;
+}
+
+[data-theme="light"] .dns-server-item {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #f6f8fa;
+}
+
+[data-theme="light"] .dns-server-addr {
+  color: #0969da;
+}
+
+[data-theme="light"] .sysinfo-hero {
+  border-color: rgba(9, 105, 218, 0.2);
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(9, 105, 218, 0.06), transparent 60%),
+    linear-gradient(135deg, #ffffff, #f6f8fa);
+  box-shadow: 0 1px 3px rgba(16, 32, 51, 0.06);
+}
+
+[data-theme="light"] .sysinfo-hero-text {
+  color: #1f2328;
+}
+
+[data-theme="light"] .sysinfo-hero-text span {
+  color: #0969da;
+}
+
+[data-theme="light"] .sysinfo-card {
+  border-color: rgba(16, 32, 51, 0.08);
+  background: #ffffff;
+}
+
+[data-theme="light"] .sysinfo-card:hover {
+  border-color: rgba(16, 32, 51, 0.18);
+}
+
+[data-theme="light"] .sysinfo-card-label {
+  color: #656d76;
+}
+
+[data-theme="light"] .sysinfo-card-value {
+  color: #1f2328;
+}

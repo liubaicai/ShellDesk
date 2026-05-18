@@ -1,0 +1,475 @@
+/* ─── Redis ────────────────────────────────────────────────────────────────── */
+
+.redis-connect-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--bg);
+}
+
+.redis-connect-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 340px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.redis-connect-card h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.redis-connect-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.redis-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.redis-field input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.redis-field input:focus {
+  border-color: var(--accent-border);
+}
+
+.redis-connect-btn {
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.redis-connect-btn:hover:not(:disabled) {
+  background: var(--accent-border);
+  color: var(--text);
+}
+
+.redis-connect-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.redis-error-banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 100, 100, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.25);
+  color: #ff8a8a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.redis-layout {
+  display: flex;
+  height: 100%;
+  background: var(--bg);
+}
+
+.redis-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  min-width: 200px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.redis-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.redis-sidebar-header strong {
+  flex: 1;
+}
+
+.redis-connection-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-strong);
+  font-size: 10px;
+  color: var(--text-muted);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.redis-disconnect-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.redis-disconnect-btn:hover {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.redis-key-search {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px 4px;
+}
+
+.redis-key-search input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
+.redis-key-search input:focus {
+  border-color: var(--accent-border);
+}
+
+.redis-key-search button {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.redis-key-search button:hover {
+  background: var(--surface-hover);
+}
+
+.redis-key-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.redis-key-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.redis-key-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.redis-key-btn.selected {
+  background: var(--surface-icon);
+  color: var(--accent);
+}
+
+.redis-key-type-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.redis-key-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.redis-key-ttl {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.redis-key-loading,
+.redis-key-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.redis-key-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.redis-key-pagination button {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.redis-key-pagination button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.redis-key-pagination button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.redis-key-count {
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.redis-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.redis-value-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.redis-value-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.redis-value-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.redis-value-key-name {
+  font-weight: 600;
+  color: var(--text);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.redis-value-type-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface-strong);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.redis-value-ttl {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.redis-save-btn {
+  padding: 3px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.redis-save-btn:hover {
+  background: var(--accent-border);
+  color: var(--text);
+}
+
+.redis-delete-key-btn {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #ff8a8a;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.redis-delete-key-btn:hover {
+  background: rgba(255, 100, 100, 0.1);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.redis-value-editor {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  tab-size: 2;
+}
+
+.redis-cmd-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  max-height: 35%;
+}
+
+.redis-cmd-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.redis-cmd-input {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.redis-cmd-input:focus {
+  border-color: var(--accent-border);
+}
+
+.redis-cmd-run-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.redis-cmd-run-btn:hover:not(:disabled) {
+  background: var(--accent-border);
+  color: var(--text);
+}
+
+.redis-cmd-run-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.redis-cmd-result {
+  flex: 1;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.redis-cmd-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ─── Redis Light Theme ───────────────────────────────────────────────────── */
+
+[data-theme="light"] .redis-error-banner {
+  background: rgba(200, 50, 50, 0.08);
+  border-color: rgba(200, 50, 50, 0.2);
+  color: #c83232;
+}
+
+[data-theme="light"] .redis-disconnect-btn:hover {
+  border-color: #c83232;
+  color: #c83232;
+}
+
+[data-theme="light"] .redis-delete-key-btn {
+  border-color: rgba(200, 50, 50, 0.25);
+  color: #c83232;
+}
+
+[data-theme="light"] .redis-delete-key-btn:hover {
+  background: rgba(200, 50, 50, 0.06);
+  border-color: #c83232;
+  color: #c83232;
+}
+

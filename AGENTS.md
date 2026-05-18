@@ -23,7 +23,14 @@ src/
   main.tsx        # React 入口
   RemoteDesktop.tsx → re-export RemoteDesktopShell
   RemoteDesktopShell.tsx  # 远程桌面：多窗口管理器 + Dock
-  styles.css      # 全局样式（单文件，深色/浅色主题）
+  styles/
+    index.scss      # 全局样式入口，按级联顺序 @use 模块
+    _tokens.scss    # 字体、CSS 变量、主题 token
+    foundations/    # reset、基础元素、全局行为
+    layout/         # 应用壳、顶部栏、侧边导航
+    pages/          # 主机、密钥、日志、设置等页面样式
+    remote-desktop/ # 远程桌面及各内置应用样式
+    themes/         # 浅色主题与远程应用主题覆盖
   vite-env.d.ts   # window.guiSSH 类型定义（GuiSshApi）
   components/
     navigation/NavIcon.tsx
@@ -63,7 +70,12 @@ src/
 - 需使用自定义模态对话框替代（见 RemoteNotepad 中的 `promptDialog` / `confirmDialog` 状态）
 
 ### 样式
-- 单文件 `src/styles.css`，使用 CSS 变量（`--bg`, `--surface`, `--text` 等）
+- 使用 Sass / SCSS，入口为 `src/styles/index.scss`，由 `src/main.tsx` 导入
+- `index.scss` 中 `@use` 顺序就是最终 CSS 级联顺序，调整模块顺序前需确认覆盖关系
+- CSS 变量（`--bg`, `--surface`, `--text` 等）集中维护在 `src/styles/_tokens.scss`
+- 页面级样式放在 `src/styles/pages/`，远程桌面及内置应用样式放在 `src/styles/remote-desktop/`
+- 浅色主题覆盖放在 `src/styles/themes/`
+- 当前视觉刷新与紧凑密度规则就近维护在对应模块文件末尾，不再新增全局 `overrides/` 补丁目录
 - 深色主题为默认，浅色主题通过 `[data-theme="light"]` 选择器覆盖
 - 新增样式需同时添加深色和浅色两套
 
@@ -73,7 +85,7 @@ src/
 - **Electron 文件**：`.cjs` 后缀（CommonJS），前端文件 `.tsx`/`.ts`（ESM）
 - **状态管理**：无 Redux/Zustand，全用 React useState/useCallback/useMemo
 - **组件模式**：函数组件 + hooks，大组件不拆文件（如 App.tsx、RemoteFileExplorer.tsx）
-- **样式**：纯 CSS，无 CSS-in-JS / Tailwind，类名用 kebab-case
+- **样式**：SCSS + CSS 变量，无 CSS-in-JS / Tailwind，类名用 kebab-case
 - **依赖**：最小化，核心依赖仅 react、ssh2、xterm、highlight.js、mysql2
 - **错误处理**：`getErrorMessage(error)` 工具函数统一提取错误信息
 - **记事本文件打开**：采用黑名单机制（`BINARY_EXTENSIONS`），排除图片/音视频/压缩包/可执行文件/数据库/二进制文档等，其余文件均可用记事本打开

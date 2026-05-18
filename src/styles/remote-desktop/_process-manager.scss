@@ -1,0 +1,279 @@
+/* ─── Process Manager ────────────────────────────────────────────────────── */
+
+.proc-manager {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.proc-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.12);
+  flex-wrap: wrap;
+}
+
+.proc-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.proc-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proc-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.proc-check-label input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.proc-summary {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.proc-summary strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.proc-search {
+  width: 220px;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+
+.proc-signal-select {
+  width: 170px;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+
+/* Kill Confirm */
+
+.proc-kill-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--danger-border);
+  padding: 10px 16px;
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+}
+
+.proc-kill-confirm p {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.proc-kill-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Table */
+
+.proc-table-wrap {
+  min-height: 0;
+  overflow: auto;
+}
+
+.proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.proc-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.proc-table th {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s;
+}
+
+.proc-table th:hover {
+  color: var(--text);
+}
+
+.proc-sort-icon {
+  display: inline-block;
+  width: 14px;
+  margin-left: 3px;
+  font-size: 9px;
+  color: var(--accent);
+}
+
+.proc-col-pid { width: 56px; }
+.proc-col-user { width: 72px; }
+.proc-col-cpu { width: 80px; }
+.proc-col-mem { width: 80px; }
+.proc-col-stat { width: 50px; }
+.proc-col-time { width: 72px; }
+.proc-col-command { }
+.proc-col-action { width: 62px; text-align: center; }
+
+.proc-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 12px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proc-row:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.proc-row.proc-zombie td {
+  opacity: 0.55;
+}
+
+.proc-pid {
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-weight: 650;
+  color: #8edfff !important;
+}
+
+.proc-user {
+  color: var(--muted-strong) !important;
+}
+
+.proc-command {
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px !important;
+}
+
+.proc-bar-wrap {
+  position: relative;
+  height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.proc-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  opacity: 0.18;
+  min-width: 2px;
+}
+
+.proc-bar-cpu {
+  background: #43c7ff;
+}
+
+.proc-bar-mem {
+  background: #a78bfa;
+}
+
+.proc-bar-wrap span {
+  position: relative;
+  z-index: 1;
+  margin-left: 4px;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.proc-stat-tag {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.proc-stat-tag.running {
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+}
+
+.proc-stat-tag.idle {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+.proc-stat-tag.blocked {
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+}
+
+.proc-stat-tag.zombie {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fca5a5;
+}
+
+.proc-kill-btn {
+  border: 1px solid rgba(255, 100, 100, 0.25);
+  border-radius: 5px;
+  padding: 3px 9px;
+  background: rgba(255, 100, 100, 0.06);
+  color: #ff9e9e;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.proc-kill-btn:hover:not(:disabled) {
+  background: rgba(255, 100, 100, 0.15);
+  border-color: rgba(255, 100, 100, 0.4);
+}
+
+.proc-kill-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.proc-empty {
+  text-align: center;
+  padding: 40px 16px !important;
+  color: var(--muted);
+  font-size: 13px;
+}
+

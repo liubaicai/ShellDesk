@@ -1,0 +1,185 @@
+.mac-dock {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 10px 13px;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.26);
+  transform: translateX(-50%);
+  backdrop-filter: blur(22px);
+}
+
+.mac-dock button {
+  width: 48px;
+  height: 48px;
+  border-radius: 9px;
+  color: #ffffff;
+  font-size: 23px;
+  font-weight: 900;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.mac-dock button.active,
+.mac-dock button:hover {
+  border-color: rgba(67, 199, 255, 0.56);
+  background: rgba(67, 199, 255, 0.22);
+  transform: translateY(-5px) scale(1.04);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(139, 164, 195, 0.34);
+  background-clip: content-box;
+}
+
+@media (max-width: 1120px) {
+  .command-bar {
+    grid-template-columns: minmax(260px, 1fr) auto auto auto;
+  }
+
+}
+
+@media (max-width: 860px) {
+  .app-layout {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .side-nav {
+    padding: 15px 9px;
+  }
+
+  .brand-panel strong,
+  .feature-nav-item:not(.active),
+  .settings-entry:not(.active) {
+    display: none;
+  }
+
+  .brand-panel {
+    justify-content: center;
+  }
+
+  .feature-nav-item,
+  .settings-entry {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .feature-nav-item .nav-icon,
+  .settings-entry .nav-icon {
+    width: auto;
+  }
+
+  .command-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow: auto;
+  }
+
+  .settings-page {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .settings-section-nav {
+    padding: 12px 8px;
+  }
+
+  .settings-section-nav-header,
+  .settings-section-nav-copy {
+    display: none;
+  }
+
+  .settings-section-nav-item {
+    min-height: 48px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 0;
+  }
+
+  .settings-section-nav-index {
+    width: 34px;
+    height: 34px;
+  }
+
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-row select,
+  .theme-switch {
+    justify-self: start;
+  }
+
+  .view-switch {
+    display: none;
+  }
+
+  .group-grid,
+  .host-grid.grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .host-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop-icons {
+    display: none;
+  }
+
+  .browser-toolbar,
+  .file-toolbar,
+  .file-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .browser-toolbar button:not([type="submit"]):not(.browser-bookmark-trigger),
+  .browser-bookmark-menu-button,
+  .desktop-window-kicker,
+  .desktop-window-state-pill,
+  .file-row.header span:not(:first-child),
+  .file-row span:not(:first-child) {
+    display: none;
+  }
+
+  .browser-toolbar-actions {
+    justify-content: space-between;
+  }
+
+  .browser-bookmark-popover {
+    right: 0;
+    width: min(320px, calc(100vw - 56px));
+  }
+
+  .hosts-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Compact dock density */
+
+.mac-dock {
+  bottom: 16px;
+  gap: 9px;
+  border-radius: 14px;
+  padding: 8px 10px;
+}
+
+.mac-dock button {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  font-size: 20px;
+}

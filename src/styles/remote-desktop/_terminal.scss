@@ -1,0 +1,69 @@
+.terminal-pane {
+  display: grid;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) 44px;
+  background: #000000;
+}
+
+.xterm-terminal-pane {
+  grid-template-rows: minmax(0, 1fr);
+  padding: 8px;
+}
+
+.terminal-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-host .xterm {
+  height: 100%;
+  padding: 6px;
+}
+
+.terminal-host .xterm-viewport,
+.terminal-host .xterm-screen {
+  border-radius: 5px;
+}
+
+.terminal-host .xterm-selection div {
+  border-radius: 4px;
+}
+
+.terminal-output {
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  color: #d7fbe8;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.terminal-input-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #ffffff14;
+  padding: 0 14px;
+  background: #ffffff0a;
+  color: #8cf7d5;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+}
+
+.terminal-input-row input,
+.browser-toolbar input,
+.file-toolbar input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+

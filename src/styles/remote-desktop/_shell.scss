@@ -1,0 +1,361 @@
+.remote-desktop-page {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: minmax(0, 1fr);
+  background: #0b111a;
+}
+
+.browser-toolbar button,
+.file-toolbar button,
+.mac-dock button,
+.desktop-icons button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.remote-desktop-surface {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 19% 34%, rgba(63, 132, 255, 0.62), transparent 29%),
+    radial-gradient(ellipse at 52% 55%, rgba(166, 55, 255, 0.58), transparent 35%),
+    radial-gradient(ellipse at 91% 44%, rgba(221, 133, 33, 0.42), transparent 30%),
+    linear-gradient(158deg, #2a3262 0%, #251748 40%, #151b24 100%);
+  isolation: isolate;
+}
+
+.remote-desktop-surface::before {
+  position: absolute;
+  inset: -12% -8%;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 36% 34%, rgba(0, 0, 0, 0.28), transparent 38%),
+    radial-gradient(ellipse at 50% 72%, rgba(13, 18, 28, 0.78), transparent 42%),
+    linear-gradient(168deg, transparent 0 34%, rgba(113, 62, 164, 0.28) 46%, rgba(0, 0, 0, 0.24) 72%);
+  content: "";
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.desktop-icons {
+  position: absolute;
+  top: 18px;
+  left: 15px;
+  z-index: 3;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, 84px);
+  grid-auto-columns: 74px;
+  column-gap: 6px;
+  row-gap: 10px;
+  max-height: calc(100% - 110px);
+  width: auto;
+}
+
+.desktop-icons button {
+  display: grid;
+  width: 74px;
+  height: 84px;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  border-color: transparent;
+  border-radius: 6px;
+  padding: 5px 4px;
+  background: transparent;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+}
+
+.desktop-icons button.active,
+.desktop-icons button:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.13);
+  backdrop-filter: blur(8px);
+}
+
+.desktop-icons span,
+.mac-dock button {
+  display: grid;
+  place-items: center;
+}
+
+.desktop-icons span {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.08)),
+    linear-gradient(145deg, rgba(63, 132, 255, 0.75), rgba(139, 92, 246, 0.55));
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 12px 24px rgba(0, 0, 0, 0.26);
+  font-size: 23px;
+  font-weight: 900;
+}
+
+.desktop-icons strong {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.22;
+  text-align: center;
+}
+
+.desktop-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  min-width: 360px;
+  min-height: 260px;
+  grid-template-rows: 37px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(14, 20, 30, 0.82);
+  box-shadow: 0 28px 88px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(24px);
+  will-change: transform, width, height;
+}
+
+.desktop-window.focused {
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 30px 96px rgba(0, 0, 0, 0.52);
+}
+
+.desktop-window.maximized {
+  border-radius: 8px;
+}
+
+.desktop-window-titlebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  box-sizing: border-box;
+  height: 37px;
+  gap: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.desktop-window-titlebar:active {
+  cursor: grabbing;
+}
+
+.win-titlebar-controls {
+  display: flex;
+  height: 100%;
+  margin-left: auto;
+}
+
+.win-titlebar-controls .win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.win-titlebar-controls .win-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.win-titlebar-controls .win-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.win-titlebar-controls .win-btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.desktop-window-titlebar strong {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.15;
+}
+
+.desktop-window-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding-left: 17px;
+}
+
+.desktop-window-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window-kicker {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.desktop-window-state-pill {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted-strong);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.desktop-window-state-pill.loading {
+  border-color: rgba(67, 199, 255, 0.24);
+  color: #c6efff;
+}
+
+.desktop-window-state-pill.error {
+  border-color: rgba(255, 111, 143, 0.24);
+  color: #ffd7df;
+}
+
+.desktop-window-body,
+.terminal-pane,
+.remote-browser-pane,
+.file-pane,
+.monitor-pane,
+.settings-pane {
+  min-height: 0;
+}
+
+.desktop-window-body {
+  overflow: hidden;
+}
+
+.desktop-window-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.desktop-window-resize-handle::before {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid rgba(255, 255, 255, 0.36);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.36);
+  content: "";
+}
+/* Current remote desktop visuals */
+
+.remote-desktop-surface {
+  background:
+    radial-gradient(ellipse at 15% 8%, rgba(75, 129, 210, 0.24), transparent 38%),
+    radial-gradient(ellipse at 80% 18%, rgba(91, 114, 155, 0.18), transparent 42%),
+    linear-gradient(145deg, #101824 0%, #0b111a 100%);
+}
+
+.remote-desktop-surface::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    radial-gradient(ellipse at 50% 100%, rgba(58, 78, 112, 0.22), transparent 46%);
+  filter: none;
+}
+
+.desktop-window {
+  grid-template-rows: 52px minmax(0, 1fr);
+  border-color: rgba(154, 177, 210, 0.24);
+  border-radius: 18px;
+  background: rgba(17, 25, 36, 0.9);
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.desktop-window.focused {
+  border-color: rgba(168, 192, 224, 0.34);
+}
+
+.desktop-window-titlebar {
+  height: 52px;
+  border-bottom-color: rgba(154, 177, 210, 0.12);
+  background:
+    linear-gradient(180deg, rgba(25, 36, 50, 0.94), rgba(17, 25, 36, 0.96));
+}
+
+.desktop-window-title {
+  padding-left: 22px;
+}
+
+.desktop-window-titlebar strong {
+  color: #eef4ff;
+  font-size: 20px;
+  font-weight: 850;
+}
+
+.win-titlebar-controls .win-btn {
+  width: 58px;
+  color: rgba(221, 229, 241, 0.78);
+}
+
+.desktop-window-browser {
+  border-radius: 20px;
+}
+
+.desktop-window-browser .desktop-window-titlebar {
+  background:
+    linear-gradient(180deg, rgba(19, 28, 39, 0.98), rgba(14, 21, 31, 0.98));
+}
+/* Compact remote desktop density */
+
+.desktop-window {
+  grid-template-rows: 42px minmax(0, 1fr);
+  border-radius: 14px;
+}
+
+.desktop-window-titlebar {
+  height: 42px;
+}
+
+.desktop-window-title {
+  gap: 7px;
+  padding-left: 17px;
+}
+
+.desktop-window-titlebar strong {
+  font-size: 15px;
+}
+
+.desktop-window-kicker,
+.desktop-window-state-pill {
+  font-size: 11px;
+}
+
+.win-titlebar-controls .win-btn {
+  width: 46px;
+}
