@@ -9,5 +9,30 @@ export interface RemoteConnectionInfo {
     port: number;
     username: string;
     authMethod: 'password' | 'key' | 'agent';
+    systemType?:
+      | 'unknown'
+      | 'ubuntu'
+      | 'debian'
+      | 'redhat'
+      | 'centos'
+      | 'fedora'
+      | 'rocky'
+      | 'almalinux'
+      | 'oracle'
+      | 'amazon'
+      | 'arch'
+      | 'manjaro'
+      | 'alpine'
+      | 'opensuse'
+      | 'linuxmint'
+      | 'kali'
+      | 'raspbian'
+      | 'gentoo'
+      | 'nixos'
+      | 'popos'
+      | 'elementary'
+      | 'linux'
+      | 'unix';
+    systemName?: string;
   };
 }

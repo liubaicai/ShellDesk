@@ -95,6 +95,31 @@ interface ShellDeskStoredKeyRecord {
   updatedAt: string;
 }
 
+type ShellDeskHostSystemType =
+  | 'unknown'
+  | 'ubuntu'
+  | 'debian'
+  | 'redhat'
+  | 'centos'
+  | 'fedora'
+  | 'rocky'
+  | 'almalinux'
+  | 'oracle'
+  | 'amazon'
+  | 'arch'
+  | 'manjaro'
+  | 'alpine'
+  | 'opensuse'
+  | 'linuxmint'
+  | 'kali'
+  | 'raspbian'
+  | 'gentoo'
+  | 'nixos'
+  | 'popos'
+  | 'elementary'
+  | 'linux'
+  | 'unix';
+
 interface ShellDeskStoredHostRecord {
   id: string;
   name: string;
@@ -106,6 +131,8 @@ interface ShellDeskStoredHostRecord {
   keyId: string;
   keyPath?: string;
   passphrase?: string;
+  systemType?: ShellDeskHostSystemType;
+  systemName?: string;
   group: string;
   tags: string[];
   note: string;
@@ -178,6 +205,8 @@ interface ShellDeskHostConnectionRequest {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  systemType?: ShellDeskHostSystemType;
+  systemName?: string;
 }
 
 interface ShellDeskConnectionInfo {
@@ -185,7 +214,7 @@ interface ShellDeskConnectionInfo {
   partition: string;
   proxyPort: number;
   connectedAt: string;
-  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod'>;
+  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'systemType' | 'systemName'>;
 }
 
 interface ShellDeskRemoteFileEntry {
