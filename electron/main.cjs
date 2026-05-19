@@ -48,6 +48,31 @@ const terminalThemeChoices = [
 ];
 const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underline', 'none'];
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
+const remoteSystemTypeChoices = new Set([
+  'unknown',
+  'ubuntu',
+  'debian',
+  'redhat',
+  'centos',
+  'fedora',
+  'rocky',
+  'almalinux',
+  'oracle',
+  'amazon',
+  'arch',
+  'manjaro',
+  'alpine',
+  'opensuse',
+  'linuxmint',
+  'kali',
+  'raspbian',
+  'gentoo',
+  'nixos',
+  'popos',
+  'elementary',
+  'linux',
+  'unix',
+]);
 const uiFontChoices = [
   'LXGW WenKai Mono',
   'Microsoft YaHei UI',
@@ -378,6 +403,10 @@ function readStringList(value, label, maxItems, maxItemLength) {
   return value.map((item) => readBoundedString(item, label, maxItemLength, { required: false }));
 }
 
+function readRemoteSystemType(value) {
+  return remoteSystemTypeChoices.has(value) ? value : 'unknown';
+}
+
 function readStoredKeyRecord(rawKey) {
   if (!isPlainObject(rawKey)) {
     throw new Error('密钥数据无效。');
@@ -447,6 +476,8 @@ function readStoredHostRecord(rawHost) {
       trim: false,
       rejectLineBreaks: false,
     }),
+    systemType: readRemoteSystemType(rawHost.systemType),
+    systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
     group: readBoundedString(rawHost.group ?? '', '分组', 120, { required: false }),
     tags: readStringList(rawHost.tags ?? [], '主机标签', 8, 256),
     note: readBoundedString(rawHost.note ?? '', '备注', 20000, {
@@ -1104,6 +1135,8 @@ function validateHostRequest(rawHost) {
       port,
       username,
       authMethod: rawHost.authMethod,
+      systemType: readRemoteSystemType(rawHost.systemType),
+      systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
     },
     sshConfig,
   };
@@ -1736,6 +1769,190 @@ function execRemoteCommand(client, command) {
   });
 }
 
+function parseOsReleaseText(output) {
+  const values = {};
+
+  for (const line of output.split(/\r?\n/)) {
+    const separatorIndex = line.indexOf('=');
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    let value = line.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    values[key] = value.replace(/\\"/g, '"').replace(/\\'/g, "'");
+  }
+
+  return values;
+}
+
+function detectRemoteSystemType(osRelease, unameOutput) {
+  const id = `${osRelease.ID ?? ''}`.toLowerCase();
+  const idLike = `${osRelease.ID_LIKE ?? ''}`.toLowerCase();
+  const name = `${osRelease.PRETTY_NAME ?? osRelease.NAME ?? ''}`.toLowerCase();
+  const marker = `${id} ${idLike} ${name}`;
+  const exactMarker = `${id} ${name}`;
+
+  if (/ubuntu/.test(exactMarker)) {
+    return 'ubuntu';
+  }
+
+  if (/linuxmint|mint/.test(exactMarker)) {
+    return 'linuxmint';
+  }
+
+  if (/kali/.test(exactMarker)) {
+    return 'kali';
+  }
+
+  if (/raspbian|raspberry|raspios/.test(exactMarker)) {
+    return 'raspbian';
+  }
+
+  if (/\bpop\b|pop!_os|pop-os|pop_os/.test(exactMarker)) {
+    return 'popos';
+  }
+
+  if (/elementary/.test(exactMarker)) {
+    return 'elementary';
+  }
+
+  if (/debian/.test(exactMarker)) {
+    return 'debian';
+  }
+
+  if (/rocky/.test(exactMarker)) {
+    return 'rocky';
+  }
+
+  if (/almalinux|alma/.test(exactMarker)) {
+    return 'almalinux';
+  }
+
+  if (/centos/.test(exactMarker)) {
+    return 'centos';
+  }
+
+  if (/fedora/.test(exactMarker)) {
+    return 'fedora';
+  }
+
+  if (/\bol\b|oracle/.test(exactMarker)) {
+    return 'oracle';
+  }
+
+  if (/\bamzn\b|amazon/.test(exactMarker)) {
+    return 'amazon';
+  }
+
+  if (
+    /\brhel\b/.test(exactMarker) ||
+    /redhat|red hat/.test(exactMarker)
+  ) {
+    return 'redhat';
+  }
+
+  if (/manjaro/.test(exactMarker)) {
+    return 'manjaro';
+  }
+
+  if (/arch/.test(exactMarker)) {
+    return 'arch';
+  }
+
+  if (/alpine/.test(exactMarker)) {
+    return 'alpine';
+  }
+
+  if (/opensuse|sles|sled|\bsuse\b/.test(exactMarker)) {
+    return 'opensuse';
+  }
+
+  if (/gentoo/.test(exactMarker)) {
+    return 'gentoo';
+  }
+
+  if (/nixos/.test(exactMarker)) {
+    return 'nixos';
+  }
+
+  if (/ubuntu/.test(idLike)) {
+    return 'ubuntu';
+  }
+
+  if (/debian/.test(idLike)) {
+    return 'debian';
+  }
+
+  if (/fedora/.test(idLike)) {
+    return 'fedora';
+  }
+
+  if (/centos/.test(idLike)) {
+    return 'centos';
+  }
+
+  if (/\brhel\b|redhat|red hat/.test(idLike)) {
+    return 'redhat';
+  }
+
+  if (/arch/.test(idLike)) {
+    return 'arch';
+  }
+
+  if (/alpine/.test(idLike)) {
+    return 'alpine';
+  }
+
+  if (/suse/.test(idLike)) {
+    return 'opensuse';
+  }
+
+  if (/gentoo/.test(idLike)) {
+    return 'gentoo';
+  }
+
+  if (/linux/i.test(unameOutput) || marker.trim()) {
+    return 'linux';
+  }
+
+  if (/darwin|bsd|sunos|aix/i.test(unameOutput)) {
+    return 'unix';
+  }
+
+  return 'unknown';
+}
+
+async function detectRemoteSystem(client) {
+  const output = await execRemoteCommand(
+    client,
+    "cat /etc/os-release 2>/dev/null; printf '\\nSHELLDESK_UNAME=%s\\n' \"$(uname -s 2>/dev/null || true)\"",
+  );
+  const osRelease = parseOsReleaseText(output);
+  const unameOutput = osRelease.SHELLDESK_UNAME ?? '';
+  const systemType = detectRemoteSystemType(osRelease, unameOutput);
+  const systemName = readBoundedString(
+    osRelease.PRETTY_NAME || osRelease.NAME || unameOutput || '',
+    '系统名称',
+    160,
+    { required: false },
+  );
+
+  return {
+    systemType,
+    systemName,
+  };
+}
+
 async function getRemoteStatus(client) {
   const commands = [
     { key: 'hostname', label: '主机名', command: 'hostname 2>/dev/null || uname -n' },
@@ -2066,6 +2283,11 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
   try {
     const { displayHost, sshConfig } = validateHostRequest(rawHost);
     client = await connectSshClient(sshConfig);
+    try {
+      Object.assign(displayHost, await detectRemoteSystem(client));
+    } catch (systemError) {
+      console.info(`[shelldesk] remote system detection failed: ${toErrorMessage(systemError)}`);
+    }
     const { server, port } = await createSocksProxy(client);
     const id = crypto.randomUUID();
     const partition = `shelldesk-${id}`;
