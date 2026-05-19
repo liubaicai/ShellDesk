@@ -413,7 +413,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} onOpenFile={openNotepadFile} />;
+      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} />;
     }
 
     if (desktopWindow.appKey === 'notepad') {
@@ -429,14 +429,14 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'settings') {
-      return <RemoteSettings connectionId={connection.id} />;
+      return <RemoteSettings connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'procmanager') {
-      return <RemoteProcessManager connectionId={connection.id} />;
+      return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
-    return <RemoteMonitor connectionId={connection.id} />;
+    return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} />;
   };
 
   return (

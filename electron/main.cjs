@@ -50,6 +50,7 @@ const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underlin
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
 const remoteSystemTypeChoices = new Set([
   'unknown',
+  'windows',
   'ubuntu',
   'debian',
   'redhat',
@@ -404,7 +405,8 @@ function readStringList(value, label, maxItems, maxItemLength) {
 }
 
 function readRemoteSystemType(value) {
-  return remoteSystemTypeChoices.has(value) ? value : 'unknown';
+  const normalizedValue = typeof value === 'string' ? value.toLowerCase() : value;
+  return remoteSystemTypeChoices.has(normalizedValue) ? normalizedValue : 'unknown';
 }
 
 function readStoredKeyRecord(rawKey) {
@@ -1615,14 +1617,55 @@ function validateRemotePath(rawPath) {
   return remotePath;
 }
 
+function isWindowsDriveRootPath(remotePath) {
+  return /^[/\\]?[a-z]:[/\\]*$/i.test(remotePath.trim());
+}
+
 function validateMutableRemotePath(rawPath) {
   const remotePath = validateRemotePath(rawPath);
 
-  if (remotePath === '.' || remotePath === '/' || remotePath === '~') {
+  if (remotePath === '.' || remotePath === '/' || remotePath === '~' || isWindowsDriveRootPath(remotePath)) {
     throw new Error('不允许对该远程路径执行管理操作。');
   }
 
   return remotePath;
+}
+
+function getRemoteFileName(remotePath, fallback = 'download') {
+  return remotePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || fallback;
+}
+
+function joinRemoteChildPath(parentPath, childName) {
+  const normalizedParent = parentPath.replace(/\\/g, '/');
+
+  if (normalizedParent === '.') {
+    return childName;
+  }
+
+  if (normalizedParent === '/') {
+    return `/${childName}`;
+  }
+
+  if (isWindowsDriveRootPath(normalizedParent)) {
+    return `${normalizedParent.replace(/\/?$/, '/')}${childName}`;
+  }
+
+  return `${normalizedParent.replace(/\/+$/, '')}/${childName}`;
+}
+
+function getRemoteParentPath(remotePath) {
+  const normalizedPath = remotePath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const driveChildMatch = normalizedPath.match(/^(\/?[a-z]:)\/[^/]+$/i);
+
+  if (driveChildMatch) {
+    return `${driveChildMatch[1]}/`;
+  }
+
+  return normalizedPath.replace(/\/[^/]*$/, '') || '.';
+}
+
+function quotePowerShellString(value) {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function validateTerminalId(rawTerminalId) {
@@ -1767,6 +1810,20 @@ function execRemoteCommand(client, command) {
       stream.once('error', reject);
     });
   });
+}
+
+function createPowerShellCommand(script) {
+  const utf8Prelude = `
+try {
+$__shelldeskUtf8 = New-Object System.Text.UTF8Encoding $false
+[Console]::InputEncoding = $__shelldeskUtf8
+[Console]::OutputEncoding = $__shelldeskUtf8
+$OutputEncoding = $__shelldeskUtf8
+} catch {}
+try { chcp.com 65001 > $null } catch {}
+`;
+  const encodedScript = Buffer.from(`${utf8Prelude}\n${script}`, 'utf16le').toString('base64');
+  return `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}`;
 }
 
 function parseOsReleaseText(output) {
@@ -1932,7 +1989,84 @@ function detectRemoteSystemType(osRelease, unameOutput) {
   return 'unknown';
 }
 
+async function detectRemoteWindowsSystem(client) {
+  try {
+    const probeOutput = await execRemoteCommand(client, createPowerShellCommand(`
+$platform = [Environment]::OSVersion.Platform.ToString()
+$versionString = [Environment]::OSVersion.VersionString
+$caption = ''
+$version = ''
+try {
+  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+  $caption = [string]$os.Caption
+  $version = [string]$os.Version
+} catch {}
+if ($platform -eq 'Win32NT' -or $caption -match 'Windows' -or $versionString -match 'Windows') {
+  'SHELLDESK_WINDOWS=1'
+  if ($caption) {
+    "SHELLDESK_WINDOWS_NAME=$caption $version"
+  } else {
+    "SHELLDESK_WINDOWS_NAME=$versionString"
+  }
+}
+`));
+
+    if (/SHELLDESK_WINDOWS=1/.test(probeOutput)) {
+      const nameMatch = probeOutput.match(/^SHELLDESK_WINDOWS_NAME=(.+)$/m);
+      const systemName = nameMatch?.[1]?.trim() || 'Windows';
+
+      return {
+        systemType: 'windows',
+        systemName: readBoundedString(systemName.replace(/\s+/g, ' ').trim(), '系统名称', 160, { required: false }),
+      };
+    }
+  } catch {
+    // Fall back to cmd.exe below.
+  }
+
+  try {
+    const versionOutput = await execRemoteCommand(client, 'cmd /c ver');
+
+    if (!/Microsoft Windows/i.test(versionOutput)) {
+      return null;
+    }
+
+    let systemName = versionOutput;
+
+    try {
+      const details = await execRemoteCommand(client, createPowerShellCommand(`
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+if ($os -and $os.Caption) {
+  $version = if ($os.Version) { $os.Version } else { [Environment]::OSVersion.Version.ToString() }
+  "$($os.Caption) $version"
+} else {
+  [Environment]::OSVersion.VersionString
+}
+`));
+
+      if (details) {
+        systemName = details;
+      }
+    } catch {
+      // The cmd.exe probe is enough to classify the host as Windows.
+    }
+
+    return {
+      systemType: 'windows',
+      systemName: readBoundedString(systemName.replace(/\s+/g, ' ').trim(), '系统名称', 160, { required: false }),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function detectRemoteSystem(client) {
+  const windowsSystem = await detectRemoteWindowsSystem(client);
+
+  if (windowsSystem) {
+    return windowsSystem;
+  }
+
   const output = await execRemoteCommand(
     client,
     "cat /etc/os-release 2>/dev/null; printf '\\nSHELLDESK_UNAME=%s\\n' \"$(uname -s 2>/dev/null || true)\"",
@@ -1953,8 +2087,16 @@ async function detectRemoteSystem(client) {
   };
 }
 
-async function getRemoteStatus(client) {
-  const commands = [
+async function getRemoteStatus(client, systemType = 'unknown') {
+  const commands = systemType === 'windows' ? [
+    { key: 'hostname', label: '主机名', command: createPowerShellCommand('[System.Net.Dns]::GetHostName()') },
+    { key: 'user', label: '当前用户', command: createPowerShellCommand('[System.Security.Principal.WindowsIdentity]::GetCurrent().Name') },
+    { key: 'kernel', label: '系统版本', command: createPowerShellCommand('[Environment]::OSVersion.VersionString') },
+    { key: 'uptime', label: '运行时间', command: createPowerShellCommand('$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()') },
+    { key: 'disk', label: '本地磁盘', command: createPowerShellCommand("Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200") },
+    { key: 'memory', label: '内存', command: createPowerShellCommand("$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); 'Total: {0} GB, Used: {1} GB, Free: {2} GB' -f $total, $used, $free") },
+    { key: 'network', label: '网络接口', command: createPowerShellCommand('Get-NetIPConfiguration | Format-List | Out-String -Width 220') },
+  ] : [
     { key: 'hostname', label: '主机名', command: 'hostname 2>/dev/null || uname -n' },
     { key: 'user', label: '当前用户', command: 'whoami 2>/dev/null || id -un' },
     { key: 'kernel', label: '系统内核', command: 'uname -a' },
@@ -2693,7 +2835,7 @@ function downloadRemoteFileToPath(client, remotePath, localPath, sender, connect
         return;
       }
 
-      const fileName = remotePath.split('/').pop() || 'download';
+      const fileName = getRemoteFileName(remotePath);
       let settled = false;
       let transferredBytes = 0;
       let totalBytes = 0;
@@ -2765,7 +2907,7 @@ function downloadRemoteFileToPath(client, remotePath, localPath, sender, connect
 registerIpcHandler('connection:download-file', async (event, connectionId, rawPath) => {
   const activeConnection = getActiveConnection(connectionId);
   const remotePath = validateRemotePath(rawPath);
-  const remoteFileName = remotePath.split('/').pop() || 'download';
+  const remoteFileName = getRemoteFileName(remotePath);
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
 
   const result = await dialog.showSaveDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
@@ -2797,9 +2939,7 @@ registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemo
 
   const localPath = result.filePaths[0];
   const fileName = localPath.split(/[/\\]/).pop() || 'upload';
-  const destPath = currentPath === '.' ? fileName
-    : currentPath === '/' ? `/${fileName}`
-    : `${currentPath.replace(/\/+$/, '')}/${fileName}`;
+  const destPath = joinRemoteChildPath(currentPath, fileName);
   const targetRemotePath = validateMutableRemotePath(destPath);
   const stats = fs.statSync(localPath);
 
@@ -2877,7 +3017,7 @@ registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemo
 
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   const activeConnection = getActiveConnection(connectionId);
-  return getRemoteStatus(activeConnection.client);
+  return getRemoteStatus(activeConnection.client, activeConnection.displayHost.systemType);
 });
 
 // ─── Remote SSH command execution ───────────────────────────────────────────
@@ -2943,6 +3083,17 @@ registerIpcHandler('connection:compress', async (_event, connectionId, rawSource
   const format = ['zip', 'tar', 'tar.gz', 'tgz', '7z'].includes(rawFormat) ? rawFormat : 'zip';
   const destPath = validateMutableRemotePath(rawDestPath);
 
+  if (activeConnection.displayHost.systemType === 'windows') {
+    if (format !== 'zip') {
+      throw new Error('Windows 主机暂仅支持 ZIP 压缩。');
+    }
+
+    const sourceArray = `@(${sourcePaths.map(quotePowerShellString).join(', ')})`;
+    const command = createPowerShellCommand(`Compress-Archive -LiteralPath ${sourceArray} -DestinationPath ${quotePowerShellString(destPath)} -Force`);
+    await execSshCommand(activeConnection.client, command);
+    return { format, destPath };
+  }
+
   const escapedSources = sourcePaths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(' ');
   const escapedDest = `'${destPath.replace(/'/g, "'\\''")}'`;
 
@@ -2973,12 +3124,22 @@ registerIpcHandler('connection:compress', async (_event, connectionId, rawSource
 registerIpcHandler('connection:decompress', async (_event, connectionId, rawArchivePath, rawDestDir) => {
   const activeConnection = getActiveConnection(connectionId);
   const archivePath = validateRemotePath(rawArchivePath);
-  const archiveName = archivePath.split('/').pop() || '';
+  const archiveName = getRemoteFileName(archivePath, '');
   const escapedArchive = `'${archivePath.replace(/'/g, "'\\''")}'`;
-  const destDir = rawDestDir ? validateRemotePath(rawDestDir) : validateRemotePath(archivePath.replace(/\/[^/]*$/, '') || '.');
+  const destDir = rawDestDir ? validateRemotePath(rawDestDir) : validateRemotePath(getRemoteParentPath(archivePath));
   const escapedDest = `'${destDir.replace(/'/g, "'\\''")}'`;
 
   let command = '';
+
+  if (activeConnection.displayHost.systemType === 'windows') {
+    if (!archiveName.toLowerCase().endsWith('.zip')) {
+      throw new Error('Windows 主机暂仅支持 ZIP 解压缩。');
+    }
+
+    command = createPowerShellCommand(`Expand-Archive -LiteralPath ${quotePowerShellString(archivePath)} -DestinationPath ${quotePowerShellString(destDir)} -Force`);
+    await execSshCommand(activeConnection.client, command);
+    return { archivePath, destDir };
+  }
 
   if (archiveName.endsWith('.tar.gz') || archiveName.endsWith('.tgz')) {
     command = `tar xzf ${escapedArchive} -C ${escapedDest}`;

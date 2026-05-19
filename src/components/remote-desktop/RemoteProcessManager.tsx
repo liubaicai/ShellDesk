@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getErrorMessage } from './desktopUtils';
+import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import type { RemoteSystemType } from './types';
 
 interface RemoteProcessManagerProps {
   connectionId: string;
+  systemType?: RemoteSystemType;
 }
 
 interface Process {
@@ -61,11 +64,47 @@ function parsePsOutput(stdout: string): Process[] {
   return processes;
 }
 
+function parseWindowsProcessOutput(stdout: string): Process[] {
+  return stdout
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('\t');
+      const pid = Number.parseInt(parts[0] ?? '', 10);
+      const name = parts[1] || 'Process';
+      const cpu = parts[2] || '0';
+      const mem = parts[3] || '0';
+      const start = parts[4] || '';
+
+      if (!Number.isInteger(pid)) {
+        return null;
+      }
+
+      return {
+        pid,
+        user: '-',
+        cpu,
+        mem,
+        vsz: '-',
+        rss: '-',
+        tty: '-',
+        stat: 'R',
+        start,
+        time: `${cpu}s`,
+        command: name,
+      };
+    })
+    .filter((process): process is Process => Boolean(process));
+}
+
 async function runCmd(connectionId: string, command: string) {
   return window.guiSSH!.connections!.runCommand(connectionId, command);
 }
 
-function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
+function ProcessManager({ connectionId, systemType }: RemoteProcessManagerProps) {
+  const isWindowsHost = isWindowsSystem(systemType);
   const [processes, setProcesses] = useState<Process[]>([]);
   const [filtered, setFiltered] = useState<Process[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,14 +123,28 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
     setLoading(true);
     setError('');
     try {
-      const result = await runCmd(connectionId, 'ps aux --sort=-%cpu 2>/dev/null || ps aux 2>/dev/null');
-      setProcesses(parsePsOutput(result.stdout || ''));
+      if (isWindowsHost) {
+        const result = await runCmd(connectionId, powershellCommand(`
+Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 300 | ForEach-Object {
+  $cpu = if ($null -eq $_.CPU) { 0 } else { [math]::Round($_.CPU, 1) }
+  $mem = [math]::Round($_.WorkingSet64 / 1MB, 1)
+  $start = ''
+  try { $start = $_.StartTime.ToString('yyyy-MM-dd HH:mm') } catch {}
+  $tab = [char]9
+  '{0}{1}{2}{1}{3}{1}{4}{1}{5}' -f $_.Id, $tab, $_.ProcessName, $cpu, $mem, $start
+}
+`));
+        setProcesses(parseWindowsProcessOutput(result.stdout || ''));
+      } else {
+        const result = await runCmd(connectionId, 'ps aux --sort=-%cpu 2>/dev/null || ps aux 2>/dev/null');
+        setProcesses(parsePsOutput(result.stdout || ''));
+      }
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, isWindowsHost]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -115,11 +168,14 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `kill -${signal} ${pid} 2>&1`);
+      const result = await runCmd(
+        connectionId,
+        isWindowsHost ? powershellCommand(`Stop-Process -Id ${pid} -Force -ErrorAction Stop`) : `kill -${signal} ${pid} 2>&1`,
+      );
       if (result.code !== 0) {
         throw new Error(result.stderr || '终止进程失败，可能需要 root 权限。');
       }
-      setSuccess(`已向 PID ${pid} 发送 SIG${signal} 信号。`);
+      setSuccess(isWindowsHost ? `已终止 PID ${pid}。` : `已向 PID ${pid} 发送 SIG${signal} 信号。`);
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -188,9 +244,11 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select className="settings-select proc-signal-select" value={selectedSignal} onChange={(e) => setSelectedSignal(e.target.value)}>
-            {SIGNALS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+          {!isWindowsHost ? (
+            <select className="settings-select proc-signal-select" value={selectedSignal} onChange={(e) => setSelectedSignal(e.target.value)}>
+              {SIGNALS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          ) : null}
         </div>
       </div>
 
@@ -217,8 +275,8 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
             <tr>
               <th className="proc-col-pid" onClick={() => toggleSort('pid')}>PID{sortIndicator('pid')}</th>
               <th className="proc-col-user" onClick={() => toggleSort('user')}>用户{sortIndicator('user')}</th>
-              <th className="proc-col-cpu" onClick={() => toggleSort('cpu')}>CPU%{sortIndicator('cpu')}</th>
-              <th className="proc-col-mem" onClick={() => toggleSort('mem')}>MEM%{sortIndicator('mem')}</th>
+              <th className="proc-col-cpu" onClick={() => toggleSort('cpu')}>{isWindowsHost ? 'CPU(s)' : 'CPU%'}{sortIndicator('cpu')}</th>
+              <th className="proc-col-mem" onClick={() => toggleSort('mem')}>{isWindowsHost ? '内存 MB' : 'MEM%'}{sortIndicator('mem')}</th>
               <th className="proc-col-stat">状态</th>
               <th className="proc-col-time">时间</th>
               <th className="proc-col-command">命令</th>
@@ -262,7 +320,7 @@ function ProcessManager({ connectionId }: RemoteProcessManagerProps) {
                       className="proc-kill-btn"
                       disabled={killing === proc.pid}
                       onClick={() => setKillingPid(proc.pid)}
-                      title={`发送 SIG${selectedSignal}`}
+                      title={isWindowsHost ? '终止进程' : `发送 SIG${selectedSignal}`}
                     >
                       {killing === proc.pid ? '...' : '终止'}
                     </button>

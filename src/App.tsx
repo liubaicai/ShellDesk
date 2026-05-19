@@ -46,6 +46,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
 type AppPage = 'hosts' | 'keys' | 'logs' | 'settings';
 type HostSystemType =
   | 'unknown'
+  | 'windows'
   | 'ubuntu'
   | 'debian'
   | 'redhat'
@@ -77,6 +78,7 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
 
 const hostSystemLabels: Record<HostSystemType, string> = {
   unknown: '未识别系统',
+  windows: 'Windows',
   ubuntu: 'Ubuntu',
   debian: 'Debian',
   redhat: 'Red Hat Enterprise Linux',
@@ -101,8 +103,18 @@ const hostSystemLabels: Record<HostSystemType, string> = {
   unix: 'Unix',
 };
 
-function getHostSystemType(value: unknown): HostSystemType {
-  return typeof value === 'string' && value in hostSystemLabels ? value as HostSystemType : 'unknown';
+function getHostSystemType(value: unknown, systemName?: unknown): HostSystemType {
+  const normalizedValue = typeof value === 'string' ? value.toLowerCase() : '';
+
+  if (normalizedValue in hostSystemLabels) {
+    return normalizedValue as HostSystemType;
+  }
+
+  if (typeof systemName === 'string' && /windows/i.test(systemName)) {
+    return 'windows';
+  }
+
+  return 'unknown';
 }
 
 function readHexColorChannels(hexColor: string) {
@@ -166,10 +178,17 @@ function HostGroupIcon() {
 }
 
 function HostSystemIcon({ systemName, systemType }: { systemName: string; systemType: HostSystemType }) {
-  const label = systemName || hostSystemLabels[systemType];
+  const effectiveSystemType = systemType === 'unknown' && /windows/i.test(systemName) ? 'windows' : systemType;
+  const label = systemName || hostSystemLabels[effectiveSystemType];
   const commonProps = { 'aria-hidden': true, focusable: false };
   const icon = (() => {
-    switch (systemType) {
+    switch (effectiveSystemType) {
+      case 'windows':
+        return (
+          <svg viewBox="0 0 64 64" {...commonProps}>
+            <path d="M13 17.5 30 15v16H13V17.5ZM34 14.4 51 12v19H34V14.4ZM13 35h17v16l-17-2.5V35ZM34 35h17v17l-17-2.4V35Z" fill="currentColor" />
+          </svg>
+        );
       case 'ubuntu':
         return (
           <svg viewBox="0 0 64 64" {...commonProps}>
@@ -363,7 +382,7 @@ function HostSystemIcon({ systemName, systemType }: { systemName: string; system
   })();
 
   return (
-    <span className={`host-avatar host-system-icon host-system-${systemType}`} title={label} aria-label={label}>
+    <span className={`host-avatar host-system-icon host-system-${effectiveSystemType}`} title={label} aria-label={label}>
       {icon}
     </span>
   );
@@ -708,7 +727,7 @@ function normalizeStoredHost(host: StoredHost): Host {
     keyId: typeof host.keyId === 'string' ? host.keyId : '',
     keyPath: typeof host.keyPath === 'string' ? host.keyPath : '',
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
-    systemType: getHostSystemType(host.systemType),
+    systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
   };
 }
@@ -1789,7 +1808,7 @@ function App() {
 
     try {
       const nextConnection = await window.guiSSH.connections.connect(hostForConnection);
-      const detectedSystemType = getHostSystemType(nextConnection.host?.systemType);
+      const detectedSystemType = getHostSystemType(nextConnection.host?.systemType, nextConnection.host?.systemName);
       const detectedSystemName = typeof nextConnection.host?.systemName === 'string' ? nextConnection.host.systemName : '';
       const hasDetectedSystem = detectedSystemType !== 'unknown' || Boolean(detectedSystemName);
 

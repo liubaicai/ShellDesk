@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import type { RemoteSystemType } from './types';
 
 interface RemoteSettingsProps {
   connectionId: string;
+  systemType?: RemoteSystemType;
 }
 
 type SettingsTab = 'systeminfo' | 'network' | 'mirrors' | 'update' | 'hosts' | 'route' | 'disk';
@@ -47,6 +50,29 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     label: '存储',
     tabs: [
       { key: 'disk', label: '磁盘和挂载点', icon: '\u{1F4BD}', description: '磁盘分区、挂载点、使用情况' },
+    ],
+  },
+];
+
+const WINDOWS_SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    label: '系统',
+    tabs: [
+      { key: 'systeminfo', label: '系统信息', icon: '\u{1F4BB}', description: 'Windows 主机概况' },
+    ],
+  },
+  {
+    label: '网络',
+    tabs: [
+      { key: 'network', label: '网络信息', icon: '\u{1F310}', description: 'IP、DNS 和适配器信息' },
+      { key: 'hosts', label: 'Hosts 管理', icon: '\u{1F4CB}', description: '管理 Windows hosts 文件' },
+      { key: 'route', label: '路由表', icon: '\u{1F6E3}\uFE0F', description: '查看 Windows 路由表' },
+    ],
+  },
+  {
+    label: '存储',
+    tabs: [
+      { key: 'disk', label: '磁盘和卷', icon: '\u{1F4BD}', description: '查看本地磁盘、卷和空间' },
     ],
   },
 ];
@@ -1414,12 +1440,373 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
   );
 }
 
+/* ─── Windows Panels ──────────────────────────────────────────────────────── */
+
+const windowsHostsPath = 'C:/Windows/System32/drivers/etc/hosts';
+
+function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
+  const [items, setItems] = useState<SysInfoItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const cmds = [
+        { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; '{0} {1}' -f $os.Caption, $os.Version") },
+        { key: 'kernel', label: '系统版本', icon: '\u2699\uFE0F', cmd: powershellCommand('[Environment]::OSVersion.VersionString') },
+        { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', cmd: powershellCommand('[System.Net.Dns]::GetHostName()') },
+        { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', cmd: powershellCommand('(Get-CimInstance Win32_OperatingSystem).OSArchitecture') },
+        { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', cmd: powershellCommand("(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)") },
+        { key: 'memory', label: '内存', icon: '\u{1F9E0}', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); '已用 {0} GB / 总计 {1} GB，空闲 {2} GB' -f $used, $total, $free") },
+        { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', cmd: powershellCommand('$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()') },
+        { key: 'load', label: 'CPU 负载', icon: '\u26A1', cmd: powershellCommand("$value = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; if ($null -eq $value) { '0%' } else { '{0}%' -f [math]::Round($value, 1) }") },
+        { key: 'shell', label: 'PowerShell', icon: '\u{1F4BB}', cmd: powershellCommand("'PowerShell ' + $PSVersionTable.PSVersion.ToString()") },
+        { key: 'user', label: '当前用户', icon: '\u{1F464}', cmd: powershellCommand('[System.Security.Principal.WindowsIdentity]::GetCurrent().Name') },
+        { key: 'locale', label: '系统语言', icon: '\u{1F30D}', cmd: powershellCommand('(Get-Culture).Name') },
+        { key: 'timezone', label: '时区', icon: '\u{1F30D}', cmd: powershellCommand('(Get-TimeZone).DisplayName') },
+        { key: 'gpu', label: 'GPU', icon: '\u{1F3AE}', cmd: powershellCommand("Get-CimInstance Win32_VideoController | Select-Object -First 3 -ExpandProperty Name | Out-String -Width 200") },
+        { key: 'virt', label: '硬件型号', icon: '\u{1F4EB}', cmd: powershellCommand("$cs = Get-CimInstance Win32_ComputerSystem; '{0} {1}' -f $cs.Manufacturer, $cs.Model") },
+        { key: 'boot', label: '启动模式', icon: '\u{1F504}', cmd: powershellCommand("try { if (Confirm-SecureBootUEFI) { 'UEFI / Secure Boot' } else { 'UEFI' } } catch { 'Legacy BIOS 或未识别' }") },
+      ];
+
+      const results: SysInfoItem[] = [];
+      for (const { key, label, icon, cmd } of cmds) {
+        try {
+          const r = await runCmd(connectionId, cmd);
+          results.push({ key, label, icon, value: (r.stdout || r.stderr || '无输出').trim() });
+        } catch {
+          results.push({ key, label, icon, value: '获取失败' });
+        }
+      }
+
+      setItems(results);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const hostnameItem = items.find((i) => i.key === 'hostname');
+  const osItem = items.find((i) => i.key === 'os');
+
+  return (
+    <div className="settings-panel-content">
+      <div className="settings-panel-header">
+        <div>
+          <h3>系统信息</h3>
+          <p>Windows 主机硬件和软件概览</p>
+        </div>
+        <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
+          {loading ? '加载中...' : '刷新'}
+        </button>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      {osItem ? (
+        <div className="sysinfo-hero">
+          <div className="sysinfo-hero-icon">{'\u{1F5A5}\uFE0F'}</div>
+          <div className="sysinfo-hero-text">
+            <strong>{hostnameItem?.value || 'Windows 主机'}</strong>
+            <span>{osItem.value}</span>
+          </div>
+        </div>
+      ) : null}
+      <div className="sysinfo-grid">
+        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os').map((item) => (
+          <article key={item.key} className="sysinfo-card">
+            <div className="sysinfo-card-head">
+              <span className="sysinfo-card-icon">{item.icon}</span>
+              <span className="sysinfo-card-label">{item.label}</span>
+            </div>
+            <pre className="sysinfo-card-value">{item.value}</pre>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WindowsNetworkPanel({ connectionId }: { connectionId: string }) {
+  const [hostname, setHostname] = useState('');
+  const [networkInfo, setNetworkInfo] = useState('');
+  const [dnsInfo, setDnsInfo] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [hostResult, ipResult, dnsResult] = await Promise.all([
+        runCmd(connectionId, powershellCommand('[System.Net.Dns]::GetHostName()')),
+        runCmd(connectionId, powershellCommand('Get-NetIPConfiguration | Format-List | Out-String -Width 220')),
+        runCmd(connectionId, powershellCommand('Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 | Format-Table -AutoSize | Out-String -Width 200')),
+      ]);
+      setHostname(hostResult.stdout || hostResult.stderr);
+      setNetworkInfo(ipResult.stdout || ipResult.stderr);
+      setDnsInfo(dnsResult.stdout || dnsResult.stderr);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <div className="settings-panel-content">
+      <div className="settings-panel-header">
+        <div>
+          <h3>网络信息</h3>
+          <p>查看 Windows 网络适配器、IP 和 DNS</p>
+        </div>
+        <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
+          {loading ? '加载中...' : '刷新'}
+        </button>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      <div className="settings-info-card">
+        <div className="settings-info-row">
+          <span className="settings-info-label">主机名</span>
+          <strong className="settings-info-value">{hostname || '...'}</strong>
+        </div>
+      </div>
+      <div className="settings-section">
+        <h4>网络适配器</h4>
+        <pre className="settings-output">{networkInfo || '加载中...'}</pre>
+      </div>
+      <div className="settings-section">
+        <h4>DNS 配置</h4>
+        <pre className="settings-output">{dnsInfo || '加载中...'}</pre>
+      </div>
+    </div>
+  );
+}
+
+function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
+  const [content, setContent] = useState('');
+  const [draft, setDraft] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [newIp, setNewIp] = useState('');
+  const [newHost, setNewHost] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const text = await window.guiSSH!.connections.readFile(connectionId, windowsHostsPath);
+      setContent(text);
+      setDraft(text);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const saveHosts = async () => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await window.guiSSH!.connections.writeFile(connectionId, windowsHostsPath, draft);
+      setContent(draft);
+      setSuccess('Hosts 文件已保存。');
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addEntry = async () => {
+    const ip = newIp.trim();
+    const host = newHost.trim();
+    if (!ip || !host) {
+      setError('请输入 IP 和主机名。');
+      return;
+    }
+    if (!isSafeNameserver(ip) || !isSafeHostname(host)) {
+      setError('IP 或主机名格式无效。');
+      return;
+    }
+    const line = `${ip}\t${host}`;
+    const nextDraft = `${draft.trimEnd()}\r\n${line}\r\n`;
+    setDraft(nextDraft);
+    setNewIp('');
+    setNewHost('');
+    setSuccess(`已添加 ${host}，点击保存后生效。`);
+  };
+
+  return (
+    <div className="settings-panel-content">
+      <div className="settings-panel-header">
+        <div>
+          <h3>Hosts 管理</h3>
+          <p>{windowsHostsPath}</p>
+        </div>
+        <div className="settings-header-actions">
+          <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>刷新</button>
+          <button type="button" className="settings-action-btn primary" onClick={saveHosts} disabled={saving || draft === content}>
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      {success ? <div className="settings-success-banner">{success}</div> : null}
+      <div className="settings-section">
+        <h4>新增映射</h4>
+        <div className="settings-inline-form">
+          <input className="settings-input" placeholder="IP 地址" value={newIp} onChange={(e) => setNewIp(e.target.value)} />
+          <input className="settings-input" placeholder="主机名" value={newHost} onChange={(e) => setNewHost(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addEntry(); }} />
+          <button type="button" className="settings-action-btn primary" onClick={addEntry}>添加</button>
+        </div>
+      </div>
+      <div className="settings-section">
+        <h4>编辑 hosts</h4>
+        <textarea
+          className="settings-textarea"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={18}
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
+  const [routes, setRoutes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await runCmd(connectionId, powershellCommand('Get-NetRoute | Sort-Object -Property DestinationPrefix, RouteMetric | Format-Table -AutoSize | Out-String -Width 260'));
+      setRoutes(result.stdout || result.stderr || '无法获取路由表');
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <div className="settings-panel-content">
+      <div className="settings-panel-header">
+        <div>
+          <h3>路由表</h3>
+          <p>查看 Windows IPv4 / IPv6 路由</p>
+        </div>
+        <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
+          {loading ? '加载中...' : '刷新'}
+        </button>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      <div className="settings-section">
+        <h4>路由表</h4>
+        <pre className="settings-output">{routes || '加载中...'}</pre>
+      </div>
+    </div>
+  );
+}
+
+function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
+  const [diskInfo, setDiskInfo] = useState('');
+  const [volumeInfo, setVolumeInfo] = useState('');
+  const [driveInfo, setDriveInfo] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [diskResult, volumeResult, driveResult] = await Promise.all([
+        runCmd(connectionId, powershellCommand("Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200")),
+        runCmd(connectionId, powershellCommand('Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem, HealthStatus, SizeRemaining, Size | Format-Table -AutoSize | Out-String -Width 220')),
+        runCmd(connectionId, powershellCommand('Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize | Out-String -Width 200')),
+      ]);
+      setDiskInfo(diskResult.stdout || diskResult.stderr);
+      setVolumeInfo(volumeResult.stdout || volumeResult.stderr);
+      setDriveInfo(driveResult.stdout || driveResult.stderr);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <div className="settings-panel-content">
+      <div className="settings-panel-header">
+        <div>
+          <h3>磁盘和卷</h3>
+          <p>查看 Windows 本地磁盘、卷和文件系统空间</p>
+        </div>
+        <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
+          {loading ? '加载中...' : '刷新'}
+        </button>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      <div className="settings-section">
+        <h4>本地磁盘</h4>
+        <pre className="settings-output">{diskInfo || '加载中...'}</pre>
+      </div>
+      <div className="settings-section">
+        <h4>卷信息</h4>
+        <pre className="settings-output">{volumeInfo || '加载中...'}</pre>
+      </div>
+      <div className="settings-section">
+        <h4>PSDrive</h4>
+        <pre className="settings-output">{driveInfo || '加载中...'}</pre>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Component ──────────────────────────────────────────────────────── */
 
-function RemoteSettings({ connectionId }: RemoteSettingsProps) {
+function RemoteSettings({ connectionId, systemType }: RemoteSettingsProps) {
+  const isWindowsHost = isWindowsSystem(systemType);
+  const settingsGroups = isWindowsHost ? WINDOWS_SETTINGS_GROUPS : SETTINGS_GROUPS;
   const [activeTab, setActiveTab] = useState<SettingsTab>('systeminfo');
 
+  useEffect(() => {
+    if (!settingsGroups.some((group) => group.tabs.some((tab) => tab.key === activeTab))) {
+      setActiveTab('systeminfo');
+    }
+  }, [activeTab, settingsGroups]);
+
   const renderPanel = () => {
+    if (isWindowsHost) {
+      switch (activeTab) {
+        case 'systeminfo': return <WindowsSystemInfoPanel connectionId={connectionId} />;
+        case 'network': return <WindowsNetworkPanel connectionId={connectionId} />;
+        case 'hosts': return <WindowsHostsPanel connectionId={connectionId} />;
+        case 'route': return <WindowsRoutePanel connectionId={connectionId} />;
+        case 'disk': return <WindowsDiskPanel connectionId={connectionId} />;
+        default: return <WindowsSystemInfoPanel connectionId={connectionId} />;
+      }
+    }
+
     switch (activeTab) {
       case 'systeminfo': return <SystemInfoPanel connectionId={connectionId} />;
       case 'network': return <NetworkPanel connectionId={connectionId} />;
@@ -1435,7 +1822,7 @@ function RemoteSettings({ connectionId }: RemoteSettingsProps) {
   return (
     <div className="settings-pane">
       <nav className="settings-sidebar" aria-label="设置导航">
-        {SETTINGS_GROUPS.map((group) => (
+        {settingsGroups.map((group) => (
           <div key={group.label}>
             <div className="settings-sidebar-group-label">{group.label}</div>
             {group.tabs.map((tab) => (

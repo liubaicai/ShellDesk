@@ -346,6 +346,13 @@
   color: #9ed0ff;
 }
 
+.host-avatar.host-system-windows {
+  background:
+    radial-gradient(circle at 68% 22%, rgba(255, 255, 255, 0.18), transparent 42%),
+    linear-gradient(145deg, rgba(0, 120, 215, 0.34), rgba(16, 64, 132, 0.72));
+  color: #8bd3ff;
+}
+
 .host-avatar.host-system-ubuntu {
   background:
     radial-gradient(circle at 68% 22%, rgba(255, 255, 255, 0.2), transparent 42%),

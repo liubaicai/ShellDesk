@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import type { RemoteSystemType } from './types';
+
 interface RemoteMonitorProps {
   connectionId: string;
+  systemType?: RemoteSystemType;
 }
 
 interface TimeSeriesPoint {
@@ -159,7 +163,8 @@ function SimpleLineChart({ data, color, fillColor, unit, minValue = 0, maxValue 
 
 // ─── Main Monitor Component ──────────────────────────────────────────────
 
-export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
+export default function RemoteMonitor({ connectionId, systemType }: RemoteMonitorProps) {
+  const isWindowsHost = isWindowsSystem(systemType);
   const [cpuData, setCpuData] = useState<TimeSeriesPoint[]>([]);
   const [memData, setMemData] = useState<TimeSeriesPoint[]>([]);
   const [netRxData, setNetRxData] = useState<TimeSeriesPoint[]>([]);
@@ -178,7 +183,11 @@ export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
     const now = Date.now();
 
     try {
-      const commands = [
+      const commands = isWindowsHost ? [
+        { key: 'cpu', cmd: powershellCommand("$value = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; if ($null -eq $value) { 0 } else { [math]::Round($value, 1) }") },
+        { key: 'mem', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; if ($os.TotalVisibleMemorySize) { [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 1) } else { 0 }") },
+        { key: 'net', cmd: powershellCommand("$stats = Get-NetAdapterStatistics -ErrorAction SilentlyContinue; $rx = ($stats | Measure-Object -Property ReceivedBytes -Sum).Sum; $tx = ($stats | Measure-Object -Property SentBytes -Sum).Sum; if ($null -eq $rx) { $rx = 0 }; if ($null -eq $tx) { $tx = 0 }; '{0} {1}' -f [int64]$rx, [int64]$tx") },
+      ] : [
         { key: 'cpu', cmd: "cat /proc/loadavg 2>/dev/null | awk '{print $1*100}' || echo 0" },
         { key: 'mem', cmd: "free 2>/dev/null | awk '/^Mem:/ {printf \"%.1f\", $3/$2*100}' || echo 0" },
         { key: 'net', cmd: "cat /proc/net/dev 2>/dev/null | awk 'NR>2 && !/^ *lo:/ {rx+=$2; tx+=$10} END {print rx, tx}' || echo '0 0'" },
@@ -224,7 +233,7 @@ export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
     } finally {
       isPollingRef.current = false;
     }
-  }, [connectionId]);
+  }, [connectionId, isWindowsHost]);
 
   // ── polling ──────────────────────────────────────────────────────────
   useEffect(() => {

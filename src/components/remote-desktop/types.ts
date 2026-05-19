@@ -1,3 +1,29 @@
+export type RemoteSystemType =
+  | 'unknown'
+  | 'windows'
+  | 'ubuntu'
+  | 'debian'
+  | 'redhat'
+  | 'centos'
+  | 'fedora'
+  | 'rocky'
+  | 'almalinux'
+  | 'oracle'
+  | 'amazon'
+  | 'arch'
+  | 'manjaro'
+  | 'alpine'
+  | 'opensuse'
+  | 'linuxmint'
+  | 'kali'
+  | 'raspbian'
+  | 'gentoo'
+  | 'nixos'
+  | 'popos'
+  | 'elementary'
+  | 'linux'
+  | 'unix';
+
 export interface RemoteConnectionInfo {
   id: string;
   partition: string;
@@ -9,30 +35,7 @@ export interface RemoteConnectionInfo {
     port: number;
     username: string;
     authMethod: 'password' | 'key' | 'agent';
-    systemType?:
-      | 'unknown'
-      | 'ubuntu'
-      | 'debian'
-      | 'redhat'
-      | 'centos'
-      | 'fedora'
-      | 'rocky'
-      | 'almalinux'
-      | 'oracle'
-      | 'amazon'
-      | 'arch'
-      | 'manjaro'
-      | 'alpine'
-      | 'opensuse'
-      | 'linuxmint'
-      | 'kali'
-      | 'raspbian'
-      | 'gentoo'
-      | 'nixos'
-      | 'popos'
-      | 'elementary'
-      | 'linux'
-      | 'unix';
+    systemType?: RemoteSystemType;
     systemName?: string;
   };
 }

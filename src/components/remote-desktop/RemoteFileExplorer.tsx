@@ -11,10 +11,13 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
+import { isWindowsSystem } from './remoteSystem';
 import { isTextFile } from './RemoteNotepad';
+import type { RemoteSystemType } from './types';
 
 interface RemoteFileExplorerProps {
   connectionId: string;
+  systemType?: RemoteSystemType;
   onOpenFile?: (filePath: string) => void;
 }
 
@@ -50,8 +53,37 @@ interface ContextMenuState {
   targetEntry: RemoteFileEntry | null;
 }
 
-function joinRemotePath(basePath: string, entryName: string) {
-  const base = basePath.trim() || '.';
+function normalizeWindowsRemotePath(remotePath: string) {
+  return remotePath.replace(/\\/g, '/');
+}
+
+function isWindowsDriveRoot(remotePath: string) {
+  return /^\/?[a-z]:\/?$/i.test(remotePath.trim());
+}
+
+function normalizeRemotePath(remotePath: string, isWindowsHost: boolean) {
+  const trimmed = remotePath.trim() || '.';
+  return isWindowsHost ? normalizeWindowsRemotePath(trimmed) : trimmed;
+}
+
+function joinRemotePath(basePath: string, entryName: string, isWindowsHost = false) {
+  const base = normalizeRemotePath(basePath, isWindowsHost);
+
+  if (isWindowsHost) {
+    if (base === '/') {
+      return /^[a-z]:$/i.test(entryName) ? `${entryName}/` : `/${entryName}`;
+    }
+
+    if (base === '.') {
+      return entryName;
+    }
+
+    if (isWindowsDriveRoot(base)) {
+      return `${base.replace(/\/?$/, '/')}${entryName}`;
+    }
+
+    return `${base.replace(/\/+$/, '')}/${entryName}`;
+  }
 
   if (base === '/') {
     return `/${entryName}`;
@@ -64,8 +96,8 @@ function joinRemotePath(basePath: string, entryName: string) {
   return `${base.replace(/\/+$/, '')}/${entryName}`;
 }
 
-function getParentRemotePath(remotePath: string) {
-  const p = remotePath.trim() || '.';
+function getParentRemotePath(remotePath: string, isWindowsHost = false) {
+  const p = normalizeRemotePath(remotePath, isWindowsHost);
 
   if (p === '/') {
     return '/';
@@ -75,7 +107,20 @@ function getParentRemotePath(remotePath: string) {
     return '..';
   }
 
+  if (isWindowsHost && isWindowsDriveRoot(p)) {
+    return '/';
+  }
+
   const normalized = p.replace(/\/+$/, '');
+
+  if (isWindowsHost) {
+    const driveChildMatch = normalized.match(/^(\/?[a-z]:)\/[^/]+$/i);
+
+    if (driveChildMatch) {
+      return `${driveChildMatch[1]}/`;
+    }
+  }
+
   const slashIndex = normalized.lastIndexOf('/');
 
   if (slashIndex < 0) {
@@ -187,9 +232,10 @@ function formatMode(mode: number) {
   return perms.join('');
 }
 
-function isValidFileName(name: string) {
+function isValidFileName(name: string, isWindowsHost = false) {
   if (!name.trim()) return false;
   if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false;
+  if (isWindowsHost && /[<>:"|?*]/.test(name)) return false;
   if (name === '.' || name === '..') return false;
   return name.length <= 255;
 }
@@ -204,7 +250,8 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
-function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, systemType, onOpenFile }: RemoteFileExplorerProps) {
+  const isWindowsHost = isWindowsSystem(systemType);
   const [remotePath, setRemotePath] = useState('.');
   const [pathDraft, setPathDraft] = useState('.');
   const [fileSearchQuery, setFileSearchQuery] = useState('');
@@ -348,12 +395,12 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
   }, [fileSearchQuery, sortedEntries]);
 
   const navigateToPath = useCallback((nextPath: string) => {
-    setRemotePath(nextPath.trim() || '.');
-  }, []);
+    setRemotePath(normalizeRemotePath(nextPath, isWindowsHost));
+  }, [isWindowsHost]);
 
   const navigateToParent = useCallback(() => {
-    navigateToPath(getParentRemotePath(remotePath));
-  }, [navigateToPath, remotePath]);
+    navigateToPath(getParentRemotePath(remotePath, isWindowsHost));
+  }, [isWindowsHost, navigateToPath, remotePath]);
 
   const submitRemotePath = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -362,11 +409,11 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
 
   const openFileEntry = useCallback((entry: RemoteFileEntry) => {
     if (entry.type === 'directory') {
-      navigateToPath(joinRemotePath(remotePath, entry.name));
+      navigateToPath(joinRemotePath(remotePath, entry.name, isWindowsHost));
     } else if (entry.type === 'file' && isTextFile(entry.name) && onOpenFile) {
-      onOpenFile(joinRemotePath(remotePath, entry.name));
+      onOpenFile(joinRemotePath(remotePath, entry.name, isWindowsHost));
     }
-  }, [navigateToPath, remotePath, onOpenFile]);
+  }, [isWindowsHost, navigateToPath, remotePath, onOpenFile]);
 
   const refreshFiles = useCallback(() => {
     setFilesRefreshToken((currentToken) => currentToken + 1);
@@ -472,7 +519,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       const errors: string[] = [];
 
       for (const entry of targets) {
-        const entryPath = joinRemotePath(remotePath, entry.name);
+        const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
         try {
           await window.guiSSH?.connections.deletePath(connectionId, entryPath, entry.type);
         } catch (error) {
@@ -488,7 +535,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [connectionId, deleteConfirmationEntries, remotePath, refreshFiles]);
+  }, [connectionId, deleteConfirmationEntries, isWindowsHost, remotePath, refreshFiles]);
 
   const startRename = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -506,7 +553,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       return;
     }
 
-    if (!isValidFileName(trimmed)) {
+    if (!isValidFileName(trimmed, isWindowsHost)) {
       setFilesError('文件名无效。');
       setRenamingName(null);
       return;
@@ -514,8 +561,8 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
 
     try {
       setFilesError('');
-      const oldPath = joinRemotePath(remotePath, renamingName);
-      const newPath = joinRemotePath(remotePath, trimmed);
+      const oldPath = joinRemotePath(remotePath, renamingName, isWindowsHost);
+      const newPath = joinRemotePath(remotePath, trimmed, isWindowsHost);
       await window.guiSSH?.connections.renamePath(connectionId, oldPath, newPath);
       setRenamingName(null);
       refreshFiles();
@@ -523,7 +570,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       setFilesError(getErrorMessage(error));
       setRenamingName(null);
     }
-  }, [connectionId, remotePath, renamingName, renameDraft, refreshFiles]);
+  }, [connectionId, isWindowsHost, remotePath, renamingName, renameDraft, refreshFiles]);
 
   const cancelRename = useCallback(() => {
     setRenamingName(null);
@@ -545,7 +592,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       return;
     }
 
-    if (!isValidFileName(trimmed)) {
+    if (!isValidFileName(trimmed, isWindowsHost)) {
       setFilesError('名称无效。');
       setIsCreatingNew(null);
       return;
@@ -554,9 +601,9 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     try {
       setFilesError('');
       if (isCreatingNew === 'folder') {
-        await window.guiSSH?.connections.createDirectory(connectionId, joinRemotePath(remotePath, trimmed));
+        await window.guiSSH?.connections.createDirectory(connectionId, joinRemotePath(remotePath, trimmed, isWindowsHost));
       } else {
-        await window.guiSSH?.connections.createFile(connectionId, joinRemotePath(remotePath, trimmed));
+        await window.guiSSH?.connections.createFile(connectionId, joinRemotePath(remotePath, trimmed, isWindowsHost));
       }
       setIsCreatingNew(null);
       refreshFiles();
@@ -564,7 +611,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       setFilesError(getErrorMessage(error));
       setIsCreatingNew(null);
     }
-  }, [connectionId, remotePath, isCreatingNew, newItemDraft, refreshFiles]);
+  }, [connectionId, isWindowsHost, remotePath, isCreatingNew, newItemDraft, refreshFiles]);
 
   const cancelNewItem = useCallback(() => {
     setIsCreatingNew(null);
@@ -572,10 +619,10 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
 
   const copyEntryPath = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
-    const fullPath = joinRemotePath(remotePath, entry.name);
+    const fullPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
     void navigator.clipboard?.writeText(fullPath);
     setCopiedPath(entry.name);
-  }, [closeContextMenu, remotePath]);
+  }, [closeContextMenu, isWindowsHost, remotePath]);
 
   const showProperties = useCallback(async (entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -584,7 +631,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     setPropertiesLoading(true);
 
     try {
-      const entryPath = joinRemotePath(remotePath, entry.name);
+      const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
       const stat = await window.guiSSH?.connections.statPath(connectionId, entryPath);
       setPropertiesData(stat ?? null);
     } catch {
@@ -592,13 +639,13 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     } finally {
       setPropertiesLoading(false);
     }
-  }, [closeContextMenu, connectionId, remotePath]);
+  }, [closeContextMenu, connectionId, isWindowsHost, remotePath]);
 
   const downloadFile = useCallback(async (entry: RemoteFileEntry) => {
     closeContextMenu();
     try {
       setFilesError('');
-      const entryPath = joinRemotePath(remotePath, entry.name);
+      const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
       const result = await window.guiSSH?.connections.downloadFile(connectionId, entryPath);
       if (!result?.canceled && result?.filePath) {
         setFilesError('');
@@ -606,7 +653,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [closeContextMenu, connectionId, remotePath]);
+  }, [closeContextMenu, connectionId, isWindowsHost, remotePath]);
 
   const uploadFile = useCallback(async () => {
     closeContextMenu();
@@ -633,16 +680,16 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
 
     try {
       setFilesError('');
-      const sourcePaths = entries.map((e) => joinRemotePath(remotePath, e.name));
+      const sourcePaths = entries.map((e) => joinRemotePath(remotePath, e.name, isWindowsHost));
       const baseName = entries.length === 1 ? entries[0].name : `${entries.length}_files`;
       const ext = format === 'zip' ? '.zip' : format === 'tar' ? '.tar' : format === 'tar.gz' ? '.tar.gz' : '.7z';
-      const destPath = joinRemotePath(remotePath, `${baseName}${ext}`);
+      const destPath = joinRemotePath(remotePath, `${baseName}${ext}`, isWindowsHost);
       await window.guiSSH.connections.compress(connectionId, sourcePaths, format, destPath);
       refreshFiles();
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+  }, [closeContextMenu, connectionId, isWindowsHost, remotePath, refreshFiles]);
 
   const decompressEntry = useCallback(async (entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -650,13 +697,13 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
 
     try {
       setFilesError('');
-      const archivePath = joinRemotePath(remotePath, entry.name);
+      const archivePath = joinRemotePath(remotePath, entry.name, isWindowsHost);
       await window.guiSSH.connections.decompress(connectionId, archivePath, remotePath);
       refreshFiles();
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+  }, [closeContextMenu, connectionId, isWindowsHost, remotePath, refreshFiles]);
 
   const handleKeydown = useCallback((event: ReactKeyboardEvent) => {
     if (renamingName || isCreatingNew) return;
@@ -695,20 +742,43 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
   }, [renamingName, isCreatingNew, deleteSelectedEntries, displayedEntries, selectedNames, startRename, openFileEntry, fileEntries, refreshFiles]);
 
   const breadcrumbSegments = useMemo(() => {
-    const p = remotePath.trim();
-    if (p === '.' || p === '..') return [p];
-    if (p === '/') return ['/'];
-    const parts = p.replace(/\/+$/, '').split('/').filter(Boolean);
-    return parts;
-  }, [remotePath]);
+    const p = normalizeRemotePath(remotePath, isWindowsHost);
+    if (p === '.' || p === '..') return [{ label: p, path: p }];
+    if (p === '/') return [{ label: '/', path: '/' }];
 
-  const handleBreadcrumbClick = useCallback((segment: string, index: number, allSegments: string[]) => {
-    if (index === 0 && (remotePath.startsWith('/') || remotePath === '/')) {
-      navigateToPath('/');
-    } else {
-      navigateToPath(allSegments.slice(0, index + 1).join('/'));
-    }
-  }, [navigateToPath, remotePath]);
+    const parts = p.replace(/\/+$/, '').split('/').filter(Boolean);
+    const rootPrefix = p.startsWith('/') ? '/' : '';
+    return parts.map((part, index) => {
+      const isDrive = isWindowsHost && index === 0 && /^[a-z]:$/i.test(part);
+      const pathValue = `${rootPrefix}${parts.slice(0, index + 1).join('/')}`;
+      return { label: part, path: isDrive ? `${rootPrefix}${part}/` : pathValue };
+    });
+  }, [isWindowsHost, remotePath]);
+
+  const handleBreadcrumbClick = useCallback((pathValue: string) => {
+    navigateToPath(pathValue);
+  }, [navigateToPath]);
+
+  const quickAccessPaths = useMemo(() => isWindowsHost
+    ? [
+        { label: 'Home', path: '.', icon: '⌂' },
+        { label: '根目录', path: '/', icon: '⌂' },
+        { label: 'C:/', path: 'C:/', icon: '□' },
+        { label: 'C:/Users', path: 'C:/Users', icon: '□' },
+        { label: 'C:/Program Files', path: 'C:/Program Files', icon: '□' },
+        { label: 'C:/Windows', path: 'C:/Windows', icon: '□' },
+        { label: 'C:/Temp', path: 'C:/Temp', icon: '□' },
+      ]
+    : [
+        { label: 'Home', path: '.', icon: '⌂' },
+        { label: '根目录', path: '/', icon: '⌂' },
+        { label: '/home', path: '/home', icon: '□' },
+        { label: '/tmp', path: '/tmp', icon: '□' },
+        { label: '/var/log', path: '/var/log', icon: '□' },
+        { label: '/etc', path: '/etc', icon: '□' },
+        { label: '/opt', path: '/opt', icon: '□' },
+        { label: '/usr/local', path: '/usr/local', icon: '□' },
+      ], [isWindowsHost]);
 
   const sortIndicator = useCallback((field: SortField) => {
     if (sortField !== field) return '';
@@ -725,21 +795,21 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
           <button type="button" disabled aria-label="前进" title="前进">
             ›
           </button>
-          <button type="button" onClick={() => navigateToPath('/home')} aria-label="打开 Home" title="Home">
+          <button type="button" onClick={() => navigateToPath(isWindowsHost ? '.' : '/home')} aria-label="打开 Home" title="Home">
             ⌂
           </button>
         </div>
         <div className="addressbar-breadcrumb-input">
           <div className="breadcrumb-trail">
             {breadcrumbSegments.map((segment, index) => (
-              <span key={`${segment}-${index}`} className="breadcrumb-segment">
+              <span key={`${segment.path}-${index}`} className="breadcrumb-segment">
                 {index > 0 && <span className="breadcrumb-sep">/</span>}
                 <button
                   type="button"
                   className="breadcrumb-btn"
-                  onClick={() => handleBreadcrumbClick(segment, index, breadcrumbSegments)}
+                  onClick={() => handleBreadcrumbClick(segment.path)}
                 >
-                  {segment}
+                  {segment.label}
                 </button>
               </span>
             ))}
@@ -748,7 +818,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
             value={pathDraft}
             onChange={(event) => setPathDraft(event.target.value)}
             spellCheck={false}
-            placeholder="输入路径后按回车..."
+            placeholder={isWindowsHost ? '输入路径，如 C:/Users 后按回车...' : '输入路径后按回车...'}
           />
         </div>
         <label className="explorer-search">
@@ -769,15 +839,17 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
       <div className="explorer-layout">
         <aside className="explorer-sidebar" aria-label="快速访问">
           <div className="sidebar-section-title">快速访问</div>
-          <button type="button" className={remotePath === '.' ? 'active' : ''} onClick={() => navigateToPath('.')}><span aria-hidden="true">⌂</span>Home</button>
-          <button type="button" className={remotePath === '/' ? 'active' : ''} onClick={() => navigateToPath('/')}><span aria-hidden="true">⌂</span>根目录</button>
+          {quickAccessPaths.slice(0, 2).map((item) => (
+            <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
+              <span aria-hidden="true">{item.icon}</span>{item.label}
+            </button>
+          ))}
           <div className="sidebar-section-title">常用目录</div>
-          <button type="button" onClick={() => navigateToPath('/home')}><span aria-hidden="true">□</span>/home</button>
-          <button type="button" onClick={() => navigateToPath('/tmp')}><span aria-hidden="true">□</span>/tmp</button>
-          <button type="button" onClick={() => navigateToPath('/var/log')}><span aria-hidden="true">□</span>/var/log</button>
-          <button type="button" onClick={() => navigateToPath('/etc')}><span aria-hidden="true">□</span>/etc</button>
-          <button type="button" onClick={() => navigateToPath('/opt')}><span aria-hidden="true">□</span>/opt</button>
-          <button type="button" onClick={() => navigateToPath('/usr/local')}><span aria-hidden="true">□</span>/usr/local</button>
+          {quickAccessPaths.slice(2).map((item) => (
+            <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
+              <span aria-hidden="true">{item.icon}</span>{item.label}
+            </button>
+          ))}
         </aside>
 
         <section
@@ -934,7 +1006,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                 {contextMenu.targetEntry.type === 'file' && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
                   <button type="button" role="menuitem" onClick={() => {
                     closeContextMenu();
-                    onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name));
+                    onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
                     用记事本打开
                   </button>
@@ -950,7 +1022,7 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                     下载
                   </button>
                 )}
-                {isArchiveFile(contextMenu.targetEntry.name) && contextMenu.targetEntry.type === 'file' && (
+                {isArchiveFile(contextMenu.targetEntry.name) && contextMenu.targetEntry.type === 'file' && (!isWindowsHost || contextMenu.targetEntry.name.toLowerCase().endsWith('.zip')) && (
                   <button type="button" role="menuitem" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
                     解压缩
                   </button>
@@ -967,9 +1039,13 @@ function RemoteFileExplorer({ connectionId, onOpenFile }: RemoteFileExplorerProp
                       return (
                         <>
                           <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'zip')}>ZIP (.zip)</button>
-                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar.gz')}>TAR.GZ (.tar.gz)</button>
-                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar')}>TAR (.tar)</button>
-                          <button type="button" role="menuitem" onClick={() => void compressEntries(targets, '7z')}>7Z (.7z)</button>
+                          {!isWindowsHost ? (
+                            <>
+                              <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar.gz')}>TAR.GZ (.tar.gz)</button>
+                              <button type="button" role="menuitem" onClick={() => void compressEntries(targets, 'tar')}>TAR (.tar)</button>
+                              <button type="button" role="menuitem" onClick={() => void compressEntries(targets, '7z')}>7Z (.7z)</button>
+                            </>
+                          ) : null}
                         </>
                       );
                     })()}
