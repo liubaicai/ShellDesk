@@ -8,6 +8,6 @@ export interface RemoteConnectionInfo {
     address: string;
     port: number;
     username: string;
-    authMethod: 'password' | 'key';
+    authMethod: 'password' | 'key' | 'agent';
   };
 }

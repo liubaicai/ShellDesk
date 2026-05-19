@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, session, 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
@@ -46,6 +47,7 @@ const terminalThemeChoices = [
   'hacker-green',
 ];
 const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underline', 'none'];
+const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
 const uiFontChoices = [
   'LXGW WenKai Mono',
   'Microsoft YaHei UI',
@@ -1050,7 +1052,7 @@ function validateHostRequest(rawHost) {
     throw new Error('端口必须是 1 到 65535 之间的整数。');
   }
 
-  if (rawHost.authMethod !== 'password' && rawHost.authMethod !== 'key') {
+  if (rawHost.authMethod !== 'password' && rawHost.authMethod !== 'key' && rawHost.authMethod !== 'agent') {
     throw new Error('登录方式无效。');
   }
 
@@ -1069,7 +1071,7 @@ function validateHostRequest(rawHost) {
       rejectLineBreaks: false,
     });
     sshConfig.password = password;
-  } else {
+  } else if (rawHost.authMethod === 'key') {
     const keyId = readBoundedString(rawHost.keyId ?? '', '密钥 ID', 128, { required: false });
     const storedKey = keyId ? getKeyById(keyId) : null;
     const inlinePrivateKey = typeof rawHost.privateKey === 'string' ? rawHost.privateKey : '';
@@ -1091,6 +1093,8 @@ function validateHostRequest(rawHost) {
         rejectLineBreaks: false,
       });
     }
+  } else {
+    sshConfig.authHandler = createDefaultUserCredentialAuthHandler(username);
   }
 
   return {
@@ -1103,6 +1107,62 @@ function validateHostRequest(rawHost) {
     },
     sshConfig,
   };
+}
+
+function getDefaultSshAgentValues() {
+  const agentValues = [];
+  const sshAuthSock = typeof process.env.SSH_AUTH_SOCK === 'string' ? process.env.SSH_AUTH_SOCK.trim() : '';
+
+  if (sshAuthSock) {
+    agentValues.push(sshAuthSock);
+  }
+
+  if (process.platform === 'win32') {
+    agentValues.push('\\\\.\\pipe\\openssh-ssh-agent', 'pageant');
+  }
+
+  return Array.from(new Set(agentValues));
+}
+
+function readDefaultIdentityKeys() {
+  const homeDir = os.homedir();
+
+  if (!homeDir) {
+    return [];
+  }
+
+  return defaultIdentityFileNames
+    .map((fileName) => path.join(homeDir, '.ssh', fileName))
+    .filter((identityPath) => {
+      try {
+        return fs.statSync(identityPath).isFile();
+      } catch {
+        return false;
+      }
+    })
+    .map((identityPath) => {
+      try {
+        return fs.readFileSync(identityPath);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function createDefaultUserCredentialAuthHandler(username) {
+  return [
+    ...getDefaultSshAgentValues().map((agent) => ({
+      type: 'agent',
+      username,
+      agent,
+    })),
+    ...readDefaultIdentityKeys().map((key) => ({
+      type: 'publickey',
+      username,
+      key,
+    })),
+  ];
 }
 
 function readPrivateKeyTextFromBase64(base64Value) {
@@ -1178,7 +1238,12 @@ function connectSshClient(sshConfig) {
         return;
       }
 
+      if (error?.level === 'agent') {
+        return;
+      }
+
       settled = true;
+      client.removeListener('error', rejectConnection);
       reject(error);
     };
 
@@ -1189,7 +1254,7 @@ function connectSshClient(sshConfig) {
       resolve(client);
     });
 
-    client.once('error', rejectConnection);
+    client.on('error', rejectConnection);
     client.connect(sshConfig);
   });
 }

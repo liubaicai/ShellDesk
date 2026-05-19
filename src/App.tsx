@@ -259,6 +259,9 @@ function toKeyFormState(key: SshKey): KeyFormState {
   };
 }
 
+type AuthMethod = 'password' | 'key';
+type ConnectionAuthMethod = AuthMethod | 'agent';
+
 interface Host {
   id: string;
   name: string;
@@ -275,6 +278,10 @@ interface Host {
   note: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface ConnectionHost extends Omit<Host, 'authMethod'> {
+  authMethod: ConnectionAuthMethod;
 }
 
 type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase'> &
@@ -306,7 +313,6 @@ type DeleteConfirmationRequest =
   | { kind: 'ssh-key'; key: SshKey; relatedHostCount: number };
 
 type ViewMode = 'grid' | 'list';
-type AuthMethod = 'password' | 'key';
 
 interface ConnectionClosedPayload {
   connectionId: string;
@@ -326,7 +332,9 @@ export interface LogEntry {
 }
 
 interface CredentialFormState {
+  authMethod: AuthMethod;
   password: string;
+  keyId: string;
   passphrase: string;
   saveCredential: boolean;
 }
@@ -347,7 +355,9 @@ const emptyHostForm: HostFormState = {
 };
 
 const emptyCredentialForm: CredentialFormState = {
+  authMethod: 'password',
   password: '',
+  keyId: '',
   passphrase: '',
   saveCredential: true,
 };
@@ -780,7 +790,7 @@ function App() {
   const [windowConnectionId] = useState(readWindowConnectionId);
   const [windowConnectionError, setWindowConnectionError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [credentialHost, setCredentialHost] = useState<Host | null>(null);
+  const [credentialHost, setCredentialHost] = useState<ConnectionHost | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
@@ -848,7 +858,7 @@ function App() {
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
 
-  const getSelectedSshKey = (host: Host) => sshKeys.find((key) => key.id === host.keyId) ?? null;
+  const getSelectedSshKey = (host: Pick<Host, 'keyId'>) => sshKeys.find((key) => key.id === host.keyId) ?? null;
 
   const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
     const { updateCollections = true } = options;
@@ -1340,14 +1350,44 @@ function App() {
     setCredentialError('');
   };
 
-  const openCredentialDialog = (host: Host, message = '') => {
+  const updateCredentialAuthMethod = (authMethod: AuthMethod) => {
+    setCredentialForm((currentForm) => {
+      const selectedKey = sshKeys.find((key) => key.id === currentForm.keyId) ??
+        (credentialHost?.authMethod === 'key' && credentialHost.keyPath ? null : sshKeys[0] ?? null);
+
+      return {
+        ...currentForm,
+        authMethod,
+        keyId: authMethod === 'key' ? selectedKey?.id ?? '' : currentForm.keyId,
+        passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? currentForm.passphrase : currentForm.passphrase,
+        saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+      };
+    });
+    setCredentialError('');
+  };
+
+  const updateCredentialKeyId = (keyId: string) => {
+    const selectedKey = sshKeys.find((key) => key.id === keyId) ?? null;
+
+    setCredentialForm((currentForm) => ({
+      ...currentForm,
+      keyId,
+      passphrase: selectedKey?.passphrase ?? '',
+    }));
+    setCredentialError('');
+  };
+
+  const openCredentialDialog = (host: ConnectionHost, message = '') => {
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
+    const authMethod: AuthMethod = host.authMethod === 'key' ? 'key' : 'password';
 
     setCredentialHost(host);
     setCredentialForm({
+      authMethod,
       password: host.password,
+      keyId: authMethod === 'key' ? selectedKey?.id ?? '' : sshKeys[0]?.id ?? '',
       passphrase: selectedKey?.passphrase ?? host.passphrase,
-      saveCredential: host.authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+      saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
     });
     setCredentialError(message);
   };
@@ -1428,31 +1468,33 @@ function App() {
     }
   };
 
-  const connectHost = async (host: Host, credentials?: CredentialFormState) => {
+  const connectHost = async (host: ConnectionHost, credentials?: CredentialFormState) => {
     if (!window.guiSSH?.connections) {
       setStatusMessage('当前运行环境不支持 SSH 连接。');
       return false;
     }
 
-    const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
+    const effectiveAuthMethod = credentials?.authMethod ?? host.authMethod;
+    const selectedKey = effectiveAuthMethod === 'key'
+      ? sshKeys.find((key) => key.id === (credentials?.keyId || host.keyId)) ?? null
+      : null;
+    const shouldUseHostKeyPath = effectiveAuthMethod === 'key' && !selectedKey && Boolean(host.keyPath);
 
-    if (host.authMethod === 'key' && !selectedKey && !host.keyId && !host.keyPath) {
+    if (effectiveAuthMethod === 'key' && !selectedKey && !shouldUseHostKeyPath) {
       setStatusMessage('该主机未选择有效密钥。');
       return false;
     }
 
-    const hostForConnection: Host = credentials
-      ? {
-          ...host,
-          password: host.authMethod === 'password' ? credentials.password : host.password,
-          keyPath: host.authMethod === 'key' ? host.keyPath : '',
-          passphrase: host.authMethod === 'key' ? credentials.passphrase : host.passphrase,
-        }
-      : {
-          ...host,
-          keyPath: host.authMethod === 'key' ? host.keyPath : '',
-          passphrase: host.authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
-        };
+    const hostForConnection: ConnectionHost = {
+      ...host,
+      authMethod: effectiveAuthMethod,
+      password: effectiveAuthMethod === 'password' ? credentials?.password ?? host.password : '',
+      keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? '' : '',
+      keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
+      passphrase: effectiveAuthMethod === 'key'
+        ? credentials?.passphrase ?? selectedKey?.passphrase ?? host.passphrase
+        : '',
+    };
 
     setIsConnecting(true);
     setStatusMessage(`正在连接 ${host.name}...`);
@@ -1466,14 +1508,18 @@ function App() {
             currentHost.id === host.id
               ? {
                   ...currentHost,
-                  password: host.authMethod === 'password' ? credentials.password : currentHost.password,
+                  authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
+                  password: effectiveAuthMethod === 'password' ? credentials.password : '',
+                  keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
+                  keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
+                  passphrase: effectiveAuthMethod === 'key' && !selectedKey ? credentials.passphrase : '',
                   updatedAt: new Date().toISOString(),
                 }
               : currentHost,
           ),
         );
 
-        if (host.authMethod === 'key' && selectedKey) {
+        if (effectiveAuthMethod === 'key' && selectedKey) {
           setSshKeys((currentKeys) => currentKeys.map((key) => (
             key.id === selectedKey.id
               ? { ...key, passphrase: credentials.passphrase, updatedAt: new Date().toISOString() }
@@ -1528,13 +1574,13 @@ function App() {
     }
 
     const now = new Date().toISOString();
-    const quickConnectHost: Host = {
+    const quickConnectHost: ConnectionHost = {
       id: `quick-connect:${parsedCommand.username}@${parsedCommand.address}:${parsedCommand.port}`,
       name: `${parsedCommand.username}@${parsedCommand.address}`,
       address: parsedCommand.address,
       port: parsedCommand.port,
       username: parsedCommand.username,
-      authMethod: parsedCommand.keyPath ? 'key' : 'password',
+      authMethod: parsedCommand.keyPath ? 'key' : 'agent',
       password: '',
       keyId: '',
       keyPath: parsedCommand.keyPath,
@@ -1546,11 +1592,6 @@ function App() {
       updatedAt: now,
     };
 
-    if (quickConnectHost.authMethod === 'password') {
-      openCredentialDialog(quickConnectHost, '请输入该连接的 SSH 密码后继续。');
-      return;
-    }
-
     await connectHost(quickConnectHost);
   };
 
@@ -1561,8 +1602,17 @@ function App() {
       return;
     }
 
-    if (credentialHost.authMethod === 'password' && !credentialForm.password) {
+    if (credentialForm.authMethod === 'password' && !credentialForm.password) {
       setCredentialError('请输入 SSH 密码。');
+      return;
+    }
+
+    if (
+      credentialForm.authMethod === 'key' &&
+      !credentialForm.keyId &&
+      !(credentialHost.authMethod === 'key' && credentialHost.keyPath)
+    ) {
+      setCredentialError('请选择 SSH 密钥。');
       return;
     }
 
@@ -1641,6 +1691,19 @@ function App() {
       setIsConfigTransferPending(false);
     }
   };
+
+  const credentialSelectedKey = credentialHost
+    ? sshKeys.find((key) => key.id === credentialForm.keyId) ?? null
+    : null;
+  const credentialCanUseCurrentKeyFile = Boolean(
+    credentialHost?.authMethod === 'key' && credentialHost.keyPath && !credentialForm.keyId,
+  );
+  const credentialCanUseKeyAuth = sshKeys.length > 0 || credentialCanUseCurrentKeyFile;
+  const credentialSaveLabel = credentialHost && hosts.some((host) => host.id === credentialHost.id)
+    ? '连接成功后保存到此主机配置'
+    : credentialForm.authMethod === 'key'
+      ? '连接成功后保存密钥口令'
+      : '连接成功后记住本次密码';
 
   return (
     <div className="app-shell">
@@ -2146,7 +2209,30 @@ function App() {
               </div>
 
               <form className="host-form" onSubmit={submitCredentialConnection}>
-                {credentialHost.authMethod === 'password' ? (
+                <div className="auth-method-section">
+                  <span className="field-label">认证方式</span>
+                  <div className="auth-switch" role="group" aria-label="认证方式">
+                    <button
+                      type="button"
+                      className={credentialForm.authMethod === 'password' ? 'active' : ''}
+                      onClick={() => updateCredentialAuthMethod('password')}
+                    >
+                      <strong>密码</strong>
+                      <small>输入 SSH 登录密码</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={credentialForm.authMethod === 'key' ? 'active' : ''}
+                      onClick={() => updateCredentialAuthMethod('key')}
+                      disabled={!credentialCanUseKeyAuth}
+                    >
+                      <strong>密钥</strong>
+                      <small>使用密钥库中的私钥</small>
+                    </button>
+                  </div>
+                </div>
+
+                {credentialForm.authMethod === 'password' ? (
                   <label className="field">
                     <span>SSH 密码</span>
                     <input
@@ -2159,9 +2245,34 @@ function App() {
                   </label>
                 ) : (
                   <>
-                    <div className="credential-note">
-                      当前使用密钥登录：{getSelectedSshKey(credentialHost)?.name ?? '未命名密钥'}
-                    </div>
+                    {sshKeys.length ? (
+                      <label className="field">
+                        <span>选择密钥</span>
+                        <select
+                          value={credentialForm.keyId}
+                          onChange={(event) => updateCredentialKeyId(event.target.value)}
+                          autoFocus
+                        >
+                          <option value="">请选择已有密钥</option>
+                          {sshKeys.map((key) => (
+                            <option key={key.id} value={key.id}>{key.name} · {key.fingerprint || key.algorithm}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {credentialSelectedKey ? (
+                      <div className="credential-note">
+                        当前使用密钥登录：{credentialSelectedKey.name}
+                      </div>
+                    ) : credentialCanUseCurrentKeyFile ? (
+                      <div className="credential-note">
+                        当前使用私钥文件：{credentialHost.keyPath}
+                      </div>
+                    ) : (
+                      <div className="credential-note">
+                        请先到“密钥”页面新建或导入密钥。
+                      </div>
+                    )}
                     <label className="field">
                       <span>密钥口令（私钥加密时填写）</span>
                       <input
@@ -2175,14 +2286,16 @@ function App() {
                   </>
                 )}
 
-                <label className="check-field">
-                  <input
-                    type="checkbox"
-                    checked={credentialForm.saveCredential}
-                    onChange={(event) => updateCredentialField('saveCredential', event.target.checked)}
-                  />
-                  <span>连接成功后保存到此主机配置</span>
-                </label>
+                {hosts.some((host) => host.id === credentialHost.id) || (credentialForm.authMethod === 'key' && credentialSelectedKey) ? (
+                  <label className="check-field">
+                    <input
+                      type="checkbox"
+                      checked={credentialForm.saveCredential}
+                      onChange={(event) => updateCredentialField('saveCredential', event.target.checked)}
+                    />
+                    <span>{credentialSaveLabel}</span>
+                  </label>
+                ) : null}
 
                 {credentialError ? <div className="error-banner">{credentialError}</div> : null}
 
