@@ -173,7 +173,7 @@ interface ShellDeskHostConnectionRequest {
   address: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
   password: string;
   keyId: string;
   keyPath: string;
