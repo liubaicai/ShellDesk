@@ -17,4 +17,5 @@
 @use "./remote-desktop/notepad" as *;
 @use "./remote-desktop/mysql" as *;
 @use "./remote-desktop/redis" as *;
+@use "./remote-desktop/sqlite" as *;
 @use "./themes/remote-light" as *;

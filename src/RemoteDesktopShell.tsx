@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
@@ -15,6 +15,7 @@ const desktopApps = [
   { key: 'redis', label: 'Redis', icon: '🔴', description: 'Redis 数据库管理' },
   { key: 'procmanager', label: '进程管理', icon: '\u2699\uFE0F', description: '进程查看、搜索和终止' },
   { key: 'settings', label: '系统设置', icon: '\uD83D\uDD27', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
+  { key: 'sqlite', label: 'SQLite', icon: '📦', description: 'SQLite 数据库查看与编辑' },
 ] as const;
 
 /** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
@@ -78,6 +79,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   procmanager: { x: 160, y: 60, width: 980, height: 580 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
+  sqlite: { x: 100, y: 40, width: 1020, height: 620 },
 };
 
 function clampWindowFrame(frame: DesktopWindowFrame, surfaceWidth: number, surfaceHeight: number): DesktopWindowFrame {
@@ -218,6 +220,22 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     windowSequenceRef.current += 1;
     zIndexRef.current += 1;
     const nextWindow = createDesktopWindow('notepad', windowSequenceRef.current, zIndexRef.current);
+    nextWindow.notepadInitialPath = filePath;
+    const surface = desktopSurfaceRef.current;
+
+    if (surface) {
+      const surfaceRect = surface.getBoundingClientRect();
+      nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
+    }
+
+    setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
+    setFocusedWindowId(nextWindow.id);
+  };
+
+  const openSqliteFile = (filePath: string) => {
+    windowSequenceRef.current += 1;
+    zIndexRef.current += 1;
+    const nextWindow = createDesktopWindow('sqlite', windowSequenceRef.current, zIndexRef.current);
     nextWindow.notepadInitialPath = filePath;
     const surface = desktopSurfaceRef.current;
 
@@ -415,7 +433,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} />;
+      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} />;
     }
 
     if (desktopWindow.appKey === 'notepad') {
@@ -440,6 +458,10 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
 
     if (desktopWindow.appKey === 'procmanager') {
       return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'sqlite') {
+      return <RemoteSqlite connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} />;
     }
 
     return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} />;

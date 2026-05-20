@@ -19,6 +19,7 @@ interface RemoteFileExplorerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
   onOpenFile?: (filePath: string) => void;
+  onOpenSqliteFile?: (filePath: string) => void;
 }
 
 interface RemoteFileEntry {
@@ -164,6 +165,12 @@ function isArchiveFile(name: string) {
     lower.endsWith('.gz') || lower.endsWith('.rar');
 }
 
+const SQLITE_EXTENSIONS = new Set(['db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb']);
+
+function isSqliteFile(name: string): boolean {
+  return SQLITE_EXTENSIONS.has(getFileExtension(name));
+}
+
 function getDeleteEntriesLabel(entries: RemoteFileEntry[]) {
   const names = entries.map((entry) => entry.name).join('\u3001');
 
@@ -250,7 +257,7 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
-function RemoteFileExplorer({ connectionId, systemType, onOpenFile }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqliteFile }: RemoteFileExplorerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [remotePath, setRemotePath] = useState('.');
   const [pathDraft, setPathDraft] = useState('.');
@@ -412,8 +419,10 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile }: RemoteFile
       navigateToPath(joinRemotePath(remotePath, entry.name, isWindowsHost));
     } else if (entry.type === 'file' && isTextFile(entry.name) && onOpenFile) {
       onOpenFile(joinRemotePath(remotePath, entry.name, isWindowsHost));
+    } else if (entry.type === 'file' && isSqliteFile(entry.name) && onOpenSqliteFile) {
+      onOpenSqliteFile(joinRemotePath(remotePath, entry.name, isWindowsHost));
     }
-  }, [isWindowsHost, navigateToPath, remotePath, onOpenFile]);
+  }, [isWindowsHost, navigateToPath, remotePath, onOpenFile, onOpenSqliteFile]);
 
   const refreshFiles = useCallback(() => {
     setFilesRefreshToken((currentToken) => currentToken + 1);
@@ -1009,6 +1018,14 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile }: RemoteFile
                     onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
                     用记事本打开
+                  </button>
+                )}
+                {contextMenu.targetEntry.type === 'file' && isSqliteFile(contextMenu.targetEntry.name) && onOpenSqliteFile && (
+                  <button type="button" role="menuitem" onClick={() => {
+                    closeContextMenu();
+                    onOpenSqliteFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
+                  }}>
+                    用 SQLite 打开
                   </button>
                 )}
                 <button type="button" role="menuitem" onClick={() => startRename(contextMenu.targetEntry!)}>

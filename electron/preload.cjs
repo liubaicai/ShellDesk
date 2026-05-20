@@ -106,6 +106,11 @@ contextBridge.exposeInMainWorld('guiSSH', {
     vncProbe: (connectionId, config) => ipcRenderer.invoke('connection:vnc-probe', connectionId, config),
     vncStart: (connectionId, config) => ipcRenderer.invoke('connection:vnc-start', connectionId, config),
     vncStop: (connectionId, vncId) => ipcRenderer.invoke('connection:vnc-stop', connectionId, vncId),
+    sqliteOpen: (connectionId, filePath) => ipcRenderer.invoke('connection:sqlite-open', connectionId, filePath),
+    sqliteClose: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-close', connectionId, sqliteId),
+    sqliteTables: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-tables', connectionId, sqliteId),
+    sqliteColumns: (connectionId, sqliteId, table) => ipcRenderer.invoke('connection:sqlite-columns', connectionId, sqliteId, table),
+    sqliteQuery: (connectionId, sqliteId, sql) => ipcRenderer.invoke('connection:sqlite-query', connectionId, sqliteId, sql),
   },
   events: {
     onTerminalData: (callback) => onIpc('terminal:data', callback),

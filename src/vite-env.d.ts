@@ -325,6 +325,11 @@ interface ShellDeskConnectionControls {
   vncProbe: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProbeResult>;
   vncStart: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProxyInfo>;
   vncStop: (connectionId: string, vncId: string) => Promise<boolean>;
+  sqliteOpen: (connectionId: string, filePath: string) => Promise<{ sqliteId: string; filePath: string }>;
+  sqliteClose: (connectionId: string, sqliteId: string) => Promise<boolean>;
+  sqliteTables: (connectionId: string, sqliteId: string) => Promise<string[]>;
+  sqliteColumns: (connectionId: string, sqliteId: string, table: string) => Promise<ShellDeskSqliteColumn[]>;
+  sqliteQuery: (connectionId: string, sqliteId: string, sql: string) => Promise<ShellDeskSqliteQueryResult>;
 }
 
 interface ShellDeskMysqlConnectConfig {
@@ -351,6 +356,19 @@ interface ShellDeskMysqlQueryResult {
   rows: Record<string, unknown>[];
   affectedRows?: number;
   insertId?: string;
+}
+
+interface ShellDeskSqliteColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  pk: boolean;
+  defaultValue: string | null;
+}
+
+interface ShellDeskSqliteQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
 }
 
 interface ShellDeskRedisConnectConfig {

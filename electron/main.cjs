@@ -4093,6 +4093,134 @@ registerIpcHandler('connection:vnc-stop', async (_event, connectionId, rawVncId)
   return true;
 });
 
+// ─── SQLite over SSH exec ──────────────────────────────────────────────────
+
+const activeSqliteSessions = new Map();
+
+function getSqliteKey(connectionId, sqliteId) {
+  return `${connectionId}::${sqliteId}`;
+}
+
+function escapeShellSingleQuotedArg(arg) {
+  return `'${String(arg).replace(/'/g, "'\\''")}'`;
+}
+
+function parseSqliteCsv(csvText) {
+  const lines = csvText.trim().split('\n');
+  if (lines.length === 0) return { columns: [], rows: [] };
+  const columns = lines[0].split(',').map((c) => c.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+    for (let j = 0; j < lines[i].length; j++) {
+      const ch = lines[i][j];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (j + 1 < lines[i].length && lines[i][j + 1] === '"') {
+            current += '"';
+            j++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        values.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    values.push(current);
+    const row = {};
+    for (let k = 0; k < columns.length; k++) {
+      row[columns[k]] = values[k] !== undefined ? values[k] : null;
+    }
+    rows.push(row);
+  }
+  return { columns, rows };
+}
+
+async function execSqliteOnRemote(client, filePath, command) {
+  const escapedPath = escapeShellSingleQuotedArg(filePath);
+  const escapedCommand = escapeShellSingleQuotedArg(command);
+  const fullCommand = `sqlite3 -csv -header ${escapedPath} ${escapedCommand}`;
+  const result = await execRemoteCommandRaw(client, fullCommand);
+  if (result.code !== 0 && result.stderr) {
+    throw new Error(result.stderr || `sqlite3 返回码 ${result.code}`);
+  }
+  return result.stdout;
+}
+
+registerIpcHandler('connection:sqlite-open', async (_event, connectionId, rawFilePath) => {
+  const activeConnection = getActiveConnection(connectionId);
+  const filePath = validateRemotePath(rawFilePath);
+  if (filePath === '.' || filePath === '/') {
+    throw new Error('无效的 SQLite 文件路径。');
+  }
+  // Validate the file is a SQLite database
+  const stdout = await execSqliteOnRemote(activeConnection.client, filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' LIMIT 1');
+  if (!stdout.trim()) {
+    throw new Error('无法打开该文件作为 SQLite 数据库。请确认文件是有效的 SQLite 数据库。');
+  }
+  const sqliteId = crypto.randomUUID();
+  const key = getSqliteKey(connectionId, sqliteId);
+  activeSqliteSessions.set(key, { connectionId, sqliteId, filePath, client: activeConnection.client });
+  return { sqliteId, filePath };
+});
+
+registerIpcHandler('connection:sqlite-close', async (_event, connectionId, rawSqliteId) => {
+  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const key = getSqliteKey(connectionId, sqliteId);
+  activeSqliteSessions.delete(key);
+  return true;
+});
+
+registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId) => {
+  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const key = getSqliteKey(connectionId, sqliteId);
+  const entry = activeSqliteSessions.get(key);
+  if (!entry) throw new Error('SQLite 会话已关闭。');
+  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
+  const lines = stdout.trim().split('\n');
+  if (lines.length <= 1) return [];
+  // First line is header "name", skip it
+  return lines.slice(1).map((l) => l.trim()).filter(Boolean);
+});
+
+registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, rawSqliteId, rawTable) => {
+  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const table = readBoundedString(rawTable, '表名', 256);
+  const key = getSqliteKey(connectionId, sqliteId);
+  const entry = activeSqliteSessions.get(key);
+  if (!entry) throw new Error('SQLite 会话已关闭。');
+  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, `PRAGMA table_info(${escapeShellSingleQuotedArg(table)})`);
+  const parsed = parseSqliteCsv(stdout);
+  return parsed.rows.map((row) => ({
+    name: row.name || row.Name || '',
+    type: row.type || row.Type || '',
+    nullable: row.notnull === '0' || row['notnull'] === '0',
+    pk: row.pk === '1' || row.Pk === '1',
+    defaultValue: row.dflt_value || row['dflt_value'] || null,
+  }));
+});
+
+registerIpcHandler('connection:sqlite-query', async (_event, connectionId, rawSqliteId, rawSql) => {
+  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
+  const key = getSqliteKey(connectionId, sqliteId);
+  const entry = activeSqliteSessions.get(key);
+  if (!entry) throw new Error('SQLite 会话已关闭。');
+  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, sql);
+  const parsed = parseSqliteCsv(stdout);
+  return { columns: parsed.columns, rows: parsed.rows };
+});
+
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') {
     return;
