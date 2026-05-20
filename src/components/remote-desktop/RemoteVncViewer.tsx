@@ -247,15 +247,17 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
       rfbRef.current = rfb;
       rfb.background = '#070b11';
-      rfb.clipViewport = true;
       rfb.compressionLevel = 6;
       rfb.dragViewport = true;
       rfb.focusOnClick = true;
       rfb.qualityLevel = 4;
-      rfb.resizeSession = resizeSession;
-      rfb.scaleViewport = scaleViewport;
       rfb.showDotCursor = true;
+      // clipViewport 设为 true（在 scaleViewport=false 时会正确设置 _viewportLoc）
+      // scaleViewport 先不设（默认 false），等首帧 framebuffer 到达后再设为 true，
+      // 否则构造时 _viewportLoc 为 {w:0,h:0}，autoscale 算出 Infinity 导致画面不可见。
+      rfb.clipViewport = true;
       rfb.viewOnly = viewOnly;
+      rfb.resizeSession = resizeSession;
 
       rfb.addEventListener('connect', () => {
         if (vncIdRef.current !== nextVncId) {
@@ -461,15 +463,11 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     const maxRetries = 120; // ~2s at 60fps
 
     const applySettings = () => {
-      // scaleViewport 在构造函数中已设为 true，setter 会比较新旧值，相同时不触发重算。
-      // 必须翻转一次使 setter 真正执行内部布局逻辑。
-      const targetScale = scaleViewportRef.current;
-
+      // 首帧到达后 _viewportLoc 已有正确尺寸（由 _resize → _updateClip 设置），
+      // 此时将 scaleViewport 从默认 false 改为目标值，autoscale 会拿到正确参数。
+      rfb.scaleViewport = scaleViewportRef.current;
       rfb.viewOnly = viewOnlyRef.current;
       rfb.resizeSession = resizeSessionRef.current;
-      rfb.clipViewport = true;
-      rfb.scaleViewport = !targetScale;
-      rfb.scaleViewport = targetScale;
       setDiagnosticMessage('');
     };
 
@@ -651,15 +649,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
             <span>SSH 隧道 · {host.trim() || '127.0.0.1'}:{parseVncPort(port)}</span>
           </div>
         ) : null}
+        <footer className="vnc-statusbar">
+          <span className={`vnc-status-dot ${isConnected ? 'online' : ''}`} aria-hidden="true" />
+          <strong>{getVncStatusLabel(status)}</strong>
+          <span>{desktopName || `SSH 隧道 · ${host.trim() || '127.0.0.1'}:${parseVncPort(port)}`}</span>
+          {diagnosticMessage || probeMessage ? <em>{diagnosticMessage || probeMessage}</em> : null}
+          {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString('zh-CN')}</time> : null}
+        </footer>
       </div>
-
-      <footer className="vnc-statusbar">
-        <span className={`vnc-status-dot ${isConnected ? 'online' : ''}`} aria-hidden="true" />
-        <strong>{getVncStatusLabel(status)}</strong>
-        <span>{desktopName || `SSH 隧道 · ${host.trim() || '127.0.0.1'}:${parseVncPort(port)}`}</span>
-        {diagnosticMessage || probeMessage ? <em>{diagnosticMessage || probeMessage}</em> : null}
-        {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString('zh-CN')}</time> : null}
-      </footer>
     </div>
   );
 }
