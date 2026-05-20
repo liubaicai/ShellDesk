@@ -3808,9 +3808,6 @@ function createVncProtocolObserver(onDiagnostic) {
 
 function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
   return new Promise((resolve, reject) => {
-    const resumeBufferedBytes = 512 * 1024;
-    const pauseBufferedBytes = 2 * 1024 * 1024;
-    const closeBufferedBytes = 24 * 1024 * 1024;
     const webSockets = new Set();
     const remoteStreams = new Set();
     const httpServer = http.createServer((_request, response) => {
@@ -3849,25 +3846,13 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
       let remoteStream = null;
       let firstDataTimer = null;
       let isClosed = false;
-      let resumeTimer = null;
+      let isSending = false;
+      const pendingRemoteChunks = [];
       const pendingClientChunks = [];
       const protocolObserver = createVncProtocolObserver(onDiagnostic);
+      const maxPendingChunks = 32;
 
       onDiagnostic('websocket', 'noVNC 已连接到本地 WebSocket 桥');
-
-      const scheduleRemoteResume = () => {
-        if (!remoteStream || remoteStream.destroyed || isClosed) {
-          return;
-        }
-
-        if (webSocket.bufferedAmount < resumeBufferedBytes) {
-          remoteStream.resume();
-          resumeTimer = null;
-          return;
-        }
-
-        resumeTimer = setTimeout(scheduleRemoteResume, 25);
-      };
 
       const closePeer = () => {
         if (isClosed) {
@@ -3878,10 +3863,6 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
         if (firstDataTimer) {
           clearTimeout(firstDataTimer);
           firstDataTimer = null;
-        }
-        if (resumeTimer) {
-          clearTimeout(resumeTimer);
-          resumeTimer = null;
         }
         webSockets.delete(webSocket);
 
@@ -3895,6 +3876,34 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
         if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
           webSocket.close();
         }
+      };
+
+      // 从队列取下一个 chunk 发送，send 回调驱动避免缓冲区堆积
+      const flushRemoteQueue = () => {
+        if (isClosed || !remoteStream || remoteStream.destroyed) {
+          return;
+        }
+
+        if (isSending || pendingRemoteChunks.length === 0) {
+          // 队列为空时恢复 SSH 流
+          if (pendingRemoteChunks.length === 0) {
+            remoteStream.resume();
+          }
+          return;
+        }
+
+        isSending = true;
+        const chunk = pendingRemoteChunks.shift();
+        webSocket.send(chunk, { binary: true }, (error) => {
+          isSending = false;
+
+          if (error) {
+            closePeer();
+            return;
+          }
+
+          flushRemoteQueue();
+        });
       };
 
       webSockets.add(webSocket);
@@ -3941,26 +3950,20 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
             clearTimeout(firstDataTimer);
             firstDataTimer = null;
           }
-          if (webSocket.readyState === WebSocket.OPEN) {
-            webSocket.send(chunk, { binary: true }, (error) => {
-              if (error) {
-                closePeer();
-              }
-            });
 
-            if (webSocket.bufferedAmount > closeBufferedBytes) {
-              onDiagnostic('flow-control', 'VNC 图像流过快，已断开以保护窗口内存。');
-              closePeer();
-              return;
-            }
+          if (isClosed || webSocket.readyState !== WebSocket.OPEN) {
+            return;
+          }
 
-            if (webSocket.bufferedAmount > pauseBufferedBytes) {
-              stream.pause();
+          // 入队，超过阈值时暂停 SSH 流防止内存暴涨
+          pendingRemoteChunks.push(chunk);
 
-              if (!resumeTimer) {
-                scheduleRemoteResume();
-              }
-            }
+          if (pendingRemoteChunks.length >= maxPendingChunks) {
+            remoteStream.pause();
+          }
+
+          if (!isSending) {
+            flushRemoteQueue();
           }
         });
         stream.on('close', () => {
