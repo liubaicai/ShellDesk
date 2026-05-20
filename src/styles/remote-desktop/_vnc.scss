@@ -34,6 +34,10 @@
   grid-column: span 2;
 }
 
+.vnc-field.mode {
+  grid-column: span 1;
+}
+
 .vnc-field {
   display: grid;
   min-width: 0;
@@ -47,7 +51,8 @@
   font-weight: 760;
 }
 
-.vnc-field input {
+.vnc-field input,
+.vnc-field select {
   width: 100%;
   min-width: 0;
   height: 32px;
@@ -60,12 +65,18 @@
   font-size: 13px;
 }
 
-.vnc-field input:focus {
+.vnc-field select {
+  cursor: pointer;
+}
+
+.vnc-field input:focus,
+.vnc-field select:focus {
   border-color: rgba(67, 199, 255, 0.45);
   box-shadow: 0 0 0 3px rgba(67, 199, 255, 0.1);
 }
 
-.vnc-field input:disabled {
+.vnc-field input:disabled,
+.vnc-field select:disabled {
   opacity: 0.62;
 }
 
@@ -280,7 +291,8 @@
   color: #526178;
 }
 
-[data-theme="light"] .vnc-field input {
+[data-theme="light"] .vnc-field input,
+[data-theme="light"] .vnc-field select {
   border-color: rgba(16, 32, 51, 0.13);
   background: #ffffff;
   color: #172033;
