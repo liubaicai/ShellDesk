@@ -7,3 +7,4 @@ export { default as RemoteNotepad, isTextFile } from './RemoteNotepad';
 export { default as RemoteProcessManager } from './RemoteProcessManager';
 export { default as RemoteSettings } from './RemoteSettings';
 export { default as RemoteTerminal } from './RemoteTerminal';
+export { default as RemoteVncViewer } from './RemoteVncViewer';

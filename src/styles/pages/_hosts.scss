@@ -183,6 +183,81 @@
   backdrop-filter: blur(18px);
 }
 
+.connection-error-overlay {
+  position: fixed;
+  top: 94px;
+  left: 50%;
+  z-index: 2200;
+  width: min(560px, calc(100vw - 36px));
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.connection-error-dialog {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 111, 143, 0.13), rgba(255, 111, 143, 0.08)),
+    var(--surface-panel);
+  color: var(--danger-text-soft);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+}
+
+.connection-error-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger-text-soft);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.connection-error-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.connection-error-copy strong {
+  color: var(--danger-text-soft);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.connection-error-copy span,
+.connection-error-copy p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.connection-error-copy span {
+  color: color-mix(in srgb, var(--danger-text-soft) 76%, transparent);
+}
+
+.connection-error-dialog button {
+  height: 30px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .vault-section {
   margin-top: 12px;
 }
@@ -1568,4 +1643,20 @@
 .host-grid.list .host-card-tags,
 .host-grid.grid .host-card-tags {
   margin-top: 7px !important;
+}
+
+@media (max-width: 860px) {
+  .connection-error-overlay {
+    top: 82px;
+    width: min(460px, calc(100vw - 24px));
+  }
+
+  .connection-error-dialog {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .connection-error-dialog button {
+    grid-column: 2;
+    justify-self: start;
+  }
 }

@@ -1,12 +1,14 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, session, shell } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const Redis = require('ioredis');
+const { WebSocket, WebSocketServer } = require('ws');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const activeConnections = new Map();
@@ -155,6 +157,10 @@ function toConnectionErrorMessage(error) {
 
   if (/ECONNREFUSED|Connection refused/i.test(message)) {
     return 'SSH 连接被拒绝：请检查主机地址、端口和 sshd 服务状态。';
+  }
+
+  if (/ECONNRESET|Connection reset|ECONNABORTED|EPIPE/i.test(message)) {
+    return 'SSH 连接被远程主机重置：请检查 Windows OpenSSH 服务、防火墙、端口和账号权限。';
   }
 
   if (/Timed out|readyTimeout|ETIMEDOUT/i.test(message)) {
@@ -1267,6 +1273,7 @@ function connectSshClient(sshConfig) {
   return new Promise((resolve, reject) => {
     const client = new Client();
     let settled = false;
+    const ignoreSettledError = () => undefined;
 
     const rejectConnection = (error) => {
       if (settled) {
@@ -1279,18 +1286,25 @@ function connectSshClient(sshConfig) {
 
       settled = true;
       client.removeListener('error', rejectConnection);
+      client.on('error', ignoreSettledError);
+      client.end();
       reject(error);
     };
 
     client.once('ready', () => {
       settled = true;
       client.removeListener('error', rejectConnection);
-      client.on('error', () => undefined);
+      client.on('error', ignoreSettledError);
       resolve(client);
     });
 
     client.on('error', rejectConnection);
-    client.connect(sshConfig);
+
+    try {
+      client.connect(sshConfig);
+    } catch (error) {
+      rejectConnection(error);
+    }
   });
 }
 
@@ -1573,6 +1587,7 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   if (activeConnection.terminalSessions) {
     for (const stream of activeConnection.terminalSessions.values()) {
       stream.removeAllListeners();
+      stream.on('error', () => undefined);
       stream.end();
     }
   }
@@ -1589,6 +1604,13 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
       activeRedisConnections.delete(key);
       entry.connection.disconnect();
       entry.tunnelServer.close();
+    }
+  }
+
+  for (const [key, entry] of activeVncSessions) {
+    if (entry.connectionId === connectionId) {
+      activeVncSessions.delete(key);
+      closeVncProxy(entry);
     }
   }
 
@@ -2457,8 +2479,17 @@ ipcMain.handle('connection:connect', async (_event, rawHost) => {
     };
 
     activeConnections.set(id, activeConnection);
-    client.once('close', () => {
-      void closeActiveConnection(id, 'SSH 连接已断开。', true);
+    client.on('error', (err) => {
+      const address = `${displayHost.address}:${displayHost.port}`;
+      console.warn(`[shelldesk] SSH error ${address}:`, toErrorMessage(err));
+    });
+    client.once('close', (hadError) => {
+      const address = `${displayHost.address}:${displayHost.port}`;
+      const reason = hadError
+        ? `SSH 连接异常断开 (${address})`
+        : `SSH 连接已断开 (${address})`;
+      console.info(`[shelldesk] SSH close ${address} hadError=${Boolean(hadError)}`);
+      void closeActiveConnection(id, reason, true);
     });
     createConnectionWindow(activeConnection);
 
@@ -2510,7 +2541,10 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
 
     activeConnection.client.shell({ term: 'xterm-256color', cols: columns, rows }, (error, stream) => {
       if (settled) {
-        stream?.end();
+        if (stream) {
+          stream.on('error', () => undefined);
+          stream.end();
+        }
         return;
       }
 
@@ -2523,6 +2557,23 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
       }
 
       activeConnection.terminalSessions.set(terminalId, stream);
+      let streamClosed = false;
+      const closeTerminalStream = () => {
+        if (streamClosed) {
+          return;
+        }
+
+        streamClosed = true;
+
+        if (activeConnection.terminalSessions.get(terminalId) === stream) {
+          activeConnection.terminalSessions.delete(terminalId);
+        }
+
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('terminal:exit', { connectionId, terminalId });
+        }
+      };
+
       stream.on('data', (chunk) => {
         if (!event.sender.isDestroyed()) {
           event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
@@ -2533,15 +2584,8 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
           event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
         }
       });
-      stream.once('close', () => {
-        if (activeConnection.terminalSessions.get(terminalId) === stream) {
-          activeConnection.terminalSessions.delete(terminalId);
-        }
-
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('terminal:exit', { connectionId, terminalId });
-        }
-      });
+      stream.once('error', closeTerminalStream);
+      stream.once('close', closeTerminalStream);
       resolve();
     });
   });
@@ -2593,6 +2637,7 @@ registerIpcHandler('connection:close-terminal', async (_event, connectionId, raw
   if (terminalStream) {
     activeConnection.terminalSessions.delete(terminalId);
     terminalStream.removeAllListeners();
+    terminalStream.on('error', () => undefined);
     terminalStream.end();
   }
 
@@ -3042,6 +3087,7 @@ function execSshCommand(client, command) {
           reject(new Error(stderr.trim() || `命令执行失败，退出码 ${code}`));
         }
       });
+      stream.once('error', reject);
     });
   });
 }
@@ -3062,6 +3108,7 @@ function execRemoteCommandRaw(client, command) {
       stream.on('close', (code) => {
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
       });
+      stream.once('error', reject);
     });
   });
 }
@@ -3534,6 +3581,479 @@ registerIpcHandler('connection:redis-command', async (_event, connectionId, rawR
   const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
   const result = await entry.connection.call(command, ...args);
   return result;
+});
+
+// ─── VNC over SSH tunnel ────────────────────────────────────────────────────
+
+const activeVncSessions = new Map();
+
+function getVncKey(connectionId, vncId) {
+  return `${connectionId}::${vncId}`;
+}
+
+function toVncWebSocketBuffer(data) {
+  if (Buffer.isBuffer(data)) {
+    return data;
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data);
+  }
+
+  if (Array.isArray(data)) {
+    return Buffer.concat(data.map((item) => Buffer.from(item)));
+  }
+
+  return Buffer.from(data);
+}
+
+const vncSecurityTypeNames = new Map([
+  [0, 'Failure'],
+  [1, 'None'],
+  [2, 'VNCAuth'],
+  [6, 'RA2ne'],
+  [16, 'Tight'],
+  [19, 'VeNCrypt'],
+  [22, 'XVP'],
+  [30, 'Apple Remote Desktop'],
+  [113, 'MSLogonII'],
+  [129, 'Tight Unix Login'],
+  [256, 'Plain'],
+]);
+
+function getVncSecurityTypeName(code) {
+  return vncSecurityTypeNames.get(code) || 'Unknown';
+}
+
+function closeVncProxy(entry) {
+  for (const remoteStream of entry.remoteStreams) {
+    remoteStream.removeAllListeners();
+    remoteStream.on('error', () => undefined);
+    remoteStream.destroy();
+  }
+
+  for (const webSocket of entry.webSockets) {
+    if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
+      webSocket.close(1000, 'VNC session closed');
+    } else {
+      webSocket.terminate();
+    }
+  }
+
+  entry.webSocketServer.close();
+  entry.httpServer.close();
+}
+
+function createVncTargetStream(client, vncHost, vncPort) {
+  const connectTimeoutMs = 12000;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const connectTimer = setTimeout(() => {
+      settled = true;
+      reject(new Error('SSH 隧道连接 VNC 超时。'));
+    }, connectTimeoutMs);
+
+    forwardOut(client, vncHost, vncPort).then((stream) => {
+      if (settled) {
+        stream.destroy();
+        return;
+      }
+
+      settled = true;
+      clearTimeout(connectTimer);
+      resolve(stream);
+    }).catch((error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(connectTimer);
+      reject(error);
+    });
+  });
+}
+
+async function probeVncTarget(client, vncHost, vncPort) {
+  const stream = await createVncTargetStream(client, vncHost, vncPort);
+  const reader = createBufferedReader(stream);
+
+  try {
+    const bannerBuffer = await reader.read(12);
+    const banner = bannerBuffer.toString('ascii');
+    const version = banner.slice(4, 11);
+
+    if (!/^RFB \d{3}\.\d{3}\n$/.test(banner)) {
+      throw new Error(`VNC 服务返回了无效协议头：${JSON.stringify(banner)}`);
+    }
+
+    stream.write(bannerBuffer);
+
+    let securityTypes = [];
+
+    if (version === '003.003' || version === '003.006') {
+      const securityType = (await reader.read(4)).readUInt32BE(0);
+      securityTypes = [{ code: securityType, name: getVncSecurityTypeName(securityType) }];
+    } else {
+      const securityTypeCount = (await reader.read(1))[0];
+
+      if (securityTypeCount === 0) {
+        const reasonLength = (await reader.read(4)).readUInt32BE(0);
+        const reason = reasonLength > 0 ? (await reader.read(reasonLength)).toString('utf8') : '没有可用的安全类型。';
+        throw new Error(reason);
+      }
+
+      const securityTypeBytes = await reader.read(securityTypeCount);
+      securityTypes = Array.from(securityTypeBytes).map((code) => ({
+        code,
+        name: getVncSecurityTypeName(code),
+      }));
+    }
+
+    return {
+      host: vncHost,
+      port: vncPort,
+      banner: banner.trim(),
+      version,
+      securityTypes,
+    };
+  } finally {
+    reader.dispose();
+    stream.removeAllListeners();
+    stream.on('error', () => undefined);
+    stream.destroy();
+  }
+}
+
+function createVncProtocolObserver(onDiagnostic) {
+  let remoteBuffer = Buffer.alloc(0);
+  let clientBuffer = Buffer.alloc(0);
+  let version = '';
+  let securityType = null;
+  let bannerSeen = false;
+  let clientVersionSeen = false;
+  let securitySeen = false;
+  let challengeSeen = false;
+  let authResponseSeen = false;
+  let resultSeen = false;
+  let isDone = false;
+
+  const emit = (stage, detail) => onDiagnostic(stage, detail);
+
+  return {
+    remote(chunk) {
+      if (isDone) {
+        return;
+      }
+
+      remoteBuffer = Buffer.concat([remoteBuffer, chunk]);
+
+      if (!bannerSeen && remoteBuffer.length >= 12) {
+        const banner = remoteBuffer.subarray(0, 12).toString('ascii').trim();
+        version = banner.slice(4);
+        bannerSeen = true;
+        remoteBuffer = remoteBuffer.subarray(12);
+        emit('server-banner', banner);
+      }
+
+      if (bannerSeen && clientVersionSeen && !securitySeen && remoteBuffer.length >= 4) {
+        securityType = remoteBuffer.readUInt32BE(0);
+        securitySeen = true;
+        remoteBuffer = remoteBuffer.subarray(4);
+        emit('security-type', `${getVncSecurityTypeName(securityType)}(${securityType})`);
+      }
+
+      if (securityType === 2 && !challengeSeen && remoteBuffer.length >= 16) {
+        challengeSeen = true;
+        remoteBuffer = remoteBuffer.subarray(16);
+        emit('auth-challenge', '已收到 VNCAuth challenge');
+      }
+
+      if (challengeSeen && authResponseSeen && !resultSeen && remoteBuffer.length >= 4) {
+        const result = remoteBuffer.readUInt32BE(0);
+        resultSeen = true;
+        remoteBuffer = remoteBuffer.subarray(4);
+        emit('auth-result', result === 0 ? '认证成功' : `认证失败 (${result})`);
+
+        // Framebuffer updates can be very large and frequent. Stop buffering
+        // after authentication so diagnostics cannot stall the VNC data path.
+        remoteBuffer = Buffer.alloc(0);
+        clientBuffer = Buffer.alloc(0);
+        isDone = true;
+      }
+    },
+    client(chunk) {
+      if (isDone) {
+        return;
+      }
+
+      clientBuffer = Buffer.concat([clientBuffer, chunk]);
+
+      if (bannerSeen && !clientVersionSeen && clientBuffer.length >= 12) {
+        const clientVersion = clientBuffer.subarray(0, 12).toString('ascii').trim();
+        clientVersionSeen = true;
+        clientBuffer = clientBuffer.subarray(12);
+        emit('client-version', clientVersion || `RFB ${version}`);
+      }
+
+      if (securityType === 2 && challengeSeen && !authResponseSeen && clientBuffer.length >= 16) {
+        authResponseSeen = true;
+        clientBuffer = clientBuffer.subarray(16);
+        emit('auth-response', '已发送 VNCAuth 密码响应');
+      }
+    },
+  };
+}
+
+function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
+  return new Promise((resolve, reject) => {
+    const resumeBufferedBytes = 512 * 1024;
+    const pauseBufferedBytes = 2 * 1024 * 1024;
+    const closeBufferedBytes = 24 * 1024 * 1024;
+    const webSockets = new Set();
+    const remoteStreams = new Set();
+    const httpServer = http.createServer((_request, response) => {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('ShellDesk VNC WebSocket proxy');
+    });
+    const webSocketServer = new WebSocketServer({ server: httpServer });
+
+    const fail = (error) => {
+      webSocketServer.close();
+      httpServer.close(() => reject(error));
+    };
+
+    const ready = () => {
+      httpServer.removeListener('error', fail);
+      httpServer.on('error', () => undefined);
+      const address = httpServer.address();
+
+      if (!address || typeof address === 'string') {
+        webSocketServer.close();
+        httpServer.close();
+        reject(new Error('VNC 代理启动失败。'));
+        return;
+      }
+
+      resolve({
+        httpServer,
+        webSocketServer,
+        webSockets,
+        remoteStreams,
+        localPort: address.port,
+      });
+    };
+
+    webSocketServer.on('connection', (webSocket) => {
+      let remoteStream = null;
+      let firstDataTimer = null;
+      let isClosed = false;
+      let resumeTimer = null;
+      const pendingClientChunks = [];
+      const protocolObserver = createVncProtocolObserver(onDiagnostic);
+
+      onDiagnostic('websocket', 'noVNC 已连接到本地 WebSocket 桥');
+
+      const scheduleRemoteResume = () => {
+        if (!remoteStream || remoteStream.destroyed || isClosed) {
+          return;
+        }
+
+        if (webSocket.bufferedAmount < resumeBufferedBytes) {
+          remoteStream.resume();
+          resumeTimer = null;
+          return;
+        }
+
+        resumeTimer = setTimeout(scheduleRemoteResume, 25);
+      };
+
+      const closePeer = () => {
+        if (isClosed) {
+          return;
+        }
+
+        isClosed = true;
+        if (firstDataTimer) {
+          clearTimeout(firstDataTimer);
+          firstDataTimer = null;
+        }
+        if (resumeTimer) {
+          clearTimeout(resumeTimer);
+          resumeTimer = null;
+        }
+        webSockets.delete(webSocket);
+
+        if (remoteStream) {
+          remoteStreams.delete(remoteStream);
+          remoteStream.removeAllListeners();
+          remoteStream.on('error', () => undefined);
+          remoteStream.destroy();
+        }
+
+        if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
+          webSocket.close();
+        }
+      };
+
+      webSockets.add(webSocket);
+      webSocket.on('close', closePeer);
+      webSocket.on('error', closePeer);
+      webSocket.on('message', (data) => {
+        const chunk = toVncWebSocketBuffer(data);
+        protocolObserver.client(chunk);
+
+        if (remoteStream && !remoteStream.destroyed) {
+          remoteStream.write(chunk);
+          return;
+        }
+
+        pendingClientChunks.push(chunk);
+      });
+
+      createVncTargetStream(client, vncHost, vncPort).then((stream) => {
+        if (isClosed) {
+          stream.destroy();
+          return;
+        }
+
+        remoteStream = stream;
+        remoteStreams.add(stream);
+        onDiagnostic('ssh-stream', `已通过 SSH 打开 ${vncHost}:${vncPort}`);
+
+        while (pendingClientChunks.length > 0 && !stream.destroyed) {
+          stream.write(pendingClientChunks.shift());
+        }
+
+        firstDataTimer = setTimeout(() => {
+          console.warn(`[shelldesk] VNC handshake timed out ${vncHost}:${vncPort} via ssh`);
+          if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
+            webSocket.close(1011, 'VNC handshake timed out');
+          }
+          closePeer();
+        }, 12000);
+
+        stream.on('data', (chunk) => {
+          protocolObserver.remote(chunk);
+
+          if (firstDataTimer) {
+            clearTimeout(firstDataTimer);
+            firstDataTimer = null;
+          }
+          if (webSocket.readyState === WebSocket.OPEN) {
+            webSocket.send(chunk, { binary: true }, (error) => {
+              if (error) {
+                closePeer();
+              }
+            });
+
+            if (webSocket.bufferedAmount > closeBufferedBytes) {
+              onDiagnostic('flow-control', 'VNC 图像流过快，已断开以保护窗口内存。');
+              closePeer();
+              return;
+            }
+
+            if (webSocket.bufferedAmount > pauseBufferedBytes) {
+              stream.pause();
+
+              if (!resumeTimer) {
+                scheduleRemoteResume();
+              }
+            }
+          }
+        });
+        stream.on('close', () => {
+          clearTimeout(firstDataTimer);
+          console.info(`[shelldesk] VNC stream closed ${vncHost}:${vncPort}`);
+          closePeer();
+        });
+        stream.on('error', (err) => {
+          clearTimeout(firstDataTimer);
+          console.warn(`[shelldesk] VNC stream error ${vncHost}:${vncPort}:`, toErrorMessage(err));
+          closePeer();
+        });
+      }).catch((error) => {
+        console.warn(`[shelldesk] VNC CONNECT failed ${vncHost}:${vncPort} via ssh: ${toErrorMessage(error)}`);
+        onDiagnostic('target-error', toErrorMessage(error));
+        if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
+          webSocket.close(1011, 'VNC target unavailable');
+        }
+        closePeer();
+      });
+    });
+
+    httpServer.once('error', fail);
+    httpServer.once('listening', ready);
+    httpServer.listen(0, '127.0.0.1');
+  });
+}
+
+registerIpcHandler('connection:vnc-probe', async (_event, connectionId, rawConfig) => {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (!isPlainObject(rawConfig)) {
+    throw new Error('VNC 连接配置无效。');
+  }
+
+  const vncHost = readBoundedString(rawConfig.host || '127.0.0.1', 'VNC 主机', 256);
+  const vncPort = readIntegerInRange(rawConfig.port, 'VNC 端口', 1, 65535, 5900);
+
+  return probeVncTarget(activeConnection.client, vncHost, vncPort);
+});
+
+registerIpcHandler('connection:vnc-start', async (event, connectionId, rawConfig) => {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (!isPlainObject(rawConfig)) {
+    throw new Error('VNC 连接配置无效。');
+  }
+
+  const vncHost = readBoundedString(rawConfig.host || '127.0.0.1', 'VNC 主机', 256);
+  const vncPort = readIntegerInRange(rawConfig.port, 'VNC 端口', 1, 65535, 5900);
+  const vncId = readBoundedString(rawConfig.vncId || crypto.randomUUID(), 'VNC 会话 ID', 128);
+  const key = getVncKey(connectionId, vncId);
+  const existing = activeVncSessions.get(key);
+
+  if (existing) {
+    activeVncSessions.delete(key);
+    closeVncProxy(existing);
+  }
+
+  const sendDiagnostic = (stage, detail) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('vnc:diagnostic', { connectionId, vncId, stage, detail });
+    }
+  };
+  const proxy = await createVncWebSocketProxy(activeConnection.client, vncHost, vncPort, sendDiagnostic);
+
+  activeVncSessions.set(key, {
+    ...proxy,
+    connectionId,
+    vncId,
+    host: vncHost,
+    port: vncPort,
+  });
+
+  return {
+    vncId,
+    host: vncHost,
+    port: vncPort,
+    webSocketUrl: `ws://127.0.0.1:${proxy.localPort}`,
+  };
+});
+
+registerIpcHandler('connection:vnc-stop', async (_event, connectionId, rawVncId) => {
+  const vncId = readBoundedString(rawVncId, 'VNC 会话 ID', 128);
+  const key = getVncKey(connectionId, vncId);
+  const entry = activeVncSessions.get(key);
+
+  if (entry) {
+    activeVncSessions.delete(key);
+    closeVncProxy(entry);
+  }
+
+  return true;
 });
 
 app.on('web-contents-created', (_event, contents) => {

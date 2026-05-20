@@ -322,6 +322,9 @@ interface ShellDeskConnectionControls {
   redisSetValue: (connectionId: string, redisId: string, key: string, value: unknown, type: string) => Promise<boolean>;
   redisDeleteKey: (connectionId: string, redisId: string, key: string) => Promise<boolean>;
   redisCommand: (connectionId: string, redisId: string, command: string, args: string[]) => Promise<unknown>;
+  vncProbe: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProbeResult>;
+  vncStart: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProxyInfo>;
+  vncStop: (connectionId: string, vncId: string) => Promise<boolean>;
 }
 
 interface ShellDeskMysqlConnectConfig {
@@ -358,6 +361,39 @@ interface ShellDeskRedisConnectConfig {
   redisId?: string;
 }
 
+interface ShellDeskVncConnectConfig {
+  host?: string;
+  port?: number;
+  vncId?: string;
+}
+
+interface ShellDeskVncProxyInfo {
+  vncId: string;
+  host: string;
+  port: number;
+  webSocketUrl: string;
+}
+
+interface ShellDeskVncSecurityType {
+  code: number;
+  name: string;
+}
+
+interface ShellDeskVncProbeResult {
+  host: string;
+  port: number;
+  banner: string;
+  version: string;
+  securityTypes: ShellDeskVncSecurityType[];
+}
+
+interface ShellDeskVncDiagnosticPayload {
+  connectionId: string;
+  vncId: string;
+  stage: string;
+  detail: string;
+}
+
 interface ShellDeskLogEntry {
   id: string;
   timestamp: string;
@@ -391,6 +427,7 @@ interface ShellDeskTransferEndPayload {
 interface ShellDeskEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
+  onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;

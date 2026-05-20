@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteTerminal } from './components/remote-desktop';
+import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
@@ -9,6 +9,7 @@ const desktopApps = [
   { key: 'terminal', label: '终端', icon: '>_', description: '交互式 SSH Shell' },
   { key: 'notepad', label: '记事本', icon: '📝', description: '远程文件编辑器' },
   { key: 'browser', label: '浏览器', icon: '🌐', description: '远程源请求' },
+  { key: 'vnc', label: 'VNC Viewer', icon: 'VNC', description: '连接本机或内网 VNC 桌面' },
   { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
   { key: 'mysql', label: 'MySQL', icon: '🐬', description: 'MySQL 数据库管理' },
   { key: 'redis', label: 'Redis', icon: '🔴', description: 'Redis 数据库管理' },
@@ -71,6 +72,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   terminal: { x: 206, y: 80, width: 780, height: 500 },
   notepad: { x: 140, y: 50, width: 860, height: 580 },
   browser: { x: 150, y: 58, width: 1000, height: 600 },
+  vnc: { x: 118, y: 46, width: 1040, height: 650 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
@@ -426,6 +428,10 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
 
     if (desktopWindow.appKey === 'redis') {
       return <RemoteRedis connectionId={connection.id} />;
+    }
+
+    if (desktopWindow.appKey === 'vnc') {
+      return <RemoteVncViewer connectionId={connection.id} />;
     }
 
     if (desktopWindow.appKey === 'settings') {
