@@ -54,20 +54,20 @@ interface ContextMenuState {
   targetEntry: RemoteFileEntry | null;
 }
 
-function normalizeWindowsRemotePath(remotePath: string) {
+export function normalizeWindowsRemotePath(remotePath: string) {
   return remotePath.replace(/\\/g, '/');
 }
 
-function isWindowsDriveRoot(remotePath: string) {
+export function isWindowsDriveRoot(remotePath: string) {
   return /^\/?[a-z]:\/?$/i.test(remotePath.trim());
 }
 
-function normalizeRemotePath(remotePath: string, isWindowsHost: boolean) {
+export function normalizeRemotePath(remotePath: string, isWindowsHost: boolean) {
   const trimmed = remotePath.trim() || '.';
   return isWindowsHost ? normalizeWindowsRemotePath(trimmed) : trimmed;
 }
 
-function joinRemotePath(basePath: string, entryName: string, isWindowsHost = false) {
+export function joinRemotePath(basePath: string, entryName: string, isWindowsHost = false) {
   const base = normalizeRemotePath(basePath, isWindowsHost);
 
   if (isWindowsHost) {
@@ -97,7 +97,7 @@ function joinRemotePath(basePath: string, entryName: string, isWindowsHost = fal
   return `${base.replace(/\/+$/, '')}/${entryName}`;
 }
 
-function getParentRemotePath(remotePath: string, isWindowsHost = false) {
+export function getParentRemotePath(remotePath: string, isWindowsHost = false) {
   const p = normalizeRemotePath(remotePath, isWindowsHost);
 
   if (p === '/') {

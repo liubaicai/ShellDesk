@@ -437,7 +437,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'notepad') {
-      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} />;
+      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'mysql') {
@@ -461,7 +461,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'sqlite') {
-      return <RemoteSqlite connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} />;
+      return <RemoteSqlite connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} systemType={connection.host.systemType} />;
     }
 
     return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} />;
