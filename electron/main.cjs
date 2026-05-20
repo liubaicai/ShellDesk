@@ -3846,11 +3846,17 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
       let remoteStream = null;
       let firstDataTimer = null;
       let isClosed = false;
-      let isSending = false;
-      const pendingRemoteChunks = [];
       const pendingClientChunks = [];
       const protocolObserver = createVncProtocolObserver(onDiagnostic);
-      const maxPendingChunks = 32;
+      const resumeBufferedBytes = 512 * 1024;
+      const pauseBufferedBytes = 2 * 1024 * 1024;
+      const closeBufferedBytes = 24 * 1024 * 1024;
+      let resumeTimer = null;
+      let isRemotePaused = false;
+
+      if (webSocket._socket && typeof webSocket._socket.setNoDelay === 'function') {
+        webSocket._socket.setNoDelay(true);
+      }
 
       onDiagnostic('websocket', 'noVNC 已连接到本地 WebSocket 桥');
 
@@ -3863,6 +3869,10 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
         if (firstDataTimer) {
           clearTimeout(firstDataTimer);
           firstDataTimer = null;
+        }
+        if (resumeTimer) {
+          clearTimeout(resumeTimer);
+          resumeTimer = null;
         }
         webSockets.delete(webSocket);
 
@@ -3878,32 +3888,37 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
         }
       };
 
-      // 从队列取下一个 chunk 发送，send 回调驱动避免缓冲区堆积
-      const flushRemoteQueue = () => {
+      const resumeRemoteIfReady = () => {
         if (isClosed || !remoteStream || remoteStream.destroyed) {
           return;
         }
 
-        if (isSending || pendingRemoteChunks.length === 0) {
-          // 队列为空时恢复 SSH 流
-          if (pendingRemoteChunks.length === 0) {
-            remoteStream.resume();
-          }
+        if (webSocket.readyState !== WebSocket.OPEN) {
           return;
         }
 
-        isSending = true;
-        const chunk = pendingRemoteChunks.shift();
-        webSocket.send(chunk, { binary: true }, (error) => {
-          isSending = false;
+        if (webSocket.bufferedAmount <= resumeBufferedBytes) {
+          isRemotePaused = false;
+          remoteStream.resume();
+          return;
+        }
 
-          if (error) {
-            closePeer();
-            return;
-          }
+        if (!resumeTimer) {
+          resumeTimer = setTimeout(() => {
+            resumeTimer = null;
+            resumeRemoteIfReady();
+          }, 16);
+        }
+      };
 
-          flushRemoteQueue();
-        });
+      const pauseRemoteForBackpressure = () => {
+        if (!remoteStream || remoteStream.destroyed || isRemotePaused) {
+          return;
+        }
+
+        isRemotePaused = true;
+        remoteStream.pause();
+        resumeRemoteIfReady();
       };
 
       webSockets.add(webSocket);
@@ -3914,7 +3929,16 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
         protocolObserver.client(chunk);
 
         if (remoteStream && !remoteStream.destroyed) {
-          remoteStream.write(chunk);
+          const canContinue = remoteStream.write(chunk);
+
+          if (!canContinue && typeof webSocket.pause === 'function') {
+            webSocket.pause();
+            remoteStream.once('drain', () => {
+              if (!isClosed && typeof webSocket.resume === 'function') {
+                webSocket.resume();
+              }
+            });
+          }
           return;
         }
 
@@ -3955,15 +3979,25 @@ function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
             return;
           }
 
-          // 入队，超过阈值时暂停 SSH 流防止内存暴涨
-          pendingRemoteChunks.push(chunk);
+          webSocket.send(chunk, { binary: true }, (error) => {
+            if (error) {
+              closePeer();
+              return;
+            }
 
-          if (pendingRemoteChunks.length >= maxPendingChunks) {
-            remoteStream.pause();
+            if (isRemotePaused) {
+              resumeRemoteIfReady();
+            }
+          });
+
+          if (webSocket.bufferedAmount >= closeBufferedBytes) {
+            onDiagnostic('flow-control', `WebSocket 缓冲过高，已断开：${Math.round(webSocket.bufferedAmount / 1024 / 1024)}MB`);
+            closePeer();
+            return;
           }
 
-          if (!isSending) {
-            flushRemoteQueue();
+          if (webSocket.bufferedAmount >= pauseBufferedBytes) {
+            pauseRemoteForBackpressure();
           }
         });
         stream.on('close', () => {

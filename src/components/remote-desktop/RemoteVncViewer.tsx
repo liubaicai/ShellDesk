@@ -9,6 +9,7 @@ interface RemoteVncViewerProps {
 }
 
 type VncStatus = 'idle' | 'starting' | 'connecting' | 'connected' | 'error';
+type VncPerformanceMode = 'smooth' | 'balanced' | 'quality';
 
 interface VncCredentialsRequiredDetail {
   types?: string[];
@@ -28,6 +29,11 @@ interface VncSecurityFailureDetail {
 }
 
 const defaultVncPort = 5900;
+const vncPerformancePresets: Record<VncPerformanceMode, { label: string; compressionLevel: number; qualityLevel: number }> = {
+  smooth: { label: '流畅', compressionLevel: 1, qualityLevel: 2 },
+  balanced: { label: '均衡', compressionLevel: 4, qualityLevel: 4 },
+  quality: { label: '清晰', compressionLevel: 6, qualityLevel: 7 },
+};
 
 function createVncId() {
   if ('randomUUID' in crypto) {
@@ -83,7 +89,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const [shared, setShared] = useState(true);
   const [viewOnly, setViewOnly] = useState(false);
   const [scaleViewport, setScaleViewport] = useState(true);
-  const [resizeSession, setResizeSession] = useState(false);
+  const [resizeSession, setResizeSession] = useState(true);
+  const [performanceMode, setPerformanceMode] = useState<VncPerformanceMode>('smooth');
   const [desktopName, setDesktopName] = useState('');
   const [connectedAt, setConnectedAt] = useState('');
   const [probeMessage, setProbeMessage] = useState('');
@@ -244,13 +251,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         credentials,
         shared,
       });
+      const performancePreset = vncPerformancePresets[performanceMode];
 
       rfbRef.current = rfb;
       rfb.background = '#070b11';
-      rfb.compressionLevel = 6;
+      rfb.compressionLevel = performancePreset.compressionLevel;
       rfb.dragViewport = true;
       rfb.focusOnClick = true;
-      rfb.qualityLevel = 4;
+      rfb.qualityLevel = performancePreset.qualityLevel;
       rfb.showDotCursor = true;
       // clipViewport 设为 true（在 scaleViewport=false 时会正确设置 _viewportLoc）
       // scaleViewport 先不设（默认 false），等首帧 framebuffer 到达后再设为 true，
@@ -373,6 +381,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     disconnectVnc,
     host,
     password,
+    performanceMode,
     port,
     resizeSession,
     scaleViewport,
@@ -519,6 +528,19 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   }, [resizeSession, scaleViewport, viewOnly]);
 
   useEffect(() => {
+    const rfb = rfbRef.current;
+
+    if (!rfb) {
+      return;
+    }
+
+    const performancePreset = vncPerformancePresets[performanceMode];
+    rfb.compressionLevel = performancePreset.compressionLevel;
+    rfb.qualityLevel = performancePreset.qualityLevel;
+    setDiagnosticMessage(`性能：${performancePreset.label}`);
+  }, [performanceMode]);
+
+  useEffect(() => {
     const screenElement = screenRef.current;
 
     if (!screenElement || typeof ResizeObserver === 'undefined') {
@@ -596,6 +618,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
               placeholder="可留空"
               disabled={isLocked}
             />
+          </label>
+          <label className="vnc-field mode">
+            <span>性能</span>
+            <select value={performanceMode} onChange={(event) => setPerformanceMode(event.target.value as VncPerformanceMode)}>
+              <option value="smooth">流畅</option>
+              <option value="balanced">均衡</option>
+              <option value="quality">清晰</option>
+            </select>
           </label>
         </div>
 
