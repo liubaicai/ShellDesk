@@ -47,8 +47,8 @@ function parsePsOutput(stdout: string): Process[] {
     if (parts.length < 11) continue;
 
     processes.push({
-      pid: Number.parseInt(parts[0], 10),
-      user: parts[1],
+      pid: Number.parseInt(parts[1], 10),
+      user: parts[0],
       cpu: parts[2],
       mem: parts[3],
       vsz: parts[4],

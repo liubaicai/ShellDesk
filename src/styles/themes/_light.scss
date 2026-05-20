@@ -266,6 +266,12 @@
   color: #a02040;
 }
 
+[data-theme="light"] .browser-error-banner {
+  border-color: rgba(200, 48, 78, 0.25);
+  background: rgba(200, 48, 78, 0.06);
+  color: #a02040;
+}
+
 [data-theme="light"] .credential-note {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
