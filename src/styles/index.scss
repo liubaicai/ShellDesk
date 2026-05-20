@@ -6,6 +6,7 @@
 @use "./remote-desktop/shell" as *;
 @use "./remote-desktop/terminal" as *;
 @use "./remote-desktop/browser" as *;
+@use "./remote-desktop/vnc" as *;
 @use "./remote-desktop/file-explorer" as *;
 @use "./remote-desktop/monitor" as *;
 @use "./remote-desktop/dock-responsive" as *;

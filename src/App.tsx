@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import RemoteDesktop from './RemoteDesktopShell';
 import appIconUrl from './assets/images/icon.png';
@@ -563,6 +564,12 @@ interface ConnectionHost extends Omit<Host, 'authMethod'> {
   authMethod: ConnectionAuthMethod;
 }
 
+interface ConnectionErrorNotice {
+  hostName: string;
+  endpoint: string;
+  message: string;
+}
+
 type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName'> &
   Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName'>>;
 
@@ -1084,6 +1091,7 @@ function App() {
   const [windowConnectionId] = useState(readWindowConnectionId);
   const [windowConnectionError, setWindowConnectionError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionErrorNotice, setConnectionErrorNotice] = useState<ConnectionErrorNotice | null>(null);
   const [credentialHost, setCredentialHost] = useState<ConnectionHost | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
@@ -1188,6 +1196,23 @@ function App() {
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
     setViewMode(snapshot.settings.defaultHostView);
     setIsVaultReady(true);
+  };
+
+  const refreshHosts = async () => {
+    if (!vaultControls) {
+      const nextHosts = readStoredHosts();
+      setHosts(nextHosts);
+      setStatusMessage(`已刷新 ${nextHosts.length} 台主机。`);
+      return;
+    }
+
+    try {
+      const snapshot = await vaultControls.getSnapshot();
+      applyVaultSnapshot(snapshot);
+      setStatusMessage(`已刷新 ${snapshot.hosts.length} 台主机。`);
+    } catch (error) {
+      setStatusMessage(`刷新主机列表失败：${getErrorMessage(error)}`);
+    }
   };
 
   useEffect(() => {
@@ -1330,7 +1355,8 @@ function App() {
       return;
     }
 
-    const timer = window.setTimeout(() => setStatusMessage(''), 1000);
+    const delay = /失败|超时|断开|拒绝|重置|不可用|无效/.test(statusMessage) ? 8000 : 2400;
+    const timer = window.setTimeout(() => setStatusMessage(''), delay);
     return () => window.clearTimeout(timer);
   }, [statusMessage]);
 
@@ -1404,14 +1430,12 @@ function App() {
     return window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
       if (payload.connectionId === connection.id) {
         const message = payload.reason || 'SSH 连接已断开。';
-        addLog('connection', 'warning', `连接断开：${connection.host.address}`, message);
+        const time = new Date().toLocaleTimeString('zh-CN');
+        addLog('connection', 'warning', `连接断开：${connection.host.address}`, `${time} — ${message}`);
         setConnection(null);
         setStatusMessage(message);
-        setWindowConnectionError(message);
-
-        if (isConnectionWindow) {
-          void windowControls?.close();
-        }
+        // 不自动关闭窗口，让用户看到断开原因
+        setWindowConnectionError(`${time} — ${message}`);
       }
     });
   }, [connection, isConnectionWindow, windowControls]);
@@ -1705,6 +1729,15 @@ function App() {
     setCredentialError('');
   };
 
+  const showConnectionError = (host: Pick<ConnectionHost, 'name' | 'username' | 'address' | 'port'>, message: string) => {
+    setConnectionErrorNotice({
+      hostName: host.name || host.address,
+      endpoint: `${host.username}@${host.address}:${host.port}`,
+      message,
+    });
+    setStatusMessage('');
+  };
+
   const submitHost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1777,7 +1810,7 @@ function App() {
 
   const connectHost = async (host: ConnectionHost, credentials?: CredentialFormState) => {
     if (!window.guiSSH?.connections) {
-      setStatusMessage('当前运行环境不支持 SSH 连接。');
+      showConnectionError(host, '当前运行环境不支持 SSH 连接。');
       return false;
     }
 
@@ -1788,7 +1821,7 @@ function App() {
     const shouldUseHostKeyPath = effectiveAuthMethod === 'key' && !selectedKey && Boolean(host.keyPath);
 
     if (effectiveAuthMethod === 'key' && !selectedKey && !shouldUseHostKeyPath) {
-      setStatusMessage('该主机未选择有效密钥。');
+      showConnectionError(host, '该主机未选择有效密钥。');
       return false;
     }
 
@@ -1804,6 +1837,7 @@ function App() {
     };
 
     setIsConnecting(true);
+    setConnectionErrorNotice(null);
     setStatusMessage(`正在连接 ${host.name}...`);
 
     try {
@@ -1858,11 +1892,12 @@ function App() {
       }
 
       closeCredentialDialog();
+      setConnectionErrorNotice(null);
       return true;
     } catch (error) {
       const message = getErrorMessage(error);
       addLog('connection', 'error', `连接失败：${host.name}`, `${host.username}@${host.address}:${host.port} — ${message}`);
-      setStatusMessage(`连接失败：${message}`);
+      showConnectionError(hostForConnection, message);
 
       if (isAuthFailureMessage(message)) {
         openCredentialDialog(hostForConnection, message);
@@ -2053,6 +2088,20 @@ function App() {
       </header>
 
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
+      {connectionErrorNotice ? createPortal(
+        <div className="connection-error-overlay no-drag" role="presentation">
+          <div className="connection-error-dialog" role="alertdialog" aria-modal="false" aria-labelledby="connection-error-title">
+            <span className="connection-error-mark" aria-hidden="true">!</span>
+            <div className="connection-error-copy">
+              <strong id="connection-error-title">连接失败：{connectionErrorNotice.hostName}</strong>
+              <span>{connectionErrorNotice.endpoint}</span>
+              <p>{connectionErrorNotice.message}</p>
+            </div>
+            <button type="button" onClick={() => setConnectionErrorNotice(null)}>关闭</button>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
 
       {connection ? (
         <RemoteDesktop connection={connection} settings={settings} />
@@ -2171,7 +2220,7 @@ function App() {
                 <h2>{activeGroupName || '未分组'} <b>{filteredHosts.length}</b></h2>
                 <span>
                   共 {filteredHosts.length} 个主机
-                  <button type="button" className="host-refresh-button" onClick={() => setHosts(readStoredHosts())} aria-label="刷新主机列表">
+                  <button type="button" className="host-refresh-button" onClick={() => void refreshHosts()} aria-label="刷新主机列表">
                     ↻
                   </button>
                 </span>

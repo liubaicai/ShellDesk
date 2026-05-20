@@ -93,6 +93,34 @@
   box-shadow: 0 12px 32px rgba(43, 67, 92, 0.14);
 }
 
+[data-theme="light"] .connection-error-dialog {
+  border-color: rgba(200, 48, 78, 0.25);
+  background:
+    linear-gradient(180deg, rgba(200, 48, 78, 0.07), rgba(200, 48, 78, 0.04)),
+    var(--surface-panel);
+  color: #a02040;
+  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.12);
+}
+
+[data-theme="light"] .connection-error-mark {
+  background: rgba(200, 48, 78, 0.1);
+  color: #a02040;
+}
+
+[data-theme="light"] .connection-error-copy strong,
+[data-theme="light"] .connection-error-dialog button {
+  color: #a02040;
+}
+
+[data-theme="light"] .connection-error-copy span {
+  color: rgba(160, 32, 64, 0.72);
+}
+
+[data-theme="light"] .connection-error-dialog button {
+  border-color: rgba(200, 48, 78, 0.25);
+  background: rgba(200, 48, 78, 0.06);
+}
+
 [data-theme="light"] .group-card,
 [data-theme="light"] .host-card {
   border-color: rgba(16, 32, 51, 0.1);
