@@ -49,6 +49,35 @@
   outline: none;
 }
 
+.sqlite-path-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sqlite-path-input-row input {
+  flex: 1;
+}
+
+.sqlite-browse-btn {
+  height: auto;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sqlite-browse-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
 .sqlite-field input:focus {
   border-color: var(--accent-border);
 }

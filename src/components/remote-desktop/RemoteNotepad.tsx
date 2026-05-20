@@ -32,6 +32,9 @@ import diff from 'highlight.js/lib/languages/diff';
 import plaintext from 'highlight.js/lib/languages/plaintext';
 
 import { getErrorMessage } from './desktopUtils';
+import { isWindowsSystem } from './remoteSystem';
+import RemoteFilePicker from './RemoteFilePicker';
+import type { RemoteSystemType } from './types';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('typescript', typescript);
@@ -72,6 +75,7 @@ interface NotepadTab {
 interface RemoteNotepadProps {
   connectionId: string;
   initialFilePath?: string;
+  systemType?: RemoteSystemType;
 }
 
 /** 二进制文件扩展名黑名单，其他文件均允许用记事本打开 */
@@ -191,7 +195,7 @@ function createNewTab(): NotepadTab {
   };
 }
 
-function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
+function RemoteNotepad({ connectionId, initialFilePath, systemType }: RemoteNotepadProps) {
   const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab()]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
   const [showGoToLine, setShowGoToLine] = useState(false);
@@ -212,6 +216,11 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  const [filePickerVisible, setFilePickerVisible] = useState(false);
+  const [filePickerMode, setFilePickerMode] = useState<'open' | 'save'>('open');
+  const [filePickerTitle, setFilePickerTitle] = useState('');
+  const [filePickerOnConfirm, setFilePickerOnConfirm] = useState<((path: string) => void) | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
@@ -291,28 +300,24 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
     if (!activeTab) return;
 
     if (!activeTab.filePath) {
-      setPromptDialog({
-        title: '保存文件',
-        placeholder: '请输入远程绝对路径，如 /home/user/file.txt',
-        defaultValue: '',
-        onConfirm: async (filePath) => {
-          if (!filePath) return;
-          const fileName = getFileNameFromPath(filePath);
-          try {
-            await window.guiSSH!.connections.writeFile(connectionId, filePath, activeTab.content);
-            setTabs((prev) => prev.map((t) => t.id === activeTab.id
-              ? { ...t, filePath, fileName, originalContent: t.content, language: getLanguage(fileName), error: '' }
-              : t,
-            ));
-          } catch (error) {
-            setTabs((prev) => prev.map((t) => t.id === activeTab.id
-              ? { ...t, error: `保存失败：${getErrorMessage(error)}` }
-              : t,
-            ));
-          }
-        },
+      setFilePickerMode('save');
+      setFilePickerTitle('保存文件');
+      setFilePickerOnConfirm(() => async (filePath: string) => {
+        const fileName = getFileNameFromPath(filePath);
+        try {
+          await window.guiSSH!.connections.writeFile(connectionId, filePath, activeTab.content);
+          setTabs((prev) => prev.map((t) => t.id === activeTab.id
+            ? { ...t, filePath, fileName, originalContent: t.content, language: getLanguage(fileName), error: '' }
+            : t,
+          ));
+        } catch (error) {
+          setTabs((prev) => prev.map((t) => t.id === activeTab.id
+            ? { ...t, error: `保存失败：${getErrorMessage(error)}` }
+            : t,
+          ));
+        }
       });
-      setPromptInput('');
+      setFilePickerVisible(true);
       return;
     }
 
@@ -332,29 +337,24 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
 
   const handleSaveAs = useCallback(() => {
     if (!activeTab) return;
-
-    setPromptDialog({
-      title: '另存为',
-      placeholder: '请输入远程绝对路径',
-      defaultValue: activeTab.filePath || '',
-      onConfirm: async (filePath) => {
-        if (!filePath) return;
-        const fileName = getFileNameFromPath(filePath);
-        try {
-          await window.guiSSH!.connections.writeFile(connectionId, filePath, activeTab.content);
-          setTabs((prev) => prev.map((t) => t.id === activeTab.id
-            ? { ...t, filePath, fileName, originalContent: t.content, language: getLanguage(fileName), error: '' }
-            : t,
-          ));
-        } catch (error) {
-          setTabs((prev) => prev.map((t) => t.id === activeTab.id
-            ? { ...t, error: `保存失败：${getErrorMessage(error)}` }
-            : t,
-          ));
-        }
-      },
+    setFilePickerMode('save');
+    setFilePickerTitle('另存为');
+    setFilePickerOnConfirm(() => async (filePath: string) => {
+      const fileName = getFileNameFromPath(filePath);
+      try {
+        await window.guiSSH!.connections.writeFile(connectionId, filePath, activeTab.content);
+        setTabs((prev) => prev.map((t) => t.id === activeTab.id
+          ? { ...t, filePath, fileName, originalContent: t.content, language: getLanguage(fileName), error: '' }
+          : t,
+        ));
+      } catch (error) {
+        setTabs((prev) => prev.map((t) => t.id === activeTab.id
+          ? { ...t, error: `保存失败：${getErrorMessage(error)}` }
+          : t,
+        ));
+      }
     });
-    setPromptInput(activeTab.filePath || '');
+    setFilePickerVisible(true);
   }, [activeTab, connectionId]);
 
   const handleCloseTab = useCallback((tabId: string) => {
@@ -469,15 +469,12 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
 
     if (isMod && event.key === 'o') {
       event.preventDefault();
-      setPromptDialog({
-        title: '打开文件',
-        placeholder: '请输入远程文件路径',
-        defaultValue: '',
-        onConfirm: (filePath) => {
-          if (filePath) void openFile(filePath);
-        },
+      setFilePickerMode('open');
+      setFilePickerTitle('打开文件');
+      setFilePickerOnConfirm(() => (filePath: string) => {
+        if (filePath) void openFile(filePath);
       });
-      setPromptInput('');
+      setFilePickerVisible(true);
       return;
     }
 
@@ -546,15 +543,12 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
         <div className="notepad-toolbar-group">
           <button type="button" className="notepad-tool-btn" onClick={handleNewFile} title="新建 (Ctrl+N)">新建</button>
           <button type="button" className="notepad-tool-btn" onClick={() => {
-            setPromptDialog({
-              title: '打开文件',
-              placeholder: '请输入远程文件路径',
-              defaultValue: '',
-              onConfirm: (filePath) => {
-                if (filePath) void openFile(filePath);
-              },
+            setFilePickerMode('open');
+            setFilePickerTitle('打开文件');
+            setFilePickerOnConfirm(() => (filePath: string) => {
+              if (filePath) void openFile(filePath);
             });
-            setPromptInput('');
+            setFilePickerVisible(true);
           }} title="打开 (Ctrl+O)">打开</button>
           <button type="button" className="notepad-tool-btn" onClick={() => void handleSave()} title="保存 (Ctrl+S)">保存</button>
           <button type="button" className="notepad-tool-btn" onClick={() => void handleSaveAs()} title="另存为 (Ctrl+Shift+S)">另存为</button>
@@ -735,6 +729,19 @@ function RemoteNotepad({ connectionId, initialFilePath }: RemoteNotepadProps) {
           </div>
         </div>
       )}
+
+      <RemoteFilePicker
+        connectionId={connectionId}
+        systemType={systemType}
+        mode={filePickerMode}
+        title={filePickerTitle}
+        visible={filePickerVisible}
+        onConfirm={(filePath) => {
+          setFilePickerVisible(false);
+          filePickerOnConfirm?.(filePath);
+        }}
+        onCancel={() => setFilePickerVisible(false)}
+      />
     </div>
   );
 }

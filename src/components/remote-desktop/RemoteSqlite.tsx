@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage } from './desktopUtils';
+import RemoteFilePicker from './RemoteFilePicker';
+import type { RemoteSystemType } from './types';
 
 interface RemoteSqliteProps {
   connectionId: string;
   initialFilePath?: string;
+  systemType?: RemoteSystemType;
 }
 
 type SqliteStatus = 'disconnected' | 'opening' | 'connected' | 'error';
 
-function RemoteSqlite({ connectionId, initialFilePath }: RemoteSqliteProps) {
+function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqliteProps) {
   const api = window.guiSSH;
   const [status, setStatus] = useState<SqliteStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -25,6 +28,7 @@ function RemoteSqlite({ connectionId, initialFilePath }: RemoteSqliteProps) {
   const [queryTime, setQueryTime] = useState(0);
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; column: string; value: string } | null>(null);
   const [page, setPage] = useState(0);
+  const [filePickerVisible, setFilePickerVisible] = useState(false);
   const pageSize = 100;
   const sqlRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -207,31 +211,55 @@ function RemoteSqlite({ connectionId, initialFilePath }: RemoteSqliteProps) {
 
   if (!isReady) {
     return (
-      <div className="sqlite-connect-panel">
-        <div className="sqlite-connect-card">
-          <h3>{initialFilePath ? '打开 SQLite 数据库' : 'SQLite 数据库管理'}</h3>
-          <p className="sqlite-connect-hint">通过 SSH 远程连接并管理 SQLite 文件数据库</p>
-          {errorMessage ? <div className="sqlite-error-banner">{errorMessage}</div> : null}
-          <label className="sqlite-field">
-            <span>数据库文件路径</span>
-            <input
-              type="text"
-              value={filePath}
-              onChange={(event) => setFilePath(event.target.value)}
-              placeholder="/path/to/database.db"
-              disabled={status === 'opening'}
-            />
-          </label>
-          <button
-            type="button"
-            className="sqlite-connect-btn"
-            onClick={handleOpen}
-            disabled={status === 'opening' || !filePath.trim()}
-          >
-            {status === 'opening' ? '打开中...' : '打开'}
-          </button>
+      <>
+        <div className="sqlite-connect-panel">
+          <div className="sqlite-connect-card">
+            <h3>{initialFilePath ? '打开 SQLite 数据库' : 'SQLite 数据库管理'}</h3>
+            <p className="sqlite-connect-hint">通过 SSH 远程连接并管理 SQLite 文件数据库</p>
+            {errorMessage ? <div className="sqlite-error-banner">{errorMessage}</div> : null}
+            <label className="sqlite-field">
+              <span>数据库文件路径</span>
+              <div className="sqlite-path-input-row">
+                <input
+                  type="text"
+                  value={filePath}
+                  onChange={(event) => setFilePath(event.target.value)}
+                  placeholder="/path/to/database.db"
+                  disabled={status === 'opening'}
+                />
+                <button
+                  type="button"
+                  className="sqlite-browse-btn"
+                  onClick={() => setFilePickerVisible(true)}
+                  disabled={status === 'opening'}
+                >
+                  选择...
+                </button>
+              </div>
+            </label>
+            <button
+              type="button"
+              className="sqlite-connect-btn"
+              onClick={handleOpen}
+              disabled={status === 'opening' || !filePath.trim()}
+            >
+              {status === 'opening' ? '打开中...' : '打开'}
+            </button>
+          </div>
         </div>
-      </div>
+        <RemoteFilePicker
+          connectionId={connectionId}
+          systemType={systemType}
+          mode="open"
+          title="选择 SQLite 数据库文件"
+          visible={filePickerVisible}
+          onConfirm={(selectedPath) => {
+            setFilePickerVisible(false);
+            setFilePath(selectedPath);
+          }}
+          onCancel={() => setFilePickerVisible(false)}
+        />
+      </>
     );
   }
 
