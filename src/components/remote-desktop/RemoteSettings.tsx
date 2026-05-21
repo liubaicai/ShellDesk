@@ -90,6 +90,15 @@ async function runCmd(connectionId: string, command: string): Promise<CommandRes
   return window.guiSSH.connections.runCommand(connectionId, command);
 }
 
+async function getSystemInfoItems(connectionId: string): Promise<SysInfoItem[]> {
+  if (!window.guiSSH?.connections) {
+    throw new Error('当前运行环境不支持系统信息读取。');
+  }
+
+  const report = await window.guiSSH.connections.getSystemInfo(connectionId);
+  return report.items;
+}
+
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -1270,37 +1279,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
     setLoading(true);
     setError('');
     try {
-      const cmds = [
-        { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', cmd: 'cat /etc/os-release 2>/dev/null | grep -E "^PRETTY_NAME|^NAME|^VERSION" | head -5 || uname -s' },
-        { key: 'kernel', label: '内核版本', icon: '\u2699\uFE0F', cmd: 'uname -r' },
-        { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', cmd: 'hostname -f 2>/dev/null || hostname' },
-        { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', cmd: 'uname -m' },
-        { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', cmd: 'lscpu 2>/dev/null | grep -E "^Model name|^Socket|^Core|^Thread|^CPU\\(s\\):" | head -6 || cat /proc/cpuinfo 2>/dev/null | grep "model name" | head -1' },
-        { key: 'memory', label: '内存', icon: '\u{1F9E0}', cmd: 'free -h 2>/dev/null | grep "^Mem:" || vm_stat 2>/dev/null | head -5' },
-        { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', cmd: 'uptime -p 2>/dev/null || uptime' },
-        { key: 'load', label: '系统负载', icon: '\u26A1', cmd: 'cat /proc/loadavg 2>/dev/null || uptime | sed "s/.*load average: //"' },
-        { key: 'shell', label: '默认 Shell', icon: '\u{1F41A}', cmd: 'echo $SHELL' },
-        { key: 'user', label: '当前用户', icon: '\u{1F464}', cmd: 'whoami 2>/dev/null || id -un' },
-        { key: 'locale', label: '系统语言', icon: '\u{1F30D}', cmd: 'locale 2>/dev/null | grep LANG= | head -1 || echo $LANG' },
-        { key: 'timezone', label: '时区', icon: '\u{1F30D}', cmd: 'timedatectl 2>/dev/null | grep "Time zone" || cat /etc/timezone 2>/dev/null || date +"%Z"' },
-        { key: 'gpu', label: 'GPU', icon: '\u{1F3AE}', cmd: 'lspci 2>/dev/null | grep -i "vga\|3d\|display" | head -3 || echo "未检测到"' },
-        { key: 'virt', label: '虚拟化', icon: '\u{1F4EB}', cmd: 'systemd-detect-virt 2>/dev/null || cat /proc/cpuinfo 2>/dev/null | grep -c "hypervisor" | awk \'{if($1>0) print "虚拟化环境"; else print "物理机或未识别"}\' || echo "未识别"' },
-        { key: 'boot', label: '启动模式', icon: '\u{1F504}', cmd: '[ -d /sys/firmware/efi ] && echo "UEFI" || echo "BIOS (Legacy)"' },
-      ];
-
-      const results: SysInfoItem[] = [];
-
-      // 串行执行，避免一次性打开过多 SSH channel 导致后面的检测项随机失败。
-      for (const { key, label, icon, cmd } of cmds) {
-        try {
-          const r = await runCmd(connectionId, cmd);
-          results.push({ key, label, icon, value: (r.stdout || r.stderr || '无输出').trim() });
-        } catch {
-          results.push({ key, label, icon, value: '获取失败' });
-        }
-      }
-
-      setItems(results);
+      setItems(await getSystemInfoItems(connectionId));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -1453,35 +1432,7 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
     setLoading(true);
     setError('');
     try {
-      const cmds = [
-        { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; '{0} {1}' -f $os.Caption, $os.Version") },
-        { key: 'kernel', label: '系统版本', icon: '\u2699\uFE0F', cmd: powershellCommand('[Environment]::OSVersion.VersionString') },
-        { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', cmd: powershellCommand('[System.Net.Dns]::GetHostName()') },
-        { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', cmd: powershellCommand('(Get-CimInstance Win32_OperatingSystem).OSArchitecture') },
-        { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', cmd: powershellCommand("(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)") },
-        { key: 'memory', label: '内存', icon: '\u{1F9E0}', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); '已用 {0} GB / 总计 {1} GB，空闲 {2} GB' -f $used, $total, $free") },
-        { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', cmd: powershellCommand('$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()') },
-        { key: 'load', label: 'CPU 负载', icon: '\u26A1', cmd: powershellCommand("$value = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; if ($null -eq $value) { '0%' } else { '{0}%' -f [math]::Round($value, 1) }") },
-        { key: 'shell', label: 'PowerShell', icon: '\u{1F4BB}', cmd: powershellCommand("'PowerShell ' + $PSVersionTable.PSVersion.ToString()") },
-        { key: 'user', label: '当前用户', icon: '\u{1F464}', cmd: powershellCommand('[System.Security.Principal.WindowsIdentity]::GetCurrent().Name') },
-        { key: 'locale', label: '系统语言', icon: '\u{1F30D}', cmd: powershellCommand('(Get-Culture).Name') },
-        { key: 'timezone', label: '时区', icon: '\u{1F30D}', cmd: powershellCommand('(Get-TimeZone).DisplayName') },
-        { key: 'gpu', label: 'GPU', icon: '\u{1F3AE}', cmd: powershellCommand("Get-CimInstance Win32_VideoController | Select-Object -First 3 -ExpandProperty Name | Out-String -Width 200") },
-        { key: 'virt', label: '硬件型号', icon: '\u{1F4EB}', cmd: powershellCommand("$cs = Get-CimInstance Win32_ComputerSystem; '{0} {1}' -f $cs.Manufacturer, $cs.Model") },
-        { key: 'boot', label: '启动模式', icon: '\u{1F504}', cmd: powershellCommand("try { if (Confirm-SecureBootUEFI) { 'UEFI / Secure Boot' } else { 'UEFI' } } catch { 'Legacy BIOS 或未识别' }") },
-      ];
-
-      const results: SysInfoItem[] = [];
-      for (const { key, label, icon, cmd } of cmds) {
-        try {
-          const r = await runCmd(connectionId, cmd);
-          results.push({ key, label, icon, value: (r.stdout || r.stderr || '无输出').trim() });
-        } catch {
-          results.push({ key, label, icon, value: '获取失败' });
-        }
-      }
-
-      setItems(results);
+      setItems(await getSystemInfoItems(connectionId));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

@@ -240,6 +240,24 @@ interface ShellDeskRemoteStatusReport {
   }>;
 }
 
+interface ShellDeskRemoteSystemInfoReport {
+  refreshedAt: string;
+  items: Array<{
+    key: string;
+    label: string;
+    icon: string;
+    value: string;
+  }>;
+}
+
+interface ShellDeskRemoteMetricsReport {
+  refreshedAt: string;
+  cpuPercent: number;
+  memoryPercent: number;
+  netRxBytes: number;
+  netTxBytes: number;
+}
+
 interface ShellDeskIpcCapabilities {
   terminalSessions: boolean;
 }
@@ -296,6 +314,8 @@ interface ShellDeskConnectionControls {
     accessedAt: string;
   }>;
   getStatus: (connectionId: string) => Promise<ShellDeskRemoteStatusReport>;
+  getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
+  getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;
   runCommand: (connectionId: string, command: string) => Promise<{ stdout: string; stderr: string; code: number }>;
   mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;

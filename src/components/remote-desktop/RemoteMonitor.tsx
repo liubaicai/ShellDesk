@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
 interface RemoteMonitorProps {
@@ -163,8 +162,7 @@ function SimpleLineChart({ data, color, fillColor, unit, minValue = 0, maxValue 
 
 // ─── Main Monitor Component ──────────────────────────────────────────────
 
-export default function RemoteMonitor({ connectionId, systemType }: RemoteMonitorProps) {
-  const isWindowsHost = isWindowsSystem(systemType);
+export default function RemoteMonitor({ connectionId }: RemoteMonitorProps) {
   const [cpuData, setCpuData] = useState<TimeSeriesPoint[]>([]);
   const [memData, setMemData] = useState<TimeSeriesPoint[]>([]);
   const [netRxData, setNetRxData] = useState<TimeSeriesPoint[]>([]);
@@ -172,6 +170,7 @@ export default function RemoteMonitor({ connectionId, systemType }: RemoteMonito
 
   const prevNetRxRef = useRef<number | null>(null);
   const prevNetTxRef = useRef<number | null>(null);
+  const prevNetTimeRef = useRef<number | null>(null);
   const isPollingRef = useRef(false);
 
   // ── collect one data point for charts ────────────────────────────────
@@ -183,57 +182,30 @@ export default function RemoteMonitor({ connectionId, systemType }: RemoteMonito
     const now = Date.now();
 
     try {
-      const commands = isWindowsHost ? [
-        { key: 'cpu', cmd: powershellCommand("$value = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; if ($null -eq $value) { 0 } else { [math]::Round($value, 1) }") },
-        { key: 'mem', cmd: powershellCommand("$os = Get-CimInstance Win32_OperatingSystem; if ($os.TotalVisibleMemorySize) { [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100, 1) } else { 0 }") },
-        { key: 'net', cmd: powershellCommand("$stats = Get-NetAdapterStatistics -ErrorAction SilentlyContinue; $rx = ($stats | Measure-Object -Property ReceivedBytes -Sum).Sum; $tx = ($stats | Measure-Object -Property SentBytes -Sum).Sum; if ($null -eq $rx) { $rx = 0 }; if ($null -eq $tx) { $tx = 0 }; '{0} {1}' -f [int64]$rx, [int64]$tx") },
-      ] : [
-        { key: 'cpu', cmd: "cat /proc/loadavg 2>/dev/null | awk '{print $1*100}' || echo 0" },
-        { key: 'mem', cmd: "free 2>/dev/null | awk '/^Mem:/ {printf \"%.1f\", $3/$2*100}' || echo 0" },
-        { key: 'net', cmd: "cat /proc/net/dev 2>/dev/null | awk 'NR>2 && !/^ *lo:/ {rx+=$2; tx+=$10} END {print rx, tx}' || echo '0 0'" },
-      ];
+      const metrics = await api.getMetrics(connectionId);
+      const cpuPercent = Number.isFinite(metrics.cpuPercent) ? metrics.cpuPercent : 0;
+      const memoryPercent = Number.isFinite(metrics.memoryPercent) ? metrics.memoryPercent : 0;
+      const rx = Number.isFinite(metrics.netRxBytes) ? metrics.netRxBytes : 0;
+      const tx = Number.isFinite(metrics.netTxBytes) ? metrics.netTxBytes : 0;
 
-      for (const { key, cmd } of commands) {
-        try {
-          const result = await api.runCommand(connectionId, cmd);
-          const stdout = result.stdout || '';
+      setCpuData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: Math.max(0, Math.min(cpuPercent, 100)) }]);
+      setMemData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: Math.max(0, Math.min(memoryPercent, 100)) }]);
 
-          switch (key) {
-            case 'cpu': {
-              const val = parseFloat(stdout) || 0;
-              setCpuData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: Math.min(val, 100 * 8) }]);
-              break;
-            }
-            case 'mem': {
-              const val = parseFloat(stdout) || 0;
-              setMemData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: val }]);
-              break;
-            }
-            case 'net': {
-              const parts = stdout.trim().split(/\s+/);
-              const rx = parseInt(parts[0], 10) || 0;
-              const tx = parseInt(parts[1], 10) || 0;
-
-              if (prevNetRxRef.current !== null) {
-                const rxDelta = (rx - prevNetRxRef.current) / (POLL_INTERVAL_MS / 1000);
-                const txDelta = (tx - prevNetTxRef.current!) / (POLL_INTERVAL_MS / 1000);
-                setNetRxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: rxDelta / 1024 }]);
-                setNetTxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: txDelta / 1024 }]);
-              }
-
-              prevNetRxRef.current = rx;
-              prevNetTxRef.current = tx;
-              break;
-            }
-          }
-        } catch {
-          // 单个命令失败不影响其他
-        }
+      if (prevNetRxRef.current !== null && prevNetTimeRef.current !== null) {
+        const seconds = Math.max(1, (now - prevNetTimeRef.current) / 1000);
+        const rxDelta = Math.max(0, rx - prevNetRxRef.current) / seconds;
+        const txDelta = Math.max(0, tx - (prevNetTxRef.current ?? 0)) / seconds;
+        setNetRxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: rxDelta / 1024 }]);
+        setNetTxData((prev) => [...prev.slice(-(MAX_POINTS - 1)), { time: now, value: txDelta / 1024 }]);
       }
+
+      prevNetRxRef.current = rx;
+      prevNetTxRef.current = tx;
+      prevNetTimeRef.current = now;
     } finally {
       isPollingRef.current = false;
     }
-  }, [connectionId, isWindowsHost]);
+  }, [connectionId]);
 
   // ── polling ──────────────────────────────────────────────────────────
   useEffect(() => {

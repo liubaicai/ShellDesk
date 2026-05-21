@@ -2109,37 +2109,258 @@ async function detectRemoteSystem(client) {
   };
 }
 
-async function getRemoteStatus(client, systemType = 'unknown') {
-  const commands = systemType === 'windows' ? [
-    { key: 'hostname', label: '主机名', command: createPowerShellCommand('[System.Net.Dns]::GetHostName()') },
-    { key: 'user', label: '当前用户', command: createPowerShellCommand('[System.Security.Principal.WindowsIdentity]::GetCurrent().Name') },
-    { key: 'kernel', label: '系统版本', command: createPowerShellCommand('[Environment]::OSVersion.VersionString') },
-    { key: 'uptime', label: '运行时间', command: createPowerShellCommand('$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()') },
-    { key: 'disk', label: '本地磁盘', command: createPowerShellCommand("Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200") },
-    { key: 'memory', label: '内存', command: createPowerShellCommand("$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); 'Total: {0} GB, Used: {1} GB, Free: {2} GB' -f $total, $used, $free") },
-    { key: 'network', label: '网络接口', command: createPowerShellCommand('Get-NetIPConfiguration | Format-List | Out-String -Width 220') },
-  ] : [
-    { key: 'hostname', label: '主机名', command: 'hostname 2>/dev/null || uname -n' },
-    { key: 'user', label: '当前用户', command: 'whoami 2>/dev/null || id -un' },
-    { key: 'kernel', label: '系统内核', command: 'uname -a' },
-    { key: 'uptime', label: '运行时间', command: 'uptime' },
-    { key: 'disk', label: '根分区', command: 'df -h / 2>/dev/null || df -h' },
-    { key: 'memory', label: '内存', command: 'free -m 2>/dev/null || vm_stat 2>/dev/null || echo unavailable' },
-    { key: 'network', label: '网络接口', command: 'ip -brief address 2>/dev/null || ifconfig 2>/dev/null || echo unavailable' },
+const remoteBatchBeginPrefix = '__SHELLDESK_BATCH_BEGIN__';
+const remoteBatchEndPrefix = '__SHELLDESK_BATCH_END__';
+
+const unixStatusItems = [
+  { key: 'hostname', label: '主机名', command: 'hostname 2>/dev/null || uname -n' },
+  { key: 'user', label: '当前用户', command: 'whoami 2>/dev/null || id -un' },
+  { key: 'kernel', label: '系统内核', command: 'uname -a' },
+  { key: 'uptime', label: '运行时间', command: 'uptime' },
+  { key: 'disk', label: '根分区', command: 'df -h / 2>/dev/null || df -h' },
+  { key: 'memory', label: '内存', command: 'free -m 2>/dev/null || vm_stat 2>/dev/null || echo unavailable' },
+  { key: 'network', label: '网络接口', command: 'ip -brief address 2>/dev/null || ifconfig 2>/dev/null || echo unavailable' },
+];
+
+const windowsStatusItems = [
+  { key: 'hostname', label: '主机名', command: '[System.Net.Dns]::GetHostName()' },
+  { key: 'user', label: '当前用户', command: '[System.Security.Principal.WindowsIdentity]::GetCurrent().Name' },
+  { key: 'kernel', label: '系统版本', command: '[Environment]::OSVersion.VersionString' },
+  { key: 'uptime', label: '运行时间', command: '$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()' },
+  { key: 'disk', label: '本地磁盘', command: "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200" },
+  { key: 'memory', label: '内存', command: "$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); 'Total: {0} GB, Used: {1} GB, Free: {2} GB' -f $total, $used, $free" },
+  { key: 'network', label: '网络接口', command: 'Get-NetIPConfiguration | Format-List | Out-String -Width 220' },
+];
+
+const unixSystemInfoItems = [
+  { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', command: 'cat /etc/os-release 2>/dev/null | grep -E "^PRETTY_NAME|^NAME|^VERSION" | head -5 || uname -s' },
+  { key: 'kernel', label: '内核版本', icon: '\u2699\uFE0F', command: 'uname -r' },
+  { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', command: 'hostname -f 2>/dev/null || hostname' },
+  { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', command: 'uname -m' },
+  { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', command: 'lscpu 2>/dev/null | grep -E "^Model name|^Socket|^Core|^Thread|^CPU\\(s\\):" | head -6 || cat /proc/cpuinfo 2>/dev/null | grep "model name" | head -1' },
+  { key: 'memory', label: '内存', icon: '\u{1F9E0}', command: 'free -h 2>/dev/null | grep "^Mem:" || vm_stat 2>/dev/null | head -5' },
+  { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', command: 'uptime -p 2>/dev/null || uptime' },
+  { key: 'load', label: '系统负载', icon: '\u26A1', command: 'cat /proc/loadavg 2>/dev/null || uptime | sed "s/.*load average: //"' },
+  { key: 'shell', label: '默认 Shell', icon: '\u{1F41A}', command: 'echo $SHELL' },
+  { key: 'user', label: '当前用户', icon: '\u{1F464}', command: 'whoami 2>/dev/null || id -un' },
+  { key: 'locale', label: '系统语言', icon: '\u{1F30D}', command: 'locale 2>/dev/null | grep LANG= | head -1 || echo $LANG' },
+  { key: 'timezone', label: '时区', icon: '\u{1F30D}', command: 'timedatectl 2>/dev/null | grep "Time zone" || cat /etc/timezone 2>/dev/null || date +"%Z"' },
+  { key: 'gpu', label: 'GPU', icon: '\u{1F3AE}', command: 'lspci 2>/dev/null | grep -i "vga\\|3d\\|display" | head -3 || echo "未检测到"' },
+  { key: 'virt', label: '虚拟化', icon: '\u{1F4EB}', command: 'systemd-detect-virt 2>/dev/null || cat /proc/cpuinfo 2>/dev/null | grep -c "hypervisor" | awk \'{if($1>0) print "虚拟化环境"; else print "物理机或未识别"}\' || echo "未识别"' },
+  { key: 'boot', label: '启动模式', icon: '\u{1F504}', command: '[ -d /sys/firmware/efi ] && echo "UEFI" || echo "BIOS (Legacy)"' },
+];
+
+const windowsSystemInfoItems = [
+  { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', command: "$os = Get-CimInstance Win32_OperatingSystem; '{0} {1}' -f $os.Caption, $os.Version" },
+  { key: 'kernel', label: '系统版本', icon: '\u2699\uFE0F', command: '[Environment]::OSVersion.VersionString' },
+  { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', command: '[System.Net.Dns]::GetHostName()' },
+  { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', command: '(Get-CimInstance Win32_OperatingSystem).OSArchitecture' },
+  { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', command: '(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)' },
+  { key: 'memory', label: '内存', icon: '\u{1F9E0}', command: "$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); '已用 {0} GB / 总计 {1} GB，空闲 {2} GB' -f $used, $total, $free" },
+  { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', command: '$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()' },
+  { key: 'load', label: 'CPU 负载', icon: '\u26A1', command: "$value = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; if ($null -eq $value) { '0%' } else { '{0}%' -f [math]::Round($value, 1) }" },
+  { key: 'shell', label: 'PowerShell', icon: '\u{1F4BB}', command: "'PowerShell ' + $PSVersionTable.PSVersion.ToString()" },
+  { key: 'user', label: '当前用户', icon: '\u{1F464}', command: '[System.Security.Principal.WindowsIdentity]::GetCurrent().Name' },
+  { key: 'locale', label: '系统语言', icon: '\u{1F30D}', command: '(Get-Culture).Name' },
+  { key: 'timezone', label: '时区', icon: '\u{1F30D}', command: '(Get-TimeZone).DisplayName' },
+  { key: 'gpu', label: 'GPU', icon: '\u{1F3AE}', command: 'Get-CimInstance Win32_VideoController | Select-Object -First 3 -ExpandProperty Name | Out-String -Width 200' },
+  { key: 'virt', label: '硬件型号', icon: '\u{1F4EB}', command: "$cs = Get-CimInstance Win32_ComputerSystem; '{0} {1}' -f $cs.Manufacturer, $cs.Model" },
+  { key: 'boot', label: '启动模式', icon: '\u{1F504}', command: "try { if (Confirm-SecureBootUEFI) { 'UEFI / Secure Boot' } else { 'UEFI' } } catch { 'Legacy BIOS 或未识别' }" },
+];
+
+function createUnixBatchCommand(items) {
+  const lines = [
+    'run_item() {',
+    '  key="$1"',
+    '  command="$2"',
+    `  printf '%s%s\\n' ${escapeShellSingleQuotedArg(remoteBatchBeginPrefix)} "$key"`,
+    '  output="$(sh -c "$command" 2>&1)"',
+    '  status=$?',
+    '  if [ "$status" -ne 0 ] && [ -z "$output" ]; then output="获取失败"; fi',
+    '  if [ -z "$output" ]; then output="无输出"; fi',
+    '  printf \'%s\\n\' "$output"',
+    `  printf '%s%s\\n' ${escapeShellSingleQuotedArg(remoteBatchEndPrefix)} "$key"`,
+    '}',
+    '',
+    ...items.map((item) => `run_item ${escapeShellSingleQuotedArg(item.key)} ${escapeShellSingleQuotedArg(item.command)}`),
   ];
 
-  // 串行执行避免 SSH channel 耗尽
-  const items = [];
-  for (const item of commands) {
-    try {
-      const value = await execRemoteCommand(client, item.command);
-      items.push({ key: item.key, label: item.label, value: value || '无输出' });
-    } catch (error) {
-      items.push({ key: item.key, label: item.label, value: `读取失败：${toErrorMessage(error)}` });
+  return `sh <<'SHELLDESK_BATCH'\n${lines.join('\n')}\nSHELLDESK_BATCH`;
+}
+
+function createWindowsBatchCommand(items) {
+  const invocations = items
+    .map((item) => `Invoke-ShellDeskItem ${quotePowerShellString(item.key)} { ${item.command} }`)
+    .join('\n');
+
+  return createPowerShellCommand(`
+function Invoke-ShellDeskItem([string]$Key, [scriptblock]$Script) {
+  [Console]::Out.WriteLine('${remoteBatchBeginPrefix}' + $Key)
+  try {
+    $result = & $Script 2>&1 | Out-String -Width 260
+    if ([string]::IsNullOrWhiteSpace($result)) {
+      [Console]::Out.WriteLine('无输出')
+    } else {
+      [Console]::Out.WriteLine($result.TrimEnd())
     }
+  } catch {
+    [Console]::Out.WriteLine('获取失败：' + $_.Exception.Message)
+  }
+  [Console]::Out.WriteLine('${remoteBatchEndPrefix}' + $Key)
+}
+${invocations}
+`);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseRemoteBatchOutput(output) {
+  const values = new Map();
+  const pattern = new RegExp(
+    `${escapeRegExp(remoteBatchBeginPrefix)}([A-Za-z0-9_-]+)\\r?\\n([\\s\\S]*?)\\r?\\n${escapeRegExp(remoteBatchEndPrefix)}\\1`,
+    'g',
+  );
+
+  let match;
+  while ((match = pattern.exec(output)) !== null) {
+    values.set(match[1], match[2].trim() || '无输出');
   }
 
-  return { refreshedAt: new Date().toISOString(), items };
+  return values;
+}
+
+async function getRemoteCommandReport(client, systemType, items) {
+  const command = systemType === 'windows'
+    ? createWindowsBatchCommand(items)
+    : createUnixBatchCommand(items);
+  const output = await execRemoteCommand(client, command);
+  const values = parseRemoteBatchOutput(output);
+
+  return {
+    refreshedAt: new Date().toISOString(),
+    items: items.map((item) => ({
+      key: item.key,
+      label: item.label,
+      ...(item.icon ? { icon: item.icon } : {}),
+      value: values.get(item.key) || '获取失败',
+    })),
+  };
+}
+
+async function getRemoteStatus(client, systemType = 'unknown') {
+  const items = systemType === 'windows' ? windowsStatusItems : unixStatusItems;
+  return getRemoteCommandReport(client, systemType, items);
+}
+
+async function getRemoteSystemInfo(client, systemType = 'unknown') {
+  const items = systemType === 'windows' ? windowsSystemInfoItems : unixSystemInfoItems;
+  return getRemoteCommandReport(client, systemType, items);
+}
+
+function parseMetricNumber(output, key) {
+  const match = output.match(new RegExp(`^${key}=([^\\r\\n]+)`, 'm'));
+  const value = Number.parseFloat(match?.[1] ?? '');
+  return Number.isFinite(value) ? value : 0;
+}
+
+function parseMetricPair(output, key) {
+  const match = output.match(new RegExp(`^${key}=([^\\s]+)\\s+([^\\s]+)`, 'm'));
+  const first = Number.parseInt(match?.[1] ?? '', 10);
+  const second = Number.parseInt(match?.[2] ?? '', 10);
+  return {
+    first: Number.isFinite(first) ? first : 0,
+    second: Number.isFinite(second) ? second : 0,
+  };
+}
+
+function createUnixMetricsCommand() {
+  return `sh <<'SHELLDESK_METRICS'
+if [ -r /proc/stat ]; then
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat
+  idle1=$((idle + iowait))
+  total1=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  sleep 0.12
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat
+  idle2=$((idle + iowait))
+  total2=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  total_delta=$((total2 - total1))
+  idle_delta=$((idle2 - idle1))
+  awk -v total="$total_delta" -v idle="$idle_delta" 'BEGIN { if (total > 0) printf "cpu=%.1f\\n", (total - idle) / total * 100; else print "cpu=0" }'
+else
+  awk '{ printf "cpu=%.1f\\n", $1 * 100 }' /proc/loadavg 2>/dev/null || echo "cpu=0"
+fi
+
+if command -v free >/dev/null 2>&1; then
+  free | awk '/^Mem:/ { if ($2 > 0) printf "mem=%.1f\\n", $3 / $2 * 100; else print "mem=0" }'
+elif [ -r /proc/meminfo ]; then
+  awk '
+    /^MemTotal:/ { total=$2 }
+    /^MemAvailable:/ { available=$2 }
+    END {
+      if (total > 0 && available >= 0) printf "mem=%.1f\\n", (total - available) / total * 100;
+      else print "mem=0"
+    }
+  ' /proc/meminfo
+else
+  echo "mem=0"
+fi
+
+if [ -r /proc/net/dev ]; then
+  awk 'NR > 2 { name=$1; sub(":", "", name); if (name != "lo") { rx += $2; tx += $10 } } END { printf "net=%d %d\\n", rx, tx }' /proc/net/dev
+else
+  echo "net=0 0"
+fi
+SHELLDESK_METRICS`;
+}
+
+function createWindowsMetricsCommand() {
+  return createPowerShellCommand(`
+$culture = [Globalization.CultureInfo]::InvariantCulture
+$cpu = 0
+$mem = 0
+$rx = 0
+$tx = 0
+
+try {
+  $cpuValue = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Measure-Object -Property LoadPercentage -Average).Average
+  if ($null -ne $cpuValue) { $cpu = [double]$cpuValue }
+} catch {}
+
+try {
+  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+  if ($os -and $os.TotalVisibleMemorySize) {
+    $mem = (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / $os.TotalVisibleMemorySize) * 100
+  }
+} catch {}
+
+try {
+  $stats = Get-NetAdapterStatistics -ErrorAction SilentlyContinue
+  $rxValue = ($stats | Measure-Object -Property ReceivedBytes -Sum).Sum
+  $txValue = ($stats | Measure-Object -Property SentBytes -Sum).Sum
+  if ($null -ne $rxValue) { $rx = [int64]$rxValue }
+  if ($null -ne $txValue) { $tx = [int64]$txValue }
+} catch {}
+
+[Console]::Out.WriteLine([string]::Format($culture, 'cpu={0:0.0}', $cpu))
+[Console]::Out.WriteLine([string]::Format($culture, 'mem={0:0.0}', $mem))
+[Console]::Out.WriteLine([string]::Format($culture, 'net={0} {1}', $rx, $tx))
+`);
+}
+
+async function getRemoteMetrics(client, systemType = 'unknown') {
+  const command = systemType === 'windows' ? createWindowsMetricsCommand() : createUnixMetricsCommand();
+  const output = await execRemoteCommand(client, command);
+  const net = parseMetricPair(output, 'net');
+
+  return {
+    refreshedAt: new Date().toISOString(),
+    cpuPercent: Math.max(0, Math.min(parseMetricNumber(output, 'cpu'), 100)),
+    memoryPercent: Math.max(0, Math.min(parseMetricNumber(output, 'mem'), 100)),
+    netRxBytes: Math.max(0, net.first),
+    netTxBytes: Math.max(0, net.second),
+  };
 }
 
 function registerIpcHandler(channel, handler) {
@@ -3063,6 +3284,16 @@ registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemo
 registerIpcHandler('connection:get-status', async (_event, connectionId) => {
   const activeConnection = getActiveConnection(connectionId);
   return getRemoteStatus(activeConnection.client, activeConnection.displayHost.systemType);
+});
+
+registerIpcHandler('connection:get-system-info', async (_event, connectionId) => {
+  const activeConnection = getActiveConnection(connectionId);
+  return getRemoteSystemInfo(activeConnection.client, activeConnection.displayHost.systemType);
+});
+
+registerIpcHandler('connection:get-metrics', async (_event, connectionId) => {
+  const activeConnection = getActiveConnection(connectionId);
+  return getRemoteMetrics(activeConnection.client, activeConnection.displayHost.systemType);
 });
 
 // ─── Remote SSH command execution ───────────────────────────────────────────
