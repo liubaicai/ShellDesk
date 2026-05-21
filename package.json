@@ -2,48 +2,33 @@
   "name": "shelldesk",
   "productName": "ShellDesk",
   "version": "0.1.0",
+  "packageManager": "pnpm@10.26.2",
   "private": true,
   "description": "Blank Electron shell for a GUI SSH client.",
+  "homepage": "https://github.com/liubaicai/ShellDesk",
+  "author": "liubaicai",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"pnpm dev:electron\"",
     "dev:electron": "wait-on http-get://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build": "tsc --noEmit && vite build",
-    "release:dir": "pnpm build && electron-builder --dir",
-    "release": "pnpm build && electron-builder --win nsis --publish never",
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm typecheck && vite build",
+    "test": "pnpm build",
+    "release:dir": "pnpm pack:dir",
+    "release": "pnpm build && cross-env npm_config_arch=x64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish=never",
+    "pack": "pnpm build && cross-env NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --publish=never",
+    "pack:dir": "pnpm build && cross-env NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --dir --publish=never",
+    "pack:win": "pnpm build && cross-env npm_config_arch=x64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --win --x64 --publish=never && cross-env npm_config_arch=arm64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --win --arm64 --publish=never",
+    "pack:win-x64": "pnpm build && cross-env npm_config_arch=x64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --win --x64 --publish=never",
+    "pack:win-arm64": "pnpm build && cross-env npm_config_arch=arm64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --win --arm64 --publish=never",
+    "pack:mac": "pnpm build && cross-env NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --mac --publish=never",
+    "pack:linux": "pnpm build && cross-env NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --linux --publish=never",
+    "pack:linux-x64": "pnpm build && cross-env npm_config_arch=x64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --linux --x64 --publish=never",
+    "pack:linux-arm64": "pnpm build && cross-env npm_config_arch=arm64 NODE_OPTIONS=--disable-warning=DEP0190 electron-builder --config electron-builder.config.cjs --linux --arm64 --publish=never",
+    "rebuild": "electron-builder install-app-deps",
     "start": "electron .",
     "preview": "vite preview --host 127.0.0.1"
-  },
-  "build": {
-    "appId": "com.shelldesk.app",
-    "productName": "ShellDesk",
-    "asar": true,
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "src/assets/images/icon.png",
-        "to": "app-icon.png"
-      }
-    ],
-    "win": {
-      "icon": "src/assets/images/icon.png",
-      "signAndEditExecutable": true,
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   },
   "dependencies": {
     "@novnc/novnc": "^1.7.0",
