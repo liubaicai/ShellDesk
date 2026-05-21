@@ -6,7 +6,7 @@
   "private": true,
   "description": "Blank Electron shell for a GUI SSH client.",
   "homepage": "https://github.com/liubaicai/ShellDesk",
-  "author": "liubaicai",
+  "author": "liubaicai <liushuai.baicai@hotmail.com>",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
