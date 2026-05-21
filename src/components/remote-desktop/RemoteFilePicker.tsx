@@ -90,15 +90,7 @@ export default function RemoteFilePicker({
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const fileNameInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!visible) return;
-    const path = initialPath?.trim() || (isWindowsHost ? '/' : '/');
-    setRemotePath(path);
-    setFileName('');
-    setSelectedName('');
-    setError('');
-  }, [visible, initialPath, isWindowsHost]);
+  const skipNavLoadRef = useRef(false);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
     setLoading(true);
@@ -115,12 +107,28 @@ export default function RemoteFilePicker({
     }
   }, [connectionId]);
 
+  // Initial load when picker becomes visible
   useEffect(() => {
     if (!visible) return;
-    void loadDirectory(remotePath);
-    // Only load when visible and path changes via navigation
+    const path = initialPath?.trim() || (isWindowsHost ? '/' : '/');
+    setFileName('');
+    setSelectedName('');
+    setError('');
+    skipNavLoadRef.current = true;
+    void loadDirectory(path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, remotePath]);
+  }, [visible]);
+
+  // Navigation load — skipped for the initial open to avoid double-loading
+  useEffect(() => {
+    if (!visible) return;
+    if (skipNavLoadRef.current) {
+      skipNavLoadRef.current = false;
+      return;
+    }
+    void loadDirectory(remotePath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remotePath]);
 
   const navigateTo = useCallback((dirPath: string) => {
     setSelectedName('');
