@@ -19,6 +19,8 @@ const maxPrivateKeyBytes = 1024 * 1024;
 const maxRemoteTextFileBytes = 5 * 1024 * 1024;
 const maxRemoteTextWriteBytes = 10 * 1024 * 1024;
 const maxVaultBytes = 25 * 1024 * 1024;
+const maxDesktopWallpaperBytes = 5 * 1024 * 1024;
+const maxDesktopWallpaperDataUrlLength = Math.ceil(maxDesktopWallpaperBytes * 1.4) + 128;
 const vaultFileName = 'vault.json';
 const vaultFormat = 'shelldesk-vault';
 const vaultSchemaVersion = 1;
@@ -106,6 +108,9 @@ function createDefaultSettings() {
     theme: 'dark',
     accentColor: accentColorChoices[0],
     defaultHostView: 'grid',
+    desktopWallpaperMode: 'default',
+    desktopWallpaperDataUrl: '',
+    desktopWallpaperName: '',
     rememberPasswords: true,
     rememberKeyPassphrases: true,
     terminalFontSize: 13,
@@ -246,6 +251,28 @@ function readColorHex(value, label, fallback) {
   throw new Error(`${label}无效。`);
 }
 
+function readDesktopWallpaperDataUrl(value, fallback = '') {
+  if (typeof value !== 'string' || !value) {
+    return fallback;
+  }
+
+  if (
+    value.length > maxDesktopWallpaperDataUrlLength ||
+    !/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)
+  ) {
+    throw new Error('桌面壁纸无效。');
+  }
+
+  const base64Payload = value.slice(value.indexOf(',') + 1);
+  const imageBytes = Buffer.byteLength(base64Payload, 'base64');
+
+  if (!imageBytes || imageBytes > maxDesktopWallpaperBytes) {
+    throw new Error('桌面壁纸为空或超过大小限制。');
+  }
+
+  return value;
+}
+
 function getVaultFilePath() {
   return path.join(app.getPath('userData'), vaultFileName);
 }
@@ -294,6 +321,21 @@ function readAppSettings(rawSettings) {
     theme: rawSettings.theme === 'light' || rawSettings.theme === 'system' ? rawSettings.theme : defaults.theme,
     accentColor: readColorHex(rawSettings.accentColor, '强调色', defaults.accentColor),
     defaultHostView: rawSettings.defaultHostView === 'list' ? 'list' : 'grid',
+    desktopWallpaperMode: (
+      rawSettings.desktopWallpaperMode === 'custom' &&
+      typeof rawSettings.desktopWallpaperDataUrl === 'string' &&
+      rawSettings.desktopWallpaperDataUrl
+    ) ? 'custom' : 'default',
+    desktopWallpaperDataUrl: readDesktopWallpaperDataUrl(
+      rawSettings.desktopWallpaperDataUrl,
+      defaults.desktopWallpaperDataUrl,
+    ),
+    desktopWallpaperName: readBoundedString(
+      rawSettings.desktopWallpaperName ?? '',
+      '桌面壁纸名称',
+      160,
+      { required: false },
+    ),
     rememberPasswords: readBoolean(rawSettings.rememberPasswords, '记住密码', defaults.rememberPasswords),
     rememberKeyPassphrases: readBoolean(
       rawSettings.rememberKeyPassphrases,
