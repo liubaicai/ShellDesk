@@ -343,6 +343,96 @@
   outline-offset: 3px;
 }
 
+.desktop-wallpaper-row {
+  grid-template-columns: minmax(0, 1fr) minmax(244px, 320px);
+  align-items: start;
+}
+
+.desktop-wallpaper-control {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.desktop-wallpaper-preview {
+  position: relative;
+  display: grid;
+  width: min(320px, 100%);
+  aspect-ratio: 16 / 9;
+  align-items: end;
+  overflow: hidden;
+  border: 1px solid rgba(154, 177, 210, 0.22);
+  border-radius: 10px;
+  padding: 10px;
+  background:
+    radial-gradient(ellipse at 15% 8%, rgba(75, 129, 210, 0.24), transparent 38%),
+    radial-gradient(ellipse at 80% 18%, rgba(91, 114, 155, 0.18), transparent 42%),
+    linear-gradient(145deg, #101824 0%, #0b111a 100%);
+  background-position: center;
+  background-size: cover;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 34px rgba(0, 0, 0, 0.18);
+}
+
+.desktop-wallpaper-preview::before {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    radial-gradient(ellipse at 50% 100%, rgba(58, 78, 112, 0.28), transparent 46%);
+  content: "";
+  pointer-events: none;
+}
+
+.desktop-wallpaper-preview span {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(5, 10, 18, 0.48);
+  color: #edf4ff;
+  font-size: 11px;
+  font-weight: 820;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.desktop-wallpaper-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.desktop-wallpaper-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.desktop-wallpaper-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.desktop-wallpaper-meta,
+.desktop-wallpaper-error {
+  max-width: 320px;
+  margin: 0;
+  text-align: right;
+}
+
+.desktop-wallpaper-error {
+  color: var(--danger-text-soft) !important;
+}
+
 .settings-inline-code {
   max-width: 320px;
   overflow-wrap: anywhere;

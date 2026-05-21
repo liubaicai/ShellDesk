@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ChangeEvent, type CSSProperties, useState } from 'react';
 
 import {
   getTerminalThemeChoice,
@@ -10,7 +10,7 @@ import {
 
 const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
-  { key: 'appearance', label: '外观', summary: '主题与强调色' },
+  { key: 'appearance', label: '外观', summary: '主题、强调色、壁纸' },
   { key: 'terminal', label: '终端', summary: '主题、字体、滚动' },
   { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
   { key: 'backup', label: '备份与导入', summary: '配置迁移' },
@@ -20,11 +20,33 @@ const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff
 const terminalLineHeightChoices = [1, 1.1, 1.2, 1.3, 1.4];
 const terminalScrollSensitivityChoices = [0.5, 1, 1.5, 2, 3, 5];
 const terminalFastScrollSensitivityChoices = [2, 5, 8, 10, 15, 20];
+const maxWallpaperImageBytes = 5 * 1024 * 1024;
+const acceptedWallpaperTypes = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
+const wallpaperExtensionPattern = /\.(png|jpe?g|webp|gif)$/i;
+const wallpaperDataUrlPattern = /^data:image\/(?:png|jpe?g|webp|gif);base64,/i;
 const terminalContrastChoices = [
   { value: 1, label: '关闭' },
   { value: 4.5, label: 'AA 4.5' },
   { value: 7, label: 'AAA 7' },
 ];
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error('图片读取失败。'));
+    };
+
+    reader.onerror = () => reject(new Error('图片读取失败。'));
+    reader.readAsDataURL(file);
+  });
+}
 
 interface SettingsPageProps {
   hostCount: number;
@@ -50,6 +72,7 @@ function SettingsPage({
   onExportConfig,
 }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('general');
+  const [wallpaperError, setWallpaperError] = useState('');
 
   const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
@@ -58,6 +81,63 @@ function SettingsPage({
     });
   };
   const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
+  const hasCustomWallpaper = settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
+  const wallpaperPreviewStyle: CSSProperties | undefined = hasCustomWallpaper
+    ? {
+        backgroundImage: `linear-gradient(180deg, rgba(8, 13, 20, 0.18), rgba(8, 13, 20, 0.42)), url(${JSON.stringify(settings.desktopWallpaperDataUrl)})`,
+      }
+    : undefined;
+
+  const resetDesktopWallpaper = () => {
+    setWallpaperError('');
+    onSettingsChange({
+      ...settings,
+      desktopWallpaperMode: 'default',
+      desktopWallpaperDataUrl: '',
+      desktopWallpaperName: '',
+    });
+  };
+
+  const uploadDesktopWallpaper = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (file.size > maxWallpaperImageBytes) {
+      setWallpaperError('图片不能超过 5 MB。');
+      return;
+    }
+
+    if (
+      (file.type && !acceptedWallpaperTypes.has(file.type)) ||
+      (!file.type && !wallpaperExtensionPattern.test(file.name))
+    ) {
+      setWallpaperError('请选择 PNG、JPG、WebP 或 GIF 图片。');
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+
+      if (!wallpaperDataUrlPattern.test(dataUrl)) {
+        setWallpaperError('请选择 PNG、JPG、WebP 或 GIF 图片。');
+        return;
+      }
+
+      setWallpaperError('');
+      onSettingsChange({
+        ...settings,
+        desktopWallpaperMode: 'custom',
+        desktopWallpaperDataUrl: dataUrl,
+        desktopWallpaperName: file.name,
+      });
+    } catch (error) {
+      setWallpaperError(error instanceof Error ? error.message : '图片读取失败。');
+    }
+  };
 
   return (
     <>
@@ -209,6 +289,44 @@ function SettingsPage({
                           aria-label={`选择颜色 ${color}`}
                         />
                       ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h2>虚拟桌面壁纸</h2>
+                <div className="settings-card desktop-wallpaper-card">
+                  <div className="settings-row desktop-wallpaper-row">
+                    <span>
+                      <strong>连接桌面背景</strong>
+                      <small>作为连接服务器后的虚拟桌面壁纸；不设置时使用默认背景</small>
+                    </span>
+                    <div className="desktop-wallpaper-control">
+                      <div
+                        className={`desktop-wallpaper-preview ${hasCustomWallpaper ? 'custom' : ''}`}
+                        style={wallpaperPreviewStyle}
+                        aria-label={hasCustomWallpaper ? '自定义壁纸预览' : '默认壁纸预览'}
+                      >
+                        <span>{hasCustomWallpaper ? '自定义壁纸' : '默认背景'}</span>
+                      </div>
+                      <div className="desktop-wallpaper-actions">
+                        <label className="command-button desktop-wallpaper-upload">
+                          上传图片
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+                            onChange={uploadDesktopWallpaper}
+                          />
+                        </label>
+                        <button type="button" className="command-button muted" onClick={resetDesktopWallpaper} disabled={!hasCustomWallpaper}>
+                          使用默认
+                        </button>
+                      </div>
+                      <small className="desktop-wallpaper-meta">
+                        {hasCustomWallpaper ? settings.desktopWallpaperName || '自定义图片' : '当前使用 ShellDesk 默认桌面背景'}
+                      </small>
+                      {wallpaperError ? <small className="desktop-wallpaper-error">{wallpaperError}</small> : null}
                     </div>
                   </div>
                 </div>

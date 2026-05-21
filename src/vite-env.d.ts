@@ -40,6 +40,9 @@ interface ShellDeskAppSettings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
   defaultHostView: 'grid' | 'list';
+  desktopWallpaperMode: 'default' | 'custom';
+  desktopWallpaperDataUrl: string;
+  desktopWallpaperName: string;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
   terminalFontSize: number;

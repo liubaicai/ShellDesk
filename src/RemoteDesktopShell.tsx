@@ -155,6 +155,21 @@ function getTopDesktopWindow(
   }, null);
 }
 
+function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties | undefined {
+  if (settings.desktopWallpaperMode !== 'custom' || !settings.desktopWallpaperDataUrl) {
+    return undefined;
+  }
+
+  const wallpaperUrl = `url(${JSON.stringify(settings.desktopWallpaperDataUrl)})`;
+
+  return {
+    backgroundImage: `linear-gradient(180deg, rgba(7, 10, 16, 0.12), rgba(7, 10, 16, 0.38)), ${wallpaperUrl}`,
+    backgroundPosition: 'center, center',
+    backgroundRepeat: 'no-repeat, no-repeat',
+    backgroundSize: 'cover, cover',
+  };
+}
+
 function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
@@ -164,6 +179,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [desktopContextMenu, setDesktopContextMenu] = useState<{ x: number; y: number; appKey: DesktopAppKey } | null>(null);
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
+  const desktopWallpaperStyle = getDesktopWallpaperStyle(settings);
 
   useEffect(() => {
     const surface = desktopSurfaceRef.current;
@@ -470,7 +486,11 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
   return (
     <>
       <main className="remote-desktop-page">
-        <section ref={desktopSurfaceRef} className="remote-desktop-surface no-drag">
+        <section
+          ref={desktopSurfaceRef}
+          className={`remote-desktop-surface no-drag ${desktopWallpaperStyle ? 'has-custom-wallpaper' : ''}`}
+          style={desktopWallpaperStyle}
+        >
           <div className="desktop-icons" aria-label="桌面应用">
           {desktopApps.map((app) => (
             <button
