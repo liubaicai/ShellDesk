@@ -76,6 +76,8 @@
 
 .logs-list {
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 4px;
   min-height: 0;
   overflow: auto;
