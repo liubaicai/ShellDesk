@@ -255,10 +255,10 @@ interface ShellDeskRemoteSystemInfoReport {
 
 interface ShellDeskRemoteMetricsReport {
   refreshedAt: string;
-  cpuPercent: number;
-  memoryPercent: number;
-  netRxBytes: number;
-  netTxBytes: number;
+  cpuPercent: number | null;
+  memoryPercent: number | null;
+  netRxBytes: number | null;
+  netTxBytes: number | null;
 }
 
 interface ShellDeskIpcCapabilities {

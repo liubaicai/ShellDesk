@@ -2360,7 +2360,7 @@ async function getRemoteSystemInfo(client, systemType = 'unknown') {
 function parseMetricNumber(output, key) {
   const match = output.match(new RegExp(`^${key}=([^\\r\\n]+)`, 'm'));
   const value = Number.parseFloat(match?.[1] ?? '');
-  return Number.isFinite(value) ? value : 0;
+  return Number.isFinite(value) ? value : null;
 }
 
 function parseMetricPair(output, key) {
@@ -2368,9 +2368,17 @@ function parseMetricPair(output, key) {
   const first = Number.parseInt(match?.[1] ?? '', 10);
   const second = Number.parseInt(match?.[2] ?? '', 10);
   return {
-    first: Number.isFinite(first) ? first : 0,
-    second: Number.isFinite(second) ? second : 0,
+    first: Number.isFinite(first) ? first : null,
+    second: Number.isFinite(second) ? second : null,
   };
+}
+
+function clampMetricPercent(value) {
+  return Number.isFinite(value) ? Math.max(0, Math.min(value, 100)) : null;
+}
+
+function clampMetricBytes(value) {
+  return Number.isFinite(value) ? Math.max(0, value) : null;
 }
 
 function createUnixMetricsCommand() {
@@ -2387,7 +2395,7 @@ if [ -r /proc/stat ]; then
   idle_delta=$((idle2 - idle1))
   awk -v total="$total_delta" -v idle="$idle_delta" 'BEGIN { if (total > 0) printf "cpu=%.1f\\n", (total - idle) / total * 100; else print "cpu=0" }'
 else
-  awk '{ printf "cpu=%.1f\\n", $1 * 100 }' /proc/loadavg 2>/dev/null || echo "cpu=0"
+  echo "cpu="
 fi
 
 if command -v free >/dev/null 2>&1; then
@@ -2402,13 +2410,13 @@ elif [ -r /proc/meminfo ]; then
     }
   ' /proc/meminfo
 else
-  echo "mem=0"
+  echo "mem="
 fi
 
 if [ -r /proc/net/dev ]; then
   awk 'NR > 2 { name=$1; sub(":", "", name); if (name != "lo") { rx += $2; tx += $10 } } END { printf "net=%d %d\\n", rx, tx }' /proc/net/dev
 else
-  echo "net=0 0"
+  echo "net=nan nan"
 fi
 SHELLDESK_METRICS`;
 }
@@ -2416,10 +2424,10 @@ SHELLDESK_METRICS`;
 function createWindowsMetricsCommand() {
   return createPowerShellCommand(`
 $culture = [Globalization.CultureInfo]::InvariantCulture
-$cpu = 0
-$mem = 0
-$rx = 0
-$tx = 0
+$cpu = $null
+$mem = $null
+$rx = $null
+$tx = $null
 
 try {
   $cpuValue = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Measure-Object -Property LoadPercentage -Average).Average
@@ -2441,9 +2449,23 @@ try {
   if ($null -ne $txValue) { $tx = [int64]$txValue }
 } catch {}
 
-[Console]::Out.WriteLine([string]::Format($culture, 'cpu={0:0.0}', $cpu))
-[Console]::Out.WriteLine([string]::Format($culture, 'mem={0:0.0}', $mem))
-[Console]::Out.WriteLine([string]::Format($culture, 'net={0} {1}', $rx, $tx))
+if ($null -ne $cpu) {
+  [Console]::Out.WriteLine([string]::Format($culture, 'cpu={0:0.0}', $cpu))
+} else {
+  [Console]::Out.WriteLine('cpu=')
+}
+
+if ($null -ne $mem) {
+  [Console]::Out.WriteLine([string]::Format($culture, 'mem={0:0.0}', $mem))
+} else {
+  [Console]::Out.WriteLine('mem=')
+}
+
+if ($null -ne $rx -and $null -ne $tx) {
+  [Console]::Out.WriteLine([string]::Format($culture, 'net={0} {1}', $rx, $tx))
+} else {
+  [Console]::Out.WriteLine('net=nan nan')
+}
 `);
 }
 
@@ -2454,10 +2476,10 @@ async function getRemoteMetrics(client, systemType = 'unknown') {
 
   return {
     refreshedAt: new Date().toISOString(),
-    cpuPercent: Math.max(0, Math.min(parseMetricNumber(output, 'cpu'), 100)),
-    memoryPercent: Math.max(0, Math.min(parseMetricNumber(output, 'mem'), 100)),
-    netRxBytes: Math.max(0, net.first),
-    netTxBytes: Math.max(0, net.second),
+    cpuPercent: clampMetricPercent(parseMetricNumber(output, 'cpu')),
+    memoryPercent: clampMetricPercent(parseMetricNumber(output, 'mem')),
+    netRxBytes: clampMetricBytes(net.first),
+    netTxBytes: clampMetricBytes(net.second),
   };
 }
 
