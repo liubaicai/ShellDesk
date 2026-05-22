@@ -75,6 +75,8 @@ interface NotepadTab {
 interface RemoteNotepadProps {
   connectionId: string;
   initialFilePath?: string;
+  initialContent?: string;
+  initialTitle?: string;
   systemType?: RemoteSystemType;
 }
 
@@ -181,13 +183,13 @@ function getFileNameFromPath(filePath: string): string {
 
 let tabSequence = 0;
 
-function createNewTab(): NotepadTab {
+function createNewTab(initialTitle?: string, initialContent = ''): NotepadTab {
   tabSequence += 1;
   return {
     id: `new-${tabSequence}`,
     filePath: '',
-    fileName: `未命名-${tabSequence}`,
-    content: '',
+    fileName: initialTitle?.trim() || `未命名-${tabSequence}`,
+    content: initialContent,
     originalContent: '',
     language: 'plaintext',
     isLoading: false,
@@ -195,8 +197,8 @@ function createNewTab(): NotepadTab {
   };
 }
 
-function RemoteNotepad({ connectionId, initialFilePath, systemType }: RemoteNotepadProps) {
-  const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab()]);
+function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialTitle, systemType }: RemoteNotepadProps) {
+  const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab(initialTitle, initialContent)]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
   const [showGoToLine, setShowGoToLine] = useState(false);
   const [goToLineValue, setGoToLineValue] = useState('');

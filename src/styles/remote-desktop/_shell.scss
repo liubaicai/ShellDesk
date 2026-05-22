@@ -183,6 +183,11 @@
   color: #fff;
 }
 
+.win-titlebar-controls .win-btn.terminal-tools.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
 .win-titlebar-controls .win-btn.close:hover {
   background: #e81123;
   color: #fff;
@@ -246,6 +251,10 @@
 .desktop-window-state-pill.error {
   border-color: rgba(255, 111, 143, 0.24);
   color: #ffd7df;
+}
+
+.terminal-titlebar-menu {
+  min-width: 180px;
 }
 
 .desktop-window-body,

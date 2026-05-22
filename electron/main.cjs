@@ -1624,8 +1624,6 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   }
 
   activeConnections.delete(connectionId);
-  const connectionWindow = activeConnection.window;
-
   if (activeConnection.terminalSessions) {
     for (const stream of activeConnection.terminalSessions.values()) {
       stream.removeAllListeners();
@@ -1663,10 +1661,6 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   }
 
   notifyConnectionClosed(connectionId, reason);
-
-  if (connectionWindow && !connectionWindow.isDestroyed()) {
-    connectionWindow.close();
-  }
 
   return true;
 }
@@ -1740,6 +1734,68 @@ function validateTerminalId(rawTerminalId) {
   }
 
   return terminalId;
+}
+
+function readOptionalTerminalLaunchText(rawValue, label, maxLength, allowNewlines = false) {
+  if (typeof rawValue !== 'string') {
+    return '';
+  }
+
+  const value = rawValue.trim();
+
+  if (!value) {
+    return '';
+  }
+
+  if (value.length > maxLength || value.includes('\0') || (!allowNewlines && /[\r\n]/.test(value))) {
+    throw new Error(`${label}无效。`);
+  }
+
+  return value;
+}
+
+function readTerminalLaunchOptions(rawOptions) {
+  if (!rawOptions || typeof rawOptions !== 'object') {
+    return {
+      title: '',
+      shell: '',
+      initialCommand: '',
+      workingDirectory: '',
+    };
+  }
+
+  return {
+    title: readOptionalTerminalLaunchText(rawOptions.title, '终端标题', 120),
+    shell: readOptionalTerminalLaunchText(rawOptions.shell, '终端 Shell', 160),
+    initialCommand: readOptionalTerminalLaunchText(rawOptions.initialCommand, '终端初始命令', 8192, true),
+    workingDirectory: readOptionalTerminalLaunchText(rawOptions.workingDirectory, '终端工作目录', 1024),
+  };
+}
+
+function quoteTerminalStartupDirectory(directory, systemType) {
+  if (systemType === 'windows') {
+    return `"${directory.replace(/"/g, '""')}"`;
+  }
+
+  return `'${directory.replace(/'/g, `'\\''`)}'`;
+}
+
+function createTerminalStartupInput(launchOptions, systemType) {
+  const startupLines = [];
+
+  if (launchOptions.workingDirectory) {
+    startupLines.push(`cd ${quoteTerminalStartupDirectory(launchOptions.workingDirectory, systemType)}`);
+  }
+
+  if (launchOptions.shell) {
+    startupLines.push(launchOptions.shell);
+  }
+
+  if (launchOptions.initialCommand) {
+    startupLines.push(launchOptions.initialCommand.replace(/\r?\n/g, '\r'));
+  }
+
+  return startupLines.length ? `${startupLines.join('\r')}\r` : '';
 }
 
 function getSftpEntryType(attrs) {
@@ -2779,11 +2835,12 @@ registerIpcHandler('connection:get-ipc-capabilities', async () => ({
   terminalSessions: true,
 }));
 
-registerIpcHandler('connection:start-terminal', async (event, connectionId, rawTerminalId, rawColumns, rawRows) => {
+registerIpcHandler('connection:start-terminal', async (event, connectionId, rawTerminalId, rawColumns, rawRows, rawLaunchOptions) => {
   const activeConnection = getActiveConnection(connectionId);
   const terminalId = validateTerminalId(rawTerminalId);
   const columns = Number(rawColumns) || 100;
   const rows = Number(rawRows) || 30;
+  const launchOptions = readTerminalLaunchOptions(rawLaunchOptions);
 
   if (!Number.isInteger(columns) || !Number.isInteger(rows) || columns < 20 || rows < 5 || columns > 300 || rows > 120) {
     throw new Error('终端尺寸无效。');
@@ -2821,6 +2878,8 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
 
       activeConnection.terminalSessions.set(terminalId, stream);
       let streamClosed = false;
+      let exitCode = null;
+      let exitSignal = null;
       const closeTerminalStream = () => {
         if (streamClosed) {
           return;
@@ -2833,7 +2892,7 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
         }
 
         if (!event.sender.isDestroyed()) {
-          event.sender.send('terminal:exit', { connectionId, terminalId });
+          event.sender.send('terminal:exit', { connectionId, terminalId, code: exitCode, signal: exitSignal });
         }
       };
 
@@ -2847,8 +2906,18 @@ registerIpcHandler('connection:start-terminal', async (event, connectionId, rawT
           event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
         }
       });
+      stream.once('exit', (code, signal) => {
+        exitCode = Number.isInteger(code) ? code : null;
+        exitSignal = typeof signal === 'string' ? signal : null;
+      });
       stream.once('error', closeTerminalStream);
       stream.once('close', closeTerminalStream);
+      const startupInput = createTerminalStartupInput(launchOptions, activeConnection.displayHost.systemType);
+
+      if (startupInput) {
+        stream.write(startupInput);
+      }
+
       resolve();
     });
   });

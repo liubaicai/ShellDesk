@@ -267,6 +267,10 @@ interface ShellDeskIpcCapabilities {
 
 interface ShellDeskTerminalIpcOptions {
   legacy?: boolean;
+  title?: string;
+  shell?: string;
+  initialCommand?: string;
+  workingDirectory?: string;
 }
 
 interface ShellDeskConnectionControls {
@@ -467,7 +471,7 @@ interface ShellDeskTransferEndPayload {
 
 interface ShellDeskEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
-  onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string }) => void) => () => void;
+  onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;

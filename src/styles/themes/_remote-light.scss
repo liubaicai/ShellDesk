@@ -356,6 +356,11 @@
   color: #111827;
 }
 
+[data-theme="light"] .desktop-window .win-titlebar-controls .win-btn.terminal-tools.active {
+  background: rgba(16, 32, 51, 0.1);
+  color: #111827;
+}
+
 [data-theme="light"] .desktop-window .win-titlebar-controls .win-btn.close:hover {
   background: #dc2626;
   color: #ffffff;

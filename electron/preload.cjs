@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
         return ipcRenderer.invoke('connection:start-terminal', connectionId);
       }
 
-      return ipcRenderer.invoke('connection:start-terminal', connectionId, terminalId, columns, rows);
+      return ipcRenderer.invoke('connection:start-terminal', connectionId, terminalId, columns, rows, options);
     },
     writeTerminal: (connectionId, terminalId, data, options) => {
       if (options?.legacy) {

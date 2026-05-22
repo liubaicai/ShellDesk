@@ -1,25 +1,89 @@
 .terminal-pane {
-  display: grid;
+  display: flex;
   height: 100%;
-  grid-template-rows: minmax(0, 1fr) 44px;
-  background: transparent;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--terminal-background, #181a24);
 }
 
-.xterm-terminal-pane {
-  grid-template-rows: minmax(0, 1fr);
+.terminal-searchbar {
+  min-width: 0;
+  border-color: rgba(139, 164, 195, 0.16);
+  background: color-mix(in srgb, var(--terminal-background, #181a24) 84%, #ffffff);
+  color: var(--text);
+}
+
+.terminal-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.terminal-searchbar button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(139, 164, 195, 0.18);
+  border-radius: 7px;
   padding: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.terminal-searchbar button:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.terminal-searchbar {
+  min-height: 36px;
+  border-bottom: 1px solid rgba(139, 164, 195, 0.14);
+  padding: 0 10px;
+}
+
+.terminal-searchbar input {
+  min-width: 0;
+  height: 26px;
+  flex: 1;
+  border: 1px solid rgba(139, 164, 195, 0.2);
+  border-radius: 7px;
+  padding: 0 9px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.terminal-searchbar input:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.terminal-searchbar span {
+  min-width: 40px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .terminal-host {
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-radius: 0 0 9px 9px;
-  padding: 6px;
+  padding: 7px;
   background: var(--terminal-background, #181a24);
 }
 
@@ -55,37 +119,73 @@
   border-radius: 4px;
 }
 
-.terminal-output {
-  height: 100%;
-  margin: 0;
-  overflow: auto;
-  padding: 16px;
-  color: #d7fbe8;
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
-.terminal-input-row {
+.terminal-launch-dialog,
+.terminal-settings-dialog {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
   gap: 10px;
-  border-top: 1px solid #ffffff14;
-  padding: 0 14px;
-  background: #ffffff0a;
-  color: #8cf7d5;
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
 }
 
-.terminal-input-row input,
-.browser-toolbar input,
-.file-toolbar input {
-  min-width: 0;
-  border: 0;
+.terminal-launch-dialog label,
+.terminal-settings-dialog > label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted-strong);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.terminal-launch-dialog textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
   outline: 0;
-  background: transparent;
+  background: var(--surface-input);
   color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
+.terminal-launch-dialog textarea:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.terminal-settings-toggles {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px;
+  background: var(--surface-soft);
+}
+
+.terminal-settings-toggles label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.terminal-settings-toggles input {
+  accent-color: var(--accent);
+}
+
+[data-theme="light"] .terminal-searchbar {
+  border-color: rgba(20, 42, 68, 0.12);
+  color: #18263a;
+}
+
+[data-theme="light"] .terminal-searchbar button,
+[data-theme="light"] .terminal-searchbar input {
+  border-color: rgba(20, 42, 68, 0.14);
+  background: rgba(255, 255, 255, 0.68);
+}

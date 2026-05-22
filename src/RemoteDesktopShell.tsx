@@ -2,6 +2,15 @@ import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, 
 import { createPortal } from 'react-dom';
 
 import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import type {
+  RemoteTerminalChromePayload,
+  RemoteTerminalLaunchOptions,
+  RemoteTerminalSessionEvent,
+  RemoteTerminalSessionState,
+  RemoteTerminalSessionStatus,
+  RemoteTerminalToolAction,
+  RemoteTerminalToolRequest,
+} from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
@@ -26,6 +35,8 @@ type DesktopAppKey = (typeof desktopApps)[number]['key'];
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
   settings: ShellDeskAppSettings;
+  onSettingsChange?: (settings: ShellDeskAppSettings) => void;
+  onTerminalSessionEvent?: (event: RemoteTerminalSessionEvent) => void;
 }
 
 interface DesktopWindowFrame {
@@ -44,10 +55,15 @@ interface DesktopWindowState {
   isMinimized: boolean;
   zIndex: number;
   terminalId?: string;
+  terminalLaunchOptions?: RemoteTerminalLaunchOptions;
+  terminalStatus?: RemoteTerminalSessionStatus;
+  terminalToolRequest?: RemoteTerminalToolRequest;
   chromeTitle?: string;
   chromeStatus?: string;
   chromeTone?: 'idle' | 'loading' | 'error';
   notepadInitialPath?: string;
+  notepadInitialContent?: string;
+  notepadInitialTitle?: string;
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -61,6 +77,12 @@ interface DesktopWindowPointerState {
   startFrame: DesktopWindowFrame;
   surfaceWidth: number;
   surfaceHeight: number;
+}
+
+interface TerminalTitlebarMenuState {
+  windowId: string;
+  x: number;
+  y: number;
 }
 
 const windowEdgePadding = 14;
@@ -128,6 +150,7 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
     isMinimized: false,
     zIndex,
     terminalId: appKey === 'terminal' ? `terminal-${sequence}` : undefined,
+    terminalStatus: appKey === 'terminal' ? 'idle' : undefined,
     chromeTitle: isBrowserWindow ? '127.0.0.1' : undefined,
     chromeStatus: isBrowserWindow ? '已就绪' : undefined,
     chromeTone: isBrowserWindow ? 'idle' : undefined,
@@ -170,15 +193,20 @@ function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties
   };
 }
 
-function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
+function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
   const windowSequenceRef = useRef(0);
+  const terminalToolRequestSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [desktopContextMenu, setDesktopContextMenu] = useState<{ x: number; y: number; appKey: DesktopAppKey } | null>(null);
+  const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
+  const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
+  const terminalTitlebarMenuWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === terminalTitlebarMenu?.windowId && desktopWindow.appKey === 'terminal') ?? null;
+  const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings);
 
   useEffect(() => {
@@ -217,12 +245,17 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     )));
   };
 
-  const openDesktopWindow = (appKey: DesktopAppKey) => {
+  const appendDesktopWindow = (
+    appKey: DesktopAppKey,
+    configureWindow?: (desktopWindow: DesktopWindowState) => void,
+  ) => {
     windowSequenceRef.current += 1;
     zIndexRef.current += 1;
     const nextWindow = createDesktopWindow(appKey, windowSequenceRef.current, zIndexRef.current);
     const surface = desktopSurfaceRef.current;
 
+    configureWindow?.(nextWindow);
+
     if (surface) {
       const surfaceRect = surface.getBoundingClientRect();
       nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
@@ -230,41 +263,45 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
 
     setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
     setFocusedWindowId(nextWindow.id);
+  };
+
+  const openDesktopWindow = (appKey: DesktopAppKey) => {
+    appendDesktopWindow(appKey);
+  };
+
+  const openTerminalWindow = (launchOptions?: RemoteTerminalLaunchOptions) => {
+    appendDesktopWindow('terminal', (nextWindow) => {
+      nextWindow.terminalLaunchOptions = launchOptions;
+    });
   };
 
   const openNotepadFile = (filePath: string) => {
-    windowSequenceRef.current += 1;
-    zIndexRef.current += 1;
-    const nextWindow = createDesktopWindow('notepad', windowSequenceRef.current, zIndexRef.current);
-    nextWindow.notepadInitialPath = filePath;
-    const surface = desktopSurfaceRef.current;
-
-    if (surface) {
-      const surfaceRect = surface.getBoundingClientRect();
-      nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
-    }
-
-    setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
-    setFocusedWindowId(nextWindow.id);
+    appendDesktopWindow('notepad', (nextWindow) => {
+      nextWindow.notepadInitialPath = filePath;
+    });
   };
 
   const openSqliteFile = (filePath: string) => {
-    windowSequenceRef.current += 1;
-    zIndexRef.current += 1;
-    const nextWindow = createDesktopWindow('sqlite', windowSequenceRef.current, zIndexRef.current);
-    nextWindow.notepadInitialPath = filePath;
-    const surface = desktopSurfaceRef.current;
-
-    if (surface) {
-      const surfaceRect = surface.getBoundingClientRect();
-      nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
-    }
-
-    setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
-    setFocusedWindowId(nextWindow.id);
+    appendDesktopWindow('sqlite', (nextWindow) => {
+      nextWindow.notepadInitialPath = filePath;
+    });
   };
 
-  const closeDesktopWindow = (windowId: string) => {
+  const openNotepadNote = (note: { title: string; content: string }) => {
+    appendDesktopWindow('notepad', (nextWindow) => {
+      nextWindow.notepadInitialContent = note.content;
+      nextWindow.notepadInitialTitle = note.title;
+    });
+  };
+
+  const openTerminalAtPath = (directoryPath: string) => {
+    openTerminalWindow({
+      title: directoryPath,
+      workingDirectory: directoryPath,
+    });
+  };
+
+  const removeDesktopWindow = (windowId: string) => {
     setDesktopWindows((currentWindows) => {
       const nextWindows = currentWindows.filter((desktopWindow) => desktopWindow.id !== windowId);
       const nextFocusedWindow = getTopDesktopWindow(nextWindows, (desktopWindow) => !desktopWindow.isMinimized);
@@ -272,6 +309,17 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
       setFocusedWindowId(nextFocusedWindow?.id ?? '');
       return nextWindows;
     });
+  };
+
+  const closeDesktopWindow = (windowId: string) => {
+    const desktopWindow = desktopWindows.find((currentWindow) => currentWindow.id === windowId);
+
+    if (desktopWindow?.appKey === 'terminal' && desktopWindow.terminalStatus === 'running') {
+      setPendingCloseWindowId(windowId);
+      return;
+    }
+
+    removeDesktopWindow(windowId);
   };
 
   const minimizeDesktopWindow = (windowId: string) => {
@@ -413,7 +461,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
 
   const updateWindowChrome = (
     windowId: string,
-    payload: { title: string; status: string; tone: 'idle' | 'loading' | 'error' },
+    payload: RemoteTerminalChromePayload,
   ) => {
     setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
       desktopWindow.id === windowId
@@ -427,6 +475,40 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     )));
   };
 
+  const updateTerminalSessionState = (windowId: string, payload: RemoteTerminalSessionState) => {
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+      desktopWindow.id === windowId
+        ? {
+            ...desktopWindow,
+            terminalStatus: payload.status,
+          }
+      : desktopWindow
+    )));
+  };
+
+  const requestTerminalTool = (windowId: string, action: RemoteTerminalToolAction) => {
+    terminalToolRequestSequenceRef.current += 1;
+    const terminalToolRequest: RemoteTerminalToolRequest = {
+      id: `terminal-tool-${terminalToolRequestSequenceRef.current}`,
+      action,
+    };
+
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+      desktopWindow.id === windowId
+        ? { ...desktopWindow, terminalToolRequest }
+        : desktopWindow
+    )));
+    setTerminalTitlebarMenu(null);
+  };
+
+  const completeTerminalToolRequest = (windowId: string, requestId: string) => {
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+      desktopWindow.id === windowId && desktopWindow.terminalToolRequest?.id === requestId
+        ? { ...desktopWindow, terminalToolRequest: undefined }
+        : desktopWindow
+    )));
+  };
+
   const renderWindowContent = (desktopWindow: DesktopWindowState) => {
     if (desktopWindow.appKey === 'terminal') {
       return (
@@ -434,6 +516,16 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
           connectionId={connection.id}
           terminalId={desktopWindow.terminalId ?? desktopWindow.id}
           settings={settings}
+          systemType={connection.host.systemType}
+          launchOptions={desktopWindow.terminalLaunchOptions}
+          toolRequest={desktopWindow.terminalToolRequest}
+          onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
+          onToolRequestHandled={(requestId) => completeTerminalToolRequest(desktopWindow.id, requestId)}
+          onOpenTerminal={openTerminalWindow}
+          onOpenNote={openNotepadNote}
+          onSessionEvent={onTerminalSessionEvent}
+          onSessionStateChange={(payload) => updateTerminalSessionState(desktopWindow.id, payload)}
+          onSettingsChange={onSettingsChange}
         />
       );
     }
@@ -449,11 +541,11 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} />;
+      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} onOpenTerminal={openTerminalAtPath} />;
     }
 
     if (desktopWindow.appKey === 'notepad') {
-      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} systemType={connection.host.systemType} />;
+      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} initialContent={desktopWindow.notepadInitialContent} initialTitle={desktopWindow.notepadInitialTitle} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'mysql') {
@@ -535,7 +627,7 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
                 onPointerCancel={finishWindowInteraction}
               >
                 <div className="desktop-window-title">
-                  {desktopWindow.appKey === 'browser' ? (
+                  {desktopWindow.appKey === 'browser' || desktopWindow.appKey === 'terminal' ? (
                     <>
                       <span className="desktop-window-kicker">{appInfo.label}</span>
                       <strong title={desktopWindow.chromeTitle || appInfo.label}>
@@ -552,6 +644,37 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
                   )}
                 </div>
                 <div className="win-titlebar-controls" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
+                  {desktopWindow.appKey === 'terminal' ? (
+                    <button
+                      type="button"
+                      className={`win-btn terminal-tools ${terminalTitlebarMenu?.windowId === desktopWindow.id ? 'active' : ''}`}
+                      aria-label="终端工具"
+                      aria-haspopup="menu"
+                      aria-expanded={terminalTitlebarMenu?.windowId === desktopWindow.id}
+                      title="终端工具"
+                      onClick={(event) => {
+                        if (terminalTitlebarMenu?.windowId === desktopWindow.id) {
+                          setTerminalTitlebarMenu(null);
+                          return;
+                        }
+
+                        const buttonRect = event.currentTarget.getBoundingClientRect();
+                        const menuWidth = 190;
+                        const menuEdgePadding = 8;
+                        setTerminalTitlebarMenu({
+                          windowId: desktopWindow.id,
+                          x: Math.max(menuEdgePadding, Math.min(buttonRect.right - menuWidth, window.innerWidth - menuWidth - menuEdgePadding)),
+                          y: buttonRect.bottom + 5,
+                        });
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                        <circle cx="2" cy="6" r="1.2" fill="currentColor" />
+                        <circle cx="6" cy="6" r="1.2" fill="currentColor" />
+                        <circle cx="10" cy="6" r="1.2" fill="currentColor" />
+                      </svg>
+                    </button>
+                  ) : null}
                   <button type="button" className="win-btn minimize" aria-label="最小化窗口" title="最小化" onClick={() => minimizeDesktopWindow(desktopWindow.id)}>
                     <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
                   </button>
@@ -663,6 +786,84 @@ function RemoteDesktopShell({ connection, settings }: RemoteDesktopProps) {
           </button>
         </div>
       </>,
+      document.body,
+    ) : null}
+
+    {terminalTitlebarMenu && terminalTitlebarMenuWindow ? createPortal(
+      <>
+        <div
+          className="context-menu-overlay"
+          onClick={() => setTerminalTitlebarMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setTerminalTitlebarMenu(null);
+          }}
+        />
+        <div
+          className="context-menu terminal-titlebar-menu"
+          style={{ left: terminalTitlebarMenu.x, top: terminalTitlebarMenu.y }}
+          role="menu"
+          aria-label="终端工具"
+        >
+          <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal')}>
+            新建终端窗口
+          </button>
+          <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'search')}>
+            搜索输出
+          </button>
+          <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'clear')}>
+            清屏
+          </button>
+          <div className="context-menu-sep" />
+          <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'toggle-follow')}>
+            切换自动跟随
+          </button>
+          <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'scroll-bottom')}>
+            滚动到底部
+          </button>
+          {terminalTitlebarMenuWindow.terminalStatus === 'exited' ? (
+            <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'restart')}>
+              重新创建会话
+            </button>
+          ) : null}
+          {onSettingsChange ? (
+            <>
+              <div className="context-menu-sep" />
+              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'settings')}>
+                终端设置
+              </button>
+            </>
+          ) : null}
+        </div>
+      </>,
+      document.body,
+    ) : null}
+
+    {pendingCloseWindow ? createPortal(
+      <div className="notepad-modal-overlay" role="presentation" onClick={() => setPendingCloseWindowId('')}>
+        <div
+          className="notepad-modal"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="terminal-close-confirm-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div id="terminal-close-confirm-title" className="notepad-modal-title">关闭终端窗口</div>
+          <div className="notepad-modal-message">
+            该终端会话仍在运行，关闭窗口会结束当前 Shell。
+          </div>
+          <div className="notepad-modal-actions">
+            <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseWindowId('')}>取消</button>
+            <button type="button" className="notepad-modal-btn danger" onClick={() => {
+              const windowId = pendingCloseWindow.id;
+              setPendingCloseWindowId('');
+              removeDesktopWindow(windowId);
+            }}>
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>,
       document.body,
     ) : null}
   </>

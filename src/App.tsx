@@ -1435,7 +1435,6 @@ function App() {
         const message = payload.reason || 'SSH 连接已断开。';
         const time = new Date().toLocaleTimeString('zh-CN');
         addLog('connection', 'warning', `连接断开：${connection.host.address}`, `${time} — ${message}`);
-        setConnection(null);
         setStatusMessage(message);
         // 不自动关闭窗口，让用户看到断开原因
         setWindowConnectionError(`${time} — ${message}`);
@@ -2107,7 +2106,7 @@ function App() {
       ) : null}
 
       {connection ? (
-        <RemoteDesktop connection={connection} settings={settings} />
+        <RemoteDesktop connection={connection} settings={settings} onSettingsChange={(nextSettings) => setSettings(nextSettings)} />
       ) : isConnectionWindow ? (
         <main className="vault-page no-drag">
           <div className="empty-state">

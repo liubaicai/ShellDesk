@@ -20,6 +20,7 @@ interface RemoteFileExplorerProps {
   systemType?: RemoteSystemType;
   onOpenFile?: (filePath: string) => void;
   onOpenSqliteFile?: (filePath: string) => void;
+  onOpenTerminal?: (directoryPath: string) => void;
 }
 
 interface RemoteFileEntry {
@@ -257,7 +258,7 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
-function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqliteFile }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [remotePath, setRemotePath] = useState('.');
   const [pathDraft, setPathDraft] = useState('.');
@@ -840,6 +841,11 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
           />
         </label>
         <button type="submit" className="explorer-go-button">转到</button>
+        {onOpenTerminal ? (
+          <button type="button" className="explorer-view-button" onClick={() => onOpenTerminal(remotePath)} aria-label="在终端中打开当前目录" title="在终端中打开">
+            &gt;_
+          </button>
+        ) : null}
         <button type="button" className="explorer-view-button" aria-label="切换视图" title="视图">
           ☷
         </button>
@@ -1012,6 +1018,14 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
                     打开
                   </button>
                 )}
+                {contextMenu.targetEntry.type === 'directory' && onOpenTerminal ? (
+                  <button type="button" role="menuitem" onClick={() => {
+                    closeContextMenu();
+                    onOpenTerminal(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
+                  }}>
+                    在终端中打开
+                  </button>
+                ) : null}
                 {contextMenu.targetEntry.type === 'file' && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
                   <button type="button" role="menuitem" onClick={() => {
                     closeContextMenu();
@@ -1093,6 +1107,11 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
                 <button type="button" role="menuitem" onClick={() => void uploadFile()}>
                   上传文件
                 </button>
+                {onOpenTerminal ? (
+                  <button type="button" role="menuitem" onClick={() => { closeContextMenu(); onOpenTerminal(remotePath); }}>
+                    在终端中打开
+                  </button>
+                ) : null}
               </>
             )}
           </div>
