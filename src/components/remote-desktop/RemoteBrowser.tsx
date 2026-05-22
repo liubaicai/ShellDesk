@@ -4,10 +4,29 @@ import { createPortal } from 'react-dom';
 import { getErrorMessage } from './desktopUtils';
 
 const defaultBrowserUrl = 'http://127.0.0.1/';
+const recentVisitLimit = 8;
+const browserRecentStoragePrefix = 'shelldesk:browser-recent:';
+const browserBookmarkBarStoragePrefix = 'shelldesk:browser-bookmark-bar:';
+
+const loopbackServiceTargets = [
+  { label: '开发服务', port: 3000 },
+  { label: 'Vite', port: 5173 },
+  { label: '管理后台', port: 8080 },
+  { label: '面板', port: 9000 },
+] as const;
+
+interface RemoteBrowserContext {
+  name: string;
+  address: string;
+  port: number;
+  username: string;
+  proxyPort: number;
+}
 
 interface RemoteBrowserProps {
   partition: string;
   bookmarkScope: string;
+  context: RemoteBrowserContext;
   onChromeChange?: (payload: { title: string; status: string; tone: 'idle' | 'loading' | 'error' }) => void;
 }
 
@@ -29,6 +48,31 @@ interface BrowserBookmarkMenuState {
   bookmarkId: string;
   x: number;
   y: number;
+}
+
+interface BrowserToolbarMenuState {
+  x: number;
+  y: number;
+}
+
+interface BrowserRecentVisit {
+  url: string;
+  title: string;
+  visitedAt: string;
+}
+
+interface BrowserLoadErrorState {
+  kind: 'load' | 'protocol';
+  url: string;
+  detail: string;
+  code?: number;
+}
+
+interface BrowserQuickTarget {
+  id: string;
+  label: string;
+  hint: string;
+  url: string;
 }
 
 interface BrowserLoadCommitEvent extends Event {
@@ -87,7 +131,7 @@ function canonicalizeBrowserUrl(value: string) {
   }
 }
 
-function normalizeBrowserUrl(value: string) {
+function resolveBrowserUrl(value: string) {
   const url = value.trim();
 
   if (!url) {
@@ -98,11 +142,29 @@ function normalizeBrowserUrl(value: string) {
     return 'about:blank';
   }
 
-  if (/^https?:\/\//i.test(url)) {
-    return canonicalizeBrowserUrl(url);
+  const schemeMatch = url.match(/^([a-z][a-z\d+.-]*):/i);
+  const hasWebScheme = /^https?:/i.test(url);
+  const isBareHostWithPort = /^[^/?#\s]+:\d+(?:[/?#]|$)/.test(url);
+
+  if (schemeMatch && !hasWebScheme && !isBareHostWithPort) {
+    return null;
   }
 
-  return canonicalizeBrowserUrl(`http://${url}`);
+  try {
+    const normalizedUrl = new URL(hasWebScheme ? url : `http://${url}`);
+
+    if (normalizedUrl.protocol !== 'http:' && normalizedUrl.protocol !== 'https:') {
+      return null;
+    }
+
+    return normalizedUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBrowserUrl(value: string) {
+  return resolveBrowserUrl(value) ?? defaultBrowserUrl;
 }
 
 function getBrowserTitle(url: string, title = '') {
@@ -170,38 +232,302 @@ function isBrowserBookmark(value: unknown): value is BrowserBookmark {
 }
 
 function normalizeBookmarks(bookmarks: BrowserBookmark[]) {
-  return bookmarks.map((bookmark) => ({
-    ...bookmark,
-    title: bookmark.title.trim() || getBrowserTitle(bookmark.url),
-    url: normalizeBrowserUrl(bookmark.url),
-  }));
+  return bookmarks.flatMap((bookmark) => {
+    const url = resolveBrowserUrl(bookmark.url);
+
+    return url
+      ? [{
+          ...bookmark,
+          title: bookmark.title.trim() || getBrowserTitle(url),
+          url,
+        }]
+      : [];
+  });
 }
 
-function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrowserProps) {
+function isBrowserRecentVisit(value: unknown): value is BrowserRecentVisit {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const visit = value as Partial<BrowserRecentVisit>;
+  return (
+    typeof visit.url === 'string' &&
+    typeof visit.title === 'string' &&
+    typeof visit.visitedAt === 'string'
+  );
+}
+
+function getBrowserRecentStorageKey(scope: string) {
+  return `${browserRecentStoragePrefix}${encodeURIComponent(scope)}`;
+}
+
+function readBrowserRecentVisits(scope: string) {
+  try {
+    const storedVisits = JSON.parse(localStorage.getItem(getBrowserRecentStorageKey(scope)) ?? '[]') as unknown;
+
+    if (!Array.isArray(storedVisits)) {
+      return [];
+    }
+
+    return storedVisits.filter(isBrowserRecentVisit).flatMap((visit) => {
+      const url = resolveBrowserUrl(visit.url);
+
+      return url
+        ? [{
+            ...visit,
+            url,
+            title: visit.title.trim() || getBrowserTitle(url),
+          }]
+        : [];
+    }).slice(0, recentVisitLimit);
+  } catch {
+    return [];
+  }
+}
+
+function writeBrowserRecentVisits(scope: string, visits: BrowserRecentVisit[]) {
+  try {
+    localStorage.setItem(getBrowserRecentStorageKey(scope), JSON.stringify(visits));
+  } catch {
+    // Recent visits are helpful UI state, not a connection blocker.
+  }
+}
+
+function getBrowserBookmarkBarStorageKey(scope: string) {
+  return `${browserBookmarkBarStoragePrefix}${encodeURIComponent(scope)}`;
+}
+
+function readBrowserBookmarkBarOpen(scope: string) {
+  try {
+    return localStorage.getItem(getBrowserBookmarkBarStorageKey(scope)) !== 'hidden';
+  } catch {
+    return true;
+  }
+}
+
+function writeBrowserBookmarkBarOpen(scope: string, isOpen: boolean) {
+  try {
+    localStorage.setItem(getBrowserBookmarkBarStorageKey(scope), isOpen ? 'visible' : 'hidden');
+  } catch {
+    // Visibility preference should not block browser navigation.
+  }
+}
+
+function getBrowserHostUrl(host: string, port?: number) {
+  const value = host.trim() || '127.0.0.1';
+  const urlHost = value.includes(':') && !value.startsWith('[') ? `[${value}]` : value;
+  return `http://${urlHost}${port && port !== 80 ? `:${port}` : ''}/`;
+}
+
+function getBrowserQuickTargets(context: RemoteBrowserContext) {
+  const targets: BrowserQuickTarget[] = [
+    {
+      id: 'loopback',
+      label: '127.0.0.1',
+      hint: '远程回环地址',
+      url: getBrowserHostUrl('127.0.0.1'),
+    },
+    {
+      id: 'remote-host',
+      label: context.address,
+      hint: '远程主机地址',
+      url: getBrowserHostUrl(context.address),
+    },
+    ...loopbackServiceTargets.map((target) => ({
+      id: `loopback-${target.port}`,
+      label: `127.0.0.1:${target.port}`,
+      hint: target.label,
+      url: getBrowserHostUrl('127.0.0.1', target.port),
+    })),
+  ];
+  const visitedTargets = new Set<string>();
+
+  return targets.filter((target) => {
+    if (visitedTargets.has(target.url)) {
+      return false;
+    }
+
+    visitedTargets.add(target.url);
+    return true;
+  });
+}
+
+function getBrowserProtocolLabel(url: string) {
+  if (/^https:\/\//i.test(url)) {
+    return 'HTTPS';
+  }
+
+  if (/^http:\/\//i.test(url)) {
+    return 'HTTP';
+  }
+
+  return '空白页';
+}
+
+function getBrowserErrorDiagnosis(error: BrowserLoadErrorState) {
+  if (error.kind === 'protocol') {
+    return {
+      title: '地址协议已拦截',
+      summary: '远程浏览器只允许打开 HTTP、HTTPS 和空白页。',
+      checks: [
+        '把裸域名、短主机名或 localhost 地址直接输入地址栏即可自动补全。',
+        '需要打开本地文件或应用协议时，请回到对应 ShellDesk 工具处理。',
+      ],
+    };
+  }
+
+  const signature = `${error.code ?? ''} ${error.detail}`.toUpperCase();
+
+  if (/CERT|TLS|SSL|-20\d/.test(signature)) {
+    return {
+      title: 'TLS 校验失败',
+      summary: '页面证书或 HTTPS 握手没有通过。',
+      checks: [
+        '确认目标服务证书、域名和系统时间是否匹配。',
+        '内网自签证书需要在服务侧修复或改用明确允许的访问路径。',
+      ],
+    };
+  }
+
+  if (/NAME_NOT_RESOLVED|DNS|-105/.test(signature)) {
+    return {
+      title: 'DNS 无法解析',
+      summary: '远程网络路径没有解析出这个主机名。',
+      checks: [
+        '先尝试远程主机地址或 127.0.0.1 快捷入口。',
+        '确认远端 DNS、hosts 或内网域名是否在当前 SSH 网络里可用。',
+      ],
+    };
+  }
+
+  if (/CONNECTION_REFUSED|-102/.test(signature)) {
+    return {
+      title: '连接被拒绝',
+      summary: '目标地址可达，但端口上没有接受连接的服务。',
+      checks: [
+        '确认服务已在远端启动，并监听了目标端口。',
+        'localhost 服务请优先使用 127.0.0.1 与常用端口快捷入口。',
+      ],
+    };
+  }
+
+  if (/PROXY|SOCKS|TUNNEL|-130|-111/.test(signature)) {
+    return {
+      title: '代理路径异常',
+      summary: '浏览器没有通过当前 SSH 代理完成访问。',
+      checks: [
+        '确认远程连接仍在线，代理端口没有被关闭。',
+        '再试一个远程 localhost 页面，用来区分代理和目标服务故障。',
+      ],
+    };
+  }
+
+  return {
+    title: '页面加载失败',
+    summary: 'ShellDesk 没有拿到可渲染的远程页面。',
+    checks: [
+      '检查 URL、端口和远端服务状态。',
+      '如果是内网地址，确认它能从当前远程主机所在网络访问。',
+    ],
+  };
+}
+
+type BrowserIconName =
+  | 'arrow-left'
+  | 'arrow-right'
+  | 'clock'
+  | 'go'
+  | 'home'
+  | 'more'
+  | 'panel'
+  | 'reload'
+  | 'route'
+  | 'shield'
+  | 'star'
+  | 'stop';
+
+function BrowserIcon({ name, filled = false }: { name: BrowserIconName; filled?: boolean }) {
+  if (name === 'star') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path
+          d="m12 3.6 2.54 5.15 5.69.83-4.12 4.01.97 5.67L12 16.59l-5.08 2.67.97-5.67L3.77 9.58l5.69-.83L12 3.6Z"
+          fill={filled ? 'currentColor' : 'none'}
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      {name === 'arrow-left' ? <path d="m14.5 5-7 7 7 7M8 12h9" /> : null}
+      {name === 'arrow-right' ? <path d="m9.5 5 7 7-7 7M16 12H7" /> : null}
+      {name === 'clock' ? <path d="M12 7v5l3.5 2M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /> : null}
+      {name === 'go' ? <path d="M5 12h13M13 6l6 6-6 6" /> : null}
+      {name === 'home' ? <path d="m4 10 8-6 8 6M7 9.5V20h10V9.5M10 20v-5h4v5" /> : null}
+      {name === 'more' ? <path d="M12 5.5v.01M12 12v.01M12 18.5v.01" /> : null}
+      {name === 'panel' ? <path d="M5 7h14M5 12h14M5 17h9" /> : null}
+      {name === 'reload' ? <path d="M19 8v5h-5M5 16v-5h5M18.2 13a6.5 6.5 0 0 1-11.1 3M5.8 11A6.5 6.5 0 0 1 17 8" /> : null}
+      {name === 'route' ? <path d="M7 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm10-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9.5 14.5l5-5" /> : null}
+      {name === 'shield' ? <path d="M12 21s7-3.1 7-9V5l-7-2-7 2v7c0 5.9 7 9 7 9Zm-3.2-9.2 2 2 4.5-5" /> : null}
+      {name === 'stop' ? <path d="M7 7h10v10H7z" /> : null}
+    </svg>
+  );
+}
+
+function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: RemoteBrowserProps) {
   const [browserAddress, setBrowserAddress] = useState(defaultBrowserUrl);
   const [browserSrc, setBrowserSrc] = useState(defaultBrowserUrl);
   const [currentUrl, setCurrentUrl] = useState(defaultBrowserUrl);
   const [pageTitle, setPageTitle] = useState(getBrowserTitle(defaultBrowserUrl));
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<BrowserLoadErrorState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
+  const [recentVisits, setRecentVisits] = useState<BrowserRecentVisit[]>([]);
+  const [isBookmarkBarOpen, setIsBookmarkBarOpen] = useState(() => readBrowserBookmarkBarOpen(bookmarkScope));
+  const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false);
   const [bookmarkDraft, setBookmarkDraft] = useState<BrowserBookmarkDraft | null>(null);
   const [bookmarkMenu, setBookmarkMenu] = useState<BrowserBookmarkMenuState | null>(null);
+  const [toolbarMenu, setToolbarMenu] = useState<BrowserToolbarMenuState | null>(null);
   const browserViewRef = useRef<BrowserWebview | null>(null);
   const isWebviewReadyRef = useRef(false);
   const bookmarkTriggerRef = useRef<HTMLDivElement | null>(null);
   const bookmarkPopoverRef = useRef<HTMLDivElement | null>(null);
   const bookmarkMenuPopoverRef = useRef<HTMLDivElement | null>(null);
+  const toolbarMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const toolbarMenuPopoverRef = useRef<HTMLDivElement | null>(null);
   const bookmarkMenuTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const lastPersistedBookmarksRef = useRef('');
+  const lastChromePayloadRef = useRef('');
   const areBookmarksReadyRef = useRef(false);
+  const areRecentVisitsReadyRef = useRef(false);
 
   const currentBookmark = bookmarks.find((bookmark) => areBrowserUrlsEquivalent(bookmark.url, currentUrl)) ?? null;
   const activeBookmarkMenuBookmark = bookmarkMenu
     ? bookmarks.find((bookmark) => bookmark.id === bookmarkMenu.bookmarkId) ?? null
     : null;
+  const quickTargets = getBrowserQuickTargets(context);
+  const errorDiagnosis = loadError ? getBrowserErrorDiagnosis(loadError) : null;
+
+  const rememberRecentVisit = (url: string, title = '') => {
+    const resolvedUrl = resolveBrowserUrl(url);
+
+    if (!resolvedUrl || resolvedUrl === 'about:blank') {
+      return;
+    }
+
+    setRecentVisits((currentVisits) => [
+      {
+        url: resolvedUrl,
+        title: getBrowserTitle(resolvedUrl, title),
+        visitedAt: new Date().toISOString(),
+      },
+      ...currentVisits.filter((visit) => !areBrowserUrlsEquivalent(visit.url, resolvedUrl)),
+    ].slice(0, recentVisitLimit));
+  };
 
   const syncNavigationState = (nextUrl?: string, nextTitle?: string) => {
     const webview = browserViewRef.current;
@@ -314,6 +640,24 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
   }, [bookmarkScope]);
 
   useEffect(() => {
+    areRecentVisitsReadyRef.current = false;
+    setRecentVisits(readBrowserRecentVisits(bookmarkScope));
+  }, [bookmarkScope]);
+
+  useEffect(() => {
+    setIsBookmarkBarOpen(readBrowserBookmarkBarOpen(bookmarkScope));
+  }, [bookmarkScope]);
+
+  useEffect(() => {
+    if (!areRecentVisitsReadyRef.current) {
+      areRecentVisitsReadyRef.current = true;
+      return;
+    }
+
+    writeBrowserRecentVisits(bookmarkScope, recentVisits);
+  }, [bookmarkScope, recentVisits]);
+
+  useEffect(() => {
     const webview = browserViewRef.current;
 
     if (!webview) {
@@ -330,8 +674,9 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
       }
 
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
-      setLoadError('');
+      setLoadError(null);
       syncNavigationState(nextUrl);
+      rememberRecentVisit(nextUrl);
     };
     const handleDidStartNavigation: EventListener = (event) => {
       const browserEvent = event as BrowserNavigationEvent;
@@ -341,7 +686,7 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
       }
 
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
-      setLoadError('');
+      setLoadError(null);
       setIsLoading(true);
       setCurrentUrl(nextUrl);
       setBrowserAddress(nextUrl);
@@ -362,16 +707,18 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     const handleDidNavigate: EventListener = (event) => {
       const browserEvent = event as BrowserNavigationEvent;
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
-      setLoadError('');
+      setLoadError(null);
       syncNavigationState(nextUrl);
+      rememberRecentVisit(nextUrl);
     };
     const handleDidNavigateInPage: EventListener = (event) => {
       const browserEvent = event as BrowserNavigationEvent;
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
       syncNavigationState(nextUrl);
+      rememberRecentVisit(nextUrl);
     };
     const handleDidStartLoading = () => {
-      setLoadError('');
+      setLoadError(null);
       setIsLoading(true);
 
       if (isWebviewReadyRef.current) {
@@ -395,7 +742,14 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
       const failedUrl = canonicalizeBrowserUrl(browserEvent.validatedURL || webview.getURL() || defaultBrowserUrl);
 
       if (browserEvent.errorCode !== -3) {
-        setLoadError(`${browserEvent.errorDescription || '页面加载失败。'} (${browserEvent.errorCode})`);
+        setLoadError({
+          kind: 'load',
+          url: failedUrl,
+          detail: browserEvent.errorDescription || '页面加载失败。',
+          code: browserEvent.errorCode,
+        });
+      } else {
+        setLoadError(null);
       }
 
       setIsLoading(false);
@@ -404,6 +758,7 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     const handlePageTitleUpdated: EventListener = (event) => {
       const browserEvent = event as BrowserTitleUpdatedEvent;
       syncNavigationState(undefined, browserEvent.title);
+      rememberRecentVisit(webview.getURL() || defaultBrowserUrl, browserEvent.title);
     };
     const handleDomReady = (_event: Event) => {
       isWebviewReadyRef.current = true;
@@ -435,11 +790,23 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
   }, [partition]);
 
   useEffect(() => {
-    onChromeChange?.({
+    if (!onChromeChange) {
+      return;
+    }
+
+    const payload = {
       title: pageTitle || getBrowserTitle(currentUrl || browserAddress || defaultBrowserUrl),
-      status: loadError ? '加载失败' : isLoading ? '加载中' : '已就绪',
+      status: loadError ? '加载失败' : isLoading ? '远程加载中' : 'SSH 代理',
       tone: loadError ? 'error' : isLoading ? 'loading' : 'idle',
-    });
+    } as const;
+    const payloadKey = `${payload.tone}\n${payload.status}\n${payload.title}`;
+
+    if (payloadKey === lastChromePayloadRef.current) {
+      return;
+    }
+
+    lastChromePayloadRef.current = payloadKey;
+    onChromeChange(payload);
   }, [browserAddress, currentUrl, isLoading, loadError, onChromeChange, pageTitle]);
 
   useEffect(() => {
@@ -497,11 +864,53 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     };
   }, [bookmarkMenu]);
 
+  useEffect(() => {
+    if (!toolbarMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+
+      if (
+        (toolbarMenuTriggerRef.current && toolbarMenuTriggerRef.current.contains(target)) ||
+        (toolbarMenuPopoverRef.current && toolbarMenuPopoverRef.current.contains(target))
+      ) {
+        return;
+      }
+
+      setToolbarMenu(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setToolbarMenu(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toolbarMenu]);
+
   const loadBrowserUrl = (value: string) => {
-    const nextUrl = normalizeBrowserUrl(value);
+    const nextUrl = resolveBrowserUrl(value);
     const webview = browserViewRef.current;
 
-    setLoadError('');
+    if (!nextUrl) {
+      setLoadError({
+        kind: 'protocol',
+        url: value.trim(),
+        detail: '地址没有使用允许的 Web 协议。',
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    setLoadError(null);
     setBrowserAddress(nextUrl);
     setCurrentUrl(nextUrl);
     setPageTitle(getBrowserTitle(nextUrl));
@@ -513,7 +922,12 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     }
 
     void webview.loadURL(nextUrl).catch((error: unknown) => {
-      setLoadError(getErrorMessage(error));
+      setLoadError({
+        kind: 'load',
+        url: nextUrl,
+        detail: getErrorMessage(error),
+      });
+      setIsLoading(false);
     });
   };
 
@@ -531,7 +945,7 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
         setBrowserAddress(defaultBrowserUrl);
         setCurrentUrl(defaultBrowserUrl);
         setPageTitle(getBrowserTitle(defaultBrowserUrl));
-        setLoadError('');
+        setLoadError(null);
         setIsLoading(true);
       }
       return;
@@ -591,6 +1005,33 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
     });
   };
 
+  const toggleToolbarMenu = (element: HTMLButtonElement) => {
+    if (toolbarMenu) {
+      setToolbarMenu(null);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const menuWidth = 186;
+    const menuHeight = 106;
+    const gap = 7;
+    const maxLeft = Math.max(10, window.innerWidth - menuWidth - 10);
+    const x = Math.min(Math.max(10, rect.right - menuWidth), maxLeft);
+    const y = rect.bottom + gap + menuHeight <= window.innerHeight - 10
+      ? rect.bottom + gap
+      : Math.max(10, rect.top - gap - menuHeight);
+
+    setToolbarMenu({ x, y });
+  };
+
+  const toggleBookmarkBar = () => {
+    setIsBookmarkBarOpen((isOpen) => {
+      const nextIsOpen = !isOpen;
+      writeBrowserBookmarkBarOpen(bookmarkScope, nextIsOpen);
+      return nextIsOpen;
+    });
+  };
+
   const updateBookmarkDraftField = (field: keyof BrowserBookmarkDraft, value: string | null) => {
     setBookmarkDraft((currentDraft) => (
       currentDraft ? { ...currentDraft, [field]: value } : currentDraft
@@ -602,7 +1043,17 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
       return;
     }
 
-    const normalizedUrl = normalizeBrowserUrl(bookmarkDraft.url);
+    const normalizedUrl = resolveBrowserUrl(bookmarkDraft.url);
+
+    if (!normalizedUrl) {
+      setLoadError({
+        kind: 'protocol',
+        url: bookmarkDraft.url.trim(),
+        detail: '书签地址没有使用允许的 Web 协议。',
+      });
+      return;
+    }
+
     const normalizedTitle = bookmarkDraft.title.trim() || getBrowserTitle(normalizedUrl, pageTitle);
     const now = new Date().toISOString();
 
@@ -662,10 +1113,10 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
       <div className="browser-chrome">
         <form className="browser-toolbar" onSubmit={submitBrowserAddress}>
           <button type="button" onClick={() => navigateWebview('back')} disabled={!canGoBack} aria-label="后退" title="后退">
-            ←
+            <BrowserIcon name="arrow-left" />
           </button>
           <button type="button" onClick={() => navigateWebview('forward')} disabled={!canGoForward} aria-label="前进" title="前进">
-            →
+            <BrowserIcon name="arrow-right" />
           </button>
           <button
             type="button"
@@ -673,17 +1124,20 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
             aria-label={isLoading ? '停止加载' : '刷新页面'}
             title={isLoading ? '停止加载' : '刷新页面'}
           >
-            {isLoading ? '×' : '↻'}
+            <BrowserIcon name={isLoading ? 'stop' : 'reload'} />
           </button>
           <button type="button" onClick={() => navigateWebview('home')} aria-label="打开主页" title="主页">
-            ⌂
+            <BrowserIcon name="home" />
           </button>
           <div className="browser-address-shell">
-            <span className="browser-security-icon" aria-hidden="true">▣</span>
+            <span className="browser-security-icon" aria-label={`地址协议 ${getBrowserProtocolLabel(currentUrl)}`}>
+              <BrowserIcon name="shield" />
+              <em>{getBrowserProtocolLabel(currentUrl)}</em>
+            </span>
             <input
               value={browserAddress}
               onChange={(event) => setBrowserAddress(event.target.value)}
-              placeholder="搜索或输入网址"
+              placeholder="输入域名、localhost 或内网地址"
               autoCapitalize="off"
               spellCheck={false}
             />
@@ -697,7 +1151,7 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
                 aria-label={currentBookmark ? '编辑当前页书签' : '收藏当前页'}
                 title={currentBookmark ? '编辑当前页书签' : '收藏当前页'}
               >
-                {currentBookmark ? '★' : '☆'}
+                <BrowserIcon name="star" filled={Boolean(currentBookmark)} />
               </button>
 
               {bookmarkDraft ? (
@@ -746,59 +1200,116 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
               ) : null}
             </div>
 
-            <button type="button" className="browser-menu-button" aria-label="浏览器菜单" title="菜单">
-              ☰
+            <button type="submit" className="browser-go-button" aria-label="打开地址" title="打开地址">
+              <BrowserIcon name="go" />
             </button>
-            <button type="submit" className="browser-kebab-button" aria-label="打开地址" title="打开地址">
-              ⋮
+            <button
+              ref={toolbarMenuTriggerRef}
+              type="button"
+              className={`browser-overflow-button ${toolbarMenu ? 'active' : ''}`}
+              aria-label="浏览器菜单"
+              aria-expanded={Boolean(toolbarMenu)}
+              title="菜单"
+              onClick={(event) => toggleToolbarMenu(event.currentTarget)}
+            >
+              <BrowserIcon name="more" />
             </button>
           </div>
         </form>
 
-        {bookmarks.length ? (
-        <div className="browser-bookmark-bar">
-          <div className="browser-bookmark-list" aria-label="书签栏">
-            {bookmarks.map((bookmark) => {
-                const bookmarkStyle = {
-                  '--bookmark-accent': getBookmarkAccent(bookmark.url),
-                } as CSSProperties;
-
-                return (
-                  <div
-                    key={bookmark.id}
-                    className={`browser-bookmark-chip ${currentBookmark?.id === bookmark.id ? 'active' : ''}`}
-                    style={bookmarkStyle}
+        {isQuickPanelOpen ? (
+          <section className="browser-shortcut-panel" aria-label="快捷访问和最近访问">
+            <div className="browser-target-column">
+              <strong>快捷地址</strong>
+              <div className="browser-target-grid">
+                {quickTargets.map((target) => (
+                  <button
+                    key={target.id}
+                    type="button"
+                    className={areBrowserUrlsEquivalent(target.url, currentUrl) ? 'active' : ''}
+                    onClick={() => loadBrowserUrl(target.url)}
                   >
-                    <button type="button" className="browser-bookmark-link" onClick={() => loadBrowserUrl(bookmark.url)} title={bookmark.url}>
-                      <span className="browser-bookmark-favicon" aria-hidden="true">
-                        {getBookmarkMonogram(bookmark.title, bookmark.url)}
-                      </span>
-                      <span className="browser-bookmark-label">{bookmark.title}</span>
+                    <span>{target.label}</span>
+                    <small>{target.hint}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="browser-recent-column">
+              <strong>
+                <BrowserIcon name="clock" />
+                最近访问
+              </strong>
+              {recentVisits.length ? (
+                <div className="browser-recent-list">
+                  {recentVisits.map((visit) => (
+                    <button key={visit.url} type="button" title={visit.url} onClick={() => loadBrowserUrl(visit.url)}>
+                      <span>{visit.title}</span>
+                      <small>{visit.url}</small>
                     </button>
-                    <button
-                      ref={(element) => {
-                        if (element) {
-                          bookmarkMenuTriggerRefs.current.set(bookmark.id, element);
-                        } else {
-                          bookmarkMenuTriggerRefs.current.delete(bookmark.id);
-                        }
-                      }}
-                      type="button"
-                      className={`browser-bookmark-menu-button ${bookmarkMenu?.bookmarkId === bookmark.id ? 'active' : ''}`}
-                      aria-label="书签操作"
-                      title="书签操作"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleBookmarkMenu(bookmark, event.currentTarget);
-                      }}
+                  ))}
+                </div>
+              ) : (
+                <p>访问远程页面后，这里会保留本连接最近打开的地址。</p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {isBookmarkBarOpen ? (
+          <div className="browser-bookmark-bar">
+            {bookmarks.length ? (
+              <div className="browser-bookmark-list" aria-label="连接级书签栏">
+                {bookmarks.map((bookmark) => {
+                  const bookmarkStyle = {
+                    '--bookmark-accent': getBookmarkAccent(bookmark.url),
+                  } as CSSProperties;
+
+                  return (
+                    <div
+                      key={bookmark.id}
+                      className={`browser-bookmark-chip ${currentBookmark?.id === bookmark.id ? 'active' : ''}`}
+                      style={bookmarkStyle}
                     >
-                      ⋯
-                    </button>
-                  </div>
-                );
-              })}
+                      <button type="button" className="browser-bookmark-link" onClick={() => loadBrowserUrl(bookmark.url)} title={bookmark.url}>
+                        <span className="browser-bookmark-favicon" aria-hidden="true">
+                          {getBookmarkMonogram(bookmark.title, bookmark.url)}
+                        </span>
+                        <span className="browser-bookmark-label">{bookmark.title}</span>
+                      </button>
+                      <button
+                        ref={(element) => {
+                          if (element) {
+                            bookmarkMenuTriggerRefs.current.set(bookmark.id, element);
+                          } else {
+                            bookmarkMenuTriggerRefs.current.delete(bookmark.id);
+                          }
+                        }}
+                        type="button"
+                        className={`browser-bookmark-menu-button ${bookmarkMenu?.bookmarkId === bookmark.id ? 'active' : ''}`}
+                        aria-label="书签操作"
+                        title="书签操作"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleBookmarkMenu(bookmark, event.currentTarget);
+                        }}
+                      >
+                        ···
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="browser-bookmark-empty">
+                <span>此连接还没有书签。</span>
+                <button type="button" onClick={() => openBookmarkDraft()}>
+                  收藏当前页
+                </button>
+              </div>
+            )}
           </div>
-        </div>
         ) : null}
       </div>
 
@@ -832,7 +1343,41 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
         document.body,
       ) : null}
 
-      {loadError ? <div className="browser-error-banner">{loadError}</div> : null}
+      {toolbarMenu ? createPortal(
+        <div
+          ref={toolbarMenuPopoverRef}
+          className="browser-toolbar-menu-panel"
+          style={{ left: toolbarMenu.x, top: toolbarMenu.y }}
+          role="menu"
+          aria-label="浏览器菜单"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className={isQuickPanelOpen ? 'active' : ''}
+            onClick={() => {
+              setIsQuickPanelOpen((open) => !open);
+              setToolbarMenu(null);
+            }}
+          >
+            <span>快捷与最近</span>
+            <em>{isQuickPanelOpen ? '收起' : '展开'}</em>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={isBookmarkBarOpen ? 'active' : ''}
+            onClick={() => {
+              toggleBookmarkBar();
+              setToolbarMenu(null);
+            }}
+          >
+            <span>书签栏</span>
+            <em>{isBookmarkBarOpen ? '隐藏' : '显示'}</em>
+          </button>
+        </div>,
+        document.body,
+      ) : null}
 
       <div className={`browser-viewport ${isLoading ? 'loading' : ''}`}>
         <div className={`browser-progress ${isLoading ? 'visible' : ''}`} aria-hidden="true" />
@@ -844,6 +1389,35 @@ function RemoteBrowser({ partition, bookmarkScope, onChromeChange }: RemoteBrows
           partition={partition}
           src={browserSrc}
         />
+        {loadError && errorDiagnosis ? (
+          <section className="browser-error-page" role="alert" aria-live="polite">
+            <div>
+              <span>{errorDiagnosis.title}</span>
+              <strong>{errorDiagnosis.summary}</strong>
+              <code>{loadError.url || browserAddress}</code>
+              <p>{loadError.detail}{typeof loadError.code === 'number' ? ` (${loadError.code})` : ''}</p>
+              <ul>
+                {errorDiagnosis.checks.map((check) => <li key={check}>{check}</li>)}
+              </ul>
+              <footer>
+                {loadError.kind === 'load' ? (
+                  <button type="button" onClick={() => loadBrowserUrl(loadError.url)}>
+                    重新加载
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoadError(null);
+                    setIsQuickPanelOpen(true);
+                  }}
+                >
+                  查看快捷地址
+                </button>
+              </footer>
+            </div>
+          </section>
+        ) : null}
       </div>
     </div>
   );

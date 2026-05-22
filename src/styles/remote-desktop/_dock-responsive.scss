@@ -167,7 +167,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .browser-toolbar button:not([type="submit"]):not(.browser-bookmark-trigger),
+  .browser-toolbar button:not([type="submit"]):not(.browser-bookmark-trigger):not(.browser-overflow-button),
   .browser-bookmark-menu-button,
   .desktop-window-kicker,
   .desktop-window-state-pill,
