@@ -5,24 +5,29 @@
   height: 100%;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--window-border);
-  background: var(--bg);
+  border: 1px solid rgba(147, 171, 205, 0.16);
+  background:
+    radial-gradient(ellipse at 18% -12%, rgba(82, 126, 188, 0.18), transparent 42%),
+    linear-gradient(145deg, #111a25 0%, #0e1620 100%);
 }
 
 .top-chrome {
   display: grid;
-  height: 37px;
+  height: 42px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 0 9px 0 12px;
+  padding: 0 14px 0 18px;
   border-bottom: 1px solid var(--window-divider);
-  background: var(--chrome);
+  background:
+    linear-gradient(180deg, rgba(31, 42, 56, 0.82), rgba(19, 28, 39, 0.9)),
+    var(--chrome);
 }
 
 .titlebar-controls {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
 }
 
 .workspace-title {
@@ -61,18 +66,20 @@
   white-space: nowrap;
 }
 
-.titlebar-controls {
-  gap: 4px;
-}
-
 .titlebar-controls button {
-  width: 32px;
+  width: 30px;
   height: 28px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--muted-strong);
+  color: rgba(221, 229, 241, 0.82);
   cursor: pointer;
+  font-size: 18px;
+}
+
+.titlebar-controls button[aria-label="最大化"] {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .titlebar-controls button:hover {
@@ -89,179 +96,69 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 214px minmax(0, 1fr);
+  grid-template-columns: 238px minmax(0, 1fr);
+  background: rgba(8, 13, 20, 0.22);
 }
 
 .side-nav {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  padding: 20px 13px 16px;
-  border-right: 1px solid var(--window-border);
-  background: var(--sidebar);
-}
-
-.brand-panel {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 22px;
-  padding: 0 3px;
-}
-
-.brand-logo {
-  display: block;
-  width: 33px;
-  height: 33px;
-  border-radius: 8px;
-  object-fit: cover;
-  box-shadow: 0 10px 22px rgba(67, 199, 255, 0.18);
-  user-select: none;
-}
-
-.brand-panel strong {
-  font-size: 19px;
-  font-weight: 800;
-  font-style: italic;
-  letter-spacing: -0.04em;
-}
-
-.feature-nav {
-  display: grid;
-  gap: 6px;
-}
-
-.feature-nav-item,
-.settings-entry {
-  display: flex;
-  width: 100%;
-  height: 44px;
-  align-items: center;
-  gap: 13px;
-  border: 0;
-  border-radius: 7px;
-  padding: 0 16px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 650;
-  text-align: left;
-}
-
-.feature-nav-item .nav-icon,
-.settings-entry .nav-icon {
-  display: grid;
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: var(--muted-strong);
-}
-
-.nav-icon svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.feature-nav-item.active,
-.feature-nav-item:hover,
-.settings-entry.active,
-.settings-entry:hover {
-  background: var(--sidebar-active);
-}
-
-.settings-entry {
-  margin-top: auto;
-}
-/* Current app shell visuals */
-
-.app-shell {
-  border-color: rgba(147, 171, 205, 0.16);
-  background:
-    radial-gradient(ellipse at 18% -12%, rgba(82, 126, 188, 0.18), transparent 42%),
-    linear-gradient(145deg, #111a25 0%, #0e1620 100%);
-}
-
-[data-theme="light"] .app-shell {
-  background:
-    radial-gradient(ellipse at 20% -12%, rgba(55, 122, 220, 0.12), transparent 42%),
-    linear-gradient(145deg, #f5f8fc 0%, #edf2f8 100%);
-}
-
-.top-chrome {
-  height: 66px;
-  padding: 0 22px 0 28px;
-  border-bottom-color: var(--window-divider);
-  background:
-    linear-gradient(180deg, rgba(31, 42, 56, 0.82), rgba(19, 28, 39, 0.9)),
-    var(--chrome);
-}
-
-.titlebar-controls {
-  gap: 14px;
-}
-
-.titlebar-controls button {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  color: rgba(221, 229, 241, 0.82);
-  font-size: 20px;
-}
-
-.app-layout {
-  grid-template-columns: 292px minmax(0, 1fr);
-  background: rgba(8, 13, 20, 0.22);
-}
-
-.side-nav {
-  padding: 20px 11px 30px;
-  border-right-color: var(--window-divider);
+  padding: 16px 10px 18px;
+  border-right: 1px solid var(--window-divider);
   background:
     radial-gradient(ellipse at 50% 18%, rgba(88, 143, 231, 0.11), transparent 48%),
     linear-gradient(180deg, rgba(27, 38, 51, 0.9), rgba(18, 27, 38, 0.95));
 }
 
 .brand-panel {
-  height: 78px;
-  margin-bottom: 16px;
-  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  gap: 11px;
+  margin-bottom: 14px;
+  padding: 0 12px;
 }
 
 .brand-logo {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  box-shadow:
-    0 16px 34px rgba(49, 120, 255, 0.28);
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 16px 34px rgba(49, 120, 255, 0.28);
+  user-select: none;
 }
 
 .brand-panel strong {
-  font-size: 21px;
-  font-style: normal;
+  font-size: 18px;
   font-weight: 850;
+  font-style: normal;
   letter-spacing: 0.01em;
 }
 
 .feature-nav {
-  gap: 16px;
+  display: grid;
+  gap: 8px;
 }
 
 .feature-nav-item,
 .settings-entry {
+  display: flex;
+  width: 100%;
   position: relative;
-  height: 63px;
+  height: 48px;
+  align-items: center;
+  gap: 13px;
+  border: 0;
   border-radius: 8px;
-  padding: 0 26px;
+  padding: 0 18px;
+  background: transparent;
   color: #eef4ff;
-  font-size: 20px;
+  cursor: pointer;
+  font-size: 16px;
   font-weight: 800;
+  text-align: left;
 }
 
 .feature-nav-item::before,
@@ -269,7 +166,7 @@
   position: absolute;
   left: 0;
   width: 3px;
-  height: 32px;
+  height: 26px;
   border-radius: 999px;
   background: transparent;
   content: "";
@@ -277,13 +174,21 @@
 
 .feature-nav-item .nav-icon,
 .settings-entry .nav-icon {
-  width: 26px;
-  height: 26px;
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--muted-strong);
 }
 
 .nav-icon svg {
-  width: 26px;
-  height: 26px;
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   stroke-width: 1.9;
 }
 
@@ -311,88 +216,18 @@
   margin-top: auto;
 }
 
+[data-theme="light"] .app-shell {
+  background:
+    radial-gradient(ellipse at 20% -12%, rgba(55, 122, 220, 0.12), transparent 42%),
+    linear-gradient(145deg, #f5f8fc 0%, #edf2f8 100%);
+}
+
 .settings-entry::after {
   position: absolute;
-  top: -28px;
+  top: -18px;
   left: 12px;
   right: 12px;
   height: 1px;
   background: rgba(165, 187, 219, 0.14);
   content: "";
-}
-/* Compact app shell density */
-
-/* Compact density must stay after the 2026 refresh size rules. */
-.top-chrome {
-  height: 42px;
-  padding: 0 14px 0 18px;
-}
-
-.titlebar-controls {
-  gap: 8px;
-}
-
-.titlebar-controls button {
-  width: 30px;
-  height: 28px;
-  border-radius: 8px;
-  font-size: 18px;
-}
-
-.titlebar-controls button[aria-label="最大化"] {
-  font-size: 15px;
-  line-height: 1;
-}
-
-.app-layout {
-  grid-template-columns: 238px minmax(0, 1fr);
-}
-
-.side-nav {
-  padding: 16px 10px 18px;
-}
-
-.brand-panel {
-  height: 56px;
-  gap: 11px;
-  margin-bottom: 14px;
-  padding: 0 12px;
-}
-
-.brand-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-}
-
-.brand-panel strong {
-  font-size: 18px;
-}
-
-.feature-nav {
-  gap: 8px;
-}
-
-.feature-nav-item,
-.settings-entry {
-  height: 48px;
-  gap: 13px;
-  padding: 0 18px;
-  font-size: 16px;
-}
-
-.feature-nav-item::before,
-.settings-entry::before {
-  height: 26px;
-}
-
-.feature-nav-item .nav-icon,
-.settings-entry .nav-icon,
-.nav-icon svg {
-  width: 21px;
-  height: 21px;
-}
-
-.settings-entry::after {
-  top: -18px;
 }

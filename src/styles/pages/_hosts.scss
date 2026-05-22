@@ -928,26 +928,26 @@
 /* Current hosts page visuals */
 
 .vault-page {
-  grid-template-rows: 88px minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
   background:
     radial-gradient(ellipse at 8% 8%, rgba(81, 136, 224, 0.12), transparent 34%),
     linear-gradient(180deg, #121c28 0%, #101821 100%);
 }
 
 .command-bar {
-  grid-template-columns: minmax(420px, 1fr) 96px auto 144px;
-  gap: 22px;
-  padding: 12px 28px 14px 26px;
+  grid-template-columns: minmax(300px, 1fr) 80px auto 126px;
+  gap: 12px;
+  padding: 8px 18px;
   border-bottom-color: var(--window-divider);
   background: rgba(20, 29, 40, 0.72);
   backdrop-filter: blur(22px);
 }
 
 .global-search {
-  height: 60px;
+  height: 44px;
   border-color: rgba(154, 177, 210, 0.18);
-  border-radius: 12px;
-  padding: 0 12px 0 16px;
+  border-radius: 10px;
+  padding: 0 10px 0 12px;
   background:
     linear-gradient(180deg, rgba(33, 45, 60, 0.62), rgba(18, 27, 38, 0.78)),
     var(--surface-input);
@@ -957,15 +957,15 @@
 }
 
 .global-search .search-icon {
-  width: 20px;
+  width: 18px;
   color: #8f9caf;
-  font-size: 26px;
+  font-size: 20px;
   line-height: 1;
 }
 
 .global-search input {
   color: #d7e1ef;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -975,22 +975,22 @@
 
 .global-search kbd {
   display: grid;
-  height: 34px;
+  height: 28px;
   place-items: center;
   border: 1px solid rgba(154, 177, 210, 0.13);
-  border-radius: 8px;
-  padding: 0 11px;
+  border-radius: 7px;
+  padding: 0 9px;
   background: rgba(8, 13, 20, 0.24);
   color: rgba(221, 229, 241, 0.74);
-  font: 700 14px/1 "Cascadia Mono", Consolas, monospace;
+  font: 700 12px/1 "Cascadia Mono", Consolas, monospace;
 }
 
 .command-button,
 .primary-action,
 .view-switch button {
-  height: 60px;
-  border-radius: 12px;
-  font-size: 16px;
+  height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
   font-weight: 850;
 }
 
@@ -1016,17 +1016,17 @@
 }
 
 .view-switch {
-  height: 60px;
+  height: 44px;
   border-color: rgba(154, 177, 210, 0.16);
-  border-radius: 12px;
-  padding: 0 6px;
+  border-radius: 10px;
+  padding: 0 4px;
   background: rgba(255, 255, 255, 0.04);
 }
 
 .view-switch button {
-  min-width: 86px;
-  height: 44px;
-  border-radius: 10px;
+  min-width: 68px;
+  height: 34px;
+  border-radius: 8px;
   color: rgba(221, 229, 241, 0.75);
 }
 
@@ -1038,7 +1038,7 @@
 
 .hosts-content {
   display: grid;
-  grid-template-columns: 348px minmax(0, 1fr);
+  grid-template-columns: 236px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   padding: 0;
@@ -1047,7 +1047,7 @@
 .hosts-group-panel {
   min-height: 0;
   overflow: auto;
-  padding: 24px 18px 28px 26px;
+  padding: 16px 12px 20px 16px;
   border-right: 1px solid var(--window-divider);
   background:
     radial-gradient(ellipse at 55% 0%, rgba(90, 146, 240, 0.09), transparent 38%),
@@ -1057,36 +1057,36 @@
 .all-hosts-filter {
   display: flex;
   width: 100%;
-  height: 48px;
+  height: 40px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid rgba(165, 187, 219, 0.12);
   color: var(--accent);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 850;
 }
 
 .filter-tab b,
 .host-list-heading h2 b {
   display: inline-grid;
-  min-width: 30px;
-  height: 30px;
+  min-width: 24px;
+  height: 24px;
   place-items: center;
   border-radius: 999px;
   background: rgba(147, 171, 205, 0.12);
   color: #d7e1ef;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 850;
 }
 
 .group-panel-heading {
-  margin: 27px 0 14px;
+  margin: 20px 0 10px;
 }
 
 .group-panel-heading h2,
 .host-list-heading h2 {
   color: #f1f6ff;
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 850;
 }
 
@@ -1101,10 +1101,10 @@
 }
 
 .group-add-button {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 9px;
-  font-size: 30px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -1116,19 +1116,19 @@
 
 .group-list {
   display: grid;
-  gap: 9px;
+  gap: 6px;
   grid-template-columns: minmax(0, 1fr);
 }
 
 .group-card {
   display: grid;
-  min-height: 58px;
+  min-height: 46px;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
   border-color: transparent;
   border-radius: 8px;
-  padding: 0 18px;
+  padding: 0 13px;
   background: transparent;
   box-shadow: none;
 }
@@ -1140,8 +1140,8 @@
 }
 
 .group-icon {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: 1px solid rgba(111, 169, 255, 0.2);
   border-radius: 8px;
   background:
@@ -1171,8 +1171,8 @@
 .group-icon svg {
   position: relative;
   z-index: 1;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.24));
   transition: transform 140ms ease;
 }
@@ -1199,7 +1199,7 @@
   min-width: 0;
   overflow: hidden;
   color: #d8e0ea;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1207,7 +1207,7 @@
 
 .group-card small {
   color: #c6d3e3;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 760;
 }
 
@@ -1215,46 +1215,46 @@
   min-height: 0;
   overflow: auto;
   margin: 0;
-  padding: 34px 34px 36px;
+  padding: 24px 26px 28px;
 }
 
 .host-list-heading {
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 
 .host-list-heading h2 {
   display: inline-flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .host-list-heading > span {
   display: inline-flex;
   align-items: center;
-  gap: 24px;
+  gap: 14px;
   color: #aab7c8;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .host-refresh-button {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: 10px;
-  font-size: 26px;
+  font-size: 24px;
 }
 
 .host-grid.list,
 .host-grid.grid {
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
+  gap: 12px;
 }
 
 .host-card {
-  min-height: 153px;
+  min-height: 104px;
   border-color: rgba(154, 177, 210, 0.12);
-  border-radius: 18px;
-  padding: 28px 28px 24px;
+  border-radius: 14px;
+  padding: 20px 20px 18px;
   background:
     linear-gradient(135deg, rgba(35, 47, 62, 0.78), rgba(19, 28, 39, 0.62)),
     var(--surface);
@@ -1271,17 +1271,17 @@
 }
 
 .host-card-main {
-  gap: 22px;
+  gap: 16px;
   padding: 0;
 }
 
 .host-avatar {
-  width: 74px;
-  height: 74px;
-  border-radius: 16px;
+  width: 54px;
+  height: 54px;
+  border-radius: 13px;
   background: linear-gradient(145deg, rgba(59, 117, 218, 0.62), rgba(38, 73, 142, 0.82));
   color: #7ebcff;
-  font-size: 31px;
+  font-size: 23px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 14px 28px rgba(20, 45, 91, 0.25);
@@ -1289,74 +1289,74 @@
 
 .host-summary strong {
   color: #f4f7ff;
-  font-size: 21px;
+  font-size: 17px;
   font-weight: 860;
 }
 
 .host-summary small {
-  margin-top: 5px;
+  margin-top: 3px;
   color: #b7c3d2;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 620;
 }
 
 .host-card-tags {
   display: flex !important;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px !important;
+  gap: 7px;
+  margin-top: 9px !important;
 }
 
 .host-card-tags em {
   display: inline-grid;
-  min-height: 32px;
+  min-height: 26px;
   place-items: center;
   border-radius: 7px;
-  padding: 0 12px;
+  padding: 0 10px;
   background: rgba(209, 220, 235, 0.09);
   color: #c4cedb;
-  font-size: 15px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 740;
 }
 
 .host-card-actions {
-  top: 26px;
-  right: 26px;
-  gap: 14px;
+  top: 18px;
+  right: 18px;
+  gap: 8px;
 }
 
 .host-connection-state {
   display: inline-flex;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
   color: #c8d3e0;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 760;
 }
 
 .host-connection-state i {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #38d47a;
   box-shadow: 0 0 16px rgba(56, 212, 122, 0.62);
 }
 
 .credential-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 8px;
   background: rgba(56, 212, 122, 0.1);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .host-card-menu summary {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: 10px;
   color: #aeb9c8;
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .host-card-menu summary:hover,
@@ -1369,211 +1369,6 @@
   background: rgba(18, 27, 38, 0.98);
   backdrop-filter: blur(18px);
 }
-/* Compact hosts density */
-
-.vault-page {
-  grid-template-rows: 64px minmax(0, 1fr);
-}
-
-.command-bar {
-  grid-template-columns: minmax(300px, 1fr) 80px auto 126px;
-  gap: 12px;
-  padding: 8px 18px;
-}
-
-.global-search {
-  height: 44px;
-  border-radius: 10px;
-  padding: 0 10px 0 12px;
-}
-
-.global-search .search-icon {
-  width: 18px;
-  font-size: 20px;
-}
-
-.global-search input {
-  font-size: 14px;
-}
-
-.global-search kbd {
-  height: 28px;
-  border-radius: 7px;
-  padding: 0 9px;
-  font-size: 12px;
-}
-
-.command-button,
-.primary-action,
-.view-switch button {
-  height: 44px;
-  border-radius: 10px;
-  font-size: 14px;
-}
-
-.view-switch {
-  height: 44px;
-  border-radius: 10px;
-  padding: 0 4px;
-}
-
-.view-switch button {
-  min-width: 68px;
-  height: 34px;
-  border-radius: 8px;
-}
-
-.hosts-content {
-  grid-template-columns: 236px minmax(0, 1fr);
-}
-
-.hosts-group-panel {
-  padding: 16px 12px 20px 16px;
-}
-
-.all-hosts-filter {
-  height: 40px;
-  font-size: 15px;
-}
-
-.filter-tab b,
-.host-list-heading h2 b {
-  min-width: 24px;
-  height: 24px;
-  font-size: 12px;
-}
-
-.group-panel-heading {
-  margin: 20px 0 10px;
-}
-
-.group-panel-heading h2,
-.host-list-heading h2 {
-  font-size: 18px;
-}
-
-.group-add-button,
-.host-refresh-button {
-  width: 28px;
-  height: 28px;
-  font-size: 24px;
-}
-
-.group-list {
-  gap: 6px;
-}
-
-.group-card {
-  min-height: 46px;
-  gap: 9px;
-  padding: 0 13px;
-}
-
-.group-icon {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-}
-
-.group-icon svg {
-  width: 17px;
-  height: 17px;
-}
-
-.group-card strong {
-  font-size: 14px;
-}
-
-.group-card small {
-  font-size: 13px;
-}
-
-.hosts-list-panel {
-  padding: 24px 26px 28px;
-}
-
-.host-list-heading {
-  margin-bottom: 18px;
-}
-
-.host-list-heading h2 {
-  gap: 10px;
-}
-
-.host-list-heading > span {
-  gap: 14px;
-  font-size: 13px;
-}
-
-.host-grid.list,
-.host-grid.grid {
-  gap: 12px;
-}
-
-.host-card {
-  min-height: 104px;
-  border-radius: 14px;
-  padding: 20px 20px 18px;
-}
-
-.host-card-main {
-  gap: 16px;
-}
-
-.host-avatar {
-  width: 54px;
-  height: 54px;
-  border-radius: 13px;
-  font-size: 23px;
-}
-
-.host-summary strong {
-  font-size: 17px;
-}
-
-.host-summary small {
-  margin-top: 3px;
-  font-size: 14px;
-}
-
-.host-card-tags {
-  gap: 7px;
-  margin-top: 9px !important;
-}
-
-.host-card-tags em {
-  min-height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
-.host-card-actions {
-  top: 18px;
-  right: 18px;
-  gap: 8px;
-}
-
-.host-connection-state {
-  gap: 8px;
-  font-size: 12px;
-}
-
-.host-connection-state i {
-  width: 8px;
-  height: 8px;
-}
-
-.credential-icon {
-  width: 24px;
-  height: 24px;
-  font-size: 12px;
-}
-
-.host-card-menu summary {
-  width: 28px;
-  height: 28px;
-  font-size: 20px;
-}
 
 .host-grid.grid {
   grid-template-columns: repeat(auto-fill, minmax(250px, 320px));
@@ -1581,15 +1376,21 @@
   justify-content: start;
 }
 
+.host-grid.list .host-card,
 .host-grid.grid .host-card {
-  min-height: 150px;
+  min-height: 0;
+  height: auto;
+  padding: 16px;
+}
+
+.host-grid.grid .host-card {
   align-items: flex-start;
-  padding: 18px;
 }
 
 .host-grid.list .host-card-main,
 .host-grid.grid .host-card-main {
   align-items: flex-start;
+  gap: 14px;
   padding-right: 42px;
 }
 
@@ -1613,7 +1414,7 @@
 .host-grid.list .host-card-tags,
 .host-grid.grid .host-card-tags {
   gap: 6px;
-  margin-top: 8px !important;
+  margin-top: 7px !important;
 }
 
 .host-grid.list .host-card-tags em,
@@ -1626,23 +1427,6 @@
 .host-grid.list .host-connection-state,
 .host-grid.grid .host-connection-state {
   font-size: 0;
-}
-.host-grid.list .host-card,
-.host-grid.grid .host-card {
-  min-height: 0;
-  height: auto;
-  padding: 16px;
-}
-
-.host-grid.list .host-card-main,
-.host-grid.grid .host-card-main {
-  gap: 14px;
-  padding-right: 42px;
-}
-
-.host-grid.list .host-card-tags,
-.host-grid.grid .host-card-tags {
-  margin-top: 7px !important;
 }
 
 @media (max-width: 860px) {

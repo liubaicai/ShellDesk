@@ -195,18 +195,14 @@
     display: none;
   }
 
-  .browser-toolbar,
-  .file-toolbar,
-  .file-row {
+  .browser-toolbar {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .browser-toolbar button:not([type="submit"]):not(.browser-bookmark-trigger):not(.browser-overflow-button),
   .browser-bookmark-menu-button,
   .desktop-window-kicker,
-  .desktop-window-state-pill,
-  .file-row.header span:not(:first-child),
-  .file-row span:not(:first-child) {
+  .desktop-window-state-pill {
     display: none;
   }
 
