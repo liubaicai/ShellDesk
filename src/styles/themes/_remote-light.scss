@@ -398,6 +398,69 @@
   color: #657489;
 }
 
+[data-theme="light"] .explorer-commandbar,
+[data-theme="light"] .explorer-details {
+  border-color: rgba(16, 32, 51, 0.1);
+  background:
+    linear-gradient(180deg, rgba(249, 251, 254, 0.98), rgba(236, 242, 249, 0.98));
+}
+
+[data-theme="light"] .explorer-commandbar button,
+[data-theme="light"] .explorer-details-actions button {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(255, 255, 255, 0.8);
+  color: #344054;
+}
+
+[data-theme="light"] .explorer-commandbar button:hover:not(:disabled),
+[data-theme="light"] .explorer-commandbar button.active,
+[data-theme="light"] .explorer-details-actions button:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.28);
+  background: #dfeeff;
+  color: #172033;
+}
+
+[data-theme="light"] .explorer-sidebar-note,
+[data-theme="light"] .explorer-transfer-card,
+[data-theme="light"] .explorer-details-hero span,
+[data-theme="light"] .explorer-details-empty span,
+[data-theme="light"] .explorer-details-empty small,
+[data-theme="light"] .explorer-details-list dt {
+  color: #657489;
+}
+
+[data-theme="light"] .explorer-transfer-card {
+  border-color: rgba(16, 32, 51, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="light"] .explorer-transfer-card.running {
+  border-color: rgba(59, 130, 246, 0.22);
+  background: rgba(219, 234, 254, 0.76);
+}
+
+[data-theme="light"] .explorer-transfer-card strong,
+[data-theme="light"] .explorer-details-header,
+[data-theme="light"] .explorer-details-hero strong,
+[data-theme="light"] .explorer-details-empty strong,
+[data-theme="light"] .explorer-details-list dd {
+  color: #172033;
+}
+
+[data-theme="light"] .explorer-details-hero,
+[data-theme="light"] .explorer-details-actions {
+  border-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .explorer-details-header button {
+  color: #657489;
+}
+
+[data-theme="light"] .explorer-details-header button:hover {
+  background: rgba(16, 32, 51, 0.08);
+  color: #172033;
+}
+
 [data-theme="light"] .sysinfo-feature-title {
   color: #1f2328;
 }

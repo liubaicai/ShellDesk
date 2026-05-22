@@ -2512,6 +2512,7 @@ function loadAppWindow(appWindow, query = {}) {
     }
 
     void appWindow.loadURL(appUrl.toString());
+    appWindow.webContents.openDevTools();
   } else {
     void appWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { query });
   }
