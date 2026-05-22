@@ -24,6 +24,60 @@ interface SettingsGroup {
   tabs: SettingsTabDef[];
 }
 
+interface RemoteSettingsSectionState<T> {
+  loaded: boolean;
+  loading: boolean;
+  current?: T;
+  draft?: T;
+  error?: string;
+  success?: string;
+}
+
+interface SettingsConfirmDialogConfig {
+  title: string;
+  message: string;
+  detail?: string;
+  preview?: string;
+  confirmLabel?: string;
+  tone?: 'primary' | 'warning' | 'danger';
+  onConfirm: () => void | Promise<void>;
+}
+
+interface SettingsHostStatus {
+  systemLabel: string;
+  userLabel: string;
+  privilegeLabel: string;
+  privilegeTone: 'ready' | 'warning' | 'danger' | 'unknown';
+  hint: string;
+}
+
+const SYSTEM_TYPE_LABELS: Record<RemoteSystemType, string> = {
+  unknown: '未知系统',
+  windows: 'Windows',
+  ubuntu: 'Ubuntu',
+  debian: 'Debian',
+  redhat: 'Red Hat',
+  centos: 'CentOS',
+  fedora: 'Fedora',
+  rocky: 'Rocky Linux',
+  almalinux: 'AlmaLinux',
+  oracle: 'Oracle Linux',
+  amazon: 'Amazon Linux',
+  arch: 'Arch Linux',
+  manjaro: 'Manjaro',
+  alpine: 'Alpine Linux',
+  opensuse: 'openSUSE',
+  linuxmint: 'Linux Mint',
+  kali: 'Kali Linux',
+  raspbian: 'Raspberry Pi OS',
+  gentoo: 'Gentoo',
+  nixos: 'NixOS',
+  popos: 'Pop!_OS',
+  elementary: 'elementary OS',
+  linux: 'Linux',
+  unix: 'Unix',
+};
+
 const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: '系统',
@@ -111,6 +165,133 @@ function isSafeNameserver(value: string) {
   return /^[0-9A-Fa-f:.]{2,45}$/.test(value);
 }
 
+function getSystemTypeLabel(systemType?: RemoteSystemType) {
+  return SYSTEM_TYPE_LABELS[systemType ?? 'unknown'] ?? '未知系统';
+}
+
+function parseKeyValueOutput(stdout: string) {
+  const values = new Map<string, string>();
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const separatorIndex = line.indexOf('=');
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    values.set(line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim());
+  }
+
+  return values;
+}
+
+function netmaskToPrefix(netmask: string) {
+  const octets = netmask.split('.').map((part) => Number.parseInt(part, 10));
+
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return null;
+  }
+
+  const bits = octets.map((octet) => octet.toString(2).padStart(8, '0')).join('');
+
+  if (!/^1*0*$/.test(bits)) {
+    return null;
+  }
+
+  const firstZeroIndex = bits.indexOf('0');
+  return firstZeroIndex === -1 ? 32 : firstZeroIndex;
+}
+
+function createLineChangePreview(current: string, draft: string) {
+  if (current === draft) {
+    return '无变更。';
+  }
+
+  const currentLines = current.split(/\r?\n/);
+  const draftLines = draft.split(/\r?\n/);
+  const currentLineSet = new Set(currentLines);
+  const draftLineSet = new Set(draftLines);
+  const removed = currentLines.filter((line) => line.trim() && !draftLineSet.has(line)).slice(0, 10);
+  const added = draftLines.filter((line) => line.trim() && !currentLineSet.has(line)).slice(0, 10);
+  const previewLines = [
+    `原始行数：${currentLines.length}`,
+    `草稿行数：${draftLines.length}`,
+    '',
+    '新增：',
+    ...(added.length ? added.map((line) => `+ ${line}`) : ['(无)']),
+    '',
+    '移除：',
+    ...(removed.length ? removed.map((line) => `- ${line}`) : ['(无)']),
+  ];
+
+  if (added.length >= 10 || removed.length >= 10) {
+    previewLines.push('', '仅显示前 10 条变更。');
+  }
+
+  return previewLines.join('\n');
+}
+
+function SettingsCommandPreview({ label, content }: { label: string; content: string }) {
+  return (
+    <div className="settings-command-preview">
+      <div className="settings-command-preview-label">{label}</div>
+      <pre>{content}</pre>
+    </div>
+  );
+}
+
+function SettingsConfirmDialog({
+  config,
+  onClose,
+}: {
+  config: SettingsConfirmDialogConfig;
+  onClose: () => void;
+}) {
+  const [isApplying, setIsApplying] = useState(false);
+  const tone = config.tone ?? 'primary';
+
+  const handleConfirm = async () => {
+    setIsApplying(true);
+    try {
+      await config.onConfirm();
+      onClose();
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  return createPortal(
+    <div className="settings-modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className={`settings-modal ${tone}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="settings-confirm-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div id="settings-confirm-title" className="settings-modal-title">{config.title}</div>
+        <div className="settings-modal-message">
+          <p>{config.message}</p>
+          {config.detail ? <small>{config.detail}</small> : null}
+        </div>
+        {config.preview ? <SettingsCommandPreview label="执行预览" content={config.preview} /> : null}
+        <div className="settings-modal-actions">
+          <button type="button" className="settings-modal-btn" onClick={onClose} disabled={isApplying}>取消</button>
+          <button
+            type="button"
+            className={`settings-modal-btn ${tone === 'danger' ? 'danger' : 'primary'}`}
+            onClick={() => void handleConfirm()}
+            disabled={isApplying}
+          >
+            {isApplying ? '执行中...' : config.confirmLabel ?? '确认'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /* ─── Network ─────────────────────────────────────────────────────────────── */
 
 interface NetIface {
@@ -170,10 +351,79 @@ interface IfaceEditState {
   gateway: string;
 }
 
+interface DnsConfig {
+  servers: string[];
+  search: string;
+  raw: string;
+}
+
+const EMPTY_DNS_CONFIG: DnsConfig = {
+  servers: [],
+  search: '',
+  raw: '',
+};
+
+function parseResolvConf(stdout: string): DnsConfig {
+  const resolvLines = stdout.split(/\r?\n/);
+  const servers = resolvLines
+    .filter((line) => /^\s*nameserver\s/.test(line))
+    .map((line) => line.replace(/^\s*nameserver\s+/, '').trim())
+    .filter(Boolean);
+  const search = resolvLines
+    .find((line) => /^\s*search\s/.test(line))
+    ?.replace(/^\s*search\s+/, '')
+    .trim() ?? '';
+
+  return {
+    servers,
+    search,
+    raw: stdout,
+  };
+}
+
+function areDnsConfigsEqual(left: DnsConfig, right: DnsConfig) {
+  return left.search === right.search
+    && left.servers.length === right.servers.length
+    && left.servers.every((server, index) => server === right.servers[index]);
+}
+
+function buildResolvConfContent(originalContent: string, config: DnsConfig) {
+  const preservedLines = originalContent
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(nameserver|search)\b/.test(line))
+    .join('\n')
+    .trimEnd();
+  const generatedLines = [
+    '# Managed by ShellDesk system settings',
+    ...config.servers.map((server) => `nameserver ${server}`),
+    config.search ? `search ${config.search}` : '',
+  ].filter(Boolean);
+
+  return [preservedLines, generatedLines.join('\n')].filter(Boolean).join('\n') + '\n';
+}
+
+function createDnsConfigPreview(current: DnsConfig, draft: DnsConfig) {
+  return [
+    '当前 DNS：',
+    ...(current.servers.length ? current.servers.map((server) => `  ${server}`) : ['  (无)']),
+    current.search ? `当前搜索域：${current.search}` : '当前搜索域：(无)',
+    '',
+    '草稿 DNS：',
+    ...(draft.servers.length ? draft.servers.map((server) => `  ${server}`) : ['  (无)']),
+    draft.search ? `草稿搜索域：${draft.search}` : '草稿搜索域：(无)',
+    '',
+    '将备份 /etc/resolv.conf 后写入草稿配置。',
+  ].join('\n');
+}
+
 function NetworkPanel({ connectionId }: { connectionId: string }) {
   const [ifaces, setIfaces] = useState<NetIface[]>([]);
-  const [dnsServers, setDnsServers] = useState<string[]>([]);
-  const [dnsSearch, setDnsSearch] = useState('');
+  const [dnsState, setDnsState] = useState<RemoteSettingsSectionState<DnsConfig>>({
+    loaded: false,
+    loading: false,
+    current: EMPTY_DNS_CONFIG,
+    draft: EMPTY_DNS_CONFIG,
+  });
   const [hostname, setHostname] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -184,9 +434,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
   const [newDns, setNewDns] = useState('');
   const [isHostnameDialogOpen, setIsHostnameDialogOpen] = useState(false);
   const [hostnameDraft, setHostnameDraft] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setDnsState((currentState) => ({ ...currentState, loading: true, error: undefined }));
     setError('');
     try {
       const [ifResult, dnsResult, hostResult] = await Promise.all([
@@ -196,29 +448,27 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
       ]);
 
       setIfaces(parseIpAddr(ifResult.stdout || ''));
-
-      const resolvLines = (dnsResult.stdout || '').split('\n');
-      const servers = resolvLines
-        .filter((l) => /^\s*nameserver\s/.test(l))
-        .map((l) => l.replace(/^\s*nameserver\s+/, '').trim())
-        .filter(Boolean);
-      const search = resolvLines
-        .find((l) => /^\s*search\s/.test(l))
-        ?.replace(/^\s*search\s+/, '')
-        .trim() ?? '';
-      setDnsServers(servers);
-      setDnsSearch(search);
+      const dnsConfig = parseResolvConf(dnsResult.stdout || '');
+      setDnsState({
+        loaded: true,
+        loading: false,
+        current: dnsConfig,
+        draft: dnsConfig,
+      });
       setHostname((hostResult.stdout || '').trim());
     } catch (err) {
-      setError(getErrorMessage(err));
+      const message = getErrorMessage(err);
+      setError(message);
+      setDnsState((currentState) => ({ ...currentState, loading: false, error: message }));
     } finally {
       setLoading(false);
+      setDnsState((currentState) => ({ ...currentState, loading: false }));
     }
   }, [connectionId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const toggleIface = async (ifaceName: string, bringUp: boolean) => {
+  const applyIfacePowerState = async (ifaceName: string, bringUp: boolean) => {
     setActionLoading(ifaceName);
     setError('');
     setSuccess('');
@@ -234,6 +484,20 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     }
   };
 
+  const requestToggleIface = (ifaceName: string, bringUp: boolean) => {
+    setConfirmDialog({
+      title: bringUp ? '启用网络接口' : '禁用网络接口',
+      message: bringUp
+        ? `将启用 ${ifaceName}。如果该接口存在冲突配置，可能改变当前网络路径。`
+        : `将禁用 ${ifaceName}。如果 SSH 正通过该接口连接，远程会话可能立即断开。`,
+      detail: '建议在确认有带外访问或备用连接后执行网络接口变更。',
+      preview: `ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'}`,
+      confirmLabel: bringUp ? '启用接口' : '禁用接口',
+      tone: bringUp ? 'warning' : 'danger',
+      onConfirm: () => applyIfacePowerState(ifaceName, bringUp),
+    });
+  };
+
   const startEditIface = (iface: NetIface) => {
     setEditingIface(iface.name);
     setSuccess('');
@@ -247,37 +511,88 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     });
   };
 
-  const applyIfaceConfig = async () => {
-    if (!editingIface) return;
-    setActionLoading(editingIface);
+  const buildIfaceConfigPlan = (ifaceName: string, form: IfaceEditState) => {
+    const ifaceArg = shellQuote(ifaceName);
+
+    if (form.method === 'dhcp') {
+      return {
+        command: `dhclient -r ${ifaceArg} 2>/dev/null; dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`,
+        preview: [`dhclient -r ${ifaceArg}`, `dhclient ${ifaceArg}`].join('\n'),
+      };
+    }
+
+    if (!form.address.trim()) {
+      throw new Error('请输入 IP 地址。');
+    }
+
+    if (!isSafeNameserver(form.address.trim())) {
+      throw new Error('IP 地址格式无效。');
+    }
+
+    if (form.gateway.trim() && !isSafeNameserver(form.gateway.trim())) {
+      throw new Error('默认网关格式无效。');
+    }
+
+    const prefix = form.netmask.trim() ? netmaskToPrefix(form.netmask.trim()) : 24;
+
+    if (prefix === null) {
+      throw new Error('子网掩码格式无效。');
+    }
+
+    const cidr = `${form.address.trim()}/${prefix}`;
+    let command = `ip addr flush dev ${ifaceArg} 2>/dev/null; ip addr add ${shellQuote(cidr)} dev ${ifaceArg} 2>&1`;
+    const previewLines = [
+      `ip addr flush dev ${ifaceArg}`,
+      `ip addr add ${shellQuote(cidr)} dev ${ifaceArg}`,
+    ];
+
+    if (form.gateway.trim()) {
+      command += ` && ip route replace default via ${shellQuote(form.gateway.trim())} dev ${ifaceArg} 2>&1`;
+      previewLines.push(`ip route replace default via ${shellQuote(form.gateway.trim())} dev ${ifaceArg}`);
+    }
+
+    return {
+      command,
+      preview: previewLines.join('\n'),
+    };
+  };
+
+  const applyIfaceConfig = async (ifaceName: string, command: string) => {
+    setActionLoading(ifaceName);
     setError('');
     setSuccess('');
     try {
-      let cmd: string;
-      const ifaceArg = shellQuote(editingIface);
-      if (editForm.method === 'dhcp') {
-        cmd = `dhclient -r ${ifaceArg} 2>/dev/null; dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`;
-      } else {
-        if (!editForm.address) { setError('请输入 IP 地址。'); setActionLoading(null); return; }
-        const prefix = editForm.netmask
-          ? editForm.netmask.split('.').map((o) => Number.parseInt(o, 10)).reduce((p, oct) => p + (oct >>> 0).toString(2).replace(/0/g, '').length, 0)
-          : 24;
-        cmd = `ip addr flush dev ${ifaceArg} 2>/dev/null; ip addr add ${shellQuote(`${editForm.address}/${prefix}`)} dev ${ifaceArg} 2>&1`;
-        if (editForm.gateway) {
-          cmd += ` && ip route replace default via ${shellQuote(editForm.gateway)} dev ${ifaceArg} 2>&1`;
-        }
-      }
-      const result = await runCmd(connectionId, cmd);
+      const result = await runCmd(connectionId, command);
       if (result.code !== 0 && !result.stdout.includes('dhclient')) {
         throw new Error(result.stderr || result.stdout || '配置失败，可能需要 root 权限。');
       }
-      setSuccess(`接口 ${editingIface} 配置已应用。`);
+      setSuccess(`接口 ${ifaceName} 配置已应用。`);
       setEditingIface(null);
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const requestApplyIfaceConfig = () => {
+    if (!editingIface) return;
+
+    try {
+      const plan = buildIfaceConfigPlan(editingIface, editForm);
+
+      setConfirmDialog({
+        title: '应用网络接口配置',
+        message: `将修改接口 ${editingIface} 的地址配置。`,
+        detail: '这类变更可能导致 SSH 连接中断；执行前请确认网关、网段和当前连接路径。',
+        preview: plan.preview,
+        confirmLabel: '应用配置',
+        tone: 'danger',
+        onConfirm: () => applyIfaceConfig(editingIface, plan.command),
+      });
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
@@ -314,41 +629,85 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     }
   };
 
-  const addDnsServer = async () => {
+  const currentDnsConfig = dnsState.current ?? EMPTY_DNS_CONFIG;
+  const dnsDraftConfig = dnsState.draft ?? currentDnsConfig;
+  const isDnsDirty = !areDnsConfigsEqual(currentDnsConfig, dnsDraftConfig);
+
+  const addDnsServer = () => {
     const server = newDns.trim();
     if (!server) return;
     if (!isSafeNameserver(server)) {
       setError('DNS 服务器必须是 IPv4 或 IPv6 地址。');
       return;
     }
+    if (dnsDraftConfig.servers.includes(server)) {
+      setSuccess(`${server} 已在 DNS 草稿中。`);
+      setNewDns('');
+      return;
+    }
+    setError('');
+    setSuccess('');
+    setDnsState((currentState) => ({
+      ...currentState,
+      draft: {
+        ...(currentState.draft ?? EMPTY_DNS_CONFIG),
+        servers: [...(currentState.draft?.servers ?? []), server],
+      },
+      success: `已加入草稿：${server}`,
+    }));
+    setNewDns('');
+  };
+
+  const removeDnsServer = (server: string) => {
+    setError('');
+    setSuccess('');
+    setDnsState((currentState) => ({
+      ...currentState,
+      draft: {
+        ...(currentState.draft ?? EMPTY_DNS_CONFIG),
+        servers: (currentState.draft?.servers ?? []).filter((item) => item !== server),
+      },
+      success: `已从草稿移除：${server}`,
+    }));
+  };
+
+  const applyDnsDraft = async (nextContent: string, draft: DnsConfig) => {
+    setActionLoading('dns');
     setError('');
     setSuccess('');
     try {
-      const line = `nameserver ${server}`;
-      const result = await runCmd(connectionId, `grep -Fxq ${shellQuote(line)} /etc/resolv.conf 2>/dev/null && echo EXISTS || printf '%s\n' ${shellQuote(line)} >> /etc/resolv.conf`);
-      if (result.stdout.trim() === 'EXISTS') {
-        setSuccess(`${server} 已存在。`);
-      } else {
-        setSuccess(`已添加 DNS 服务器 ${server}。`);
+      const result = await runCmd(connectionId, `cp /etc/resolv.conf /etc/resolv.conf.bak.$(date +%s) 2>/dev/null; printf '%s' ${shellQuote(nextContent)} > /etc/resolv.conf`);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || result.stdout || '写入 DNS 配置失败，可能需要 root 权限。');
       }
-      setNewDns('');
+      setDnsState((currentState) => ({
+        ...currentState,
+        current: { ...draft, raw: nextContent },
+        draft: { ...draft, raw: nextContent },
+        success: 'DNS 配置已应用。',
+      }));
+      setSuccess('DNS 配置已应用。');
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const removeDnsServer = async (server: string) => {
-    setError('');
-    setSuccess('');
-    try {
-      const line = `nameserver ${server}`;
-      await runCmd(connectionId, `tmp=$(mktemp) && grep -Fxv ${shellQuote(line)} /etc/resolv.conf > "$tmp"; rc=$?; if [ "$rc" -le 1 ]; then cat "$tmp" > /etc/resolv.conf; rc=0; fi; rm -f "$tmp"; exit "$rc"`);
-      setSuccess(`已移除 DNS 服务器 ${server}。`);
-      await refresh();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
+  const requestApplyDnsDraft = () => {
+    if (!isDnsDirty) return;
+
+    const nextContent = buildResolvConfContent(currentDnsConfig.raw, dnsDraftConfig);
+    setConfirmDialog({
+      title: '应用 DNS 配置',
+      message: '将备份并重写 /etc/resolv.conf 中的 DNS 配置。',
+      detail: 'DNS 变更可能影响包管理、域名访问和远程服务解析。',
+      preview: createDnsConfigPreview(currentDnsConfig, dnsDraftConfig),
+      confirmLabel: '应用 DNS',
+      tone: 'warning',
+      onConfirm: () => applyDnsDraft(nextContent, dnsDraftConfig),
+    });
   };
 
   return (
@@ -364,6 +723,9 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
       {success ? <div className="settings-success-banner">{success}</div> : null}
+      <div className="settings-warning-banner">
+        网络接口、默认路由和 DNS 变更可能让当前 SSH 会话失联。应用前请确认你有备用连接路径。
+      </div>
 
       {/* Hostname */}
       <div className="settings-info-card">
@@ -396,11 +758,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                   </div>
                   <div className="net-iface-actions">
                     {iface.state === 'UP' ? (
-                      <button type="button" className="settings-action-btn danger" onClick={() => void toggleIface(iface.name, false)} disabled={isBusy}>
+                      <button type="button" className="settings-action-btn danger" onClick={() => requestToggleIface(iface.name, false)} disabled={isBusy}>
                         {isBusy ? '...' : '禁用'}
                       </button>
                     ) : (
-                      <button type="button" className="settings-action-btn primary" onClick={() => void toggleIface(iface.name, true)} disabled={isBusy}>
+                      <button type="button" className="settings-action-btn primary" onClick={() => requestToggleIface(iface.name, true)} disabled={isBusy}>
                         {isBusy ? '...' : '启用'}
                       </button>
                     )}
@@ -467,7 +829,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                     ) : null}
                     <div className="net-edit-footer">
                       <button type="button" className="settings-action-btn" onClick={() => setEditingIface(null)}>取消</button>
-                      <button type="button" className="settings-action-btn primary" onClick={() => void applyIfaceConfig()} disabled={isBusy}>
+                      <button type="button" className="settings-action-btn primary" onClick={requestApplyIfaceConfig} disabled={isBusy}>
                         {isBusy ? '应用中...' : '应用配置'}
                       </button>
                     </div>
@@ -484,20 +846,49 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
       <div className="settings-section">
         <h4>DNS 服务器</h4>
         <div className="dns-server-list">
-          {dnsServers.map((server) => (
+          {dnsDraftConfig.servers.map((server) => (
             <div key={server} className="dns-server-item">
               <span className="dns-server-addr">{server}</span>
-              <button type="button" className="settings-action-btn danger" onClick={() => void removeDnsServer(server)}>移除</button>
+              <button type="button" className="settings-action-btn danger" onClick={() => removeDnsServer(server)}>移除</button>
             </div>
           ))}
-          {dnsServers.length === 0 ? <p className="settings-hint">无已配置的 DNS 服务器。</p> : null}
+          {dnsDraftConfig.servers.length === 0 ? <p className="settings-hint">{dnsState.loading ? '正在加载 DNS 配置...' : '无已配置的 DNS 服务器。'}</p> : null}
         </div>
         <div className="settings-inline-form">
           <input type="text" className="settings-input" placeholder="添加 DNS 服务器 (如 8.8.8.8)" value={newDns} onChange={(e) => setNewDns(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addDnsServer(); }} />
-          <button type="button" className="settings-action-btn primary" onClick={addDnsServer}>添加</button>
+          <button type="button" className="settings-action-btn primary" onClick={addDnsServer}>加入草稿</button>
         </div>
-        {dnsSearch ? (
-          <div className="net-iface-meta"><em>搜索域</em>{dnsSearch}</div>
+        <label className="settings-field">
+          <span>搜索域</span>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder="example.com corp.local"
+            value={dnsDraftConfig.search}
+            onChange={(event) => {
+              const search = event.target.value;
+              setDnsState((currentState) => ({
+                ...currentState,
+                draft: {
+                  ...(currentState.draft ?? EMPTY_DNS_CONFIG),
+                  search,
+                },
+              }));
+            }}
+          />
+        </label>
+        {isDnsDirty ? (
+          <div className="settings-draft-footer">
+            <span>DNS 草稿尚未应用。</span>
+            <div className="settings-header-actions">
+              <button type="button" className="settings-action-btn" onClick={() => setDnsState((currentState) => ({ ...currentState, draft: currentState.current }))}>
+                回滚草稿
+              </button>
+              <button type="button" className="settings-action-btn primary" onClick={requestApplyDnsDraft} disabled={actionLoading === 'dns'}>
+                {actionLoading === 'dns' ? '应用中...' : '预览并应用'}
+              </button>
+            </div>
+          </div>
         ) : null}
       </div>
 
@@ -528,6 +919,15 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
               autoFocus
               placeholder="例如 server-01"
             />
+            {hostnameDraft.trim() ? (
+              <SettingsCommandPreview
+                label="执行预览"
+                content={[
+                  `hostnamectl set-hostname ${shellQuote(hostnameDraft.trim())}`,
+                  `hostname ${shellQuote(hostnameDraft.trim())}`,
+                ].join('\n')}
+              />
+            ) : null}
             <div className="notepad-modal-actions">
               <button type="button" className="notepad-modal-btn" onClick={() => setIsHostnameDialogOpen(false)}>取消</button>
               <button type="button" className="notepad-modal-btn primary" onClick={() => void setHostnameCmd()}>保存</button>
@@ -536,6 +936,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
         </div>,
         document.body,
       ) : null}
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -562,10 +963,12 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
   const [distroType, setDistroType] = useState<'debian' | 'redhat' | 'unknown'>('unknown');
   const [distroName, setDistroName] = useState('');
   const [currentMirror, setCurrentMirror] = useState('');
+  const [mirrorDraft, setMirrorDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
 
   const detectDistro = useCallback(async () => {
     setLoading(true);
@@ -600,6 +1003,7 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         setDistroType('unknown');
         setCurrentMirror('');
       }
+      setMirrorDraft('');
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -609,38 +1013,80 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
 
   useEffect(() => { void detectDistro(); }, [detectDistro]);
 
-  const applyMirror = async (mirrorUrl: string) => {
-    setApplying(true);
-    setError('');
-    setSuccess('');
-    try {
-      if (distroType === 'debian') {
-        const versionMatch = distroName.match(/VERSION_CODENAME=(\S+)/);
-        const codename = versionMatch?.[1] || 'bookworm';
-        const backupCmd = `cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%s) 2>/dev/null`;
-        const writeCmd = `cat > /etc/apt/sources.list << 'MIRROR_EOF'
+  const getMirrorPlan = (mirrorUrl: string) => {
+    if (distroType === 'debian') {
+      const versionMatch = distroName.match(/VERSION_CODENAME=(\S+)/);
+      const codename = versionMatch?.[1] || 'bookworm';
+      const backupCommand = `cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%s) 2>/dev/null`;
+      const writeCommand = `cat > /etc/apt/sources.list << 'MIRROR_EOF'
 deb http://${mirrorUrl}/debian/ ${codename} main contrib non-free non-free-firmware
 deb http://${mirrorUrl}/debian/ ${codename}-updates main contrib non-free non-free-firmware
 deb http://${mirrorUrl}/debian/ ${codename}-backports main contrib non-free non-free-firmware
 deb http://${mirrorUrl}/debian-security ${codename}-security main contrib non-free non-free-firmware
 MIRROR_EOF`;
-        await runCmd(connectionId, backupCmd);
-        await runCmd(connectionId, writeCmd);
-        setSuccess(`已切换到 ${mirrorUrl}，请前往「系统更新」刷新软件包索引。`);
-      } else if (distroType === 'redhat') {
-        const backupCmd = `cp -r /etc/yum.repos.d /etc/yum.repos.d.bak.$(date +%s) 2>/dev/null`;
-        const sedCmd = `sed -i 's|^mirrorlist=|#mirrorlist=|g; s|^#\\(baseurl=.*\\)baseurl|\\1baseurl|g; s|baseurl=.*://[^/]*|baseurl=http://${mirrorUrl}|g' /etc/yum.repos.d/*.repo 2>/dev/null`;
-        await runCmd(connectionId, backupCmd);
-        await runCmd(connectionId, sedCmd);
-        setSuccess(`已切换到 ${mirrorUrl}。`);
-      } else {
-        setError('无法识别的发行版类型，请手动修改镜像源配置。');
+
+      return {
+        backupCommand,
+        writeCommand,
+        preview: `${backupCommand}\n${writeCommand}`,
+        successMessage: `已切换到 ${mirrorUrl}，请前往「系统更新」刷新软件包索引。`,
+      };
+    }
+
+    if (distroType === 'redhat') {
+      const backupCommand = `cp -r /etc/yum.repos.d /etc/yum.repos.d.bak.$(date +%s) 2>/dev/null`;
+      const writeCommand = `sed -i 's|^mirrorlist=|#mirrorlist=|g; s|^#\\(baseurl=.*\\)baseurl|\\1baseurl|g; s|baseurl=.*://[^/]*|baseurl=http://${mirrorUrl}|g' /etc/yum.repos.d/*.repo 2>/dev/null`;
+
+      return {
+        backupCommand,
+        writeCommand,
+        preview: `${backupCommand}\n${writeCommand}`,
+        successMessage: `已切换到 ${mirrorUrl}。`,
+      };
+    }
+
+    throw new Error('无法识别的发行版类型，请手动修改镜像源配置。');
+  };
+
+  const applyMirror = async (mirrorUrl: string) => {
+    setApplying(true);
+    setError('');
+    setSuccess('');
+    try {
+      const plan = getMirrorPlan(mirrorUrl);
+      const backupResult = await runCmd(connectionId, plan.backupCommand);
+      const writeResult = await runCmd(connectionId, plan.writeCommand);
+
+      if (writeResult.code !== 0) {
+        throw new Error(writeResult.stderr || writeResult.stdout || '写入镜像源失败，可能需要 root 权限。');
       }
+      setSuccess(backupResult.code === 0 ? plan.successMessage : `${plan.successMessage}（备份命令可能未执行成功，请确认权限。）`);
+      setMirrorDraft('');
       await detectDistro();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setApplying(false);
+    }
+  };
+
+  const requestApplyMirror = () => {
+    if (!mirrorDraft) return;
+
+    try {
+      const plan = getMirrorPlan(mirrorDraft);
+
+      setConfirmDialog({
+        title: '切换软件镜像源',
+        message: `将把软件源切换到 ${mirrorDraft}。`,
+        detail: '系统会先尝试创建备份，再写入新的源配置。失败时请查看回显并手动检查源文件。',
+        preview: plan.preview,
+        confirmLabel: '切换镜像源',
+        tone: 'warning',
+        onConfirm: () => applyMirror(mirrorDraft),
+      });
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
@@ -676,8 +1122,8 @@ MIRROR_EOF`;
                 <button
                   key={preset.url}
                   type="button"
-                  className="settings-mirror-btn"
-                  onClick={() => void applyMirror(preset.url)}
+                  className={`settings-mirror-btn ${mirrorDraft === preset.url ? 'selected' : ''}`}
+                  onClick={() => { setMirrorDraft(preset.url); setSuccess(''); setError(''); }}
                   disabled={applying}
                 >
                   <strong>{preset.label}</strong>
@@ -685,6 +1131,21 @@ MIRROR_EOF`;
                 </button>
               ))}
             </div>
+            {mirrorDraft ? (
+              <div className="settings-preview-card">
+                <div>
+                  <strong>待应用镜像源</strong>
+                  <span>{mirrorDraft}</span>
+                </div>
+                <SettingsCommandPreview label="命令预览" content={getMirrorPlan(mirrorDraft).preview} />
+                <div className="settings-preview-actions">
+                  <button type="button" className="settings-action-btn" onClick={() => setMirrorDraft('')} disabled={applying}>清除草稿</button>
+                  <button type="button" className="settings-action-btn primary" onClick={requestApplyMirror} disabled={applying}>
+                    {applying ? '应用中...' : '预览并应用'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </>
       ) : (
@@ -692,6 +1153,7 @@ MIRROR_EOF`;
           <p className="settings-hint">无法自动识别发行版类型，请手动编辑镜像源配置文件。</p>
         </div>
       )}
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -705,6 +1167,7 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
 
   const detectPkgManager = useCallback(async () => {
@@ -772,6 +1235,29 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     }
   };
 
+  const requestApplyUpdates = () => {
+    const preview = distroType === 'debian'
+      ? 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y'
+      : distroType === 'redhat'
+        ? 'yum update -y'
+        : '';
+
+    if (!preview) {
+      setError('无法识别的包管理器。');
+      return;
+    }
+
+    setConfirmDialog({
+      title: '升级系统软件包',
+      message: '将安装所有可用的软件包升级。',
+      detail: '系统升级可能重启服务、替换配置文件或短暂影响远程服务；建议先检查可升级列表。',
+      preview,
+      confirmLabel: '开始升级',
+      tone: 'danger',
+      onConfirm: applyUpdates,
+    });
+  };
+
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -789,13 +1275,16 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
           <button type="button" className="settings-action-btn" onClick={checkUpdates} disabled={running}>
             {running ? '执行中...' : '检查更新'}
           </button>
-          <button type="button" className="settings-action-btn primary" onClick={applyUpdates} disabled={running}>
+          <button type="button" className="settings-action-btn primary" onClick={requestApplyUpdates} disabled={running}>
             {running ? '执行中...' : '一键升级'}
           </button>
         </div>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
       {success ? <div className="settings-success-banner">{success}</div> : null}
+      <div className="settings-warning-banner">
+        设置页只执行系统级更新；包安装、卸载和锁定建议交给包管理中心处理。
+      </div>
       {upgradable ? (
         <div className="settings-section">
           <h4>可升级软件包</h4>
@@ -813,6 +1302,7 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
           <p className="settings-hint">点击「检查更新」查看可用更新，或点击「一键升级」立即升级所有软件包。</p>
         </div>
       ) : null}
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -829,6 +1319,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
   const [success, setSuccess] = useState('');
   const [addIp, setAddIp] = useState('');
   const [addHostname, setAddHostname] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -862,6 +1353,23 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const requestSaveHosts = () => {
+    if (draft === hostsContent) {
+      setSuccess('hosts 草稿没有变更。');
+      return;
+    }
+
+    setConfirmDialog({
+      title: '保存 hosts 文件',
+      message: '将重写 /etc/hosts。',
+      detail: '错误的 hosts 映射可能影响登录、包管理和服务发现。',
+      preview: createLineChangePreview(hostsContent, draft),
+      confirmLabel: '保存 hosts',
+      tone: 'warning',
+      onConfirm: saveHosts,
+    });
   };
 
   const addHostEntry = async () => {
@@ -901,7 +1409,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
           {editing ? (
             <>
               <button type="button" className="settings-action-btn" onClick={() => { setEditing(false); setError(''); }} disabled={saving}>取消</button>
-              <button type="button" className="settings-action-btn primary" onClick={saveHosts} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+              <button type="button" className="settings-action-btn primary" onClick={requestSaveHosts} disabled={saving}>{saving ? '保存中...' : '预览并保存'}</button>
             </>
           ) : (
             <>
@@ -950,8 +1458,10 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
             rows={16}
             spellCheck={false}
           />
+          <SettingsCommandPreview label="变更预览" content={createLineChangePreview(hostsContent, draft)} />
         </div>
       )}
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -967,6 +1477,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
   const [addGateway, setAddGateway] = useState('');
   const [addDev, setAddDev] = useState('');
   const [delDest, setDelDest] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -983,22 +1494,15 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const addRoute = async () => {
-    if (!addDest.trim()) {
-      setError('请输入目标网段。');
-      return;
-    }
-    setError('');
-    setSuccess('');
+  const applyAddRoute = async (command: string, destination: string) => {
     try {
-      let cmd = `ip route add ${shellQuote(addDest.trim())}`;
-      if (addGateway.trim()) cmd += ` via ${shellQuote(addGateway.trim())}`;
-      if (addDev.trim()) cmd += ` dev ${shellQuote(addDev.trim())}`;
-      const result = await runCmd(connectionId, cmd);
+      setError('');
+      setSuccess('');
+      const result = await runCmd(connectionId, command);
       if (result.code !== 0) {
         throw new Error(result.stderr || '添加路由失败，可能需要 root 权限。');
       }
-      setSuccess(`已添加路由：${addDest.trim()}`);
+      setSuccess(`已添加路由：${destination}`);
       setAddDest('');
       setAddGateway('');
       setAddDev('');
@@ -1008,24 +1512,61 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     }
   };
 
-  const deleteRoute = async () => {
-    if (!delDest.trim()) {
-      setError('请输入要删除的目标网段。');
+  const requestAddRoute = () => {
+    const destination = addDest.trim();
+    if (!destination) {
+      setError('请输入目标网段。');
       return;
     }
-    setError('');
-    setSuccess('');
+
+    let command = `ip route add ${shellQuote(destination)}`;
+    if (addGateway.trim()) command += ` via ${shellQuote(addGateway.trim())}`;
+    if (addDev.trim()) command += ` dev ${shellQuote(addDev.trim())}`;
+
+    setConfirmDialog({
+      title: '添加系统路由',
+      message: `将添加路由 ${destination}。`,
+      detail: '路由变更可能改变 SSH 返回路径；请确认目标网段和网关无误。',
+      preview: command,
+      confirmLabel: '添加路由',
+      tone: 'warning',
+      onConfirm: () => applyAddRoute(command, destination),
+    });
+  };
+
+  const applyDeleteRoute = async (command: string, destination: string) => {
     try {
-      const result = await runCmd(connectionId, `ip route del ${shellQuote(delDest.trim())} 2>&1`);
+      setError('');
+      setSuccess('');
+      const result = await runCmd(connectionId, command);
       if (result.code !== 0) {
         throw new Error(result.stderr || '删除路由失败，可能需要 root 权限。');
       }
-      setSuccess(`已删除路由：${delDest.trim()}`);
+      setSuccess(`已删除路由：${destination}`);
       setDelDest('');
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
     }
+  };
+
+  const requestDeleteRoute = () => {
+    const destination = delDest.trim();
+    if (!destination) {
+      setError('请输入要删除的目标网段。');
+      return;
+    }
+
+    const command = `ip route del ${shellQuote(destination)} 2>&1`;
+    setConfirmDialog({
+      title: '删除系统路由',
+      message: `将删除路由 ${destination}。`,
+      detail: '删除默认路由或当前连接路径上的路由会让远程会话失联。',
+      preview: command,
+      confirmLabel: '删除路由',
+      tone: 'danger',
+      onConfirm: () => applyDeleteRoute(command, destination),
+    });
   };
 
   return (
@@ -1047,20 +1588,21 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
           <input type="text" className="settings-input" placeholder="目标网段 (如 10.0.0.0/8)" value={addDest} onChange={(e) => setAddDest(e.target.value)} />
           <input type="text" className="settings-input" placeholder="网关 (可选)" value={addGateway} onChange={(e) => setAddGateway(e.target.value)} />
           <input type="text" className="settings-input" placeholder="接口 (可选)" value={addDev} onChange={(e) => setAddDev(e.target.value)} />
-          <button type="button" className="settings-action-btn primary" onClick={addRoute}>添加</button>
+          <button type="button" className="settings-action-btn primary" onClick={requestAddRoute}>预览添加</button>
         </div>
       </div>
       <div className="settings-section">
         <h4>删除路由</h4>
         <div className="settings-inline-form">
           <input type="text" className="settings-input" placeholder="目标网段 (如 10.0.0.0/8)" value={delDest} onChange={(e) => setDelDest(e.target.value)} />
-          <button type="button" className="settings-action-btn danger" onClick={deleteRoute}>删除</button>
+          <button type="button" className="settings-action-btn danger" onClick={requestDeleteRoute}>预览删除</button>
         </div>
       </div>
       <div className="settings-section">
         <h4>路由表</h4>
         <pre className="settings-output">{routes || '加载中...'}</pre>
       </div>
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -1548,6 +2090,7 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
   const [success, setSuccess] = useState('');
   const [newIp, setNewIp] = useState('');
   const [newHost, setNewHost] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<SettingsConfirmDialogConfig | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -1580,6 +2123,23 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
     }
   };
 
+  const requestSaveHosts = () => {
+    if (draft === content) {
+      setSuccess('Hosts 草稿没有变更。');
+      return;
+    }
+
+    setConfirmDialog({
+      title: '保存 Windows hosts',
+      message: `将重写 ${windowsHostsPath}。`,
+      detail: '需要管理员权限；错误映射可能影响远程服务解析。',
+      preview: createLineChangePreview(content, draft),
+      confirmLabel: '保存 hosts',
+      tone: 'warning',
+      onConfirm: saveHosts,
+    });
+  };
+
   const addEntry = async () => {
     const ip = newIp.trim();
     const host = newHost.trim();
@@ -1608,8 +2168,8 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
         </div>
         <div className="settings-header-actions">
           <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>刷新</button>
-          <button type="button" className="settings-action-btn primary" onClick={saveHosts} disabled={saving || draft === content}>
-            {saving ? '保存中...' : '保存'}
+          <button type="button" className="settings-action-btn primary" onClick={requestSaveHosts} disabled={saving || draft === content}>
+            {saving ? '保存中...' : '预览并保存'}
           </button>
         </div>
       </div>
@@ -1632,7 +2192,9 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
           rows={18}
           spellCheck={false}
         />
+        <SettingsCommandPreview label="变更预览" content={createLineChangePreview(content, draft)} />
       </div>
+      {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
   );
 }
@@ -1733,18 +2295,140 @@ function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
   );
 }
 
+function createInitialHostStatus(systemType?: RemoteSystemType): SettingsHostStatus {
+  return {
+    systemLabel: getSystemTypeLabel(systemType),
+    userLabel: '检测中',
+    privilegeLabel: '检测中',
+    privilegeTone: 'unknown',
+    hint: '正在读取远程权限状态',
+  };
+}
+
+function mapPrivilegeStatus(systemType: RemoteSystemType | undefined, values: Map<string, string>): SettingsHostStatus {
+  const privilege = values.get('PRIV') ?? 'unknown';
+  const user = values.get('USER') || '未知用户';
+  const isWindowsHost = isWindowsSystem(systemType);
+
+  if (privilege === 'root') {
+    return {
+      systemLabel: getSystemTypeLabel(systemType),
+      userLabel: user,
+      privilegeLabel: 'root',
+      privilegeTone: 'ready',
+      hint: '具备系统级写入权限',
+    };
+  }
+
+  if (privilege === 'sudo') {
+    return {
+      systemLabel: getSystemTypeLabel(systemType),
+      userLabel: user,
+      privilegeLabel: 'sudo 可用',
+      privilegeTone: 'ready',
+      hint: '可执行需要提权的配置命令',
+    };
+  }
+
+  if (privilege === 'admin') {
+    return {
+      systemLabel: getSystemTypeLabel(systemType),
+      userLabel: user,
+      privilegeLabel: '管理员',
+      privilegeTone: 'ready',
+      hint: '具备 Windows 管理员权限',
+    };
+  }
+
+  return {
+    systemLabel: getSystemTypeLabel(systemType),
+    userLabel: user,
+    privilegeLabel: isWindowsHost ? '普通用户' : '未检测到 root/sudo',
+    privilegeTone: 'warning',
+    hint: isWindowsHost ? '部分系统配置可能需要管理员权限' : '写入网络、镜像源、hosts 等配置可能失败',
+  };
+}
+
+function SettingsStatusStrip({
+  status,
+  loading,
+  onRefresh,
+}: {
+  status: SettingsHostStatus;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="settings-status-strip">
+      <div className="settings-status-item">
+        <span>系统</span>
+        <strong>{status.systemLabel}</strong>
+      </div>
+      <div className="settings-status-item">
+        <span>用户</span>
+        <strong>{status.userLabel}</strong>
+      </div>
+      <div className={`settings-status-pill ${status.privilegeTone}`}>
+        {status.privilegeLabel}
+      </div>
+      <div className="settings-status-hint">{status.hint}</div>
+      <button type="button" className="settings-action-btn" onClick={onRefresh} disabled={loading}>
+        {loading ? '检测中...' : '检测权限'}
+      </button>
+    </div>
+  );
+}
+
 /* ─── Main Component ──────────────────────────────────────────────────────── */
 
 function RemoteSettings({ connectionId, systemType }: RemoteSettingsProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const settingsGroups = isWindowsHost ? WINDOWS_SETTINGS_GROUPS : SETTINGS_GROUPS;
   const [activeTab, setActiveTab] = useState<SettingsTab>('systeminfo');
+  const [hostStatus, setHostStatus] = useState<SettingsHostStatus>(() => createInitialHostStatus(systemType));
+  const [hostStatusLoading, setHostStatusLoading] = useState(false);
+
+  const refreshHostStatus = useCallback(async () => {
+    setHostStatusLoading(true);
+    setHostStatus((currentStatus) => ({
+      ...currentStatus,
+      systemLabel: getSystemTypeLabel(systemType),
+      hint: '正在读取远程权限状态',
+    }));
+
+    try {
+      const command = isWindowsHost
+        ? powershellCommand(`
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+$isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$privilege = if ($isAdmin) { 'admin' } else { 'user' }
+Write-Output ("USER=" + $identity.Name)
+Write-Output ("PRIV=" + $privilege)
+`)
+        : `user="$(id -un 2>/dev/null || whoami 2>/dev/null || printf unknown)"; uid="$(id -u 2>/dev/null || printf '')"; if [ "$uid" = "0" ]; then priv=root; elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then priv=sudo; else priv=user; fi; printf 'USER=%s\\nUID=%s\\nPRIV=%s\\n' "$user" "$uid" "$priv"`;
+      const result = await runCmd(connectionId, command);
+      setHostStatus(mapPrivilegeStatus(systemType, parseKeyValueOutput(result.stdout || result.stderr || '')));
+    } catch (err) {
+      setHostStatus({
+        systemLabel: getSystemTypeLabel(systemType),
+        userLabel: '未知',
+        privilegeLabel: '检测失败',
+        privilegeTone: 'danger',
+        hint: getErrorMessage(err),
+      });
+    } finally {
+      setHostStatusLoading(false);
+    }
+  }, [connectionId, isWindowsHost, systemType]);
 
   useEffect(() => {
     if (!settingsGroups.some((group) => group.tabs.some((tab) => tab.key === activeTab))) {
       setActiveTab('systeminfo');
     }
   }, [activeTab, settingsGroups]);
+
+  useEffect(() => { void refreshHostStatus(); }, [refreshHostStatus]);
 
   const renderPanel = () => {
     if (isWindowsHost) {
@@ -1794,7 +2478,10 @@ function RemoteSettings({ connectionId, systemType }: RemoteSettingsProps) {
         ))}
       </nav>
       <div className="settings-main">
-        {renderPanel()}
+        <SettingsStatusStrip status={hostStatus} loading={hostStatusLoading} onRefresh={() => void refreshHostStatus()} />
+        <div className="settings-panel-shell">
+          {renderPanel()}
+        </div>
       </div>
     </div>
   );

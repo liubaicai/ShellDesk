@@ -42,6 +42,49 @@
   border-bottom-color: rgba(16, 32, 51, 0.08);
 }
 
+[data-theme="light"] .settings-status-strip {
+  border-bottom-color: rgba(16, 32, 51, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(242, 246, 251, 0.9)),
+    #ffffff;
+}
+
+[data-theme="light"] .settings-status-item span,
+[data-theme="light"] .settings-status-hint,
+[data-theme="light"] .settings-field span,
+[data-theme="light"] .settings-command-preview-label {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-status-item strong {
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-status-pill {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #ffffff;
+  color: #57606a;
+}
+
+[data-theme="light"] .settings-status-pill.ready {
+  border-color: rgba(26, 127, 55, 0.24);
+  background: rgba(26, 127, 55, 0.08);
+  color: #1a7f37;
+}
+
+[data-theme="light"] .settings-status-pill.warning,
+[data-theme="light"] .settings-status-pill.unknown {
+  border-color: rgba(154, 103, 0, 0.25);
+  background: rgba(154, 103, 0, 0.08);
+  color: #9a6700;
+}
+
+[data-theme="light"] .settings-status-pill.danger {
+  border-color: rgba(207, 34, 46, 0.25);
+  background: rgba(207, 34, 46, 0.08);
+  color: #cf222e;
+}
+
 [data-theme="light"] .settings-action-btn {
   border-color: rgba(16, 32, 51, 0.12);
   background: #ffffff;
@@ -78,6 +121,17 @@
   border-color: rgba(40, 167, 69, 0.22);
   background: rgba(40, 167, 69, 0.05);
   color: #1a7f37;
+}
+
+[data-theme="light"] .settings-warning-banner {
+  border-color: rgba(154, 103, 0, 0.22);
+  background: rgba(154, 103, 0, 0.06);
+  color: #7d4e00;
+}
+
+[data-theme="light"] .settings-warning-banner::before {
+  background: rgba(154, 103, 0, 0.12);
+  color: #9a6700;
 }
 
 [data-theme="light"] .settings-info-card {
@@ -119,6 +173,23 @@
   color: #8b949e;
 }
 
+[data-theme="light"] .settings-draft-footer,
+[data-theme="light"] .settings-preview-card {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+[data-theme="light"] .settings-draft-footer span,
+[data-theme="light"] .settings-preview-card span {
+  color: var(--accent);
+}
+
+[data-theme="light"] .settings-command-preview pre {
+  border-color: rgba(16, 32, 51, 0.1);
+  background: #f6f8fa;
+  color: #1f2328;
+}
+
 [data-theme="light"] .settings-textarea {
   border-color: rgba(16, 32, 51, 0.14);
   background: #f6f8fa;
@@ -142,6 +213,11 @@
   box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
+[data-theme="light"] .settings-mirror-btn.selected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 [data-theme="light"] .settings-mirror-btn small {
   color: #656d76;
 }
@@ -154,6 +230,62 @@
 
 [data-theme="light"] .settings-select:focus {
   border-color: var(--focus-border);
+}
+
+[data-theme="light"] .settings-modal-overlay {
+  background: rgba(16, 32, 51, 0.32);
+}
+
+[data-theme="light"] .settings-modal {
+  border-color: rgba(16, 32, 51, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 250, 0.98)),
+    #ffffff;
+  box-shadow: 0 22px 60px rgba(43, 67, 92, 0.22);
+}
+
+[data-theme="light"] .settings-modal.warning {
+  border-color: rgba(154, 103, 0, 0.24);
+}
+
+[data-theme="light"] .settings-modal.danger {
+  border-color: rgba(207, 34, 46, 0.24);
+}
+
+[data-theme="light"] .settings-modal-title,
+[data-theme="light"] .settings-preview-card strong {
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-modal-message p {
+  color: #344054;
+}
+
+[data-theme="light"] .settings-modal-message small {
+  color: #656d76;
+}
+
+[data-theme="light"] .settings-modal-btn {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #ffffff;
+  color: #57606a;
+}
+
+[data-theme="light"] .settings-modal-btn:hover:not(:disabled) {
+  border-color: rgba(16, 32, 51, 0.2);
+  color: #1f2328;
+}
+
+[data-theme="light"] .settings-modal-btn.primary {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+[data-theme="light"] .settings-modal-btn.danger {
+  border-color: rgba(207, 34, 46, 0.28);
+  background: rgba(207, 34, 46, 0.08);
+  color: #cf222e;
 }
 
 [data-theme="light"] .net-iface-card {
