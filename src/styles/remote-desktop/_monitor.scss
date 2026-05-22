@@ -110,6 +110,39 @@
   background: rgba(0, 0, 0, 0.18);
 }
 
+.monitor-control-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.monitor-proc-button {
+  height: 30px;
+  border: 1px solid var(--monitor-border);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--monitor-muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: 0;
+  white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.monitor-proc-button:hover {
+  border-color: rgba(103, 183, 255, 0.28);
+  background: var(--monitor-panel-hover);
+  color: var(--monitor-text);
+}
+
 .monitor-interval-control button {
   min-width: 36px;
   height: 26px;
@@ -285,6 +318,11 @@
 
   .monitor-interval-control {
     justify-self: start;
+  }
+
+  .monitor-control-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .monitor-charts-grid {

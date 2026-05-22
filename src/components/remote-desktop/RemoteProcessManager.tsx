@@ -1,336 +1,1264 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
+export type RemoteProcessManagerSortKey =
+  | 'pid'
+  | 'ppid'
+  | 'user'
+  | 'cpu'
+  | 'memory'
+  | 'state'
+  | 'startTime'
+  | 'runtime'
+  | 'command';
+
+export type RemoteProcessManagerViewMode = 'table' | 'tree';
+
+export interface RemoteProcessManagerLaunchOptions {
+  pid?: number;
+  search?: string;
+  user?: string;
+  sortKey?: RemoteProcessManagerSortKey;
+  sortDir?: SortDir;
+  viewMode?: RemoteProcessManagerViewMode;
+}
+
 interface RemoteProcessManagerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
+  launchOptions?: RemoteProcessManagerLaunchOptions;
 }
 
-interface Process {
+export interface RemoteProcessEntry {
   pid: number;
-  user: string;
-  cpu: string;
-  mem: string;
-  vsz: string;
-  rss: string;
-  tty: string;
-  stat: string;
-  start: string;
-  time: string;
+  ppid?: number;
+  user?: string;
+  cpuPercent?: number;
+  cpuSeconds?: number;
+  memoryPercent?: number;
+  memoryMb?: number;
+  state?: string;
+  startTime?: string;
+  runtime?: string;
+  cpuTime?: string;
+  tty?: string;
+  vszKb?: number;
+  rssKb?: number;
   command: string;
+  executablePath?: string;
 }
 
-type SortKey = keyof Process;
+interface ProcessDetail {
+  pid: number;
+  cwd?: string;
+  executablePath?: string;
+  ports: string[];
+  loadedAt: number;
+  error?: string;
+}
+
+interface ProcessRow {
+  process: RemoteProcessEntry;
+  depth: number;
+}
+
 type SortDir = 'asc' | 'desc';
 
-const SIGNALS = [
-  { value: '15', label: 'SIGTERM（优雅终止）' },
-  { value: '9', label: 'SIGKILL（强制终止）' },
-  { value: '2', label: 'SIGINT（Ctrl+C）' },
-  { value: '1', label: 'SIGHUP（挂断）' },
-] as const;
-
-function parsePsOutput(stdout: string): Process[] {
-  const lines = stdout.trim().split('\n');
-  if (lines.length < 2) return [];
-
-  // Skip header line
-  const dataLines = lines.slice(1);
-  const processes: Process[] = [];
-
-  for (const line of dataLines) {
-    if (!line.trim()) continue;
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 11) continue;
-
-    processes.push({
-      pid: Number.parseInt(parts[1], 10),
-      user: parts[0],
-      cpu: parts[2],
-      mem: parts[3],
-      vsz: parts[4],
-      rss: parts[5],
-      tty: parts[6],
-      stat: parts[7],
-      start: parts[8],
-      time: parts[9],
-      command: parts.slice(10).join(' '),
-    });
-  }
-
-  return processes;
+interface SignalDefinition {
+  value: string;
+  name: string;
+  label: string;
+  description: string;
 }
 
-function parseWindowsProcessOutput(stdout: string): Process[] {
+interface PendingSignal {
+  pid: number;
+  command: string;
+  signal: SignalDefinition;
+}
+
+const SIGNALS: SignalDefinition[] = [
+  {
+    value: '15',
+    name: 'TERM',
+    label: 'TERM',
+    description: '请求进程自行退出，适合优先尝试，通常会触发清理逻辑。',
+  },
+  {
+    value: '9',
+    name: 'KILL',
+    label: 'KILL',
+    description: '由系统强制结束进程，进程没有机会保存状态或清理资源。',
+  },
+  {
+    value: '2',
+    name: 'INT',
+    label: 'INT',
+    description: '等同终端 Ctrl+C，适合前台任务或可中断脚本。',
+  },
+  {
+    value: '1',
+    name: 'HUP',
+    label: 'HUP',
+    description: '通知进程挂断或重新加载配置，具体行为由进程自行决定。',
+  },
+];
+
+const AUTO_REFRESH_OPTIONS = [3000, 5000, 10000] as const;
+const DEFAULT_AUTO_REFRESH_MS = 5000;
+const DEFAULT_SIGNAL = SIGNALS[0];
+
+function readInteger(value: string | number | undefined | null) {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+  return Number.isInteger(parsedValue) ? parsedValue : undefined;
+}
+
+function readNumber(value: string | number | undefined | null) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string' || !value.trim() || value === '-') {
+    return undefined;
+  }
+
+  const parsedValue = Number.parseFloat(value);
+  return Number.isFinite(parsedValue) ? parsedValue : undefined;
+}
+
+function clampPercent(value: number | undefined) {
+  if (value === undefined) {
+    return 0;
+  }
+
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function formatMetric(value: number | undefined, suffix = '') {
+  if (value === undefined || !Number.isFinite(value)) {
+    return '-';
+  }
+
+  const formattedValue = value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2);
+  return `${formattedValue.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}${suffix}`;
+}
+
+function formatMemory(process: RemoteProcessEntry, isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    return formatMetric(process.memoryMb, ' MB');
+  }
+
+  return formatMetric(process.memoryPercent, '%');
+}
+
+function formatCpu(process: RemoteProcessEntry, isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    return formatMetric(process.cpuSeconds, 's');
+  }
+
+  return formatMetric(process.cpuPercent, '%');
+}
+
+function getCpuValue(process: RemoteProcessEntry, isWindowsHost: boolean) {
+  return isWindowsHost ? process.cpuSeconds ?? 0 : process.cpuPercent ?? 0;
+}
+
+function getMemoryValue(process: RemoteProcessEntry, isWindowsHost: boolean) {
+  return isWindowsHost ? process.memoryMb ?? 0 : process.memoryPercent ?? 0;
+}
+
+function getSignalByValue(value: string) {
+  return SIGNALS.find((signal) => signal.value === value) ?? DEFAULT_SIGNAL;
+}
+
+function parseLinuxProcessLine(line: string): RemoteProcessEntry | null {
+  const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const pid = readInteger(match[1]);
+
+  if (pid === undefined) {
+    return null;
+  }
+
+  return {
+    pid,
+    ppid: readInteger(match[2]),
+    user: match[3] || '-',
+    cpuPercent: readNumber(match[4]),
+    memoryPercent: readNumber(match[5]),
+    vszKb: readInteger(match[6]),
+    rssKb: readInteger(match[7]),
+    tty: match[8],
+    state: match[9],
+    startTime: match[10],
+    runtime: match[11],
+    cpuTime: match[12],
+    command: match[13]?.trim() || '(无命令)',
+  };
+}
+
+function parsePsAuxLine(line: string): RemoteProcessEntry | null {
+  const parts = line.trim().split(/\s+/);
+
+  if (parts.length < 11 || parts[0].toUpperCase() === 'USER') {
+    return null;
+  }
+
+  const pid = readInteger(parts[1]);
+
+  if (pid === undefined) {
+    return null;
+  }
+
+  return {
+    pid,
+    user: parts[0],
+    cpuPercent: readNumber(parts[2]),
+    memoryPercent: readNumber(parts[3]),
+    vszKb: readInteger(parts[4]),
+    rssKb: readInteger(parts[5]),
+    tty: parts[6],
+    state: parts[7],
+    startTime: parts[8],
+    cpuTime: parts[9],
+    command: parts.slice(10).join(' ') || '(无命令)',
+  };
+}
+
+function parseLinuxProcessOutput(stdout: string): RemoteProcessEntry[] {
   return stdout
     .trim()
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => line.trimEnd())
     .filter(Boolean)
-    .map((line) => {
-      const parts = line.split('\t');
-      const pid = Number.parseInt(parts[0] ?? '', 10);
-      const name = parts[1] || 'Process';
-      const cpu = parts[2] || '0';
-      const mem = parts[3] || '0';
-      const start = parts[4] || '';
+    .map((line) => parseLinuxProcessLine(line) ?? parsePsAuxLine(line))
+    .filter((process): process is RemoteProcessEntry => Boolean(process));
+}
 
-      if (!Number.isInteger(pid)) {
-        return null;
-      }
+function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] {
+  const text = stdout.trim();
 
-      return {
-        pid,
-        user: '-',
-        cpu,
-        mem,
-        vsz: '-',
-        rss: '-',
-        tty: '-',
-        stat: 'R',
-        start,
-        time: `${cpu}s`,
-        command: name,
-      };
-    })
-    .filter((process): process is Process => Boolean(process));
+  if (!text) {
+    return [];
+  }
+
+  try {
+    const parsedJson = JSON.parse(text) as unknown;
+    const records = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+
+    return records
+      .map<RemoteProcessEntry | null>((record) => {
+        if (!record || typeof record !== 'object') {
+          return null;
+        }
+
+        const item = record as Record<string, unknown>;
+        const pid = readInteger(item.pid as string | number | undefined);
+
+        if (pid === undefined) {
+          return null;
+        }
+
+        const process: RemoteProcessEntry = {
+          pid,
+          ppid: readInteger(item.ppid as string | number | undefined),
+          user: typeof item.user === 'string' && item.user.trim() ? item.user : '-',
+          cpuSeconds: readNumber(item.cpuSeconds as string | number | undefined),
+          memoryMb: readNumber(item.memoryMb as string | number | undefined),
+          state: typeof item.state === 'string' ? item.state : 'Running',
+          startTime: typeof item.startTime === 'string' ? item.startTime : '',
+          runtime: typeof item.runtime === 'string' ? item.runtime : '',
+          cpuTime: typeof item.cpuTime === 'string' ? item.cpuTime : '',
+          command: typeof item.command === 'string' && item.command.trim() ? item.command : `PID ${pid}`,
+          executablePath: typeof item.executablePath === 'string' ? item.executablePath : undefined,
+        };
+
+        return process;
+      })
+      .filter((process): process is RemoteProcessEntry => Boolean(process));
+  } catch {
+    return [];
+  }
+}
+
+function getLinuxProcessListCommand() {
+  return "(ps -eo pid=,ppid=,user=,pcpu=,pmem=,vsz=,rss=,tty=,stat=,start=,etime=,time=,args= 2>/dev/null || ps aux 2>/dev/null) | head -n 800";
+}
+
+function getWindowsProcessListCommand() {
+  return powershellCommand(`
+$processById = @{}
+Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+  $processById[[int]$_.Id] = $_
+}
+
+$items = Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object {
+  $proc = $processById[[int]$_.ProcessId]
+  $owner = '-'
+  try {
+    $ownerInfo = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction Stop
+    if ($ownerInfo.ReturnValue -eq 0 -and $ownerInfo.User) {
+      if ($ownerInfo.Domain) { $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)" } else { $owner = $ownerInfo.User }
+    }
+  } catch {}
+
+  $cpuSeconds = $null
+  if ($proc -and $null -ne $proc.CPU) { $cpuSeconds = [double][math]::Round($proc.CPU, 1) }
+
+  $memoryMb = $null
+  if ($null -ne $_.WorkingSetSize) {
+    $memoryMb = [double][math]::Round(([double]$_.WorkingSetSize / 1MB), 1)
+  } elseif ($proc -and $null -ne $proc.WorkingSet64) {
+    $memoryMb = [double][math]::Round(([double]$proc.WorkingSet64 / 1MB), 1)
+  }
+
+  $startTime = ''
+  if ($null -ne $_.CreationDate) {
+    try { $startTime = ([datetime]$_.CreationDate).ToString('yyyy-MM-dd HH:mm') } catch { $startTime = [string]$_.CreationDate }
+  }
+
+  $state = 'Running'
+  if ($proc -and $proc.Responding -eq $false) { $state = 'NotResponding' }
+
+  $command = $_.CommandLine
+  if ([string]::IsNullOrWhiteSpace($command)) { $command = $_.Name }
+
+  $parentPid = $null
+  if ($null -ne $_.ParentProcessId) { $parentPid = [int]$_.ParentProcessId }
+
+  $cpuTime = ''
+  if ($null -ne $cpuSeconds) { $cpuTime = "$cpuSeconds s" }
+
+  [pscustomobject]@{
+    pid = [int]$_.ProcessId
+    ppid = $parentPid
+    user = $owner
+    cpuSeconds = $cpuSeconds
+    memoryMb = $memoryMb
+    state = $state
+    startTime = $startTime
+    runtime = ''
+    cpuTime = $cpuTime
+    command = $command
+    executablePath = $_.ExecutablePath
+  }
+}
+
+$items |
+  Sort-Object -Property @{ Expression = { if ($null -eq $_.cpuSeconds) { -1 } else { $_.cpuSeconds } }; Descending = $true } |
+  Select-Object -First 800 |
+  ConvertTo-Json -Compress
+`);
+}
+
+function parseProcessDetailOutput(stdout: string, pid: number): ProcessDetail {
+  const detail: ProcessDetail = {
+    pid,
+    ports: [],
+    loadedAt: Date.now(),
+  };
+
+  stdout.split(/\r?\n/).forEach((line) => {
+    const [kind, ...rest] = line.split('\t');
+    const value = rest.join('\t').trim();
+
+    if (!value) {
+      return;
+    }
+
+    if (kind === 'CWD') {
+      detail.cwd = value;
+    } else if (kind === 'PATH') {
+      detail.executablePath = value;
+    } else if (kind === 'PORT') {
+      detail.ports.push(value);
+    }
+  });
+
+  return detail;
+}
+
+function getLinuxProcessDetailCommand(pid: number) {
+  return `
+{ pwdx ${pid} 2>/dev/null | sed 's/^[^:]*:[[:space:]]*/CWD\\t/'; } || true
+if command -v ss >/dev/null 2>&1; then
+  ss -Htunlp 2>/dev/null | awk -v pid='pid=${pid},' 'index($0, pid) { print "PORT\\t" $0 }'
+elif command -v netstat >/dev/null 2>&1; then
+  netstat -tunlp 2>/dev/null | awk -v pid='${pid}/' 'index($0, pid) { print "PORT\\t" $0 }'
+fi
+`;
+}
+
+function getWindowsProcessDetailCommand(pid: number) {
+  return powershellCommand(`
+$tab = [char]9
+$proc = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue
+if ($proc -and $proc.ExecutablePath) { "PATH" + $tab + $proc.ExecutablePath }
+try {
+  Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction SilentlyContinue | ForEach-Object {
+    "PORT" + $tab + "TCP $($_.LocalAddress):$($_.LocalPort) -> $($_.RemoteAddress):$($_.RemotePort) $($_.State)"
+  }
+} catch {}
+try {
+  Get-NetUDPEndpoint -OwningProcess ${pid} -ErrorAction SilentlyContinue | ForEach-Object {
+    "PORT" + $tab + "UDP $($_.LocalAddress):$($_.LocalPort)"
+  }
+} catch {}
+`);
 }
 
 async function runCmd(connectionId: string, command: string) {
-  return window.guiSSH!.connections!.runCommand(connectionId, command);
+  const api = window.guiSSH?.connections;
+
+  if (!api) {
+    throw new Error('ShellDesk IPC 未就绪。');
+  }
+
+  return api.runCommand(connectionId, command);
 }
 
-function ProcessManager({ connectionId, systemType }: RemoteProcessManagerProps) {
+function getStateTone(state?: string) {
+  if (!state) {
+    return 'idle';
+  }
+
+  const normalizedState = state.toUpperCase();
+
+  if (normalizedState.startsWith('R')) {
+    return 'running';
+  }
+
+  if (normalizedState.startsWith('D') || normalizedState.includes('NOTRESPONDING')) {
+    return 'blocked';
+  }
+
+  if (normalizedState.startsWith('Z')) {
+    return 'zombie';
+  }
+
+  return 'idle';
+}
+
+function compareProcesses(
+  first: RemoteProcessEntry,
+  second: RemoteProcessEntry,
+  sortKey: RemoteProcessManagerSortKey,
+  sortDir: SortDir,
+  isWindowsHost: boolean,
+) {
+  const direction = sortDir === 'asc' ? 1 : -1;
+
+  const readSortValue = (process: RemoteProcessEntry) => {
+    if (sortKey === 'pid') return process.pid;
+    if (sortKey === 'ppid') return process.ppid ?? -1;
+    if (sortKey === 'cpu') return getCpuValue(process, isWindowsHost);
+    if (sortKey === 'memory') return getMemoryValue(process, isWindowsHost);
+    if (sortKey === 'user') return process.user ?? '';
+    if (sortKey === 'state') return process.state ?? '';
+    if (sortKey === 'startTime') return process.startTime ?? '';
+    if (sortKey === 'runtime') return process.runtime ?? '';
+    return process.command;
+  };
+
+  const firstValue = readSortValue(first);
+  const secondValue = readSortValue(second);
+
+  if (typeof firstValue === 'number' && typeof secondValue === 'number') {
+    return (firstValue - secondValue) * direction;
+  }
+
+  return String(firstValue).localeCompare(String(secondValue), 'zh-CN') * direction;
+}
+
+function matchesQuery(process: RemoteProcessEntry, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const searchableText = [
+    process.pid,
+    process.ppid,
+    process.user,
+    process.state,
+    process.command,
+    process.executablePath,
+  ].filter((value) => value !== undefined && value !== null).join(' ').toLowerCase();
+
+  return searchableText.includes(normalizedQuery);
+}
+
+function flattenProcessTree(
+  processes: RemoteProcessEntry[],
+  visiblePids: Set<number>,
+  compare: (first: RemoteProcessEntry, second: RemoteProcessEntry) => number,
+) {
+  const processByPid = new Map(processes.map((process) => [process.pid, process]));
+  const childrenByPid = new Map<number, RemoteProcessEntry[]>();
+
+  processes.forEach((process) => {
+    if (!visiblePids.has(process.pid)) {
+      return;
+    }
+
+    const parentPid = process.ppid;
+
+    if (parentPid === undefined || !visiblePids.has(parentPid)) {
+      return;
+    }
+
+    const children = childrenByPid.get(parentPid) ?? [];
+    children.push(process);
+    childrenByPid.set(parentPid, children);
+  });
+
+  childrenByPid.forEach((children) => children.sort(compare));
+
+  const roots = processes
+    .filter((process) => visiblePids.has(process.pid))
+    .filter((process) => process.ppid === undefined || !processByPid.has(process.ppid) || !visiblePids.has(process.ppid))
+    .sort(compare);
+  const rows: ProcessRow[] = [];
+  const walkedPids = new Set<number>();
+
+  const walk = (process: RemoteProcessEntry, depth: number) => {
+    if (walkedPids.has(process.pid)) {
+      return;
+    }
+
+    walkedPids.add(process.pid);
+    rows.push({ process, depth });
+    (childrenByPid.get(process.pid) ?? []).forEach((child) => walk(child, depth + 1));
+  };
+
+  roots.forEach((process) => walk(process, 0));
+
+  processes
+    .filter((process) => visiblePids.has(process.pid) && !walkedPids.has(process.pid))
+    .sort(compare)
+    .forEach((process) => rows.push({ process, depth: 0 }));
+
+  return rows;
+}
+
+function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProcessManagerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
-  const [processes, setProcesses] = useState<Process[]>([]);
-  const [filtered, setFiltered] = useState<Process[]>([]);
+  const isMountedRef = useRef(true);
+  const isRefreshingRef = useRef(false);
+  const missingPidNoticeRef = useRef<number | null>(null);
+  const [processes, setProcesses] = useState<RemoteProcessEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [killing, setKilling] = useState<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [signalingPid, setSignalingPid] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [success, setSuccess] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(launchOptions?.search ?? '');
+  const [userFilter, setUserFilter] = useState(launchOptions?.user ?? 'all');
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>('cpu');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [selectedSignal, setSelectedSignal] = useState('15');
-  const [killingPid, setKillingPid] = useState<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [autoRefreshMs, setAutoRefreshMs] = useState<(typeof AUTO_REFRESH_OPTIONS)[number]>(DEFAULT_AUTO_REFRESH_MS);
+  const [sortKey, setSortKey] = useState<RemoteProcessManagerSortKey>(launchOptions?.sortKey ?? 'cpu');
+  const [sortDir, setSortDir] = useState<SortDir>(launchOptions?.sortDir ?? 'desc');
+  const [viewMode, setViewMode] = useState<RemoteProcessManagerViewMode>(launchOptions?.viewMode ?? 'table');
+  const [selectedSignalValue, setSelectedSignalValue] = useState(DEFAULT_SIGNAL.value);
+  const [selectedPid, setSelectedPid] = useState<number | null>(launchOptions?.pid ?? null);
+  const [processDetail, setProcessDetail] = useState<ProcessDetail | null>(null);
+  const [pendingSignal, setPendingSignal] = useState<PendingSignal | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const selectedSignal = getSignalByValue(selectedSignalValue);
+
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (isRefreshingRef.current) {
+      return;
+    }
+
+    isRefreshingRef.current = true;
+
+    if (!options?.silent) {
+      setLoading(true);
+    }
+
     setError('');
+
     try {
-      if (isWindowsHost) {
-        const result = await runCmd(connectionId, powershellCommand(`
-Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 300 | ForEach-Object {
-  $cpu = if ($null -eq $_.CPU) { 0 } else { [math]::Round($_.CPU, 1) }
-  $mem = [math]::Round($_.WorkingSet64 / 1MB, 1)
-  $start = ''
-  try { $start = $_.StartTime.ToString('yyyy-MM-dd HH:mm') } catch {}
-  $tab = [char]9
-  '{0}{1}{2}{1}{3}{1}{4}{1}{5}' -f $_.Id, $tab, $_.ProcessName, $cpu, $mem, $start
-}
-`));
-        setProcesses(parseWindowsProcessOutput(result.stdout || ''));
-      } else {
-        const result = await runCmd(connectionId, 'ps aux --sort=-%cpu 2>/dev/null || ps aux 2>/dev/null');
-        setProcesses(parsePsOutput(result.stdout || ''));
+      const result = await runCmd(
+        connectionId,
+        isWindowsHost ? getWindowsProcessListCommand() : getLinuxProcessListCommand(),
+      );
+      const nextProcesses = isWindowsHost
+        ? parseWindowsProcessOutput(result.stdout || '')
+        : parseLinuxProcessOutput(result.stdout || '');
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setProcesses(nextProcesses);
+
+      if (result.code !== 0 && !nextProcesses.length) {
+        setError(result.stderr || '无法读取远程进程列表。');
       }
     } catch (err) {
-      setError(getErrorMessage(err));
+      if (isMountedRef.current) {
+        setError(getErrorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      isRefreshingRef.current = false;
+
+      if (isMountedRef.current && !options?.silent) {
+        setLoading(false);
+      }
     }
   }, [connectionId, isWindowsHost]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  const loadProcessDetails = useCallback(async (pid: number) => {
+    if (!Number.isInteger(pid) || pid <= 0) {
+      return;
+    }
+
+    setDetailLoading(true);
+
+    try {
+      const result = await runCmd(
+        connectionId,
+        isWindowsHost ? getWindowsProcessDetailCommand(pid) : getLinuxProcessDetailCommand(pid),
+      );
+      const nextDetail = parseProcessDetailOutput(result.stdout || '', pid);
+
+      if (result.code !== 0) {
+        nextDetail.error = result.stderr || '无法读取进程详情，可能权限不足。';
+      }
+
+      if (isMountedRef.current) {
+        setProcessDetail(nextDetail);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setProcessDetail({
+          pid,
+          ports: [],
+          loadedAt: Date.now(),
+          error: getErrorMessage(err),
+        });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setDetailLoading(false);
+      }
+    }
+  }, [connectionId, isWindowsHost]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    void refresh();
+
+    return () => {
+      isMountedRef.current = false;
+      isRefreshingRef.current = false;
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!launchOptions) {
+      return;
+    }
+
+    if (typeof launchOptions.search === 'string') {
+      setSearch(launchOptions.search);
+    }
+
+    if (typeof launchOptions.user === 'string') {
+      setUserFilter(launchOptions.user);
+    }
+
+    if (launchOptions.sortKey) {
+      setSortKey(launchOptions.sortKey);
+    }
+
+    if (launchOptions.sortDir) {
+      setSortDir(launchOptions.sortDir);
+    }
+
+    if (launchOptions.viewMode) {
+      setViewMode(launchOptions.viewMode);
+    }
+
+    if (Number.isInteger(launchOptions.pid) && launchOptions.pid! > 0) {
+      setSelectedPid(launchOptions.pid!);
+    }
+  }, [launchOptions]);
 
   useEffect(() => {
     if (!autoRefresh) {
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      return undefined;
+    }
+
+    let canceled = false;
+    let timerId: number | undefined;
+
+    const scheduleTick = () => {
+      if (canceled) {
+        return;
+      }
+
+      timerId = window.setTimeout(async () => {
+        if (!pendingSignal && signalingPid === null) {
+          await refresh({ silent: true });
+        }
+
+        scheduleTick();
+      }, autoRefreshMs);
+    };
+
+    scheduleTick();
+
+    return () => {
+      canceled = true;
+
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [autoRefresh, autoRefreshMs, pendingSignal, refresh, signalingPid]);
+
+  useEffect(() => {
+    if (selectedPid === null) {
+      setProcessDetail(null);
       return;
     }
-    timerRef.current = setInterval(() => void refresh(), 3000);
-    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
-  }, [autoRefresh, refresh]);
 
-  const killProcess = async (pid: number) => {
-    if (!Number.isInteger(pid) || pid <= 0) {
+    void loadProcessDetails(selectedPid);
+  }, [loadProcessDetails, selectedPid]);
+
+  const compare = useCallback((first: RemoteProcessEntry, second: RemoteProcessEntry) => (
+    compareProcesses(first, second, sortKey, sortDir, isWindowsHost)
+  ), [isWindowsHost, sortDir, sortKey]);
+
+  const users = useMemo(() => {
+    const uniqueUsers = new Set(
+      processes
+        .map((process) => process.user?.trim())
+        .filter((user): user is string => Boolean(user && user !== '-')),
+    );
+
+    return [...uniqueUsers].sort((first, second) => first.localeCompare(second, 'zh-CN'));
+  }, [processes]);
+
+  const baseFilteredProcesses = useMemo(() => {
+    const normalizedSearch = search.trim();
+
+    return processes.filter((process) => {
+      const matchesUser = userFilter === 'all' || process.user === userFilter;
+      return matchesUser && matchesQuery(process, normalizedSearch);
+    });
+  }, [processes, search, userFilter]);
+
+  const processRows = useMemo<ProcessRow[]>(() => {
+    const basePids = new Set(baseFilteredProcesses.map((process) => process.pid));
+    const normalizedSearch = search.trim();
+
+    if (viewMode === 'table') {
+      return [...baseFilteredProcesses]
+        .sort(compare)
+        .map((process) => ({ process, depth: 0 }));
+    }
+
+    if (normalizedSearch) {
+      const processByPid = new Map(processes.map((process) => [process.pid, process]));
+
+      baseFilteredProcesses.forEach((process) => {
+        let parentPid = process.ppid;
+        let guard = 0;
+
+        while (parentPid !== undefined && guard < 64) {
+          const parent = processByPid.get(parentPid);
+
+          if (!parent) {
+            break;
+          }
+
+          basePids.add(parent.pid);
+          parentPid = parent.ppid;
+          guard += 1;
+        }
+
+        processes
+          .filter((candidate) => candidate.ppid === process.pid)
+          .forEach((child) => basePids.add(child.pid));
+      });
+    }
+
+    return flattenProcessTree(processes, basePids, compare);
+  }, [baseFilteredProcesses, compare, processes, search, viewMode]);
+
+  const selectedProcess = useMemo(() => {
+    if (selectedPid === null) {
+      return null;
+    }
+
+    return processes.find((process) => process.pid === selectedPid) ?? null;
+  }, [processes, selectedPid]);
+
+  const selectedParent = useMemo(() => {
+    if (!selectedProcess?.ppid) {
+      return null;
+    }
+
+    return processes.find((process) => process.pid === selectedProcess.ppid) ?? null;
+  }, [processes, selectedProcess]);
+
+  const selectedChildren = useMemo(() => {
+    if (!selectedProcess) {
+      return [];
+    }
+
+    return processes
+      .filter((process) => process.ppid === selectedProcess.pid)
+      .sort(compare);
+  }, [compare, processes, selectedProcess]);
+
+  const maxCpuValue = useMemo(() => Math.max(1, ...processes.map((process) => getCpuValue(process, isWindowsHost))), [isWindowsHost, processes]);
+  const maxMemoryValue = useMemo(() => Math.max(1, ...processes.map((process) => getMemoryValue(process, isWindowsHost))), [isWindowsHost, processes]);
+
+  useEffect(() => {
+    if (selectedPid !== null && processes.some((process) => process.pid === selectedPid)) {
+      missingPidNoticeRef.current = null;
+      setNotice('');
+      return;
+    }
+
+    if (selectedPid !== null && processes.length > 0 && !loading && missingPidNoticeRef.current !== selectedPid) {
+      missingPidNoticeRef.current = selectedPid;
+      setNotice(`PID ${selectedPid} 当前不在列表中，可能已经退出或权限不可见。`);
+    }
+
+    if (selectedPid === null && processRows.length > 0) {
+      setSelectedPid(processRows[0].process.pid);
+    }
+  }, [loading, processRows, processes, selectedPid]);
+
+  const toggleSort = (key: RemoteProcessManagerSortKey) => {
+    if (sortKey === key) {
+      setSortDir((currentDir) => (currentDir === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSortKey(key);
+    setSortDir(key === 'user' || key === 'command' || key === 'state' ? 'asc' : 'desc');
+  };
+
+  const sortIndicator = (key: RemoteProcessManagerSortKey) => {
+    if (sortKey !== key) {
+      return <span className="proc-sort-icon" aria-hidden="true" />;
+    }
+
+    return <span className="proc-sort-icon" aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>;
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    setError('');
+    setNotice('');
+    setSuccess('');
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setSuccess(`已复制${label}。`);
+    } catch (err) {
+      setError(`复制失败：${getErrorMessage(err)}`);
+    }
+  };
+
+  const requestSignal = (process: RemoteProcessEntry) => {
+    setPendingSignal({
+      pid: process.pid,
+      command: process.command,
+      signal: isWindowsHost
+        ? {
+            value: 'win-kill',
+            name: 'Stop-Process',
+            label: '结束任务',
+            description: 'Windows 将强制结束该 PID，对未保存状态的程序不做清理保证。',
+          }
+        : selectedSignal,
+    });
+  };
+
+  const sendSignal = async (pending: PendingSignal) => {
+    if (!Number.isInteger(pending.pid) || pending.pid <= 0) {
       setError('PID 无效。');
       return;
     }
 
-    const signal = SIGNALS.some((item) => item.value === selectedSignal) ? selectedSignal : '15';
-    setKilling(pid);
+    setSignalingPid(pending.pid);
     setError('');
+    setNotice('');
     setSuccess('');
+
     try {
-      const result = await runCmd(
-        connectionId,
-        isWindowsHost ? powershellCommand(`Stop-Process -Id ${pid} -Force -ErrorAction Stop`) : `kill -${signal} ${pid} 2>&1`,
-      );
+      const command = isWindowsHost
+        ? powershellCommand(`Stop-Process -Id ${pending.pid} -Force -ErrorAction Stop`)
+        : `kill -${pending.signal.value} ${pending.pid} 2>&1`;
+      const result = await runCmd(connectionId, command);
+
       if (result.code !== 0) {
-        throw new Error(result.stderr || '终止进程失败，可能需要 root 权限。');
+        throw new Error(result.stderr || result.stdout || '操作失败，PID 可能不存在或当前用户权限不足。');
       }
-      setSuccess(isWindowsHost ? `已终止 PID ${pid}。` : `已向 PID ${pid} 发送 SIG${signal} 信号。`);
+
+      setSuccess(isWindowsHost
+        ? `已结束 PID ${pending.pid}。`
+        : `已向 PID ${pending.pid} 发送 ${pending.signal.name}。`);
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
-      setKilling(null);
-      setKillingPid(null);
+      setSignalingPid(null);
+      setPendingSignal(null);
     }
   };
 
-  // Filter and sort
-  useEffect(() => {
-    let list = processes;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter((p) =>
-        p.command.toLowerCase().includes(q) ||
-        p.user.toLowerCase().includes(q) ||
-        String(p.pid).includes(q)
-      );
-    }
-    list = [...list].sort((a, b) => {
-      let cmp = 0;
-      if (sortKey === 'pid') cmp = a.pid - b.pid;
-      else if (sortKey === 'cpu' || sortKey === 'mem') cmp = Number.parseFloat(a[sortKey]) - Number.parseFloat(b[sortKey]);
-      else cmp = String(a[sortKey]).localeCompare(String(b[sortKey]));
-      return sortDir === 'desc' ? -cmp : cmp;
-    });
-    setFiltered(list);
-  }, [processes, search, sortKey, sortDir]);
+  const renderSortHeader = (key: RemoteProcessManagerSortKey, label: string, className: string) => (
+    <th className={className}>
+      <button type="button" className="proc-sort-button" onClick={() => toggleSort(key)}>
+        <span>{label}</span>
+        {sortIndicator(key)}
+      </button>
+    </th>
+  );
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
-    }
-  };
+  const renderProcessRow = ({ process, depth }: ProcessRow) => {
+    const isSelected = selectedPid === process.pid;
+    const stateTone = getStateTone(process.state);
+    const cpuValue = getCpuValue(process, isWindowsHost);
+    const memoryValue = getMemoryValue(process, isWindowsHost);
+    const cpuWidth = isWindowsHost ? (cpuValue / maxCpuValue) * 100 : clampPercent(cpuValue);
+    const memoryWidth = isWindowsHost ? (memoryValue / maxMemoryValue) * 100 : clampPercent(memoryValue);
 
-  const sortIndicator = (key: SortKey) => {
-    if (sortKey !== key) return <span className="proc-sort-icon">&nbsp;</span>;
-    return <span className="proc-sort-icon">{sortDir === 'asc' ? '▲' : '▼'}</span>;
+    return (
+      <tr
+        key={process.pid}
+        className={`proc-row ${isSelected ? 'selected' : ''} ${stateTone === 'zombie' ? 'proc-zombie' : ''}`}
+        onClick={() => setSelectedPid(process.pid)}
+      >
+        <td className="proc-pid">{process.pid}</td>
+        <td className="proc-ppid">{process.ppid ?? '-'}</td>
+        <td className="proc-user" title={process.user}>{process.user || '-'}</td>
+        <td className="proc-cpu">
+          <div className="proc-bar-wrap">
+            <div className="proc-bar proc-bar-cpu" style={{ width: `${cpuWidth}%` }} />
+            <span>{formatCpu(process, isWindowsHost)}</span>
+          </div>
+        </td>
+        <td className="proc-mem">
+          <div className="proc-bar-wrap">
+            <div className="proc-bar proc-bar-mem" style={{ width: `${memoryWidth}%` }} />
+            <span>{formatMemory(process, isWindowsHost)}</span>
+          </div>
+        </td>
+        <td className="proc-stat">
+          <span className={`proc-stat-tag ${stateTone}`}>{process.state || '-'}</span>
+        </td>
+        <td className="proc-start">{process.startTime || '-'}</td>
+        <td className="proc-runtime">{process.runtime || process.cpuTime || '-'}</td>
+        <td className="proc-command" title={process.command}>
+          {viewMode === 'tree' ? <span className="proc-tree-indent" style={{ width: depth * 14 }} /> : null}
+          {viewMode === 'tree' && depth > 0 ? <span className="proc-tree-branch" aria-hidden="true">└</span> : null}
+          <span>{process.command}</span>
+        </td>
+      </tr>
+    );
   };
 
   return (
     <div className="proc-manager">
-      {/* Toolbar */}
       <div className="proc-toolbar">
         <div className="proc-toolbar-left">
-          <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-            {loading ? '加载中...' : '刷新'}
+          <button type="button" className="proc-tool-button primary" onClick={() => void refresh()} disabled={loading}>
+            {loading ? '刷新中' : '刷新'}
           </button>
-          <label className="proc-check-label">
-            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-            自动刷新 (3s)
-          </label>
-          <span className="proc-summary">
-            共 <strong>{filtered.length}</strong> / {processes.length} 个进程
-          </span>
-        </div>
-        <div className="proc-toolbar-right">
-          <input
-            type="text"
-            className="settings-input proc-search"
-            placeholder="搜索进程名、用户或 PID..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {!isWindowsHost ? (
-            <select className="settings-select proc-signal-select" value={selectedSignal} onChange={(e) => setSelectedSignal(e.target.value)}>
-              {SIGNALS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          ) : null}
-        </div>
-      </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
-
-      {/* Confirm Kill Dialog */}
-      {killingPid !== null ? (
-        <div className="proc-kill-confirm" role="alertdialog">
-          <p>确定要终止 PID <strong>{killingPid}</strong> 吗？</p>
-          <div className="proc-kill-actions">
-            <button type="button" className="settings-action-btn" onClick={() => setKillingPid(null)}>取消</button>
-            <button type="button" className="settings-action-btn danger" onClick={() => { const pid = killingPid; setKillingPid(null); void killProcess(pid); }}>
-              确认终止
+          <div className="proc-segmented" aria-label="列表模式">
+            <button type="button" className={viewMode === 'table' ? 'active' : ''} onClick={() => setViewMode('table')}>
+              表格
+            </button>
+            <button type="button" className={viewMode === 'tree' ? 'active' : ''} onClick={() => setViewMode('tree')}>
+              树
             </button>
           </div>
-        </div>
-      ) : null}
 
-      {/* Process Table */}
-      <div className="proc-table-wrap">
-        <table className="proc-table">
-          <thead>
-            <tr>
-              <th className="proc-col-pid" onClick={() => toggleSort('pid')}>PID{sortIndicator('pid')}</th>
-              <th className="proc-col-user" onClick={() => toggleSort('user')}>用户{sortIndicator('user')}</th>
-              <th className="proc-col-cpu" onClick={() => toggleSort('cpu')}>{isWindowsHost ? 'CPU(s)' : 'CPU%'}{sortIndicator('cpu')}</th>
-              <th className="proc-col-mem" onClick={() => toggleSort('mem')}>{isWindowsHost ? '内存 MB' : 'MEM%'}{sortIndicator('mem')}</th>
-              <th className="proc-col-stat">状态</th>
-              <th className="proc-col-time">时间</th>
-              <th className="proc-col-command">命令</th>
-              <th className="proc-col-action">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="proc-empty">
-                  {loading ? '正在加载进程列表...' : '暂无匹配的进程。'}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((proc) => (
-                <tr key={proc.pid} className={`proc-row ${proc.stat.startsWith('Z') ? 'proc-zombie' : ''}`}>
-                  <td className="proc-pid">{proc.pid}</td>
-                  <td className="proc-user" title={proc.user}>{proc.user}</td>
-                  <td className="proc-cpu">
-                    <div className="proc-bar-wrap">
-                      <div className="proc-bar proc-bar-cpu" style={{ width: `${Math.min(Number.parseFloat(proc.cpu), 100)}%` }} />
-                      <span>{proc.cpu}</span>
-                    </div>
-                  </td>
-                  <td className="proc-mem">
-                    <div className="proc-bar-wrap">
-                      <div className="proc-bar proc-bar-mem" style={{ width: `${Math.min(Number.parseFloat(proc.mem), 100)}%` }} />
-                      <span>{proc.mem}</span>
-                    </div>
-                  </td>
-                  <td className="proc-stat">
-                    <span className={`proc-stat-tag ${proc.stat.startsWith('Z') ? 'zombie' : proc.stat.startsWith('R') ? 'running' : proc.stat.startsWith('D') ? 'blocked' : 'idle'}`}>
-                      {proc.stat[0]}
-                    </span>
-                  </td>
-                  <td className="proc-time">{proc.time}</td>
-                  <td className="proc-command" title={proc.command}>{proc.command}</td>
-                  <td className="proc-action">
-                    <button
-                      type="button"
-                      className="proc-kill-btn"
-                      disabled={killing === proc.pid}
-                      onClick={() => setKillingPid(proc.pid)}
-                      title={isWindowsHost ? '终止进程' : `发送 SIG${selectedSignal}`}
-                    >
-                      {killing === proc.pid ? '...' : '终止'}
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <label className="proc-check-label">
+            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+            自动刷新
+          </label>
+
+          <select
+            className="proc-select proc-refresh-select"
+            value={autoRefreshMs}
+            onChange={(event) => setAutoRefreshMs(Number(event.target.value) as (typeof AUTO_REFRESH_OPTIONS)[number])}
+            disabled={!autoRefresh}
+            aria-label="自动刷新间隔"
+          >
+            {AUTO_REFRESH_OPTIONS.map((interval) => (
+              <option key={interval} value={interval}>{interval / 1000}s</option>
+            ))}
+          </select>
+
+          <span className="proc-summary">
+            <strong>{processRows.length}</strong> / {processes.length}
+          </span>
+        </div>
+
+        <div className="proc-toolbar-right">
+          <select
+            className="proc-select proc-user-filter"
+            value={userFilter}
+            onChange={(event) => setUserFilter(event.target.value)}
+            aria-label="按用户筛选"
+          >
+            <option value="all">全部用户</option>
+            {users.map((user) => (
+              <option key={user} value={user}>{user}</option>
+            ))}
+          </select>
+
+          <input
+            type="search"
+            className="proc-search"
+            placeholder="搜索 PID、用户、命令..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
       </div>
+
+      {error ? <div className="proc-alert danger">{error}</div> : null}
+      {notice ? <div className="proc-alert info">{notice}</div> : null}
+      {success ? <div className="proc-alert success">{success}</div> : null}
+
+      <div className="proc-content">
+        <section className="proc-table-panel" aria-label="进程列表">
+          <div className="proc-table-wrap">
+            <table className="proc-table">
+              <thead>
+                <tr>
+                  {renderSortHeader('pid', 'PID', 'proc-col-pid')}
+                  {renderSortHeader('ppid', 'PPID', 'proc-col-ppid')}
+                  {renderSortHeader('user', '用户', 'proc-col-user')}
+                  {renderSortHeader('cpu', isWindowsHost ? 'CPU(s)' : 'CPU%', 'proc-col-cpu')}
+                  {renderSortHeader('memory', isWindowsHost ? '内存 MB' : 'MEM%', 'proc-col-mem')}
+                  {renderSortHeader('state', '状态', 'proc-col-stat')}
+                  {renderSortHeader('startTime', '启动', 'proc-col-start')}
+                  {renderSortHeader('runtime', isWindowsHost ? 'CPU 时间' : '运行', 'proc-col-runtime')}
+                  {renderSortHeader('command', '命令', 'proc-col-command')}
+                </tr>
+              </thead>
+              <tbody>
+                {processRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="proc-empty">
+                      {loading ? '正在加载进程列表...' : '暂无匹配的进程。'}
+                    </td>
+                  </tr>
+                ) : (
+                  processRows.map(renderProcessRow)
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside className="proc-detail-panel" aria-label="进程详情">
+          {selectedProcess ? (
+            <>
+              <header className="proc-detail-header">
+                <span>PID</span>
+                <strong>{selectedProcess.pid}</strong>
+                <button type="button" onClick={() => void copyToClipboard(String(selectedProcess.pid), ' PID')}>
+                  复制
+                </button>
+              </header>
+
+              <div className="proc-detail-metrics">
+                <div>
+                  <span>{isWindowsHost ? 'CPU 累计' : 'CPU'}</span>
+                  <strong>{formatCpu(selectedProcess, isWindowsHost)}</strong>
+                </div>
+                <div>
+                  <span>{isWindowsHost ? '工作集' : '内存'}</span>
+                  <strong>{formatMemory(selectedProcess, isWindowsHost)}</strong>
+                </div>
+              </div>
+
+              <dl className="proc-detail-list">
+                <div>
+                  <dt>PPID</dt>
+                  <dd>{selectedProcess.ppid ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt>用户</dt>
+                  <dd title={selectedProcess.user}>{selectedProcess.user || '-'}</dd>
+                </div>
+                <div>
+                  <dt>状态</dt>
+                  <dd><span className={`proc-stat-tag ${getStateTone(selectedProcess.state)}`}>{selectedProcess.state || '-'}</span></dd>
+                </div>
+                <div>
+                  <dt>启动</dt>
+                  <dd>{selectedProcess.startTime || '-'}</dd>
+                </div>
+                <div>
+                  <dt>{isWindowsHost ? 'CPU 时间' : '运行时间'}</dt>
+                  <dd>{selectedProcess.runtime || selectedProcess.cpuTime || '-'}</dd>
+                </div>
+                <div>
+                  <dt>TTY</dt>
+                  <dd>{selectedProcess.tty || '-'}</dd>
+                </div>
+              </dl>
+
+              <section className="proc-detail-section">
+                <div className="proc-section-title">
+                  <strong>命令行</strong>
+                  <button type="button" onClick={() => void copyToClipboard(selectedProcess.command, '命令行')}>
+                    复制
+                  </button>
+                </div>
+                <pre className="proc-command-box">{selectedProcess.command}</pre>
+                {(processDetail?.cwd || processDetail?.executablePath || selectedProcess.executablePath) ? (
+                  <div className="proc-path-list">
+                    {processDetail?.cwd ? <span title={processDetail.cwd}>cwd: {processDetail.cwd}</span> : null}
+                    {processDetail?.executablePath || selectedProcess.executablePath ? (
+                      <span title={processDetail?.executablePath || selectedProcess.executablePath}>
+                        path: {processDetail?.executablePath || selectedProcess.executablePath}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="proc-detail-section">
+                <div className="proc-section-title">
+                  <strong>父子关系</strong>
+                  <span>{selectedChildren.length} 个子进程</span>
+                </div>
+                <div className="proc-relation-list">
+                  {selectedParent ? (
+                    <button type="button" onClick={() => setSelectedPid(selectedParent.pid)}>
+                      <span>父进程</span>
+                      <strong>{selectedParent.pid}</strong>
+                      <em>{selectedParent.command}</em>
+                    </button>
+                  ) : (
+                    <div className="proc-relation-empty">未在当前快照中找到父进程。</div>
+                  )}
+                  {selectedChildren.slice(0, 8).map((child) => (
+                    <button key={child.pid} type="button" onClick={() => setSelectedPid(child.pid)}>
+                      <span>子进程</span>
+                      <strong>{child.pid}</strong>
+                      <em>{child.command}</em>
+                    </button>
+                  ))}
+                  {selectedChildren.length > 8 ? (
+                    <div className="proc-relation-empty">还有 {selectedChildren.length - 8} 个子进程。</div>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="proc-detail-section">
+                <div className="proc-section-title">
+                  <strong>端口归属</strong>
+                  <button type="button" onClick={() => void loadProcessDetails(selectedProcess.pid)} disabled={detailLoading}>
+                    {detailLoading ? '读取中' : '重读'}
+                  </button>
+                </div>
+                {processDetail?.error ? <div className="proc-detail-warning">{processDetail.error}</div> : null}
+                {processDetail?.ports.length ? (
+                  <div className="proc-port-list">
+                    {processDetail.ports.slice(0, 6).map((port) => <code key={port}>{port}</code>)}
+                    {processDetail.ports.length > 6 ? <span>还有 {processDetail.ports.length - 6} 条端口记录。</span> : null}
+                  </div>
+                ) : (
+                  <div className="proc-relation-empty">{detailLoading ? '正在读取端口...' : '未发现该进程打开的端口。'}</div>
+                )}
+              </section>
+
+              <section className="proc-detail-section danger-zone">
+                <div className="proc-section-title">
+                  <strong>{isWindowsHost ? '结束任务' : '发送信号'}</strong>
+                </div>
+                {!isWindowsHost ? (
+                  <>
+                    <select className="proc-select" value={selectedSignalValue} onChange={(event) => setSelectedSignalValue(event.target.value)}>
+                      {SIGNALS.map((signal) => (
+                        <option key={signal.value} value={signal.value}>{signal.label}</option>
+                      ))}
+                    </select>
+                    <p>{selectedSignal.description}</p>
+                  </>
+                ) : (
+                  <p>Windows 将使用 Stop-Process -Force 结束该 PID。</p>
+                )}
+                <button
+                  type="button"
+                  className="proc-danger-button"
+                  disabled={signalingPid === selectedProcess.pid}
+                  onClick={() => requestSignal(selectedProcess)}
+                >
+                  {signalingPid === selectedProcess.pid ? '处理中' : isWindowsHost ? '结束进程' : `发送 ${selectedSignal.name}`}
+                </button>
+              </section>
+            </>
+          ) : (
+            <div className="proc-detail-empty">
+              <strong>{selectedPid === null ? '未选中进程' : `PID ${selectedPid} 不在当前快照中`}</strong>
+              <span>{selectedPid === null ? '从左侧列表选择一个 PID 查看详情。' : '该进程可能已经退出，或当前用户没有查看权限。'}</span>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {pendingSignal ? createPortal(
+        <div className="proc-modal-overlay" role="presentation" onClick={() => setPendingSignal(null)}>
+          <div
+            className="proc-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="proc-signal-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div id="proc-signal-confirm-title" className="proc-modal-title">
+              {isWindowsHost ? '结束进程' : `发送 ${pendingSignal.signal.name}`}
+            </div>
+            <div className="proc-modal-message">
+              <p>目标 PID：<strong>{pendingSignal.pid}</strong></p>
+              <p>{pendingSignal.signal.description}</p>
+              <code>{pendingSignal.command}</code>
+            </div>
+            <div className="proc-modal-actions">
+              <button type="button" className="proc-modal-btn" onClick={() => setPendingSignal(null)}>取消</button>
+              <button type="button" className="proc-modal-btn danger" onClick={() => void sendSignal(pendingSignal)}>
+                确认执行
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }

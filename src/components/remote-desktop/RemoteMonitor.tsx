@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import { getErrorMessage } from './desktopUtils';
+import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
 
 interface RemoteMonitorProps {
   connectionId: string;
   systemType?: RemoteSystemType;
+  onOpenProcessManager?: (options?: RemoteProcessManagerLaunchOptions) => void;
 }
 
 interface MonitorSample {
@@ -470,7 +472,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
   );
 }
 
-export default function RemoteMonitor({ connectionId, systemType }: RemoteMonitorProps) {
+export default function RemoteMonitor({ connectionId, systemType, onOpenProcessManager }: RemoteMonitorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
   const isPollingRef = useRef(false);
@@ -707,17 +709,38 @@ export default function RemoteMonitor({ connectionId, systemType }: RemoteMonito
             <small>{lastSampleAt ? formatTimeLabel(lastSampleAt) : getSystemLabel(systemType)}</small>
           </div>
 
-          <div className="monitor-interval-control" aria-label="采样间隔">
-            {POLL_INTERVAL_OPTIONS.map((interval) => (
-              <button
-                key={interval}
-                type="button"
-                className={pollIntervalMs === interval ? 'active' : ''}
-                onClick={() => setPollIntervalMs(interval)}
-              >
-                {interval / 1000}s
-              </button>
-            ))}
+          <div className="monitor-control-actions">
+            {onOpenProcessManager ? (
+              <>
+                <button
+                  type="button"
+                  className="monitor-proc-button"
+                  onClick={() => onOpenProcessManager({ sortKey: 'cpu', sortDir: 'desc', viewMode: 'table' })}
+                >
+                  CPU 进程
+                </button>
+                <button
+                  type="button"
+                  className="monitor-proc-button"
+                  onClick={() => onOpenProcessManager({ sortKey: 'memory', sortDir: 'desc', viewMode: 'table' })}
+                >
+                  内存进程
+                </button>
+              </>
+            ) : null}
+
+            <div className="monitor-interval-control" aria-label="采样间隔">
+              {POLL_INTERVAL_OPTIONS.map((interval) => (
+                <button
+                  key={interval}
+                  type="button"
+                  className={pollIntervalMs === interval ? 'active' : ''}
+                  onClick={() => setPollIntervalMs(interval)}
+                >
+                  {interval / 1000}s
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

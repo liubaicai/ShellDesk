@@ -2,6 +2,7 @@ import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, 
 import { createPortal } from 'react-dom';
 
 import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
   RemoteTerminalLaunchOptions,
@@ -64,6 +65,7 @@ interface DesktopWindowState {
   notepadInitialPath?: string;
   notepadInitialContent?: string;
   notepadInitialTitle?: string;
+  processManagerLaunchOptions?: RemoteProcessManagerLaunchOptions;
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -99,7 +101,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
-  procmanager: { x: 160, y: 60, width: 980, height: 580 },
+  procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
 };
@@ -298,6 +300,32 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     openTerminalWindow({
       title: directoryPath,
       workingDirectory: directoryPath,
+    });
+  };
+
+  const openProcessManager = (launchOptions?: RemoteProcessManagerLaunchOptions) => {
+    const existingWindow = getTopDesktopWindow(desktopWindows, (desktopWindow) => desktopWindow.appKey === 'procmanager');
+
+    if (existingWindow) {
+      zIndexRef.current += 1;
+      const nextZIndex = zIndexRef.current;
+
+      setFocusedWindowId(existingWindow.id);
+      setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+        desktopWindow.id === existingWindow.id
+          ? {
+              ...desktopWindow,
+              isMinimized: false,
+              zIndex: nextZIndex,
+              processManagerLaunchOptions: launchOptions ? { ...launchOptions } : desktopWindow.processManagerLaunchOptions,
+            }
+          : desktopWindow
+      )));
+      return;
+    }
+
+    appendDesktopWindow('procmanager', (nextWindow) => {
+      nextWindow.processManagerLaunchOptions = launchOptions ? { ...launchOptions } : undefined;
     });
   };
 
@@ -588,14 +616,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'procmanager') {
-      return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} launchOptions={desktopWindow.processManagerLaunchOptions} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {
       return <RemoteSqlite connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} systemType={connection.host.systemType} />;
     }
 
-    return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} />;
+    return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
   };
 
   return (
