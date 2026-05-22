@@ -8,11 +8,8 @@ on:
         type: boolean
         default: false
   push:
-    branches:
-      - "**"
     tags:
       - "v*"
-  pull_request:
 
 concurrency:
   group: build-packages-${{ github.workflow }}-${{ github.ref_type }}-${{ github.event.pull_request.head.ref || github.ref_name }}
