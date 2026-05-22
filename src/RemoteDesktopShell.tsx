@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteBrowser, RemoteFileExplorer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -23,6 +23,7 @@ const desktopApps = [
   { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
   { key: 'mysql', label: 'MySQL', icon: '🐬', description: 'MySQL 数据库管理' },
   { key: 'redis', label: 'Redis', icon: '🔴', description: 'Redis 数据库管理' },
+  { key: 'service-manager', label: '服务管理', icon: 'SVC', description: 'systemd / Windows Services' },
   { key: 'procmanager', label: '进程管理', icon: '\u2699\uFE0F', description: '进程查看、搜索和终止' },
   { key: 'settings', label: '系统设置', icon: '\uD83D\uDD27', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
   { key: 'sqlite', label: 'SQLite', icon: '📦', description: 'SQLite 数据库查看与编辑' },
@@ -101,6 +102,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
+  'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
@@ -617,6 +619,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'procmanager') {
       return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} launchOptions={desktopWindow.processManagerLaunchOptions} />;
+    }
+
+    if (desktopWindow.appKey === 'service-manager') {
+      return <RemoteServiceManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {

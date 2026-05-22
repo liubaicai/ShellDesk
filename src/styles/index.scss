@@ -13,6 +13,7 @@
 @use "./pages/logs" as *;
 @use "./remote-desktop/settings" as *;
 @use "./remote-desktop/process-manager" as *;
+@use "./remote-desktop/service-manager" as *;
 @use "./themes/light" as *;
 @use "./remote-desktop/notepad" as *;
 @use "./remote-desktop/mysql" as *;

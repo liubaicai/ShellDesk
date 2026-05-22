@@ -3,6 +3,7 @@ export { default as RemoteFileExplorer } from './RemoteFileExplorer';
 export { default as RemoteMonitor } from './RemoteMonitor';
 export { default as RemoteMySQL } from './RemoteMySQL';
 export { default as RemoteRedis } from './RemoteRedis';
+export { default as RemoteServiceManager } from './RemoteServiceManager';
 export { default as RemoteSqlite } from './RemoteSqlite';
 export { default as RemoteNotepad, isTextFile } from './RemoteNotepad';
 export { default as RemoteProcessManager } from './RemoteProcessManager';
