@@ -1,4 +1,5 @@
 export { default as RemoteBrowser } from './RemoteBrowser';
+export { default as RemoteContainerManager } from './RemoteContainerManager';
 export { default as RemoteFileExplorer } from './RemoteFileExplorer';
 export { default as RemoteLogViewer } from './RemoteLogViewer';
 export { default as RemoteMonitor } from './RemoteMonitor';
