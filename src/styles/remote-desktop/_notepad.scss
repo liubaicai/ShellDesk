@@ -17,11 +17,20 @@
   background: var(--surface-soft);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .notepad-toolbar-group {
   display: flex;
+  align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+}
+
+.notepad-toolbar-spacer {
+  flex: 1;
+  min-width: 12px;
 }
 
 .notepad-tool-btn {
@@ -37,21 +46,72 @@
   white-space: nowrap;
 }
 
-.notepad-tool-btn:hover {
+.notepad-tool-btn:hover:not(:disabled),
+.notepad-tool-btn.active {
   border-color: var(--border-strong);
   color: var(--text);
   background: var(--surface-hover);
 }
 
+.notepad-tool-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.notepad-toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.notepad-toolbar-select {
+  height: 26px;
+  max-width: 150px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 24px 0 8px;
+  background: var(--surface-input);
+  color: var(--muted-strong);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.notepad-toolbar-select:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.notepad-toolbar-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.notepad-recent-select {
+  width: 132px;
+}
+
+.notepad-tabstrip {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 34px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 .notepad-tabs {
   display: flex;
   align-items: stretch;
+  min-width: 0;
+  flex: 1;
   gap: 0;
-  background: var(--chrome);
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
-  flex-shrink: 0;
-  min-height: 32px;
 }
 
 .notepad-tabs::-webkit-scrollbar {
@@ -62,16 +122,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  min-width: 0;
+  height: 34px;
   border: 0;
   border-right: 1px solid var(--border);
-  padding: 0 10px;
   background: transparent;
   color: var(--muted);
-  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
   flex-shrink: 0;
 }
 
@@ -86,10 +144,49 @@
   border-bottom: 2px solid var(--accent);
 }
 
+.notepad-tab-select {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0 6px 0 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
 .notepad-tab-name {
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.notepad-tab-dirty {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.notepad-tab-dirty.visible {
+  opacity: 1;
+}
+
+.notepad-tab-readonly {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .notepad-tab-close {
@@ -98,7 +195,10 @@
   justify-content: center;
   width: 16px;
   height: 16px;
+  margin-right: 7px;
+  border: 0;
   border-radius: 4px;
+  background: transparent;
   font-size: 14px;
   line-height: 1;
   color: var(--muted);
@@ -111,9 +211,49 @@
 }
 
 .notepad-tab-add {
-  padding: 0 8px;
+  align-self: center;
+  width: 27px;
+  height: 27px;
+  margin: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   font-size: 16px;
   font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.notepad-tab-add:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notepad-save-state {
+  align-self: center;
+  margin: 0 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface-pill);
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.notepad-save-state.dirty {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.notepad-save-state.readonly {
+  border-color: var(--border-strong);
   color: var(--muted);
 }
 
@@ -125,6 +265,8 @@
   background: var(--surface-soft);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .notepad-find-label {
@@ -143,6 +285,15 @@
   font-size: 12px;
   font-family: inherit;
   min-width: 180px;
+}
+
+.notepad-goto-input {
+  min-width: 86px;
+  width: 86px;
+}
+
+.notepad-find-input:disabled {
+  opacity: 0.58;
 }
 
 .notepad-find-input:focus {
@@ -191,6 +342,7 @@
   overflow: hidden;
   user-select: none;
   flex-shrink: 0;
+  scrollbar-width: none;
 }
 
 .notepad-line-numbers span {
@@ -266,6 +418,17 @@
   -moz-tab-size: 2;
 }
 
+.notepad-textarea:read-only {
+  cursor: default;
+}
+
+.notepad-editor-wrap.wrapped .notepad-highlight-layer,
+.notepad-editor-wrap.wrapped .notepad-textarea {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 .notepad-textarea::selection {
   background: rgba(67, 199, 255, 0.25);
   color: transparent;
@@ -274,13 +437,17 @@
 .notepad-statusbar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 4px 12px;
   background: var(--surface-soft);
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--muted);
   flex-shrink: 0;
+  min-height: 25px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .notepad-statusbar-path {
@@ -289,6 +456,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 40%;
+  min-width: 120px;
   direction: rtl;
   text-align: left;
 }
@@ -343,13 +511,23 @@
   color: #656d76;
 }
 
-[data-theme="light"] .notepad-tool-btn:hover {
+[data-theme="light"] .notepad-tool-btn:hover:not(:disabled) {
   border-color: rgba(16, 32, 51, 0.2);
   color: #1f2328;
   background: #f3f4f6;
 }
 
+[data-theme="light"] .notepad-toolbar-select {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #344054;
+}
+
 [data-theme="light"] .notepad-tabs {
+  background: #f6f8fa;
+}
+
+[data-theme="light"] .notepad-tabstrip {
   background: #f6f8fa;
   border-bottom-color: rgba(16, 32, 51, 0.1);
 }
@@ -368,6 +546,23 @@
   background: #fff;
   color: #1f2328;
   border-bottom-color: var(--accent);
+}
+
+[data-theme="light"] .notepad-tab-readonly {
+  border-color: rgba(16, 32, 51, 0.12);
+  color: #656d76;
+}
+
+[data-theme="light"] .notepad-save-state {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(24, 42, 67, 0.06);
+  color: #344054;
+}
+
+[data-theme="light"] .notepad-save-state.dirty {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 [data-theme="light"] .notepad-tab-close:hover {
@@ -497,6 +692,71 @@
   line-height: 1.5;
 }
 
+.notepad-diff-modal,
+.notepad-conflict-modal {
+  width: min(780px, calc(100% - 32px));
+}
+
+.notepad-diff-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.notepad-diff-preview {
+  max-height: min(52vh, 440px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-input);
+  color: var(--text);
+  overflow: auto;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notepad-diff-line {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: 18px;
+  white-space: pre;
+}
+
+.notepad-diff-line.added {
+  background: rgba(74, 222, 128, 0.13);
+  color: #d9ffea;
+}
+
+.notepad-diff-line.removed {
+  background: rgba(255, 111, 143, 0.14);
+  color: #ffe2e8;
+}
+
+.notepad-diff-line.meta {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.notepad-diff-prefix {
+  display: block;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  text-align: center;
+  user-select: none;
+}
+
+.notepad-diff-text {
+  display: block;
+  min-width: 0;
+  padding: 0 9px;
+}
+
 .notepad-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -516,9 +776,14 @@
   font-weight: 600;
 }
 
-.notepad-modal-btn:hover {
+.notepad-modal-btn:hover:not(:disabled) {
   border-color: var(--border-strong);
   color: var(--text);
+}
+
+.notepad-modal-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
 }
 
 .notepad-modal-btn.primary {
@@ -553,6 +818,27 @@
   border-color: rgba(16, 32, 51, 0.12);
   background: #fff;
   color: #1f2328;
+}
+
+[data-theme="light"] .notepad-diff-preview {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-diff-line.added {
+  background: rgba(26, 127, 55, 0.1);
+  color: #116329;
+}
+
+[data-theme="light"] .notepad-diff-line.removed {
+  background: rgba(207, 34, 46, 0.1);
+  color: #82071e;
+}
+
+[data-theme="light"] .notepad-diff-line.meta {
+  background: #f6f8fa;
+  color: #656d76;
 }
 
 [data-theme="light"] .notepad-modal-btn {
