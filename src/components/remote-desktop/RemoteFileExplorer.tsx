@@ -225,6 +225,26 @@ function getFileTypeLabel(entry: RemoteFileEntry) {
   return ext ? `.${ext} 文件` : '文件';
 }
 
+function isHiddenEntry(entry: RemoteFileEntry) {
+  return entry.name.startsWith('.') && entry.name !== '.' && entry.name !== '..';
+}
+
+function getOpenActionLabel(entry: RemoteFileEntry) {
+  if (entry.type === 'directory') {
+    return '打开目录';
+  }
+
+  if (entry.type === 'file' && isSqliteFile(entry.name)) {
+    return '用 SQLite 打开';
+  }
+
+  if (entry.type === 'file' && isTextFile(entry.name)) {
+    return '用记事本打开';
+  }
+
+  return '';
+}
+
 function formatMode(mode: number) {
   const perms = [
     (mode & 0o400) ? 'r' : '-',
@@ -270,6 +290,11 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
   const [filesRefreshToken, setFilesRefreshToken] = useState(0);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [showHiddenEntries, setShowHiddenEntries] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(true);
+  const [favoritePaths, setFavoritePaths] = useState<string[]>([]);
+  const [navigationHistory, setNavigationHistory] = useState<string[]>(['.']);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingName, setRenamingName] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -321,6 +346,9 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
           setFileEntries(result.entries);
           setRemotePath(result.path);
           setPathDraft(result.path);
+          setNavigationHistory((history) => history.map((path, index) => (
+            index === historyIndex ? result.path : path
+          )));
         }
       } catch (error) {
         if (!cancelled) {
@@ -339,7 +367,7 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
     return () => {
       cancelled = true;
     };
-  }, [connectionId, filesRefreshToken, remotePath]);
+  }, [connectionId, filesRefreshToken, historyIndex, remotePath]);
 
   useEffect(() => {
     if (renamingName && renameInputRef.current) {
@@ -391,20 +419,116 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
 
   const displayedEntries = useMemo(() => {
     const query = fileSearchQuery.trim().toLowerCase();
+    const visibleEntries = showHiddenEntries
+      ? sortedEntries
+      : sortedEntries.filter((entry) => !isHiddenEntry(entry));
 
     if (!query) {
-      return sortedEntries;
+      return visibleEntries;
     }
 
-    return sortedEntries.filter((entry) => {
+    return visibleEntries.filter((entry) => {
       const haystack = `${entry.name} ${getFileTypeLabel(entry)}`.toLowerCase();
       return haystack.includes(query);
     });
-  }, [fileSearchQuery, sortedEntries]);
+  }, [fileSearchQuery, showHiddenEntries, sortedEntries]);
+
+  const selectedEntries = useMemo(
+    () => sortedEntries.filter((entry) => selectedNames.has(entry.name)),
+    [selectedNames, sortedEntries],
+  );
+
+  const selectedFileEntries = useMemo(
+    () => selectedEntries.filter((entry) => entry.type === 'file'),
+    [selectedEntries],
+  );
+
+  const primarySelectedEntry = useMemo(() => {
+    if (lastClickedName) {
+      const lastClickedEntry = selectedEntries.find((entry) => entry.name === lastClickedName);
+
+      if (lastClickedEntry) {
+        return lastClickedEntry;
+      }
+    }
+
+    return selectedEntries[0] ?? null;
+  }, [lastClickedName, selectedEntries]);
+
+  const selectedFilesSize = useMemo(
+    () => selectedFileEntries.reduce((totalSize, entry) => totalSize + Math.max(entry.size, 0), 0),
+    [selectedFileEntries],
+  );
+
+  useEffect(() => {
+    if (!isDetailsOpen || selectedEntries.length !== 1 || !primarySelectedEntry || !window.guiSSH?.connections) {
+      setPropertiesData(null);
+      setPropertiesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSelectedEntryProperties = async () => {
+      setPropertiesData(null);
+      setPropertiesLoading(true);
+
+      try {
+        const entryPath = joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost);
+        const stat = await window.guiSSH!.connections.statPath(connectionId, entryPath);
+
+        if (!cancelled) {
+          setPropertiesData(stat ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setPropertiesData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setPropertiesLoading(false);
+        }
+      }
+    };
+
+    void loadSelectedEntryProperties();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId, isDetailsOpen, isWindowsHost, primarySelectedEntry, remotePath, selectedEntries.length]);
 
   const navigateToPath = useCallback((nextPath: string) => {
-    setRemotePath(normalizeRemotePath(nextPath, isWindowsHost));
-  }, [isWindowsHost]);
+    const normalizedPath = normalizeRemotePath(nextPath, isWindowsHost);
+
+    if (normalizedPath === remotePath) {
+      return;
+    }
+
+    setNavigationHistory((history) => [...history.slice(0, historyIndex + 1), normalizedPath]);
+    setHistoryIndex(historyIndex + 1);
+    setRemotePath(normalizedPath);
+  }, [historyIndex, isWindowsHost, remotePath]);
+
+  const navigateBack = useCallback(() => {
+    if (historyIndex <= 0) {
+      return;
+    }
+
+    const nextIndex = historyIndex - 1;
+    setHistoryIndex(nextIndex);
+    setRemotePath(navigationHistory[nextIndex]);
+  }, [historyIndex, navigationHistory]);
+
+  const navigateForward = useCallback(() => {
+    if (historyIndex >= navigationHistory.length - 1) {
+      return;
+    }
+
+    const nextIndex = historyIndex + 1;
+    setHistoryIndex(nextIndex);
+    setRemotePath(navigationHistory[nextIndex]);
+  }, [historyIndex, navigationHistory]);
 
   const navigateToParent = useCallback(() => {
     navigateToPath(getParentRemotePath(remotePath, isWindowsHost));
@@ -414,6 +538,12 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
     event.preventDefault();
     navigateToPath(pathDraft);
   }, [navigateToPath, pathDraft]);
+
+  const toggleFavoritePath = useCallback(() => {
+    setFavoritePaths((paths) => paths.includes(remotePath)
+      ? paths.filter((path) => path !== remotePath)
+      : [remotePath, ...paths].slice(0, 8));
+  }, [remotePath]);
 
   const openFileEntry = useCallback((entry: RemoteFileEntry) => {
     if (entry.type === 'directory') {
@@ -665,6 +795,18 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
     }
   }, [closeContextMenu, connectionId, isWindowsHost, remotePath]);
 
+  const downloadFiles = useCallback(async (entries: RemoteFileEntry[]) => {
+    const files = entries.filter((entry) => entry.type === 'file');
+
+    if (!files.length) {
+      return;
+    }
+
+    for (const entry of files) {
+      await downloadFile(entry);
+    }
+  }, [downloadFile]);
+
   const uploadFile = useCallback(async () => {
     closeContextMenu();
     try {
@@ -790,6 +932,15 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
         { label: '/usr/local', path: '/usr/local', icon: '□' },
       ], [isWindowsHost]);
 
+  const isFavoritePath = favoritePaths.includes(remotePath);
+  const selectedOpenActionLabel = selectedEntries.length === 1 && primarySelectedEntry
+    ? getOpenActionLabel(primarySelectedEntry)
+    : '';
+  const selectedArchiveCanDecompress = selectedEntries.length === 1 &&
+    primarySelectedEntry?.type === 'file' &&
+    isArchiveFile(primarySelectedEntry.name) &&
+    (!isWindowsHost || primarySelectedEntry.name.toLowerCase().endsWith('.zip'));
+
   const sortIndicator = useCallback((field: SortField) => {
     if (sortField !== field) return '';
     return sortDirection === 'asc' ? ' \u25B2' : ' \u25BC';
@@ -799,11 +950,14 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
     <div className="file-pane explorer-pane" onKeyDown={handleKeydown} tabIndex={-1}>
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
         <div className="explorer-nav-buttons" aria-label="目录导航">
-          <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回">
-            ‹
+          <button type="button" onClick={navigateBack} disabled={historyIndex <= 0} aria-label="后退" title="后退">
+            ←
           </button>
-          <button type="button" disabled aria-label="前进" title="前进">
-            ›
+          <button type="button" onClick={navigateForward} disabled={historyIndex >= navigationHistory.length - 1} aria-label="前进" title="前进">
+            →
+          </button>
+          <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回上级目录">
+            ↑
           </button>
           <button type="button" onClick={() => navigateToPath(isWindowsHost ? '.' : '/home')} aria-label="打开 Home" title="Home">
             ⌂
@@ -841,17 +995,46 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
           />
         </label>
         <button type="submit" className="explorer-go-button">转到</button>
-        {onOpenTerminal ? (
-          <button type="button" className="explorer-view-button" onClick={() => onOpenTerminal(remotePath)} aria-label="在终端中打开当前目录" title="在终端中打开">
-            &gt;_
-          </button>
-        ) : null}
-        <button type="button" className="explorer-view-button" aria-label="切换视图" title="视图">
-          ☷
-        </button>
       </form>
 
-      <div className="explorer-layout">
+      <div className="explorer-commandbar" aria-label="文件工具栏">
+        <div className="explorer-command-group">
+          <button type="button" onClick={refreshFiles} disabled={isFilesLoading} title="刷新当前目录">
+            刷新
+          </button>
+          <button type="button" onClick={() => startNewItem('file')}>
+            新建文件
+          </button>
+          <button type="button" onClick={() => startNewItem('folder')}>
+            新建目录
+          </button>
+          <button type="button" onClick={() => void uploadFile()}>
+            上传
+          </button>
+          <button type="button" onClick={() => void downloadFiles(selectedFileEntries)} disabled={!selectedFileEntries.length}>
+            下载
+          </button>
+        </div>
+        <div className="explorer-command-group explorer-command-group-end">
+          {copiedPath ? <span className="ribbon-toast">已复制 {copiedPath} 路径</span> : null}
+          {onOpenTerminal ? (
+            <button type="button" onClick={() => onOpenTerminal(remotePath)} title="在终端中打开当前目录">
+              终端
+            </button>
+          ) : null}
+          <button type="button" className={showHiddenEntries ? 'active' : ''} aria-pressed={showHiddenEntries} onClick={() => setShowHiddenEntries((visible) => !visible)}>
+            隐藏项
+          </button>
+          <button type="button" className={isFavoritePath ? 'active' : ''} aria-pressed={isFavoritePath} onClick={toggleFavoritePath}>
+            {isFavoritePath ? '取消收藏' : '收藏'}
+          </button>
+          <button type="button" className={isDetailsOpen ? 'active' : ''} aria-pressed={isDetailsOpen} onClick={() => setIsDetailsOpen((open) => !open)}>
+            详情
+          </button>
+        </div>
+      </div>
+
+      <div className={`explorer-layout ${isDetailsOpen ? 'with-details' : ''}`}>
         <aside className="explorer-sidebar" aria-label="快速访问">
           <div className="sidebar-section-title">快速访问</div>
           {quickAccessPaths.slice(0, 2).map((item) => (
@@ -865,6 +1048,23 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
               <span aria-hidden="true">{item.icon}</span>{item.label}
             </button>
           ))}
+          <div className="sidebar-section-title">收藏路径</div>
+          {favoritePaths.length ? favoritePaths.map((path) => (
+            <button key={path} type="button" className={remotePath === path ? 'active' : ''} onClick={() => navigateToPath(path)} title={path}>
+              <span aria-hidden="true">★</span>{path}
+            </button>
+          )) : (
+            <div className="explorer-sidebar-note">暂无收藏路径</div>
+          )}
+          <div className="sidebar-section-title">传输</div>
+          <div className={`explorer-transfer-card ${transferProgress ? 'running' : ''}`}>
+            <strong>{transferProgress ? '正在传输' : '无活动传输'}</strong>
+            <span>
+              {transferProgress
+                ? `${transferProgress.type === 'download' ? '下载' : '上传'} ${transferProgress.fileName}`
+                : '暂无上传或下载任务'}
+            </span>
+          </div>
         </aside>
 
         <section
@@ -967,6 +1167,100 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
             <div className="empty-inline">{fileEntries.length ? '没有匹配的文件。' : '该目录为空。'}</div>
           ) : null}
         </section>
+
+        {isDetailsOpen ? (
+          <aside className="explorer-details" aria-label="文件详情">
+            <div className="explorer-details-header">
+              <strong>详情</strong>
+              <button type="button" onClick={() => setIsDetailsOpen(false)} aria-label="关闭详情面板" title="关闭详情">
+                ×
+              </button>
+            </div>
+
+            {primarySelectedEntry && selectedEntries.length === 1 ? (
+              <>
+                <div className="explorer-details-hero">
+                  <b className={`file-kind-icon ${primarySelectedEntry.type}`}>{getFileIcon(primarySelectedEntry)}</b>
+                  <div>
+                    <strong>{primarySelectedEntry.name}</strong>
+                    <span>{getFileTypeLabel(primarySelectedEntry)}</span>
+                  </div>
+                </div>
+                <dl className="explorer-details-list">
+                  <div>
+                    <dt>路径</dt>
+                    <dd title={joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost)}>
+                      {joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>大小</dt>
+                    <dd>{primarySelectedEntry.type === 'directory' ? '-' : formatBytes(primarySelectedEntry.size)}</dd>
+                  </div>
+                  <div>
+                    <dt>修改时间</dt>
+                    <dd>{formatDateTime(primarySelectedEntry.modifiedAt)}</dd>
+                  </div>
+                  {propertiesLoading ? (
+                    <div>
+                      <dt>属性</dt>
+                      <dd>正在读取...</dd>
+                    </div>
+                  ) : null}
+                  {propertiesData ? (
+                    <>
+                      <div>
+                        <dt>权限</dt>
+                        <dd><code>{formatMode(propertiesData.mode)}</code></dd>
+                      </div>
+                      <div>
+                        <dt>所有者</dt>
+                        <dd>UID {propertiesData.owner} / GID {propertiesData.group}</dd>
+                      </div>
+                      <div>
+                        <dt>访问时间</dt>
+                        <dd>{formatDateTime(propertiesData.accessedAt)}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                </dl>
+                <div className="explorer-details-actions">
+                  {selectedOpenActionLabel ? (
+                    <button type="button" onClick={() => openFileEntry(primarySelectedEntry)}>
+                      {selectedOpenActionLabel}
+                    </button>
+                  ) : null}
+                  {primarySelectedEntry.type === 'file' ? (
+                    <button type="button" onClick={() => void downloadFile(primarySelectedEntry)}>
+                      下载
+                    </button>
+                  ) : null}
+                  {selectedArchiveCanDecompress ? (
+                    <button type="button" onClick={() => void decompressEntry(primarySelectedEntry)}>
+                      解压缩
+                    </button>
+                  ) : null}
+                  {primarySelectedEntry.type === 'directory' && onOpenTerminal ? (
+                    <button type="button" onClick={() => onOpenTerminal(joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost))}>
+                      在终端中打开
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : selectedEntries.length > 1 ? (
+              <div className="explorer-details-empty">
+                <strong>{selectedEntries.length} 个项目已选</strong>
+                <span>{selectedFileEntries.length ? `其中 ${selectedFileEntries.length} 个文件，合计 ${formatBytes(selectedFilesSize)}` : '当前选择不含普通文件。'}</span>
+              </div>
+            ) : (
+              <div className="explorer-details-empty">
+                <strong>当前目录</strong>
+                <span title={remotePath}>{remotePath}</span>
+                <small>{showHiddenEntries ? '隐藏项已显示' : '隐藏项已过滤'}</small>
+              </div>
+            )}
+          </aside>
+        ) : null}
       </div>
 
       <div className="explorer-statusbar">
@@ -1177,6 +1471,7 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
         </>,
         document.body,
       ) : null}
+
     </div>
   );
 }
