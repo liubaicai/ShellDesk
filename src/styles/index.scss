@@ -8,6 +8,7 @@
 @use "./remote-desktop/browser" as *;
 @use "./remote-desktop/vnc" as *;
 @use "./remote-desktop/file-explorer" as *;
+@use "./remote-desktop/log-viewer" as *;
 @use "./remote-desktop/monitor" as *;
 @use "./remote-desktop/dock-responsive" as *;
 @use "./pages/logs" as *;
