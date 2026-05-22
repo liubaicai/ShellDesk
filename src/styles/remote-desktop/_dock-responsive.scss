@@ -19,19 +19,45 @@
   width: 48px;
   height: 48px;
   border-radius: 9px;
+  padding: 0;
   color: #ffffff;
-  font-size: 23px;
-  font-weight: 900;
+  overflow: visible;
   transition:
     transform 140ms ease,
     background 140ms ease,
     border-color 140ms ease;
 }
 
+.dock-app-icon {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(214, 226, 240, 0.16);
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.18), transparent 34%),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--app-accent) 80%, #263244 20%),
+      color-mix(in srgb, var(--app-accent-2) 88%, #111827 12%)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 10px 22px rgba(0, 0, 0, 0.2);
+  transition:
+    box-shadow 140ms ease,
+    filter 140ms ease;
+}
+
+.dock-app-icon .desktop-app-icon {
+  width: 23px;
+  height: 23px;
+}
+
 .mac-dock button.open::after {
   position: absolute;
   right: 6px;
   bottom: 5px;
+  z-index: 2;
   width: 5px;
   height: 5px;
   border-radius: 999px;
@@ -53,6 +79,14 @@
   border-color: rgba(67, 199, 255, 0.56);
   background: rgba(67, 199, 255, 0.22);
   transform: translateY(-5px) scale(1.04);
+}
+
+.mac-dock button.active .dock-app-icon,
+.mac-dock button:hover .dock-app-icon {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 14px 30px rgba(0, 0, 0, 0.26);
+  filter: saturate(1.02) brightness(1.04);
 }
 
 ::-webkit-scrollbar {
@@ -202,5 +236,9 @@
   width: 42px;
   height: 42px;
   border-radius: 9px;
-  font-size: 20px;
+}
+
+.dock-app-icon .desktop-app-icon {
+  width: 21px;
+  height: 21px;
 }

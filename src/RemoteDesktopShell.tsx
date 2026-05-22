@@ -15,20 +15,20 @@ import type {
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 
 const desktopApps = [
-  { key: 'files', label: '文件管理', icon: '📁', description: 'Windows 风格 SFTP 资源管理器' },
-  { key: 'terminal', label: '终端', icon: '>_', description: '交互式 SSH Shell' },
-  { key: 'notepad', label: '记事本', icon: '📝', description: '远程文件编辑器' },
-  { key: 'browser', label: '浏览器', icon: '🌐', description: '远程源请求' },
-  { key: 'vnc', label: 'VNC Viewer', icon: 'VNC', description: '连接本机或内网 VNC 桌面' },
-  { key: 'log-viewer', label: '日志查看', icon: 'LOG', description: 'journalctl / /var/log / Event Log' },
-  { key: 'monitor', label: '系统监视器', icon: '📊', description: '服务器状态' },
-  { key: 'mysql', label: 'MySQL', icon: '🐬', description: 'MySQL 数据库管理' },
-  { key: 'redis', label: 'Redis', icon: '🔴', description: 'Redis 数据库管理' },
-  { key: 'service-manager', label: '服务管理', icon: 'SVC', description: 'systemd / Windows Services' },
-  { key: 'container-manager', label: '容器管理', icon: 'CTR', description: 'Docker / Podman 容器与镜像' },
-  { key: 'procmanager', label: '进程管理', icon: '\u2699\uFE0F', description: '进程查看、搜索和终止' },
-  { key: 'settings', label: '系统设置', icon: '\uD83D\uDD27', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
-  { key: 'sqlite', label: 'SQLite', icon: '📦', description: 'SQLite 数据库查看与编辑' },
+  { key: 'files', label: '文件管理', description: 'Windows 风格 SFTP 资源管理器' },
+  { key: 'terminal', label: '终端', description: '交互式 SSH Shell' },
+  { key: 'notepad', label: '记事本', description: '远程文件编辑器' },
+  { key: 'browser', label: '浏览器', description: '远程源请求' },
+  { key: 'vnc', label: 'VNC Viewer', description: '连接本机或内网 VNC 桌面' },
+  { key: 'log-viewer', label: '日志查看', description: 'journalctl / /var/log / Event Log' },
+  { key: 'monitor', label: '系统监视器', description: '服务器状态' },
+  { key: 'mysql', label: 'MySQL', description: 'MySQL 数据库管理' },
+  { key: 'redis', label: 'Redis', description: 'Redis 数据库管理' },
+  { key: 'service-manager', label: '服务管理', description: 'systemd / Windows Services' },
+  { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
+  { key: 'procmanager', label: '进程管理', description: '进程查看、搜索和终止' },
+  { key: 'settings', label: '系统设置', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
+  { key: 'sqlite', label: 'SQLite', description: 'SQLite 数据库查看与编辑' },
 ] as const;
 
 /** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
@@ -167,6 +167,162 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
 
 function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
+}
+
+function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
+  const iconProps = {
+    className: 'desktop-app-icon',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.75,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+
+  if (appKey === 'files') {
+    return (
+      <svg {...iconProps}>
+        <path d="M3.5 6.75A2.25 2.25 0 0 1 5.75 4.5h4.05l1.7 2h6.75a2.25 2.25 0 0 1 2.25 2.25v8a2.75 2.75 0 0 1-2.75 2.75H6.25a2.75 2.75 0 0 1-2.75-2.75v-10Z" />
+        <path d="M4 9h16" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'terminal') {
+    return (
+      <svg {...iconProps}>
+        <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+        <path d="m7.25 9 2.8 2.5-2.8 2.5" />
+        <path d="M12.25 14.25h4.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'notepad') {
+    return (
+      <svg {...iconProps}>
+        <path d="M6 3.75h8.25L18 7.5v12.75H6V3.75Z" />
+        <path d="M14 4v4h4" />
+        <path d="M8.75 10.5h5.5M8.75 14h6.5M8.75 17.5h3.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'browser') {
+    return (
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M3.75 12h16.5" />
+        <path d="M12 3.5c2.2 2.35 3.3 5.18 3.3 8.5s-1.1 6.15-3.3 8.5c-2.2-2.35-3.3-5.18-3.3-8.5S9.8 5.85 12 3.5Z" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'vnc') {
+    return (
+      <svg {...iconProps}>
+        <rect x="3.5" y="5" width="17" height="11.5" rx="2.25" />
+        <path d="M8.5 20h7M12 16.5V20" />
+        <path d="M7.25 9.5h9.5M7.25 12.5h4.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'log-viewer') {
+    return (
+      <svg {...iconProps}>
+        <path d="M6 3.75h8.25L18 7.5v12.75H6V3.75Z" />
+        <path d="M14 4v4h4" />
+        <path d="M8.75 11h6.5M8.75 14.25h6.5M8.75 17.5h4" />
+        <circle cx="17.5" cy="17.5" r="2.25" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'monitor') {
+    return (
+      <svg {...iconProps}>
+        <path d="M4.25 18.75V5.25" />
+        <path d="M4.25 18.75h15.5" />
+        <path d="m7 15 3.15-3.4 2.75 2.25 4.45-5.2" />
+        <path d="M16.75 8.65h2.1v2.1" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'mysql') {
+    return (
+      <svg {...iconProps}>
+        <ellipse cx="12" cy="5.75" rx="6.75" ry="2.75" />
+        <path d="M5.25 5.75v8.5C5.25 15.77 8.27 17 12 17s6.75-1.23 6.75-2.75v-8.5" />
+        <path d="M5.25 10c0 1.52 3.02 2.75 6.75 2.75S18.75 11.52 18.75 10" />
+        <path d="M9.25 20.25h5.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'redis') {
+    return (
+      <svg {...iconProps}>
+        <path d="m12 3.75 7 3.4-7 3.35-7-3.35 7-3.4Z" />
+        <path d="m5 11 7 3.35L19 11" />
+        <path d="m5 14.9 7 3.35 7-3.35" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'service-manager') {
+    return (
+      <svg {...iconProps}>
+        <path d="M5 7h14M5 12h14M5 17h14" />
+        <circle cx="9" cy="7" r="1.75" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="12" r="1.75" fill="currentColor" stroke="none" />
+        <circle cx="11.5" cy="17" r="1.75" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'container-manager') {
+    return (
+      <svg {...iconProps}>
+        <path d="M5 8.5h14v8.25H5V8.5Z" />
+        <path d="M8.5 8.5v8.25M12 8.5v8.25M15.5 8.5v8.25" />
+        <path d="M7 5h10v3.5H7V5Z" />
+        <path d="M6.25 19h11.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'procmanager') {
+    return (
+      <svg {...iconProps}>
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+        <path d="M10 3.75v2.5M14 3.75v2.5M10 17.75v2.5M14 17.75v2.5M3.75 10h2.5M3.75 14h2.5M17.75 10h2.5M17.75 14h2.5" />
+        <path d="M9.75 12h1.7l1.05-2.2 1.35 4.4.95-2.2h1.45" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'settings') {
+    return (
+      <svg {...iconProps}>
+        <path d="M12 8.75a3.25 3.25 0 1 1 0 6.5 3.25 3.25 0 0 1 0-6.5Z" />
+        <path d="m18.65 13.5 1.85 1.38-1.75 3.03-2.18-.9a7.18 7.18 0 0 1-1.65.95l-.3 2.29h-3.5l-.3-2.29a7.18 7.18 0 0 1-1.65-.95l-2.18.9-1.75-3.03L7.35 13.5a7.55 7.55 0 0 1 0-1.9L5.5 10.12l1.75-3.03 2.18.9c.5-.39 1.05-.7 1.65-.95l.3-2.29h3.5l.3 2.29c.6.25 1.15.56 1.65.95l2.18-.9 1.75 3.03-1.85 1.48c.08.62.08 1.27 0 1.9Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...iconProps}>
+      <path d="M6.25 4.25h9l2.5 2.5v13H6.25V4.25Z" />
+      <path d="M15 4.5V7h2.5" />
+      <ellipse cx="12" cy="10" rx="4" ry="1.7" />
+      <path d="M8 10v5.25c0 .94 1.8 1.7 4 1.7s4-.76 4-1.7V10" />
+      <path d="M8 12.75c0 .94 1.8 1.7 4 1.7s4-.76 4-1.7" />
+    </svg>
+  );
 }
 
 function getTopDesktopWindow(
@@ -664,7 +820,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 setDesktopContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key });
               }}
             >
-              <span>{app.icon}</span>
+              <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
+                <DesktopAppIcon appKey={app.key} />
+              </span>
               <strong>{app.label}</strong>
             </button>
           ))}
@@ -696,6 +854,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 onPointerCancel={finishWindowInteraction}
               >
                 <div className="desktop-window-title">
+                  <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
+                    <DesktopAppIcon appKey={desktopWindow.appKey} />
+                  </span>
                   {desktopWindow.appKey === 'browser' || desktopWindow.appKey === 'terminal' ? (
                     <>
                       <span className="desktop-window-kicker">{appInfo.label}</span>
@@ -821,7 +982,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   aria-label={dockButtonLabel}
                   title={dockButtonLabel}
                 >
-                  {app.icon}
+                  <span className={`dock-app-icon desktop-app-icon-${app.key}`}>
+                    <DesktopAppIcon appKey={app.key} />
+                  </span>
                 </button>
               );
             });
