@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
       ipcRenderer.invoke('connection:mysql-update-cell', connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues),
     redisConnect: (connectionId, config) => ipcRenderer.invoke('connection:redis-connect', connectionId, config),
     redisDisconnect: (connectionId, redisId) => ipcRenderer.invoke('connection:redis-disconnect', connectionId, redisId),
+    redisScan: (connectionId, redisId, options) => ipcRenderer.invoke('connection:redis-scan', connectionId, redisId, options),
     redisKeys: (connectionId, redisId, pattern) => ipcRenderer.invoke('connection:redis-keys', connectionId, redisId, pattern),
     redisGetValue: (connectionId, redisId, key) => ipcRenderer.invoke('connection:redis-get-value', connectionId, redisId, key),
     redisSetValue: (connectionId, redisId, key, value, type) => ipcRenderer.invoke('connection:redis-set-value', connectionId, redisId, key, value, type),
@@ -111,8 +112,12 @@ contextBridge.exposeInMainWorld('guiSSH', {
     sqliteOpen: (connectionId, filePath) => ipcRenderer.invoke('connection:sqlite-open', connectionId, filePath),
     sqliteClose: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-close', connectionId, sqliteId),
     sqliteTables: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-tables', connectionId, sqliteId),
+    sqliteObjects: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-objects', connectionId, sqliteId),
     sqliteColumns: (connectionId, sqliteId, table) => ipcRenderer.invoke('connection:sqlite-columns', connectionId, sqliteId, table),
+    sqliteSchema: (connectionId, sqliteId, objectType, objectName) => ipcRenderer.invoke('connection:sqlite-schema', connectionId, sqliteId, objectType, objectName),
     sqliteQuery: (connectionId, sqliteId, sql) => ipcRenderer.invoke('connection:sqlite-query', connectionId, sqliteId, sql),
+    sqliteUpdateCell: (connectionId, sqliteId, table, column, newValue, target) =>
+      ipcRenderer.invoke('connection:sqlite-update-cell', connectionId, sqliteId, table, column, newValue, target),
   },
   events: {
     onTerminalData: (callback) => onIpc('terminal:data', callback),

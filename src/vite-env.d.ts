@@ -344,8 +344,9 @@ interface ShellDeskConnectionControls {
   ) => Promise<{ affectedRows: number }>;
   redisConnect: (connectionId: string, config: ShellDeskRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
   redisDisconnect: (connectionId: string, redisId: string) => Promise<boolean>;
+  redisScan: (connectionId: string, redisId: string, options?: ShellDeskRedisScanOptions) => Promise<ShellDeskRedisScanResult>;
   redisKeys: (connectionId: string, redisId: string, pattern?: string) => Promise<{ name: string; type: string; ttl: number }[]>;
-  redisGetValue: (connectionId: string, redisId: string, key: string) => Promise<{ type: string; value: unknown }>;
+  redisGetValue: (connectionId: string, redisId: string, key: string) => Promise<ShellDeskRedisValueResult>;
   redisSetValue: (connectionId: string, redisId: string, key: string, value: unknown, type: string) => Promise<boolean>;
   redisDeleteKey: (connectionId: string, redisId: string, key: string) => Promise<boolean>;
   redisCommand: (connectionId: string, redisId: string, command: string, args: string[]) => Promise<unknown>;
@@ -355,8 +356,18 @@ interface ShellDeskConnectionControls {
   sqliteOpen: (connectionId: string, filePath: string) => Promise<{ sqliteId: string; filePath: string }>;
   sqliteClose: (connectionId: string, sqliteId: string) => Promise<boolean>;
   sqliteTables: (connectionId: string, sqliteId: string) => Promise<string[]>;
+  sqliteObjects: (connectionId: string, sqliteId: string) => Promise<ShellDeskSqliteObject[]>;
   sqliteColumns: (connectionId: string, sqliteId: string, table: string) => Promise<ShellDeskSqliteColumn[]>;
+  sqliteSchema: (connectionId: string, sqliteId: string, objectType: string, objectName: string) => Promise<ShellDeskSqliteObject>;
   sqliteQuery: (connectionId: string, sqliteId: string, sql: string) => Promise<ShellDeskSqliteQueryResult>;
+  sqliteUpdateCell: (
+    connectionId: string,
+    sqliteId: string,
+    table: string,
+    column: string,
+    newValue: unknown,
+    target: ShellDeskSqliteUpdateTarget,
+  ) => Promise<{ affectedRows: number }>;
 }
 
 interface ShellDeskMysqlConnectConfig {
@@ -393,9 +404,22 @@ interface ShellDeskSqliteColumn {
   defaultValue: string | null;
 }
 
+interface ShellDeskSqliteObject {
+  type: 'table' | 'view' | 'index' | string;
+  name: string;
+  tableName: string;
+  sql: string;
+}
+
 interface ShellDeskSqliteQueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
+}
+
+interface ShellDeskSqliteUpdateTarget {
+  pkColumns?: string[];
+  pkValues?: unknown[];
+  rowid?: unknown;
 }
 
 interface ShellDeskRedisConnectConfig {
@@ -404,6 +428,38 @@ interface ShellDeskRedisConnectConfig {
   password?: string;
   db?: number;
   redisId?: string;
+}
+
+interface ShellDeskRedisScanOptions {
+  cursor?: string;
+  pattern?: string;
+  count?: number;
+}
+
+interface ShellDeskRedisKeySummary {
+  name: string;
+  type: string;
+  ttl: number;
+  size?: number;
+  scannedAt: string;
+}
+
+interface ShellDeskRedisScanResult {
+  cursor: string;
+  complete: boolean;
+  pattern: string;
+  scannedAt: string;
+  keys: ShellDeskRedisKeySummary[];
+}
+
+interface ShellDeskRedisValueResult {
+  type: string;
+  value: unknown;
+  ttl?: number;
+  size?: number;
+  count?: number;
+  previewLimit?: number;
+  truncated?: boolean;
 }
 
 interface ShellDeskVncConnectConfig {

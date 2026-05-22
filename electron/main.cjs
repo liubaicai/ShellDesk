@@ -1654,6 +1654,12 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
     }
   }
 
+  for (const [key, entry] of activeSqliteSessions) {
+    if (entry.connectionId === connectionId) {
+      activeSqliteSessions.delete(key);
+    }
+  }
+
   await closeServer(activeConnection.socksServer);
 
   if (!fromClientClose) {
@@ -3773,9 +3779,101 @@ registerIpcHandler('connection:mysql-update-cell', async (_event, connectionId, 
 // ─── Redis over SSH tunnel ──────────────────────────────────────────────────
 
 const activeRedisConnections = new Map();
+const redisValuePreviewLimit = 200;
 
 function getRedisKey(connectionId, redisId) {
   return `${connectionId}::${redisId}`;
+}
+
+function getActiveRedisConnection(connectionId, rawRedisId) {
+  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const key = getRedisKey(connectionId, redisId);
+  const entry = activeRedisConnections.get(key);
+
+  if (!entry) {
+    throw new Error('Redis 连接已断开。');
+  }
+
+  return { redisId, entry };
+}
+
+function getRedisSizeCommand(type) {
+  switch (type) {
+    case 'string': return 'strlen';
+    case 'hash': return 'hlen';
+    case 'list': return 'llen';
+    case 'set': return 'scard';
+    case 'zset': return 'zcard';
+    case 'stream': return 'xlen';
+    default: return '';
+  }
+}
+
+async function createRedisKeySummaries(connection, keyNames) {
+  if (!keyNames.length) {
+    return [];
+  }
+
+  const scannedAt = new Date().toISOString();
+  const metaPipeline = connection.pipeline();
+
+  for (const keyName of keyNames) {
+    metaPipeline.type(keyName);
+    metaPipeline.ttl(keyName);
+  }
+
+  const metaResults = await metaPipeline.exec();
+  const summaries = keyNames.map((name, index) => {
+    const typeResult = metaResults?.[index * 2] ?? [];
+    const ttlResult = metaResults?.[index * 2 + 1] ?? [];
+
+    return {
+      name,
+      type: typeResult[0] ? 'unknown' : (typeResult[1] || 'none'),
+      ttl: ttlResult[0] ? -2 : Number(ttlResult[1]),
+      scannedAt,
+    };
+  });
+
+  const sizePipeline = connection.pipeline();
+  const sizeJobs = [];
+
+  summaries.forEach((summary, index) => {
+    const command = getRedisSizeCommand(summary.type);
+
+    if (command) {
+      sizePipeline.call(command, summary.name);
+      sizeJobs.push(index);
+    }
+  });
+
+  if (sizeJobs.length) {
+    const sizeResults = await sizePipeline.exec();
+
+    sizeJobs.forEach((summaryIndex, resultIndex) => {
+      const [error, value] = sizeResults?.[resultIndex] ?? [];
+
+      if (!error && value !== undefined && value !== null && Number.isFinite(Number(value))) {
+        summaries[summaryIndex].size = Number(value);
+      }
+    });
+  }
+
+  return summaries;
+}
+
+function normalizeRedisScanOptions(rawOptions) {
+  const options = isPlainObject(rawOptions) ? rawOptions : {};
+  const cursor = readBoundedString(String(options.cursor ?? '0'), '扫描游标', 64, { required: false }) || '0';
+  const pattern = readBoundedString(
+    typeof options.pattern === 'string' && options.pattern.trim() ? options.pattern : '*',
+    '键匹配模式',
+    512,
+    { required: false },
+  ) || '*';
+  const count = readIntegerInRange(options.count, '扫描数量', 10, 2000, 300);
+
+  return { cursor, pattern, count };
 }
 
 function createRedisTunnel(client, redisHost, redisPort) {
@@ -3829,12 +3927,26 @@ registerIpcHandler('connection:redis-disconnect', async (_event, connectionId, r
   return true;
 });
 
+registerIpcHandler('connection:redis-scan', async (_event, connectionId, rawRedisId, rawOptions) => {
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
+  const { cursor, pattern, count } = normalizeRedisScanOptions(rawOptions);
+  const [nextCursor, batch] = await entry.connection.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+  const keys = await createRedisKeySummaries(entry.connection, Array.isArray(batch) ? batch : []);
+
+  keys.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    cursor: nextCursor,
+    complete: nextCursor === '0',
+    pattern,
+    scannedAt: new Date().toISOString(),
+    keys,
+  };
+});
+
 registerIpcHandler('connection:redis-keys', async (_event, connectionId, rawRedisId, rawPattern) => {
-  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
   const pattern = typeof rawPattern === 'string' ? rawPattern : '*';
-  const key = getRedisKey(connectionId, redisId);
-  const entry = activeRedisConnections.get(key);
-  if (!entry) { throw new Error('Redis 连接已断开。'); }
   const allKeys = [];
   let cursor = '0';
   do {
@@ -3858,32 +3970,63 @@ registerIpcHandler('connection:redis-keys', async (_event, connectionId, rawRedi
 });
 
 registerIpcHandler('connection:redis-get-value', async (_event, connectionId, rawRedisId, rawKey) => {
-  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
   const key = readBoundedString(rawKey, '键名', 1024);
-  const redisKey = getRedisKey(connectionId, redisId);
-  const entry = activeRedisConnections.get(redisKey);
-  if (!entry) { throw new Error('Redis 连接已断开。'); }
   const type = await entry.connection.type(key);
+  const ttl = await entry.connection.ttl(key);
+  const sizeCommand = getRedisSizeCommand(type);
+  const size = sizeCommand ? Number(await entry.connection.call(sizeCommand, key)) : undefined;
+  let count = size;
+  let truncated = false;
   let value;
   switch (type) {
     case 'string': value = await entry.connection.get(key); break;
-    case 'hash': value = await entry.connection.hgetall(key); break;
-    case 'list': value = await entry.connection.lrange(key, 0, -1); break;
-    case 'set': value = await entry.connection.smembers(key); break;
-    case 'zset': value = await entry.connection.zrange(key, 0, -1, 'WITHSCORES'); break;
+    case 'hash': {
+      const [cursor, entries] = await entry.connection.hscan(key, '0', 'COUNT', redisValuePreviewLimit);
+      value = {};
+      for (let index = 0; index < entries.length; index += 2) {
+        value[entries[index]] = entries[index + 1] ?? '';
+      }
+      truncated = cursor !== '0' || (count !== undefined && Object.keys(value).length < count);
+      break;
+    }
+    case 'list':
+      value = await entry.connection.lrange(key, 0, redisValuePreviewLimit - 1);
+      truncated = count !== undefined && count > redisValuePreviewLimit;
+      break;
+    case 'set': {
+      const [cursor, members] = await entry.connection.sscan(key, '0', 'COUNT', redisValuePreviewLimit);
+      value = members;
+      truncated = cursor !== '0' || (count !== undefined && members.length < count);
+      break;
+    }
+    case 'zset': {
+      const rawItems = await entry.connection.zrange(key, 0, redisValuePreviewLimit - 1, 'WITHSCORES');
+      value = [];
+      for (let index = 0; index < rawItems.length; index += 2) {
+        value.push({ member: rawItems[index], score: Number(rawItems[index + 1]) });
+      }
+      truncated = count !== undefined && count > redisValuePreviewLimit;
+      break;
+    }
+    case 'stream':
+      value = await entry.connection.xrange(key, '-', '+', 'COUNT', Math.min(redisValuePreviewLimit, 100));
+      truncated = count !== undefined && count > 100;
+      break;
     case 'none': throw new Error(`键 "${key}" 不存在。`);
-    default: value = await entry.connection.call('DUMP', key); break;
+    default:
+      value = null;
+      count = undefined;
+      break;
   }
-  return { type, value };
+  return { type, value, ttl, size, count, previewLimit: redisValuePreviewLimit, truncated };
 });
 
 registerIpcHandler('connection:redis-set-value', async (_event, connectionId, rawRedisId, rawKey, rawValue, rawType) => {
-  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
   const key = readBoundedString(rawKey, '键名', 1024);
-  const redisKey = getRedisKey(connectionId, redisId);
-  const entry = activeRedisConnections.get(redisKey);
-  if (!entry) { throw new Error('Redis 连接已断开。'); }
   const type = typeof rawType === 'string' ? rawType : 'string';
+  const ttlMs = await entry.connection.pttl(key);
   const pipeline = entry.connection.pipeline();
   pipeline.del(key);
   switch (type) {
@@ -3891,18 +4034,24 @@ registerIpcHandler('connection:redis-set-value', async (_event, connectionId, ra
     case 'hash': {
       if (typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)) {
         pipeline.hset(key, rawValue);
+      } else {
+        throw new Error('Hash 值必须是 JSON 对象。');
       }
       break;
     }
     case 'list': {
       if (Array.isArray(rawValue) && rawValue.length > 0) {
         pipeline.rpush(key, ...rawValue);
+      } else if (!Array.isArray(rawValue)) {
+        throw new Error('List 值必须是 JSON 数组。');
       }
       break;
     }
     case 'set': {
       if (Array.isArray(rawValue) && rawValue.length > 0) {
         pipeline.sadd(key, ...rawValue);
+      } else if (!Array.isArray(rawValue)) {
+        throw new Error('Set 值必须是 JSON 数组。');
       }
       break;
     }
@@ -3919,30 +4068,31 @@ registerIpcHandler('connection:redis-set-value', async (_event, connectionId, ra
           }
         }
         if (zsetArgs.length > 0) pipeline.zadd(key, ...zsetArgs);
+      } else {
+        throw new Error('ZSet 值必须是 JSON 数组。');
       }
       break;
     }
+    default:
+      throw new Error(`暂不支持保存 ${type} 类型。`);
+  }
+  if (ttlMs > 0) {
+    pipeline.pexpire(key, ttlMs);
   }
   await pipeline.exec();
   return true;
 });
 
 registerIpcHandler('connection:redis-delete-key', async (_event, connectionId, rawRedisId, rawKey) => {
-  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
   const key = readBoundedString(rawKey, '键名', 1024);
-  const redisKey = getRedisKey(connectionId, redisId);
-  const entry = activeRedisConnections.get(redisKey);
-  if (!entry) { throw new Error('Redis 连接已断开。'); }
   await entry.connection.del(key);
   return true;
 });
 
 registerIpcHandler('connection:redis-command', async (_event, connectionId, rawRedisId, rawCommand, rawArgs) => {
-  const redisId = readBoundedString(rawRedisId, 'Redis 连接 ID', 128);
+  const { entry } = getActiveRedisConnection(connectionId, rawRedisId);
   const command = readBoundedString(rawCommand, '命令', 256);
-  const key = getRedisKey(connectionId, redisId);
-  const entry = activeRedisConnections.get(key);
-  if (!entry) { throw new Error('Redis 连接已断开。'); }
   const args = Array.isArray(rawArgs) ? rawArgs.map(String) : [];
   const result = await entry.connection.call(command, ...args);
   return result;
@@ -4466,12 +4616,50 @@ function getSqliteKey(connectionId, sqliteId) {
   return `${connectionId}::${sqliteId}`;
 }
 
+function getActiveSqliteSession(connectionId, rawSqliteId) {
+  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const key = getSqliteKey(connectionId, sqliteId);
+  const entry = activeSqliteSessions.get(key);
+
+  if (!entry) {
+    throw new Error('SQLite 会话已关闭。');
+  }
+
+  return { sqliteId, entry };
+}
+
 function escapeShellSingleQuotedArg(arg) {
   return `'${String(arg).replace(/'/g, "'\\''")}'`;
 }
 
+function quoteSqliteIdentifier(identifier) {
+  return `"${String(identifier).replace(/"/g, '""')}"`;
+}
+
+function quoteSqliteLiteral(value) {
+  if (value === null || value === undefined) {
+    return 'NULL';
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? '1' : '0';
+  }
+
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
 function parseSqliteCsv(csvText) {
-  const lines = csvText.trim().split('\n');
+  const normalizedText = String(csvText ?? '').trim();
+
+  if (!normalizedText) {
+    return { columns: [], rows: [] };
+  }
+
+  const lines = normalizedText.split('\n');
   if (lines.length === 0) return { columns: [], rows: [] };
   const columns = lines[0].split(',').map((c) => c.trim());
   const rows = [];
@@ -4511,6 +4699,15 @@ function parseSqliteCsv(csvText) {
   return { columns, rows };
 }
 
+function parseSqliteObjectRows(stdout) {
+  return parseSqliteCsv(stdout).rows.map((row) => ({
+    type: row.type || '',
+    name: row.name || '',
+    tableName: row.tableName || row.tbl_name || '',
+    sql: row.sql || '',
+  })).filter((item) => item.type && item.name);
+}
+
 async function execSqliteOnRemote(client, filePath, command) {
   const escapedPath = escapeShellSingleQuotedArg(filePath);
   const escapedCommand = escapeShellSingleQuotedArg(command);
@@ -4527,6 +4724,10 @@ registerIpcHandler('connection:sqlite-open', async (_event, connectionId, rawFil
   const filePath = validateRemotePath(rawFilePath);
   if (filePath === '.' || filePath === '/') {
     throw new Error('无效的 SQLite 文件路径。');
+  }
+  const stat = await statRemotePath(activeConnection.client, filePath);
+  if (stat.type !== 'file') {
+    throw new Error('请选择可读取的 SQLite 文件。');
   }
   // Validate the file is a SQLite database
   const stdout = await execSqliteOnRemote(activeConnection.client, filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' LIMIT 1');
@@ -4547,10 +4748,7 @@ registerIpcHandler('connection:sqlite-close', async (_event, connectionId, rawSq
 });
 
 registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId) => {
-  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
-  const key = getSqliteKey(connectionId, sqliteId);
-  const entry = activeSqliteSessions.get(key);
-  if (!entry) throw new Error('SQLite 会话已关闭。');
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
   const stdout = await execSqliteOnRemote(entry.client, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
   const lines = stdout.trim().split('\n');
   if (lines.length <= 1) return [];
@@ -4558,13 +4756,21 @@ registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawS
   return lines.slice(1).map((l) => l.trim()).filter(Boolean);
 });
 
+registerIpcHandler('connection:sqlite-objects', async (_event, connectionId, rawSqliteId) => {
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
+  const stdout = await execSqliteOnRemote(
+    entry.client,
+    entry.filePath,
+    "SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type IN ('table','view','index') AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'view' THEN 1 ELSE 2 END, name",
+  );
+
+  return parseSqliteObjectRows(stdout);
+});
+
 registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, rawSqliteId, rawTable) => {
-  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
   const table = readBoundedString(rawTable, '表名', 256);
-  const key = getSqliteKey(connectionId, sqliteId);
-  const entry = activeSqliteSessions.get(key);
-  if (!entry) throw new Error('SQLite 会话已关闭。');
-  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, `PRAGMA table_info(${escapeShellSingleQuotedArg(table)})`);
+  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, `PRAGMA table_info(${quoteSqliteLiteral(table)})`);
   const parsed = parseSqliteCsv(stdout);
   return parsed.rows.map((row) => ({
     name: row.name || row.Name || '',
@@ -4575,15 +4781,63 @@ registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, raw
   }));
 });
 
+registerIpcHandler('connection:sqlite-schema', async (_event, connectionId, rawSqliteId, rawObjectType, rawObjectName) => {
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
+  const objectType = readBoundedString(rawObjectType, '对象类型', 32);
+  const objectName = readBoundedString(rawObjectName, '对象名', 256);
+  const stdout = await execSqliteOnRemote(
+    entry.client,
+    entry.filePath,
+    `SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type = ${quoteSqliteLiteral(objectType)} AND name = ${quoteSqliteLiteral(objectName)} LIMIT 1`,
+  );
+  const [schema] = parseSqliteObjectRows(stdout);
+
+  if (!schema) {
+    throw new Error('未找到 SQLite 对象。');
+  }
+
+  return schema;
+});
+
 registerIpcHandler('connection:sqlite-query', async (_event, connectionId, rawSqliteId, rawSql) => {
-  const sqliteId = readBoundedString(rawSqliteId, 'SQLite 会话 ID', 128);
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
   const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
-  const key = getSqliteKey(connectionId, sqliteId);
-  const entry = activeSqliteSessions.get(key);
-  if (!entry) throw new Error('SQLite 会话已关闭。');
   const stdout = await execSqliteOnRemote(entry.client, entry.filePath, sql);
   const parsed = parseSqliteCsv(stdout);
   return { columns: parsed.columns, rows: parsed.rows };
+});
+
+registerIpcHandler('connection:sqlite-update-cell', async (_event, connectionId, rawSqliteId, rawTable, rawColumn, rawNewValue, rawTarget) => {
+  const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
+  const table = readBoundedString(rawTable, '表名', 256);
+  const column = readBoundedString(rawColumn, '列名', 256);
+  const target = isPlainObject(rawTarget) ? rawTarget : {};
+  let whereClause = '';
+
+  if (Array.isArray(target.pkColumns) && Array.isArray(target.pkValues) && target.pkColumns.length > 0 && target.pkColumns.length === target.pkValues.length) {
+    whereClause = target.pkColumns.map((rawPkColumn, index) => {
+      const pkColumn = readBoundedString(String(rawPkColumn), '主键列名', 256);
+      return `${quoteSqliteIdentifier(pkColumn)} = ${quoteSqliteLiteral(target.pkValues[index])}`;
+    }).join(' AND ');
+  } else if (target.rowid !== undefined && target.rowid !== null) {
+    whereClause = `rowid = ${quoteSqliteLiteral(target.rowid)}`;
+  }
+
+  if (!whereClause) {
+    throw new Error('无法定位要更新的 SQLite 行。');
+  }
+
+  const sql = [
+    'BEGIN IMMEDIATE;',
+    `UPDATE ${quoteSqliteIdentifier(table)} SET ${quoteSqliteIdentifier(column)} = ${quoteSqliteLiteral(rawNewValue)} WHERE ${whereClause};`,
+    'SELECT changes() AS affectedRows;',
+    'COMMIT;',
+  ].join(' ');
+  const stdout = await execSqliteOnRemote(entry.client, entry.filePath, sql);
+  const parsed = parseSqliteCsv(stdout);
+  const affectedRows = Number(parsed.rows[0]?.affectedRows ?? 0);
+
+  return { affectedRows };
 });
 
 app.on('web-contents-created', (_event, contents) => {
