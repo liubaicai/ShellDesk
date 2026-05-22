@@ -463,16 +463,32 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     windowId: string,
     payload: RemoteTerminalChromePayload,
   ) => {
-    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
-      desktopWindow.id === windowId
-        ? {
-            ...desktopWindow,
-            chromeTitle: payload.title,
-            chromeStatus: payload.status,
-            chromeTone: payload.tone,
-          }
-        : desktopWindow
-    )));
+    setDesktopWindows((currentWindows) => {
+      const windowIndex = currentWindows.findIndex((desktopWindow) => desktopWindow.id === windowId);
+      const desktopWindow = currentWindows[windowIndex];
+
+      if (
+        !desktopWindow ||
+        (
+          desktopWindow.chromeTitle === payload.title &&
+          desktopWindow.chromeStatus === payload.status &&
+          desktopWindow.chromeTone === payload.tone
+        )
+      ) {
+        return currentWindows;
+      }
+
+      return currentWindows.map((currentWindow) => (
+        currentWindow.id === windowId
+          ? {
+              ...currentWindow,
+              chromeTitle: payload.title,
+              chromeStatus: payload.status,
+              chromeTone: payload.tone,
+            }
+          : currentWindow
+      ));
+    });
   };
 
   const updateTerminalSessionState = (windowId: string, payload: RemoteTerminalSessionState) => {
@@ -535,6 +551,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         <RemoteBrowser
           partition={connection.partition}
           bookmarkScope={`${connection.host.username}@${connection.host.address}:${connection.host.port}`}
+          context={{
+            name: connection.host.name,
+            address: connection.host.address,
+            port: connection.host.port,
+            username: connection.host.username,
+            proxyPort: connection.proxyPort,
+          }}
           onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
         />
       );

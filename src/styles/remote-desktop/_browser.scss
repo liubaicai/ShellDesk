@@ -727,3 +727,424 @@
 .browser-bookmark-popover-actions {
   gap: 8px;
 }
+
+/* Browser remote-context redesign */
+
+.remote-browser-pane {
+  --browser-panel: rgba(13, 20, 30, 0.84);
+  --browser-panel-strong: rgba(8, 14, 23, 0.94);
+  --browser-panel-soft: rgba(255, 255, 255, 0.05);
+  --browser-panel-hover: rgba(84, 166, 255, 0.14);
+  --browser-border: rgba(154, 177, 210, 0.16);
+  --browser-border-strong: rgba(154, 177, 210, 0.28);
+  --browser-text: #eef4ff;
+  --browser-muted: #a4b3c7;
+  --browser-accent: #6ab0ff;
+  --browser-ready: #7dd7a4;
+  --browser-error: #ff9cad;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.browser-chrome {
+  grid-auto-rows: auto;
+  grid-template-rows: auto;
+}
+
+.browser-toolbar {
+  grid-template-columns: 32px 32px 32px 32px minmax(180px, 1fr) auto;
+}
+
+.browser-toolbar button,
+.browser-target-grid button,
+.browser-recent-list button,
+.browser-error-page button,
+.browser-bookmark-empty button {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+.browser-toolbar svg,
+.browser-security-icon svg,
+.browser-recent-column svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.browser-toolbar svg path,
+.browser-security-icon svg path,
+.browser-recent-column svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.browser-bookmark-trigger.active svg path {
+  fill: currentColor;
+}
+
+.browser-security-icon {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--browser-border);
+  border-radius: 999px;
+  padding: 0 8px;
+  color: var(--browser-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.browser-security-icon svg {
+  width: 13px;
+  height: 13px;
+  color: var(--browser-ready);
+}
+
+.browser-security-icon em {
+  font-style: normal;
+}
+
+.browser-toolbar .browser-go-button,
+.browser-toolbar .browser-overflow-button {
+  width: 32px;
+  min-width: 32px;
+}
+
+.browser-toolbar > button,
+.browser-toolbar-actions > button,
+.browser-toolbar .browser-bookmark-trigger {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.browser-toolbar .browser-go-button svg,
+.browser-toolbar .browser-overflow-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.browser-bookmark-empty button {
+  display: inline-flex;
+  min-width: 0;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--browser-border);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--browser-panel-soft);
+  color: var(--browser-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 780;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.browser-bookmark-empty button:hover {
+  border-color: rgba(106, 176, 255, 0.34);
+  background: var(--browser-panel-hover);
+  color: var(--browser-text);
+}
+
+.browser-toolbar .browser-overflow-button.active {
+  border-color: rgba(106, 176, 255, 0.34);
+  background: rgba(106, 176, 255, 0.14);
+  color: #f5fbff;
+}
+
+.browser-toolbar-menu-panel {
+  position: fixed;
+  z-index: 10030;
+  display: grid;
+  width: 186px;
+  gap: 4px;
+  border: 1px solid rgba(129, 152, 185, 0.24);
+  border-radius: 10px;
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgba(19, 25, 37, 0.98), rgba(12, 17, 27, 0.98)),
+    #101824;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.browser-toolbar-menu-panel button {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: #eef4ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.browser-toolbar-menu-panel button:hover,
+.browser-toolbar-menu-panel button.active {
+  border-color: rgba(106, 176, 255, 0.26);
+  background: rgba(106, 176, 255, 0.12);
+}
+
+.browser-toolbar-menu-panel em {
+  color: #a4b3c7;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.browser-shortcut-panel {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.95fr);
+  gap: 11px;
+  border-bottom: 1px solid var(--browser-border);
+  padding: 10px 14px 12px;
+  background:
+    linear-gradient(180deg, rgba(5, 10, 18, 0.34), rgba(5, 10, 18, 0.18)),
+    var(--browser-panel-strong);
+}
+
+.browser-target-column,
+.browser-recent-column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 7px;
+}
+
+.browser-target-column > strong,
+.browser-recent-column > strong {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--browser-text);
+  font-size: 11.5px;
+  font-weight: 840;
+}
+
+.browser-recent-column > strong svg {
+  width: 14px;
+  height: 14px;
+  color: var(--browser-accent);
+}
+
+.browser-target-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 6px;
+}
+
+.browser-target-grid button,
+.browser-recent-list button {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--browser-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--browser-panel-soft);
+  color: var(--browser-text);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.22;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.browser-target-grid button:hover,
+.browser-target-grid button.active,
+.browser-recent-list button:hover {
+  border-color: rgba(106, 176, 255, 0.34);
+  background: var(--browser-panel-hover);
+}
+
+.browser-target-grid span,
+.browser-recent-list span,
+.browser-recent-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-target-grid span,
+.browser-recent-list span {
+  font-weight: 790;
+}
+
+.browser-target-grid small,
+.browser-recent-list small,
+.browser-recent-column p {
+  color: var(--browser-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.browser-recent-column p {
+  margin: 0;
+  border: 1px dashed var(--browser-border);
+  border-radius: 8px;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.browser-recent-list {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.browser-bookmark-bar {
+  border-top: 0;
+  border-bottom: 1px solid var(--browser-border);
+  background: var(--browser-panel);
+}
+
+.browser-bookmark-empty {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px;
+  color: var(--browser-muted);
+}
+
+.browser-bookmark-empty button {
+  height: 24px;
+}
+
+.browser-bookmark-menu-button {
+  letter-spacing: 0;
+}
+
+.browser-viewport {
+  grid-row: 2;
+}
+
+.browser-error-page {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  overflow: auto;
+  padding: clamp(16px, 3vw, 34px);
+  background:
+    linear-gradient(135deg, rgba(9, 15, 25, 0.9), rgba(9, 15, 25, 0.66)),
+    rgba(240, 245, 250, 0.55);
+  color: var(--browser-text);
+}
+
+.browser-error-page > div {
+  display: grid;
+  width: min(540px, 100%);
+  gap: 9px;
+  border: 1px solid var(--browser-border-strong);
+  border-radius: 12px;
+  padding: clamp(15px, 2vw, 22px);
+  background: var(--browser-panel-strong);
+  box-shadow: 0 28px 68px rgba(0, 0, 0, 0.28);
+}
+
+.browser-error-page span {
+  color: var(--browser-error);
+  font-size: 11px;
+  font-weight: 880;
+}
+
+.browser-error-page strong {
+  color: var(--browser-text);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.browser-error-page code {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--browser-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--browser-accent);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-error-page p {
+  margin: 0;
+  color: var(--browser-muted);
+  font-size: 11.5px;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
+.browser-error-page ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 17px;
+  color: var(--browser-text);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.browser-error-page footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.browser-error-page button {
+  height: 31px;
+  border: 1px solid rgba(106, 176, 255, 0.3);
+  border-radius: 8px;
+  padding: 0 11px;
+  background: rgba(106, 176, 255, 0.14);
+  color: var(--browser-text);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 820;
+}
+
+.browser-error-page button:hover {
+  border-color: rgba(106, 176, 255, 0.48);
+  background: rgba(106, 176, 255, 0.22);
+}
+
+@media (max-width: 760px) {
+  .browser-shortcut-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
