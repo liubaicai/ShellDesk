@@ -98,6 +98,13 @@ contextBridge.exposeInMainWorld('guiSSH', {
     mysqlQuery: (connectionId, mysqlId, sql, database) => ipcRenderer.invoke('connection:mysql-query', connectionId, mysqlId, sql, database),
     mysqlUpdateCell: (connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues) =>
       ipcRenderer.invoke('connection:mysql-update-cell', connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues),
+    postgresConnect: (connectionId, config) => ipcRenderer.invoke('connection:postgres-connect', connectionId, config),
+    postgresDisconnect: (connectionId, postgresId) => ipcRenderer.invoke('connection:postgres-disconnect', connectionId, postgresId),
+    postgresDatabases: (connectionId, postgresId) => ipcRenderer.invoke('connection:postgres-databases', connectionId, postgresId),
+    postgresSchemas: (connectionId, postgresId) => ipcRenderer.invoke('connection:postgres-schemas', connectionId, postgresId),
+    postgresTables: (connectionId, postgresId, schema) => ipcRenderer.invoke('connection:postgres-tables', connectionId, postgresId, schema),
+    postgresColumns: (connectionId, postgresId, schema, table) => ipcRenderer.invoke('connection:postgres-columns', connectionId, postgresId, schema, table),
+    postgresQuery: (connectionId, postgresId, sql) => ipcRenderer.invoke('connection:postgres-query', connectionId, postgresId, sql),
     redisConnect: (connectionId, config) => ipcRenderer.invoke('connection:redis-connect', connectionId, config),
     redisDisconnect: (connectionId, redisId) => ipcRenderer.invoke('connection:redis-disconnect', connectionId, redisId),
     redisScan: (connectionId, redisId, options) => ipcRenderer.invoke('connection:redis-scan', connectionId, redisId, options),

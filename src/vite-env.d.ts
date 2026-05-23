@@ -342,6 +342,13 @@ interface ShellDeskConnectionControls {
     pkColumns?: string[],
     pkValues?: unknown[],
   ) => Promise<{ affectedRows: number }>;
+  postgresConnect: (connectionId: string, config: ShellDeskPostgresConnectConfig) => Promise<{ postgresId: string; alreadyConnected?: boolean }>;
+  postgresDisconnect: (connectionId: string, postgresId: string) => Promise<boolean>;
+  postgresDatabases: (connectionId: string, postgresId: string) => Promise<string[]>;
+  postgresSchemas: (connectionId: string, postgresId: string) => Promise<string[]>;
+  postgresTables: (connectionId: string, postgresId: string, schema: string) => Promise<ShellDeskPostgresTable[]>;
+  postgresColumns: (connectionId: string, postgresId: string, schema: string, table: string) => Promise<ShellDeskPostgresColumn[]>;
+  postgresQuery: (connectionId: string, postgresId: string, sql: string) => Promise<ShellDeskPostgresQueryResult>;
   redisConnect: (connectionId: string, config: ShellDeskRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
   redisDisconnect: (connectionId: string, redisId: string) => Promise<boolean>;
   redisScan: (connectionId: string, redisId: string, options?: ShellDeskRedisScanOptions) => Promise<ShellDeskRedisScanResult>;
@@ -394,6 +401,35 @@ interface ShellDeskMysqlQueryResult {
   rows: Record<string, unknown>[];
   affectedRows?: number;
   insertId?: string;
+}
+
+interface ShellDeskPostgresConnectConfig {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database?: string;
+  postgresId?: string;
+}
+
+interface ShellDeskPostgresTable {
+  schema: string;
+  name: string;
+  type: string;
+}
+
+interface ShellDeskPostgresColumn {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  defaultValue?: string | null;
+  isPrimaryKey?: boolean;
+}
+
+interface ShellDeskPostgresQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount?: number;
 }
 
 interface ShellDeskSqliteColumn {
