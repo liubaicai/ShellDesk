@@ -13,6 +13,15 @@ const hostsStorageKey = 'shelldesk:hosts';
 const keysStorageKey = 'shelldesk:keys';
 const bookmarkStorageKeyPrefix = 'shelldesk:browser-bookmarks:';
 const ungroupedKey = '__ungrouped__';
+const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
+  sortMode: 'custom',
+  items: [
+    { id: 'app:files', type: 'app', appKey: 'files' },
+    { id: 'app:terminal', type: 'app', appKey: 'terminal' },
+    { id: 'app:browser', type: 'app', appKey: 'browser' },
+    { id: 'app:settings', type: 'app', appKey: 'settings' },
+  ],
+};
 const defaultAppSettings: ShellDeskAppSettings = {
   language: 'zh-CN',
   interfaceFont: 'LXGW WenKai Mono',
@@ -22,6 +31,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
   desktopWallpaperMode: 'default',
   desktopWallpaperDataUrl: '',
   desktopWallpaperName: '',
+  remoteDesktopLayout: defaultRemoteDesktopLayout,
   rememberPasswords: true,
   rememberKeyPassphrases: true,
   terminalFontSize: 13,

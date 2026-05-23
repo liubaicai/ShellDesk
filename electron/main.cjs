@@ -52,6 +52,34 @@ const terminalThemeChoices = [
   'hacker-green',
 ];
 const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underline', 'none'];
+const remoteDesktopAppKeys = [
+  'files',
+  'terminal',
+  'notepad',
+  'browser',
+  'vnc',
+  'log-viewer',
+  'monitor',
+  'mysql',
+  'redis',
+  'service-manager',
+  'container-manager',
+  'port-manager',
+  'firewall-manager',
+  'network-diagnostics',
+  'disk-analyzer',
+  'package-manager',
+  'scheduled-tasks',
+  'postgres',
+  'security-audit',
+  'login-sessions',
+  'api-debugger',
+  'procmanager',
+  'settings',
+  'sqlite',
+];
+const remoteDesktopAppKeySet = new Set(remoteDesktopAppKeys);
+const remoteDesktopSortModes = new Set(['custom', 'name-asc', 'name-desc']);
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
 const remoteSystemTypeChoices = new Set([
   'unknown',
@@ -112,6 +140,7 @@ function createDefaultSettings() {
     desktopWallpaperMode: 'default',
     desktopWallpaperDataUrl: '',
     desktopWallpaperName: '',
+    remoteDesktopLayout: createDefaultRemoteDesktopLayout(),
     rememberPasswords: true,
     rememberKeyPassphrases: true,
     terminalFontSize: 13,
@@ -274,6 +303,88 @@ function readDesktopWallpaperDataUrl(value, fallback = '') {
   return value;
 }
 
+function createDefaultRemoteDesktopLayout() {
+  return {
+    sortMode: 'custom',
+    items: ['files', 'terminal', 'browser', 'settings'].map((appKey) => ({
+      id: `app:${appKey}`,
+      type: 'app',
+      appKey,
+    })),
+  };
+}
+
+function readRemoteDesktopLayout(rawLayout) {
+  const defaults = createDefaultRemoteDesktopLayout();
+
+  if (!isPlainObject(rawLayout)) {
+    return defaults;
+  }
+
+  const sortMode = remoteDesktopSortModes.has(rawLayout.sortMode) ? rawLayout.sortMode : defaults.sortMode;
+
+  if (!Array.isArray(rawLayout.items)) {
+    return { ...defaults, sortMode };
+  }
+
+  const seenAppKeys = new Set();
+  const items = [];
+
+  for (const [index, rawItem] of rawLayout.items.slice(0, remoteDesktopAppKeys.length + 12).entries()) {
+    if (!isPlainObject(rawItem)) {
+      continue;
+    }
+
+    if (rawItem.type === 'app') {
+      const appKey = rawItem.appKey;
+
+      if (!remoteDesktopAppKeySet.has(appKey) || seenAppKeys.has(appKey)) {
+        continue;
+      }
+
+      seenAppKeys.add(appKey);
+      items.push({
+        id: `app:${appKey}`,
+        type: 'app',
+        appKey,
+      });
+      continue;
+    }
+
+    if (rawItem.type === 'folder') {
+      const folderAppKeys = Array.isArray(rawItem.appKeys)
+        ? rawItem.appKeys.filter((appKey) => {
+            if (!remoteDesktopAppKeySet.has(appKey) || seenAppKeys.has(appKey)) {
+              return false;
+            }
+
+            seenAppKeys.add(appKey);
+            return true;
+          })
+        : [];
+      const folderName = readBoundedString(rawItem.name ?? '文件夹', '桌面文件夹名称', 40, { required: false }) || '文件夹';
+      const folderId = readBoundedString(
+        rawItem.id ?? `folder:${index + 1}`,
+        '桌面文件夹 ID',
+        128,
+        { required: false },
+      ) || `folder:${index + 1}`;
+
+      items.push({
+        id: folderId,
+        type: 'folder',
+        name: folderName,
+        appKeys: folderAppKeys,
+      });
+    }
+  }
+
+  return {
+    sortMode,
+    items: items.length ? items : defaults.items,
+  };
+}
+
 function getVaultFilePath() {
   return path.join(app.getPath('userData'), vaultFileName);
 }
@@ -337,6 +448,7 @@ function readAppSettings(rawSettings) {
       160,
       { required: false },
     ),
+    remoteDesktopLayout: readRemoteDesktopLayout(rawSettings.remoteDesktopLayout),
     rememberPasswords: readBoolean(rawSettings.rememberPasswords, '记住密码', defaults.rememberPasswords),
     rememberKeyPassphrases: readBoolean(
       rawSettings.rememberKeyPassphrases,

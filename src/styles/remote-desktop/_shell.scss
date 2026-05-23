@@ -268,6 +268,298 @@
   text-align: center;
 }
 
+.desktop-folder-icon-shell {
+  position: relative;
+  display: grid;
+  width: 52px;
+  height: 44px;
+  place-items: center;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(238, 244, 255, 0.9), rgba(174, 195, 224, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    0 8px 18px rgba(7, 10, 16, 0.24);
+}
+
+.desktop-folder-icon-shell::before {
+  position: absolute;
+  top: -6px;
+  left: 7px;
+  width: 22px;
+  height: 10px;
+  border-radius: 6px 6px 2px 2px;
+  background: rgba(210, 225, 244, 0.96);
+  content: "";
+}
+
+.desktop-folder-icon-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 32px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+}
+
+.desktop-folder-mini-icon {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+}
+
+.desktop-folder-mini-icon .desktop-app-icon {
+  width: 100%;
+  height: 100%;
+  filter: none;
+}
+
+.dock-separator {
+  width: 1px;
+  height: 32px;
+  align-self: center;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dock-all-apps {
+  background:
+    linear-gradient(145deg, rgba(238, 244, 255, 0.22), rgba(139, 164, 195, 0.08));
+}
+
+.dock-all-apps-icon {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.launchpad-overlay,
+.desktop-folder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  padding: 36px;
+  background: rgba(5, 8, 13, 0.58);
+  backdrop-filter: blur(24px);
+}
+
+.launchpad-panel {
+  display: grid;
+  width: min(980px, calc(100vw - 72px));
+  max-height: min(720px, calc(100vh - 72px));
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background: rgba(14, 20, 30, 0.78);
+  box-shadow: 0 28px 86px rgba(0, 0, 0, 0.46);
+}
+
+.launchpad-header,
+.desktop-folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 18px 20px;
+}
+
+.launchpad-header span {
+  display: block;
+  color: rgba(238, 244, 255, 0.62);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.launchpad-header strong {
+  color: #eef4ff;
+  font-size: 20px;
+  font-weight: 860;
+}
+
+.launchpad-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef4ff;
+  cursor: pointer;
+}
+
+.launchpad-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.launchpad-app-button,
+.desktop-folder-app-button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #eef4ff;
+  cursor: pointer;
+  text-align: center;
+}
+
+.launchpad-app-button {
+  min-height: 104px;
+  align-content: start;
+  gap: 8px;
+  padding: 12px 10px;
+}
+
+.launchpad-tooltip {
+  position: fixed;
+  z-index: 10002;
+  width: max-content;
+  max-width: 220px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: rgba(10, 15, 23, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  color: rgba(238, 244, 255, 0.9);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.35;
+  pointer-events: none;
+  text-align: left;
+  transform: translateX(-50%);
+  white-space: normal;
+}
+
+.launchpad-tooltip.top {
+  transform: translate(-50%, -100%);
+}
+
+.launchpad-app-button:hover,
+.launchpad-app-button:focus-visible {
+  z-index: 4;
+}
+
+.launchpad-app-button:hover,
+.desktop-folder-app-button:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.launchpad-app-button .desktop-app-icon-shell {
+  width: 54px;
+  height: 54px;
+}
+
+.launchpad-app-button strong,
+.desktop-folder-app-button strong {
+  overflow-wrap: anywhere;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.desktop-folder-panel {
+  display: grid;
+  width: min(520px, calc(100vw - 56px));
+  max-height: min(520px, calc(100vh - 56px));
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background: rgba(14, 20, 30, 0.82);
+  box-shadow: 0 26px 74px rgba(0, 0, 0, 0.42);
+}
+
+.desktop-folder-title {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #eef4ff;
+  cursor: text;
+  font-size: 20px;
+  font-weight: 860;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 12px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.desktop-folder-grid.empty {
+  display: grid;
+  place-items: center;
+}
+
+.desktop-folder-app-button {
+  height: 96px;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 5px;
+}
+
+.desktop-folder-app-button .desktop-app-icon-shell {
+  width: 50px;
+  height: 50px;
+}
+
+.desktop-folder-empty {
+  display: grid;
+  width: 100%;
+  min-height: 180px;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  color: rgba(238, 244, 255, 0.58);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.desktop-folder-rename-modal {
+  width: min(360px, calc(100vw - 48px));
+}
+
+.context-menu button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.context-menu button:disabled:hover {
+  background: transparent;
+}
+
+.context-submenu button.checked::before {
+  content: "✓";
+  width: 12px;
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.context-submenu button:not(.checked)::before {
+  content: "";
+  width: 12px;
+}
+
 .desktop-window {
   position: absolute;
   top: 0;

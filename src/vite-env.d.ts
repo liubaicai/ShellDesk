@@ -26,6 +26,54 @@ interface ShellDeskFileControls {
   exportConfig: () => Promise<string>;
 }
 
+type ShellDeskDesktopSortMode = 'custom' | 'name-asc' | 'name-desc';
+
+type ShellDeskDesktopAppKey =
+  | 'files'
+  | 'terminal'
+  | 'notepad'
+  | 'browser'
+  | 'vnc'
+  | 'log-viewer'
+  | 'monitor'
+  | 'mysql'
+  | 'redis'
+  | 'service-manager'
+  | 'container-manager'
+  | 'port-manager'
+  | 'firewall-manager'
+  | 'network-diagnostics'
+  | 'disk-analyzer'
+  | 'package-manager'
+  | 'scheduled-tasks'
+  | 'postgres'
+  | 'security-audit'
+  | 'login-sessions'
+  | 'api-debugger'
+  | 'procmanager'
+  | 'settings'
+  | 'sqlite';
+
+interface ShellDeskDesktopAppLayoutItem {
+  id: string;
+  type: 'app';
+  appKey: ShellDeskDesktopAppKey;
+}
+
+interface ShellDeskDesktopFolderLayoutItem {
+  id: string;
+  type: 'folder';
+  name: string;
+  appKeys: ShellDeskDesktopAppKey[];
+}
+
+type ShellDeskDesktopLayoutItem = ShellDeskDesktopAppLayoutItem | ShellDeskDesktopFolderLayoutItem;
+
+interface ShellDeskRemoteDesktopLayout {
+  sortMode: ShellDeskDesktopSortMode;
+  items: ShellDeskDesktopLayoutItem[];
+}
+
 interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
   interfaceFont:
@@ -43,6 +91,7 @@ interface ShellDeskAppSettings {
   desktopWallpaperMode: 'default' | 'custom';
   desktopWallpaperDataUrl: string;
   desktopWallpaperName: string;
+  remoteDesktopLayout: ShellDeskRemoteDesktopLayout;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
   terminalFontSize: number;

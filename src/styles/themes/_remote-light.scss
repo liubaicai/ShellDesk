@@ -476,6 +476,72 @@
   box-shadow: none;
 }
 
+[data-theme="light"] .launchpad-panel,
+[data-theme="light"] .desktop-folder-panel {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 46px rgba(43, 67, 92, 0.18);
+}
+
+[data-theme="light"] .launchpad-header span,
+[data-theme="light"] .desktop-folder-empty {
+  color: #526178;
+}
+
+[data-theme="light"] .launchpad-tooltip {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.16);
+  color: #526178;
+}
+
+[data-theme="light"] .launchpad-close {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(255, 255, 255, 0.86);
+  color: #172033;
+}
+
+[data-theme="light"] .launchpad-overlay,
+[data-theme="light"] .desktop-folder-overlay {
+  background: rgba(237, 242, 248, 0.6);
+}
+
+[data-theme="light"] .launchpad-header,
+[data-theme="light"] .desktop-folder-header {
+  border-bottom-color: rgba(16, 32, 51, 0.08);
+}
+
+[data-theme="light"] .launchpad-header strong,
+[data-theme="light"] .desktop-folder-title,
+[data-theme="light"] .launchpad-app-button,
+[data-theme="light"] .desktop-folder-app-button,
+[data-theme="light"] .launchpad-app-button strong,
+[data-theme="light"] .desktop-folder-app-button strong {
+  color: #172033;
+}
+
+[data-theme="light"] .launchpad-app-button:hover,
+[data-theme="light"] .desktop-folder-app-button:hover {
+  border-color: rgba(16, 32, 51, 0.1);
+  background: rgba(67, 199, 255, 0.1);
+}
+
+[data-theme="light"] .desktop-folder-empty {
+  border-color: rgba(16, 32, 51, 0.18);
+}
+
+[data-theme="light"] .desktop-folder-icon-shell {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(210, 221, 236, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 8px 18px rgba(43, 67, 92, 0.16);
+}
+
+[data-theme="light"] .desktop-folder-icon-shell::before {
+  background: rgba(238, 244, 252, 0.98);
+}
+
 [data-theme="light"] .mac-dock button.minimized::after {
   background: rgba(82, 97, 120, 0.42);
 }

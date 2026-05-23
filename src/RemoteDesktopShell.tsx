@@ -1,4 +1,4 @@
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteLoginSessions, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
@@ -72,6 +72,54 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   settings: new URL('./assets/desktop-icons/settings.png', import.meta.url).href,
   sqlite: new URL('./assets/desktop-icons/sqlite.png', import.meta.url).href,
 };
+
+const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
+const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
+const desktopAppKeySet = new Set<DesktopAppKey>(desktopApps.map((app) => app.key));
+const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; label: string }> = [
+  { value: 'custom', label: '自定义' },
+  { value: 'name-asc', label: '名称 A-Z' },
+  { value: 'name-desc', label: '名称 Z-A' },
+];
+
+type DesktopLayoutItem = ShellDeskDesktopLayoutItem;
+type DesktopFolderLayoutItem = ShellDeskDesktopFolderLayoutItem;
+
+type DesktopDragPayload =
+  | { source: 'desktop'; itemId: string; itemType: 'app' | 'folder'; appKey?: DesktopAppKey }
+  | { source: 'launchpad'; appKey: DesktopAppKey }
+  | { source: 'folder'; folderId: string; appKey: DesktopAppKey };
+
+interface DesktopAppContextMenuState {
+  x: number;
+  y: number;
+  appKey: DesktopAppKey;
+  source: 'desktop' | 'launchpad' | 'folder';
+  folderId?: string;
+}
+
+interface DesktopFolderContextMenuState {
+  x: number;
+  y: number;
+  folderId: string;
+}
+
+interface DesktopSurfaceContextMenuState {
+  x: number;
+  y: number;
+}
+
+interface FolderRenameDialogState {
+  folderId: string;
+  name: string;
+}
+
+interface LaunchpadTooltipState {
+  description: string;
+  x: number;
+  y: number;
+  placement: 'top' | 'bottom';
+}
 
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
@@ -215,6 +263,264 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
 
 function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
+}
+
+function isDesktopAppKey(value: unknown): value is DesktopAppKey {
+  return typeof value === 'string' && desktopAppKeySet.has(value as DesktopAppKey);
+}
+
+function createDefaultRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
+  return {
+    sortMode: 'custom',
+    items: defaultDesktopAppKeys.map((appKey) => ({
+      id: `app:${appKey}`,
+      type: 'app',
+      appKey,
+    })),
+  };
+}
+
+function normalizeFolderName(value: unknown) {
+  const name = typeof value === 'string' ? value.trim().slice(0, 40) : '';
+  return name || '文件夹';
+}
+
+function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDesktopLayout {
+  const defaultLayout = createDefaultRemoteDesktopLayout();
+
+  if (!rawLayout || typeof rawLayout !== 'object' || Array.isArray(rawLayout)) {
+    return defaultLayout;
+  }
+
+  const layout = rawLayout as Partial<ShellDeskRemoteDesktopLayout>;
+  const sortMode = layout.sortMode === 'name-asc' || layout.sortMode === 'name-desc'
+    ? layout.sortMode
+    : 'custom';
+
+  if (!Array.isArray(layout.items)) {
+    return { ...defaultLayout, sortMode };
+  }
+
+  const seenAppKeys = new Set<DesktopAppKey>();
+  const items: DesktopLayoutItem[] = [];
+
+  layout.items.slice(0, desktopApps.length + 12).forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+
+    if (item.type === 'app') {
+      if (!isDesktopAppKey(item.appKey) || seenAppKeys.has(item.appKey)) {
+        return;
+      }
+
+      seenAppKeys.add(item.appKey);
+      items.push({
+        id: `app:${item.appKey}`,
+        type: 'app',
+        appKey: item.appKey,
+      });
+      return;
+    }
+
+    if (item.type === 'folder') {
+      const appKeys = Array.isArray(item.appKeys)
+        ? item.appKeys.filter((appKey): appKey is DesktopAppKey => {
+            if (!isDesktopAppKey(appKey) || seenAppKeys.has(appKey)) {
+              return false;
+            }
+
+            seenAppKeys.add(appKey);
+            return true;
+          })
+        : [];
+      const id = typeof item.id === 'string' && item.id.trim()
+        ? item.id.trim().slice(0, 128)
+        : `folder:${index + 1}`;
+
+      items.push({
+        id,
+        type: 'folder',
+        name: normalizeFolderName(item.name),
+        appKeys,
+      });
+    }
+  });
+
+  return {
+    sortMode,
+    items: items.length ? items : defaultLayout.items,
+  };
+}
+
+function getLayoutItemLabel(item: DesktopLayoutItem) {
+  return item.type === 'app' ? getAppInfo(item.appKey).label : item.name;
+}
+
+function compareLayoutItemsByName(firstItem: DesktopLayoutItem, secondItem: DesktopLayoutItem) {
+  return getLayoutItemLabel(firstItem).localeCompare(getLayoutItemLabel(secondItem), 'zh-CN');
+}
+
+function getSortedDesktopItems(layout: ShellDeskRemoteDesktopLayout) {
+  if (layout.sortMode === 'custom') {
+    return layout.items;
+  }
+
+  const sortedItems = [...layout.items].sort(compareLayoutItemsByName);
+  return layout.sortMode === 'name-desc' ? sortedItems.reverse() : sortedItems;
+}
+
+function hasDesktopApp(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey) {
+  return layout.items.some((item) => (
+    item.type === 'app'
+      ? item.appKey === appKey
+      : item.appKeys.includes(appKey)
+  ));
+}
+
+function removeAppFromDesktopLayout(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey): ShellDeskRemoteDesktopLayout {
+  return {
+    ...layout,
+    items: layout.items
+      .map((item): DesktopLayoutItem | null => {
+        if (item.type === 'app') {
+          return item.appKey === appKey ? null : item;
+        }
+
+        return {
+          ...item,
+          appKeys: item.appKeys.filter((currentAppKey) => currentAppKey !== appKey),
+        };
+      })
+      .filter((item): item is DesktopLayoutItem => Boolean(item)),
+  };
+}
+
+function removeTopLevelItem(items: DesktopLayoutItem[], itemId: string) {
+  return items.filter((item) => item.id !== itemId);
+}
+
+function insertTopLevelItem(items: DesktopLayoutItem[], nextItem: DesktopLayoutItem, targetItemId?: string) {
+  const cleanItems = items.filter((item) => item.id !== nextItem.id);
+  const targetIndex = targetItemId ? cleanItems.findIndex((item) => item.id === targetItemId) : -1;
+
+  if (targetIndex < 0) {
+    return [...cleanItems, nextItem];
+  }
+
+  return [
+    ...cleanItems.slice(0, targetIndex),
+    nextItem,
+    ...cleanItems.slice(targetIndex),
+  ];
+}
+
+function addAppToFolder(layout: ShellDeskRemoteDesktopLayout, folderId: string, appKey: DesktopAppKey, targetAppKey?: DesktopAppKey): ShellDeskRemoteDesktopLayout {
+  const withoutApp = removeAppFromDesktopLayout(layout, appKey);
+
+  return {
+    ...withoutApp,
+    sortMode: 'custom',
+    items: withoutApp.items.map((item) => {
+      if (item.type !== 'folder' || item.id !== folderId) {
+        return item;
+      }
+
+      const appKeys = item.appKeys.filter((currentAppKey) => currentAppKey !== appKey);
+      const targetIndex = targetAppKey ? appKeys.indexOf(targetAppKey) : -1;
+      const nextAppKeys = targetIndex >= 0
+        ? [...appKeys.slice(0, targetIndex), appKey, ...appKeys.slice(targetIndex)]
+        : [...appKeys, appKey];
+
+      return {
+        ...item,
+        appKeys: nextAppKeys,
+      };
+    }),
+  };
+}
+
+function moveAppToDesktop(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey, targetItemId?: string): ShellDeskRemoteDesktopLayout {
+  const withoutApp = removeAppFromDesktopLayout(layout, appKey);
+  return {
+    ...withoutApp,
+    sortMode: 'custom',
+    items: insertTopLevelItem(withoutApp.items, {
+      id: `app:${appKey}`,
+      type: 'app',
+      appKey,
+    }, targetItemId),
+  };
+}
+
+function moveTopLevelItem(layout: ShellDeskRemoteDesktopLayout, itemId: string, targetItemId?: string): ShellDeskRemoteDesktopLayout {
+  const item = layout.items.find((currentItem) => currentItem.id === itemId);
+
+  if (!item || item.id === targetItemId) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    sortMode: 'custom',
+    items: insertTopLevelItem(removeTopLevelItem(layout.items, itemId), item, targetItemId),
+  };
+}
+
+function createUniqueFolderName(items: DesktopLayoutItem[]) {
+  const existingNames = new Set(items.filter((item) => item.type === 'folder').map((item) => item.name));
+  let name = '文件夹';
+  let index = 2;
+
+  while (existingNames.has(name)) {
+    name = `文件夹 ${index}`;
+    index += 1;
+  }
+
+  return name;
+}
+
+function getDragPayload(event: ReactDragEvent<HTMLElement>, fallbackPayload: DesktopDragPayload | null) {
+  if (fallbackPayload) {
+    return fallbackPayload;
+  }
+
+  try {
+    const rawPayload = event.dataTransfer.getData(desktopDragMimeType);
+    const payload = rawPayload ? JSON.parse(rawPayload) as Partial<DesktopDragPayload> : null;
+
+    if (payload?.source === 'launchpad' && isDesktopAppKey(payload.appKey)) {
+      return { source: 'launchpad', appKey: payload.appKey } satisfies DesktopDragPayload;
+    }
+
+    if (payload?.source === 'folder' && typeof payload.folderId === 'string' && isDesktopAppKey(payload.appKey)) {
+      return { source: 'folder', folderId: payload.folderId, appKey: payload.appKey } satisfies DesktopDragPayload;
+    }
+
+    if (payload?.source === 'desktop' && typeof payload.itemId === 'string' && (payload.itemType === 'app' || payload.itemType === 'folder')) {
+      return {
+        source: 'desktop',
+        itemId: payload.itemId,
+        itemType: payload.itemType,
+        appKey: isDesktopAppKey(payload.appKey) ? payload.appKey : undefined,
+      } satisfies DesktopDragPayload;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function AllAppsIcon() {
+  return (
+    <svg className="dock-all-apps-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="4" width="6" height="6" rx="1.6" />
+      <rect x="14" y="4" width="6" height="6" rx="1.6" />
+      <rect x="4" y="14" width="6" height="6" rx="1.6" />
+      <rect x="14" y="14" width="6" height="6" rx="1.6" />
+    </svg>
+  );
 }
 
 function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
@@ -538,18 +844,33 @@ function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
+  const desktopDragPayloadRef = useRef<DesktopDragPayload | null>(null);
   const windowSequenceRef = useRef(0);
   const terminalToolRequestSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
+  const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
   const [focusedWindowId, setFocusedWindowId] = useState('');
-  const [desktopContextMenu, setDesktopContextMenu] = useState<{ x: number; y: number; appKey: DesktopAppKey } | null>(null);
+  const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
+  const [appContextMenu, setAppContextMenu] = useState<DesktopAppContextMenuState | null>(null);
+  const [folderContextMenu, setFolderContextMenu] = useState<DesktopFolderContextMenuState | null>(null);
+  const [surfaceContextMenu, setSurfaceContextMenu] = useState<DesktopSurfaceContextMenuState | null>(null);
+  const [openFolderId, setOpenFolderId] = useState('');
+  const [renameFolderDialog, setRenameFolderDialog] = useState<FolderRenameDialogState | null>(null);
+  const [launchpadTooltip, setLaunchpadTooltip] = useState<LaunchpadTooltipState | null>(null);
   const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
   const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
   const terminalTitlebarMenuWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === terminalTitlebarMenu?.windowId && desktopWindow.appKey === 'terminal') ?? null;
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings);
+  const visibleDesktopItems = getSortedDesktopItems(desktopLayout);
+  const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
+  const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => firstApp.label.localeCompare(secondApp.label, 'zh-CN'));
+
+  useEffect(() => {
+    setDesktopLayout(normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
+  }, [settings.remoteDesktopLayout]);
 
   useEffect(() => {
     const surface = desktopSurfaceRef.current;
@@ -577,6 +898,185 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     return () => resizeObserver.disconnect();
   }, []);
+
+  const commitDesktopLayout = (nextLayout: ShellDeskRemoteDesktopLayout) => {
+    const normalizedLayout = normalizeRemoteDesktopLayout(nextLayout);
+    setDesktopLayout(normalizedLayout);
+    onSettingsChange?.({
+      ...settings,
+      remoteDesktopLayout: normalizedLayout,
+    });
+  };
+
+  const updateDesktopLayout = (updater: (layout: ShellDeskRemoteDesktopLayout) => ShellDeskRemoteDesktopLayout) => {
+    commitDesktopLayout(updater(desktopLayout));
+  };
+
+  const closeDesktopMenus = () => {
+    setAppContextMenu(null);
+    setFolderContextMenu(null);
+    setSurfaceContextMenu(null);
+  };
+
+  const createFolder = () => {
+    const folderName = createUniqueFolderName(desktopLayout.items);
+    const folderId = `folder:${Date.now().toString(36)}`;
+
+    commitDesktopLayout({
+      ...desktopLayout,
+      sortMode: 'custom',
+      items: [
+        ...desktopLayout.items,
+        {
+          id: folderId,
+          type: 'folder',
+          name: folderName,
+          appKeys: [],
+        },
+      ],
+    });
+    setRenameFolderDialog({ folderId, name: folderName });
+  };
+
+  const renameFolder = (folderId: string, name: string) => {
+    updateDesktopLayout((layout) => ({
+      ...layout,
+      items: layout.items.map((item) => (
+        item.type === 'folder' && item.id === folderId
+          ? { ...item, name: normalizeFolderName(name) }
+          : item
+      )),
+    }));
+  };
+
+  const deleteFolder = (folderId: string) => {
+    updateDesktopLayout((layout) => ({
+      ...layout,
+      sortMode: 'custom',
+      items: layout.items.filter((item) => item.id !== folderId),
+    }));
+
+    if (openFolderId === folderId) {
+      setOpenFolderId('');
+    }
+  };
+
+  const handleSortModeChange = (sortMode: ShellDeskDesktopSortMode) => {
+    updateDesktopLayout((layout) => ({
+      ...layout,
+      sortMode,
+    }));
+  };
+
+  const showLaunchpadTooltip = (element: HTMLElement, description: string) => {
+    const rect = element.getBoundingClientRect();
+    const tooltipHeight = 56;
+    const placement = rect.bottom + tooltipHeight + 12 > window.innerHeight ? 'top' : 'bottom';
+
+    setLaunchpadTooltip({
+      description,
+      x: rect.left + rect.width / 2,
+      y: placement === 'bottom' ? rect.bottom + 10 : rect.top - 10,
+      placement,
+    });
+  };
+
+  const handleDragStart = (event: ReactDragEvent<HTMLElement>, payload: DesktopDragPayload) => {
+    desktopDragPayloadRef.current = payload;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(desktopDragMimeType, JSON.stringify(payload));
+  };
+
+  const handleDragEnd = () => {
+    desktopDragPayloadRef.current = null;
+  };
+
+  const handleDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const applyDesktopDrop = (payload: DesktopDragPayload, targetItem?: DesktopLayoutItem) => {
+    const payloadAppKey = 'appKey' in payload ? payload.appKey : undefined;
+
+    if (targetItem?.type === 'folder' && payloadAppKey) {
+      updateDesktopLayout((layout) => addAppToFolder(layout, targetItem.id, payloadAppKey));
+      return;
+    }
+
+    if (payload.source === 'desktop') {
+      updateDesktopLayout((layout) => moveTopLevelItem(layout, payload.itemId, targetItem?.id));
+      return;
+    }
+
+    updateDesktopLayout((layout) => moveAppToDesktop(layout, payload.appKey, targetItem?.id));
+  };
+
+  const handleDesktopDrop = (event: ReactDragEvent<HTMLElement>, targetItem?: DesktopLayoutItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = getDragPayload(event, desktopDragPayloadRef.current);
+    desktopDragPayloadRef.current = null;
+
+    if (!payload) {
+      return;
+    }
+
+    applyDesktopDrop(payload, targetItem);
+  };
+
+  const handleFolderDrop = (event: ReactDragEvent<HTMLElement>, folderId: string, targetAppKey?: DesktopAppKey) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = getDragPayload(event, desktopDragPayloadRef.current);
+    desktopDragPayloadRef.current = null;
+
+    const payloadAppKey = payload && 'appKey' in payload ? payload.appKey : undefined;
+
+    if (!payloadAppKey) {
+      return;
+    }
+
+    updateDesktopLayout((layout) => addAppToFolder(layout, folderId, payloadAppKey, targetAppKey));
+  };
+
+  const handleSurfaceContextMenu = (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+
+    if (target.closest('.desktop-icon-button, .desktop-window, .mac-dock')) {
+      return;
+    }
+
+    event.preventDefault();
+    closeDesktopMenus();
+    setSurfaceContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const sendAppToDesktop = (appKey: DesktopAppKey) => {
+    if (hasDesktopApp(desktopLayout, appKey)) {
+      return;
+    }
+
+    updateDesktopLayout((layout) => moveAppToDesktop(layout, appKey));
+  };
+
+  const deleteAppFromDesktop = (appKey: DesktopAppKey) => {
+    updateDesktopLayout((layout) => ({
+      ...removeAppFromDesktopLayout(layout, appKey),
+      sortMode: 'custom',
+    }));
+  };
+
+  const submitFolderRename = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!renameFolderDialog) {
+      return;
+    }
+
+    renameFolder(renameFolderDialog.folderId, renameFolderDialog.name);
+    setRenameFolderDialog(null);
+  };
 
   const bringWindowToFront = (windowId: string) => {
     zIndexRef.current += 1;
@@ -1045,26 +1545,73 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           ref={desktopSurfaceRef}
           className={`remote-desktop-surface no-drag ${desktopWallpaperStyle ? 'has-custom-wallpaper' : ''}`}
           style={desktopWallpaperStyle}
+          onContextMenu={handleSurfaceContextMenu}
+          onDragOver={handleDragOver}
+          onDrop={(event) => handleDesktopDrop(event)}
         >
           <div className="desktop-icons" aria-label="桌面应用">
-          {desktopApps.map((app) => (
-            <button
-              key={app.key}
-              type="button"
-              className={focusedWindow?.appKey === app.key ? 'active' : ''}
-              onDoubleClick={() => openDesktopWindow(app.key)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setDesktopContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key });
-              }}
-            >
-              <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
-                <DesktopAppIcon appKey={app.key} />
-              </span>
-              <strong>{app.label}</strong>
-            </button>
-          ))}
-        </div>
+            {visibleDesktopItems.map((item) => {
+              if (item.type === 'folder') {
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`desktop-icon-button desktop-folder-button ${openFolderId === item.id ? 'active' : ''}`}
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, { source: 'desktop', itemId: item.id, itemType: 'folder' })}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={handleDragOver}
+                    onDrop={(event) => handleDesktopDrop(event, item)}
+                    onDoubleClick={() => setOpenFolderId(item.id)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      closeDesktopMenus();
+                      setFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: item.id });
+                    }}
+                  >
+                    <span className="desktop-folder-icon-shell">
+                      <span className="desktop-folder-icon-grid">
+                        {item.appKeys.slice(0, 4).map((appKey) => (
+                          <span key={appKey} className={`desktop-folder-mini-icon desktop-app-icon-${appKey}`}>
+                            <DesktopAppIcon appKey={appKey} />
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                    <strong>{item.name}</strong>
+                  </button>
+                );
+              }
+
+              const app = getAppInfo(item.appKey);
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`desktop-icon-button ${focusedWindow?.appKey === item.appKey ? 'active' : ''}`}
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, { source: 'desktop', itemId: item.id, itemType: 'app', appKey: item.appKey })}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleDesktopDrop(event, item)}
+                  onDoubleClick={() => openDesktopWindow(item.appKey)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeDesktopMenus();
+                    setAppContextMenu({ x: event.clientX, y: event.clientY, appKey: item.appKey, source: 'desktop' });
+                  }}
+                >
+                  <span className={`desktop-app-icon-shell desktop-app-icon-${item.appKey}`}>
+                    <DesktopAppIcon appKey={item.appKey} />
+                  </span>
+                  <strong>{app.label}</strong>
+                </button>
+              );
+            })}
+          </div>
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
@@ -1188,6 +1735,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         })}
 
         <nav className="mac-dock" aria-label="远程桌面 Dock">
+          <button
+            type="button"
+            className={`dock-launchpad-button ${isLaunchpadOpen ? 'active' : ''}`}
+            onClick={() => setIsLaunchpadOpen((isOpen) => !isOpen)}
+            aria-label="全部应用"
+            title="全部应用"
+          >
+            <span className="dock-app-icon dock-all-apps">
+              <AllAppsIcon />
+            </span>
+          </button>
+          <span className="dock-separator" aria-hidden="true" />
           {(() => {
             const openAppKeys = new Set(desktopWindows.map((w) => w.appKey));
             const dockApps = [
@@ -1231,31 +1790,310 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       </section>
     </main>
 
-    {desktopContextMenu ? createPortal(
+    {isLaunchpadOpen ? createPortal(
+      <div className="launchpad-overlay" role="presentation" onClick={() => setIsLaunchpadOpen(false)}>
+        <section className="launchpad-panel" aria-label="全部应用" onClick={(event) => event.stopPropagation()}>
+          <header className="launchpad-header">
+            <div>
+              <span>全部应用</span>
+              <strong>{launchpadApps.length} 个组件</strong>
+            </div>
+            <button type="button" className="launchpad-close" aria-label="关闭全部应用" onClick={() => setIsLaunchpadOpen(false)}>
+              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <line x1="2" y1="2" x2="10" y2="10" />
+                <line x1="10" y1="2" x2="2" y2="10" />
+              </svg>
+            </button>
+          </header>
+          <div className="launchpad-grid">
+            {launchpadApps.map((app) => (
+              <button
+                key={app.key}
+                type="button"
+                className="launchpad-app-button"
+                draggable
+                onDragStart={(event) => handleDragStart(event, { source: 'launchpad', appKey: app.key })}
+                onDragEnd={handleDragEnd}
+                onMouseEnter={(event) => showLaunchpadTooltip(event.currentTarget, app.description)}
+                onMouseLeave={() => setLaunchpadTooltip(null)}
+                onFocus={(event) => showLaunchpadTooltip(event.currentTarget, app.description)}
+                onBlur={() => setLaunchpadTooltip(null)}
+                onClick={() => {
+                  setIsLaunchpadOpen(false);
+                  setLaunchpadTooltip(null);
+                  openDesktopWindow(app.key);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeDesktopMenus();
+                  setAppContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key, source: 'launchpad' });
+                }}
+              >
+                <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
+                  <DesktopAppIcon appKey={app.key} />
+                </span>
+                <strong>{app.label}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>,
+      document.body,
+    ) : null}
+
+    {launchpadTooltip ? createPortal(
+      <div
+        className={`launchpad-tooltip ${launchpadTooltip.placement}`}
+        style={{ left: launchpadTooltip.x, top: launchpadTooltip.y }}
+        role="tooltip"
+      >
+        {launchpadTooltip.description}
+      </div>,
+      document.body,
+    ) : null}
+
+    {openFolder ? createPortal(
+      <div className="desktop-folder-overlay" role="presentation" onClick={() => setOpenFolderId('')}>
+        <section
+          className="desktop-folder-panel"
+          aria-label={openFolder.name}
+          onClick={(event) => event.stopPropagation()}
+          onDragOver={handleDragOver}
+          onDrop={(event) => handleFolderDrop(event, openFolder.id)}
+        >
+          <header className="desktop-folder-header">
+            <button
+              type="button"
+              className="desktop-folder-title"
+              onClick={() => setRenameFolderDialog({ folderId: openFolder.id, name: openFolder.name })}
+              title="重命名文件夹"
+            >
+              {openFolder.name}
+            </button>
+            <button type="button" className="launchpad-close" aria-label="关闭文件夹" onClick={() => setOpenFolderId('')}>
+              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <line x1="2" y1="2" x2="10" y2="10" />
+                <line x1="10" y1="2" x2="2" y2="10" />
+              </svg>
+            </button>
+          </header>
+          <div className={`desktop-folder-grid ${openFolder.appKeys.length ? '' : 'empty'}`}>
+            {openFolder.appKeys.length ? openFolder.appKeys.map((appKey) => {
+              const app = getAppInfo(appKey);
+
+              return (
+                <button
+                  key={appKey}
+                  type="button"
+                  className="desktop-icon-button desktop-folder-app-button"
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, { source: 'folder', folderId: openFolder.id, appKey })}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleFolderDrop(event, openFolder.id, appKey)}
+                  onClick={() => openDesktopWindow(appKey)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeDesktopMenus();
+                    setAppContextMenu({ x: event.clientX, y: event.clientY, appKey, source: 'folder', folderId: openFolder.id });
+                  }}
+                >
+                  <span className={`desktop-app-icon-shell desktop-app-icon-${appKey}`}>
+                    <DesktopAppIcon appKey={appKey} />
+                  </span>
+                  <strong>{app.label}</strong>
+                </button>
+              );
+            }) : (
+              <div className="desktop-folder-empty">将组件拖到这里</div>
+            )}
+          </div>
+        </section>
+      </div>,
+      document.body,
+    ) : null}
+
+    {appContextMenu ? createPortal(
       <>
         <div
           className="context-menu-overlay"
-          onClick={() => setDesktopContextMenu(null)}
-          onContextMenu={(e) => { e.preventDefault(); setDesktopContextMenu(null); }}
+          onClick={() => setAppContextMenu(null)}
+          onContextMenu={(event) => { event.preventDefault(); setAppContextMenu(null); }}
         />
         <div
           className="context-menu"
-          style={{ left: desktopContextMenu!.x, top: desktopContextMenu!.y }}
+          style={{ left: appContextMenu.x, top: appContextMenu.y }}
           role="menu"
         >
           <button
             type="button"
             role="menuitem"
             onClick={() => {
-              const { appKey } = desktopContextMenu!;
-              setDesktopContextMenu(null);
+              const { appKey } = appContextMenu;
+              setAppContextMenu(null);
+              setIsLaunchpadOpen(false);
               openDesktopWindow(appKey);
             }}
           >
             打开
           </button>
+          {appContextMenu.source === 'launchpad' ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={hasDesktopApp(desktopLayout, appContextMenu.appKey)}
+              onClick={() => {
+                const { appKey } = appContextMenu;
+                setAppContextMenu(null);
+                sendAppToDesktop(appKey);
+              }}
+            >
+              发送到桌面
+            </button>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              className="danger-text"
+              onClick={() => {
+                const { appKey } = appContextMenu;
+                setAppContextMenu(null);
+                deleteAppFromDesktop(appKey);
+              }}
+            >
+              删除
+            </button>
+          )}
         </div>
       </>,
+      document.body,
+    ) : null}
+
+    {folderContextMenu ? createPortal(
+      <>
+        <div
+          className="context-menu-overlay"
+          onClick={() => setFolderContextMenu(null)}
+          onContextMenu={(event) => { event.preventDefault(); setFolderContextMenu(null); }}
+        />
+        <div
+          className="context-menu"
+          style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpenFolderId(folderContextMenu.folderId);
+              setFolderContextMenu(null);
+            }}
+          >
+            打开
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const folder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === folderContextMenu.folderId);
+              setRenameFolderDialog({ folderId: folderContextMenu.folderId, name: folder?.name ?? '文件夹' });
+              setFolderContextMenu(null);
+            }}
+          >
+            重命名
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger-text"
+            onClick={() => {
+              const { folderId } = folderContextMenu;
+              setFolderContextMenu(null);
+              deleteFolder(folderId);
+            }}
+          >
+            删除文件夹
+          </button>
+        </div>
+      </>,
+      document.body,
+    ) : null}
+
+    {surfaceContextMenu ? createPortal(
+      <>
+        <div
+          className="context-menu-overlay"
+          onClick={() => setSurfaceContextMenu(null)}
+          onContextMenu={(event) => { event.preventDefault(); setSurfaceContextMenu(null); }}
+        />
+        <div
+          className="context-menu"
+          style={{ left: surfaceContextMenu.x, top: surfaceContextMenu.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setSurfaceContextMenu(null);
+              createFolder();
+            }}
+          >
+            新建文件夹
+          </button>
+          <div className="context-menu-item-has-submenu">
+            <button type="button" role="menuitem" aria-haspopup="menu">
+              排序
+            </button>
+            <div className="context-submenu" role="menu" aria-label="桌面排序方式">
+              {desktopSortOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={desktopLayout.sortMode === option.value}
+                  className={desktopLayout.sortMode === option.value ? 'checked' : ''}
+                  onClick={() => {
+                    setSurfaceContextMenu(null);
+                    handleSortModeChange(option.value);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </>,
+      document.body,
+    ) : null}
+
+    {renameFolderDialog ? createPortal(
+      <div className="notepad-modal-overlay" role="presentation" onClick={() => setRenameFolderDialog(null)}>
+        <form
+          className="notepad-modal desktop-folder-rename-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="desktop-folder-rename-title"
+          onClick={(event) => event.stopPropagation()}
+          onSubmit={submitFolderRename}
+        >
+          <div id="desktop-folder-rename-title" className="notepad-modal-title">重命名文件夹</div>
+          <input
+            className="notepad-modal-input"
+            value={renameFolderDialog.name}
+            maxLength={40}
+            autoFocus
+            onChange={(event) => setRenameFolderDialog({ ...renameFolderDialog, name: event.target.value })}
+          />
+          <div className="notepad-modal-actions">
+            <button type="button" className="notepad-modal-btn" onClick={() => setRenameFolderDialog(null)}>取消</button>
+            <button type="submit" className="notepad-modal-btn primary">保存</button>
+          </div>
+        </form>
+      </div>,
       document.body,
     ) : null}
 

@@ -40,6 +40,10 @@
     filter 140ms ease;
 }
 
+.dock-separator {
+  height: 32px;
+}
+
 .dock-app-icon .desktop-app-icon {
   width: 100%;
   height: 100%;
@@ -222,6 +226,10 @@
   width: 42px;
   height: 42px;
   border-radius: 9px;
+}
+
+.dock-separator {
+  height: 28px;
 }
 
 .dock-app-icon .desktop-app-icon {
