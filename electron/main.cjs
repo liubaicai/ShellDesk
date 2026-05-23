@@ -8,6 +8,7 @@ const path = require('node:path');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const Redis = require('ioredis');
+const { Client: PostgresClient } = require('pg');
 const { WebSocket, WebSocketServer } = require('ws');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -1636,6 +1637,13 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
     if (entry.connectionId === connectionId) {
       activeMysqlConnections.delete(key);
       entry.connection.end().catch(() => {});
+    }
+  }
+
+  for (const [key, entry] of activePostgresConnections) {
+    if (entry.connectionId === connectionId) {
+      activePostgresConnections.delete(key);
+      entry.client.end().catch(() => {});
     }
   }
 
@@ -3774,6 +3782,166 @@ registerIpcHandler('connection:mysql-update-cell', async (_event, connectionId, 
   const [result] = await entry.connection.query(sql, params);
 
   return { affectedRows: result.affectedRows };
+});
+
+// ─── PostgreSQL over SSH tunnel ─────────────────────────────────────────────
+
+const activePostgresConnections = new Map();
+
+function getPostgresKey(connectionId, postgresId) {
+  return `${connectionId}::${postgresId}`;
+}
+
+function getActivePostgresConnection(connectionId, rawPostgresId) {
+  const postgresId = readBoundedString(rawPostgresId, 'PostgreSQL 连接 ID', 128);
+  const key = getPostgresKey(connectionId, postgresId);
+  const entry = activePostgresConnections.get(key);
+
+  if (!entry) {
+    throw new Error('PostgreSQL 连接已断开。');
+  }
+
+  return { postgresId, entry };
+}
+
+registerIpcHandler('connection:postgres-connect', async (_event, connectionId, rawConfig) => {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (!isPlainObject(rawConfig)) {
+    throw new Error('PostgreSQL 连接配置无效。');
+  }
+
+  const postgresHost = readBoundedString(rawConfig.host || '127.0.0.1', 'PostgreSQL 主机', 256);
+  const postgresPort = readIntegerInRange(rawConfig.port, 'PostgreSQL 端口', 1, 65535, 5432);
+  const postgresUser = readBoundedString(rawConfig.user || 'postgres', 'PostgreSQL 用户名', 128);
+  const postgresPassword = typeof rawConfig.password === 'string' ? rawConfig.password : '';
+  const postgresDatabase = readBoundedString(rawConfig.database || 'postgres', 'PostgreSQL 数据库', 256);
+  const postgresId = readBoundedString(rawConfig.postgresId || crypto.randomUUID(), 'PostgreSQL 连接 ID', 128);
+  const key = getPostgresKey(connectionId, postgresId);
+  const existing = activePostgresConnections.get(key);
+
+  if (existing) {
+    try {
+      await existing.client.query('SELECT 1');
+      return { postgresId, alreadyConnected: true };
+    } catch {
+      activePostgresConnections.delete(key);
+      existing.client.end().catch(() => {});
+    }
+  }
+
+  const stream = await forwardOut(activeConnection.client, postgresHost, postgresPort);
+  const client = new PostgresClient({
+    host: postgresHost,
+    port: postgresPort,
+    user: postgresUser,
+    password: postgresPassword,
+    database: postgresDatabase,
+    stream,
+    connectionTimeoutMillis: 15000,
+  });
+
+  await client.connect();
+  activePostgresConnections.set(key, { client, connectionId, postgresId });
+
+  return { postgresId };
+});
+
+registerIpcHandler('connection:postgres-disconnect', async (_event, connectionId, rawPostgresId) => {
+  const postgresId = readBoundedString(rawPostgresId, 'PostgreSQL 连接 ID', 128);
+  const key = getPostgresKey(connectionId, postgresId);
+  const entry = activePostgresConnections.get(key);
+
+  if (entry) {
+    activePostgresConnections.delete(key);
+    await entry.client.end().catch(() => {});
+  }
+
+  return true;
+});
+
+registerIpcHandler('connection:postgres-databases', async (_event, connectionId, rawPostgresId) => {
+  const { entry } = getActivePostgresConnection(connectionId, rawPostgresId);
+  const result = await entry.client.query(
+    'SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname',
+  );
+
+  return result.rows.map((row) => row.datname);
+});
+
+registerIpcHandler('connection:postgres-schemas', async (_event, connectionId, rawPostgresId) => {
+  const { entry } = getActivePostgresConnection(connectionId, rawPostgresId);
+  const result = await entry.client.query(
+    "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name",
+  );
+
+  return result.rows.map((row) => row.schema_name);
+});
+
+registerIpcHandler('connection:postgres-tables', async (_event, connectionId, rawPostgresId, rawSchema) => {
+  const schema = readBoundedString(rawSchema, 'Schema 名称', 256);
+  const { entry } = getActivePostgresConnection(connectionId, rawPostgresId);
+  const result = await entry.client.query(
+    'SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name',
+    [schema],
+  );
+
+  return result.rows.map((row) => ({
+    schema: row.table_schema,
+    name: row.table_name,
+    type: row.table_type,
+  }));
+});
+
+registerIpcHandler('connection:postgres-columns', async (_event, connectionId, rawPostgresId, rawSchema, rawTable) => {
+  const schema = readBoundedString(rawSchema, 'Schema 名称', 256);
+  const table = readBoundedString(rawTable, '表名', 256);
+  const { entry } = getActivePostgresConnection(connectionId, rawPostgresId);
+  const result = await entry.client.query(
+    `
+SELECT
+  c.column_name,
+  c.data_type,
+  c.is_nullable,
+  c.column_default,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+      AND tc.table_name = kcu.table_name
+    WHERE tc.constraint_type = 'PRIMARY KEY'
+      AND tc.table_schema = c.table_schema
+      AND tc.table_name = c.table_name
+      AND kcu.column_name = c.column_name
+  ) AS is_primary_key
+FROM information_schema.columns c
+WHERE c.table_schema = $1 AND c.table_name = $2
+ORDER BY c.ordinal_position
+`,
+    [schema, table],
+  );
+
+  return result.rows.map((row) => ({
+    name: row.column_name,
+    dataType: row.data_type,
+    nullable: row.is_nullable === 'YES',
+    defaultValue: row.column_default,
+    isPrimaryKey: Boolean(row.is_primary_key),
+  }));
+});
+
+registerIpcHandler('connection:postgres-query', async (_event, connectionId, rawPostgresId, rawSql) => {
+  const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
+  const { entry } = getActivePostgresConnection(connectionId, rawPostgresId);
+  const result = await entry.client.query(sql);
+
+  return {
+    columns: result.fields.map((field) => field.name),
+    rows: result.rows,
+    rowCount: result.rowCount ?? undefined,
+  };
 });
 
 // ─── Redis over SSH tunnel ──────────────────────────────────────────────────
