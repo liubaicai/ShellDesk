@@ -46,6 +46,33 @@ const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
 
 type DesktopAppKey = (typeof desktopApps)[number]['key'];
 
+const desktopAppIconSources: Record<DesktopAppKey, string> = {
+  files: new URL('./assets/desktop-icons/files.png', import.meta.url).href,
+  terminal: new URL('./assets/desktop-icons/terminal.png', import.meta.url).href,
+  notepad: new URL('./assets/desktop-icons/notepad.png', import.meta.url).href,
+  browser: new URL('./assets/desktop-icons/browser.png', import.meta.url).href,
+  vnc: new URL('./assets/desktop-icons/vnc.png', import.meta.url).href,
+  'log-viewer': new URL('./assets/desktop-icons/log-viewer.png', import.meta.url).href,
+  monitor: new URL('./assets/desktop-icons/monitor.png', import.meta.url).href,
+  mysql: new URL('./assets/desktop-icons/mysql.png', import.meta.url).href,
+  redis: new URL('./assets/desktop-icons/redis.png', import.meta.url).href,
+  'service-manager': new URL('./assets/desktop-icons/service-manager.png', import.meta.url).href,
+  'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
+  'port-manager': new URL('./assets/desktop-icons/port-manager.png', import.meta.url).href,
+  'firewall-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
+  'network-diagnostics': new URL('./assets/desktop-icons/network-diagnostics.png', import.meta.url).href,
+  'disk-analyzer': new URL('./assets/desktop-icons/disk-analyzer.png', import.meta.url).href,
+  'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
+  'scheduled-tasks': new URL('./assets/desktop-icons/scheduled-tasks.png', import.meta.url).href,
+  postgres: new URL('./assets/desktop-icons/postgres.png', import.meta.url).href,
+  'security-audit': new URL('./assets/desktop-icons/security-audit.png', import.meta.url).href,
+  'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
+  'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
+  procmanager: new URL('./assets/desktop-icons/procmanager.png', import.meta.url).href,
+  settings: new URL('./assets/desktop-icons/settings.png', import.meta.url).href,
+  sqlite: new URL('./assets/desktop-icons/sqlite.png', import.meta.url).href,
+};
+
 interface RemoteDesktopProps {
   connection: RemoteConnectionInfo;
   settings: ShellDeskAppSettings;
@@ -191,6 +218,20 @@ function getAppInfo(appKey: DesktopAppKey) {
 }
 
 function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
+  const iconSource = desktopAppIconSources[appKey];
+
+  if (iconSource) {
+    return (
+      <img
+        className="desktop-app-icon"
+        src={iconSource}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+    );
+  }
+
   const iconProps = {
     className: 'desktop-app-icon',
     viewBox: '0 0 24 24',

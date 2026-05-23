@@ -31,26 +31,18 @@
 .dock-app-icon {
   width: 100%;
   height: 100%;
-  border: 1px solid rgba(214, 226, 240, 0.16);
+  border: 0;
   border-radius: inherit;
-  background:
-    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.18), transparent 34%),
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--app-accent) 80%, #263244 20%),
-      color-mix(in srgb, var(--app-accent-2) 88%, #111827 12%)
-    );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 10px 22px rgba(0, 0, 0, 0.2);
+  background: transparent;
+  box-shadow: none;
   transition:
     box-shadow 140ms ease,
     filter 140ms ease;
 }
 
 .dock-app-icon .desktop-app-icon {
-  width: 23px;
-  height: 23px;
+  width: 100%;
+  height: 100%;
 }
 
 .mac-dock button.open::after {
@@ -83,9 +75,7 @@
 
 .mac-dock button.active .dock-app-icon,
 .mac-dock button:hover .dock-app-icon {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 14px 30px rgba(0, 0, 0, 0.26);
+  box-shadow: none;
   filter: saturate(1.02) brightness(1.04);
 }
 
@@ -235,6 +225,6 @@
 }
 
 .dock-app-icon .desktop-app-icon {
-  width: 21px;
-  height: 21px;
+  width: 100%;
+  height: 100%;
 }

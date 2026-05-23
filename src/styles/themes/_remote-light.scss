@@ -468,16 +468,12 @@
 [data-theme="light"] .desktop-app-icon-shell,
 [data-theme="light"] .dock-app-icon,
 [data-theme="light"] .desktop-title-icon {
-  border-color: rgba(255, 255, 255, 0.46);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 10px 22px rgba(79, 102, 136, 0.16);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 [data-theme="light"] .desktop-title-icon {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 6px 14px rgba(79, 102, 136, 0.12);
+  box-shadow: none;
 }
 
 [data-theme="light"] .mac-dock button.minimized::after {
