@@ -20,9 +20,12 @@ const maxPrivateKeyBytes = 1024 * 1024;
 const maxRemoteTextFileBytes = 5 * 1024 * 1024;
 const maxRemoteTextWriteBytes = 10 * 1024 * 1024;
 const maxVaultBytes = 25 * 1024 * 1024;
+const maxConfigStoreBytes = 25 * 1024 * 1024;
 const maxDesktopWallpaperBytes = 5 * 1024 * 1024;
 const maxDesktopWallpaperDataUrlLength = Math.ceil(maxDesktopWallpaperBytes * 1.4) + 128;
+const configFileName = 'config.json';
 const vaultFileName = 'vault.json';
+const configStoreFormat = 'shelldesk-config-store';
 const vaultFormat = 'shelldesk-vault';
 const vaultSchemaVersion = 1;
 const bookmarkScopePrefix = 'shelldesk:browser-bookmarks:';
@@ -389,13 +392,23 @@ function getVaultFilePath() {
   return path.join(app.getPath('userData'), vaultFileName);
 }
 
+function getConfigFilePath() {
+  return path.join(app.getPath('userData'), configFileName);
+}
+
 function getVaultStorageInfo() {
   const protectedStorage = safeStorage.isEncryptionAvailable();
+  const configPath = getConfigFilePath();
+  const vaultPath = getVaultFilePath();
 
   return {
-    path: getVaultFilePath(),
+    path: path.dirname(configPath),
+    configPath,
+    vaultPath,
     protected: protectedStorage,
-    protectionLabel: protectedStorage ? '已使用系统凭据加密保存' : '当前系统不支持加密，改为本地文件权限保护',
+    protectionLabel: protectedStorage
+      ? '普通配置写入 config.json，密码和私钥已使用系统凭据加密保存到 vault.json'
+      : '普通配置写入 config.json，当前系统不支持加密，敏感 vault 改为本地文件权限保护',
   };
 }
 
@@ -703,7 +716,50 @@ function createEmptyVault() {
     sshKeys: [],
     settings: createDefaultSettings(),
     browserBookmarks: [],
+    preferences: {},
   };
+}
+
+function readPreferenceStore(rawPreferences) {
+  if (!isPlainObject(rawPreferences)) {
+    return {};
+  }
+
+  const preferences = {};
+
+  for (const [key, value] of Object.entries(rawPreferences)) {
+    if (typeof key !== 'string' || key.length > 255 || !/^[a-z0-9:._%-]+$/i.test(key)) {
+      continue;
+    }
+
+    try {
+      preferences[key] = readPreferenceValue(value);
+    } catch {
+      // Ignore one malformed preference without discarding the whole config.
+    }
+  }
+
+  return preferences;
+}
+
+function readPreferenceKey(rawKey) {
+  const key = readBoundedString(rawKey, '偏好设置键', 255);
+
+  if (!/^[a-z0-9:._%-]+$/i.test(key)) {
+    throw new Error('偏好设置键无效。');
+  }
+
+  return key;
+}
+
+function readPreferenceValue(rawValue) {
+  const serialized = JSON.stringify(rawValue);
+
+  if (serialized === undefined || Buffer.byteLength(serialized, 'utf8') > 64 * 1024) {
+    throw new Error('偏好设置内容无效或超过大小限制。');
+  }
+
+  return JSON.parse(serialized);
 }
 
 function readVaultPayload(rawPayload) {
@@ -719,7 +775,194 @@ function readVaultPayload(rawPayload) {
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
       ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
       : [],
+    preferences: readPreferenceStore(rawPayload.preferences),
   };
+}
+
+function toConfigHostRecord(host) {
+  const { password: _password, passphrase: _passphrase, ...configHost } = host;
+  return configHost;
+}
+
+function toConfigKeyRecord(key) {
+  const { privateKey: _privateKey, passphrase: _passphrase, ...configKey } = key;
+  return configKey;
+}
+
+function createConfigPayload(vault) {
+  return {
+    version: vaultSchemaVersion,
+    hosts: vault.hosts.map((host) => toConfigHostRecord(host)),
+    sshKeys: vault.sshKeys.map((key) => toConfigKeyRecord(key)),
+    settings: vault.settings,
+    browserBookmarks: vault.browserBookmarks,
+    preferences: vault.preferences,
+  };
+}
+
+function createVaultSecretsPayload(vault) {
+  return {
+    version: vaultSchemaVersion,
+    hostSecrets: vault.hosts
+      .map((host) => ({
+        id: host.id,
+        password: host.password,
+        passphrase: host.passphrase,
+      }))
+      .filter((secret) => secret.password || secret.passphrase),
+    sshKeySecrets: vault.sshKeys.map((key) => ({
+      id: key.id,
+      privateKey: key.privateKey,
+      passphrase: key.passphrase,
+    })),
+  };
+}
+
+function readConfigPayload(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('配置数据无效。');
+  }
+
+  return {
+    version: vaultSchemaVersion,
+    hosts: Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : [],
+    sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readStoredKeyRecord(key)) : [],
+    settings: readAppSettings(rawPayload.settings),
+    browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
+      ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
+      : [],
+    preferences: readPreferenceStore(rawPayload.preferences),
+  };
+}
+
+function readPersistedConfigWrapper(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('配置文件格式无效。');
+  }
+
+  if (rawPayload.format === configStoreFormat && rawPayload.version === vaultSchemaVersion) {
+    return readConfigPayload(rawPayload.payload);
+  }
+
+  if ('hosts' in rawPayload || 'sshKeys' in rawPayload || 'settings' in rawPayload || 'browserBookmarks' in rawPayload || 'preferences' in rawPayload) {
+    return readConfigPayload(rawPayload);
+  }
+
+  throw new Error('配置文件格式不受支持。');
+}
+
+function readHostSecretRecord(rawSecret) {
+  if (!isPlainObject(rawSecret)) {
+    throw new Error('主机凭据无效。');
+  }
+
+  return {
+    id: readBoundedString(rawSecret.id, '主机 ID', 128),
+    password: readBoundedString(rawSecret.password ?? '', 'SSH 密码', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+    passphrase: readBoundedString(rawSecret.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+  };
+}
+
+function readSshKeySecretRecord(rawSecret) {
+  if (!isPlainObject(rawSecret)) {
+    throw new Error('密钥凭据无效。');
+  }
+
+  return {
+    id: readBoundedString(rawSecret.id, '密钥 ID', 128),
+    privateKey: ensurePrivateKeyText(rawSecret.privateKey, 'SSH 私钥内容'),
+    passphrase: readBoundedString(rawSecret.passphrase ?? '', 'SSH 密钥口令', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    }),
+  };
+}
+
+function readVaultSecretsPayload(rawPayload) {
+  if (!isPlainObject(rawPayload)) {
+    throw new Error('敏感数据无效。');
+  }
+
+  const rawKeySecrets = Array.isArray(rawPayload.sshKeySecrets)
+    ? rawPayload.sshKeySecrets
+    : Array.isArray(rawPayload.keySecrets)
+      ? rawPayload.keySecrets
+      : [];
+
+  return {
+    version: vaultSchemaVersion,
+    hostSecrets: Array.isArray(rawPayload.hostSecrets)
+      ? rawPayload.hostSecrets.map((secret) => readHostSecretRecord(secret))
+      : [],
+    sshKeySecrets: rawKeySecrets.map((secret) => readSshKeySecretRecord(secret)),
+  };
+}
+
+function isVaultSecretsPayload(rawPayload) {
+  return isPlainObject(rawPayload) && (
+    Array.isArray(rawPayload.hostSecrets) ||
+    Array.isArray(rawPayload.sshKeySecrets) ||
+    Array.isArray(rawPayload.keySecrets)
+  );
+}
+
+function mergeConfigAndSecrets(configPayload, secretsPayload) {
+  const hostSecretsById = new Map(secretsPayload.hostSecrets.map((secret) => [secret.id, secret]));
+  const keySecretsById = new Map(secretsPayload.sshKeySecrets.map((secret) => [secret.id, secret]));
+
+  const hosts = configPayload.hosts.map((host) => {
+    const secret = hostSecretsById.get(host.id);
+
+    return readStoredHostRecord({
+      ...host,
+      password: secret?.password ?? host.password,
+      passphrase: secret?.passphrase ?? host.passphrase,
+    });
+  });
+
+  const sshKeys = configPayload.sshKeys
+    .map((key) => {
+      const secret = keySecretsById.get(key.id);
+
+      if (!secret) {
+        return null;
+      }
+
+      return readVaultKeyRecord({
+        ...key,
+        privateKey: secret.privateKey,
+        passphrase: secret.passphrase,
+      });
+    })
+    .filter(Boolean);
+
+  return readVaultPayload({
+    version: vaultSchemaVersion,
+    hosts,
+    sshKeys,
+    settings: configPayload.settings,
+    browserBookmarks: configPayload.browserBookmarks,
+    preferences: configPayload.preferences,
+  });
+}
+
+function readJsonFile(filePath, maxBytes, label) {
+  const stats = fs.statSync(filePath);
+
+  if (!stats.size || stats.size > maxBytes) {
+    throw new Error(`${label}为空或超过大小限制。`);
+  }
+
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
 function readPersistedVaultWrapper(rawPayload) {
@@ -730,15 +973,31 @@ function readPersistedVaultWrapper(rawPayload) {
   if (rawPayload.protected) {
     const encrypted = readBoundedString(rawPayload.ciphertext, '本地数据密文', 8 * 1024 * 1024, { trim: false });
     const decrypted = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-    return readVaultPayload(JSON.parse(decrypted));
+    return JSON.parse(decrypted);
   }
 
-  return readVaultPayload(rawPayload.payload);
+  return rawPayload.payload;
 }
 
-function writeVaultToDisk(vault) {
+function writeConfigToDisk(vault) {
+  const configPath = getConfigFilePath();
+  const wrapper = {
+    format: configStoreFormat,
+    version: vaultSchemaVersion,
+    updatedAt: new Date().toISOString(),
+    payload: createConfigPayload(vault),
+  };
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(wrapper, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+}
+
+function writeVaultSecretsToDisk(vault) {
   const vaultPath = getVaultFilePath();
-  const payloadJson = JSON.stringify(vault);
+  const payloadJson = JSON.stringify(createVaultSecretsPayload(vault));
   const storageInfo = getVaultStorageInfo();
   const wrapper = storageInfo.protected
     ? {
@@ -761,32 +1020,71 @@ function writeVaultToDisk(vault) {
   });
 }
 
+function writeVaultFiles(vault) {
+  writeConfigToDisk(vault);
+  writeVaultSecretsToDisk(vault);
+}
+
 function getVault() {
   if (vaultCache) {
     return vaultCache;
   }
 
+  const configPath = getConfigFilePath();
   const vaultPath = getVaultFilePath();
+
+  if (fs.existsSync(configPath)) {
+    const configPayload = readPersistedConfigWrapper(readJsonFile(configPath, maxConfigStoreBytes, '配置文件'));
+    let secretsPayload = readVaultSecretsPayload({});
+    let shouldRewriteVaultFiles = false;
+
+    if (fs.existsSync(vaultPath)) {
+      const persistedPayload = readPersistedVaultWrapper(readJsonFile(vaultPath, maxVaultBytes, '敏感数据文件'));
+      if (isVaultSecretsPayload(persistedPayload)) {
+        secretsPayload = readVaultSecretsPayload(persistedPayload);
+      } else {
+        secretsPayload = readVaultSecretsPayload(createVaultSecretsPayload(readVaultPayload(persistedPayload)));
+        shouldRewriteVaultFiles = true;
+      }
+    }
+
+    vaultCache = mergeConfigAndSecrets(configPayload, secretsPayload);
+
+    if (shouldRewriteVaultFiles) {
+      writeVaultFiles(vaultCache);
+    }
+
+    return vaultCache;
+  }
 
   if (!fs.existsSync(vaultPath)) {
     vaultCache = createEmptyVault();
     return vaultCache;
   }
 
-  const stats = fs.statSync(vaultPath);
+  const persistedPayload = readPersistedVaultWrapper(readJsonFile(vaultPath, maxVaultBytes, '本地数据文件'));
 
-  if (!stats.size || stats.size > maxVaultBytes) {
-    throw new Error('本地数据文件为空或超过大小限制。');
+  if (isVaultSecretsPayload(persistedPayload)) {
+    vaultCache = mergeConfigAndSecrets(readConfigPayload({}), readVaultSecretsPayload(persistedPayload));
+    return vaultCache;
   }
 
-  vaultCache = readPersistedVaultWrapper(JSON.parse(fs.readFileSync(vaultPath, 'utf8')));
+  vaultCache = readVaultPayload(persistedPayload);
+  writeVaultFiles(vaultCache);
   return vaultCache;
 }
 
 function setVault(nextVault) {
+  const previousSecrets = vaultCache ? JSON.stringify(createVaultSecretsPayload(vaultCache)) : '';
   const normalizedVault = readVaultPayload(nextVault);
+  const nextSecrets = JSON.stringify(createVaultSecretsPayload(normalizedVault));
   vaultCache = normalizedVault;
-  writeVaultToDisk(normalizedVault);
+  writeConfigToDisk(normalizedVault);
+
+  if (previousSecrets !== nextSecrets || !fs.existsSync(getVaultFilePath())) {
+    writeVaultSecretsToDisk(normalizedVault);
+  }
+
   return normalizedVault;
 }
 
@@ -858,6 +1156,34 @@ function createVaultSnapshot(vault = getVault()) {
     browserBookmarks: vault.browserBookmarks,
     storage: getVaultStorageInfo(),
   };
+}
+
+function getConfigPreference(rawKey) {
+  const key = readPreferenceKey(rawKey);
+  return getVault().preferences[key] ?? null;
+}
+
+function setConfigPreference(rawKey, rawValue) {
+  const key = readPreferenceKey(rawKey);
+  const value = readPreferenceValue(rawValue);
+  const currentVault = getVault();
+  const nextPreferences = { ...currentVault.preferences };
+
+  if (value === null) {
+    delete nextPreferences[key];
+  } else {
+    nextPreferences[key] = value;
+  }
+
+  const nextVault = readVaultPayload({
+    ...currentVault,
+    preferences: nextPreferences,
+  });
+
+  vaultCache = nextVault;
+  writeConfigToDisk(nextVault);
+  notifyVaultChanged({ kind: 'preference', key });
+  return nextVault.preferences[key] ?? null;
 }
 
 function upsertVaultCollections(rawPayload) {
@@ -1179,7 +1505,13 @@ function readLegacyBookmarkCollections(rawCollections) {
 function migrateLegacyData(rawPayload) {
   const currentVault = getVault();
 
-  if (currentVault.hosts.length || currentVault.sshKeys.length || currentVault.browserBookmarks.length) {
+  if (
+    currentVault.hosts.length ||
+    currentVault.sshKeys.length ||
+    currentVault.browserBookmarks.length ||
+    fs.existsSync(getConfigFilePath()) ||
+    fs.existsSync(getVaultFilePath())
+  ) {
     return createVaultSnapshot(currentVault);
   }
 
@@ -2815,6 +3147,10 @@ registerIpcHandler('logs:save-entries', async (_event, rawEntries) => {
   return readLogEntries();
 });
 
+registerIpcHandler('preferences:get', async (_event, rawKey) => getConfigPreference(rawKey));
+
+registerIpcHandler('preferences:set', async (_event, rawKey, rawValue) => setConfigPreference(rawKey, rawValue));
+
 registerIpcHandler('vault:save-collections', async (_event, rawPayload) => upsertVaultCollections(rawPayload));
 
 registerIpcHandler('vault:migrate-legacy-data', async (_event, rawPayload) => migrateLegacyData(rawPayload));
@@ -2842,11 +3178,13 @@ registerIpcHandler('vault:save-bookmarks', async (_event, rawScope, rawBookmarks
     nextCollection,
     ...currentVault.browserBookmarks.filter((collection) => collection.scope !== scope),
   ].filter((collection) => collection.bookmarks.length);
-  const nextVault = setVault({
+  const nextVault = readVaultPayload({
     ...currentVault,
     browserBookmarks: nextBookmarkCollections,
   });
 
+  vaultCache = nextVault;
+  writeConfigToDisk(nextVault);
   notifyVaultChanged({ kind: 'bookmarks', scope });
   return nextVault.browserBookmarks.find((collection) => collection.scope === scope)?.bookmarks ?? [];
 });

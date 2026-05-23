@@ -52,8 +52,8 @@ interface VncStoredTarget {
 
 const defaultVncPort = 5900;
 const maxDiagnostics = 80;
-const vncInspectorStorageKey = 'shelldesk:vnc:diagnostic-inspector:v1';
-const vncTargetStorageKey = 'shelldesk:vnc:last-target:v1';
+const vncInspectorPreferenceKey = 'vnc.diagnostic-inspector.v1';
+const vncTargetPreferenceKey = 'vnc.last-target.v1';
 const defaultVncStoredTarget: VncStoredTarget = {
   host: '127.0.0.1',
   port: defaultVncPort,
@@ -120,43 +120,30 @@ function isStoredVncTarget(value: unknown): value is VncStoredTarget {
   );
 }
 
-function readStoredVncTarget() {
+async function readStoredVncTarget() {
   try {
-    const rawTarget = localStorage.getItem(vncTargetStorageKey);
+    const storedTarget = await window.guiSSH?.preferences?.get(vncTargetPreferenceKey);
 
-    if (!rawTarget) {
-      return defaultVncStoredTarget;
-    }
-
-    const storedTarget: unknown = JSON.parse(rawTarget);
     return isStoredVncTarget(storedTarget) ? storedTarget : defaultVncStoredTarget;
   } catch {
     return defaultVncStoredTarget;
   }
 }
 
-function writeStoredVncTarget(target: VncStoredTarget) {
-  try {
-    localStorage.setItem(vncTargetStorageKey, JSON.stringify(target));
-  } catch {
-    // Target recall is useful UI state, not a connection blocker.
-  }
+async function writeStoredVncTarget(target: VncStoredTarget) {
+  await window.guiSSH?.preferences?.set(vncTargetPreferenceKey, target).catch(() => undefined);
 }
 
-function readVncInspectorOpen() {
+async function readVncInspectorOpen() {
   try {
-    return localStorage.getItem(vncInspectorStorageKey) !== 'closed';
+    return await window.guiSSH?.preferences?.get(vncInspectorPreferenceKey) !== 'closed';
   } catch {
     return true;
   }
 }
 
-function writeVncInspectorOpen(isOpen: boolean) {
-  try {
-    localStorage.setItem(vncInspectorStorageKey, isOpen ? 'open' : 'closed');
-  } catch {
-    // Panel visibility should not block the viewer.
-  }
+async function writeVncInspectorOpen(isOpen: boolean) {
+  await window.guiSSH?.preferences?.set(vncInspectorPreferenceKey, isOpen ? 'open' : 'closed').catch(() => undefined);
 }
 
 function getVncStatusLabel(status: VncStatus) {
@@ -233,7 +220,6 @@ function getFailureCopy(failureKind: VncFailureKind, errorMessage: string) {
 
 function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const api = window.guiSSH;
-  const [storedTarget] = useState(readStoredVncTarget);
   const screenRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -243,14 +229,15 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const viewportRefreshTimersRef = useRef<number[]>([]);
   const disconnectingRef = useRef(false);
   const diagnosticCounterRef = useRef(0);
+  const isInspectorPreferenceReadyRef = useRef(false);
   const [status, setStatus] = useState<VncStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [failureKind, setFailureKind] = useState<VncFailureKind>(null);
-  const [host, setHost] = useState(storedTarget.host);
-  const [port, setPort] = useState(String(storedTarget.port));
-  const [username, setUsername] = useState(storedTarget.username);
+  const [host, setHost] = useState(defaultVncStoredTarget.host);
+  const [port, setPort] = useState(String(defaultVncStoredTarget.port));
+  const [username, setUsername] = useState(defaultVncStoredTarget.username);
   const [password, setPassword] = useState('');
-  const [shared, setShared] = useState(storedTarget.shared);
+  const [shared, setShared] = useState(defaultVncStoredTarget.shared);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewMode, setViewMode] = useState<VncViewMode>('fit');
   const [performanceMode, setPerformanceMode] = useState<VncPerformanceMode>('smooth');
@@ -258,7 +245,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const [connectedAt, setConnectedAt] = useState('');
   const [latencyLabel, setLatencyLabel] = useState('');
   const [diagnostics, setDiagnostics] = useState<VncDiagnosticEntry[]>([]);
-  const [showInspector, setShowInspector] = useState(readVncInspectorOpen);
+  const [showInspector, setShowInspector] = useState(true);
   const [clipboardText, setClipboardText] = useState('');
   const [clipboardNotice, setClipboardNotice] = useState('剪贴板仅在你点击发送或复制时同步。');
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
@@ -274,6 +261,42 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const targetLabel = `${host.trim() || '127.0.0.1'}:${parseVncPort(port)}`;
   const latestDiagnostic = diagnostics[diagnostics.length - 1];
   const failureCopy = getFailureCopy(failureKind, errorMessage);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void readStoredVncTarget().then((target) => {
+      if (disposed) {
+        return;
+      }
+
+      setHost(target.host);
+      setPort(String(target.port));
+      setUsername(target.username);
+      setShared(target.shared);
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void readVncInspectorOpen().then((isOpen) => {
+      if (disposed) {
+        return;
+      }
+
+      setShowInspector(isOpen);
+      isInspectorPreferenceReadyRef.current = true;
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const appendDiagnostic = useCallback((stage: string, detail: string, tone: VncDiagnosticTone = 'info') => {
     diagnosticCounterRef.current += 1;
@@ -388,7 +411,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     const trimmedUsername = username.trim();
     const nextVncId = createVncId();
 
-    writeStoredVncTarget({
+    void writeStoredVncTarget({
       host: targetHost,
       port: targetPort,
       username: trimmedUsername,
@@ -877,7 +900,11 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   }, []);
 
   useEffect(() => {
-    writeVncInspectorOpen(showInspector);
+    if (!isInspectorPreferenceReadyRef.current) {
+      return;
+    }
+
+    void writeVncInspectorOpen(showInspector);
   }, [showInspector]);
 
   useEffect(() => {

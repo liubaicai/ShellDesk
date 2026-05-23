@@ -209,6 +209,8 @@ interface ShellDeskBrowserBookmarkCollection {
 
 interface ShellDeskStorageInfo {
   path: string;
+  configPath: string;
+  vaultPath: string;
   protected: boolean;
   protectionLabel: string;
 }
@@ -594,6 +596,11 @@ interface ShellDeskLogsControls {
   saveEntries: (entries: ShellDeskLogEntry[]) => Promise<ShellDeskLogEntry[]>;
 }
 
+interface ShellDeskPreferenceControls {
+  get: (key: string) => Promise<unknown>;
+  set: (key: string, value: unknown) => Promise<unknown>;
+}
+
 interface ShellDeskTransferProgress {
   type: 'download' | 'upload';
   fileName: string;
@@ -615,7 +622,7 @@ interface ShellDeskEventControls {
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
-  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks'; scope?: string }) => void) => () => void;
+  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference'; scope?: string; key?: string }) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
 }
@@ -627,6 +634,7 @@ interface ShellDeskApi {
   files: ShellDeskFileControls;
   vault: ShellDeskVaultControls;
   logs: ShellDeskLogsControls;
+  preferences: ShellDeskPreferenceControls;
   connections: ShellDeskConnectionControls;
   events: ShellDeskEventControls;
 }

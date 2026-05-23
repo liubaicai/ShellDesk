@@ -816,6 +816,38 @@ function readLegacyBookmarkCollections(): ShellDeskBrowserBookmarkCollection[] {
   }
 }
 
+function shouldTryLegacyMigration(snapshot: ShellDeskVaultSnapshot) {
+  return !snapshot.hosts.length && !snapshot.sshKeys.length && !snapshot.browserBookmarks.length;
+}
+
+function readLegacyVaultPayload() {
+  return {
+    hosts: readStoredHosts(),
+    sshKeys: readStoredSshKeys() as unknown as ShellDeskStoredKeyRecord[],
+    settings: defaultAppSettings,
+    browserBookmarks: readLegacyBookmarkCollections(),
+  };
+}
+
+function hasLegacyCollections(payload: ReturnType<typeof readLegacyVaultPayload>) {
+  return Boolean(payload.hosts.length || payload.sshKeys.length || payload.browserBookmarks.length);
+}
+
+function clearLegacyLocalStorage() {
+  try {
+    window.localStorage.removeItem(hostsStorageKey);
+    window.localStorage.removeItem(keysStorageKey);
+
+    for (const storageKey of Object.keys(window.localStorage)) {
+      if (storageKey.startsWith(bookmarkStorageKeyPrefix)) {
+        window.localStorage.removeItem(storageKey);
+      }
+    }
+  } catch {
+    // Legacy cleanup is best-effort only.
+  }
+}
+
 function validateHostForm(form: HostFormState, keys: SshKey[]) {
   const port = Number(form.port);
   const selectedKey = keys.find((key) => key.id === form.keyId);
@@ -1078,7 +1110,7 @@ function parseQuickConnectCommand(value: string) {
 }
 
 function App() {
-  const [hosts, setHosts] = useState<Host[]>(readStoredHosts);
+  const [hosts, setHosts] = useState<Host[]>(() => (window.guiSSH?.vault ? [] : readStoredHosts()));
   const [sshKeys, setSshKeys] = useState<SshKey[]>([]);
   const [form, setForm] = useState<HostFormState>(emptyHostForm);
   const [keyForm, setKeyForm] = useState<KeyFormState>(emptyKeyForm);
@@ -1123,6 +1155,7 @@ function App() {
     : '';
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
+  const sshKeyById = useMemo(() => new Map(sshKeys.map((key) => [key.id, key])), [sshKeys]);
 
   const hostGroups = useMemo<HostGroup[]>(() => {
     const groups = new Map<string, HostGroup>();
@@ -1146,7 +1179,7 @@ function App() {
     const query = searchQuery.trim().toLowerCase();
 
     return hosts.filter((host) => {
-      const hostKey = sshKeys.find((key) => key.id === host.keyId) ?? null;
+      const hostKey = sshKeyById.get(host.keyId) ?? null;
       const matchesGroup = !activeGroupKey || getHostGroupKey(host) === activeGroupKey;
       const matchesQuery =
         !query ||
@@ -1170,7 +1203,7 @@ function App() {
 
       return matchesGroup && matchesQuery;
     });
-  }, [activeGroupKey, hosts, searchQuery, sshKeys]);
+  }, [activeGroupKey, hosts, searchQuery, sshKeyById]);
 
   const filteredKeys = useMemo(() => {
     const query = keySearchQuery.trim().toLowerCase();
@@ -1186,7 +1219,7 @@ function App() {
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
 
-  const getSelectedSshKey = (host: Pick<Host, 'keyId'>) => sshKeys.find((key) => key.id === host.keyId) ?? null;
+  const getSelectedSshKey = (host: Pick<Host, 'keyId'>) => sshKeyById.get(host.keyId) ?? null;
 
   const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
     const { updateCollections = true } = options;
@@ -1269,14 +1302,16 @@ function App() {
 
     const loadSnapshot = async () => {
       try {
-        const snapshot = !isConnectionWindow
-          ? await vaultControls.migrateLegacyData({
-              hosts: readStoredHosts(),
-              sshKeys: readStoredSshKeys() as unknown as ShellDeskStoredKeyRecord[],
-              settings: defaultAppSettings,
-              browserBookmarks: readLegacyBookmarkCollections(),
-            })
-          : await vaultControls.getSnapshot();
+        let snapshot = await vaultControls.getSnapshot();
+
+        if (!isConnectionWindow && shouldTryLegacyMigration(snapshot)) {
+          const legacyPayload = readLegacyVaultPayload();
+
+          if (hasLegacyCollections(legacyPayload)) {
+            snapshot = await vaultControls.migrateLegacyData(legacyPayload);
+            clearLegacyLocalStorage();
+          }
+        }
 
         if (!disposed) {
           applyVaultSnapshot(snapshot);
@@ -1695,7 +1730,7 @@ function App() {
 
   const updateCredentialAuthMethod = (authMethod: AuthMethod) => {
     setCredentialForm((currentForm) => {
-      const selectedKey = sshKeys.find((key) => key.id === currentForm.keyId) ??
+      const selectedKey = sshKeyById.get(currentForm.keyId) ??
         (credentialHost?.authMethod === 'key' && credentialHost.keyPath ? null : sshKeys[0] ?? null);
 
       return {
@@ -1710,7 +1745,7 @@ function App() {
   };
 
   const updateCredentialKeyId = (keyId: string) => {
-    const selectedKey = sshKeys.find((key) => key.id === keyId) ?? null;
+    const selectedKey = sshKeyById.get(keyId) ?? null;
 
     setCredentialForm((currentForm) => ({
       ...currentForm,
@@ -1753,7 +1788,7 @@ function App() {
   const submitHost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const selectedKey = sshKeys.find((key) => key.id === form.keyId) ?? null;
+    const selectedKey = sshKeyById.get(form.keyId) ?? null;
     const validationError = validateHostForm(form, sshKeys);
 
     if (validationError) {
@@ -1828,7 +1863,7 @@ function App() {
 
     const effectiveAuthMethod = credentials?.authMethod ?? host.authMethod;
     const selectedKey = effectiveAuthMethod === 'key'
-      ? sshKeys.find((key) => key.id === (credentials?.keyId || host.keyId)) ?? null
+      ? sshKeyById.get(credentials?.keyId || host.keyId) ?? null
       : null;
     const shouldUseHostKeyPath = effectiveAuthMethod === 'key' && !selectedKey && Boolean(host.keyPath);
 
@@ -2062,7 +2097,7 @@ function App() {
   };
 
   const credentialSelectedKey = credentialHost
-    ? sshKeys.find((key) => key.id === credentialForm.keyId) ?? null
+    ? sshKeyById.get(credentialForm.keyId) ?? null
     : null;
   const credentialCanUseCurrentKeyFile = Boolean(
     credentialHost?.authMethod === 'key' && credentialHost.keyPath && !credentialForm.keyId,
@@ -2207,7 +2242,9 @@ function App() {
                 </button>
               </div>
 
-              {hostGroups.length ? (
+              {!isVaultReady ? (
+                <div className="empty-inline">正在读取主机分组...</div>
+              ) : hostGroups.length ? (
                 <div className="group-grid group-list">
                   {hostGroups.map((group) => (
                     <button
@@ -2238,7 +2275,13 @@ function App() {
                 </span>
               </div>
 
-              {filteredHosts.length ? (
+              {!isVaultReady ? (
+                <div className="empty-state">
+                  <span>LOADING</span>
+                  <h3>正在读取主机列表</h3>
+                  <p>正在从本地安全库载入已保存的 SSH 主机。</p>
+                </div>
+              ) : filteredHosts.length ? (
                 <div className={`host-grid ${viewMode}`}>
                   {filteredHosts.map((host) => (
                     <article

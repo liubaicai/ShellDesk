@@ -5,8 +5,8 @@ import { getErrorMessage } from './desktopUtils';
 
 const defaultBrowserUrl = 'http://127.0.0.1/';
 const recentVisitLimit = 8;
-const browserRecentStoragePrefix = 'shelldesk:browser-recent:';
-const browserBookmarkBarStoragePrefix = 'shelldesk:browser-bookmark-bar:';
+const browserRecentPreferencePrefix = 'browser.recent.';
+const browserBookmarkBarPreferencePrefix = 'browser.bookmark-bar.';
 
 const loopbackServiceTargets = [
   { label: '开发服务', port: 3000 },
@@ -258,13 +258,17 @@ function isBrowserRecentVisit(value: unknown): value is BrowserRecentVisit {
   );
 }
 
-function getBrowserRecentStorageKey(scope: string) {
-  return `${browserRecentStoragePrefix}${encodeURIComponent(scope)}`;
+function encodePreferenceScope(scope: string) {
+  return encodeURIComponent(scope).replace(/[!'()*~]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
-function readBrowserRecentVisits(scope: string) {
+function getBrowserRecentPreferenceKey(scope: string) {
+  return `${browserRecentPreferencePrefix}${encodePreferenceScope(scope)}`;
+}
+
+async function readBrowserRecentVisits(scope: string) {
   try {
-    const storedVisits = JSON.parse(localStorage.getItem(getBrowserRecentStorageKey(scope)) ?? '[]') as unknown;
+    const storedVisits = await window.guiSSH?.preferences?.get(getBrowserRecentPreferenceKey(scope));
 
     if (!Array.isArray(storedVisits)) {
       return [];
@@ -286,32 +290,24 @@ function readBrowserRecentVisits(scope: string) {
   }
 }
 
-function writeBrowserRecentVisits(scope: string, visits: BrowserRecentVisit[]) {
-  try {
-    localStorage.setItem(getBrowserRecentStorageKey(scope), JSON.stringify(visits));
-  } catch {
-    // Recent visits are helpful UI state, not a connection blocker.
-  }
+async function writeBrowserRecentVisits(scope: string, visits: BrowserRecentVisit[]) {
+  await window.guiSSH?.preferences?.set(getBrowserRecentPreferenceKey(scope), visits).catch(() => undefined);
 }
 
-function getBrowserBookmarkBarStorageKey(scope: string) {
-  return `${browserBookmarkBarStoragePrefix}${encodeURIComponent(scope)}`;
+function getBrowserBookmarkBarPreferenceKey(scope: string) {
+  return `${browserBookmarkBarPreferencePrefix}${encodePreferenceScope(scope)}`;
 }
 
-function readBrowserBookmarkBarOpen(scope: string) {
+async function readBrowserBookmarkBarOpen(scope: string) {
   try {
-    return localStorage.getItem(getBrowserBookmarkBarStorageKey(scope)) !== 'hidden';
+    return await window.guiSSH?.preferences?.get(getBrowserBookmarkBarPreferenceKey(scope)) !== 'hidden';
   } catch {
     return true;
   }
 }
 
-function writeBrowserBookmarkBarOpen(scope: string, isOpen: boolean) {
-  try {
-    localStorage.setItem(getBrowserBookmarkBarStorageKey(scope), isOpen ? 'visible' : 'hidden');
-  } catch {
-    // Visibility preference should not block browser navigation.
-  }
+async function writeBrowserBookmarkBarOpen(scope: string, isOpen: boolean) {
+  await window.guiSSH?.preferences?.set(getBrowserBookmarkBarPreferenceKey(scope), isOpen ? 'visible' : 'hidden').catch(() => undefined);
 }
 
 function getBrowserHostUrl(host: string, port?: number) {
@@ -487,7 +483,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const [canGoForward, setCanGoForward] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
   const [recentVisits, setRecentVisits] = useState<BrowserRecentVisit[]>([]);
-  const [isBookmarkBarOpen, setIsBookmarkBarOpen] = useState(() => readBrowserBookmarkBarOpen(bookmarkScope));
+  const [isBookmarkBarOpen, setIsBookmarkBarOpen] = useState(true);
   const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false);
   const [bookmarkDraft, setBookmarkDraft] = useState<BrowserBookmarkDraft | null>(null);
   const [bookmarkMenu, setBookmarkMenu] = useState<BrowserBookmarkMenuState | null>(null);
@@ -640,12 +636,35 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   }, [bookmarkScope]);
 
   useEffect(() => {
+    let disposed = false;
     areRecentVisitsReadyRef.current = false;
-    setRecentVisits(readBrowserRecentVisits(bookmarkScope));
+
+    void readBrowserRecentVisits(bookmarkScope).then((storedVisits) => {
+      if (disposed) {
+        return;
+      }
+
+      setRecentVisits(storedVisits);
+      areRecentVisitsReadyRef.current = true;
+    });
+
+    return () => {
+      disposed = true;
+    };
   }, [bookmarkScope]);
 
   useEffect(() => {
-    setIsBookmarkBarOpen(readBrowserBookmarkBarOpen(bookmarkScope));
+    let disposed = false;
+
+    void readBrowserBookmarkBarOpen(bookmarkScope).then((isOpen) => {
+      if (!disposed) {
+        setIsBookmarkBarOpen(isOpen);
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
   }, [bookmarkScope]);
 
   useEffect(() => {
@@ -654,7 +673,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
       return;
     }
 
-    writeBrowserRecentVisits(bookmarkScope, recentVisits);
+    void writeBrowserRecentVisits(bookmarkScope, recentVisits);
   }, [bookmarkScope, recentVisits]);
 
   useEffect(() => {
@@ -1027,7 +1046,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const toggleBookmarkBar = () => {
     setIsBookmarkBarOpen((isOpen) => {
       const nextIsOpen = !isOpen;
-      writeBrowserBookmarkBarOpen(bookmarkScope, nextIsOpen);
+      void writeBrowserBookmarkBarOpen(bookmarkScope, nextIsOpen);
       return nextIsOpen;
     });
   };

@@ -721,13 +721,27 @@ function SettingsPage({
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>数据文件路径</strong>
-                      <small>主机、密钥、设置和书签统一保存在主进程本地仓库</small>
+                      <strong>数据目录</strong>
+                      <small>普通配置与敏感 vault 统一放在同一目录，便于后续同步</small>
                     </span>
                     <code className="settings-inline-code">{storageInfo?.path ?? '未就绪'}</code>
                   </div>
+                  <div className="settings-row">
+                    <span>
+                      <strong>普通配置文件</strong>
+                      <small>主机元数据、设置和书签</small>
+                    </span>
+                    <code className="settings-inline-code">{storageInfo?.configPath ?? '未就绪'}</code>
+                  </div>
+                  <div className="settings-row">
+                    <span>
+                      <strong>敏感 vault 文件</strong>
+                      <small>SSH 密码、密钥口令和私钥内容</small>
+                    </span>
+                    <code className="settings-inline-code">{storageInfo?.vaultPath ?? '未就绪'}</code>
+                  </div>
                 </div>
-                <p className="settings-caption">私钥内容不会再以路径引用方式保存在渲染进程，而是复制到本地受保护仓库，并只在主进程解锁使用。</p>
+                <p className="settings-caption">私钥、密码和口令只写入敏感 vault；普通配置文件不包含这些字段，后续可单独作为云同步配置源。</p>
               </section>
             </>
           ) : null}

@@ -1,5 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+let initialVaultSnapshotPromise = ipcRenderer.invoke('vault:get-snapshot');
+let shouldUseInitialVaultSnapshot = true;
+
+initialVaultSnapshotPromise.catch(() => undefined);
+
 function onIpc(channel, callback) {
   const listener = (_event, payload) => callback(payload);
   ipcRenderer.on(channel, listener);
@@ -14,6 +19,16 @@ async function connectHost(host) {
   }
 
   return result.connection;
+}
+
+function getVaultSnapshot() {
+  if (shouldUseInitialVaultSnapshot) {
+    return initialVaultSnapshotPromise.finally(() => {
+      shouldUseInitialVaultSnapshot = false;
+    });
+  }
+
+  return ipcRenderer.invoke('vault:get-snapshot');
 }
 
 contextBridge.exposeInMainWorld('guiSSH', {
@@ -31,7 +46,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     exportConfig: () => ipcRenderer.invoke('config:export'),
   },
   vault: {
-    getSnapshot: () => ipcRenderer.invoke('vault:get-snapshot'),
+    getSnapshot: getVaultSnapshot,
     saveCollections: (payload) => ipcRenderer.invoke('vault:save-collections', payload),
     migrateLegacyData: (payload) => ipcRenderer.invoke('vault:migrate-legacy-data', payload),
     importKeyPair: (payload) => ipcRenderer.invoke('vault:import-key-pair', payload),
@@ -42,6 +57,10 @@ contextBridge.exposeInMainWorld('guiSSH', {
   logs: {
     getEntries: () => ipcRenderer.invoke('logs:get-entries'),
     saveEntries: (entries) => ipcRenderer.invoke('logs:save-entries', entries),
+  },
+  preferences: {
+    get: (key) => ipcRenderer.invoke('preferences:get', key),
+    set: (key, value) => ipcRenderer.invoke('preferences:set', key, value),
   },
   connections: {
     connect: connectHost,
