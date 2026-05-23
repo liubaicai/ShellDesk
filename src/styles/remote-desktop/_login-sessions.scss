@@ -1,0 +1,356 @@
+.login-sessions {
+  --login-bg: #071018;
+  --login-panel: rgba(14, 23, 34, 0.88);
+  --login-border: rgba(148, 170, 204, 0.16);
+  --login-text: #eef4ff;
+  --login-muted: #8ea0b8;
+  --login-muted-strong: #c9d6e7;
+  --login-accent: #70b8ff;
+  --login-danger: #ff8fa3;
+  --login-ok: #75e4aa;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(14, 24, 38, 0.98), rgba(7, 12, 18, 0.98)), var(--login-bg);
+  color: var(--login-text);
+}
+
+.login-toolbar,
+.login-tabs,
+.login-toolbar-actions,
+.login-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-toolbar {
+  min-height: 50px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--login-border);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.login-tabs button,
+.login-toolbar-actions button,
+.login-detail-actions button,
+.login-source-stats button {
+  height: 30px;
+  border: 1px solid var(--login-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--login-muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.login-tabs button:hover,
+.login-tabs button.active,
+.login-toolbar-actions button:hover:not(:disabled),
+.login-detail-actions button:hover:not(:disabled) {
+  border-color: rgba(112, 184, 255, 0.36);
+  background: rgba(112, 184, 255, 0.12);
+  color: var(--login-text);
+}
+
+.login-toolbar-actions button.primary {
+  border-color: rgba(112, 184, 255, 0.36);
+  background: rgba(112, 184, 255, 0.14);
+  color: #e4f2ff;
+}
+
+.login-toolbar-actions button:disabled,
+.login-detail-actions button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.login-toolbar-actions span {
+  color: var(--login-muted);
+  font-size: 11px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.login-alert {
+  margin: 8px 10px 0;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 730;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-alert.danger {
+  border-color: rgba(255, 143, 163, 0.24);
+  background: rgba(255, 143, 163, 0.1);
+  color: var(--login-danger);
+}
+
+.login-alert.info {
+  border-color: rgba(112, 184, 255, 0.2);
+  background: rgba(112, 184, 255, 0.08);
+  color: var(--login-accent);
+}
+
+.login-content {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.login-table-panel,
+.login-detail-panel {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)), var(--login-panel);
+}
+
+.login-table-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--login-border);
+  padding: 8px 10px;
+}
+
+.login-table-head strong {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.login-table-head span {
+  color: var(--login-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.login-table-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.login-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.login-table th,
+.login-table td {
+  border-bottom: 1px solid rgba(148, 170, 204, 0.1);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.login-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: rgba(8, 13, 20, 0.96);
+  color: var(--login-muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.login-table td {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-table tbody tr {
+  cursor: pointer;
+}
+
+.login-table tbody tr:hover td,
+.login-table tbody tr.selected td {
+  background: rgba(112, 184, 255, 0.08);
+}
+
+.login-empty-cell {
+  padding: 30px 12px;
+  color: var(--login-muted);
+  text-align: center;
+}
+
+.login-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.login-source-stats,
+.login-record-detail,
+.login-detail-title {
+  display: grid;
+  gap: 8px;
+}
+
+.login-source-stats h3 {
+  margin: 0;
+  color: var(--login-muted);
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.login-source-stats button {
+  display: flex;
+  height: auto;
+  min-height: 30px;
+  justify-content: space-between;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.login-source-stats button:hover {
+  border-color: rgba(255, 143, 163, 0.28);
+  background: rgba(255, 143, 163, 0.08);
+}
+
+.login-source-stats strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-source-stats span {
+  color: var(--login-danger);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.login-detail-title span {
+  color: var(--login-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.login-detail-title strong {
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-record-detail dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.login-record-detail dl div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.login-record-detail dt,
+.login-record-detail dd {
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.login-record-detail dt {
+  color: var(--login-muted);
+  font-weight: 760;
+}
+
+.login-record-detail dd {
+  overflow-wrap: anywhere;
+  color: var(--login-muted-strong);
+  font-weight: 720;
+}
+
+.login-record-detail pre {
+  min-height: 92px;
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(4, 8, 13, 0.48);
+  color: var(--login-muted-strong);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.login-advice {
+  border: 1px solid rgba(255, 143, 163, 0.2);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 143, 163, 0.08);
+  color: var(--login-muted-strong);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+.login-empty-detail {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  color: var(--login-muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+@media (max-width: 900px) {
+  .login-content {
+    grid-template-columns: 1fr;
+  }
+
+  .login-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+[data-theme="light"] .login-sessions {
+  --login-bg: #f6f8fb;
+  --login-panel: rgba(255, 255, 255, 0.92);
+  --login-border: rgba(78, 96, 126, 0.18);
+  --login-text: #172033;
+  --login-muted: #66748a;
+  --login-muted-strong: #344158;
+  background: linear-gradient(180deg, #f6fbff, #edf3f7);
+}
+
+[data-theme="light"] .login-table th {
+  background: rgba(246, 248, 252, 0.98);
+}
+
+[data-theme="light"] .login-record-detail pre {
+  background: rgba(255, 255, 255, 0.82);
+}

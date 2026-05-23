@@ -155,6 +155,11 @@
   --app-accent-2: #386b72;
 }
 
+.desktop-app-icon-firewall-manager {
+  --app-accent: #b98855;
+  --app-accent-2: #7a4938;
+}
+
 .desktop-app-icon-network-diagnostics {
   --app-accent: #5a9ec8;
   --app-accent-2: #3f587f;
@@ -178,6 +183,21 @@
 .desktop-app-icon-postgres {
   --app-accent: #5d8fbd;
   --app-accent-2: #385b86;
+}
+
+.desktop-app-icon-security-audit {
+  --app-accent: #62a88e;
+  --app-accent-2: #3d6d68;
+}
+
+.desktop-app-icon-login-sessions {
+  --app-accent: #6f9ec8;
+  --app-accent-2: #445f8a;
+}
+
+.desktop-app-icon-api-debugger {
+  --app-accent: #79a95c;
+  --app-accent-2: #4e7139;
 }
 
 .desktop-app-icon-procmanager {

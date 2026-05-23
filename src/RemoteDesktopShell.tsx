@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteLoginSessions, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -27,11 +27,15 @@ const desktopApps = [
   { key: 'service-manager', label: '服务管理', description: 'systemd / Windows Services' },
   { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
   { key: 'port-manager', label: '端口监听', description: '端口占用与连接状态' },
+  { key: 'firewall-manager', label: '防火墙', description: 'ufw / firewalld / Windows Firewall' },
   { key: 'network-diagnostics', label: '网络诊断', description: 'Ping / DNS / HTTP / TCP' },
   { key: 'disk-analyzer', label: '磁盘分析', description: '空间占用与大文件定位' },
   { key: 'package-manager', label: '包管理器', description: '系统软件包查询与更新' },
   { key: 'scheduled-tasks', label: '计划任务', description: 'Cron / systemd timer / Task Scheduler' },
   { key: 'postgres', label: 'PostgreSQL', description: 'PostgreSQL 数据库管理' },
+  { key: 'security-audit', label: '安全巡检', description: 'SSH、端口、登录与权限检查' },
+  { key: 'login-sessions', label: '登录会话', description: '在线用户、成功与失败登录' },
+  { key: 'api-debugger', label: 'API 调试', description: '从远程主机发起 HTTP 请求' },
   { key: 'procmanager', label: '进程管理', description: '进程查看、搜索和终止' },
   { key: 'settings', label: '系统设置', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
   { key: 'sqlite', label: 'SQLite', description: 'SQLite 数据库查看与编辑' },
@@ -115,11 +119,15 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
+  'firewall-manager': { x: 118, y: 48, width: 1080, height: 650 },
   'network-diagnostics': { x: 120, y: 52, width: 1060, height: 640 },
   'disk-analyzer': { x: 110, y: 46, width: 1120, height: 650 },
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
   'scheduled-tasks': { x: 118, y: 50, width: 1080, height: 650 },
   postgres: { x: 100, y: 40, width: 1080, height: 650 },
+  'security-audit': { x: 116, y: 48, width: 1080, height: 650 },
+  'login-sessions': { x: 124, y: 52, width: 1080, height: 640 },
+  'api-debugger': { x: 118, y: 46, width: 1080, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
@@ -321,6 +329,17 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
     );
   }
 
+  if (appKey === 'firewall-manager') {
+    return (
+      <svg {...iconProps}>
+        <path d="M12 3.5 18.75 6v5.3c0 4.05-2.58 7.35-6.75 9.2-4.17-1.85-6.75-5.15-6.75-9.2V6L12 3.5Z" />
+        <path d="M8.5 11.5h7" />
+        <path d="M10 8.75v5.5M14 8.75v5.5" />
+        <path d="M9.25 16.25h5.5" />
+      </svg>
+    );
+  }
+
   if (appKey === 'network-diagnostics') {
     return (
       <svg {...iconProps}>
@@ -376,6 +395,39 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M5.25 10c0 1.52 3.02 2.75 6.75 2.75S18.75 11.52 18.75 10" />
         <path d="M8.25 20.25h7.5" />
         <path d="M9.25 15.75 7.75 19M14.75 15.75 16.25 19" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'security-audit') {
+    return (
+      <svg {...iconProps}>
+        <path d="M12 3.5 18.25 6v5.2c0 3.65-2.32 6.72-6.25 8.45-3.93-1.73-6.25-4.8-6.25-8.45V6L12 3.5Z" />
+        <path d="m8.75 11.8 2.1 2.1 4.4-5" />
+        <path d="M8.5 16.5h7" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'login-sessions') {
+    return (
+      <svg {...iconProps}>
+        <path d="M8.5 10.75a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" />
+        <path d="M3.75 19.25c.5-3.25 2.15-5 4.75-5s4.25 1.75 4.75 5" />
+        <path d="M16 8.5h4.25" />
+        <path d="m18.25 6.5 2 2-2 2" />
+        <path d="M15.5 14.5h4.75" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'api-debugger') {
+    return (
+      <svg {...iconProps}>
+        <path d="m8.25 8-4 4 4 4" />
+        <path d="m15.75 8 4 4-4 4" />
+        <path d="m13.25 5.75-2.5 12.5" />
+        <path d="M7.25 20.25h9.5" />
       </svg>
     );
   }
@@ -902,6 +954,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return <RemotePortManager connectionId={connection.id} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
     }
 
+    if (desktopWindow.appKey === 'firewall-manager') {
+      return <RemoteFirewallManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
     if (desktopWindow.appKey === 'network-diagnostics') {
       return <RemoteNetworkDiagnostics connectionId={connection.id} systemType={connection.host.systemType} />;
     }
@@ -920,6 +976,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'postgres') {
       return <RemotePostgres connectionId={connection.id} />;
+    }
+
+    if (desktopWindow.appKey === 'security-audit') {
+      return <RemoteSecurityAudit connectionId={connection.id} systemType={connection.host.systemType} hostLabel={connection.host.name} />;
+    }
+
+    if (desktopWindow.appKey === 'login-sessions') {
+      return <RemoteLoginSessions connectionId={connection.id} systemType={connection.host.systemType} onOpenSecurityAudit={() => openDesktopWindow('security-audit')} />;
+    }
+
+    if (desktopWindow.appKey === 'api-debugger') {
+      return <RemoteApiDebugger connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {

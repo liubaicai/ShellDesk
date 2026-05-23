@@ -1,7 +1,10 @@
+export { default as RemoteApiDebugger } from './RemoteApiDebugger';
 export { default as RemoteBrowser } from './RemoteBrowser';
 export { default as RemoteContainerManager } from './RemoteContainerManager';
 export { default as RemoteDiskAnalyzer } from './RemoteDiskAnalyzer';
+export { default as RemoteFirewallManager } from './RemoteFirewallManager';
 export { default as RemoteFileExplorer } from './RemoteFileExplorer';
+export { default as RemoteLoginSessions } from './RemoteLoginSessions';
 export { default as RemoteLogViewer } from './RemoteLogViewer';
 export { default as RemoteMonitor } from './RemoteMonitor';
 export { default as RemoteMySQL } from './RemoteMySQL';
@@ -11,6 +14,7 @@ export { default as RemotePackageManager } from './RemotePackageManager';
 export { default as RemotePortManager } from './RemotePortManager';
 export { default as RemotePostgres } from './RemotePostgres';
 export { default as RemoteScheduledTasks } from './RemoteScheduledTasks';
+export { default as RemoteSecurityAudit } from './RemoteSecurityAudit';
 export { default as RemoteServiceManager } from './RemoteServiceManager';
 export { default as RemoteSqlite } from './RemoteSqlite';
 export { default as RemoteNotepad, isTextFile } from './RemoteNotepad';
