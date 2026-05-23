@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteContainerManager, RemoteFileExplorer, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemoteProcessManager, RemoteRedis, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteBrowser, RemoteContainerManager, RemoteFileExplorer, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNotepad, RemotePortManager, RemoteProcessManager, RemoteRedis, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -26,6 +26,7 @@ const desktopApps = [
   { key: 'redis', label: 'Redis', description: 'Redis 数据库管理' },
   { key: 'service-manager', label: '服务管理', description: 'systemd / Windows Services' },
   { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
+  { key: 'port-manager', label: '端口监听', description: '端口占用与连接状态' },
   { key: 'procmanager', label: '进程管理', description: '进程查看、搜索和终止' },
   { key: 'settings', label: '系统设置', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
   { key: 'sqlite', label: 'SQLite', description: 'SQLite 数据库查看与编辑' },
@@ -107,6 +108,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
+  'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
@@ -291,6 +293,19 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M8.5 8.5v8.25M12 8.5v8.25M15.5 8.5v8.25" />
         <path d="M7 5h10v3.5H7V5Z" />
         <path d="M6.25 19h11.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'port-manager') {
+    return (
+      <svg {...iconProps}>
+        <path d="M4.25 7.5h5.25l2.5 4.5h7.75" />
+        <path d="M4.25 16.5h5.25l2.5-4.5" />
+        <circle cx="4.25" cy="7.5" r="1.75" />
+        <circle cx="4.25" cy="16.5" r="1.75" />
+        <circle cx="19.75" cy="12" r="1.75" />
+        <path d="M13.25 7.5h2.75M15.75 16.5h2.25" />
       </svg>
     );
   }
@@ -791,6 +806,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'container-manager') {
       return <RemoteContainerManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'port-manager') {
+      return <RemotePortManager connectionId={connection.id} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {

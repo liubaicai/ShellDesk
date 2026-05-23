@@ -5,6 +5,7 @@ export { default as RemoteLogViewer } from './RemoteLogViewer';
 export { default as RemoteMonitor } from './RemoteMonitor';
 export { default as RemoteMySQL } from './RemoteMySQL';
 export { default as RemoteRedis } from './RemoteRedis';
+export { default as RemotePortManager } from './RemotePortManager';
 export { default as RemoteServiceManager } from './RemoteServiceManager';
 export { default as RemoteSqlite } from './RemoteSqlite';
 export { default as RemoteNotepad, isTextFile } from './RemoteNotepad';
