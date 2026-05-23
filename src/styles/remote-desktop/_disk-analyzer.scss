@@ -1,0 +1,510 @@
+.disk-analyzer {
+  --disk-bg: #081018;
+  --disk-panel: rgba(14, 23, 34, 0.86);
+  --disk-border: rgba(148, 170, 204, 0.16);
+  --disk-text: #eef4ff;
+  --disk-muted: #8ea0b8;
+  --disk-muted-strong: #c9d6e7;
+  --disk-accent: #80d39b;
+  --disk-blue: #70b8ff;
+  --disk-warning: #ffd36b;
+  --disk-danger: #ff8fa3;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(18, 29, 37, 0.98), rgba(7, 12, 18, 0.98)),
+    var(--disk-bg);
+  color: var(--disk-text);
+}
+
+.disk-toolbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--disk-border);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.disk-path-bar,
+.disk-toolbar-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.disk-path-bar {
+  flex: 1 1 auto;
+}
+
+.disk-path-bar input,
+.disk-threshold {
+  height: 30px;
+  min-width: 0;
+  border: 1px solid var(--disk-border);
+  border-radius: 7px;
+  background: rgba(5, 10, 16, 0.38);
+  color: var(--disk-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+  outline: none;
+}
+
+.disk-path-bar input {
+  flex: 1 1 auto;
+  padding: 0 10px;
+}
+
+.disk-threshold {
+  width: 72px;
+  padding: 0 8px;
+}
+
+.disk-path-bar input:focus,
+.disk-threshold:focus {
+  border-color: rgba(128, 211, 155, 0.5);
+  box-shadow: 0 0 0 3px rgba(128, 211, 155, 0.12);
+}
+
+.disk-toolbar button,
+.disk-side button,
+.disk-tabs button,
+.disk-detail-actions button {
+  height: 30px;
+  border: 1px solid var(--disk-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--disk-muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 780;
+}
+
+.disk-toolbar button:hover:not(:disabled),
+.disk-side button:hover,
+.disk-tabs button:hover,
+.disk-detail-actions button:hover:not(:disabled) {
+  border-color: rgba(128, 211, 155, 0.32);
+  background: rgba(128, 211, 155, 0.1);
+  color: var(--disk-text);
+}
+
+.disk-toolbar button.primary,
+.disk-tabs button.active {
+  border-color: rgba(128, 211, 155, 0.34);
+  background: rgba(128, 211, 155, 0.13);
+  color: #e1fbe8;
+}
+
+.disk-toolbar button:disabled,
+.disk-detail-actions button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.disk-alert {
+  margin: 8px 10px 0;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 730;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-alert.danger {
+  border-color: rgba(255, 143, 163, 0.24);
+  background: rgba(255, 143, 163, 0.1);
+  color: var(--disk-danger);
+}
+
+.disk-alert.info {
+  border-color: rgba(112, 184, 255, 0.2);
+  background: rgba(112, 184, 255, 0.08);
+  color: var(--disk-blue);
+}
+
+.disk-mount-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--disk-border);
+  padding: 8px 10px;
+}
+
+.disk-mount-strip button {
+  display: grid;
+  min-width: 190px;
+  gap: 5px;
+  border: 1px solid var(--disk-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.disk-mount-strip button:hover {
+  border-color: rgba(128, 211, 155, 0.28);
+  background: rgba(128, 211, 155, 0.08);
+}
+
+.disk-mount-strip span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.disk-mount-strip strong,
+.disk-mount-strip em,
+.disk-mount-strip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-mount-strip strong {
+  font-size: 12px;
+  font-weight: 840;
+}
+
+.disk-mount-strip em,
+.disk-mount-strip small {
+  color: var(--disk-muted);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 680;
+}
+
+.disk-mount-strip i,
+.disk-size-bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 170, 204, 0.13);
+}
+
+.disk-mount-strip i b,
+.disk-size-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--disk-accent), var(--disk-warning));
+}
+
+.disk-mount-strip mark {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: rgba(128, 211, 155, 0.12);
+  color: var(--disk-accent);
+  font-size: 10px;
+  font-weight: 860;
+}
+
+.disk-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 180px minmax(0, 1fr) 300px;
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.disk-side,
+.disk-main,
+.disk-detail {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--disk-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+    var(--disk-panel);
+}
+
+.disk-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.disk-side-title {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 8px;
+}
+
+.disk-side-title strong {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.disk-side-title span {
+  overflow-wrap: anywhere;
+  color: var(--disk-muted);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.disk-side button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.disk-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.disk-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--disk-border);
+  padding: 8px;
+}
+
+.disk-entry-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.disk-entry-list > button {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 90px 150px;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 0;
+  border-bottom: 1px solid rgba(148, 170, 204, 0.09);
+  padding: 7px 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.disk-entry-list > button:hover,
+.disk-entry-list > button.active {
+  background: rgba(128, 211, 155, 0.08);
+}
+
+.disk-entry-list > button.active {
+  box-shadow: inset 3px 0 0 rgba(128, 211, 155, 0.72);
+}
+
+.disk-entry-type {
+  display: inline-flex;
+  width: 48px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(148, 170, 204, 0.12);
+  color: var(--disk-muted-strong);
+  font-size: 10px;
+  font-weight: 860;
+}
+
+.disk-entry-type.directory {
+  background: rgba(128, 211, 155, 0.12);
+  color: var(--disk-accent);
+}
+
+.disk-entry-type.file {
+  background: rgba(112, 184, 255, 0.12);
+  color: var(--disk-blue);
+}
+
+.disk-entry-name {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.disk-entry-name strong,
+.disk-entry-name small,
+.disk-entry-size {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-entry-name strong {
+  font-size: 12.5px;
+  font-weight: 820;
+}
+
+.disk-entry-name small {
+  color: var(--disk-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.disk-entry-size {
+  color: var(--disk-muted-strong);
+  font-size: 12px;
+  font-weight: 780;
+  text-align: right;
+}
+
+.disk-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.disk-detail-title {
+  display: grid;
+  gap: 4px;
+}
+
+.disk-detail-title span {
+  color: var(--disk-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.disk-detail-title strong {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 860;
+}
+
+.disk-detail dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.disk-detail dl div {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.disk-detail dt {
+  color: var(--disk-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.disk-detail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--disk-muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.disk-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.disk-suggestion {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255, 211, 107, 0.18);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 211, 107, 0.08);
+  color: var(--disk-muted-strong);
+}
+
+.disk-suggestion strong {
+  color: var(--disk-warning);
+  font-size: 12px;
+}
+
+.disk-suggestion p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.disk-empty {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 180px;
+  place-items: center;
+  color: var(--disk-muted);
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.disk-empty.detail {
+  min-height: 100%;
+}
+
+@media (max-width: 1050px) {
+  .disk-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .disk-side {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .disk-toolbar,
+  .disk-path-bar,
+  .disk-toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .disk-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .disk-entry-list > button {
+    grid-template-columns: 54px minmax(0, 1fr) 80px;
+  }
+
+  .disk-size-bar {
+    display: none;
+  }
+}
+
+[data-theme="light"] .disk-analyzer {
+  --disk-bg: #f6f8fb;
+  --disk-panel: rgba(255, 255, 255, 0.92);
+  --disk-border: rgba(78, 96, 126, 0.18);
+  --disk-text: #172033;
+  --disk-muted: #66748a;
+  --disk-muted-strong: #344158;
+  background: linear-gradient(180deg, #f8fbf9, #edf4f0);
+}
+
+[data-theme="light"] .disk-path-bar input,
+[data-theme="light"] .disk-threshold {
+  background: rgba(255, 255, 255, 0.82);
+}

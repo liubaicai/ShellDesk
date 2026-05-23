@@ -18,6 +18,7 @@ import type { RemoteSystemType } from './types';
 interface RemoteFileExplorerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
+  initialPath?: string;
   onOpenFile?: (filePath: string) => void;
   onOpenSqliteFile?: (filePath: string) => void;
   onOpenTerminal?: (directoryPath: string) => void;
@@ -278,10 +279,10 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
-function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
-  const [remotePath, setRemotePath] = useState('.');
-  const [pathDraft, setPathDraft] = useState('.');
+  const [remotePath, setRemotePath] = useState(initialPath || '.');
+  const [pathDraft, setPathDraft] = useState(initialPath || '.');
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileEntries, setFileEntries] = useState<RemoteFileEntry[]>([]);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
@@ -293,7 +294,7 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
   const [showHiddenEntries, setShowHiddenEntries] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [favoritePaths, setFavoritePaths] = useState<string[]>([]);
-  const [navigationHistory, setNavigationHistory] = useState<string[]>(['.']);
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([initialPath || '.']);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingName, setRenamingName] = useState<string | null>(null);
@@ -312,10 +313,23 @@ function RemoteFileExplorer({ connectionId, systemType, onOpenFile, onOpenSqlite
   const newItemInputRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialPathRef = useRef(initialPath || '.');
 
   useEffect(() => {
     setPathDraft(remotePath);
   }, [remotePath]);
+
+  useEffect(() => {
+    if (!initialPath || initialPath === initialPathRef.current) {
+      return;
+    }
+
+    initialPathRef.current = initialPath;
+    setRemotePath(initialPath);
+    setPathDraft(initialPath);
+    setNavigationHistory([initialPath]);
+    setHistoryIndex(0);
+  }, [initialPath]);
 
   useEffect(() => {
     return () => {

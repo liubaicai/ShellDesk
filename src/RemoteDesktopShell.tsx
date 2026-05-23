@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteBrowser, RemoteContainerManager, RemoteFileExplorer, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePortManager, RemoteProcessManager, RemoteRedis, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePortManager, RemoteProcessManager, RemoteRedis, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -28,6 +28,7 @@ const desktopApps = [
   { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
   { key: 'port-manager', label: '端口监听', description: '端口占用与连接状态' },
   { key: 'network-diagnostics', label: '网络诊断', description: 'Ping / DNS / HTTP / TCP' },
+  { key: 'disk-analyzer', label: '磁盘分析', description: '空间占用与大文件定位' },
   { key: 'procmanager', label: '进程管理', description: '进程查看、搜索和终止' },
   { key: 'settings', label: '系统设置', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
   { key: 'sqlite', label: 'SQLite', description: 'SQLite 数据库查看与编辑' },
@@ -71,6 +72,7 @@ interface DesktopWindowState {
   notepadInitialContent?: string;
   notepadInitialTitle?: string;
   processManagerLaunchOptions?: RemoteProcessManagerLaunchOptions;
+  fileExplorerInitialPath?: string;
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -111,6 +113,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
   'network-diagnostics': { x: 120, y: 52, width: 1060, height: 640 },
+  'disk-analyzer': { x: 110, y: 46, width: 1120, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
@@ -325,6 +328,18 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
     );
   }
 
+  if (appKey === 'disk-analyzer') {
+    return (
+      <svg {...iconProps}>
+        <ellipse cx="12" cy="6" rx="6.5" ry="2.75" />
+        <path d="M5.5 6v8.5c0 1.52 2.91 2.75 6.5 2.75s6.5-1.23 6.5-2.75V6" />
+        <path d="M5.5 10.25C5.5 11.77 8.41 13 12 13s6.5-1.23 6.5-2.75" />
+        <path d="M8.5 20h7" />
+        <path d="M15.75 16.75 18.5 20" />
+      </svg>
+    );
+  }
+
   if (appKey === 'procmanager') {
     return (
       <svg {...iconProps}>
@@ -478,6 +493,26 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const openSqliteFile = (filePath: string) => {
     appendDesktopWindow('sqlite', (nextWindow) => {
       nextWindow.notepadInitialPath = filePath;
+    });
+  };
+
+  const openFileManagerAtPath = (directoryPath: string) => {
+    const existingWindow = getTopDesktopWindow(desktopWindows, (desktopWindow) => desktopWindow.appKey === 'files');
+
+    if (existingWindow) {
+      zIndexRef.current += 1;
+      const nextZIndex = zIndexRef.current;
+      setFocusedWindowId(existingWindow.id);
+      setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+        desktopWindow.id === existingWindow.id
+          ? { ...desktopWindow, isMinimized: false, zIndex: nextZIndex, fileExplorerInitialPath: directoryPath }
+          : desktopWindow
+      )));
+      return;
+    }
+
+    appendDesktopWindow('files', (nextWindow) => {
+      nextWindow.fileExplorerInitialPath = directoryPath;
     });
   };
 
@@ -784,7 +819,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} onOpenTerminal={openTerminalAtPath} />;
+      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} initialPath={desktopWindow.fileExplorerInitialPath} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} onOpenTerminal={openTerminalAtPath} />;
     }
 
     if (desktopWindow.appKey === 'notepad') {
@@ -829,6 +864,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'network-diagnostics') {
       return <RemoteNetworkDiagnostics connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'disk-analyzer') {
+      return <RemoteDiskAnalyzer connectionId={connection.id} systemType={connection.host.systemType} onOpenFileManager={openFileManagerAtPath} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {
