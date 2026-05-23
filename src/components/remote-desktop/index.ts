@@ -7,6 +7,7 @@ export { default as RemoteMonitor } from './RemoteMonitor';
 export { default as RemoteMySQL } from './RemoteMySQL';
 export { default as RemoteNetworkDiagnostics } from './RemoteNetworkDiagnostics';
 export { default as RemoteRedis } from './RemoteRedis';
+export { default as RemotePackageManager } from './RemotePackageManager';
 export { default as RemotePortManager } from './RemotePortManager';
 export { default as RemoteServiceManager } from './RemoteServiceManager';
 export { default as RemoteSqlite } from './RemoteSqlite';

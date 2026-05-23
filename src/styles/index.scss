@@ -19,6 +19,7 @@
 @use "./remote-desktop/port-manager" as *;
 @use "./remote-desktop/network-diagnostics" as *;
 @use "./remote-desktop/disk-analyzer" as *;
+@use "./remote-desktop/package-manager" as *;
 @use "./themes/light" as *;
 @use "./remote-desktop/notepad" as *;
 @use "./remote-desktop/mysql" as *;
