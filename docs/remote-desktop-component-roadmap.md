@@ -1,87 +1,89 @@
-# ShellDesk 远程桌面组件优先级建议
+# ShellDesk 远程桌面组件路线图
 
-本文档包含两组设计材料：
+截至 2026-05-24，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
 
-- 现有远程桌面组件的重新设计文档，不受当前已实现功能边界约束。
-- 40 个可扩展远程桌面组件的优先级建议与详细设计文档。
+本文档包含两组材料：
 
-40 个扩展组件的排序综合考虑：
+- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-24`。
+- `remote-desktop-components/`：尚未实现的扩展组件设计文档，当前从 `01` 重新编号到 `27`。
 
-- 与 ShellDesk 图形化 SSH 客户端定位的契合度
-- 用户日常使用频率
-- 对现有 `runCommand`、SFTP、数据库和 VNC IPC 能力的复用程度
-- 实现复杂度与短期收益比例
-- 后续插件化、组件化时的示范价值
+组件排序综合考虑：
 
-## 现有组件重新设计
+- 与 ShellDesk 图形化 SSH 客户端定位的契合度。
+- 用户日常运维、开发和排障的使用频率。
+- 对现有 `runCommand`、SFTP、终端、数据库、VNC、浏览器和窗口系统能力的复用程度。
+- 实现复杂度与短期收益比例。
+- 后续插件化、组件化时的示范价值。
 
-下列文档针对当前远程桌面已有应用重新设计，重点讨论它们作为 ShellDesk 基础工作台能力时应该承担的职责、边界和后续开发计划。
+## 已实现与归档组件
 
-| 组件 | 重新设计文档 | 设计重点 |
-| --- | --- | --- |
-| 终端 | [终端组件重设计](./remote-desktop-existing-components/01-terminal-redesign.md) | 多会话、分屏、输出检索、与其他工具协作 |
-| 文件管理器 | [文件管理器组件重设计](./remote-desktop-existing-components/02-file-explorer-redesign.md) | 导航、传输、批量操作、打开方式入口 |
-| 浏览器 | [浏览器组件重设计](./remote-desktop-existing-components/03-browser-redesign.md) | 远程网络上下文、书签、错误诊断、安全边界 |
-| 记事本 | [记事本组件重设计](./remote-desktop-existing-components/04-notepad-redesign.md) | 多文件编辑、保存安全、冲突处理、diff |
-| VNC Viewer | [VNC Viewer 组件重设计](./remote-desktop-existing-components/05-vnc-viewer-redesign.md) | 连接诊断、输入控制、缩放、性能模式 |
-| 系统监视器 | [系统监视器组件重设计](./remote-desktop-existing-components/06-system-monitor-redesign.md) | 健康摘要、趋势、诊断跳转 |
-| MySQL | [MySQL 管理器组件重设计](./remote-desktop-existing-components/07-mysql-redesign.md) | schema 浏览、查询工作区、受控编辑 |
-| Redis | [Redis 管理器组件重设计](./remote-desktop-existing-components/08-redis-redesign.md) | SCAN 浏览、类型化值查看、命令风险 |
-| SQLite | [SQLite 管理器组件重设计](./remote-desktop-existing-components/09-sqlite-redesign.md) | 文件数据库入口、对象树、查询安全 |
-| 进程管理器 | [进程管理器组件重设计](./remote-desktop-existing-components/10-process-manager-redesign.md) | 资源排序、详情、信号操作、组件联动 |
-| 系统设置 | [系统设置组件重设计](./remote-desktop-existing-components/11-system-settings-redesign.md) | 系统配置边界、草稿应用、危险变更提示 |
+下列组件已经作为远程桌面现有能力管理，相关文档集中放在 `remote-desktop-existing-components/`。其中前 11 项偏“已有组件重设计”，后续项为已经从扩展清单中完成并归档的远程工具。
 
-## 推荐优先级
+| 编号 | 组件 | 文档 | 当前设计重点 |
+| --- | --- | --- | --- |
+| 01 | 终端 | [终端组件重设计](./remote-desktop-existing-components/01-terminal-redesign.md) | 多会话、输出检索、终端工具菜单、与文件/记事本协作 |
+| 02 | 文件管理器 | [文件管理器组件重设计](./remote-desktop-existing-components/02-file-explorer-redesign.md) | SFTP 导航、传输、压缩解压、详情与打开方式入口 |
+| 03 | 浏览器 | [浏览器组件重设计](./remote-desktop-existing-components/03-browser-redesign.md) | 远程网络上下文、书签、错误诊断、安全边界 |
+| 04 | 记事本 | [记事本组件重设计](./remote-desktop-existing-components/04-notepad-redesign.md) | 远程文本编辑、保存安全、代码高亮、自定义模态 |
+| 05 | VNC Viewer | [VNC Viewer 组件重设计](./remote-desktop-existing-components/05-vnc-viewer-redesign.md) | VNC 探测、代理连接、缩放和输入控制 |
+| 06 | 系统监视器 | [系统监视器组件重设计](./remote-desktop-existing-components/06-system-monitor-redesign.md) | 系统状态、指标摘要、进程跳转 |
+| 07 | MySQL | [MySQL 管理器组件重设计](./remote-desktop-existing-components/07-mysql-redesign.md) | schema 浏览、SQL 查询、结果查看和基础编辑 |
+| 08 | Redis | [Redis 管理器组件重设计](./remote-desktop-existing-components/08-redis-redesign.md) | SCAN 浏览、类型化值查看、命令执行和风险操作 |
+| 09 | SQLite | [SQLite 管理器组件重设计](./remote-desktop-existing-components/09-sqlite-redesign.md) | 远程 SQLite 文件入口、对象树、查询和单元格编辑 |
+| 10 | 进程管理器 | [进程管理器组件重设计](./remote-desktop-existing-components/10-process-manager-redesign.md) | 资源排序、进程详情、信号操作、端口组件联动 |
+| 11 | 系统设置 | [系统设置组件重设计](./remote-desktop-existing-components/11-system-settings-redesign.md) | 系统配置边界、草稿应用、危险变更提示 |
+| 12 | 服务管理器 | [服务管理器](./remote-desktop-existing-components/12-service-manager.md) | systemd / Windows Services 列表、状态、日志和启停操作 |
+| 13 | 日志查看器 | [日志查看器](./remote-desktop-existing-components/13-log-viewer.md) | journalctl、文件日志、Windows Event Log、搜索和分页 |
+| 14 | Docker / Podman 管理器 | [Docker / Podman 管理器](./remote-desktop-existing-components/14-docker-podman-manager.md) | 容器、镜像、卷、网络和常用容器操作 |
+| 15 | 端口与监听管理器 | [端口与监听管理器](./remote-desktop-existing-components/15-port-listener-manager.md) | `ss` / `netstat` / PowerShell 端口列表、进程详情跳转 |
+| 16 | 网络诊断工具箱 | [网络诊断工具箱](./remote-desktop-existing-components/16-network-diagnostics.md) | Ping、DNS、Trace、HTTP、TCP、路由表诊断 |
+| 17 | 磁盘空间分析器 | [磁盘空间分析器](./remote-desktop-existing-components/17-disk-space-analyzer.md) | 目录体积扫描、大文件定位、文件管理器联动 |
+| 18 | 包管理器中心 | [包管理器中心](./remote-desktop-existing-components/18-package-manager-center.md) | apt/yum/dnf/pacman/zypper/winget/choco 检测、搜索和操作命令 |
+| 19 | 计划任务管理器 | [计划任务管理器](./remote-desktop-existing-components/19-scheduled-task-manager.md) | crontab、systemd timer、Windows Task Scheduler |
+| 20 | PostgreSQL 管理器 | [PostgreSQL 管理器](./remote-desktop-existing-components/20-postgresql-manager.md) | PostgreSQL 连接、schema/表浏览、SQL 查询 |
+| 21 | 防火墙管理器 | [防火墙管理器](./remote-desktop-existing-components/21-firewall-manager.md) | ufw、firewalld、Windows Firewall 状态、规则、新增/删除确认 |
+| 22 | 安全巡检面板 | [安全巡检面板](./remote-desktop-existing-components/22-security-audit-panel.md) | SSH 配置、高权限账号、失败登录、端口、敏感权限和报告复制 |
+| 23 | 登录会话查看器 | [登录会话查看器](./remote-desktop-existing-components/23-login-session-viewer.md) | 在线用户、成功登录、失败登录、来源聚合和详情复制 |
+| 24 | API 调试器 | [API 调试器](./remote-desktop-existing-components/24-api-debugger.md) | 远程 curl 请求、Header/Body、响应查看、JSON 格式化和历史 |
 
-| 优先级 | 组件 | 简要功能介绍 |
-| --- | --- | --- |
-| 1 | 服务管理器 | 管理 Linux `systemd`、Windows Services 等服务，支持查看状态、启动、停止、重启、开机自启、查看最近日志。 |
-| 2 | 日志查看器 | 聚合 `journalctl`、`/var/log/*`、Nginx/Apache/App 日志，支持实时 tail、搜索、过滤、错误高亮和快速定位。 |
-| 3 | Docker / Podman 管理器 | 管理容器、镜像、卷、网络和 compose 项目，支持查看日志、进入容器、启动停止、删除和拉取镜像。 |
-| 4 | 端口与监听管理器 | 查看远程主机监听端口、占用进程、协议、绑定地址，支持跳转进程详情或终止进程。 |
-| 5 | 网络诊断工具箱 | 图形化封装 ping、traceroute、mtr、nslookup、dig、curl、tcping、speedtest 等常用网络诊断命令。 |
-| 6 | 磁盘空间分析器 | 扫描目录体积，找出大目录、大文件、缓存、日志和构建产物，帮助快速清理磁盘空间。 |
-| 7 | 包管理器中心 | 支持 `apt`、`yum`、`dnf`、`pacman`、`zypper`、`winget`、`choco` 等包管理器的搜索、安装、卸载和升级。 |
-| 8 | 计划任务管理器 | 管理 crontab、systemd timer、Windows Task Scheduler，支持新增、编辑、启停、查看下次执行时间和执行历史。 |
-| 9 | PostgreSQL 管理器 | 连接和管理 PostgreSQL，支持库表浏览、SQL 查询、结果查看、基础编辑和连接配置保存。 |
-| 10 | SSH 隧道管理器 | 管理本地转发、远程转发和动态 SOCKS，支持保存常用隧道配置、启动停止和状态查看。 |
-| 11 | Git 仓库管理器 | 查看远程目录中的 Git 状态、分支、diff、提交记录，支持 fetch、pull、checkout 等轻量维护操作。 |
-| 12 | 代码部署面板 | 将常用部署流程图形化，支持拉代码、构建、重启服务、回滚、查看执行日志和部署历史。 |
-| 13 | 防火墙管理器 | 管理 ufw、firewalld、iptables、nftables、Windows Firewall，支持开放/关闭端口、规则查看和基础校验。 |
-| 14 | Nginx / Apache 管理器 | 查看站点配置、启停/reload 服务、配置测试、虚拟主机编辑、证书路径和访问/错误日志入口。 |
-| 15 | 远程搜索器 | 按文件名、内容、扩展名、大小、修改时间搜索远程文件，结果可直接打开文件或定位目录。 |
-| 16 | 文件差异比较器 | 比较两个远程文件，或比较远程文件与本地缓存版本，适合配置文件变更检查。 |
-| 17 | 备份/同步面板 | 图形化管理 rsync、scp、tar 等备份同步任务，显示备份历史、体积、耗时和执行结果。 |
-| 18 | 命令收藏夹 / Snippet 面板 | 保存常用命令模板，支持变量填充、分类、复制、执行和连接维度的常用命令沉淀。 |
-| 19 | 任务仪表盘 | 将常用命令和检查项变成按钮或卡片，例如清缓存、重启服务、查看状态、拉取代码。 |
-| 20 | 多主机批量执行器 | 对多个主机同时执行命令，实时汇总输出、成功失败状态和耗时，适合批量巡检与维护。 |
-| 21 | 安全巡检面板 | 检查 SSH 配置风险、sudo 用户、弱权限文件、异常开放端口、登录失败记录等安全项。 |
-| 22 | 登录会话查看器 | 汇总 `who`、`w`、`last`、`lastb` 等信息，查看当前登录用户、历史登录、失败登录和来源 IP。 |
-| 23 | 证书管理器 | 查看 TLS 证书有效期、证书链、域名匹配、Nginx/Apache 证书路径和 certbot 状态。 |
-| 24 | 环境变量管理器 | 管理 `.env`、shell profile、systemd service env 等配置，支持敏感字段遮蔽和修改前后对比。 |
-| 25 | JSON / YAML / TOML 编辑器 | 面向远程配置文件的结构化编辑器，支持格式化、语法校验、折叠、搜索和差异预览。 |
-| 26 | API 调试器 | 通过远程主机网络环境发起 HTTP 请求，适合测试内网 API、服务健康检查和接口调试。 |
-| 27 | 密钥与授权管理器 | 管理远程 `authorized_keys`、用户 SSH 登录权限、密钥注释、启用状态和最后修改信息。 |
-| 28 | 权限编辑器 | 图形化修改 chmod、chown、ACL 等权限信息，可作为文件管理器的增强入口。 |
-| 29 | 压缩包浏览器 | 查看 zip、tar、gz 等压缩包内容，支持选择性解压、整体解压和压缩包基本信息查看。 |
-| 30 | 批量重命名工具 | 对远程文件批量重命名，支持规则预览、编号、替换、大小写转换和撤销提示。 |
-| 31 | 健康检查卡片生成器 | 自定义检查项并生成服务器健康报告，覆盖系统、网络、磁盘、服务、端口和安全摘要。 |
-| 32 | 会话录制/回放 | 记录终端命令、关键输出、文件操作和诊断步骤，用于审计、复盘或交接。 |
-| 33 | 远程剪贴板 / 临时便签 | 保存当前连接相关的临时命令、路径、账号提示、排查笔记和待办事项。 |
-| 34 | MongoDB 管理器 | 管理 MongoDB 数据库、集合和文档，支持查询、查看索引、基础编辑和连接配置。 |
-| 35 | Elasticsearch / OpenSearch 面板 | 查看集群健康、节点、索引、分片状态，支持基础查询和常见运维操作。 |
-| 36 | RabbitMQ / Kafka 简易面板 | 查看队列、topic、consumer、consumer lag 和基础消息状态，适合中间件运维排查。 |
-| 37 | MinIO / S3 浏览器 | 浏览对象存储 bucket 和对象，支持上传、下载、删除、预签名链接和基础元信息查看。 |
-| 38 | 正则 / 文本处理工具箱 | 图形化封装 grep、sed、awk、jq 等文本处理能力，用于日志分析、配置提取和批量转换。 |
-| 39 | Hosts / DNS 工具 | 专注 hosts 和 DNS 解析诊断，支持解析链路检查、hosts 修改、DNS 服务器测试和缓存提示。 |
-| 40 | 远程桌面启动器 | 作为连接后的工作台首页，展示最近文件、最近命令、常用服务、常用路径和告警摘要。 |
+## 剩余扩展组件优先级
+
+`remote-desktop-components/` 中的待办文档已经从 `01` 开始重新编号。下面的优先级即当前剩余实现顺序。
+
+| 优先级 | 组件 | 设计文档 | 简要功能介绍 |
+| --- | --- | --- | --- |
+| 01 | SSH 隧道管理器 | [SSH 隧道管理器](./remote-desktop-components/01-ssh-tunnel-manager.md) | 管理本地转发、远程转发和动态 SOCKS，支持保存常用隧道、启动停止和状态查看。 |
+| 02 | Git 仓库管理器 | [Git 仓库管理器](./remote-desktop-components/02-git-repository-manager.md) | 查看远程目录中的 Git 状态、分支、diff、提交记录，支持 fetch、pull、checkout 等轻量维护操作。 |
+| 03 | 代码部署面板 | [代码部署面板](./remote-desktop-components/03-deployment-panel.md) | 将常用部署流程图形化，支持拉代码、构建、重启服务、回滚、查看执行日志和部署历史。 |
+| 04 | Nginx / Apache 管理器 | [Nginx / Apache 管理器](./remote-desktop-components/04-nginx-apache-manager.md) | 查看站点配置、启停/reload 服务、配置测试、虚拟主机编辑、证书路径和日志入口。 |
+| 05 | 远程搜索器 | [远程搜索器](./remote-desktop-components/05-remote-searcher.md) | 按文件名、内容、扩展名、大小、修改时间搜索远程文件，结果可直接打开或定位目录。 |
+| 06 | 文件差异比较器 | [文件差异比较器](./remote-desktop-components/06-file-diff-viewer.md) | 比较两个远程文件，或比较远程文件与本地缓存版本，适合配置文件变更检查。 |
+| 07 | 备份/同步面板 | [备份/同步面板](./remote-desktop-components/07-backup-sync-panel.md) | 图形化管理 rsync、scp、tar 等备份同步任务，显示历史、体积、耗时和执行结果。 |
+| 08 | 命令收藏夹 / Snippet 面板 | [命令收藏夹 / Snippet 面板](./remote-desktop-components/08-command-snippets.md) | 保存常用命令模板，支持变量填充、分类、复制、执行和连接维度沉淀。 |
+| 09 | 任务仪表盘 | [任务仪表盘](./remote-desktop-components/09-task-dashboard.md) | 将常用命令和检查项变成按钮或卡片，例如清缓存、重启服务、查看状态、拉取代码。 |
+| 10 | 多主机批量执行器 | [多主机批量执行器](./remote-desktop-components/10-multi-host-runner.md) | 对多个主机同时执行命令，实时汇总输出、成功失败状态和耗时。 |
+| 11 | 证书管理器 | [证书管理器](./remote-desktop-components/11-certificate-manager.md) | 查看 TLS 证书有效期、证书链、域名匹配、Nginx/Apache 证书路径和 certbot 状态。 |
+| 12 | 环境变量管理器 | [环境变量管理器](./remote-desktop-components/12-environment-variable-manager.md) | 管理 `.env`、shell profile、systemd service env 等配置，支持敏感字段遮蔽和修改前后对比。 |
+| 13 | JSON / YAML / TOML 编辑器 | [JSON / YAML / TOML 编辑器](./remote-desktop-components/13-structured-config-editor.md) | 面向远程配置文件的结构化编辑器，支持格式化、语法校验、折叠、搜索和差异预览。 |
+| 14 | 密钥与授权管理器 | [密钥与授权管理器](./remote-desktop-components/14-authorized-keys-manager.md) | 管理远程 `authorized_keys`、用户 SSH 登录权限、密钥注释、启用状态和最后修改信息。 |
+| 15 | 权限编辑器 | [权限编辑器](./remote-desktop-components/15-permission-editor.md) | 图形化修改 chmod、chown、ACL 等权限信息，可作为文件管理器增强入口。 |
+| 16 | 压缩包浏览器 | [压缩包浏览器](./remote-desktop-components/16-archive-browser.md) | 查看 zip、tar、gz 等压缩包内容，支持选择性解压、整体解压和基础元信息查看。 |
+| 17 | 批量重命名工具 | [批量重命名工具](./remote-desktop-components/17-batch-rename-tool.md) | 对远程文件批量重命名，支持规则预览、编号、替换、大小写转换和撤销提示。 |
+| 18 | 健康检查卡片生成器 | [健康检查卡片生成器](./remote-desktop-components/18-health-check-report.md) | 自定义检查项并生成服务器健康报告，覆盖系统、网络、磁盘、服务、端口和安全摘要。 |
+| 19 | 会话录制/回放 | [会话录制/回放](./remote-desktop-components/19-session-recorder.md) | 记录终端命令、关键输出、文件操作和诊断步骤，用于审计、复盘或交接。 |
+| 20 | 远程剪贴板 / 临时便签 | [远程剪贴板 / 临时便签](./remote-desktop-components/20-remote-notes-clipboard.md) | 保存当前连接相关的临时命令、路径、账号提示、排查笔记和待办事项。 |
+| 21 | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-components/21-mongodb-manager.md) | 管理 MongoDB 数据库、集合和文档，支持查询、查看索引、基础编辑和连接配置。 |
+| 22 | Elasticsearch / OpenSearch 面板 | [Elasticsearch / OpenSearch 面板](./remote-desktop-components/22-elasticsearch-opensearch-panel.md) | 查看集群健康、节点、索引、分片状态，支持基础查询和常见运维操作。 |
+| 23 | RabbitMQ / Kafka 简易面板 | [RabbitMQ / Kafka 简易面板](./remote-desktop-components/23-message-queue-panel.md) | 查看队列、topic、consumer、consumer lag 和基础消息状态，适合中间件排查。 |
+| 24 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/24-minio-s3-browser.md) | 浏览对象存储 bucket 和对象，支持上传、下载、删除、预签名链接和基础元信息查看。 |
+| 25 | 正则 / 文本处理工具箱 | [正则 / 文本处理工具箱](./remote-desktop-components/25-text-processing-toolbox.md) | 图形化封装 grep、sed、awk、jq 等文本处理能力，用于日志分析、配置提取和批量转换。 |
+| 26 | Hosts / DNS 工具 | [Hosts / DNS 工具](./remote-desktop-components/26-hosts-dns-tool.md) | 专注 hosts 和 DNS 解析诊断，支持解析链路检查、hosts 修改、DNS 服务器测试和缓存提示。 |
+| 27 | 远程桌面启动器 | [远程桌面启动器](./remote-desktop-components/27-remote-desktop-launcher.md) | 作为连接后的工作台首页，展示最近文件、最近命令、常用服务、常用路径和告警摘要。 |
 
 ## 分阶段建议
 
-第一阶段优先做 1-8：这些组件最贴近日常运维，且大多可以复用现有 SSH 命令执行和文件能力，短期收益高。
+下一阶段优先做 `01-10`：这些组件补齐开发、部署、站点维护、搜索、备份和多主机执行能力，能直接建立远程工作台的日常操作闭环。
 
-第二阶段推进 9-20：补齐开发、部署、网络和批量管理能力，让 ShellDesk 从“连接工具”升级为“远程工作台”。
+随后推进 `11-20`：重点增强证书、环境变量、结构化配置、授权密钥、权限、压缩包、批量文件操作、健康报告和会话审计，让安全与配置维护更完整。
 
-第三阶段考虑 21-33：强化安全、审计、配置维护和辅助工作流，提升专业用户黏性。
-
-第四阶段扩展 34-40：覆盖更多中间件和工作台体验，适合作为后续插件化生态的候选方向。
+最后推进 `21-27`：覆盖更多中间件、对象存储、文本处理、Hosts/DNS 和工作台首页体验，适合作为后续插件化生态的候选组件。
