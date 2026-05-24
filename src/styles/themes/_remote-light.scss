@@ -1,12 +1,12 @@
 /* ─── Light: Remote Settings ──────────────────────────────────────────────── */
 
 [data-theme="light"] .settings-pane {
-  background: #f5f7fb;
+  background: var(--surface-elevated);
 }
 
 [data-theme="light"] .settings-sidebar {
   border-right-color: rgba(16, 32, 51, 0.08);
-  background: #edf0f5;
+  background: var(--surface-soft);
 }
 
 [data-theme="light"] .settings-sidebar-group-label {
@@ -45,8 +45,8 @@
 [data-theme="light"] .settings-status-strip {
   border-bottom-color: rgba(16, 32, 51, 0.08);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(242, 246, 251, 0.9)),
-    #ffffff;
+    linear-gradient(180deg, rgba(248, 250, 252, 0.88), rgba(232, 239, 247, 0.92)),
+    var(--surface);
 }
 
 [data-theme="light"] .settings-status-item span,
@@ -62,7 +62,7 @@
 
 [data-theme="light"] .settings-status-pill {
   border-color: rgba(16, 32, 51, 0.12);
-  background: #ffffff;
+  background: var(--surface);
   color: #57606a;
 }
 
@@ -87,7 +87,7 @@
 
 [data-theme="light"] .settings-action-btn {
   border-color: rgba(16, 32, 51, 0.12);
-  background: #ffffff;
+  background: var(--surface);
   color: #1f2328;
 }
 
@@ -136,7 +136,7 @@
 
 [data-theme="light"] .settings-info-card {
   border-color: rgba(16, 32, 51, 0.08);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 [data-theme="light"] .settings-info-label {
@@ -160,7 +160,7 @@
 
 [data-theme="light"] .settings-input {
   border-color: rgba(16, 32, 51, 0.14);
-  background: #ffffff;
+  background: var(--surface-input);
   color: #1f2328;
 }
 
@@ -203,7 +203,7 @@
 
 [data-theme="light"] .settings-mirror-btn {
   border-color: rgba(16, 32, 51, 0.07);
-  background: #ffffff;
+  background: var(--surface);
   color: #1f2328;
 }
 
@@ -224,7 +224,7 @@
 
 [data-theme="light"] .settings-select {
   border-color: rgba(16, 32, 51, 0.14);
-  background: #ffffff;
+  background: var(--surface-input);
   color: #1f2328;
 }
 
@@ -239,8 +239,8 @@
 [data-theme="light"] .settings-modal {
   border-color: rgba(16, 32, 51, 0.14);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 250, 0.98)),
-    #ffffff;
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(235, 241, 248, 0.98)),
+    var(--surface);
   box-shadow: 0 22px 60px rgba(43, 67, 92, 0.22);
 }
 
@@ -267,7 +267,7 @@
 
 [data-theme="light"] .settings-modal-btn {
   border-color: rgba(16, 32, 51, 0.12);
-  background: #ffffff;
+  background: var(--surface);
   color: #57606a;
 }
 
@@ -290,7 +290,7 @@
 
 [data-theme="light"] .net-iface-card {
   border-color: rgba(16, 32, 51, 0.08);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 [data-theme="light"] .net-iface-card.up {
@@ -371,12 +371,12 @@
 
 [data-theme="light"] .sysinfo-card {
   border-color: rgba(16, 32, 51, 0.08);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 [data-theme="light"] .sysinfo-card:hover {
   border-color: var(--accent-border);
-  background: #fafbfc;
+  background: var(--surface-elevated);
 }
 
 [data-theme="light"] .sysinfo-card-icon {
@@ -394,7 +394,7 @@
 
 [data-theme="light"] .top-chrome {
   background:
-    linear-gradient(180deg, rgba(246, 249, 253, 0.92), rgba(231, 238, 247, 0.92)),
+    linear-gradient(180deg, rgba(239, 244, 250, 0.94), rgba(224, 232, 243, 0.94)),
     var(--chrome);
 }
 
@@ -412,12 +412,12 @@
 }
 
 [data-theme="light"] .command-bar {
-  background: rgba(247, 249, 252, 0.82);
+  background: rgba(236, 242, 249, 0.86);
 }
 
 [data-theme="light"] .remote-desktop-surface {
-  --desktop-wallpaper-scrim-top: rgba(255, 255, 255, 0.08);
-  --desktop-wallpaper-scrim-bottom: rgba(247, 249, 252, 0.2);
+  --desktop-wallpaper-scrim-top: rgba(248, 250, 252, 0.07);
+  --desktop-wallpaper-scrim-bottom: rgba(230, 237, 246, 0.22);
 }
 
 [data-theme="light"] .remote-desktop-surface.has-default-wallpaper::before {
@@ -429,7 +429,7 @@
 [data-theme="light"] .global-search,
 [data-theme="light"] .command-button,
 [data-theme="light"] .view-switch {
-  background: #ffffff;
+  background: var(--surface);
   box-shadow: 0 12px 28px rgba(34, 55, 84, 0.08);
 }
 
@@ -444,7 +444,7 @@
 
 [data-theme="light"] .hosts-group-panel,
 [data-theme="light"] .host-card {
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(248, 250, 252, 0.84);
 }
 
 [data-theme="light"] .group-panel-heading h2,
@@ -468,7 +468,7 @@
 [data-theme="light"] .explorer-addressbar,
 [data-theme="light"] .explorer-statusbar {
   background:
-    linear-gradient(180deg, rgba(246, 249, 253, 0.96), rgba(231, 238, 247, 0.96));
+    linear-gradient(180deg, rgba(239, 244, 250, 0.96), rgba(224, 232, 243, 0.96));
 }
 
 [data-theme="light"] .mac-dock button.open::after {
@@ -490,7 +490,7 @@
 [data-theme="light"] .launchpad-panel,
 [data-theme="light"] .desktop-folder-panel {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(248, 250, 252, 0.86);
   box-shadow: 0 18px 46px rgba(43, 67, 92, 0.18);
 }
 
@@ -501,20 +501,20 @@
 
 [data-theme="light"] .launchpad-tooltip {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(242, 246, 251, 0.96);
   box-shadow: 0 12px 28px rgba(43, 67, 92, 0.16);
   color: #526178;
 }
 
 [data-theme="light"] .launchpad-close {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(248, 250, 252, 0.88);
   color: #172033;
 }
 
 [data-theme="light"] .launchpad-overlay,
 [data-theme="light"] .desktop-folder-overlay {
-  background: rgba(237, 242, 248, 0.6);
+  background: rgba(225, 233, 243, 0.64);
 }
 
 [data-theme="light"] .launchpad-header,
@@ -593,13 +593,13 @@
 [data-theme="light"] .browser-address-shell,
 [data-theme="light"] .addressbar-breadcrumb-input,
 [data-theme="light"] .explorer-search {
-  background: #ffffff;
+  background: var(--surface-input);
   box-shadow: 0 12px 26px rgba(34, 55, 84, 0.08);
 }
 
 [data-theme="light"] .remote-browser-pane {
-  --browser-panel: rgba(255, 255, 255, 0.78);
-  --browser-panel-strong: rgba(248, 251, 255, 0.96);
+  --browser-panel: rgba(248, 250, 252, 0.82);
+  --browser-panel-strong: rgba(242, 246, 251, 0.96);
   --browser-panel-soft: rgba(31, 64, 104, 0.06);
   --browser-panel-hover: rgba(37, 99, 235, 0.12);
   --browser-border: rgba(34, 55, 84, 0.14);
@@ -613,14 +613,14 @@
 
 [data-theme="light"] .browser-shortcut-panel {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(237, 244, 252, 0.82)),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.66), rgba(227, 236, 246, 0.86)),
     var(--browser-panel-strong);
 }
 
 [data-theme="light"] .browser-error-page {
   background:
-    linear-gradient(135deg, rgba(235, 242, 251, 0.92), rgba(245, 249, 254, 0.72)),
-    rgba(255, 255, 255, 0.62);
+    linear-gradient(135deg, rgba(227, 236, 247, 0.94), rgba(238, 244, 251, 0.76)),
+    rgba(248, 250, 252, 0.64);
 }
 
 [data-theme="light"] .browser-error-page code {
@@ -630,12 +630,12 @@
 [data-theme="light"] .explorer-pane,
 [data-theme="light"] .explorer-layout,
 [data-theme="light"] .explorer-main {
-  background: #edf2f8;
+  background: var(--bg);
 }
 
 [data-theme="light"] .explorer-sidebar,
 [data-theme="light"] .explorer-table {
-  background: #ffffff;
+  background: var(--surface);
 }
 
 [data-theme="light"] .explorer-row {
@@ -643,7 +643,7 @@
 }
 
 [data-theme="light"] .explorer-header {
-  background: #eef3f8;
+  background: var(--surface-soft);
   color: #657489;
 }
 
@@ -781,7 +781,7 @@
   border-color: var(--accent-border);
   background:
     radial-gradient(ellipse at 20% 50%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
-    linear-gradient(135deg, #ffffff, #f6f8fa);
+    linear-gradient(135deg, var(--surface), var(--surface-elevated));
   box-shadow: 0 1px 3px rgba(16, 32, 51, 0.06);
 }
 
@@ -795,7 +795,7 @@
 
 [data-theme="light"] .sysinfo-card {
   border-color: rgba(16, 32, 51, 0.08);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 [data-theme="light"] .sysinfo-card:hover {
