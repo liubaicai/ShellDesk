@@ -239,7 +239,7 @@
 [data-theme="light"] .field select,
 [data-theme="light"] .field textarea {
   border-color: rgba(16, 32, 51, 0.14);
-  background: #ffffff;
+  background: var(--surface-input);
 }
 
 [data-theme="light"] .field input:focus,
@@ -294,7 +294,7 @@
 
 [data-theme="light"] .settings-row select {
   border-color: rgba(16, 32, 51, 0.14);
-  background: #ffffff;
+  background: var(--surface-input);
 }
 
 [data-theme="light"] .theme-switch {
@@ -303,7 +303,7 @@
 }
 
 [data-theme="light"] .theme-switch button.active {
-  background: #ffffff;
+  background: var(--surface);
   box-shadow: inset 0 0 0 1px rgba(16, 32, 51, 0.14);
 }
 
@@ -399,9 +399,9 @@
 /* ── Light Theme Monitor ────────────────────────────── */
 
 [data-theme="light"] .monitor-pane {
-  --monitor-bg: #eef3f8;
-  --monitor-panel: rgba(255, 255, 255, 0.76);
-  --monitor-panel-strong: rgba(255, 255, 255, 0.94);
+  --monitor-bg: #e7edf5;
+  --monitor-panel: rgba(248, 250, 252, 0.78);
+  --monitor-panel-strong: rgba(242, 246, 251, 0.95);
   --monitor-panel-soft: rgba(16, 32, 51, 0.04);
   --monitor-panel-hover: rgba(38, 111, 232, 0.09);
   --monitor-border: rgba(16, 32, 51, 0.12);
@@ -417,7 +417,7 @@
   --monitor-chart-empty: #7a8798;
   --monitor-chart-crosshair: rgba(24, 35, 52, 0.32);
   background:
-    linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(233, 239, 246, 0.98)),
+    linear-gradient(180deg, rgba(238, 243, 248, 0.98), rgba(224, 232, 242, 0.98)),
     var(--monitor-bg);
 }
 

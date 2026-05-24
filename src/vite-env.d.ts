@@ -233,6 +233,8 @@ interface ShellDeskVaultCollectionsPayload {
 }
 
 interface ShellDeskVaultControls {
+  initialPublicSnapshot: ShellDeskVaultSnapshot | null;
+  getPublicSnapshot: () => Promise<ShellDeskVaultSnapshot>;
   getSnapshot: () => Promise<ShellDeskVaultSnapshot>;
   saveCollections: (payload: ShellDeskVaultCollectionsPayload) => Promise<ShellDeskVaultSnapshot>;
   migrateLegacyData: (payload: Partial<ShellDeskVaultSnapshot>) => Promise<ShellDeskVaultSnapshot>;

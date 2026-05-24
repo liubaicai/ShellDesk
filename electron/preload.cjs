@@ -1,9 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-let initialVaultSnapshotPromise = ipcRenderer.invoke('vault:get-snapshot');
-let shouldUseInitialVaultSnapshot = true;
+function readInitialPublicVaultSnapshot() {
+  try {
+    const result = ipcRenderer.sendSync('vault:get-public-snapshot-sync');
+    return result?.ok ? result.snapshot : null;
+  } catch {
+    return null;
+  }
+}
 
-initialVaultSnapshotPromise.catch(() => undefined);
+const initialPublicVaultSnapshot = readInitialPublicVaultSnapshot();
+let initialPublicVaultSnapshotPromise = initialPublicVaultSnapshot
+  ? Promise.resolve(initialPublicVaultSnapshot)
+  : ipcRenderer.invoke('vault:get-public-snapshot');
+let shouldUseInitialPublicVaultSnapshot = true;
+
+initialPublicVaultSnapshotPromise.catch(() => undefined);
 
 function onIpc(channel, callback) {
   const listener = (_event, payload) => callback(payload);
@@ -22,13 +34,17 @@ async function connectHost(host) {
 }
 
 function getVaultSnapshot() {
-  if (shouldUseInitialVaultSnapshot) {
-    return initialVaultSnapshotPromise.finally(() => {
-      shouldUseInitialVaultSnapshot = false;
+  return ipcRenderer.invoke('vault:get-snapshot');
+}
+
+function getPublicVaultSnapshot() {
+  if (shouldUseInitialPublicVaultSnapshot) {
+    return initialPublicVaultSnapshotPromise.finally(() => {
+      shouldUseInitialPublicVaultSnapshot = false;
     });
   }
 
-  return ipcRenderer.invoke('vault:get-snapshot');
+  return ipcRenderer.invoke('vault:get-public-snapshot');
 }
 
 contextBridge.exposeInMainWorld('guiSSH', {
@@ -47,6 +63,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
     exportConfig: () => ipcRenderer.invoke('config:export'),
   },
   vault: {
+    initialPublicSnapshot: initialPublicVaultSnapshot,
+    getPublicSnapshot: getPublicVaultSnapshot,
     getSnapshot: getVaultSnapshot,
     saveCollections: (payload) => ipcRenderer.invoke('vault:save-collections', payload),
     migrateLegacyData: (payload) => ipcRenderer.invoke('vault:migrate-legacy-data', payload),

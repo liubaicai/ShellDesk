@@ -1158,6 +1158,41 @@ function createVaultSnapshot(vault = getVault()) {
   };
 }
 
+function createPublicVaultSnapshotFromConfig(configPayload) {
+  return {
+    hosts: configPayload.hosts.map((host) => ({
+      ...host,
+      password: '',
+      passphrase: '',
+    })),
+    sshKeys: configPayload.sshKeys.map((key) => toRendererKeyRecord({
+      ...key,
+      passphrase: '',
+    })),
+    settings: configPayload.settings,
+    browserBookmarks: configPayload.browserBookmarks,
+    storage: getVaultStorageInfo(),
+  };
+}
+
+function createPublicVaultSnapshot() {
+  const configPath = getConfigFilePath();
+
+  if (fs.existsSync(configPath)) {
+    return createPublicVaultSnapshotFromConfig(readPersistedConfigWrapper(readJsonFile(configPath, maxConfigStoreBytes, '配置文件')));
+  }
+
+  if (vaultCache) {
+    return createPublicVaultSnapshotFromConfig(readConfigPayload(createConfigPayload(vaultCache)));
+  }
+
+  if (!fs.existsSync(getVaultFilePath())) {
+    return createPublicVaultSnapshotFromConfig(readConfigPayload({}));
+  }
+
+  return createPublicVaultSnapshotFromConfig(readConfigPayload(createConfigPayload(getVault())));
+}
+
 function getConfigPreference(rawKey) {
   const key = readPreferenceKey(rawKey);
   return getVault().preferences[key] ?? null;
@@ -1227,6 +1262,14 @@ function getKeyById(keyId) {
   }
 
   return getVault().sshKeys.find((key) => key.id === keyId) ?? null;
+}
+
+function getHostById(hostId) {
+  if (!hostId) {
+    return null;
+  }
+
+  return getVault().hosts.find((host) => host.id === hostId) ?? null;
 }
 
 function readLocalTextFile(filePath, label, maxBytes = maxPrivateKeyBytes) {
@@ -1569,6 +1612,7 @@ function validateHostRequest(rawHost) {
     throw new Error('主机信息无效。');
   }
 
+  const hostId = readBoundedString(rawHost.id ?? '', '主机 ID', 128, { required: false });
   const name = readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false });
   const host = readBoundedString(rawHost.address, '主机地址', 255);
   const username = readBoundedString(rawHost.username, '用户名', 128);
@@ -1582,6 +1626,14 @@ function validateHostRequest(rawHost) {
     throw new Error('登录方式无效。');
   }
 
+  const storedHost = hostId ? getHostById(hostId) : null;
+  const matchedStoredHost = storedHost &&
+    storedHost.address === host &&
+    storedHost.port === port &&
+    storedHost.username === username
+    ? storedHost
+    : null;
+
   const sshConfig = {
     host,
     port,
@@ -1592,13 +1644,24 @@ function validateHostRequest(rawHost) {
   };
 
   if (rawHost.authMethod === 'password') {
-    const password = readBoundedString(rawHost.password ?? '', 'SSH 密码', 4096, {
-      trim: false,
-      rejectLineBreaks: false,
-    });
+    const rawPassword = typeof rawHost.password === 'string' ? rawHost.password : '';
+    const password = readBoundedString(
+      rawPassword || (matchedStoredHost?.authMethod === 'password' ? matchedStoredHost.password : ''),
+      'SSH 密码',
+      4096,
+      {
+        trim: false,
+        rejectLineBreaks: false,
+      },
+    );
     sshConfig.password = password;
   } else if (rawHost.authMethod === 'key') {
-    const keyId = readBoundedString(rawHost.keyId ?? '', '密钥 ID', 128, { required: false });
+    const keyId = readBoundedString(
+      rawHost.keyId || (matchedStoredHost?.authMethod === 'key' ? matchedStoredHost.keyId : ''),
+      '密钥 ID',
+      128,
+      { required: false },
+    );
     const storedKey = keyId ? getKeyById(keyId) : null;
     const inlinePrivateKey = typeof rawHost.privateKey === 'string' ? rawHost.privateKey : '';
 
@@ -1611,7 +1674,9 @@ function validateHostRequest(rawHost) {
       sshConfig.privateKey = fs.readFileSync(keyPath);
     }
 
-    const rawPassphrase = typeof rawHost.passphrase === 'string' ? rawHost.passphrase : storedKey?.passphrase ?? '';
+    const rawPassphrase = typeof rawHost.passphrase === 'string' && rawHost.passphrase
+      ? rawHost.passphrase
+      : storedKey?.passphrase || (matchedStoredHost?.authMethod === 'key' ? matchedStoredHost.passphrase : '');
 
     if (rawPassphrase) {
       sshConfig.passphrase = readBoundedString(rawPassphrase, 'SSH 密钥口令', 4096, {
@@ -1896,16 +1961,20 @@ function formatIpv6Address(bytes) {
   return parts.join(':');
 }
 
-function forwardOut(client, destinationHost, destinationPort) {
+function forwardOut(client, destinationHost, destinationPort, sourcePort = randomSourcePort()) {
   return new Promise((resolve, reject) => {
-    client.forwardOut('127.0.0.1', randomSourcePort(), destinationHost, destinationPort, (error, stream) => {
-      if (error) {
-        reject(error);
-        return;
-      }
+    try {
+      client.forwardOut('127.0.0.1', sourcePort, destinationHost, destinationPort, (error, stream) => {
+        if (error) {
+          reject(error);
+          return;
+        }
 
-      resolve(stream);
-    });
+        resolve(stream);
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -3152,6 +3221,16 @@ ipcMain.handle('dialog:select-public-key', async (event) => {
   return result.filePaths[0] ?? '';
 });
 
+ipcMain.on('vault:get-public-snapshot-sync', (event) => {
+  try {
+    event.returnValue = { ok: true, snapshot: createPublicVaultSnapshot() };
+  } catch (error) {
+    event.returnValue = { ok: false, error: toErrorMessage(error) };
+  }
+});
+
+registerIpcHandler('vault:get-public-snapshot', async () => createPublicVaultSnapshot());
+
 registerIpcHandler('vault:get-snapshot', async () => createVaultSnapshot());
 
 registerIpcHandler('logs:get-entries', async () => readLogEntries());
@@ -4066,16 +4145,7 @@ function getMysqlKey(connectionId, mysqlId) {
 }
 
 function createMysqlTunnelStream(client, host, port) {
-  return new Promise((resolve, reject) => {
-    const sourcePort = Math.floor(Math.random() * 50000) + 10000;
-    client.forwardOut('127.0.0.1', sourcePort, host, port, (error, stream) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(stream);
-    });
-  });
+  return forwardOut(client, host, port);
 }
 
 registerIpcHandler('connection:mysql-connect', async (_event, connectionId, rawConfig) => {
@@ -4514,11 +4584,20 @@ function createRedisTunnel(client, redisHost, redisPort) {
     const localPort = Math.floor(Math.random() * 50000) + 10000;
     const localHost = '127.0.0.1';
     const server = net.createServer((localSocket) => {
-      client.forwardOut(localHost, localPort, redisHost, redisPort, (error, remoteStream) => {
-        if (error) { localSocket.destroy(); return; }
+      localSocket.on('error', () => undefined);
+
+      forwardOut(client, redisHost, redisPort).then((remoteStream) => {
+        if (localSocket.destroyed) {
+          remoteStream.destroy();
+          return;
+        }
+
         localSocket.pipe(remoteStream).pipe(localSocket);
-        localSocket.on('error', () => {});
         remoteStream.on('error', () => localSocket.destroy());
+        remoteStream.on('close', () => localSocket.destroy());
+        localSocket.on('close', () => remoteStream.destroy());
+      }).catch(() => {
+        localSocket.destroy();
       });
     });
     server.listen(localPort, localHost, () => {

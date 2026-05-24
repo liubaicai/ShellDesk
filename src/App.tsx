@@ -1110,8 +1110,16 @@ function parseQuickConnectCommand(value: string) {
 }
 
 function App() {
-  const [hosts, setHosts] = useState<Host[]>(() => (window.guiSSH?.vault ? [] : readStoredHosts()));
-  const [sshKeys, setSshKeys] = useState<SshKey[]>([]);
+  const initialPublicSnapshotRef = useRef<ShellDeskVaultSnapshot | null>(window.guiSSH?.vault?.initialPublicSnapshot ?? null);
+  const initialPublicSnapshot = initialPublicSnapshotRef.current;
+  const [hosts, setHosts] = useState<Host[]>(() => (
+    initialPublicSnapshot
+      ? initialPublicSnapshot.hosts.filter(isStoredHost).map(normalizeStoredHost)
+      : (window.guiSSH?.vault ? [] : readStoredHosts())
+  ));
+  const [sshKeys, setSshKeys] = useState<SshKey[]>(() => (
+    initialPublicSnapshot ? initialPublicSnapshot.sshKeys.filter(isStoredSshKey) : []
+  ));
   const [form, setForm] = useState<HostFormState>(emptyHostForm);
   const [keyForm, setKeyForm] = useState<KeyFormState>(emptyKeyForm);
   const [editingHostId, setEditingHostId] = useState<string | null>(null);
@@ -1125,11 +1133,14 @@ function App() {
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>(defaultAppSettings.defaultHostView);
-  const [settings, setSettings] = useState<ShellDeskAppSettings>(defaultAppSettings);
-  const [storageInfo, setStorageInfo] = useState<ShellDeskStorageInfo | null>(null);
-  const [bookmarkCount, setBookmarkCount] = useState(0);
-  const [isVaultReady, setIsVaultReady] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(initialPublicSnapshot?.settings.defaultHostView ?? defaultAppSettings.defaultHostView);
+  const [settings, setSettings] = useState<ShellDeskAppSettings>(initialPublicSnapshot?.settings ?? defaultAppSettings);
+  const [storageInfo, setStorageInfo] = useState<ShellDeskStorageInfo | null>(initialPublicSnapshot?.storage ?? null);
+  const [bookmarkCount, setBookmarkCount] = useState(() => (
+    initialPublicSnapshot?.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0) ?? 0
+  ));
+  const [isVaultReady, setIsVaultReady] = useState(Boolean(initialPublicSnapshot) || !window.guiSSH?.vault);
+  const [isVaultHydrated, setIsVaultHydrated] = useState(!window.guiSSH?.vault);
   const [isLogsReady, setIsLogsReady] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
@@ -1222,8 +1233,8 @@ function App() {
 
   const getSelectedSshKey = (host: Pick<Host, 'keyId'>) => sshKeyById.get(host.keyId) ?? null;
 
-  const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean } = {}) => {
-    const { updateCollections = true } = options;
+  const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean; hydrated?: boolean } = {}) => {
+    const { updateCollections = true, hydrated = true } = options;
 
     if (updateCollections) {
       const nextHosts = snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost);
@@ -1231,11 +1242,14 @@ function App() {
 
       setHosts(nextHosts);
       setSshKeys(nextKeys);
-      lastPersistedCollectionsRef.current = JSON.stringify({
-        hosts: nextHosts,
-        sshKeys: nextKeys,
-        settings: snapshot.settings,
-      });
+
+      if (hydrated) {
+        lastPersistedCollectionsRef.current = JSON.stringify({
+          hosts: nextHosts,
+          sshKeys: nextKeys,
+          settings: snapshot.settings,
+        });
+      }
     }
 
     setSettings(snapshot.settings);
@@ -1243,6 +1257,10 @@ function App() {
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
     setViewMode(snapshot.settings.defaultHostView);
     setIsVaultReady(true);
+
+    if (hydrated) {
+      setIsVaultHydrated(true);
+    }
   };
 
   const refreshHosts = async () => {
@@ -1296,12 +1314,30 @@ function App() {
   useEffect(() => {
     if (!vaultControls) {
       setIsVaultReady(true);
+      setIsVaultHydrated(true);
       return;
     }
 
     let disposed = false;
 
     const loadSnapshot = async () => {
+      let renderedPublicSnapshot = Boolean(initialPublicSnapshotRef.current);
+
+      if (!renderedPublicSnapshot) {
+        try {
+          const publicSnapshot = typeof vaultControls.getPublicSnapshot === 'function'
+            ? await vaultControls.getPublicSnapshot()
+            : null;
+
+          if (!disposed && publicSnapshot) {
+            renderedPublicSnapshot = true;
+            applyVaultSnapshot(publicSnapshot, { hydrated: false });
+          }
+        } catch {
+          // Fall back to the full vault read below.
+        }
+      }
+
       try {
         let snapshot = await vaultControls.getSnapshot();
 
@@ -1320,7 +1356,9 @@ function App() {
       } catch (error) {
         if (!disposed) {
           setIsVaultReady(true);
-          setStatusMessage(`读取本地数据失败：${getErrorMessage(error)}`);
+          setStatusMessage(renderedPublicSnapshot
+            ? `读取本地凭据失败：${getErrorMessage(error)}`
+            : `读取本地数据失败：${getErrorMessage(error)}`);
         }
       }
     };
@@ -1349,7 +1387,7 @@ function App() {
   }, [isConnectionWindow, isVaultReady]);
 
   useEffect(() => {
-    if (!vaultControls || !isVaultReady) {
+    if (!vaultControls || !isVaultReady || !isVaultHydrated) {
       return;
     }
 
@@ -1379,7 +1417,45 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [hosts, isVaultReady, settings, sshKeys, vaultControls]);
+  }, [hosts, isVaultHydrated, isVaultReady, settings, sshKeys, vaultControls]);
+
+  useEffect(() => {
+    const closeOpenHostCardMenus = (target: EventTarget | null) => {
+      const targetNode = target instanceof Node ? target : null;
+
+      document.querySelectorAll<HTMLDetailsElement>('details.host-card-menu[open]').forEach((menu) => {
+        if (targetNode && menu.contains(targetNode)) {
+          return;
+        }
+
+        menu.open = false;
+      });
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      closeOpenHostCardMenus(event.target);
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      closeOpenHostCardMenus(event.target);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeOpenHostCardMenus(null);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     const logsControls = window.guiSSH?.logs;
@@ -1420,33 +1496,33 @@ function App() {
     root.style.setProperty('--accent', accentColor);
     root.style.setProperty('--accent-strong', accentColor);
     root.style.setProperty('--accent-contrast', accentContrast);
-    root.style.setProperty('--bg', isLightTheme ? '#eef3f8' : '#0b111a');
-    root.style.setProperty('--chrome', isLightTheme ? '#f8fafc' : '#1b222b');
-    root.style.setProperty('--sidebar', isLightTheme ? '#e4ebf3' : '#20262f');
-    root.style.setProperty('--sidebar-active', isLightTheme ? '#d5e0ec' : '#3a3f49');
-    root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111820');
-    root.style.setProperty('--surface-soft', isLightTheme ? '#f6f9fc' : '#161e28');
-    root.style.setProperty('--surface-strong', isLightTheme ? '#e8eef5' : '#1a2330');
-    root.style.setProperty('--surface-elevated', isLightTheme ? '#f5f8fc' : '#141b25');
-    root.style.setProperty('--surface-input', isLightTheme ? '#ffffff' : '#1a212c');
-    root.style.setProperty('--surface-control', isLightTheme ? '#e8eef5' : '#202733');
-    root.style.setProperty('--surface-hover', isLightTheme ? '#eef5fc' : '#141d28');
-    root.style.setProperty('--surface-icon', isLightTheme ? '#dceaf8' : '#12334a');
-    root.style.setProperty('--surface-panel', isLightTheme ? '#f7fbff' : '#151d28');
-    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(16, 32, 51, 0.02)' : 'rgba(255, 255, 255, 0.025)');
-    root.style.setProperty('--surface-pill', isLightTheme ? '#dce5ef' : '#1d2632');
+    root.style.setProperty('--bg', isLightTheme ? '#e7edf5' : '#0b111a');
+    root.style.setProperty('--chrome', isLightTheme ? '#dfe7f1' : '#1b222b');
+    root.style.setProperty('--sidebar', isLightTheme ? '#dde6f0' : '#20262f');
+    root.style.setProperty('--sidebar-active', isLightTheme ? '#ccd8e6' : '#3a3f49');
+    root.style.setProperty('--surface', isLightTheme ? '#f8fafc' : '#111820');
+    root.style.setProperty('--surface-soft', isLightTheme ? '#eef3f8' : '#161e28');
+    root.style.setProperty('--surface-strong', isLightTheme ? '#dfe7f1' : '#1a2330');
+    root.style.setProperty('--surface-elevated', isLightTheme ? '#edf2f7' : '#141b25');
+    root.style.setProperty('--surface-input', isLightTheme ? '#f8fafc' : '#1a212c');
+    root.style.setProperty('--surface-control', isLightTheme ? '#e4ebf4' : '#202733');
+    root.style.setProperty('--surface-hover', isLightTheme ? '#e5edf6' : '#141d28');
+    root.style.setProperty('--surface-icon', isLightTheme ? '#d2e1f1' : '#12334a');
+    root.style.setProperty('--surface-panel', isLightTheme ? '#f2f6fb' : '#151d28');
+    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(16, 32, 51, 0.035)' : 'rgba(255, 255, 255, 0.025)');
+    root.style.setProperty('--surface-pill', isLightTheme ? '#d2dce8' : '#1d2632');
     root.style.setProperty('--surface-success-soft', isLightTheme ? 'rgba(34, 160, 90, 0.08)' : 'rgba(119, 244, 197, 0.08)');
     root.style.setProperty('--surface-success-border', isLightTheme ? 'rgba(34, 160, 90, 0.22)' : 'rgba(119, 244, 197, 0.22)');
     root.style.setProperty('--text-success', isLightTheme ? '#1a8a55' : '#d8fff1');
-    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(247, 251, 255, 0.96)' : 'rgba(12, 23, 34, 0.92)');
+    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(241, 246, 251, 0.96)' : 'rgba(12, 23, 34, 0.92)');
     root.style.setProperty('--toast-text', isLightTheme ? '#1a6d94' : '#c6efff');
     root.style.setProperty('--text', isLightTheme ? '#18263a' : '#edf4ff');
     root.style.setProperty('--muted', isLightTheme ? '#627890' : '#8b9aad');
     root.style.setProperty('--muted-strong', isLightTheme ? '#415874' : '#bfcede');
-    root.style.setProperty('--border', isLightTheme ? 'rgba(20, 42, 68, 0.1)' : 'rgba(139, 164, 195, 0.14)');
-    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(20, 42, 68, 0.18)' : 'rgba(139, 164, 195, 0.28)');
-    root.style.setProperty('--window-border', isLightTheme ? 'rgba(20, 42, 68, 0.08)' : 'rgba(255, 255, 255, 0.04)');
-    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(20, 42, 68, 0.08)' : 'rgba(255, 255, 255, 0.05)');
+    root.style.setProperty('--border', isLightTheme ? 'rgba(20, 42, 68, 0.14)' : 'rgba(139, 164, 195, 0.14)');
+    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(20, 42, 68, 0.22)' : 'rgba(139, 164, 195, 0.28)');
+    root.style.setProperty('--window-border', isLightTheme ? 'rgba(20, 42, 68, 0.1)' : 'rgba(255, 255, 255, 0.04)');
+    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(20, 42, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)');
     root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(20, 42, 68, 0.06)' : 'rgba(255, 255, 255, 0.08)');
     root.style.setProperty('--danger-hover-bg', isLightTheme ? 'rgba(200, 48, 78, 0.12)' : 'rgba(255, 111, 143, 0.18)');
     root.style.setProperty('--danger-hover-text', isLightTheme ? '#d63a5e' : '#ffd8e1');
@@ -1463,7 +1539,7 @@ function App() {
     root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(43, 67, 92, 0.16)' : '0 18px 36px rgba(0, 0, 0, 0.32)');
     root.style.setProperty('--shadow-panel', isLightTheme ? '0 16px 48px rgba(43, 67, 92, 0.16)' : '0 24px 70px rgba(0, 0, 0, 0.42)');
     root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 16px 48px rgba(43, 67, 92, 0.18)' : '0 24px 70px rgba(0, 0, 0, 0.46)');
-    root.style.setProperty('--toggle-off', isLightTheme ? '#cdd6e0' : '#202938');
+    root.style.setProperty('--toggle-off', isLightTheme ? '#c3cedb' : '#202938');
     root.style.colorScheme = isLightTheme ? 'light' : 'dark';
     root.setAttribute('data-theme', effectiveTheme);
     const interfaceFontFamily = `"${settings.interfaceFont}", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
