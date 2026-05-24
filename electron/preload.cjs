@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+    isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
     close: () => ipcRenderer.invoke('window:close'),
   },
   files: {
@@ -150,6 +151,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     onTerminalExit: (callback) => onIpc('terminal:exit', callback),
     onVncDiagnostic: (callback) => onIpc('vnc:diagnostic', callback),
     onConnectionClosed: (callback) => onIpc('connection:closed', callback),
+    onWindowMaximizedChange: (callback) => onIpc('window:maximize-state-changed', callback),
     onVaultChanged: (callback) => onIpc('vault:changed', callback),
     onTransferProgress: (callback) => onIpc('transfer:progress', callback),
     onTransferEnd: (callback) => onIpc('transfer:end', callback),

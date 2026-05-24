@@ -16,6 +16,7 @@ declare global {
 interface ShellDeskWindowControls {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<boolean>;
+  isMaximized: () => Promise<boolean>;
   close: () => Promise<void>;
 }
 
@@ -622,6 +623,7 @@ interface ShellDeskEventControls {
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
+  onWindowMaximizedChange: (callback: (payload: { maximized: boolean }) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference'; scope?: string; key?: string }) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;

@@ -2968,6 +2968,14 @@ function getSenderWindow(event) {
 }
 
 function configureAppWindow(appWindow) {
+  const sendMaximizeState = () => {
+    if (appWindow.isDestroyed() || appWindow.webContents.isDestroyed()) {
+      return;
+    }
+
+    appWindow.webContents.send('window:maximize-state-changed', { maximized: appWindow.isMaximized() });
+  };
+
   appWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
       void shell.openExternal(url);
@@ -2981,6 +2989,9 @@ function configureAppWindow(appWindow) {
       event.preventDefault();
     }
   });
+
+  appWindow.on('maximize', sendMaximizeState);
+  appWindow.on('unmaximize', sendMaximizeState);
 }
 
 function loadAppWindow(appWindow, query = {}) {
@@ -3098,6 +3109,10 @@ ipcMain.handle('window:toggle-maximize', (event) => {
   }
 
   return window.isMaximized();
+});
+
+ipcMain.handle('window:is-maximized', (event) => {
+  return Boolean(getSenderWindow(event)?.isMaximized());
 });
 
 ipcMain.handle('window:close', (event) => {

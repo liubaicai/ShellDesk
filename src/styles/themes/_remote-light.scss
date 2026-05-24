@@ -415,6 +415,17 @@
   background: rgba(247, 249, 252, 0.82);
 }
 
+[data-theme="light"] .remote-desktop-surface {
+  --desktop-wallpaper-scrim-top: rgba(255, 255, 255, 0.08);
+  --desktop-wallpaper-scrim-bottom: rgba(247, 249, 252, 0.2);
+}
+
+[data-theme="light"] .remote-desktop-surface.has-default-wallpaper::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 30%),
+    radial-gradient(ellipse at 50% 100%, rgba(23, 32, 51, 0.12), transparent 54%);
+}
+
 [data-theme="light"] .global-search,
 [data-theme="light"] .command-button,
 [data-theme="light"] .view-switch {

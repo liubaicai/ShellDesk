@@ -7,6 +7,7 @@ import {
   terminalFontWeightChoices,
   terminalThemeChoices,
 } from '../components/remote-desktop/terminalPresets';
+import defaultDesktopWallpaperUrl from '../assets/images/default-desktop-wallpaper.png';
 
 const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
@@ -82,11 +83,10 @@ function SettingsPage({
   };
   const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
   const hasCustomWallpaper = settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
-  const wallpaperPreviewStyle: CSSProperties | undefined = hasCustomWallpaper
-    ? {
-        backgroundImage: `linear-gradient(180deg, rgba(8, 13, 20, 0.18), rgba(8, 13, 20, 0.42)), url(${JSON.stringify(settings.desktopWallpaperDataUrl)})`,
-      }
-    : undefined;
+  const wallpaperPreviewUrl = hasCustomWallpaper ? settings.desktopWallpaperDataUrl : defaultDesktopWallpaperUrl;
+  const wallpaperPreviewStyle: CSSProperties = {
+    backgroundImage: `linear-gradient(180deg, rgba(8, 13, 20, 0.16), rgba(8, 13, 20, 0.34)), url(${JSON.stringify(wallpaperPreviewUrl)})`,
+  };
 
   const resetDesktopWallpaper = () => {
     setWallpaperError('');
