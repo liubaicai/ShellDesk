@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Linux Mint">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7dbd3e"/>
+      <stop offset="1" stop-color="#174c37"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#e3ffaf" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#e3ffaf" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#e3ffaf" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#c6fb84">
+    <path d="M18 19h10v18c0 4.4 3.6 8 8 8s8-3.6 8-8V25h-7v12c0 .6-.4 1-1 1s-1-.4-1-1V19h11c4.4 0 8 3.6 8 8v11c0 8.8-7.2 16-16 16H26c-8.8 0-16-7.2-16-16V27c0-4.4 3.6-8 8-8Z" fill="#c6fb84"/>
+    <path d="M18 19v18c0 4.4 3.6 8 8 8h7" fill="none" stroke="#111820" stroke-linecap="round" stroke-width="5" opacity="0.38"/>
+  </g>
+</svg>

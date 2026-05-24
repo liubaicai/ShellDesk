@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Alpine Linux">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#257fbd"/>
+      <stop offset="1" stop-color="#0d314f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#c0e7ff" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#c0e7ff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#c0e7ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#93d8ff">
+    <path d="M10 48 27 18l7.6 13.2L40 22l14 26H10Z" fill="#93d8ff"/>
+    <path d="M27 18 19.2 31.7 29.5 27l-2.5-9ZM34.6 31.2 24 48h20.5L34.6 31.2Z" fill="#ffffff" opacity="0.2"/>
+  </g>
+</svg>

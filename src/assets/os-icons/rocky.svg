@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Rocky Linux">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#168b5a"/>
+      <stop offset="1" stop-color="#0d403c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#b9ffd2" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#b9ffd2" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#b9ffd2" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#7fe6a9">
+    <path d="M12 45.5 27.8 17 36 31.2l5.4-9.4L54 45.5H12Z" fill="#7fe6a9"/>
+    <path d="M22 45.5 36 31.2l7.9 14.3H22Z" fill="#111820" opacity="0.35"/>
+    <path d="M27.8 17 18 34.7l13.7-8.8L27.8 17Z" fill="#ffffff" opacity="0.22"/>
+  </g>
+</svg>

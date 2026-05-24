@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ubuntu">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e95420"/>
+      <stop offset="1" stop-color="#5b1742"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#ffd0a9" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#ffd0a9" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffd0a9" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#ff9a5f">
+    <circle cx="32" cy="32" r="22" fill="#ff9a5f" opacity="0.14"/>
+    <circle cx="32" cy="32" r="13" fill="none" stroke="#ff9a5f" stroke-width="5.5"/>
+    <circle cx="50" cy="24" r="6.5" fill="#ff9a5f"/>
+    <circle cx="26" cy="51" r="6.5" fill="#ff9a5f"/>
+    <circle cx="18" cy="21" r="6.5" fill="#ff9a5f"/>
+    <path d="M43.3 25.7 38.9 29M28.6 43.8l1.4-5.1M23.6 25.5l4.9 3.4" stroke="#ff9a5f" stroke-width="5.5" stroke-linecap="round"/>
+  </g>
+</svg>

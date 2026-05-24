@@ -87,6 +87,7 @@ const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
 const remoteSystemTypeChoices = new Set([
   'unknown',
   'windows',
+  'macos',
   'ubuntu',
   'debian',
   'redhat',
@@ -2629,7 +2630,11 @@ function detectRemoteSystemType(osRelease, unameOutput) {
     return 'linux';
   }
 
-  if (/darwin|bsd|sunos|aix/i.test(unameOutput)) {
+  if (/darwin/i.test(unameOutput)) {
+    return 'macos';
+  }
+
+  if (/bsd|sunos|aix/i.test(unameOutput)) {
     return 'unix';
   }
 
@@ -2716,13 +2721,14 @@ async function detectRemoteSystem(client) {
 
   const output = await execRemoteCommand(
     client,
-    "cat /etc/os-release 2>/dev/null; printf '\\nSHELLDESK_UNAME=%s\\n' \"$(uname -s 2>/dev/null || true)\"",
+    "cat /etc/os-release 2>/dev/null; printf '\\nSHELLDESK_UNAME=%s\\n' \"$(uname -s 2>/dev/null || true)\"; if command -v sw_vers >/dev/null 2>&1; then printf 'SHELLDESK_MACOS_NAME=%s %s\\n' \"$(sw_vers -productName 2>/dev/null || true)\" \"$(sw_vers -productVersion 2>/dev/null || true)\"; fi",
   );
   const osRelease = parseOsReleaseText(output);
   const unameOutput = osRelease.SHELLDESK_UNAME ?? '';
   const systemType = detectRemoteSystemType(osRelease, unameOutput);
+  const macosSystemName = systemType === 'macos' ? `${osRelease.SHELLDESK_MACOS_NAME ?? ''}`.trim() : '';
   const systemName = readBoundedString(
-    osRelease.PRETTY_NAME || osRelease.NAME || unameOutput || '',
+    macosSystemName || osRelease.PRETTY_NAME || osRelease.NAME || unameOutput || '',
     '系统名称',
     160,
     { required: false },

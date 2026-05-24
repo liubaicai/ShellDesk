@@ -54,6 +54,7 @@ interface SettingsHostStatus {
 const SYSTEM_TYPE_LABELS: Record<RemoteSystemType, string> = {
   unknown: '未知系统',
   windows: 'Windows',
+  macos: 'macOS',
   ubuntu: 'Ubuntu',
   debian: 'Debian',
   redhat: 'Red Hat',

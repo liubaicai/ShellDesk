@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Raspberry Pi OS">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#be2857"/>
+      <stop offset="1" stop-color="#24694e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#ffd0df" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#ffd0df" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffd0df" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#ff7da8">
+    <path d="M32 17c2.2-4.3 6.6-6.2 12.8-5.5-1.1 5.3-4.8 8.4-11.1 9.4" fill="#ff7da8" opacity="0.65"/>
+    <circle cx="25" cy="31" r="8" fill="#ff7da8"/>
+    <circle cx="39" cy="31" r="8" fill="#ff7da8"/>
+    <circle cx="32" cy="42" r="8" fill="#ff7da8"/>
+    <circle cx="23" cy="43" r="6.3" fill="#ff7da8" opacity="0.8"/>
+    <circle cx="41" cy="43" r="6.3" fill="#ff7da8" opacity="0.8"/>
+  </g>
+</svg>

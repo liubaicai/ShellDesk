@@ -170,6 +170,10 @@ function getSystemLabel(systemType?: RemoteSystemType) {
     return 'Windows';
   }
 
+  if (systemType === 'macos') {
+    return 'macOS';
+  }
+
   if (systemType === 'unknown') {
     return '未知系统';
   }

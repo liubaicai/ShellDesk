@@ -151,6 +151,7 @@ interface ShellDeskStoredKeyRecord {
 type ShellDeskHostSystemType =
   | 'unknown'
   | 'windows'
+  | 'macos'
   | 'ubuntu'
   | 'debian'
   | 'redhat'

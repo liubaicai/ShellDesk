@@ -1,6 +1,7 @@
 export type RemoteSystemType =
   | 'unknown'
   | 'windows'
+  | 'macos'
   | 'ubuntu'
   | 'debian'
   | 'redhat'

@@ -61,6 +61,7 @@ type AppPage = 'hosts' | 'keys' | 'logs' | 'settings';
 type HostSystemType =
   | 'unknown'
   | 'windows'
+  | 'macos'
   | 'ubuntu'
   | 'debian'
   | 'redhat'
@@ -93,6 +94,7 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
 const hostSystemLabels: Record<HostSystemType, string> = {
   unknown: '未识别系统',
   windows: 'Windows',
+  macos: 'macOS',
   ubuntu: 'Ubuntu',
   debian: 'Debian',
   redhat: 'Red Hat Enterprise Linux',
@@ -120,12 +122,16 @@ const hostSystemLabels: Record<HostSystemType, string> = {
 function getHostSystemType(value: unknown, systemName?: unknown): HostSystemType {
   const normalizedValue = typeof value === 'string' ? value.toLowerCase() : '';
 
-  if (normalizedValue in hostSystemLabels) {
+  if (normalizedValue in hostSystemLabels && normalizedValue !== 'unknown') {
     return normalizedValue as HostSystemType;
   }
 
   if (typeof systemName === 'string' && /windows/i.test(systemName)) {
     return 'windows';
+  }
+
+  if (typeof systemName === 'string' && /mac\s?os|darwin/i.test(systemName)) {
+    return 'macos';
   }
 
   return 'unknown';
@@ -155,6 +161,45 @@ function getReadableTextColor(hexColor: string) {
   const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
 
   return luminance > 0.58 ? '#0b1220' : '#ffffff';
+}
+
+const hostSystemIconUrls: Record<HostSystemType, string> = {
+  unknown: new URL('./assets/os-icons/unknown.svg', import.meta.url).href,
+  windows: new URL('./assets/os-icons/windows.svg', import.meta.url).href,
+  macos: new URL('./assets/os-icons/macos.svg', import.meta.url).href,
+  ubuntu: new URL('./assets/os-icons/ubuntu.svg', import.meta.url).href,
+  debian: new URL('./assets/os-icons/debian.svg', import.meta.url).href,
+  redhat: new URL('./assets/os-icons/redhat.svg', import.meta.url).href,
+  centos: new URL('./assets/os-icons/centos.svg', import.meta.url).href,
+  fedora: new URL('./assets/os-icons/fedora.svg', import.meta.url).href,
+  rocky: new URL('./assets/os-icons/rocky.svg', import.meta.url).href,
+  almalinux: new URL('./assets/os-icons/almalinux.svg', import.meta.url).href,
+  oracle: new URL('./assets/os-icons/oracle.svg', import.meta.url).href,
+  amazon: new URL('./assets/os-icons/amazon.svg', import.meta.url).href,
+  arch: new URL('./assets/os-icons/arch.svg', import.meta.url).href,
+  manjaro: new URL('./assets/os-icons/manjaro.svg', import.meta.url).href,
+  alpine: new URL('./assets/os-icons/alpine.svg', import.meta.url).href,
+  opensuse: new URL('./assets/os-icons/opensuse.svg', import.meta.url).href,
+  linuxmint: new URL('./assets/os-icons/linuxmint.svg', import.meta.url).href,
+  kali: new URL('./assets/os-icons/kali.svg', import.meta.url).href,
+  raspbian: new URL('./assets/os-icons/raspbian.svg', import.meta.url).href,
+  gentoo: new URL('./assets/os-icons/gentoo.svg', import.meta.url).href,
+  nixos: new URL('./assets/os-icons/nixos.svg', import.meta.url).href,
+  popos: new URL('./assets/os-icons/popos.svg', import.meta.url).href,
+  elementary: new URL('./assets/os-icons/elementary.svg', import.meta.url).href,
+  linux: new URL('./assets/os-icons/linux.svg', import.meta.url).href,
+  unix: new URL('./assets/os-icons/unix.svg', import.meta.url).href,
+};
+
+function HostSystemIcon({ systemName, systemType }: { systemName: string; systemType: HostSystemType }) {
+  const effectiveSystemType = systemType === 'unknown' ? getHostSystemType(systemType, systemName) : systemType;
+  const label = systemName || hostSystemLabels[effectiveSystemType];
+
+  return (
+    <span className={`host-avatar host-system-icon host-system-${effectiveSystemType}`} title={label} aria-label={label}>
+      <img src={hostSystemIconUrls[effectiveSystemType]} alt="" draggable={false} />
+    </span>
+  );
 }
 
 function HostGroupIcon() {
@@ -188,217 +233,6 @@ function HostGroupIcon() {
       <path d="M15.2 14.95h2.3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
       <circle cx="16.35" cy="14.95" r="1.15" fill="currentColor" />
     </svg>
-  );
-}
-
-function HostSystemIcon({ systemName, systemType }: { systemName: string; systemType: HostSystemType }) {
-  const effectiveSystemType = systemType === 'unknown' && /windows/i.test(systemName) ? 'windows' : systemType;
-  const label = systemName || hostSystemLabels[effectiveSystemType];
-  const commonProps = { 'aria-hidden': true, focusable: false };
-  const icon = (() => {
-    switch (effectiveSystemType) {
-      case 'windows':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M13 17.5 30 15v16H13V17.5ZM34 14.4 51 12v19H34V14.4ZM13 35h17v16l-17-2.5V35ZM34 35h17v17l-17-2.4V35Z" fill="currentColor" />
-          </svg>
-        );
-      case 'ubuntu':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <circle cx="32" cy="32" r="22" fill="currentColor" opacity="0.14" />
-            <circle cx="32" cy="32" r="13" fill="none" stroke="currentColor" strokeWidth="5.5" />
-            <circle cx="50" cy="24" r="6.5" fill="currentColor" />
-            <circle cx="26" cy="51" r="6.5" fill="currentColor" />
-            <circle cx="18" cy="21" r="6.5" fill="currentColor" />
-            <path d="M43.3 25.7 38.9 29M28.6 43.8l1.4-5.1M23.6 25.5l4.9 3.4" stroke="currentColor" strokeWidth="5.5" strokeLinecap="round" />
-          </svg>
-        );
-      case 'debian':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path
-              d="M43.4 18.3c-5.9-5.1-17.2-3.6-23.1 3.3-6.5 7.6-4.8 19.5 4 24.6 7.5 4.4 18.4 2.5 22.7-4.8 3.6-6.1.3-13.3-6.4-14.1-5.7-.7-10.1 3.7-9 7.4.6 2 2.8 2.9 4.9 2.2"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth="5.6"
-            />
-            <path d="M42.7 18.1c3.3 3.2 4.4 7.2 3.2 10.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="4" opacity="0.52" />
-          </svg>
-        );
-      case 'redhat':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M15 36.5c5.9 4.2 27.9 4.2 34 0l-3.5-10.6c-.7-2.1-2.5-3.4-4.7-3.4H23.2c-2.2 0-4 1.3-4.7 3.4L15 36.5Z" fill="currentColor" />
-            <path d="M11.5 38.8c3.4 7 37.8 7 41 0-5.7 3.5-35.2 3.5-41 0Z" fill="currentColor" opacity="0.72" />
-            <path d="M24.5 25.8h15l2.3 7c-5.7 1.6-14 1.6-19.7 0l2.4-7Z" fill="#111820" opacity="0.62" />
-          </svg>
-        );
-      case 'centos':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M32 13v38M13 32h38M19.5 19.5l25 25M44.5 19.5l-25 25" stroke="currentColor" strokeWidth="4.8" strokeLinecap="round" />
-            <rect x="24" y="24" width="16" height="16" rx="3" fill="currentColor" />
-            <path d="M32 14 38 20 32 26 26 20 32 14ZM32 38l6 6-6 6-6-6 6-6ZM14 32l6-6 6 6-6 6-6-6ZM38 32l6-6 6 6-6 6-6-6Z" fill="currentColor" opacity="0.72" />
-          </svg>
-        );
-      case 'fedora':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M33 12c-11.6 0-21 9.4-21 21 0 10.5 7.7 19 18 20.7V41h-5.4c-5.1 0-9.3-4.1-9.3-9.2s4.2-9.2 9.3-9.2H30v-2.1c0-4.7 3.8-8.5 8.5-8.5H33Z" fill="currentColor" opacity="0.95" />
-            <path d="M30 22.6h8.2c4.9 0 8.8 4 8.8 8.9s-3.9 8.9-8.8 8.9H36v12.8C45.4 50.7 52 42.4 52 33c0-9.9-7.2-18.1-16.7-19.7A5.8 5.8 0 0 0 30 19v3.6Zm0 8.2h-5.4a1 1 0 1 0 0 2H30v-2Zm6 2h2.2a1.3 1.3 0 1 0 0-2.6H36v2.6Z" fill="#111820" opacity="0.62" />
-          </svg>
-        );
-      case 'rocky':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M12 45.5 27.8 17 36 31.2l5.4-9.4L54 45.5H12Z" fill="currentColor" />
-            <path d="M22 45.5 36 31.2l7.9 14.3H22Z" fill="#111820" opacity="0.35" />
-            <path d="M27.8 17 18 34.7l13.7-8.8L27.8 17Z" fill="#ffffff" opacity="0.22" />
-          </svg>
-        );
-      case 'almalinux':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <circle cx="32" cy="32" r="11" fill="currentColor" />
-            <circle cx="20" cy="20" r="7" fill="currentColor" opacity="0.78" />
-            <circle cx="45" cy="19" r="6.5" fill="currentColor" opacity="0.65" />
-            <circle cx="47" cy="44" r="7" fill="currentColor" opacity="0.82" />
-            <circle cx="19" cy="44" r="6" fill="currentColor" opacity="0.58" />
-            <path d="M25.1 25.1 21.8 21.8M39.5 24.8l4.1-4.1M39.3 39.2l4.6 4.6M24.9 39.1l-4 4" stroke="currentColor" strokeWidth="4" strokeLinecap="round" opacity="0.52" />
-          </svg>
-        );
-      case 'oracle':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <rect x="13" y="23" width="38" height="18" rx="9" fill="none" stroke="currentColor" strokeWidth="6" />
-            <path d="M23 32h18" stroke="currentColor" strokeLinecap="round" strokeWidth="5" opacity="0.5" />
-          </svg>
-        );
-      case 'amazon':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M17 23c5.3-5.1 12.2-7.1 20.5-5.8 3.9.6 7.1 2 9.8 4.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="5.2" />
-            <path d="M17.5 40.5c9 7.4 20 7.3 29-.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="5.2" />
-            <path d="M40 40.7h8.4v8.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.6" />
-          </svg>
-        );
-      case 'arch':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M32 10 14 52c8.5-5.2 16.8-7.3 25-6.4l-7-17.2 9.7 15.9c3.2 1.1 6.1 2.8 8.8 5.1L32 10Z" fill="currentColor" />
-            <path d="M32 10 26 31.2h12L32 10Z" fill="#ffffff" opacity="0.22" />
-          </svg>
-        );
-      case 'manjaro':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M15 15h34v34H38V25H27v24H15V15Z" fill="currentColor" />
-            <path d="M30 25h8v24h-8V25Z" fill="#111820" opacity="0.54" />
-          </svg>
-        );
-      case 'alpine':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M10 48 27 18l7.6 13.2L40 22l14 26H10Z" fill="currentColor" />
-            <path d="M27 18 19.2 31.7 29.5 27l-2.5-9ZM34.6 31.2 24 48h20.5L34.6 31.2Z" fill="#ffffff" opacity="0.2" />
-          </svg>
-        );
-      case 'opensuse':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M16 35c2.7-10 11.3-16.2 22.1-15.1 6.8.7 11.8 4.2 14.4 9.1-3.5-1.5-7.8-1.6-12.8-.1-5.3 1.6-9.5 4.7-12.5 9.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="5.4" />
-            <circle cx="42" cy="31.5" r="4.4" fill="currentColor" />
-            <path d="M18 41c6 5.4 17 6 25.5.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="4.8" opacity="0.68" />
-          </svg>
-        );
-      case 'linuxmint':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M18 19h10v18c0 4.4 3.6 8 8 8s8-3.6 8-8V25h-7v12c0 .6-.4 1-1 1s-1-.4-1-1V19h11c4.4 0 8 3.6 8 8v11c0 8.8-7.2 16-16 16H26c-8.8 0-16-7.2-16-16V27c0-4.4 3.6-8 8-8Z" fill="currentColor" />
-            <path d="M18 19v18c0 4.4 3.6 8 8 8h7" fill="none" stroke="#111820" strokeLinecap="round" strokeWidth="5" opacity="0.38" />
-          </svg>
-        );
-      case 'kali':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M12 39c12.5-11.8 26.8-17.9 43-18.5-4.3 3.6-7.8 7.7-10.5 12.5 4.8.4 8.2 1.6 10.3 3.8-9.2.2-16.4 2.2-21.7 6.1-4.3 3.2-9.4 4.5-15.1 4l9.4-7.4C22 38.8 16.9 38.6 12 39Z" fill="currentColor" />
-            <path d="M33 28.4c-4.8 2.5-9.2 5.4-13.3 8.8" stroke="#111820" strokeLinecap="round" strokeWidth="3.8" opacity="0.34" />
-          </svg>
-        );
-      case 'raspbian':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M32 17c2.2-4.3 6.6-6.2 12.8-5.5-1.1 5.3-4.8 8.4-11.1 9.4" fill="currentColor" opacity="0.65" />
-            <circle cx="25" cy="31" r="8" fill="currentColor" />
-            <circle cx="39" cy="31" r="8" fill="currentColor" />
-            <circle cx="32" cy="42" r="8" fill="currentColor" />
-            <circle cx="23" cy="43" r="6.3" fill="currentColor" opacity="0.8" />
-            <circle cx="41" cy="43" r="6.3" fill="currentColor" opacity="0.8" />
-          </svg>
-        );
-      case 'gentoo':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M20 18c9.5-5.8 26.4 1.5 28.9 13.2 2.2 10.2-9.2 18.3-22.1 17.5-8.7-.6-14.1-4.5-13.8-10.2.3-5.3 5.7-8.2 13.8-7.4 4.9.5 8.2-.5 9.8-2.9-4.9-4.8-10.3-8.2-16.6-10.2Z" fill="currentColor" />
-            <path d="M26.4 31.1c5 .5 8.4-.5 10.2-2.9" fill="none" stroke="#111820" strokeLinecap="round" strokeWidth="4.5" opacity="0.34" />
-          </svg>
-        );
-      case 'nixos':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M32 11v42M14 21.5l36 21M14 42.5l36-21" stroke="currentColor" strokeLinecap="round" strokeWidth="5" />
-            <path d="M24 16.5 32 21l8-4.5M24 47.5 32 43l8 4.5M16 32h10M38 32h10" stroke="currentColor" strokeLinecap="round" strokeWidth="4" opacity="0.58" />
-          </svg>
-        );
-      case 'popos':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M32 12 37.6 25 52 26.3 41.1 35.9 44.4 50 32 42.6 19.6 50l3.3-14.1L12 26.3 26.4 25 32 12Z" fill="currentColor" />
-            <circle cx="32" cy="32" r="7.2" fill="#111820" opacity="0.42" />
-          </svg>
-        );
-      case 'elementary':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <circle cx="32" cy="32" r="21" fill="none" stroke="currentColor" strokeWidth="5.2" />
-            <path d="M20 35c2.6 5.1 7 7.5 13.2 7.3 5.1-.2 9.1-2.1 12-5.6M19.5 29c3.1-5.8 7.5-8.4 13.2-7.9 5.8.5 9.8 3.8 12 9.9H22" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="4.5" />
-          </svg>
-        );
-      case 'linux':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <ellipse cx="32" cy="32" rx="15" ry="21" fill="#12161d" />
-            <ellipse cx="32" cy="38" rx="10" ry="13" fill="#f4f7fb" />
-            <circle cx="26.5" cy="24" r="2.3" fill="#f4f7fb" />
-            <circle cx="37.5" cy="24" r="2.3" fill="#f4f7fb" />
-            <path d="M28 30.5h8L32 35l-4-4.5Z" fill="#f5ad31" />
-            <path d="M20 51c2.9-3.2 8.4-3.2 11 0H20ZM33 51c2.9-3.2 8.4-3.2 11 0H33Z" fill="#f5ad31" />
-          </svg>
-        );
-      case 'unix':
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <path d="M18 42.5c4.9-9.5 9.5-17.3 14-23.2 4.6 5.9 9.2 13.7 14 23.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="5.5" />
-            <path d="M22 38h20M27 29h10" stroke="currentColor" strokeLinecap="round" strokeWidth="5.5" opacity="0.62" />
-          </svg>
-        );
-      default:
-        return (
-          <svg viewBox="0 0 64 64" {...commonProps}>
-            <rect x="14" y="18" width="36" height="25" rx="6" fill="none" stroke="currentColor" strokeWidth="4.4" />
-            <path d="m23 27 6 5-6 5M32 38h10" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.4" />
-            <path d="M24 49h16" stroke="currentColor" strokeLinecap="round" strokeWidth="4.4" opacity="0.55" />
-          </svg>
-        );
-    }
-  })();
-
-  return (
-    <span className={`host-avatar host-system-icon host-system-${effectiveSystemType}`} title={label} aria-label={label}>
-      {icon}
-    </span>
   );
 }
 

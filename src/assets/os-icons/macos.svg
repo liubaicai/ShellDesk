@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="macOS">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38a3ff"/>
+      <stop offset="1" stop-color="#8a5bff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#e4f3ff" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#e4f3ff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#e4f3ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#eef7ff">
+    <path d="M15 16.5h34c2.8 0 5 2.2 5 5v21c0 2.8-2.2 5-5 5H15c-2.8 0-5-2.2-5-5v-21c0-2.8 2.2-5 5-5Z" fill="#eaf5ff" opacity="0.96"/>
+    <path d="M32 16.5h17c2.8 0 5 2.2 5 5v21c0 2.8-2.2 5-5 5H32v-31Z" fill="#77d9ff" opacity="0.78"/>
+    <path d="M31.8 20.5c-4.8 4.7-7.1 9.4-7 14.2.2 4.7 2.6 8.1 7.2 10.2" fill="none" stroke="#1f3f67" stroke-linecap="round" stroke-width="2.9" opacity="0.62"/>
+    <circle cx="24.3" cy="30.2" r="1.7" fill="#1f3f67"/>
+    <circle cx="40.2" cy="30.2" r="1.7" fill="#1f3f67"/>
+    <path d="M25 38.2c4.4 2.7 9.6 2.7 14 0" fill="none" stroke="#1f3f67" stroke-linecap="round" stroke-width="2.9"/>
+  </g>
+</svg>

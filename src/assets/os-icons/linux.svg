@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Linux">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#343c49"/>
+      <stop offset="1" stop-color="#10151d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(44 16) rotate(122) scale(33 27)">
+      <stop stop-color="#ffd36e" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#ffd36e" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffd36e" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-shadow" x="-20%" y="-16%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020812" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
+  <g filter="url(#soft-shadow)" color="#f5ad31">
+    <ellipse cx="32" cy="32" rx="15" ry="21" fill="#12161d"/>
+    <ellipse cx="32" cy="38" rx="10" ry="13" fill="#f4f7fb"/>
+    <circle cx="26.5" cy="24" r="2.3" fill="#f4f7fb"/>
+    <circle cx="37.5" cy="24" r="2.3" fill="#f4f7fb"/>
+    <path d="M28 30.5h8L32 35l-4-4.5Z" fill="#f5ad31"/>
+    <path d="M20 51c2.9-3.2 8.4-3.2 11 0H20ZM33 51c2.9-3.2 8.4-3.2 11 0H33Z" fill="#f5ad31"/>
+  </g>
+</svg>
