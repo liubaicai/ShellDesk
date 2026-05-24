@@ -127,7 +127,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     getStatus: (connectionId) => ipcRenderer.invoke('connection:get-status', connectionId),
     getSystemInfo: (connectionId) => ipcRenderer.invoke('connection:get-system-info', connectionId),
     getMetrics: (connectionId) => ipcRenderer.invoke('connection:get-metrics', connectionId),
-    runCommand: (connectionId, command) => ipcRenderer.invoke('connection:run-command', connectionId, command),
+    runCommand: (connectionId, command, stdin) => ipcRenderer.invoke('connection:run-command', connectionId, command, stdin),
     mysqlConnect: (connectionId, config) => ipcRenderer.invoke('connection:mysql-connect', connectionId, config),
     mysqlDisconnect: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-disconnect', connectionId, mysqlId),
     mysqlDatabases: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-databases', connectionId, mysqlId),

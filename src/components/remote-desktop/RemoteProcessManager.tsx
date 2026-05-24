@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
 export type RemoteProcessManagerSortKey =
@@ -293,7 +293,38 @@ function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] {
       })
       .filter((process): process is RemoteProcessEntry => Boolean(process));
   } catch {
-    return [];
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map<RemoteProcessEntry | null>((line) => {
+        const parts = line.split('\t');
+
+        if (parts[0] !== 'PROC') {
+          return null;
+        }
+
+        const pid = readInteger(parts[1]);
+
+        if (pid === undefined) {
+          return null;
+        }
+
+        return {
+          pid,
+          ppid: readInteger(parts[2]),
+          user: parts[3] || '-',
+          cpuSeconds: readNumber(parts[4]),
+          memoryMb: readNumber(parts[5]),
+          state: parts[6] || 'Running',
+          startTime: parts[7] || '',
+          runtime: parts[8] || '',
+          cpuTime: parts[9] || '',
+          command: parts[10]?.trim() || `PID ${pid}`,
+          executablePath: parts[11]?.trim() || undefined,
+        };
+      })
+      .filter((process): process is RemoteProcessEntry => Boolean(process));
   }
 }
 
@@ -302,21 +333,96 @@ function getLinuxProcessListCommand() {
 }
 
 function getWindowsProcessListCommand() {
-  return powershellCommand(`
-$processById = @{}
-Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
-  $processById[[int]$_.Id] = $_
+  return powershellStdinCommand(`
+$tab = [char]9
+$hasInvokeCimMethod = [bool](Get-Command Invoke-CimMethod -ErrorAction SilentlyContinue)
+
+function Clean-Field($value) {
+  if ($null -eq $value) { return '' }
+  return ([string]$value) -replace "[\`r\`n\`t]", ' '
 }
 
-$items = Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object {
-  $proc = $processById[[int]$_.ProcessId]
+function Is-Blank($value) {
+  if ($null -eq $value) { return $true }
+  return ([string]$value).Trim().Length -eq 0
+}
+
+function Write-ProcessRow($processIdValue, $parentProcessIdValue, $owner, $cpuSeconds, $memoryMb, $state, $startTime, $runtime, $cpuTime, $command, $path) {
+  $fields = @(
+    'PROC',
+    $processIdValue,
+    $parentProcessIdValue,
+    $owner,
+    $cpuSeconds,
+    $memoryMb,
+    $state,
+    $startTime,
+    $runtime,
+    $cpuTime,
+    $command,
+    $path
+  )
+  ($fields | ForEach-Object { Clean-Field $_ }) -join $tab
+}
+
+function Get-ProcessRecords {
+  try {
+    return @(Get-CimInstance Win32_Process -ErrorAction Stop)
+  } catch {
+    try {
+      return @(Get-WmiObject Win32_Process -ErrorAction Stop)
+    } catch {
+      return @()
+    }
+  }
+}
+
+function Get-OwnerText($processRecord) {
   $owner = '-'
   try {
-    $ownerInfo = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction Stop
-    if ($ownerInfo.ReturnValue -eq 0 -and $ownerInfo.User) {
+    $ownerInfo = $null
+    if ($hasInvokeCimMethod) {
+      $ownerInfo = Invoke-CimMethod -InputObject $processRecord -MethodName GetOwner -ErrorAction Stop
+    } elseif ($processRecord.PSObject.Methods['GetOwner']) {
+      $ownerInfo = $processRecord.GetOwner()
+    }
+
+    if ($ownerInfo -and $ownerInfo.ReturnValue -eq 0 -and $ownerInfo.User) {
       if ($ownerInfo.Domain) { $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)" } else { $owner = $ownerInfo.User }
     }
   } catch {}
+
+  return $owner
+}
+
+function Format-ProcessDate($value) {
+  if ($null -eq $value) { return '' }
+  try {
+    if ($value -is [datetime]) { return $value.ToString('yyyy-MM-dd HH:mm') }
+    return ([Management.ManagementDateTimeConverter]::ToDateTime([string]$value)).ToString('yyyy-MM-dd HH:mm')
+  } catch {
+    try { return ([datetime]$value).ToString('yyyy-MM-dd HH:mm') } catch { return [string]$value }
+  }
+}
+
+$processById = @{}
+try {
+  Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+    $processById[[int]$_.Id] = $_
+  }
+} catch {}
+
+$processRecords = Get-ProcessRecords
+$rowCount = 0
+
+if (@($processRecords).Count -gt 0) {
+foreach ($record in @($processRecords)) {
+  if ($rowCount -ge 800) { break }
+  $rowCount += 1
+
+  $_ = $record
+  $proc = $processById[[int]$_.ProcessId]
+  $owner = Get-OwnerText $_
 
   $cpuSeconds = $null
   if ($proc -and $null -ne $proc.CPU) { $cpuSeconds = [double][math]::Round($proc.CPU, 1) }
@@ -328,16 +434,13 @@ $items = Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object {
     $memoryMb = [double][math]::Round(([double]$proc.WorkingSet64 / 1MB), 1)
   }
 
-  $startTime = ''
-  if ($null -ne $_.CreationDate) {
-    try { $startTime = ([datetime]$_.CreationDate).ToString('yyyy-MM-dd HH:mm') } catch { $startTime = [string]$_.CreationDate }
-  }
+  $startTime = Format-ProcessDate $_.CreationDate
 
   $state = 'Running'
   if ($proc -and $proc.Responding -eq $false) { $state = 'NotResponding' }
 
   $command = $_.CommandLine
-  if ([string]::IsNullOrWhiteSpace($command)) { $command = $_.Name }
+  if (Is-Blank $command) { $command = $_.Name }
 
   $parentPid = $null
   if ($null -ne $_.ParentProcessId) { $parentPid = [int]$_.ParentProcessId }
@@ -345,25 +448,29 @@ $items = Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object {
   $cpuTime = ''
   if ($null -ne $cpuSeconds) { $cpuTime = "$cpuSeconds s" }
 
-  [pscustomobject]@{
-    pid = [int]$_.ProcessId
-    ppid = $parentPid
-    user = $owner
-    cpuSeconds = $cpuSeconds
-    memoryMb = $memoryMb
-    state = $state
-    startTime = $startTime
-    runtime = ''
-    cpuTime = $cpuTime
-    command = $command
-    executablePath = $_.ExecutablePath
+  Write-ProcessRow ([int]$_.ProcessId) $parentPid $owner $cpuSeconds $memoryMb $state $startTime '' $cpuTime $command $_.ExecutablePath
+}
+} elseif ($processById.Count -gt 0) {
+  foreach ($processEntry in @($processById.Values)) {
+    if ($rowCount -ge 800) { break }
+    $rowCount += 1
+    $_ = $processEntry
+    $cpuSeconds = $null
+    if ($null -ne $_.CPU) { $cpuSeconds = [double][math]::Round($_.CPU, 1) }
+    $memoryMb = $null
+    if ($null -ne $_.WorkingSet64) { $memoryMb = [double][math]::Round(([double]$_.WorkingSet64 / 1MB), 1) }
+    $startTime = ''
+    try { if ($_.StartTime) { $startTime = $_.StartTime.ToString('yyyy-MM-dd HH:mm') } } catch {}
+    $state = 'Running'
+    if ($_.Responding -eq $false) { $state = 'NotResponding' }
+    $cpuTime = ''
+    if ($null -ne $cpuSeconds) { $cpuTime = "$cpuSeconds s" }
+    $path = $null
+    try { $path = $_.Path } catch {}
+
+    Write-ProcessRow ([int]$_.Id) '' '-' $cpuSeconds $memoryMb $state $startTime '' $cpuTime $_.ProcessName $path
   }
 }
-
-$items |
-  Sort-Object -Property @{ Expression = { if ($null -eq $_.cpuSeconds) { -1 } else { $_.cpuSeconds } }; Descending = $true } |
-  Select-Object -First 800 |
-  ConvertTo-Json -Compress
 `);
 }
 
@@ -406,31 +513,62 @@ fi
 }
 
 function getWindowsProcessDetailCommand(pid: number) {
-  return powershellCommand(`
+  return powershellStdinCommand(`
 $tab = [char]9
-$proc = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue
-if ($proc -and $proc.ExecutablePath) { "PATH" + $tab + $proc.ExecutablePath }
+$foundPort = $false
+$proc = $null
+try { $proc = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction Stop } catch {
+  try { $proc = Get-WmiObject Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction Stop } catch {}
+}
+if ($proc -and $proc.ExecutablePath) {
+  "PATH" + $tab + $proc.ExecutablePath
+} else {
+  try {
+    $psProc = Get-Process -Id ${pid} -ErrorAction Stop
+    if ($psProc.Path) { "PATH" + $tab + $psProc.Path }
+  } catch {}
+}
 try {
-  Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction SilentlyContinue | ForEach-Object {
-    "PORT" + $tab + "TCP $($_.LocalAddress):$($_.LocalPort) -> $($_.RemoteAddress):$($_.RemotePort) $($_.State)"
+  if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+    Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction Stop | ForEach-Object {
+      $foundPort = $true
+      "PORT" + $tab + "TCP $($_.LocalAddress):$($_.LocalPort) -> $($_.RemoteAddress):$($_.RemotePort) $($_.State)"
+    }
   }
 } catch {}
 try {
-  Get-NetUDPEndpoint -OwningProcess ${pid} -ErrorAction SilentlyContinue | ForEach-Object {
-    "PORT" + $tab + "UDP $($_.LocalAddress):$($_.LocalPort)"
+  if (Get-Command Get-NetUDPEndpoint -ErrorAction SilentlyContinue) {
+    Get-NetUDPEndpoint -OwningProcess ${pid} -ErrorAction Stop | ForEach-Object {
+      $foundPort = $true
+      "PORT" + $tab + "UDP $($_.LocalAddress):$($_.LocalPort)"
+    }
   }
 } catch {}
+if (-not $foundPort) {
+  try {
+    netstat -ano | ForEach-Object {
+      $line = $_.Trim()
+      if ($line -match '^(TCP|UDP)\\s+' -and $line -match '\\s+${pid}$') {
+        "PORT" + $tab + $line
+      }
+    }
+  } catch {}
+}
 `);
 }
 
-async function runCmd(connectionId: string, command: string) {
+async function runCmd(connectionId: string, command: string | RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
     throw new Error('ShellDesk IPC 未就绪。');
   }
 
-  return api.runCommand(connectionId, command);
+  if (typeof command === 'string') {
+    return api.runCommand(connectionId, command);
+  }
+
+  return api.runCommand(connectionId, command.command, command.stdin);
 }
 
 function getStateTone(state?: string) {

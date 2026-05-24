@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getErrorMessage } from './desktopUtils';
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
 
@@ -36,14 +36,18 @@ interface EndpointParts {
 
 const portToolMarker = '__SHELLDESK_PORT_TOOL__';
 
-function runCmd(connectionId: string, command: string) {
+function runCmd(connectionId: string, command: string | RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
     throw new Error('ShellDesk IPC 未就绪。');
   }
 
-  return api.runCommand(connectionId, command);
+  if (typeof command === 'string') {
+    return api.runCommand(connectionId, command);
+  }
+
+  return api.runCommand(connectionId, command.command, command.stdin);
 }
 
 function shellSingleQuote(value: string) {
@@ -243,32 +247,66 @@ function parseWindowsPorts(stdout: string): PortListenerEntry[] {
     return [];
   }
 
-  const parsedJson = JSON.parse(trimmedText) as unknown;
-  const rows = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+  try {
+    const parsedJson = JSON.parse(trimmedText) as unknown;
+    const rows = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
 
-  return rows
-    .map(toRecord)
-    .filter((record): record is Record<string, unknown> => Boolean(record))
-    .map((record, index) => {
-      const protocol = normalizeProtocol(readText(record, 'Protocol'));
-      const localPort = parseMaybeNumber(record.LocalPort) ?? null;
-      const remotePort = parseMaybeNumber(record.RemotePort) ?? null;
-      const pid = parseMaybeNumber(record.Pid);
-      const entry: Omit<PortListenerEntry, 'id'> = {
-        protocol,
-        state: readText(record, 'State') || (protocol === 'udp' ? 'UNCONN' : 'UNKNOWN'),
-        localAddress: readText(record, 'LocalAddress') || '*',
-        localPort,
-        remoteAddress: readText(record, 'RemoteAddress') || '*',
-        remotePort,
-        pid,
-        processName: readText(record, 'ProcessName') || undefined,
-        command: readText(record, 'CommandLine') || undefined,
-        source: 'powershell',
-      };
+    return rows
+      .map(toRecord)
+      .filter((record): record is Record<string, unknown> => Boolean(record))
+      .map((record, index) => {
+        const protocol = normalizeProtocol(readText(record, 'Protocol'));
+        const localPort = parseMaybeNumber(record.LocalPort) ?? null;
+        const remotePort = parseMaybeNumber(record.RemotePort) ?? null;
+        const pid = parseMaybeNumber(record.Pid);
+        const entry: Omit<PortListenerEntry, 'id'> = {
+          protocol,
+          state: readText(record, 'State') || (protocol === 'udp' ? 'UNCONN' : 'UNKNOWN'),
+          localAddress: readText(record, 'LocalAddress') || '*',
+          localPort,
+          remoteAddress: readText(record, 'RemoteAddress') || '*',
+          remotePort,
+          pid,
+          processName: readText(record, 'ProcessName') || undefined,
+          command: readText(record, 'CommandLine') || undefined,
+          source: 'powershell',
+        };
 
-      return { ...entry, id: createEntryId(entry, index) };
-    });
+        return { ...entry, id: createEntryId(entry, index) };
+      });
+  } catch {
+    return trimmedText
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line, index) => {
+        const parts = line.split('\t');
+
+        if (parts[0] !== 'PORT') {
+          return null;
+        }
+
+        const protocol = normalizeProtocol(parts[1] ?? '');
+        const localPort = parseMaybeNumber(parts[4]) ?? null;
+        const remotePort = parseMaybeNumber(parts[6]) ?? null;
+        const pid = parseMaybeNumber(parts[7]);
+        const entry: Omit<PortListenerEntry, 'id'> = {
+          protocol,
+          state: parts[2] || (protocol === 'udp' ? 'UNCONN' : 'UNKNOWN'),
+          localAddress: parts[3] || '*',
+          localPort,
+          remoteAddress: parts[5] || '*',
+          remotePort,
+          pid,
+          processName: parts[8] || undefined,
+          command: parts[9] || undefined,
+          source: 'powershell',
+        };
+
+        return { ...entry, id: createEntryId(entry, index) };
+      })
+      .filter((entry): entry is PortListenerEntry => Boolean(entry));
+  }
 }
 
 function createUnixPortCommand() {
@@ -280,47 +318,145 @@ function createUnixPortCommand() {
 }
 
 function createWindowsPortCommand() {
-  return powershellCommand(`
+  return powershellStdinCommand(`
 $ErrorActionPreference = 'SilentlyContinue'
-$tcpRows = Get-NetTCPConnection | ForEach-Object {
-  $processName = ''
-  $commandLine = ''
-  if ($_.OwningProcess) {
-    try { $processName = (Get-Process -Id $_.OwningProcess).ProcessName } catch {}
-    try { $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)").CommandLine } catch {}
-  }
-  [PSCustomObject]@{
-    Protocol = 'tcp'
-    State = [string]$_.State
-    LocalAddress = [string]$_.LocalAddress
-    LocalPort = [int]$_.LocalPort
-    RemoteAddress = [string]$_.RemoteAddress
-    RemotePort = if ($null -ne $_.RemotePort) { [int]$_.RemotePort } else { $null }
-    Pid = if ($_.OwningProcess) { [int]$_.OwningProcess } else { $null }
-    ProcessName = $processName
-    CommandLine = $commandLine
+$tab = [char]9
+
+function Clean-Field($value) {
+  if ($null -eq $value) { return '' }
+  return ([string]$value) -replace "[\`r\`n\`t]", ' '
+}
+
+function Is-Blank($value) {
+  if ($null -eq $value) { return $true }
+  return ([string]$value).Trim().Length -eq 0
+}
+
+function Get-ProcessRecords {
+  try {
+    return @(Get-CimInstance Win32_Process -ErrorAction Stop)
+  } catch {
+    try {
+      return @(Get-WmiObject Win32_Process -ErrorAction Stop)
+    } catch {
+      return @()
+    }
   }
 }
-$udpRows = Get-NetUDPEndpoint | ForEach-Object {
-  $processName = ''
-  $commandLine = ''
-  if ($_.OwningProcess) {
-    try { $processName = (Get-Process -Id $_.OwningProcess).ProcessName } catch {}
-    try { $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)").CommandLine } catch {}
-  }
-  [PSCustomObject]@{
-    Protocol = 'udp'
-    State = 'UNCONN'
-    LocalAddress = [string]$_.LocalAddress
-    LocalPort = [int]$_.LocalPort
-    RemoteAddress = ''
-    RemotePort = $null
-    Pid = if ($_.OwningProcess) { [int]$_.OwningProcess } else { $null }
-    ProcessName = $processName
-    CommandLine = $commandLine
-  }
+
+$processInfo = @{}
+$processNames = @{}
+Get-ProcessRecords | ForEach-Object {
+  if ($null -ne $_.ProcessId) { $processInfo[[int]$_.ProcessId] = $_ }
 }
-@($tcpRows + $udpRows) | Sort-Object Protocol, LocalPort, LocalAddress | Select-Object -First 1500 | ConvertTo-Json -Depth 4
+try {
+  Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+    $processNames[[int]$_.Id] = $_.ProcessName
+  }
+} catch {}
+
+function Normalize-Int($value) {
+  if ((Is-Blank $value) -or [string]$value -eq '*') { return $null }
+  try { return [int]$value } catch { return $null }
+}
+
+function Get-ProcessNameByPid($processIdValue) {
+  $id = Normalize-Int $processIdValue
+  if ($null -eq $id) { return '' }
+  if ($processInfo.ContainsKey($id) -and $processInfo[$id].Name) { return [string]$processInfo[$id].Name }
+  if ($processNames.ContainsKey($id)) { return [string]$processNames[$id] }
+  return ''
+}
+
+function Get-CommandLineByPid($processIdValue) {
+  $id = Normalize-Int $processIdValue
+  if ($null -eq $id) { return '' }
+  if ($processInfo.ContainsKey($id) -and $processInfo[$id].CommandLine) { return [string]$processInfo[$id].CommandLine }
+  return ''
+}
+
+function New-PortRow($protocol, $state, $localAddress, $localPort, $remoteAddress, $remotePort, $processIdValue) {
+  $normalizedPid = Normalize-Int $processIdValue
+  $fields = @(
+    'PORT',
+    $protocol,
+    $state,
+    $localAddress,
+    (Normalize-Int $localPort),
+    $remoteAddress,
+    (Normalize-Int $remotePort),
+    $normalizedPid,
+    (Get-ProcessNameByPid $normalizedPid),
+    (Get-CommandLineByPid $normalizedPid)
+  )
+  ($fields | ForEach-Object { Clean-Field $_ }) -join $tab
+}
+
+function Split-NetstatEndpoint($endpoint) {
+  $raw = ([string]$endpoint).Trim()
+  if ((Is-Blank $raw) -or $raw -eq '*' -or $raw -eq '*:*') {
+    return @{ Address = '*'; Port = $null }
+  }
+
+  if ($raw -match '^\\[(.*)\\]:(\\d+|\\*)$') {
+    return @{ Address = $matches[1]; Port = Normalize-Int $matches[2] }
+  }
+
+  if ($raw -match '^(.*):(\\d+|\\*)$') {
+    $address = $matches[1]
+    if (Is-Blank $address) { $address = '*' }
+    return @{ Address = $address; Port = Normalize-Int $matches[2] }
+  }
+
+  return @{ Address = $raw; Port = $null }
+}
+
+$rowsWritten = 0
+
+if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+  try {
+    Get-NetTCPConnection -ErrorAction Stop | ForEach-Object {
+      if ($rowsWritten -lt 1500) {
+        $rowsWritten += 1
+      New-PortRow 'tcp' $_.State $_.LocalAddress $_.LocalPort $_.RemoteAddress $_.RemotePort $_.OwningProcess
+      }
+    }
+  } catch {}
+}
+
+if (Get-Command Get-NetUDPEndpoint -ErrorAction SilentlyContinue) {
+  try {
+    Get-NetUDPEndpoint -ErrorAction Stop | ForEach-Object {
+      if ($rowsWritten -lt 1500) {
+        $rowsWritten += 1
+        New-PortRow 'udp' 'UNCONN' $_.LocalAddress $_.LocalPort '' $null $_.OwningProcess
+      }
+    }
+  } catch {}
+}
+
+if ($rowsWritten -eq 0) {
+  try {
+    foreach ($line in @(netstat -ano)) {
+      if ($rowsWritten -ge 1500) { break }
+      $text = $line.Trim()
+      if ($text -notmatch '^(TCP|UDP)\\s+') { continue }
+
+      $parts = $text -split '\\s+'
+      if ($parts[0] -eq 'TCP' -and $parts.Count -ge 5) {
+        $local = Split-NetstatEndpoint $parts[1]
+        $remote = Split-NetstatEndpoint $parts[2]
+        $rowsWritten += 1
+        New-PortRow 'tcp' $parts[3] $local.Address $local.Port $remote.Address $remote.Port $parts[4]
+      } elseif ($parts[0] -eq 'UDP' -and $parts.Count -ge 4) {
+        $local = Split-NetstatEndpoint $parts[1]
+        $remote = Split-NetstatEndpoint $parts[2]
+        $rowsWritten += 1
+        New-PortRow 'udp' 'UNCONN' $local.Address $local.Port $remote.Address $remote.Port $parts[$parts.Count - 1]
+      }
+    }
+  } catch {}
+}
 `);
 }
 
@@ -373,16 +509,24 @@ function createUnixProcessDetailCommand(pid: number) {
 }
 
 function createWindowsProcessDetailCommand(pid: number) {
-  return powershellCommand(`
-$process = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"
+  return powershellStdinCommand(`
+$process = $null
+try { $process = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction Stop } catch {
+  try { $process = Get-WmiObject Win32_Process -Filter "ProcessId=${pid}" -ErrorAction Stop } catch {}
+}
 if ($process) {
-  [PSCustomObject]@{
-    ProcessId = $process.ProcessId
-    ParentProcessId = $process.ParentProcessId
-    Name = $process.Name
-    ExecutablePath = $process.ExecutablePath
-    CommandLine = $process.CommandLine
-  } | ConvertTo-Json -Depth 3
+  "ProcessId: $($process.ProcessId)"
+  "ParentProcessId: $($process.ParentProcessId)"
+  "Name: $($process.Name)"
+  "ExecutablePath: $($process.ExecutablePath)"
+  "CommandLine: $($process.CommandLine)"
+} else {
+  try {
+    $psProcess = Get-Process -Id ${pid} -ErrorAction Stop
+    "ProcessId: $($psProcess.Id)"
+    "Name: $($psProcess.ProcessName)"
+    "ExecutablePath: $($psProcess.Path)"
+  } catch {}
 }
 `);
 }

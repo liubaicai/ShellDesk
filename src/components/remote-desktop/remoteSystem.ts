@@ -4,7 +4,12 @@ export function isWindowsSystem(systemType?: RemoteSystemType) {
   return systemType === 'windows';
 }
 
-export function powershellCommand(script: string) {
+export interface RemoteCommandInput {
+  command: string;
+  stdin?: string;
+}
+
+function createPowerShellScript(script: string) {
   const utf8Prelude = `
 try {
 $__shelldeskUtf8 = New-Object System.Text.UTF8Encoding $false
@@ -14,7 +19,12 @@ $OutputEncoding = $__shelldeskUtf8
 } catch {}
 try { chcp.com 65001 > $null } catch {}
 `;
-  const fullScript = `${utf8Prelude}\n${script}`;
+
+  return `${utf8Prelude}\n${script}`;
+}
+
+export function powershellCommand(script: string) {
+  const fullScript = createPowerShellScript(script);
   const bytes = new Uint8Array(fullScript.length * 2);
 
   for (let index = 0; index < fullScript.length; index += 1) {
@@ -29,6 +39,13 @@ try { chcp.com 65001 > $null } catch {}
   }
 
   return `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${btoa(binary)}`;
+}
+
+export function powershellStdinCommand(script: string): RemoteCommandInput {
+  return {
+    command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command -',
+    stdin: createPowerShellScript(script),
+  };
 }
 
 export function powershellSingleQuote(value: string) {

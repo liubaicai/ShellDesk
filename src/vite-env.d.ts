@@ -378,7 +378,7 @@ interface ShellDeskConnectionControls {
   getStatus: (connectionId: string) => Promise<ShellDeskRemoteStatusReport>;
   getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
   getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;
-  runCommand: (connectionId: string, command: string) => Promise<{ stdout: string; stderr: string; code: number }>;
+  runCommand: (connectionId: string, command: string, stdin?: string) => Promise<{ stdout: string; stderr: string; code: number }>;
   mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;

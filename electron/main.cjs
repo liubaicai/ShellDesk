@@ -5,6 +5,7 @@ const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
+const { TextDecoder } = require('node:util');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const Redis = require('ioredis');
@@ -19,6 +20,8 @@ const maxConfigImportBytes = 20 * 1024 * 1024;
 const maxPrivateKeyBytes = 1024 * 1024;
 const maxRemoteTextFileBytes = 5 * 1024 * 1024;
 const maxRemoteTextWriteBytes = 10 * 1024 * 1024;
+const maxRemoteCommandLength = 64 * 1024;
+const maxRemoteCommandInputLength = 512 * 1024;
 const maxVaultBytes = 25 * 1024 * 1024;
 const maxConfigStoreBytes = 25 * 1024 * 1024;
 const maxDesktopWallpaperBytes = 5 * 1024 * 1024;
@@ -3996,6 +3999,68 @@ registerIpcHandler('connection:get-metrics', async (_event, connectionId) => {
 
 // ─── Remote SSH command execution ───────────────────────────────────────────
 
+function countReplacementChars(value) {
+  return (value.match(/\uFFFD/g) ?? []).length;
+}
+
+function decodeWithTextDecoder(buffer, encoding) {
+  try {
+    return new TextDecoder(encoding, { fatal: false }).decode(buffer);
+  } catch {
+    return '';
+  }
+}
+
+function looksLikeUtf16Le(buffer) {
+  if (buffer.length < 4) {
+    return false;
+  }
+
+  let nullOddBytes = 0;
+  const sampleLength = Math.min(buffer.length, 512);
+
+  for (let index = 1; index < sampleLength; index += 2) {
+    if (buffer[index] === 0) {
+      nullOddBytes += 1;
+    }
+  }
+
+  return nullOddBytes / Math.max(1, Math.floor(sampleLength / 2)) > 0.35;
+}
+
+function decodeSshOutputBuffer(buffer) {
+  if (!buffer.length) {
+    return '';
+  }
+
+  if (looksLikeUtf16Le(buffer)) {
+    return buffer.toString('utf16le');
+  }
+
+  const utf8Text = buffer.toString('utf8');
+
+  if (!utf8Text.includes('\uFFFD')) {
+    return utf8Text;
+  }
+
+  const candidates = ['gb18030', 'gbk', 'big5']
+    .map((encoding) => decodeWithTextDecoder(buffer, encoding))
+    .filter(Boolean);
+  let bestText = utf8Text;
+  let bestReplacementCount = countReplacementChars(utf8Text);
+
+  for (const candidate of candidates) {
+    const replacementCount = countReplacementChars(candidate);
+
+    if (replacementCount < bestReplacementCount) {
+      bestText = candidate;
+      bestReplacementCount = replacementCount;
+    }
+  }
+
+  return bestText;
+}
+
 function execSshCommand(client, command) {
   return new Promise((resolve, reject) => {
     client.exec(command, (error, stream) => {
@@ -4004,12 +4069,14 @@ function execSshCommand(client, command) {
         return;
       }
 
-      let stdout = '';
-      let stderr = '';
+      const stdoutChunks = [];
+      const stderrChunks = [];
 
-      stream.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-      stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      stream.on('data', (chunk) => { stdoutChunks.push(Buffer.from(chunk)); });
+      stream.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
       stream.on('close', (code) => {
+        const stdout = decodeSshOutputBuffer(Buffer.concat(stdoutChunks));
+        const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
         if (code === 0) {
           resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
         } else {
@@ -4021,7 +4088,7 @@ function execSshCommand(client, command) {
   });
 }
 
-function execRemoteCommandRaw(client, command) {
+function execRemoteCommandRaw(client, command, stdin = '') {
   return new Promise((resolve, reject) => {
     client.exec(command, (error, stream) => {
       if (error) {
@@ -4029,12 +4096,17 @@ function execRemoteCommandRaw(client, command) {
         return;
       }
 
-      let stdout = '';
-      let stderr = '';
+      const stdoutChunks = [];
+      const stderrChunks = [];
 
-      stream.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-      stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      stream.on('data', (chunk) => { stdoutChunks.push(Buffer.from(chunk)); });
+      stream.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
+      if (stdin) {
+        stream.end(stdin, 'utf8');
+      }
       stream.on('close', (code) => {
+        const stdout = decodeSshOutputBuffer(Buffer.concat(stdoutChunks));
+        const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
       });
       stream.once('error', reject);
@@ -4042,10 +4114,13 @@ function execRemoteCommandRaw(client, command) {
   });
 }
 
-registerIpcHandler('connection:run-command', async (_event, connectionId, rawCommand) => {
+registerIpcHandler('connection:run-command', async (_event, connectionId, rawCommand, rawStdin) => {
   const activeConnection = getActiveConnection(connectionId);
-  const command = readBoundedString(rawCommand, '命令', 4096, { rejectLineBreaks: false });
-  return execRemoteCommandRaw(activeConnection.client, command);
+  const command = readBoundedString(rawCommand, '命令', maxRemoteCommandLength, { rejectLineBreaks: false });
+  const stdin = typeof rawStdin === 'string'
+    ? readBoundedString(rawStdin, '命令输入', maxRemoteCommandInputLength, { required: false, trim: false, rejectLineBreaks: false })
+    : '';
+  return execRemoteCommandRaw(activeConnection.client, command, stdin);
 });
 
 registerIpcHandler('connection:compress', async (_event, connectionId, rawSourcePaths, rawFormat, rawDestPath) => {
