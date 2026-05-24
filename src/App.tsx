@@ -1134,6 +1134,7 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
   const [windowConnectionId] = useState(readWindowConnectionId);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [windowConnectionError, setWindowConnectionError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionErrorNotice, setConnectionErrorNotice] = useState<ConnectionErrorNotice | null>(null);
@@ -1471,6 +1472,28 @@ function App() {
   }, [settings]);
 
   useEffect(() => {
+    if (!windowControls) {
+      return;
+    }
+
+    let isMounted = true;
+    void windowControls.isMaximized().then((maximized) => {
+      if (isMounted) {
+        setIsWindowMaximized(maximized);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribe = window.guiSSH?.events.onWindowMaximizedChange((payload) => {
+      setIsWindowMaximized(Boolean(payload.maximized));
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
+  }, [windowControls]);
+
+  useEffect(() => {
     if (!connection || !window.guiSSH?.events) {
       return;
     }
@@ -1527,7 +1550,9 @@ function App() {
   };
 
   const toggleMaximizeWindow = () => {
-    void windowControls?.toggleMaximize();
+    void windowControls?.toggleMaximize().then((maximized) => {
+      setIsWindowMaximized(maximized);
+    }).catch(() => undefined);
   };
 
   const closeWindow = () => {
@@ -2127,9 +2152,17 @@ function App() {
 
         {showWindowControls ? (
           <div className="titlebar-controls no-drag">
-            <button type="button" aria-label="最小化" onClick={minimizeWindow}>−</button>
-            <button type="button" aria-label="最大化" onClick={toggleMaximizeWindow}>□</button>
-            <button type="button" aria-label="关闭" className="danger" onClick={closeWindow}>×</button>
+            <button type="button" className="titlebar-button minimize" aria-label="最小化" title="最小化" onClick={minimizeWindow}>−</button>
+            <button
+              type="button"
+              className={`titlebar-button maximize ${isWindowMaximized ? 'restore' : ''}`}
+              aria-label={isWindowMaximized ? '还原' : '最大化'}
+              title={isWindowMaximized ? '还原' : '最大化'}
+              onClick={toggleMaximizeWindow}
+            >
+              <span className={`window-control-icon ${isWindowMaximized ? 'restore' : 'maximize'}`} aria-hidden="true" />
+            </button>
+            <button type="button" className="titlebar-button danger" aria-label="关闭" title="关闭" onClick={closeWindow}>×</button>
           </div>
         ) : null}
       </header>

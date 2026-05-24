@@ -13,6 +13,7 @@ import type {
   RemoteTerminalToolRequest,
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
+import defaultDesktopWallpaperUrl from './assets/images/default-desktop-wallpaper.png';
 
 const desktopApps = [
   { key: 'files', label: '文件管理', description: 'Windows 风格 SFTP 资源管理器' },
@@ -826,15 +827,18 @@ function getTopDesktopWindow(
   }, null);
 }
 
-function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties | undefined {
-  if (settings.desktopWallpaperMode !== 'custom' || !settings.desktopWallpaperDataUrl) {
-    return undefined;
-  }
+function hasCustomDesktopWallpaper(settings: ShellDeskAppSettings) {
+  return settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
+}
 
-  const wallpaperUrl = `url(${JSON.stringify(settings.desktopWallpaperDataUrl)})`;
+function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties {
+  const wallpaperSource = hasCustomDesktopWallpaper(settings)
+    ? settings.desktopWallpaperDataUrl
+    : defaultDesktopWallpaperUrl;
+  const wallpaperUrl = `url(${JSON.stringify(wallpaperSource)})`;
 
   return {
-    backgroundImage: `linear-gradient(180deg, rgba(7, 10, 16, 0.12), rgba(7, 10, 16, 0.38)), ${wallpaperUrl}`,
+    backgroundImage: `linear-gradient(180deg, var(--desktop-wallpaper-scrim-top), var(--desktop-wallpaper-scrim-bottom)), ${wallpaperUrl}`,
     backgroundPosition: 'center, center',
     backgroundRepeat: 'no-repeat, no-repeat',
     backgroundSize: 'cover, cover',
@@ -864,6 +868,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const terminalTitlebarMenuWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === terminalTitlebarMenu?.windowId && desktopWindow.appKey === 'terminal') ?? null;
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings);
+  const hasCustomWallpaper = hasCustomDesktopWallpaper(settings);
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
   const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => firstApp.label.localeCompare(secondApp.label, 'zh-CN'));
@@ -1543,7 +1548,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       <main className="remote-desktop-page">
         <section
           ref={desktopSurfaceRef}
-          className={`remote-desktop-surface no-drag ${desktopWallpaperStyle ? 'has-custom-wallpaper' : ''}`}
+          className={`remote-desktop-surface no-drag ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'}`}
           style={desktopWallpaperStyle}
           onContextMenu={handleSurfaceContextMenu}
           onDragOver={handleDragOver}

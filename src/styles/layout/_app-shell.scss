@@ -67,19 +67,54 @@
 }
 
 .titlebar-controls button {
+  position: relative;
+  display: inline-grid;
   width: 30px;
   height: 28px;
+  place-items: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: rgba(221, 229, 241, 0.82);
   cursor: pointer;
   font-size: 18px;
+  line-height: 1;
 }
 
-.titlebar-controls button[aria-label="最大化"] {
-  font-size: 15px;
-  line-height: 1;
+.titlebar-controls .window-control-icon {
+  position: relative;
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
+.titlebar-controls .window-control-icon.maximize::before,
+.titlebar-controls .window-control-icon.restore::before,
+.titlebar-controls .window-control-icon.restore::after {
+  position: absolute;
+  content: "";
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+.titlebar-controls .window-control-icon.maximize::before {
+  inset: 1.5px;
+}
+
+.titlebar-controls .window-control-icon.restore::before {
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 7px;
+  opacity: 0.72;
+}
+
+.titlebar-controls .window-control-icon.restore::after {
+  bottom: 1px;
+  left: 1px;
+  width: 8px;
+  height: 7px;
+  background: var(--chrome);
 }
 
 .titlebar-controls button:hover {

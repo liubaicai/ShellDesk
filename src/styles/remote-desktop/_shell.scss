@@ -16,6 +16,8 @@
 }
 
 .remote-desktop-surface {
+  --desktop-wallpaper-scrim-top: rgba(7, 10, 16, 0.1);
+  --desktop-wallpaper-scrim-bottom: rgba(7, 10, 16, 0.34);
   position: relative;
   min-height: 0;
   overflow: hidden;
@@ -760,6 +762,12 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
     radial-gradient(ellipse at 50% 100%, rgba(58, 78, 112, 0.22), transparent 46%);
   filter: none;
+}
+
+.remote-desktop-surface.has-default-wallpaper::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%),
+    radial-gradient(ellipse at 50% 100%, rgba(4, 8, 13, 0.22), transparent 54%);
 }
 
 .remote-desktop-surface.has-custom-wallpaper::before {
