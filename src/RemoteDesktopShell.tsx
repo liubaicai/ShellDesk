@@ -14,6 +14,7 @@ import type {
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import defaultDesktopWallpaperUrl from './assets/images/default-desktop-wallpaper.png';
+import { getAppLocale, translateText } from './i18n';
 
 const desktopApps = [
   { key: 'files', label: '文件管理', description: 'Windows 风格 SFTP 资源管理器' },
@@ -354,20 +355,24 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
   };
 }
 
-function getLayoutItemLabel(item: DesktopLayoutItem) {
-  return item.type === 'app' ? getAppInfo(item.appKey).label : item.name;
+function getLayoutItemLabel(item: DesktopLayoutItem, language: ShellDeskAppSettings['language']) {
+  return item.type === 'app' ? translateText(getAppInfo(item.appKey).label, language) : item.name;
 }
 
-function compareLayoutItemsByName(firstItem: DesktopLayoutItem, secondItem: DesktopLayoutItem) {
-  return getLayoutItemLabel(firstItem).localeCompare(getLayoutItemLabel(secondItem), 'zh-CN');
+function compareLayoutItemsByName(
+  firstItem: DesktopLayoutItem,
+  secondItem: DesktopLayoutItem,
+  language: ShellDeskAppSettings['language'],
+) {
+  return getLayoutItemLabel(firstItem, language).localeCompare(getLayoutItemLabel(secondItem, language), getAppLocale(language));
 }
 
-function getSortedDesktopItems(layout: ShellDeskRemoteDesktopLayout) {
+function getSortedDesktopItems(layout: ShellDeskRemoteDesktopLayout, language: ShellDeskAppSettings['language']) {
   if (layout.sortMode === 'custom') {
     return layout.items;
   }
 
-  const sortedItems = [...layout.items].sort(compareLayoutItemsByName);
+  const sortedItems = [...layout.items].sort((firstItem, secondItem) => compareLayoutItemsByName(firstItem, secondItem, language));
   return layout.sortMode === 'name-desc' ? sortedItems.reverse() : sortedItems;
 }
 
@@ -869,9 +874,12 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings);
   const hasCustomWallpaper = hasCustomDesktopWallpaper(settings);
-  const visibleDesktopItems = getSortedDesktopItems(desktopLayout);
+  const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
-  const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => firstApp.label.localeCompare(secondApp.label, 'zh-CN'));
+  const appLocale = getAppLocale(settings.language);
+  const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => (
+    translateText(firstApp.label, settings.language).localeCompare(translateText(secondApp.label, settings.language), appLocale)
+  ));
 
   useEffect(() => {
     setDesktopLayout(normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));

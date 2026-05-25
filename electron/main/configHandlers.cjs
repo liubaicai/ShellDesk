@@ -23,13 +23,46 @@ const {
   writeLogEntries,
 } = require('./vaultStore.cjs');
 
+function getCurrentLanguage() {
+  try {
+    return getVault().settings?.language === 'zh-CN' ? 'zh-CN' : 'en-US';
+  } catch {
+    return /^zh\b|^zh-/i.test(app.getLocale?.() ?? '') ? 'zh-CN' : 'en-US';
+  }
+}
+
+function getDialogText(language) {
+  return language === 'zh-CN'
+    ? {
+        selectPrivateKey: '选择 SSH 私钥文件',
+        selectPublicKey: '选择 SSH 公钥文件',
+        exportConfig: '导出完整主机配置',
+        importConfig: '导入完整主机配置',
+        allFiles: 'All Files',
+        sshPublicKeys: 'SSH Public Keys',
+        shellDeskConfig: 'ShellDesk Config',
+        importSizeError: '备份文件为空或超过大小限制。',
+      }
+    : {
+        selectPrivateKey: 'Choose SSH Private Key',
+        selectPublicKey: 'Choose SSH Public Key',
+        exportConfig: 'Export Full Host Configuration',
+        importConfig: 'Import Full Host Configuration',
+        allFiles: 'All Files',
+        sshPublicKeys: 'SSH Public Keys',
+        shellDeskConfig: 'ShellDesk Config',
+        importSizeError: 'The backup file is empty or exceeds the size limit.',
+      };
+}
+
 function registerConfigHandlers(registerIpcHandler) {
   ipcMain.handle('dialog:select-private-key', async (event) => {
     const window = getSenderWindow(event);
+    const text = getDialogText(getCurrentLanguage());
     const result = await dialog.showOpenDialog(window ?? undefined, {
-      title: '选择 SSH 私钥文件',
+      title: text.selectPrivateKey,
       properties: ['openFile'],
-      filters: [{ name: 'All Files', extensions: ['*'] }],
+      filters: [{ name: text.allFiles, extensions: ['*'] }],
     });
 
     if (result.canceled) {
@@ -41,12 +74,13 @@ function registerConfigHandlers(registerIpcHandler) {
 
   ipcMain.handle('dialog:select-public-key', async (event) => {
     const window = getSenderWindow(event);
+    const text = getDialogText(getCurrentLanguage());
     const result = await dialog.showOpenDialog(window ?? undefined, {
-      title: '选择 SSH 公钥文件',
+      title: text.selectPublicKey,
       properties: ['openFile'],
       filters: [
-        { name: 'SSH Public Keys', extensions: ['pub', 'txt'] },
-        { name: 'All Files', extensions: ['*'] },
+        { name: text.sshPublicKeys, extensions: ['pub', 'txt'] },
+        { name: text.allFiles, extensions: ['*'] },
       ],
     });
 
@@ -100,11 +134,12 @@ function registerConfigHandlers(registerIpcHandler) {
   registerIpcHandler('config:export', async (event) => {
     const bundle = buildConfigBundle();
     const window = getSenderWindow(event);
+    const text = getDialogText(getCurrentLanguage());
     const defaultPath = path.join(app.getPath('documents'), `shelldesk-config-${new Date().toISOString().slice(0, 10)}.json`);
     const result = await dialog.showSaveDialog(window ?? undefined, {
-      title: '导出完整主机配置',
+      title: text.exportConfig,
       defaultPath,
-      filters: [{ name: 'ShellDesk Config', extensions: ['json'] }],
+      filters: [{ name: text.shellDeskConfig, extensions: ['json'] }],
     });
 
     if (result.canceled || !result.filePath) {
@@ -121,10 +156,11 @@ function registerConfigHandlers(registerIpcHandler) {
 
   registerIpcHandler('config:import', async (event) => {
     const window = getSenderWindow(event);
+    const text = getDialogText(getCurrentLanguage());
     const result = await dialog.showOpenDialog(window ?? undefined, {
-      title: '导入完整主机配置',
+      title: text.importConfig,
       properties: ['openFile'],
-      filters: [{ name: 'ShellDesk Config', extensions: ['json'] }],
+      filters: [{ name: text.shellDeskConfig, extensions: ['json'] }],
     });
 
     if (result.canceled) {
@@ -140,7 +176,7 @@ function registerConfigHandlers(registerIpcHandler) {
     const stats = fs.statSync(filePath);
 
     if (!stats.size || stats.size > maxConfigImportBytes) {
-      throw new Error('备份文件为空或超过大小限制。');
+      throw new Error(text.importSizeError);
     }
 
     const importedPayload = readConfigImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')));
