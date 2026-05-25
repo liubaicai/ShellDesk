@@ -17,7 +17,7 @@
   <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
   <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)"/>
   <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.13"/>
-  <g filter="url(#soft-shadow)" color="#9edcff">
+  <g filter="url(#soft-shadow)" color="#9edcff" transform="translate(32 32) scale(0.84) translate(-32 -32)">
     <path d="M13 17.5 30 15v16H13V17.5ZM34 14.4 51 12v19H34V14.4ZM13 35h17v16l-17-2.5V35ZM34 35h17v17l-17-2.4V35Z" fill="#9edcff"/>
   </g>
 </svg>
