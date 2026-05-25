@@ -10,8 +10,6 @@ import LogsPage from './pages/LogsPage';
 import SettingsPage from './pages/SettingsPage';
 
 const hostsStorageKey = 'shelldesk:hosts';
-const keysStorageKey = 'shelldesk:keys';
-const bookmarkStorageKeyPrefix = 'shelldesk:browser-bookmarks:';
 const ungroupedKey = '__ungrouped__';
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   sortMode: 'custom',
@@ -248,15 +246,6 @@ interface SshKey {
   updatedAt: string;
 }
 
-interface LegacyStoredKey {
-  id: string;
-  name: string;
-  keyPath: string;
-  passphrase: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface KeyFormState {
   name: string;
   privateKeyPath: string;
@@ -297,42 +286,6 @@ function isStoredSshKey(value: unknown): value is SshKey {
     typeof key.createdAt === 'string' &&
     typeof key.updatedAt === 'string'
   );
-}
-
-function isLegacyStoredSshKey(value: unknown): value is LegacyStoredKey {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const key = value as Partial<LegacyStoredKey>;
-  return (
-    typeof key.id === 'string' &&
-    typeof key.name === 'string' &&
-    typeof key.keyPath === 'string' &&
-    typeof key.passphrase === 'string' &&
-    typeof key.createdAt === 'string' &&
-    typeof key.updatedAt === 'string'
-  );
-}
-
-function readStoredSshKeys(): LegacyStoredKey[] {
-  try {
-    const rawKeys = window.localStorage.getItem(keysStorageKey);
-
-    if (!rawKeys) {
-      return [];
-    }
-
-    const parsedKeys: unknown = JSON.parse(rawKeys);
-
-    if (!Array.isArray(parsedKeys)) {
-      return [];
-    }
-
-    return parsedKeys.filter(isLegacyStoredSshKey);
-  } catch {
-    return [];
-  }
 }
 
 type KeyEditorMode = 'import' | 'generate' | 'edit';
@@ -603,82 +556,6 @@ function readStoredHosts(): Host[] {
     return parsedHosts.filter(isStoredHost).map(normalizeStoredHost);
   } catch {
     return [];
-  }
-}
-
-function readLegacyBookmarkCollections(): ShellDeskBrowserBookmarkCollection[] {
-  try {
-    return Object.keys(window.localStorage)
-      .filter((key) => key.startsWith(bookmarkStorageKeyPrefix))
-      .map((storageKey) => {
-        const rawValue = window.localStorage.getItem(storageKey);
-
-        if (!rawValue) {
-          return null;
-        }
-
-        const parsedValue: unknown = JSON.parse(rawValue);
-
-        if (!Array.isArray(parsedValue)) {
-          return null;
-        }
-
-        const bookmarks = parsedValue.filter((bookmark): bookmark is ShellDeskBrowserBookmark => {
-          if (!bookmark || typeof bookmark !== 'object') {
-            return false;
-          }
-
-          const value = bookmark as Partial<ShellDeskBrowserBookmark>;
-          return (
-            typeof value.id === 'string' &&
-            typeof value.title === 'string' &&
-            typeof value.url === 'string' &&
-            typeof value.createdAt === 'string' &&
-            typeof value.updatedAt === 'string'
-          );
-        });
-
-        return {
-          scope: storageKey.slice(bookmarkStorageKeyPrefix.length),
-          bookmarks,
-          updatedAt: new Date().toISOString(),
-        };
-      })
-      .filter((collection): collection is ShellDeskBrowserBookmarkCollection => Boolean(collection));
-  } catch {
-    return [];
-  }
-}
-
-function shouldTryLegacyMigration(snapshot: ShellDeskVaultSnapshot) {
-  return !snapshot.hosts.length && !snapshot.sshKeys.length && !snapshot.browserBookmarks.length;
-}
-
-function readLegacyVaultPayload() {
-  return {
-    hosts: readStoredHosts(),
-    sshKeys: readStoredSshKeys() as unknown as ShellDeskStoredKeyRecord[],
-    settings: defaultAppSettings,
-    browserBookmarks: readLegacyBookmarkCollections(),
-  };
-}
-
-function hasLegacyCollections(payload: ReturnType<typeof readLegacyVaultPayload>) {
-  return Boolean(payload.hosts.length || payload.sshKeys.length || payload.browserBookmarks.length);
-}
-
-function clearLegacyLocalStorage() {
-  try {
-    window.localStorage.removeItem(hostsStorageKey);
-    window.localStorage.removeItem(keysStorageKey);
-
-    for (const storageKey of Object.keys(window.localStorage)) {
-      if (storageKey.startsWith(bookmarkStorageKeyPrefix)) {
-        window.localStorage.removeItem(storageKey);
-      }
-    }
-  } catch {
-    // Legacy cleanup is best-effort only.
   }
 }
 
@@ -1173,16 +1050,7 @@ function App() {
       }
 
       try {
-        let snapshot = await vaultControls.getSnapshot();
-
-        if (!isConnectionWindow && shouldTryLegacyMigration(snapshot)) {
-          const legacyPayload = readLegacyVaultPayload();
-
-          if (hasLegacyCollections(legacyPayload)) {
-            snapshot = await vaultControls.migrateLegacyData(legacyPayload);
-            clearLegacyLocalStorage();
-          }
-        }
+        const snapshot = await vaultControls.getSnapshot();
 
         if (!disposed) {
           applyVaultSnapshot(snapshot);

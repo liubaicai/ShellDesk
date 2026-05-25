@@ -238,7 +238,6 @@ interface ShellDeskVaultControls {
   getPublicSnapshot: () => Promise<ShellDeskVaultSnapshot>;
   getSnapshot: () => Promise<ShellDeskVaultSnapshot>;
   saveCollections: (payload: ShellDeskVaultCollectionsPayload) => Promise<ShellDeskVaultSnapshot>;
-  migrateLegacyData: (payload: Partial<ShellDeskVaultSnapshot>) => Promise<ShellDeskVaultSnapshot>;
   importKeyPair: (payload: {
     name: string;
     privateKeyPath: string;

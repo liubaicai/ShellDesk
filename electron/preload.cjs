@@ -67,7 +67,6 @@ contextBridge.exposeInMainWorld('guiSSH', {
     getPublicSnapshot: getPublicVaultSnapshot,
     getSnapshot: getVaultSnapshot,
     saveCollections: (payload) => ipcRenderer.invoke('vault:save-collections', payload),
-    migrateLegacyData: (payload) => ipcRenderer.invoke('vault:migrate-legacy-data', payload),
     importKeyPair: (payload) => ipcRenderer.invoke('vault:import-key-pair', payload),
     generateRsaKeyPair: (payload) => ipcRenderer.invoke('vault:generate-rsa-key-pair', payload),
     getBookmarks: (scope) => ipcRenderer.invoke('vault:get-bookmarks', scope),
