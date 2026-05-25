@@ -290,7 +290,7 @@ ShellDesk/
 
 ## 开源协议
 
-当前仓库尚未声明开源协议。如需对外发布、分发或二次开发，请先补充 `LICENSE` 文件并在本节同步说明。
+本项目采用 GNU General Public License v3.0（GPLv3）开源协议发布。完整协议内容见 [LICENSE](LICENSE)。
 
 ---
 
