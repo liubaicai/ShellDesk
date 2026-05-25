@@ -46,8 +46,8 @@ function KeysPage({
           />
         </label>
 
-        <button type="button" className="command-button" onClick={onImportPrivateKey}>导入密钥对</button>
-        <button type="button" className="primary-action" onClick={onCreateKey}>+ 新建 RSA 密钥</button>
+        <button type="button" className="command-button key-import-button" onClick={onImportPrivateKey}>导入密钥对</button>
+        <button type="button" className="primary-action key-create-button" onClick={onCreateKey}>+ 新建 RSA 密钥</button>
       </div>
 
       <section className="vault-content">

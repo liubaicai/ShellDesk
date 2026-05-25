@@ -17,10 +17,6 @@
   background: var(--surface-elevated);
 }
 
-.key-command-bar {
-  grid-template-columns: minmax(320px, 1fr) auto auto;
-}
-
 .simple-command-bar {
   grid-template-columns: minmax(0, 1fr);
   color: var(--muted-strong);
@@ -958,6 +954,25 @@
   border-bottom-color: var(--window-divider);
   background: rgba(20, 29, 40, 0.72);
   backdrop-filter: blur(22px);
+}
+
+.key-command-bar {
+  grid-template-columns: minmax(300px, 1fr) 90px auto;
+  column-gap: 16px;
+}
+
+.key-command-bar .key-import-button {
+  width: 90px;
+  padding-inline: 0;
+  white-space: nowrap;
+}
+
+.key-command-bar .key-create-button {
+  justify-self: end;
+}
+
+[data-language="en-US"] .key-command-bar .key-import-button {
+  font-size: 11px;
 }
 
 .global-search {

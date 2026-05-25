@@ -805,7 +805,14 @@ function translateTextNode(node: Text, language: AppLanguage) {
   const currentStoredTranslation = storedOriginal ? translateText(storedOriginal, 'en-US') : '';
   let original = storedOriginal;
 
-  if (!original || (language === 'en-US' && currentValue !== currentStoredTranslation && chineseTextPattern.test(currentValue))) {
+  if (
+    !original
+    || (
+      currentValue !== original
+      && currentValue !== currentStoredTranslation
+      && (language === 'zh-CN' || chineseTextPattern.test(currentValue))
+    )
+  ) {
     original = currentValue;
     textOriginals.set(node, original);
   }
@@ -852,7 +859,14 @@ function translateElementAttributes(element: Element, language: AppLanguage) {
     const currentStoredTranslation = storedOriginal ? translateText(storedOriginal, 'en-US') : '';
     let original = storedOriginal;
 
-    if (!original || (language === 'en-US' && currentValue !== currentStoredTranslation && chineseTextPattern.test(currentValue))) {
+    if (
+      !original
+      || (
+        currentValue !== original
+        && currentValue !== currentStoredTranslation
+        && (language === 'zh-CN' || chineseTextPattern.test(currentValue))
+      )
+    ) {
       original = currentValue;
       originals.set(attributeName, original);
     }

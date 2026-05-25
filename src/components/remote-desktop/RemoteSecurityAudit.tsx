@@ -94,13 +94,11 @@ function RemoteSecurityAudit({ connectionId, systemType, hostLabel = '当前连�
       const commandResult = await runCmd(connectionId, command);
       const result = definition.evaluate(commandResult);
       upsertResult(result);
-      setSelectedId(result.id);
       setScannedAt(new Date().toLocaleString('zh-CN'));
       return result;
     } catch (error) {
       const result = createFailedResult(definition, error);
       upsertResult(result);
-      setSelectedId(result.id);
       return result;
     } finally {
       setRunningIds((current) => {
@@ -116,11 +114,15 @@ function RemoteSecurityAudit({ connectionId, systemType, hostLabel = '当前连�
     setError('');
     setNotice('');
     setResults([]);
+    const completedResults: SecurityCheckResult[] = [];
 
     try {
       for (const definition of definitions) {
-        await runCheck(definition);
+        const result = await runCheck(definition);
+        completedResults.push(result);
+        setResults([...completedResults]);
       }
+      setResults(completedResults);
       setScannedAt(new Date().toLocaleString('zh-CN'));
       setNotice('巡检完成，报告已刷新。');
     } catch (error) {

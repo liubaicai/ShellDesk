@@ -564,9 +564,11 @@ function readStoredHosts(): Host[] {
 
 function readHostGroupPanelCollapsed() {
   try {
-    return window.localStorage.getItem(hostGroupPanelCollapsedStorageKey) === 'true';
+    const storedValue = window.localStorage.getItem(hostGroupPanelCollapsedStorageKey);
+
+    return storedValue == null ? true : storedValue === 'true';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -2166,7 +2168,7 @@ function App() {
                           <strong>{host.name}</strong>
                           <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
                           <span className="host-card-tags">
-                            <em>SSH</em>
+                            {/* <em>SSH</em> */}
                             <em>{host.group || '未分组'}</em>
                             <em>{host.tags.length ? host.tags.join(' / ') : '无标签'}</em>
                           </span>
