@@ -37,6 +37,15 @@ const {
 
 let vaultCache = null;
 
+function getDefaultLanguage() {
+  try {
+    const locale = typeof app.getLocale === 'function' ? app.getLocale() : '';
+    return /^zh\b|^zh-/i.test(locale) ? 'zh-CN' : 'en-US';
+  } catch {
+    return 'en-US';
+  }
+}
+
 function readFontFamily(value, fallback) {
   if (typeof value !== 'string') {
     return fallback;
@@ -56,7 +65,7 @@ function readFontFamily(value, fallback) {
 
 function createDefaultSettings() {
   return {
-    language: 'zh-CN',
+    language: getDefaultLanguage(),
     interfaceFont: 'Microsoft YaHei UI',
     theme: 'dark',
     accentColor: accentColorChoices[0],
@@ -227,7 +236,7 @@ function readAppSettings(rawSettings) {
   }
 
   return {
-    language: rawSettings.language === 'en-US' ? 'en-US' : 'zh-CN',
+    language: rawSettings.language === 'zh-CN' || rawSettings.language === 'en-US' ? rawSettings.language : defaults.language,
     interfaceFont: readFontFamily(rawSettings.interfaceFont, defaults.interfaceFont),
     theme: rawSettings.theme === 'light' || rawSettings.theme === 'system' ? rawSettings.theme : defaults.theme,
     accentColor: readColorHex(rawSettings.accentColor, '强调色', defaults.accentColor),

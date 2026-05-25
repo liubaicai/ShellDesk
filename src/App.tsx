@@ -9,6 +9,7 @@ import { buildFontStack } from './fontUtils';
 import KeysPage from './pages/KeysPage';
 import LogsPage from './pages/LogsPage';
 import SettingsPage from './pages/SettingsPage';
+import { getAppLocale, getSystemLanguage, useShellDeskI18n } from './i18n';
 
 const hostsStorageKey = 'shelldesk:hosts';
 const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
@@ -23,7 +24,7 @@ const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   ],
 };
 const defaultAppSettings: ShellDeskAppSettings = {
-  language: 'zh-CN',
+  language: getSystemLanguage(),
   interfaceFont: 'Microsoft YaHei UI',
   theme: 'dark',
   accentColor: '#43c7ff',
@@ -898,6 +899,9 @@ function App() {
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
   const sshKeyById = useMemo(() => new Map(sshKeys.map((key) => [key.id, key])), [sshKeys]);
+  const appLocale = getAppLocale(settings.language);
+
+  useShellDeskI18n(settings.language);
 
   const hostGroups = useMemo<HostGroup[]>(() => {
     const groups = new Map<string, HostGroup>();
@@ -914,8 +918,8 @@ function App() {
       });
     }
 
-    return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
-  }, [hosts]);
+    return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name, appLocale));
+  }, [appLocale, hosts]);
 
   const filteredHosts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -1316,14 +1320,14 @@ function App() {
     return window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
       if (payload.connectionId === connection.id) {
         const message = payload.reason || 'SSH 连接已断开。';
-        const time = new Date().toLocaleTimeString('zh-CN');
+        const time = new Date().toLocaleTimeString(appLocale);
         addLog('connection', 'warning', `连接断开：${connection.host.address}`, `${time} — ${message}`);
         setStatusMessage(message);
         // 不自动关闭窗口，让用户看到断开原因
         setWindowConnectionError(`${time} — ${message}`);
       }
     });
-  }, [connection, isConnectionWindow, windowControls]);
+  }, [appLocale, connection, isConnectionWindow, windowControls]);
 
   useEffect(() => {
     if (!window.guiSSH?.events.onVaultChanged || !vaultControls) {
