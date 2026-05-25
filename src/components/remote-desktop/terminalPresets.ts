@@ -1,20 +1,6 @@
 import type { FontWeight, ITheme } from '@xterm/xterm';
 
-export const terminalFontFamilyChoices: ReadonlyArray<{
-  value: ShellDeskAppSettings['terminalFontFamily'];
-  label: string;
-}> = [
-  { value: 'Cascadia Mono', label: 'Cascadia Mono' },
-  { value: 'JetBrains Mono', label: 'JetBrains Mono' },
-  { value: 'Fira Code', label: 'Fira Code' },
-  { value: 'Consolas', label: 'Consolas' },
-  { value: 'LXGW WenKai Mono', label: '霞鹜文楷' },
-  { value: 'Source Code Pro', label: 'Source Code Pro' },
-  { value: 'Hack', label: 'Hack' },
-  { value: 'Menlo', label: 'Menlo' },
-  { value: 'Monaco', label: 'Monaco' },
-  { value: 'Courier New', label: 'Courier New' },
-];
+import { buildFontStack } from '../../fontUtils';
 
 export const terminalThemeChoices: ReadonlyArray<{
   key: ShellDeskAppSettings['terminalTheme'];
@@ -302,19 +288,14 @@ export function getTerminalThemeChoice(themeKey: ShellDeskAppSettings['terminalT
 }
 
 export function buildTerminalFontStack(fontFamily: ShellDeskAppSettings['terminalFontFamily']) {
-  const families = [
-    fontFamily,
+  return buildFontStack(fontFamily, [
     'Cascadia Mono',
     'JetBrains Mono',
     'Consolas',
     'Menlo',
     'Monaco',
     'monospace',
-  ];
-
-  return [...new Set(families)]
-    .map((family) => (family === 'monospace' ? family : `"${family}"`))
-    .join(', ');
+  ]);
 }
 
 export function toTerminalFontWeight(weight: number): FontWeight {

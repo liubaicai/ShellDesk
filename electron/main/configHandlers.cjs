@@ -2,6 +2,7 @@ const { app, dialog, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { maxConfigImportBytes } = require('./constants.cjs');
+const { getSystemFontFamilies } = require('./systemFonts.cjs');
 const { getSenderWindow } = require('./windows.cjs');
 const { readBoundedString, toErrorMessage } = require('./validation.cjs');
 const {
@@ -79,6 +80,8 @@ function registerConfigHandlers(registerIpcHandler) {
   registerIpcHandler('preferences:get', async (_event, rawKey) => getConfigPreference(rawKey));
 
   registerIpcHandler('preferences:set', async (_event, rawKey, rawValue) => setConfigPreference(rawKey, rawValue));
+
+  registerIpcHandler('system:list-fonts', async () => getSystemFontFamilies());
 
   registerIpcHandler('vault:save-collections', async (_event, rawPayload) => upsertVaultCollections(rawPayload));
 

@@ -77,15 +77,7 @@ interface ShellDeskRemoteDesktopLayout {
 
 interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
-  interfaceFont:
-    | 'LXGW WenKai Mono'
-    | 'Microsoft YaHei UI'
-    | 'DengXian'
-    | 'SimSun'
-    | 'Arial'
-    | 'Verdana'
-    | 'Georgia'
-    | 'Times New Roman';
+  interfaceFont: string;
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
   defaultHostView: 'grid' | 'list';
@@ -96,17 +88,7 @@ interface ShellDeskAppSettings {
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
   terminalFontSize: number;
-  terminalFontFamily:
-    | 'Cascadia Mono'
-    | 'JetBrains Mono'
-    | 'Fira Code'
-    | 'Consolas'
-    | 'LXGW WenKai Mono'
-    | 'Source Code Pro'
-    | 'Hack'
-    | 'Menlo'
-    | 'Monaco'
-    | 'Courier New';
+  terminalFontFamily: string;
   terminalFontWeight: number;
   terminalFontWeightBold: number;
   terminalFontLigatures: boolean;
@@ -604,6 +586,10 @@ interface ShellDeskPreferenceControls {
   set: (key: string, value: unknown) => Promise<unknown>;
 }
 
+interface ShellDeskSystemControls {
+  listFonts: () => Promise<string[]>;
+}
+
 interface ShellDeskTransferProgress {
   type: 'download' | 'upload';
   fileName: string;
@@ -639,6 +625,7 @@ interface ShellDeskApi {
   vault: ShellDeskVaultControls;
   logs: ShellDeskLogsControls;
   preferences: ShellDeskPreferenceControls;
+  system: ShellDeskSystemControls;
   connections: ShellDeskConnectionControls;
   events: ShellDeskEventControls;
 }

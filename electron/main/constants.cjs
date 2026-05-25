@@ -19,18 +19,6 @@ const bookmarkScopePrefix = 'shelldesk:browser-bookmarks:';
 const logFileName = 'logs.json';
 const maxLogEntries = 500;
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
-const terminalFontFamilyChoices = [
-  'Cascadia Mono',
-  'JetBrains Mono',
-  'Fira Code',
-  'Consolas',
-  'LXGW WenKai Mono',
-  'Source Code Pro',
-  'Hack',
-  'Menlo',
-  'Monaco',
-  'Courier New',
-];
 const terminalThemeChoices = [
   'shelldesk-dark',
   'netcatty-dark',
@@ -98,17 +86,6 @@ const remoteSystemTypeChoices = new Set([
   'linux',
   'unix',
 ]);
-const uiFontChoices = [
-  'LXGW WenKai Mono',
-  'Microsoft YaHei UI',
-  'DengXian',
-  'SimSun',
-  'Arial',
-  'Verdana',
-  'Georgia',
-  'Times New Roman',
-];
-
 module.exports = {
   accentColorChoices,
   bookmarkScopePrefix,
@@ -134,9 +111,7 @@ module.exports = {
   remoteDesktopSortModes,
   remoteSystemTypeChoices,
   terminalCursorInactiveStyleChoices,
-  terminalFontFamilyChoices,
   terminalThemeChoices,
-  uiFontChoices,
   vaultFileName,
   vaultFormat,
   vaultSchemaVersion,

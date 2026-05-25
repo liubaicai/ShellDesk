@@ -1,9 +1,8 @@
-import { type ChangeEvent, type CSSProperties, useState } from 'react';
+import { type ChangeEvent, type CSSProperties, useEffect, useMemo, useState } from 'react';
 
 import {
   getTerminalThemeChoice,
   terminalBoldWeightChoices,
-  terminalFontFamilyChoices,
   terminalFontWeightChoices,
   terminalThemeChoices,
 } from '../components/remote-desktop/terminalPresets';
@@ -21,6 +20,52 @@ const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff
 const terminalLineHeightChoices = [1, 1.1, 1.2, 1.3, 1.4];
 const terminalScrollSensitivityChoices = [0.5, 1, 1.5, 2, 3, 5];
 const terminalFastScrollSensitivityChoices = [2, 5, 8, 10, 15, 20];
+const fallbackSystemFontChoices = [
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'PingFang SC',
+  'Hiragino Sans GB',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'Segoe UI Variable',
+  'Segoe UI',
+  'Arial',
+  'Verdana',
+  'Georgia',
+  'Times New Roman',
+  'DengXian',
+  'SimSun',
+  'Cascadia Mono',
+  'JetBrains Mono',
+  'Fira Code',
+  'Consolas',
+  'Source Code Pro',
+  'Hack',
+  'Menlo',
+  'Monaco',
+  'Courier New',
+];
+const interfacePreferredFontChoices = [
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'PingFang SC',
+  'Hiragino Sans GB',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'Segoe UI Variable',
+  'Segoe UI',
+];
+const terminalPreferredFontChoices = [
+  'Cascadia Mono',
+  'JetBrains Mono',
+  'Fira Code',
+  'Consolas',
+  'Source Code Pro',
+  'Hack',
+  'Menlo',
+  'Monaco',
+  'Courier New',
+];
 const maxWallpaperImageBytes = 5 * 1024 * 1024;
 const acceptedWallpaperTypes = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
 const wallpaperExtensionPattern = /\.(png|jpe?g|webp|gif)$/i;
@@ -49,6 +94,53 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function normalizeFontChoice(value: unknown) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeFontChoices(values: readonly unknown[]) {
+  const fontMap = new Map<string, string>();
+
+  for (const value of values) {
+    const fontChoice = normalizeFontChoice(value);
+
+    if (!fontChoice) {
+      continue;
+    }
+
+    const key = fontChoice.toLocaleLowerCase();
+
+    if (!fontMap.has(key)) {
+      fontMap.set(key, fontChoice);
+    }
+  }
+
+  return Array.from(fontMap.values());
+}
+
+function createFontOptions(systemFonts: readonly string[], selectedFont: string, preferredFonts: readonly string[]) {
+  const availableFonts = new Set(systemFonts.map((font) => font.toLocaleLowerCase()));
+  const preferredAvailableFonts = preferredFonts.filter((font) => availableFonts.has(font.toLocaleLowerCase()));
+
+  return normalizeFontChoices([
+    selectedFont,
+    ...preferredAvailableFonts,
+    ...systemFonts,
+  ]);
+}
+
+function getFontListErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return '读取系统字体失败。';
+}
+
 interface SettingsPageProps {
   hostCount: number;
   keyCount: number;
@@ -74,6 +166,9 @@ function SettingsPage({
 }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('general');
   const [wallpaperError, setWallpaperError] = useState('');
+  const [systemFonts, setSystemFonts] = useState<string[]>(fallbackSystemFontChoices);
+  const [isSystemFontsLoading, setIsSystemFontsLoading] = useState(false);
+  const [systemFontsError, setSystemFontsError] = useState('');
 
   const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
@@ -82,6 +177,19 @@ function SettingsPage({
     });
   };
   const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
+  const interfaceFontOptions = useMemo(
+    () => createFontOptions(systemFonts, settings.interfaceFont, interfacePreferredFontChoices),
+    [settings.interfaceFont, systemFonts],
+  );
+  const terminalFontOptions = useMemo(
+    () => createFontOptions(systemFonts, settings.terminalFontFamily, terminalPreferredFontChoices),
+    [settings.terminalFontFamily, systemFonts],
+  );
+  const fontListStatus = systemFontsError
+    ? `使用备用字体列表：${systemFontsError}`
+    : isSystemFontsLoading
+      ? '正在读取系统字体列表'
+      : `已读取 ${systemFonts.length} 个系统字体`;
   const hasCustomWallpaper = settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
   const wallpaperPreviewUrl = hasCustomWallpaper ? settings.desktopWallpaperDataUrl : defaultDesktopWallpaperUrl;
   const wallpaperPreviewStyle: CSSProperties = {
@@ -97,6 +205,48 @@ function SettingsPage({
       desktopWallpaperName: '',
     });
   };
+
+  useEffect(() => {
+    const listFonts = window.guiSSH?.system?.listFonts;
+
+    if (!listFonts) {
+      setSystemFonts(fallbackSystemFontChoices);
+      setSystemFontsError('当前运行环境未提供系统字体接口。');
+      return;
+    }
+
+    let disposed = false;
+    setIsSystemFontsLoading(true);
+    setSystemFontsError('');
+
+    void listFonts()
+      .then((fontFamilies) => {
+        if (disposed) {
+          return;
+        }
+
+        const nextSystemFonts = normalizeFontChoices(fontFamilies);
+        setSystemFonts(nextSystemFonts.length ? nextSystemFonts : fallbackSystemFontChoices);
+        setSystemFontsError(nextSystemFonts.length ? '' : '系统未返回可用字体。');
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+
+        setSystemFonts(fallbackSystemFontChoices);
+        setSystemFontsError(getFontListErrorMessage(error));
+      })
+      .finally(() => {
+        if (!disposed) {
+          setIsSystemFontsLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const uploadDesktopWallpaper = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -189,20 +339,15 @@ function SettingsPage({
                   <label className="settings-row">
                     <span>
                       <strong>界面字体</strong>
-                      <small>控制主界面与表单的字体栈</small>
+                      <small>{fontListStatus}</small>
                     </span>
                     <select
                       value={settings.interfaceFont}
                       onChange={(event) => updateSetting('interfaceFont', event.target.value as ShellDeskAppSettings['interfaceFont'])}
                     >
-                      <option value="LXGW WenKai Mono">霞鹜文楷</option>
-                      <option value="Microsoft YaHei UI">微软雅黑 UI</option>
-                      <option value="DengXian">等线</option>
-                      <option value="SimSun">宋体</option>
-                      <option value="Arial">Arial</option>
-                      <option value="Verdana">Verdana</option>
-                      <option value="Georgia">Georgia</option>
-                      <option value="Times New Roman">Times New Roman</option>
+                      {interfaceFontOptions.map((fontChoice) => (
+                        <option key={fontChoice} value={fontChoice}>{fontChoice}</option>
+                      ))}
                     </select>
                   </label>
 
@@ -381,14 +526,14 @@ function SettingsPage({
                   <label className="settings-row">
                     <span>
                       <strong>字体族</strong>
-                      <small>优先使用所选字体，不存在时回退到常见等宽字体</small>
+                      <small>{fontListStatus}</small>
                     </span>
                     <select
                       value={settings.terminalFontFamily}
                       onChange={(event) => updateSetting('terminalFontFamily', event.target.value as ShellDeskAppSettings['terminalFontFamily'])}
                     >
-                      {terminalFontFamilyChoices.map((fontChoice) => (
-                        <option key={fontChoice.value} value={fontChoice.value}>{fontChoice.label}</option>
+                      {terminalFontOptions.map((fontChoice) => (
+                        <option key={fontChoice} value={fontChoice}>{fontChoice}</option>
                       ))}
                     </select>
                   </label>

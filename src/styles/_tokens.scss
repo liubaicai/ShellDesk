@@ -1,14 +1,6 @@
-@font-face {
-  font-family: "LXGW WenKai Mono";
-  src: url("../assets/fonts/LXGWWenKaiMono-Medium.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 400 900;
-  font-display: swap;
-}
-
 :root {
   color-scheme: dark;
-  --interface-font-family: "LXGW WenKai Mono", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --interface-font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --bg: #101823;
   --chrome: #151f2b;
   --sidebar: #16202c;

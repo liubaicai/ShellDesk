@@ -272,8 +272,7 @@ ShellDesk/
 │   ├── RemoteDesktopShell.tsx           # 多窗口远程桌面与 Dock
 │   ├── main.tsx                         # React 入口
 │   ├── assets/
-│   │   ├── fonts/                       # 内置字体
-│   │   └── images/                      # 应用图标
+│   │   ├── images/                      # 应用图标
 │   ├── components/
 │   │   ├── navigation/                  # 主界面导航图标
 │   │   └── remote-desktop/              # 远程桌面内置应用
