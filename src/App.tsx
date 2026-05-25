@@ -11,6 +11,7 @@ import LogsPage from './pages/LogsPage';
 import SettingsPage from './pages/SettingsPage';
 
 const hostsStorageKey = 'shelldesk:hosts';
+const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const ungroupedKey = '__ungrouped__';
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   sortMode: 'custom',
@@ -560,6 +561,22 @@ function readStoredHosts(): Host[] {
   }
 }
 
+function readHostGroupPanelCollapsed() {
+  try {
+    return window.localStorage.getItem(hostGroupPanelCollapsedStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function storeHostGroupPanelCollapsed(collapsed: boolean) {
+  try {
+    window.localStorage.setItem(hostGroupPanelCollapsedStorageKey, collapsed ? 'true' : 'false');
+  } catch {
+    // Ignore localStorage write failures in restricted environments.
+  }
+}
+
 function validateHostForm(form: HostFormState, keys: SshKey[]) {
   const port = Number(form.port);
   const selectedKey = keys.find((key) => key.id === form.keyId);
@@ -841,6 +858,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [keySearchQuery, setKeySearchQuery] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+  const [isHostGroupPanelCollapsed, setIsHostGroupPanelCollapsed] = useState(readHostGroupPanelCollapsed);
   const [formError, setFormError] = useState('');
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -1072,6 +1090,10 @@ function App() {
       disposed = true;
     };
   }, [isConnectionWindow, vaultControls]);
+
+  useEffect(() => {
+    storeHostGroupPanelCollapsed(isHostGroupPanelCollapsed);
+  }, [isHostGroupPanelCollapsed]);
 
   useEffect(() => {
     const logsControls = window.guiSSH?.logs;
@@ -1846,6 +1868,10 @@ function App() {
     setSearchQuery('');
   };
 
+  const toggleHostGroupPanel = () => {
+    setIsHostGroupPanelCollapsed((current) => !current);
+  };
+
   const changeViewMode = (nextViewMode: ViewMode) => {
     setViewMode(nextViewMode);
     setSettings((currentSettings: ShellDeskAppSettings) => (
@@ -1992,11 +2018,6 @@ function App() {
       ) : (
       <div className="app-layout">
         <aside className="side-nav">
-          <div className="brand-panel">
-            <img className="brand-logo" src={appIconUrl} alt="" />
-            <strong>ShellDesk</strong>
-          </div>
-
           <nav className="feature-nav" aria-label="功能导航">
             {navigationItems.map((item) => (
               <button
@@ -2054,8 +2075,8 @@ function App() {
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
           </div>
 
-          <section className="vault-content hosts-content">
-            <aside className="hosts-group-panel" aria-label="主机分组">
+          <section className={`vault-content hosts-content ${isHostGroupPanelCollapsed ? 'groups-collapsed' : ''}`}>
+            <aside id="hosts-group-panel" className="hosts-group-panel" aria-label="主机分组" hidden={isHostGroupPanelCollapsed}>
               <button type="button" className={`filter-tab all-hosts-filter ${!activeGroupKey && !searchQuery ? 'active' : ''}`} onClick={clearFilters}>
                 <span>全部主机</span>
                 <b>{hosts.length}</b>
@@ -2092,11 +2113,24 @@ function App() {
 
             <section className="vault-section host-section hosts-list-panel">
               <div className="section-heading host-list-heading">
-                <h2>{activeGroupName || '未分组'} <b>{filteredHosts.length}</b></h2>
+                <div className="host-list-title">
+                  <button
+                    type="button"
+                    className={`group-panel-toggle-button ${isHostGroupPanelCollapsed ? 'collapsed' : ''}`}
+                    onClick={toggleHostGroupPanel}
+                    aria-label={isHostGroupPanelCollapsed ? '显示主机分组' : '隐藏主机分组'}
+                    aria-expanded={!isHostGroupPanelCollapsed}
+                    aria-controls="hosts-group-panel"
+                    title={isHostGroupPanelCollapsed ? '显示主机分组' : '隐藏主机分组'}
+                  >
+                    <span aria-hidden="true">{isHostGroupPanelCollapsed ? '☰' : '‹'}</span>
+                  </button>
+                  <h2>{activeGroupName || '全部主机'} <b>{filteredHosts.length}</b></h2>
+                </div>
                 <span>
                   共 {filteredHosts.length} 个主机
                   <button type="button" className="host-refresh-button" onClick={() => void refreshHosts()} aria-label="刷新主机列表">
-                    ↻
+                    <span aria-hidden="true">↻</span>
                   </button>
                 </span>
               </div>

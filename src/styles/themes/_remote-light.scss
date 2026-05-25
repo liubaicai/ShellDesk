@@ -406,8 +406,7 @@
 }
 
 [data-theme="light"] .feature-nav-item,
-[data-theme="light"] .settings-entry,
-[data-theme="light"] .brand-panel strong {
+[data-theme="light"] .settings-entry {
   color: #182335;
 }
 
@@ -445,6 +444,12 @@
 [data-theme="light"] .hosts-group-panel,
 [data-theme="light"] .host-card {
   background: rgba(248, 250, 252, 0.84);
+}
+
+[data-theme="light"] .group-panel-toggle-button,
+[data-theme="light"] .group-add-button,
+[data-theme="light"] .host-refresh-button {
+  color: #526178;
 }
 
 [data-theme="light"] .group-panel-heading h2,

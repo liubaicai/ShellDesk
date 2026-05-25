@@ -131,7 +131,7 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   background: rgba(8, 13, 20, 0.22);
 }
 
@@ -144,32 +144,6 @@
   background:
     radial-gradient(ellipse at 50% 18%, rgba(88, 143, 231, 0.11), transparent 48%),
     linear-gradient(180deg, rgba(27, 38, 51, 0.9), rgba(18, 27, 38, 0.95));
-}
-
-.brand-panel {
-  display: flex;
-  align-items: center;
-  height: 56px;
-  gap: 11px;
-  margin-bottom: 14px;
-  padding: 0 12px;
-}
-
-.brand-logo {
-  display: block;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  object-fit: cover;
-  box-shadow: 0 16px 34px rgba(49, 120, 255, 0.28);
-  user-select: none;
-}
-
-.brand-panel strong {
-  font-size: 18px;
-  font-weight: 850;
-  font-style: normal;
-  letter-spacing: 0.01em;
 }
 
 .feature-nav {

@@ -111,14 +111,9 @@
     padding: 15px 9px;
   }
 
-  .brand-panel strong,
   .feature-nav-item:not(.active),
   .settings-entry:not(.active) {
     display: none;
-  }
-
-  .brand-panel {
-    justify-content: center;
   }
 
   .feature-nav-item,
