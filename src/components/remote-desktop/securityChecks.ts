@@ -28,6 +28,13 @@ export interface SecurityCheckDefinition {
   evaluate: (result: SecurityCommandResult) => SecurityCheckResult;
 }
 
+export interface SecurityScoreSummary {
+  score: number | null;
+  label: string;
+  tone: 'idle' | 'good' | 'watch' | 'risk' | 'critical';
+  deductions: string[];
+}
+
 const highRiskPorts = new Set(['22', '3389', '3306', '5432', '6379', '9200', '9300', '11211', '27017']);
 
 function shellSingleQuote(value: string) {
@@ -40,6 +47,26 @@ function raw(result: SecurityCommandResult) {
 
 function lines(text: string) {
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function withoutPrefix(line: string, prefix: string) {
+  return line.startsWith(prefix) ? line.slice(prefix.length) : line;
+}
+
+function hasPublicBind(line: string) {
+  return /(^|\s)(0\.0\.0\.0|\[::\]|::|\*)[:\s]/.test(line)
+    || /\bLocalAddress=(0\.0\.0\.0|::|\*)\b/i.test(line);
+}
+
+function getPortFromLine(line: string) {
+  return line.match(/(?::|LocalPort=)(\d{1,5})\b/i)?.[1] ?? null;
+}
+
+function getPublicHighRiskPortLines(outputLines: string[]) {
+  return outputLines.filter((line) => {
+    const port = getPortFromLine(line);
+    return hasPublicBind(line) && port && highRiskPorts.has(port);
+  });
 }
 
 function createResult(
@@ -88,14 +115,25 @@ function evaluateSshConfig(result: SecurityCommandResult): SecurityCheckResult {
   const permitRootLogin = getSshConfigValue(output, 'permitrootlogin') ?? '未知';
   const passwordAuthentication = getSshConfigValue(output, 'passwordauthentication') ?? '未知';
   const pubkeyAuthentication = getSshConfigValue(output, 'pubkeyauthentication') ?? '未知';
+  const permitEmptyPasswords = getSshConfigValue(output, 'permitemptypasswords') ?? '未知';
+  const maxAuthTries = getSshConfigValue(output, 'maxauthtries') ?? '未知';
+  const allowTcpForwarding = getSshConfigValue(output, 'allowtcpforwarding') ?? '未知';
+  const x11Forwarding = getSshConfigValue(output, 'x11forwarding') ?? '未知';
+  const allowUsers = getSshConfigValue(output, 'allowusers') ?? '未限制';
+  const allowGroups = getSshConfigValue(output, 'allowgroups') ?? '未限制';
   const port = getSshConfigValue(output, 'port') ?? '未知';
   const risks: string[] = [];
+  const maxAuthTriesValue = Number.parseInt(maxAuthTries, 10);
 
   if (permitRootLogin === 'yes') risks.push('允许 root 直接登录');
   if (passwordAuthentication === 'yes') risks.push('允许密码登录');
   if (pubkeyAuthentication === 'no') risks.push('未启用公钥登录');
+  if (permitEmptyPasswords === 'yes') risks.push('允许空密码登录');
+  if (Number.isFinite(maxAuthTriesValue) && maxAuthTriesValue > 6) risks.push(`认证重试次数偏高：${maxAuthTriesValue}`);
+  if (allowTcpForwarding === 'yes') risks.push('允许 TCP 转发');
+  if (x11Forwarding === 'yes') risks.push('允许 X11 转发');
 
-  const severity: SecuritySeverity = risks.some((risk) => risk.includes('root')) ? 'high' : risks.length ? 'medium' : 'info';
+  const severity: SecuritySeverity = risks.some((risk) => risk.includes('root') || risk.includes('空密码')) ? 'high' : risks.length ? 'medium' : 'info';
   const status: SecurityStatus = risks.length ? 'warning' : 'passed';
 
   return createResult(
@@ -108,10 +146,16 @@ function evaluateSshConfig(result: SecurityCommandResult): SecurityCheckResult {
       `PermitRootLogin: ${permitRootLogin}`,
       `PasswordAuthentication: ${passwordAuthentication}`,
       `PubkeyAuthentication: ${pubkeyAuthentication}`,
+      `PermitEmptyPasswords: ${permitEmptyPasswords}`,
+      `MaxAuthTries: ${maxAuthTries}`,
+      `AllowTcpForwarding: ${allowTcpForwarding}`,
+      `X11Forwarding: ${x11Forwarding}`,
+      `AllowUsers: ${allowUsers}`,
+      `AllowGroups: ${allowGroups}`,
       `Port: ${port}`,
     ],
     risks.length
-      ? ['优先禁用 root 直接登录，逐步关闭密码登录，并确认公钥登录可用。', '修改 sshd_config 后先使用 sshd -t 校验配置，再 reload sshd。']
+      ? ['优先禁用 root 直接登录和空密码，逐步关闭密码登录，并确认公钥登录可用。', '按需关闭 TCP/X11 转发，限制 AllowUsers/AllowGroups。', '修改 sshd_config 后先使用 sshd -t 校验配置，再 reload sshd。']
       : ['保持最小登录面，并定期复查 sshd -T 输出。'],
     result,
   );
@@ -148,6 +192,59 @@ function evaluatePrivilegedUsers(result: SecurityCommandResult): SecurityCheckRe
   );
 }
 
+function evaluateAccountPosture(result: SecurityCommandResult): SecurityCheckResult {
+  const outputLines = lines(raw(result));
+  const loginUsers = outputLines.filter((line) => line.startsWith('LOGIN_USER:')).map((line) => line.slice('LOGIN_USER:'.length));
+  const localUsers = outputLines.filter((line) => line.startsWith('LOCAL_USER:')).map((line) => line.slice('LOCAL_USER:'.length));
+  const emptyPasswordUsers = outputLines.filter((line) => line.startsWith('EMPTY_PASSWORD:')).map((line) => line.slice('EMPTY_PASSWORD:'.length));
+  const passwordOptionalUsers = localUsers.filter((line) => /PasswordRequired=False/i.test(line));
+  const nopasswdLines = outputLines.filter((line) => line.startsWith('NOPASSWD:')).map((line) => line.slice('NOPASSWD:'.length));
+  const authorizedKeyLines = outputLines.filter((line) => line.startsWith('AUTHORIZED_KEYS:')).map((line) => line.slice('AUTHORIZED_KEYS:'.length));
+  const shadowReadable = !outputLines.some((line) => line === 'SHADOW:unreadable');
+  const broadKeyFiles = authorizedKeyLines.filter((line) => {
+    const mode = line.match(/^\S+:\d+:(\d{3,4})\s/)?.[1];
+    if (!mode) return false;
+    const parsedMode = Number.parseInt(mode.slice(-3), 8);
+    return (parsedMode & 0o022) !== 0;
+  });
+  const largeKeyFiles = authorizedKeyLines.filter((line) => {
+    const count = Number.parseInt(line.match(/^\S+:(\d+):/)?.[1] ?? '0', 10);
+    return count >= 10;
+  });
+  const interactiveSystemUsers = loginUsers.filter((line) => {
+    const uid = Number.parseInt(line.split(':')[1] ?? '', 10);
+    return Number.isFinite(uid) && uid > 0 && uid < 1000;
+  });
+  const highRisk = emptyPasswordUsers.length + passwordOptionalUsers.length + broadKeyFiles.length;
+  const mediumRisk = nopasswdLines.length;
+  const lowRisk = largeKeyFiles.length + interactiveSystemUsers.length;
+  const severity: SecuritySeverity = highRisk ? 'high' : mediumRisk ? 'medium' : lowRisk ? 'low' : 'info';
+  const status: SecurityStatus = highRisk ? 'failed' : mediumRisk || lowRisk ? 'warning' : 'passed';
+
+  return createResult(
+    'account-keys',
+    '账号与密钥',
+    severity,
+    status,
+    highRisk
+      ? `发现 ${highRisk} 个账号或授权密钥高风险。`
+      : mediumRisk || lowRisk
+        ? `发现 ${mediumRisk + lowRisk} 个账号/密钥加固项。`
+        : '未发现明显账号与授权密钥风险。',
+    [
+      emptyPasswordUsers.length ? `空密码账号: ${emptyPasswordUsers.join('、')}` : shadowReadable ? '未发现空密码账号。' : '当前用户无法读取 shadow，空密码检查受限。',
+      passwordOptionalUsers.length ? `Windows 账号未强制密码: ${passwordOptionalUsers.slice(0, 8).join(' | ')}` : localUsers.length ? 'Windows 本地账号均要求密码。' : `可登录 Shell 账号: ${loginUsers.length || 0} 个。`,
+      authorizedKeyLines.length ? `authorized_keys: ${authorizedKeyLines.slice(0, 8).join(' | ')}` : '未发现当前可读取的 authorized_keys 文件。',
+      nopasswdLines.length ? `NOPASSWD sudo: ${nopasswdLines.slice(0, 6).join(' | ')}` : '未发现 NOPASSWD sudo 规则。',
+      interactiveSystemUsers.length ? `可登录系统账号: ${interactiveSystemUsers.slice(0, 6).join(' | ')}` : '未发现可登录的低 UID 服务账号。',
+    ],
+    highRisk
+      ? ['立即处理空密码账号和过宽的 authorized_keys 权限。', '授权密钥文件建议使用 600，.ssh 目录建议使用 700。']
+      : ['定期清理离职人员密钥、过期账号和不再使用的 sudo 免密规则。'],
+    result,
+  );
+}
+
 function evaluateFailedLogins(result: SecurityCommandResult): SecurityCheckResult {
   const outputLines = lines(raw(result)).filter((line) => !/^(btmp|wtmp)\s+begins/i.test(line));
   const failedLines = outputLines.filter((line) => /(failed|invalid|authentication failure|ssh|pts|tty|notty|\d+\.\d+\.\d+\.\d+)/i.test(line));
@@ -170,11 +267,7 @@ function evaluateFailedLogins(result: SecurityCommandResult): SecurityCheckResul
 
 function evaluateOpenPorts(result: SecurityCommandResult): SecurityCheckResult {
   const outputLines = lines(raw(result));
-  const riskyLines = outputLines.filter((line) => {
-    const publicBind = /\b(0\.0\.0\.0|\[::\]|::):/.test(line) || /\*:\d+/.test(line);
-    const portMatch = line.match(/(?::|LocalPort=)(\d{1,5})\b/i);
-    return publicBind && portMatch && highRiskPorts.has(portMatch[1]);
-  });
+  const riskyLines = getPublicHighRiskPortLines(outputLines);
   const listenCount = outputLines.filter((line) => /LISTEN|LocalPort=|UDP/i.test(line)).length;
   const severity: SecuritySeverity = riskyLines.length ? 'medium' : 'info';
   const status: SecurityStatus = riskyLines.length ? 'warning' : 'passed';
@@ -189,6 +282,47 @@ function evaluateOpenPorts(result: SecurityCommandResult): SecurityCheckResult {
     riskyLines.length
       ? ['确认数据库、缓存、管理端口是否只绑定内网或 localhost。', '使用防火墙管理器限制来源地址。']
       : ['继续保持最小暴露端口，新增服务后复查监听地址。'],
+    result,
+  );
+}
+
+function evaluateFirewallExposure(result: SecurityCommandResult): SecurityCheckResult {
+  const outputLines = lines(raw(result));
+  const provider = outputLines.find((line) => line.startsWith('FIREWALL_PROVIDER:'))?.slice('FIREWALL_PROVIDER:'.length) ?? 'unknown';
+  const firewallLines = outputLines
+    .filter((line) => line.startsWith('FIREWALL_LINE:') || line.startsWith('FIREWALL_PROFILE:'))
+    .map((line) => withoutPrefix(withoutPrefix(line, 'FIREWALL_LINE:'), 'FIREWALL_PROFILE:'));
+  const portLines = outputLines
+    .filter((line) => line.startsWith('PORT_LINE:'))
+    .map((line) => line.slice('PORT_LINE:'.length));
+  const riskyPortLines = getPublicHighRiskPortLines(portLines);
+  const disabledFirewallLines = firewallLines.filter((line) => /inactive|not running|disabled|Enabled=False|DefaultInbound=Allow|-P INPUT ACCEPT/i.test(line));
+  const noFirewall = provider === 'none' || firewallLines.some((line) => /provider=none/i.test(line));
+  const riskyFirewall = noFirewall || disabledFirewallLines.length > 0;
+  const severity: SecuritySeverity = riskyFirewall && riskyPortLines.length ? 'high' : riskyFirewall || riskyPortLines.length ? 'medium' : 'info';
+  const status: SecurityStatus = riskyFirewall && riskyPortLines.length ? 'failed' : riskyFirewall || riskyPortLines.length ? 'warning' : 'passed';
+
+  return createResult(
+    'firewall-exposure',
+    '防火墙暴露',
+    severity,
+    status,
+    riskyFirewall && riskyPortLines.length
+      ? `防火墙未完全收敛，且发现 ${riskyPortLines.length} 条公网高敏感端口。`
+      : riskyFirewall
+        ? '防火墙状态可能未启用或入站策略过宽。'
+        : riskyPortLines.length
+          ? `发现 ${riskyPortLines.length} 条公网高敏感端口，请确认防火墙来源限制。`
+          : '防火墙状态和公网高敏感端口未见明显异常。',
+    [
+      `防火墙: ${provider}`,
+      disabledFirewallLines.length ? `异常策略: ${disabledFirewallLines.slice(0, 6).join(' | ')}` : '未发现明显禁用或放行所有入站的防火墙策略。',
+      riskyPortLines.length ? `公网高敏感端口: ${riskyPortLines.slice(0, 8).join(' | ')}` : '未发现公网监听的高敏感端口。',
+      portLines.length ? `监听采样: ${portLines.slice(0, 5).join(' | ')}` : '未读取到监听端口采样。',
+    ],
+    status === 'passed'
+      ? ['继续保持默认拒绝入站，新增服务后复查来源限制。']
+      : ['优先确认数据库、缓存、管理端口是否仅允许内网或堡垒机来源。', '在 ShellDesk 防火墙组件中收敛入站规则，并保留当前 SSH 管理来源。'],
     result,
   );
 }
@@ -221,6 +355,38 @@ function evaluateSensitivePermissions(result: SecurityCommandResult): SecurityCh
   );
 }
 
+function evaluatePrivilegeSurface(result: SecurityCommandResult): SecurityCheckResult {
+  const outputLines = lines(raw(result));
+  const suidLines = outputLines.filter((line) => line.startsWith('SUID:')).map((line) => line.slice('SUID:'.length));
+  const worldWritableLines = outputLines.filter((line) => line.startsWith('WORLD_WRITABLE:')).map((line) => line.slice('WORLD_WRITABLE:'.length));
+  const unquotedServices = outputLines.filter((line) => line.startsWith('UNQUOTED_SERVICE:')).map((line) => line.slice('UNQUOTED_SERVICE:'.length));
+  const severity: SecuritySeverity = worldWritableLines.length ? 'high' : unquotedServices.length ? 'medium' : suidLines.length > 40 ? 'low' : 'info';
+  const status: SecurityStatus = worldWritableLines.length ? 'failed' : unquotedServices.length || suidLines.length > 40 ? 'warning' : 'passed';
+
+  return createResult(
+    'privilege-surface',
+    '提权面',
+    severity,
+    status,
+    worldWritableLines.length
+      ? `发现 ${worldWritableLines.length} 条全局可写敏感路径。`
+      : unquotedServices.length
+        ? `发现 ${unquotedServices.length} 个未引号包裹的 Windows 服务路径。`
+        : suidLines.length > 40
+          ? `SUID/SGID 文件数量偏多：${suidLines.length} 个。`
+          : '未发现明显本地提权面异常。',
+    [
+      worldWritableLines.length ? `全局可写: ${worldWritableLines.slice(0, 8).join(' | ')}` : '未发现全局可写敏感路径。',
+      unquotedServices.length ? `未引号服务路径: ${unquotedServices.slice(0, 8).join(' | ')}` : '未发现未引号包裹的服务路径。',
+      suidLines.length ? `SUID/SGID 采样: ${suidLines.slice(0, 10).join(' | ')}` : '未读取到 SUID/SGID 采样。',
+    ],
+    status === 'passed'
+      ? ['保留最小 SUID 集合，并定期复查服务安装变更。']
+      : ['修正全局可写敏感文件，删除不必要的 SUID/SGID 位。', 'Windows 服务路径包含空格时应使用引号包裹可执行文件路径。'],
+    result,
+  );
+}
+
 function evaluateUpdates(result: SecurityCommandResult): SecurityCheckResult {
   const output = raw(result);
   const countMatch = output.match(/UPDATES:\s*(\d+)/i);
@@ -244,9 +410,9 @@ function evaluateUpdates(result: SecurityCommandResult): SecurityCheckResult {
 function linuxSshCommand() {
   return `
 if command -v sshd >/dev/null 2>&1; then
-  sshd -T 2>/dev/null | grep -Ei '^(permitrootlogin|passwordauthentication|pubkeyauthentication|port)\\s+' || true
+  sshd -T 2>/dev/null | grep -Ei '^(permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|allowtcpforwarding|x11forwarding|allowusers|allowgroups|port)\\s+' || true
 elif [ -f /etc/ssh/sshd_config ]; then
-  grep -Ei '^\\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Port)\\s+' /etc/ssh/sshd_config | sed 's/^\\s*//'
+  grep -Ei '^\\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|AllowTcpForwarding|X11Forwarding|AllowUsers|AllowGroups|Port)\\s+' /etc/ssh/sshd_config | sed 's/^\\s*//'
 else
   printf 'OpenSSH Server 配置未找到。\\n'
 fi
@@ -260,6 +426,29 @@ printf 'SUDO:'
 getent group sudo 2>/dev/null || true
 printf 'WHEEL:'
 getent group wheel 2>/dev/null || true
+`;
+}
+
+function linuxAccountPostureCommand() {
+  return `
+getent passwd | awk -F: '($7 !~ /(nologin|false|sync|shutdown|halt)$/) { print "LOGIN_USER:" $1 ":" $3 ":" $6 ":" $7 }'
+if [ -r /etc/shadow ]; then
+  awk -F: '($2 == "") { print "EMPTY_PASSWORD:" $1 }' /etc/shadow
+else
+  printf 'SHADOW:unreadable\\n'
+fi
+for home in /root /home/*; do
+  [ -d "$home" ] || continue
+  user="$(basename "$home")"
+  [ "$home" = "/root" ] && user=root
+  file="$home/.ssh/authorized_keys"
+  if [ -f "$file" ]; then
+    count="$(grep -cv '^[[:space:]]*\\(#\\|$\\)' "$file" 2>/dev/null || printf 0)"
+    meta="$(stat -c '%a %U %G %n' "$file" 2>/dev/null || printf 'unknown - - %s' "$file")"
+    printf 'AUTHORIZED_KEYS:%s:%s:%s\\n' "$user" "$count" "$meta"
+  fi
+done
+grep -Rhs 'NOPASSWD' /etc/sudoers /etc/sudoers.d 2>/dev/null | head -20 | sed 's/^/NOPASSWD:/' || true
 `;
 }
 
@@ -287,6 +476,29 @@ fi
 `;
 }
 
+function linuxFirewallExposureCommand() {
+  return `
+if command -v ufw >/dev/null 2>&1; then
+  printf 'FIREWALL_PROVIDER:ufw\\n'
+  ufw status verbose 2>&1 | sed 's/^/FIREWALL_LINE:/'
+elif command -v firewall-cmd >/dev/null 2>&1; then
+  printf 'FIREWALL_PROVIDER:firewalld\\n'
+  firewall-cmd --state 2>&1 | sed 's/^/FIREWALL_LINE:/'
+  firewall-cmd --list-all 2>&1 | head -80 | sed 's/^/FIREWALL_LINE:/'
+elif command -v iptables >/dev/null 2>&1; then
+  printf 'FIREWALL_PROVIDER:iptables\\n'
+  iptables -S 2>/dev/null | head -80 | sed 's/^/FIREWALL_LINE:/'
+else
+  printf 'FIREWALL_PROVIDER:none\\n'
+fi
+if command -v ss >/dev/null 2>&1; then
+  ss -H -tunlp 2>/dev/null || ss -H -tunl 2>/dev/null || true
+elif command -v netstat >/dev/null 2>&1; then
+  netstat -tunlp 2>/dev/null || netstat -tunl 2>/dev/null || true
+fi | sed 's/^/PORT_LINE:/'
+`;
+}
+
 function linuxPermissionsCommand() {
   return `
 for target in /etc/passwd /etc/shadow "$HOME/.ssh/authorized_keys"; do
@@ -296,6 +508,17 @@ for target in /etc/passwd /etc/shadow "$HOME/.ssh/authorized_keys"; do
     printf 'missing - - %s\\n' "$target"
   fi
 done
+`;
+}
+
+function linuxPrivilegeSurfaceCommand() {
+  return `
+if command -v find >/dev/null 2>&1; then
+  find /usr/bin /usr/sbin /bin /sbin -xdev \\( -perm -4000 -o -perm -2000 \\) -type f -printf 'SUID:%m %u %g %p\\n' 2>/dev/null | head -80
+  find /etc /etc/cron.d /var/spool/cron -xdev -type f -perm -0002 -printf 'WORLD_WRITABLE:%m %u %g %p\\n' 2>/dev/null | head -40
+else
+  printf 'PRIV_ESC:find unavailable\\n'
+fi
 `;
 }
 
@@ -324,7 +547,7 @@ function windowsSshCommand() {
 $paths = @("$env:ProgramData\\ssh\\sshd_config", "$env:WINDIR\\System32\\OpenSSH\\sshd_config")
 $path = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($path) {
-  Get-Content $path | Where-Object { $_ -match '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Port)\\s+' }
+  Get-Content $path | Where-Object { $_ -match '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|AllowTcpForwarding|X11Forwarding|AllowUsers|AllowGroups|Port)\\s+' }
 } else {
   "OpenSSH Server 配置未找到。"
 }
@@ -335,6 +558,22 @@ function windowsAdminsCommand() {
   return powershellCommand(`
 "ADMINS:"
 Get-LocalGroupMember Administrators -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+`);
+}
+
+function windowsAccountPostureCommand() {
+  return powershellCommand(`
+Get-LocalUser -ErrorAction SilentlyContinue | ForEach-Object {
+  "LOCAL_USER:$($_.Name):Enabled=$($_.Enabled):PasswordRequired=$($_.PasswordRequired):LastLogon=$($_.LastLogon)"
+}
+$adminKey = "$env:ProgramData\\ssh\\administrators_authorized_keys"
+if (Test-Path $adminKey) {
+  $count = (Get-Content $adminKey -ErrorAction SilentlyContinue | Where-Object { $_ -and ($_ -notmatch '^\\s*#') }).Count
+  "AUTHORIZED_KEYS:Administrators:$($count):$adminKey"
+}
+Get-LocalGroupMember Administrators -ErrorAction SilentlyContinue | ForEach-Object {
+  "LOCAL_ADMIN:$($_.Name)"
+}
 `);
 }
 
@@ -349,6 +588,18 @@ function windowsPortsCommand() {
   return powershellCommand(`
 Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object -First 120 | ForEach-Object {
   "LocalPort=$($_.LocalPort) LocalAddress=$($_.LocalAddress) OwningProcess=$($_.OwningProcess)"
+}
+`);
+}
+
+function windowsFirewallExposureCommand() {
+  return powershellCommand(`
+"FIREWALL_PROVIDER:windows"
+Get-NetFirewallProfile -ErrorAction SilentlyContinue | ForEach-Object {
+  "FIREWALL_PROFILE:$($_.Name):Enabled=$($_.Enabled):DefaultInbound=$($_.DefaultInboundAction)"
+}
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object -First 120 | ForEach-Object {
+  "PORT_LINE:LocalPort=$($_.LocalPort) LocalAddress=$($_.LocalAddress) OwningProcess=$($_.OwningProcess)"
 }
 `);
 }
@@ -368,6 +619,15 @@ foreach ($path in $paths) {
 `);
 }
 
+function windowsPrivilegeSurfaceCommand() {
+  return powershellCommand(`
+Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
+  Where-Object { $_.PathName -match '\\s' -and $_.PathName -notmatch '^"' } |
+  Select-Object -First 40 |
+  ForEach-Object { "UNQUOTED_SERVICE:$($_.Name):$($_.PathName)" }
+`);
+}
+
 function windowsUpdatesCommand() {
   return powershellCommand(`
 "Windows Update 详细检查首版仅提示人工复查。"
@@ -380,7 +640,7 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean): Security
     {
       id: 'ssh-config',
       title: 'SSH 配置',
-      description: 'root 登录、密码登录、公钥登录和端口。',
+      description: '登录方式、空密码、转发、重试和端口。',
       createCommand: isWindowsHost ? windowsSshCommand : linuxSshCommand,
       evaluate: evaluateSshConfig,
     },
@@ -390,6 +650,13 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean): Security
       description: 'sudo、wheel、Administrators 和 UID 0 账号。',
       createCommand: isWindowsHost ? windowsAdminsCommand : linuxPrivilegedUsersCommand,
       evaluate: evaluatePrivilegedUsers,
+    },
+    {
+      id: 'account-keys',
+      title: '账号与密钥',
+      description: '空密码、authorized_keys、sudo 免密和可登录账号。',
+      createCommand: isWindowsHost ? windowsAccountPostureCommand : linuxAccountPostureCommand,
+      evaluate: evaluateAccountPosture,
     },
     {
       id: 'failed-logins',
@@ -406,11 +673,25 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean): Security
       evaluate: evaluateOpenPorts,
     },
     {
+      id: 'firewall-exposure',
+      title: '防火墙暴露',
+      description: '防火墙状态与公网高敏感端口联动。',
+      createCommand: isWindowsHost ? windowsFirewallExposureCommand : linuxFirewallExposureCommand,
+      evaluate: evaluateFirewallExposure,
+    },
+    {
       id: 'file-permissions',
       title: '敏感文件权限',
       description: 'SSH 授权文件、passwd、shadow 等权限。',
       createCommand: isWindowsHost ? windowsPermissionsCommand : linuxPermissionsCommand,
       evaluate: evaluateSensitivePermissions,
+    },
+    {
+      id: 'privilege-surface',
+      title: '提权面',
+      description: 'SUID/SGID、全局可写路径和服务路径风险。',
+      createCommand: isWindowsHost ? windowsPrivilegeSurfaceCommand : linuxPrivilegeSurfaceCommand,
+      evaluate: evaluatePrivilegeSurface,
     },
     {
       id: 'updates',
@@ -422,6 +703,51 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean): Security
   ];
 }
 
+function getScorePenalty(result: SecurityCheckResult) {
+  if (result.status === 'passed') return 0;
+
+  if (result.status === 'unknown') {
+    return 2;
+  }
+
+  if (result.status === 'failed') {
+    if (result.severity === 'high') return 25;
+    if (result.severity === 'medium') return 18;
+    if (result.severity === 'low') return 10;
+    return 6;
+  }
+
+  if (result.severity === 'high') return 20;
+  if (result.severity === 'medium') return 12;
+  if (result.severity === 'low') return 6;
+  return 3;
+}
+
+export function calculateSecurityScore(results: SecurityCheckResult[]): SecurityScoreSummary {
+  if (!results.length) {
+    return {
+      score: null,
+      label: '未评分',
+      tone: 'idle',
+      deductions: [],
+    };
+  }
+
+  const deductions = results
+    .map((result) => ({ result, penalty: getScorePenalty(result) }))
+    .filter((item) => item.penalty > 0);
+  const score = Math.max(0, 100 - deductions.reduce((total, item) => total + item.penalty, 0));
+  const tone: SecurityScoreSummary['tone'] = score >= 90 ? 'good' : score >= 75 ? 'watch' : score >= 60 ? 'risk' : 'critical';
+  const label = score >= 90 ? '良好' : score >= 75 ? '需关注' : score >= 60 ? '需加固' : '高风险';
+
+  return {
+    score,
+    label,
+    tone,
+    deductions: deductions.map((item) => `${item.result.title} -${item.penalty}: ${item.result.summary}`),
+  };
+}
+
 export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: string, scannedAt: string) {
   const counts = {
     high: results.filter((result) => result.severity === 'high').length,
@@ -429,13 +755,16 @@ export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: 
     low: results.filter((result) => result.severity === 'low').length,
     info: results.filter((result) => result.severity === 'info').length,
   };
+  const score = calculateSecurityScore(results);
 
   return [
     `# ShellDesk 安全巡检报告`,
     '',
     `- 主机：${hostLabel || '当前连接'}`,
     `- 时间：${scannedAt || new Date().toLocaleString('zh-CN')}`,
+    `- 安全评分：${score.score ?? '--'}（${score.label}）`,
     `- 风险：高 ${counts.high} / 中 ${counts.medium} / 低 ${counts.low} / 信息 ${counts.info}`,
+    score.deductions.length ? `- 扣分项：${score.deductions.slice(0, 6).join('；')}` : '- 扣分项：无明显扣分项',
     '',
     ...results.flatMap((result) => [
       `## ${result.title}`,

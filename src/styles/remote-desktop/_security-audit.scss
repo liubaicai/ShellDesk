@@ -46,7 +46,8 @@
 .security-check-list button small,
 .security-detail-head span,
 .security-section h3,
-.security-summary span {
+.security-summary span,
+.security-summary em {
   color: var(--security-muted);
   font-size: 11px;
   font-style: normal;
@@ -121,7 +122,7 @@
 
 .security-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   padding: 10px;
 }
@@ -139,6 +140,32 @@
 .security-summary strong {
   font-size: 18px;
   font-weight: 880;
+}
+
+.security-summary em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.security-score-card.good {
+  border-color: rgba(128, 224, 192, 0.3);
+  background: rgba(128, 224, 192, 0.08);
+}
+
+.security-score-card.watch {
+  border-color: rgba(112, 184, 255, 0.28);
+  background: rgba(112, 184, 255, 0.08);
+}
+
+.security-score-card.risk {
+  border-color: rgba(255, 211, 107, 0.3);
+  background: rgba(255, 211, 107, 0.08);
+}
+
+.security-score-card.critical {
+  border-color: rgba(255, 143, 163, 0.32);
+  background: rgba(255, 143, 163, 0.08);
 }
 
 .security-layout {

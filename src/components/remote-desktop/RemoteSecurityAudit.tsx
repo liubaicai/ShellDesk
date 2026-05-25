@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { getErrorMessage } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import {
+  calculateSecurityScore,
   createSecurityCheckDefinitions,
   formatSecurityReport,
   getSeverityLabel,
@@ -73,6 +74,7 @@ function RemoteSecurityAudit({ connectionId, systemType, hostLabel = '当前连�
     info: results.filter((result) => result.severity === 'info').length,
     warning: results.filter((result) => result.status === 'warning' || result.status === 'failed').length,
   }), [results]);
+  const score = useMemo(() => calculateSecurityScore(results), [results]);
 
   const upsertResult = (nextResult: SecurityCheckResult) => {
     setResults((currentResults) => {
@@ -161,6 +163,11 @@ function RemoteSecurityAudit({ connectionId, systemType, hostLabel = '当前连�
       {notice ? <div className="security-alert info">{notice}</div> : null}
 
       <div className="security-summary">
+        <div className={`security-score-card ${score.tone}`}>
+          <span>安全评分</span>
+          <strong>{score.score ?? '--'}</strong>
+          <em>{score.label}</em>
+        </div>
         <div><span>高风险</span><strong>{stats.high}</strong></div>
         <div><span>中风险</span><strong>{stats.medium}</strong></div>
         <div><span>低风险</span><strong>{stats.low}</strong></div>
