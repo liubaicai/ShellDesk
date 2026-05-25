@@ -20,9 +20,7 @@ const {
   remoteDesktopSortModes,
   remoteSystemTypeChoices,
   terminalCursorInactiveStyleChoices,
-  terminalFontFamilyChoices,
   terminalThemeChoices,
-  uiFontChoices,
   vaultFileName,
   vaultFormat,
   vaultSchemaVersion,
@@ -39,10 +37,27 @@ const {
 
 let vaultCache = null;
 
+function readFontFamily(value, fallback) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const fontFamily = value
+    .replace(/\0/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!fontFamily || fontFamily.length > 120 || /[\r\n]/.test(fontFamily)) {
+    return fallback;
+  }
+
+  return fontFamily;
+}
+
 function createDefaultSettings() {
   return {
     language: 'zh-CN',
-    interfaceFont: 'LXGW WenKai Mono',
+    interfaceFont: 'Microsoft YaHei UI',
     theme: 'dark',
     accentColor: accentColorChoices[0],
     defaultHostView: 'grid',
@@ -213,7 +228,7 @@ function readAppSettings(rawSettings) {
 
   return {
     language: rawSettings.language === 'en-US' ? 'en-US' : 'zh-CN',
-    interfaceFont: uiFontChoices.includes(rawSettings.interfaceFont) ? rawSettings.interfaceFont : defaults.interfaceFont,
+    interfaceFont: readFontFamily(rawSettings.interfaceFont, defaults.interfaceFont),
     theme: rawSettings.theme === 'light' || rawSettings.theme === 'system' ? rawSettings.theme : defaults.theme,
     accentColor: readColorHex(rawSettings.accentColor, '强调色', defaults.accentColor),
     defaultHostView: rawSettings.defaultHostView === 'list' ? 'list' : 'grid',
@@ -240,9 +255,7 @@ function readAppSettings(rawSettings) {
       defaults.rememberKeyPassphrases,
     ),
     terminalFontSize: readIntegerInRange(rawSettings.terminalFontSize, '终端字号', 11, 20, defaults.terminalFontSize),
-    terminalFontFamily: terminalFontFamilyChoices.includes(rawSettings.terminalFontFamily)
-      ? rawSettings.terminalFontFamily
-      : defaults.terminalFontFamily,
+    terminalFontFamily: readFontFamily(rawSettings.terminalFontFamily, defaults.terminalFontFamily),
     terminalFontWeight: readIntegerInRange(
       rawSettings.terminalFontWeight,
       '终端常规字重',

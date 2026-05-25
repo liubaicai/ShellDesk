@@ -5,6 +5,7 @@ import RemoteDesktop from './RemoteDesktopShell';
 import appIconUrl from './assets/images/icon.png';
 import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
+import { buildFontStack } from './fontUtils';
 import KeysPage from './pages/KeysPage';
 import LogsPage from './pages/LogsPage';
 import SettingsPage from './pages/SettingsPage';
@@ -22,7 +23,7 @@ const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
 };
 const defaultAppSettings: ShellDeskAppSettings = {
   language: 'zh-CN',
-  interfaceFont: 'LXGW WenKai Mono',
+  interfaceFont: 'Microsoft YaHei UI',
   theme: 'dark',
   accentColor: '#43c7ff',
   defaultHostView: 'grid',
@@ -1244,7 +1245,21 @@ function App() {
     root.style.setProperty('--toggle-off', isLightTheme ? '#c3cedb' : '#202938');
     root.style.colorScheme = isLightTheme ? 'light' : 'dark';
     root.setAttribute('data-theme', effectiveTheme);
-    const interfaceFontFamily = `"${settings.interfaceFont}", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    const interfaceFontFamily = buildFontStack(settings.interfaceFont, [
+      'Microsoft YaHei UI',
+      'Microsoft YaHei',
+      'PingFang SC',
+      'Hiragino Sans GB',
+      'Noto Sans CJK SC',
+      'Source Han Sans SC',
+      'Segoe UI Variable',
+      'Segoe UI',
+      'ui-sans-serif',
+      'system-ui',
+      '-apple-system',
+      'BlinkMacSystemFont',
+      'sans-serif',
+    ]);
     root.style.setProperty('--interface-font-family', interfaceFontFamily);
     document.body.style.fontFamily = interfaceFontFamily;
   }, [settings]);

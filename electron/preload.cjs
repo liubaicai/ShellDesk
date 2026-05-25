@@ -80,6 +80,9 @@ contextBridge.exposeInMainWorld('guiSSH', {
     get: (key) => ipcRenderer.invoke('preferences:get', key),
     set: (key, value) => ipcRenderer.invoke('preferences:set', key, value),
   },
+  system: {
+    listFonts: () => ipcRenderer.invoke('system:list-fonts'),
+  },
   connections: {
     connect: connectHost,
     getInfo: (connectionId) => ipcRenderer.invoke('connection:get-info', connectionId),
