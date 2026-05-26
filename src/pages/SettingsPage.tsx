@@ -12,6 +12,7 @@ const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
   { key: 'appearance', label: '外观', summary: '主题、强调色、壁纸' },
   { key: 'terminal', label: '终端', summary: '主题、字体、滚动' },
+  { key: 'ai', label: 'AI', summary: '提供商、密钥、模型' },
   { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
   { key: 'backup', label: '备份与导入', summary: '配置迁移' },
 ] as const;
@@ -74,6 +75,42 @@ const terminalContrastChoices = [
   { value: 1, label: '关闭' },
   { value: 4.5, label: 'AA 4.5' },
   { value: 7, label: 'AAA 7' },
+];
+const aiProviderChoices: Array<{
+  value: ShellDeskAiProvider;
+  label: string;
+  summary: string;
+  apiFormat: ShellDeskAiApiFormat;
+  defaultApiBaseUrl: string;
+}> = [
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    summary: '官方 OpenAI API，使用 /v1/models 获取模型',
+    apiFormat: 'openai',
+    defaultApiBaseUrl: 'https://api.openai.com/v1',
+  },
+  {
+    value: 'anthropic',
+    label: 'Claude / Anthropic',
+    summary: 'Anthropic Messages API，使用 /v1/models 获取 Claude 模型',
+    apiFormat: 'anthropic',
+    defaultApiBaseUrl: 'https://api.anthropic.com',
+  },
+  {
+    value: 'openai-compatible',
+    label: 'OpenAI 兼容',
+    summary: 'DeepSeek、OpenRouter、Ollama 等兼容 OpenAI 的服务',
+    apiFormat: 'openai',
+    defaultApiBaseUrl: '',
+  },
+  {
+    value: 'custom',
+    label: '自定义提供商',
+    summary: '手动选择 API 格式并填写模型列表地址',
+    apiFormat: 'openai',
+    defaultApiBaseUrl: '',
+  },
 ];
 
 function readFileAsDataUrl(file: File) {
@@ -169,6 +206,10 @@ function SettingsPage({
   const [systemFonts, setSystemFonts] = useState<string[]>(fallbackSystemFontChoices);
   const [isSystemFontsLoading, setIsSystemFontsLoading] = useState(false);
   const [systemFontsError, setSystemFontsError] = useState('');
+  const [aiModelOptions, setAiModelOptions] = useState<ShellDeskAiModelInfo[]>([]);
+  const [isAiModelsLoading, setIsAiModelsLoading] = useState(false);
+  const [aiModelsMessage, setAiModelsMessage] = useState('');
+  const [aiModelsError, setAiModelsError] = useState('');
 
   const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
@@ -177,6 +218,14 @@ function SettingsPage({
     });
   };
   const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
+  const selectedAiProvider = aiProviderChoices.find((choice) => choice.value === settings.aiProvider) ?? aiProviderChoices[0];
+  const selectedAiModelInList = aiModelOptions.some((model) => model.id === settings.aiModel);
+  const visibleAiModelOptions = selectedAiModelInList || !settings.aiModel
+    ? aiModelOptions
+    : [{ id: settings.aiModel, name: settings.aiModel }, ...aiModelOptions];
+  const aiModelStatus = aiModelsError || aiModelsMessage || (
+    aiModelOptions.length ? `已获取 ${aiModelOptions.length} 个模型` : '获取模型列表后可从下拉框选择'
+  );
   const interfaceFontOptions = useMemo(
     () => createFontOptions(systemFonts, settings.interfaceFont, interfacePreferredFontChoices),
     [settings.interfaceFont, systemFonts],
@@ -204,6 +253,66 @@ function SettingsPage({
       desktopWallpaperDataUrl: '',
       desktopWallpaperName: '',
     });
+  };
+
+  const updateAiProvider = (provider: ShellDeskAiProvider) => {
+    const providerChoice = aiProviderChoices.find((choice) => choice.value === provider) ?? aiProviderChoices[0];
+
+    setAiModelOptions([]);
+    setAiModelsMessage('');
+    setAiModelsError('');
+    onSettingsChange({
+      ...settings,
+      aiProvider: providerChoice.value,
+      aiProviderName: providerChoice.label,
+      aiApiFormat: providerChoice.apiFormat,
+      aiApiBaseUrl: providerChoice.defaultApiBaseUrl,
+      aiModel: '',
+    });
+  };
+
+  const fetchAiModels = async () => {
+    const listModels = window.guiSSH?.ai?.listModels;
+
+    if (!listModels) {
+      setAiModelsError('当前运行环境未提供 AI 模型列表接口。');
+      setAiModelsMessage('');
+      return;
+    }
+
+    if (!settings.aiApiBaseUrl.trim()) {
+      setAiModelsError('请先填写 API 地址。');
+      setAiModelsMessage('');
+      return;
+    }
+
+    if (!settings.aiApiKey.trim()) {
+      setAiModelsError('请先填写 API 密钥。');
+      setAiModelsMessage('');
+      return;
+    }
+
+    setIsAiModelsLoading(true);
+    setAiModelsError('');
+    setAiModelsMessage('');
+
+    try {
+      const result = await listModels({
+        provider: settings.aiProvider,
+        apiFormat: settings.aiApiFormat,
+        apiBaseUrl: settings.aiApiBaseUrl,
+        apiKey: settings.aiApiKey,
+      });
+      const models = result.models;
+
+      setAiModelOptions(models);
+      setAiModelsMessage(`已获取 ${models.length} 个模型`);
+    } catch (error) {
+      setAiModelOptions([]);
+      setAiModelsError(error instanceof Error ? error.message : '获取模型列表失败。');
+    } finally {
+      setIsAiModelsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -821,6 +930,137 @@ function SettingsPage({
             </>
           ) : null}
 
+          {activeSection === 'ai' ? (
+            <>
+              <section className="settings-section">
+                <h2>AI 提供商</h2>
+                <div className="settings-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>提供商</strong>
+                      <small>{selectedAiProvider.summary}</small>
+                    </span>
+                    <select
+                      value={settings.aiProvider}
+                      onChange={(event) => updateAiProvider(event.target.value as ShellDeskAiProvider)}
+                    >
+                      {aiProviderChoices.map((providerChoice) => (
+                        <option key={providerChoice.value} value={providerChoice.value}>{providerChoice.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {settings.aiProvider === 'custom' ? (
+                    <label className="settings-row">
+                      <span>
+                        <strong>提供商名称</strong>
+                        <small>用于后续组件展示当前 AI 来源</small>
+                      </span>
+                      <input
+                        className="settings-text-input"
+                        value={settings.aiProviderName}
+                        maxLength={80}
+                        onChange={(event) => updateSetting('aiProviderName', event.target.value)}
+                        placeholder="例如：公司内网网关"
+                      />
+                    </label>
+                  ) : null}
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>API 格式</strong>
+                      <small>OpenAI 兼容格式使用 Authorization；Claude 格式使用 x-api-key</small>
+                    </span>
+                    <select
+                      value={settings.aiApiFormat}
+                      onChange={(event) => {
+                        setAiModelOptions([]);
+                        setAiModelsMessage('');
+                        setAiModelsError('');
+                        updateSetting('aiApiFormat', event.target.value as ShellDeskAiApiFormat);
+                      }}
+                      disabled={settings.aiProvider !== 'custom'}
+                    >
+                      <option value="openai">OpenAI compatible</option>
+                      <option value="anthropic">Claude / Anthropic</option>
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>API 地址</strong>
+                      <small>填写基础地址即可；模型列表会自动拼接对应路径</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-url-input"
+                      type="url"
+                      value={settings.aiApiBaseUrl}
+                      onChange={(event) => {
+                        setAiModelOptions([]);
+                        setAiModelsMessage('');
+                        setAiModelsError('');
+                        updateSetting('aiApiBaseUrl', event.target.value);
+                      }}
+                      placeholder={settings.aiApiFormat === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.example.com/v1'}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>API 密钥</strong>
+                      <small>密钥写入敏感 vault；普通 config.json 只保留非敏感配置</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-secret-input"
+                      type="password"
+                      value={settings.aiApiKey}
+                      onChange={(event) => updateSetting('aiApiKey', event.target.value)}
+                      placeholder="sk-..."
+                    />
+                  </label>
+                </div>
+                <p className="settings-caption">OpenAI 兼容格式适合 OpenAI、DeepSeek、OpenRouter、Ollama 网关等；Claude 格式适合 Anthropic 官方或兼容网关。</p>
+              </section>
+
+              <section className="settings-section">
+                <h2>模型</h2>
+                <div className="settings-card">
+                  <div className="settings-row ai-model-row">
+                    <span>
+                      <strong>默认模型</strong>
+                      <small className={aiModelsError ? 'settings-error-text' : undefined}>{aiModelStatus}</small>
+                    </span>
+                    <div className="ai-model-control">
+                      <input
+                        className="settings-text-input"
+                        list="ai-model-options"
+                        value={settings.aiModel}
+                        onChange={(event) => updateSetting('aiModel', event.target.value)}
+                        placeholder="先获取模型列表，或手动输入模型 ID"
+                      />
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={fetchAiModels}
+                        disabled={isAiModelsLoading || !settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim()}
+                      >
+                        {isAiModelsLoading ? '获取中...' : '获取模型'}
+                      </button>
+                      <datalist id="ai-model-options">
+                        {visibleAiModelOptions.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name === model.id ? model.id : `${model.name} · ${model.id}`}
+                          </option>
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+                </div>
+                <p className="settings-caption">当前只完成全局 AI 配置和模型发现，后续终端、文件、数据库等组件可以复用这套配置接入 AI 能力。</p>
+              </section>
+            </>
+          ) : null}
+
           {activeSection === 'security' ? (
             <>
               <section className="settings-section">
@@ -881,12 +1121,12 @@ function SettingsPage({
                   <div className="settings-row">
                     <span>
                       <strong>敏感 vault 文件</strong>
-                      <small>SSH 密码、密钥口令和私钥内容</small>
+                      <small>SSH 密码、密钥口令、私钥内容和 AI API 密钥</small>
                     </span>
                     <code className="settings-inline-code">{storageInfo?.vaultPath ?? '未就绪'}</code>
                   </div>
                 </div>
-                <p className="settings-caption">私钥、密码和口令只写入敏感 vault；普通配置文件不包含这些字段，后续可单独作为云同步配置源。</p>
+                <p className="settings-caption">私钥、密码、口令和 AI API 密钥只写入敏感 vault；普通配置文件不包含这些字段，后续可单独作为云同步配置源。</p>
               </section>
             </>
           ) : null}
@@ -898,7 +1138,7 @@ function SettingsPage({
                 <div className="settings-row">
                   <span>
                     <strong>完整导出</strong>
-                    <small>导出主机、密钥、设置和浏览器书签，包含密码、私钥内容与密钥口令。</small>
+                    <small>导出主机、密钥、设置和浏览器书签，包含密码、私钥内容、密钥口令和 AI API 密钥。</small>
                   </span>
                   <button
                     type="button"

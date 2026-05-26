@@ -1469,7 +1469,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'notepad') {
-      return <RemoteNotepad connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} initialContent={desktopWindow.notepadInitialContent} initialTitle={desktopWindow.notepadInitialTitle} systemType={connection.host.systemType} />;
+      return <RemoteNotepad connectionId={connection.id} settings={settings} initialFilePath={desktopWindow.notepadInitialPath} initialContent={desktopWindow.notepadInitialContent} initialTitle={desktopWindow.notepadInitialTitle} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'mysql') {

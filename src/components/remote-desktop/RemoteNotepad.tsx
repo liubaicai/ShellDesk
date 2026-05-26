@@ -1,5 +1,6 @@
 import {
   type ChangeEvent,
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
@@ -78,6 +79,7 @@ interface NotepadTab {
 
 interface RemoteNotepadProps {
   connectionId: string;
+  settings: ShellDeskAppSettings;
   initialFilePath?: string;
   initialContent?: string;
   initialTitle?: string;
@@ -116,6 +118,35 @@ interface DiffPreviewLine {
 interface DiffPreview {
   lines: DiffPreviewLine[];
   truncated: boolean;
+}
+
+type NotepadAiMessageRole = 'user' | 'assistant' | 'tool';
+
+type NotepadAiAction =
+  | {
+      type: 'replace_content' | 'append_content' | 'insert_at_cursor' | 'replace_selection';
+      content: string;
+      summary?: string;
+    }
+  | {
+      type: 'run_command';
+      command: string;
+      reason?: string;
+    };
+
+interface NotepadAiMessage {
+  id: string;
+  role: NotepadAiMessageRole;
+  content: string;
+  createdAt: string;
+  action?: NotepadAiAction;
+  actionApplied?: boolean;
+}
+
+interface EditorSelectionSnapshot {
+  start: number;
+  end: number;
+  text: string;
 }
 
 /** 二进制文件扩展名黑名单，其他文件均允许用记事本打开 */
@@ -221,8 +252,33 @@ const LANGUAGE_OPTIONS = [
 const MAX_DIFF_INPUT_LINES = 180;
 const MAX_DIFF_OUTPUT_LINES = 280;
 const MAX_HIGHLIGHT_CHARACTERS = 320000;
-const MAX_RECENT_FILES = 6;
 const EDITOR_LINE_HEIGHT = 20;
+const MAX_AI_FILE_CONTEXT_CHARACTERS = 18000;
+const MAX_AI_SELECTION_CHARACTERS = 6000;
+const MAX_AI_ENVIRONMENT_CHARACTERS = 12000;
+const MAX_AI_COMMAND_OUTPUT_CHARACTERS = 12000;
+const MAX_AI_HISTORY_MESSAGES = 14;
+const NOTEPAD_AI_SYSTEM_PROMPT = `你是 ShellDesk 远程记事本中的 AI Agent。你帮助用户理解、生成和修改当前远程文件内容。
+
+要求：
+- 用中文回答，除非用户明确要求其他语言。
+- 优先结合当前文件路径、语言、选区、远端环境探测结果来生成内容。
+- 如果要修改当前文本，先简短说明，然后附加一个 shelldesk-action 代码块。
+- 如果需要探测服务器，可以请求执行只读命令，同样使用 shelldesk-action 代码块。命令会经 SSH 隧道在当前连接上执行，但必须等用户确认。
+
+可用动作 JSON：
+{"type":"replace_content","content":"完整新内容","summary":"替换全文"}
+{"type":"replace_selection","content":"替换选区的文本","summary":"替换选区"}
+{"type":"insert_at_cursor","content":"要插入的文本","summary":"插入文本"}
+{"type":"append_content","content":"追加到文件末尾的文本","summary":"追加文本"}
+{"type":"run_command","command":"只读探测命令","reason":"为什么需要执行"}
+
+动作块格式必须是：
+\`\`\`shelldesk-action
+{"type":"replace_content","content":"..."}
+\`\`\`
+
+除非用户明确要求，避免生成会删除数据、重启服务、安装软件或修改系统状态的命令。`;
 
 function getFileExtension(name: string): string {
   const dotIndex = name.lastIndexOf('.');
@@ -369,6 +425,96 @@ function getDiffPrefix(kind: DiffPreviewLine['kind']): string {
   return ' ';
 }
 
+function createNotepadAiMessageId() {
+  return `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function truncateMiddle(content: string, maxLength: number) {
+  if (content.length <= maxLength) {
+    return content;
+  }
+
+  const headLength = Math.floor(maxLength * 0.58);
+  const tailLength = Math.max(0, maxLength - headLength - 80);
+  return `${content.slice(0, headLength)}\n\n... 已截断 ${content.length - headLength - tailLength} 个字符 ...\n\n${content.slice(-tailLength)}`;
+}
+
+function stripAiActionBlocks(content: string) {
+  return content
+    .replace(/```shelldesk-action\s*[\s\S]*?```/giu, '')
+    .replace(/```shelldesk-action[\s\S]*$/iu, '')
+    .trim();
+}
+
+function parseAiAction(content: string): NotepadAiAction | undefined {
+  const match = /```shelldesk-action\s*([\s\S]*?)```/iu.exec(content);
+
+  if (!match) {
+    return undefined;
+  }
+
+  try {
+    const parsedAction: unknown = JSON.parse(match[1].trim());
+
+    if (!parsedAction || typeof parsedAction !== 'object') {
+      return undefined;
+    }
+
+    const action = parsedAction as Partial<NotepadAiAction>;
+
+    if (
+      (action.type === 'replace_content' ||
+        action.type === 'append_content' ||
+        action.type === 'insert_at_cursor' ||
+        action.type === 'replace_selection') &&
+      typeof action.content === 'string'
+    ) {
+      return {
+        type: action.type,
+        content: action.content,
+        summary: typeof action.summary === 'string' ? action.summary : undefined,
+      };
+    }
+
+    if (action.type === 'run_command' && typeof action.command === 'string' && action.command.trim()) {
+      return {
+        type: 'run_command',
+        command: action.command.trim(),
+        reason: typeof action.reason === 'string' ? action.reason : undefined,
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function formatCommandResult(command: string, result: { stdout: string; stderr: string; code: number }) {
+  const stdout = result.stdout ? truncateMiddle(result.stdout, MAX_AI_COMMAND_OUTPUT_CHARACTERS) : '(无标准输出)';
+  const stderr = result.stderr ? `\n\nstderr:\n${truncateMiddle(result.stderr, 4000)}` : '';
+
+  return `远端命令执行完成。\n\n命令:\n${command}\n\n退出码: ${result.code}\n\nstdout:\n${stdout}${stderr}`;
+}
+
+function getEnvironmentProbeCommand(systemType?: RemoteSystemType) {
+  if (systemType === 'windows') {
+    return [
+      'powershell',
+      '-NoProfile',
+      '-ExecutionPolicy Bypass',
+      '-Command',
+      '"$ErrorActionPreference=\'SilentlyContinue\';',
+      'Write-Output \'# OS\'; Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture | Format-List | Out-String;',
+      'Write-Output \'# PowerShell\'; $PSVersionTable | Out-String;',
+      'Write-Output \'# Runtime\'; foreach ($cmd in \'node\',\'python\',\'python3\',\'dotnet\',\'java\',\'go\',\'rustc\',\'php\') { $found = Get-Command $cmd -ErrorAction SilentlyContinue; if ($found) { Write-Output \"## $cmd\"; & $cmd --version 2>&1 | Select-Object -First 3 } };',
+      'Write-Output \'# Paths\'; Get-Location | Out-String"',
+    ].join(' ');
+  }
+
+  return `sh -lc 'printf "# OS\\n"; (cat /etc/os-release 2>/dev/null || sw_vers 2>/dev/null || uname -a); printf "\\n# Kernel\\n"; uname -a 2>/dev/null; printf "\\n# Shell\\n"; printf "%s\\n" "$SHELL"; printf "\\n# Runtime\\n"; for cmd in node npm pnpm yarn python python3 pip pip3 ruby go rustc cargo java javac php composer docker docker-compose nginx apache2 httpd mysql psql sqlite3; do if command -v "$cmd" >/dev/null 2>&1; then printf "## %s\\n" "$cmd"; "$cmd" --version 2>&1 | head -n 3; fi; done; printf "\\n# Working directory\\n"; pwd'`;
+}
+
 let tabSequence = 0;
 
 function createNewTab(initialTitle?: string, initialContent = ''): NotepadTab {
@@ -401,7 +547,7 @@ function NotepadDiffPreview({ preview }: { preview: DiffPreview }) {
   );
 }
 
-function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialTitle, systemType }: RemoteNotepadProps) {
+function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent, initialTitle, systemType }: RemoteNotepadProps) {
   const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab(initialTitle, initialContent)]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
   const [showGoToLine, setShowGoToLine] = useState(false);
@@ -413,10 +559,18 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
   const [findFeedback, setFindFeedback] = useState('');
   const [showFind, setShowFind] = useState(false);
   const [wrapEnabled, setWrapEnabled] = useState(false);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [pendingCloseTab, setPendingCloseTab] = useState<{ id: string; title: string } | null>(null);
   const [conflictDialog, setConflictDialog] = useState<NotepadConflictDialog | null>(null);
   const [diffDialog, setDiffDialog] = useState<NotepadDiffDialog | null>(null);
+  const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
+  const [aiInput, setAiInput] = useState('');
+  const [aiMessages, setAiMessages] = useState<NotepadAiMessage[]>([]);
+  const [isAiBusy, setIsAiBusy] = useState(false);
+  const [isAiProbing, setIsAiProbing] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [remoteEnvironment, setRemoteEnvironment] = useState('');
+  const [includeAiFileContext, setIncludeAiFileContext] = useState(true);
+  const [lastAiSelection, setLastAiSelection] = useState<EditorSelectionSnapshot | null>(null);
 
   const [filePickerVisible, setFilePickerVisible] = useState(false);
   const [filePickerMode, setFilePickerMode] = useState<'open' | 'save'>('open');
@@ -428,6 +582,8 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const goToLineInputRef = useRef<HTMLInputElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+  const aiInputRef = useRef<HTMLTextAreaElement>(null);
+  const aiMessagesEndRef = useRef<HTMLDivElement>(null);
   const initialFileHandledRef = useRef(false);
   const tabsRef = useRef(tabs);
 
@@ -436,17 +592,22 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
   }, [tabs]);
 
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0], [tabs, activeTabId]);
+  const isAiConfigured = Boolean(
+    settings.aiApiBaseUrl.trim() &&
+    settings.aiApiKey.trim() &&
+    settings.aiModel.trim() &&
+    (window.guiSSH?.ai?.chatStream || window.guiSSH?.ai?.chat),
+  );
 
   const updateTab = useCallback((tabId: string, update: (tab: NotepadTab) => NotepadTab) => {
     setTabs((currentTabs) => currentTabs.map((tab) => tab.id === tabId ? update(tab) : tab));
   }, []);
 
-  const rememberRecentFile = useCallback((filePath: string) => {
-    setRecentFiles((currentFiles) => [
-      filePath,
-      ...currentFiles.filter((currentPath) => currentPath !== filePath),
-    ].slice(0, MAX_RECENT_FILES));
-  }, []);
+  useEffect(() => {
+    if (isAiSidebarOpen) {
+      aiMessagesEndRef.current?.scrollIntoView({ block: 'end' });
+    }
+  }, [aiMessages, isAiBusy, isAiSidebarOpen]);
 
   const closeTabNow = useCallback((tabId: string) => {
     const currentTabs = tabsRef.current;
@@ -529,7 +690,6 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
         isLoading: false,
         error: '',
       }));
-      rememberRecentFile(nextFilePath);
     } catch (error) {
       updateTab(newTab.id, (tab) => ({
         ...tab,
@@ -537,7 +697,7 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
         error: getErrorMessage(error),
       }));
     }
-  }, [activeTabId, connectionId, rememberRecentFile, updateTab]);
+  }, [activeTabId, connectionId, updateTab]);
 
   useEffect(() => {
     if (initialFilePath && !initialFileHandledRef.current) {
@@ -631,8 +791,6 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
         isSaving: false,
         error: receivedMoreEdits ? '保存完成，保存过程中产生的新编辑仍未写入。' : '',
       }));
-      rememberRecentFile(nextFilePath);
-
       if (options.closeAfterSave && !receivedMoreEdits) {
         closeTabNow(tabId);
       }
@@ -645,7 +803,7 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
       }));
       return false;
     }
-  }, [closeTabNow, connectionId, rememberRecentFile, updateTab]);
+  }, [closeTabNow, connectionId, updateTab]);
 
   const openSavePicker = useCallback((tabId: string, title: string, closeAfterSave = false) => {
     setFilePickerMode('save');
@@ -726,6 +884,356 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
     updateCursorPosition();
   }, [updateCursorPosition]);
 
+  const replaceActiveContent = useCallback((nextContent: string, nextSelectionStart: number, nextSelectionEnd: number) => {
+    updateTab(activeTabId, (tab) => tab.readOnly ? tab : {
+      ...tab,
+      content: nextContent,
+      dirty: nextContent !== tab.originalContent,
+    });
+
+    requestAnimationFrame(() => selectEditorRange(nextSelectionStart, nextSelectionEnd));
+  }, [activeTabId, selectEditorRange, updateTab]);
+
+  const getCurrentEditorSelection = useCallback((): EditorSelectionSnapshot => {
+    const textarea = textareaRef.current;
+
+    if (!textarea) {
+      return { start: 0, end: 0, text: '' };
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    return {
+      start,
+      end,
+      text: textarea.value.slice(start, end),
+    };
+  }, []);
+
+  const buildAiContextMessage = useCallback((
+    selection: EditorSelectionSnapshot,
+    options?: { environmentOverride?: string },
+  ) => {
+    const filePath = activeTab.filePath || '(尚未保存的新文件)';
+    const selectedText = selection.text
+      ? truncateMiddle(selection.text, MAX_AI_SELECTION_CHARACTERS)
+      : '(无选区)';
+    const environmentSource = options?.environmentOverride ?? remoteEnvironment;
+    const environmentContext = environmentSource
+      ? truncateMiddle(environmentSource, MAX_AI_ENVIRONMENT_CHARACTERS)
+      : '(尚未探测；发送消息时会自动探测，也可以请求 run_command 动作补充上下文)';
+    const fileContextLines = includeAiFileContext
+      ? [
+          '当前文件内容：',
+          '```',
+          truncateMiddle(activeTab.content, MAX_AI_FILE_CONTEXT_CHARACTERS),
+          '```',
+        ]
+      : [
+          '当前文件内容：',
+          '(用户已取消带入当前文件内容上下文；请仅依据文件元数据、选区、对话和工具结果回答)',
+        ];
+
+    return [
+      '当前 ShellDesk 记事本上下文：',
+      `文件标题：${activeTab.title}`,
+      `远程路径：${filePath}`,
+      `语言模式：${activeTab.language}`,
+      `只读状态：${activeTab.readOnly ? '只读' : '可编辑'}`,
+      `光标：第 ${cursorLine} 行，第 ${cursorCol} 列`,
+      `选区范围：${selection.start}-${selection.end}`,
+      '',
+      '当前选中文本：',
+      selectedText,
+      '',
+      '远端环境探测：',
+      environmentContext,
+      '',
+      ...fileContextLines,
+    ].join('\n');
+  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.readOnly, activeTab.title, cursorCol, cursorLine, includeAiFileContext, remoteEnvironment]);
+
+  const createAiChatMessages = useCallback((
+    nextMessages: NotepadAiMessage[],
+    selection: EditorSelectionSnapshot,
+    options?: { environmentOverride?: string },
+  ): ShellDeskAiChatMessage[] => {
+    const recentMessages = nextMessages.slice(-MAX_AI_HISTORY_MESSAGES).map<ShellDeskAiChatMessage>((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.role === 'tool' ? `工具结果：\n${message.content}` : message.content,
+    }));
+
+    return [
+      { role: 'system', content: NOTEPAD_AI_SYSTEM_PROMPT },
+      { role: 'user', content: buildAiContextMessage(selection, options) },
+      ...recentMessages,
+    ];
+  }, [buildAiContextMessage]);
+
+  const runRemoteEnvironmentProbe = useCallback(async () => {
+    const command = getEnvironmentProbeCommand(systemType);
+    const result = await window.guiSSH!.connections.runCommand(connectionId, command);
+    return formatCommandResult(command, result);
+  }, [connectionId, systemType]);
+
+  const requestAiAssistant = useCallback(async (
+    nextMessages: NotepadAiMessage[],
+    selection: EditorSelectionSnapshot,
+    options?: { environmentOverride?: string },
+  ) => {
+    const aiControls = window.guiSSH?.ai;
+    const chat = aiControls?.chat;
+    const chatStream = aiControls?.chatStream;
+
+    if (!chat && !chatStream) {
+      setAiError('当前运行环境未提供 AI 对话接口。');
+      return;
+    }
+
+    if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+      setAiError('请先在设置中完成 AI 提供商、API 密钥和模型配置。');
+      return;
+    }
+
+    setIsAiBusy(true);
+    setAiError('');
+
+    try {
+      const chatRequest: ShellDeskAiChatRequest = {
+        provider: settings.aiProvider,
+        apiFormat: settings.aiApiFormat,
+        apiBaseUrl: settings.aiApiBaseUrl,
+        apiKey: settings.aiApiKey,
+        model: settings.aiModel,
+        temperature: 0.2,
+        messages: createAiChatMessages(nextMessages, selection, options),
+      };
+      const assistantMessageId = createNotepadAiMessageId();
+      const assistantCreatedAt = new Date().toISOString();
+      let streamedContent = '';
+      let resultContent = '';
+
+      if (chatStream) {
+        try {
+          const result = await chatStream(chatRequest, {
+            onChunk: (chunk) => {
+              streamedContent += chunk;
+              const partialContent = stripAiActionBlocks(streamedContent) || '正在生成回复...';
+              const partialMessage: NotepadAiMessage = {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: partialContent,
+                createdAt: assistantCreatedAt,
+              };
+
+              setAiMessages((currentMessages) => {
+                const existingIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
+
+                if (existingIndex >= 0) {
+                  return currentMessages.map((message) => (
+                    message.id === assistantMessageId ? { ...message, content: partialContent } : message
+                  ));
+                }
+
+                return [...currentMessages, partialMessage];
+              });
+            },
+          });
+
+          resultContent = result.content || streamedContent;
+        } catch (streamError) {
+          if (streamedContent || !chat) {
+            throw streamError;
+          }
+
+          const result = await chat(chatRequest);
+          resultContent = result.content;
+        }
+      } else if (chat) {
+        const result = await chat(chatRequest);
+        resultContent = result.content;
+      }
+
+      const action = parseAiAction(resultContent);
+      const displayContent = stripAiActionBlocks(resultContent) || (action ? '我准备好了一个可执行动作。' : resultContent);
+      const assistantMessage: NotepadAiMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: displayContent,
+        createdAt: assistantCreatedAt,
+        action,
+      };
+
+      setAiMessages([...nextMessages, assistantMessage]);
+    } catch (error) {
+      setAiError(`AI 请求失败：${getErrorMessage(error)}`);
+      setAiMessages(nextMessages);
+    } finally {
+      setIsAiBusy(false);
+    }
+  }, [
+    createAiChatMessages,
+    settings.aiApiBaseUrl,
+    settings.aiApiFormat,
+    settings.aiApiKey,
+    settings.aiModel,
+    settings.aiProvider,
+  ]);
+
+  const handleAiSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const prompt = aiInput.trim();
+    if (!prompt || isAiBusy || isAiProbing) {
+      return;
+    }
+
+    if (!isAiConfigured) {
+      setAiError('请先在设置中完成 AI 提供商、API 密钥和模型配置。');
+      return;
+    }
+
+    const selection = getCurrentEditorSelection();
+    setLastAiSelection(selection);
+    const userMessage: NotepadAiMessage = {
+      id: createNotepadAiMessageId(),
+      role: 'user',
+      content: prompt,
+      createdAt: new Date().toISOString(),
+    };
+    let nextMessages = [...aiMessages, userMessage];
+    let environmentOverride = remoteEnvironment || undefined;
+
+    setAiInput('');
+    setAiMessages(nextMessages);
+
+    if (!environmentOverride) {
+      setIsAiProbing(true);
+      setAiError('');
+
+      try {
+        const toolContent = await runRemoteEnvironmentProbe();
+        const toolMessage: NotepadAiMessage = {
+          id: createNotepadAiMessageId(),
+          role: 'tool',
+          content: `已自动探测环境，后续对话会带上这份上下文。\n\n${toolContent}`,
+          createdAt: new Date().toISOString(),
+        };
+
+        environmentOverride = toolContent;
+        nextMessages = [...nextMessages, toolMessage];
+        setRemoteEnvironment(toolContent);
+        setAiMessages(nextMessages);
+      } catch (error) {
+        const errorMessage = `自动探测环境失败：${getErrorMessage(error)}`;
+        const toolMessage: NotepadAiMessage = {
+          id: createNotepadAiMessageId(),
+          role: 'tool',
+          content: errorMessage,
+          createdAt: new Date().toISOString(),
+        };
+
+        environmentOverride = errorMessage;
+        nextMessages = [...nextMessages, toolMessage];
+        setAiError(errorMessage);
+        setAiMessages(nextMessages);
+      } finally {
+        setIsAiProbing(false);
+      }
+    }
+
+    await requestAiAssistant(nextMessages, selection, { environmentOverride });
+  }, [
+    aiInput,
+    aiMessages,
+    getCurrentEditorSelection,
+    isAiBusy,
+    isAiConfigured,
+    isAiProbing,
+    remoteEnvironment,
+    requestAiAssistant,
+    runRemoteEnvironmentProbe,
+  ]);
+
+  const markAiActionApplied = useCallback((messageId: string) => {
+    setAiMessages((currentMessages) => currentMessages.map((message) => (
+      message.id === messageId ? { ...message, actionApplied: true } : message
+    )));
+  }, []);
+
+  const applyAiTextAction = useCallback((message: NotepadAiMessage) => {
+    const action = message.action;
+
+    if (!action || action.type === 'run_command') {
+      return;
+    }
+
+    if (activeTab.readOnly) {
+      setAiError('当前标签是只读状态，无法应用 AI 修改。');
+      return;
+    }
+
+    const selection = lastAiSelection ?? getCurrentEditorSelection();
+    let nextContent = activeTab.content;
+    let nextPosition = 0;
+
+    if (action.type === 'replace_content') {
+      nextContent = action.content;
+      nextPosition = action.content.length;
+    } else if (action.type === 'append_content') {
+      const separator = nextContent && !nextContent.endsWith('\n') ? '\n' : '';
+      nextContent = `${nextContent}${separator}${action.content}`;
+      nextPosition = nextContent.length;
+    } else if (action.type === 'replace_selection') {
+      nextContent = `${nextContent.slice(0, selection.start)}${action.content}${nextContent.slice(selection.end)}`;
+      nextPosition = selection.start + action.content.length;
+    } else {
+      nextContent = `${nextContent.slice(0, selection.start)}${action.content}${nextContent.slice(selection.start)}`;
+      nextPosition = selection.start + action.content.length;
+    }
+
+    replaceActiveContent(nextContent, nextPosition, nextPosition);
+    markAiActionApplied(message.id);
+  }, [activeTab.content, activeTab.readOnly, getCurrentEditorSelection, lastAiSelection, markAiActionApplied, replaceActiveContent]);
+
+  const runAiCommandAction = useCallback(async (message: NotepadAiMessage) => {
+    const action = message.action;
+
+    if (!action || action.type !== 'run_command' || isAiBusy) {
+      return;
+    }
+
+    setIsAiBusy(true);
+    setAiError('');
+
+    try {
+      const result = await window.guiSSH!.connections.runCommand(connectionId, action.command);
+      const toolContent = formatCommandResult(action.command, result);
+      const toolMessage: NotepadAiMessage = {
+        id: createNotepadAiMessageId(),
+        role: 'tool',
+        content: toolContent,
+        createdAt: new Date().toISOString(),
+      };
+      const selection = getCurrentEditorSelection();
+      const nextMessages = aiMessages.map((currentMessage) => (
+        currentMessage.id === message.id ? { ...currentMessage, actionApplied: true } : currentMessage
+      ));
+      const continuedMessages = [...nextMessages, toolMessage];
+
+      setLastAiSelection(selection);
+      setRemoteEnvironment((currentEnvironment) => (
+        currentEnvironment ? `${currentEnvironment}\n\n${toolContent}` : toolContent
+      ));
+      setAiMessages(continuedMessages);
+      await requestAiAssistant(continuedMessages, selection);
+    } catch (error) {
+      setAiError(`命令执行失败：${getErrorMessage(error)}`);
+    } finally {
+      setIsAiBusy(false);
+    }
+  }, [aiMessages, connectionId, getCurrentEditorSelection, isAiBusy, requestAiAssistant]);
+
   const handleTextareaScroll = useCallback(() => {
     const textarea = textareaRef.current;
     const highlight = highlightRef.current;
@@ -785,16 +1293,6 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
     selectEditorRange(matchIndex, matchIndex + findText.length);
     setFindFeedback(nextIndex >= 0 ? '' : '已从文件边界继续查找');
   }, [findText, selectEditorRange]);
-
-  const replaceActiveContent = useCallback((nextContent: string, nextSelectionStart: number, nextSelectionEnd: number) => {
-    updateTab(activeTabId, (tab) => tab.readOnly ? tab : {
-      ...tab,
-      content: nextContent,
-      dirty: nextContent !== tab.originalContent,
-    });
-
-    requestAnimationFrame(() => selectEditorRange(nextSelectionStart, nextSelectionEnd));
-  }, [activeTabId, selectEditorRange, updateTab]);
 
   const handleReplaceCurrent = useCallback(() => {
     const textarea = textareaRef.current;
@@ -1012,23 +1510,6 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
           </button>
         </div>
 
-        <div className="notepad-toolbar-group notepad-recent-group">
-          <select
-            className="notepad-toolbar-select notepad-recent-select"
-            value=""
-            onChange={(event) => {
-              if (event.target.value) void openFile(event.target.value);
-            }}
-            aria-label="打开最近文件"
-            disabled={recentFiles.length === 0}
-          >
-            <option value="">最近文件</option>
-            {recentFiles.map((filePath) => (
-              <option key={filePath} value={filePath}>{filePath}</option>
-            ))}
-          </select>
-        </div>
-
         <div className="notepad-toolbar-spacer" />
 
         <div className="notepad-toolbar-group notepad-editor-controls">
@@ -1060,6 +1541,21 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="notepad-toolbar-group">
+          <button
+            type="button"
+            className={`notepad-tool-btn ${isAiSidebarOpen ? 'active' : ''}`}
+            onClick={() => {
+              setIsAiSidebarOpen((currentOpen) => !currentOpen);
+              setTimeout(() => aiInputRef.current?.focus(), 0);
+            }}
+            aria-pressed={isAiSidebarOpen}
+            title="AI Agent"
+          >
+            AI
+          </button>
         </div>
       </div>
 
@@ -1127,37 +1623,140 @@ function RemoteNotepad({ connectionId, initialFilePath, initialContent, initialT
         <div className="notepad-error">{activeTab.error}</div>
       ) : null}
 
-      {activeTab.isLoading ? (
-        <div className="notepad-loading">正在加载文件...</div>
-      ) : (
-        <div className={`notepad-editor-wrap ${wrapEnabled ? 'wrapped' : ''}`}>
-          <div ref={lineNumbersRef} className="notepad-line-numbers" aria-hidden="true">
-            {Array.from({ length: lineCount }, (_, index) => (
-              <span key={index + 1} className={cursorLine === index + 1 ? 'active' : ''}>{index + 1}</span>
-            ))}
+      <div className={`notepad-workspace ${isAiSidebarOpen ? 'with-ai' : ''}`}>
+        {activeTab.isLoading ? (
+          <div className="notepad-loading">正在加载文件...</div>
+        ) : (
+          <div className={`notepad-editor-wrap ${wrapEnabled ? 'wrapped' : ''}`}>
+            <div ref={lineNumbersRef} className="notepad-line-numbers" aria-hidden="true">
+              {Array.from({ length: lineCount }, (_, index) => (
+                <span key={index + 1} className={cursorLine === index + 1 ? 'active' : ''}>{index + 1}</span>
+              ))}
+            </div>
+            <div className="notepad-editor-container">
+              <pre ref={highlightRef} className="notepad-highlight-layer" aria-hidden="true">
+                <code dangerouslySetInnerHTML={{ __html: `${highlightedHtml}\n` }} />
+              </pre>
+              <textarea
+                ref={textareaRef}
+                className="notepad-textarea"
+                value={activeTab.content}
+                onChange={handleContentChange}
+                onKeyUp={updateCursorPosition}
+                onMouseUp={updateCursorPosition}
+                onScroll={handleTextareaScroll}
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="off"
+                wrap={wrapEnabled ? 'soft' : 'off'}
+                readOnly={activeTab.readOnly}
+                aria-label={`${activeTab.title} 编辑区`}
+              />
+            </div>
           </div>
-          <div className="notepad-editor-container">
-            <pre ref={highlightRef} className="notepad-highlight-layer" aria-hidden="true">
-              <code dangerouslySetInnerHTML={{ __html: `${highlightedHtml}\n` }} />
-            </pre>
-            <textarea
-              ref={textareaRef}
-              className="notepad-textarea"
-              value={activeTab.content}
-              onChange={handleContentChange}
-              onKeyUp={updateCursorPosition}
-              onMouseUp={updateCursorPosition}
-              onScroll={handleTextareaScroll}
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-              wrap={wrapEnabled ? 'soft' : 'off'}
-              readOnly={activeTab.readOnly}
-              aria-label={`${activeTab.title} 编辑区`}
-            />
-          </div>
-        </div>
-      )}
+        )}
+
+        {isAiSidebarOpen ? (
+          <aside className="notepad-ai-sidebar" aria-label="AI Agent 侧边栏">
+            <div className="notepad-ai-header">
+              <span>
+                <strong>AI Agent</strong>
+              </span>
+              <button type="button" className="notepad-ai-close" onClick={() => setIsAiSidebarOpen(false)} aria-label="关闭 AI 侧边栏">×</button>
+            </div>
+
+            {!isAiConfigured ? (
+              <div className="notepad-ai-warning">
+                请先在设置里配置 AI 提供商、API 密钥和默认模型。
+              </div>
+            ) : null}
+
+            {aiError ? <div className="notepad-ai-error">{aiError}</div> : null}
+
+            <div className="notepad-ai-messages">
+              {aiMessages.length === 0 ? (
+                <div className="notepad-ai-empty">
+                  <strong>可以让 Agent 生成、重构或解释当前文件。</strong>
+                  <span>发送时会自动探测环境；当前文件内容默认会带入上下文，可在发送前取消。</span>
+                </div>
+              ) : null}
+
+              {aiMessages.map((message) => (
+                <div key={message.id} className={`notepad-ai-message ${message.role}`}>
+                  <div className="notepad-ai-message-role">
+                    {message.role === 'assistant' ? 'Agent' : message.role === 'tool' ? '工具' : '你'}
+                  </div>
+                  <div className="notepad-ai-message-content">{message.content}</div>
+                  {message.action ? (
+                    <div className="notepad-ai-action">
+                      {message.action.type === 'run_command' ? (
+                        <>
+                          <strong>请求执行命令</strong>
+                          {message.action.reason ? <span>{message.action.reason}</span> : null}
+                          <code>{message.action.command}</code>
+                          <button
+                            type="button"
+                            className="notepad-modal-btn primary"
+                            onClick={() => void runAiCommandAction(message)}
+                            disabled={message.actionApplied || isAiBusy}
+                          >
+                            {message.actionApplied ? '已执行' : '确认执行'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <strong>{message.action.summary || '可应用到当前文本'}</strong>
+                          <span>{message.action.type === 'replace_content' ? '替换全文' : message.action.type === 'replace_selection' ? '替换选区' : message.action.type === 'append_content' ? '追加内容' : '插入到光标'}</span>
+                          <button
+                            type="button"
+                            className="notepad-modal-btn primary"
+                            onClick={() => applyAiTextAction(message)}
+                            disabled={message.actionApplied || activeTab.readOnly}
+                          >
+                            {message.actionApplied ? '已应用' : '应用修改'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {isAiProbing ? <div className="notepad-ai-thinking">正在自动探测环境...</div> : null}
+              {!isAiProbing && isAiBusy ? <div className="notepad-ai-thinking">Agent 正在思考...</div> : null}
+              <div ref={aiMessagesEndRef} />
+            </div>
+
+            <form className="notepad-ai-compose" onSubmit={handleAiSubmit}>
+              <textarea
+                ref={aiInputRef}
+                value={aiInput}
+                onChange={(event) => setAiInput(event.target.value)}
+                placeholder="询问、生成内容，或要求修改当前文本..."
+                rows={4}
+                disabled={isAiBusy || isAiProbing}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              <div className="notepad-ai-compose-footer">
+                <label className="notepad-ai-context-toggle">
+                  <input
+                    type="checkbox"
+                    checked={includeAiFileContext}
+                    onChange={(event) => setIncludeAiFileContext(event.target.checked)}
+                  />
+                  <span>带入当前文件内容</span>
+                </label>
+                <button type="submit" className="notepad-modal-btn primary" disabled={!aiInput.trim() || isAiBusy || isAiProbing || !isAiConfigured}>
+                  发送
+                </button>
+              </div>
+            </form>
+          </aside>
+        ) : null}
+      </div>
 
       <div className="notepad-statusbar">
         <span>行 {cursorLine}, 列 {cursorCol}</span>

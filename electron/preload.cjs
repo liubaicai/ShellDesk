@@ -23,6 +23,23 @@ function onIpc(channel, callback) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
+function createIpcRequestId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function chatStream(request, callbacks = {}) {
+  const streamId = createIpcRequestId('ai-stream');
+  const removeChunkListener = onIpc('ai:chat-stream:chunk', (payload) => {
+    if (payload?.streamId === streamId && typeof payload.chunk === 'string') {
+      callbacks.onChunk?.(payload.chunk);
+    }
+  });
+
+  return ipcRenderer.invoke('ai:chat-stream', { ...request, streamId }).finally(() => {
+    removeChunkListener();
+  });
+}
+
 async function connectHost(host) {
   const result = await ipcRenderer.invoke('connection:connect', host);
 
@@ -82,6 +99,11 @@ contextBridge.exposeInMainWorld('guiSSH', {
   },
   system: {
     listFonts: () => ipcRenderer.invoke('system:list-fonts'),
+  },
+  ai: {
+    listModels: (request) => ipcRenderer.invoke('ai:list-models', request),
+    chat: (request) => ipcRenderer.invoke('ai:chat', request),
+    chatStream,
   },
   connections: {
     connect: connectHost,

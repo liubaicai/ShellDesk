@@ -91,10 +91,6 @@
   opacity: 0.54;
 }
 
-.notepad-recent-select {
-  width: 132px;
-}
-
 .notepad-tabstrip {
   display: flex;
   align-items: stretch;
@@ -325,11 +321,276 @@
   font-size: 13px;
 }
 
+.notepad-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 .notepad-editor-wrap {
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+}
+
+.notepad-ai-sidebar {
+  display: flex;
+  flex: 0 0 min(360px, 42%);
+  min-width: 300px;
+  max-width: 440px;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 28%),
+    var(--surface-soft);
+}
+
+.notepad-ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+
+.notepad-ai-header span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.notepad-ai-header strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.notepad-ai-header small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notepad-ai-close {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.notepad-ai-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notepad-ai-warning,
+.notepad-ai-error {
+  margin: 10px 12px 0;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.notepad-ai-warning {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--toast-text);
+}
+
+.notepad-ai-context-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.notepad-ai-context-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.notepad-ai-context-toggle:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notepad-ai-messages {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding: 2px 12px 12px;
+}
+
+.notepad-ai-empty {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notepad-ai-empty strong {
+  color: var(--muted-strong);
+  font-size: 12.5px;
+}
+
+.notepad-ai-message {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface-panel) 84%, transparent);
+}
+
+.notepad-ai-message.user {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface-panel));
+}
+
+.notepad-ai-message.tool {
+  background: var(--surface-input);
+}
+
+.notepad-ai-message-role {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.notepad-ai-message-content,
+.notepad-ai-thinking {
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notepad-ai-thinking {
+  color: var(--muted);
+}
+
+.notepad-ai-action {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  padding: 9px;
+  background: color-mix(in srgb, var(--accent-soft) 76%, transparent);
+}
+
+.notepad-ai-action strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notepad-ai-action span {
+  color: var(--muted-strong);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.notepad-ai-action code {
+  display: block;
+  max-height: 120px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.notepad-ai-action .notepad-modal-btn {
+  justify-self: start;
+}
+
+.notepad-ai-compose {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px 12px;
+  flex-shrink: 0;
+}
+
+.notepad-ai-compose textarea {
+  width: 100%;
+  min-height: 76px;
+  max-height: 150px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  box-sizing: border-box;
+}
+
+.notepad-ai-compose textarea:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.notepad-ai-compose-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notepad-ai-compose-footer .notepad-modal-btn {
+  flex-shrink: 0;
 }
 
 .notepad-line-numbers {
@@ -612,6 +873,44 @@
   background: rgba(200, 48, 78, 0.06);
   border-bottom-color: rgba(200, 48, 78, 0.2);
   color: #c8304e;
+}
+
+[data-theme="light"] .notepad-ai-sidebar {
+  border-left-color: rgba(16, 32, 51, 0.1);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 28%),
+    #f6f8fa;
+}
+
+[data-theme="light"] .notepad-ai-header {
+  border-bottom-color: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .notepad-ai-message {
+  border-color: rgba(16, 32, 51, 0.1);
+  background: #fff;
+}
+
+[data-theme="light"] .notepad-ai-message.user {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+[data-theme="light"] .notepad-ai-message.tool,
+[data-theme="light"] .notepad-ai-action code,
+[data-theme="light"] .notepad-ai-compose textarea {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .notepad-ai-warning {
+  color: var(--accent);
+}
+
+[data-theme="light"] .notepad-ai-message-content,
+[data-theme="light"] .notepad-ai-action span {
+  color: #344054;
 }
 
 /* light theme highlight.js overrides */

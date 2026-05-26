@@ -1,4 +1,5 @@
 const { app, BrowserWindow, nativeTheme } = require('electron');
+const { registerAiHandlers } = require('./main/aiHandlers.cjs');
 const { registerConfigHandlers } = require('./main/configHandlers.cjs');
 const { registerConnectionHandlers } = require('./main/connectionHandlers.cjs');
 const { activeConnections, closeActiveConnection } = require('./main/connectionManager.cjs');
@@ -22,6 +23,7 @@ if (process.platform === 'win32') {
 
 registerWindowHandlers();
 registerConfigHandlers(registerIpcHandler);
+registerAiHandlers(registerIpcHandler);
 registerConnectionHandlers(registerIpcHandler);
 registerRemoteConnectionHandlers(registerIpcHandler);
 registerDatabaseHandlers(registerIpcHandler);

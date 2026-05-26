@@ -30,6 +30,18 @@ const terminalThemeChoices = [
   'hacker-green',
 ];
 const terminalCursorInactiveStyleChoices = ['outline', 'block', 'bar', 'underline', 'none'];
+const aiProviderChoices = ['openai', 'anthropic', 'openai-compatible', 'custom'];
+const aiApiFormatChoices = ['openai', 'anthropic'];
+const defaultAiApiBaseUrls = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  'openai-compatible': '',
+  custom: '',
+};
+const maxAiApiBaseUrlLength = 2048;
+const maxAiApiKeyLength = 8192;
+const maxAiModelNameLength = 200;
+const maxAiProviderNameLength = 80;
 const remoteDesktopAppKeys = [
   'files',
   'terminal',
@@ -88,13 +100,20 @@ const remoteSystemTypeChoices = new Set([
 ]);
 module.exports = {
   accentColorChoices,
+  aiApiFormatChoices,
+  aiProviderChoices,
   bookmarkScopePrefix,
   configBundleFormat,
   configBundleVersion,
   configFileName,
   configStoreFormat,
+  defaultAiApiBaseUrls,
   defaultIdentityFileNames,
   logFileName,
+  maxAiApiBaseUrlLength,
+  maxAiApiKeyLength,
+  maxAiModelNameLength,
+  maxAiProviderNameLength,
   maxConfigImportBytes,
   maxConfigStoreBytes,
   maxDesktopWallpaperBytes,

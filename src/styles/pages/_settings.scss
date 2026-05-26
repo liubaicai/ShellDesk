@@ -196,7 +196,8 @@
   font-weight: 600;
 }
 
-.settings-row select {
+.settings-row select,
+.settings-row .settings-text-input {
   width: 168px;
   height: 38px;
   border: 1px solid var(--border);
@@ -206,6 +207,51 @@
   background: var(--surface);
   color: var(--text);
   font-size: 13px;
+}
+
+.settings-row .settings-text-input {
+  width: min(360px, 42vw);
+  min-width: 220px;
+}
+
+.settings-row .settings-url-input {
+  width: min(460px, 48vw);
+}
+
+.settings-row .settings-secret-input {
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+}
+
+.settings-row .settings-text-input::placeholder {
+  color: var(--muted);
+}
+
+.settings-row .settings-text-input:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.ai-model-row {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 480px);
+}
+
+.ai-model-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.ai-model-control .settings-text-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.ai-model-control .command-button {
+  white-space: nowrap;
+}
+
+.settings-error-text {
+  color: var(--danger-text-soft) !important;
 }
 
 .terminal-theme-row {
@@ -543,4 +589,45 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
   transform: none !important;
+}
+
+@media (max-width: 860px) {
+  .settings-page {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-section-nav {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(180px, 1fr);
+    display: grid;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-row,
+  .desktop-wallpaper-row,
+  .ai-model-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .settings-row select,
+  .settings-row .settings-text-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .desktop-wallpaper-control {
+    justify-items: stretch;
+  }
+
+  .desktop-wallpaper-actions {
+    justify-content: flex-start;
+  }
+
+  .desktop-wallpaper-meta,
+  .desktop-wallpaper-error {
+    text-align: left;
+  }
 }

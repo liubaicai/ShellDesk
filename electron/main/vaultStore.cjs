@@ -5,12 +5,19 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   accentColorChoices,
+  aiApiFormatChoices,
+  aiProviderChoices,
   configBundleFormat,
   configBundleVersion,
   configFileName,
   configStoreFormat,
+  defaultAiApiBaseUrls,
   defaultIdentityFileNames,
   logFileName,
+  maxAiApiBaseUrlLength,
+  maxAiApiKeyLength,
+  maxAiModelNameLength,
+  maxAiProviderNameLength,
   maxConfigStoreBytes,
   maxLogEntries,
   maxPrivateKeyBytes,
@@ -63,7 +70,84 @@ function readFontFamily(value, fallback) {
   return fontFamily;
 }
 
+function readAiProvider(value, fallback) {
+  return aiProviderChoices.includes(value) ? value : fallback;
+}
+
+function readAiApiFormat(value, fallback) {
+  return aiApiFormatChoices.includes(value) ? value : fallback;
+}
+
+function readAiApiBaseUrl(value, fallback = '') {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const apiBaseUrl = value.trim().replace(/\/+$/u, '');
+
+  if (!apiBaseUrl) {
+    return '';
+  }
+
+  if (apiBaseUrl.length > maxAiApiBaseUrlLength || /[\0\r\n]/.test(apiBaseUrl)) {
+    throw new Error('AI API 地址无效。');
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(apiBaseUrl);
+  } catch {
+    throw new Error('AI API 地址无效。');
+  }
+
+  if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+    throw new Error('AI API 地址只支持 http 或 https。');
+  }
+
+  return apiBaseUrl;
+}
+
+function readAiApiKey(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return readBoundedString(value, 'AI API 密钥', maxAiApiKeyLength, {
+    required: false,
+  });
+}
+
+function createDefaultAiSettings() {
+  return {
+    aiProvider: 'openai',
+    aiProviderName: 'OpenAI',
+    aiApiFormat: 'openai',
+    aiApiBaseUrl: defaultAiApiBaseUrls.openai,
+    aiApiKey: '',
+    aiModel: '',
+  };
+}
+
+function getDefaultAiProviderName(provider) {
+  if (provider === 'anthropic') {
+    return 'Claude / Anthropic';
+  }
+
+  if (provider === 'openai-compatible') {
+    return 'OpenAI 兼容';
+  }
+
+  if (provider === 'custom') {
+    return '自定义提供商';
+  }
+
+  return 'OpenAI';
+}
+
 function createDefaultSettings() {
+  const defaultAiSettings = createDefaultAiSettings();
+
   return {
     language: getDefaultLanguage(),
     interfaceFont: 'Microsoft YaHei UI',
@@ -97,6 +181,7 @@ function createDefaultSettings() {
     terminalBracketedPasteMode: true,
     terminalMinimumContrastRatio: 1,
     terminalScreenReaderMode: false,
+    ...defaultAiSettings,
   };
 }
 
@@ -202,7 +287,7 @@ function getVaultStorageInfo() {
     vaultPath,
     protected: protectedStorage,
     protectionLabel: protectedStorage
-      ? '普通配置写入 config.json，密码和私钥已使用系统凭据加密保存到 vault.json'
+      ? '普通配置写入 config.json，密码、私钥和 AI API 密钥已使用系统凭据加密保存到 vault.json'
       : '普通配置写入 config.json，当前系统不支持加密，敏感 vault 改为本地文件权限保护',
   };
 }
@@ -235,6 +320,14 @@ function readAppSettings(rawSettings) {
     return defaults;
   }
 
+  const aiProvider = readAiProvider(rawSettings.aiProvider, defaults.aiProvider);
+  const aiApiFormat = readAiApiFormat(
+    rawSettings.aiApiFormat,
+    aiProvider === 'anthropic' ? 'anthropic' : defaults.aiApiFormat,
+  );
+  const defaultAiApiBaseUrl = defaultAiApiBaseUrls[aiProvider] ?? '';
+  const defaultAiProviderName = getDefaultAiProviderName(aiProvider);
+
   return {
     language: rawSettings.language === 'zh-CN' || rawSettings.language === 'en-US' ? rawSettings.language : defaults.language,
     interfaceFont: readFontFamily(rawSettings.interfaceFont, defaults.interfaceFont),
@@ -262,6 +355,22 @@ function readAppSettings(rawSettings) {
       rawSettings.rememberKeyPassphrases,
       '记住密钥口令',
       defaults.rememberKeyPassphrases,
+    ),
+    aiProvider,
+    aiProviderName: readBoundedString(
+      rawSettings.aiProviderName ?? defaultAiProviderName,
+      'AI 提供商名称',
+      maxAiProviderNameLength,
+      { required: false },
+    ) || defaultAiProviderName,
+    aiApiFormat,
+    aiApiBaseUrl: readAiApiBaseUrl(rawSettings.aiApiBaseUrl, defaultAiApiBaseUrl),
+    aiApiKey: readAiApiKey(rawSettings.aiApiKey),
+    aiModel: readBoundedString(
+      rawSettings.aiModel ?? defaults.aiModel,
+      'AI 模型',
+      maxAiModelNameLength,
+      { required: false },
     ),
     terminalFontSize: readIntegerInRange(rawSettings.terminalFontSize, '终端字号', 11, 20, defaults.terminalFontSize),
     terminalFontFamily: readFontFamily(rawSettings.terminalFontFamily, defaults.terminalFontFamily),
@@ -582,12 +691,19 @@ function toConfigKeyRecord(key) {
   return configKey;
 }
 
+function toConfigSettings(settings) {
+  return {
+    ...settings,
+    aiApiKey: '',
+  };
+}
+
 function createConfigPayload(vault) {
   return {
     version: vaultSchemaVersion,
     hosts: vault.hosts.map((host) => toConfigHostRecord(host)),
     sshKeys: vault.sshKeys.map((key) => toConfigKeyRecord(key)),
-    settings: vault.settings,
+    settings: toConfigSettings(vault.settings),
     browserBookmarks: vault.browserBookmarks,
     preferences: vault.preferences,
   };
@@ -608,6 +724,9 @@ function createVaultSecretsPayload(vault) {
       privateKey: key.privateKey,
       passphrase: key.passphrase,
     })),
+    aiSecret: {
+      apiKey: vault.settings.aiApiKey || '',
+    },
   };
 }
 
@@ -680,6 +799,16 @@ function readSshKeySecretRecord(rawSecret) {
   };
 }
 
+function readAiSecretRecord(rawSecret) {
+  if (!isPlainObject(rawSecret)) {
+    return { apiKey: '' };
+  }
+
+  return {
+    apiKey: readAiApiKey(rawSecret.apiKey ?? ''),
+  };
+}
+
 function readVaultSecretsPayload(rawPayload) {
   if (!isPlainObject(rawPayload)) {
     throw new Error('敏感数据无效。');
@@ -697,6 +826,7 @@ function readVaultSecretsPayload(rawPayload) {
       ? rawPayload.hostSecrets.map((secret) => readHostSecretRecord(secret))
       : [],
     sshKeySecrets: rawKeySecrets.map((secret) => readSshKeySecretRecord(secret)),
+    aiSecret: readAiSecretRecord(rawPayload.aiSecret),
   };
 }
 
@@ -704,7 +834,8 @@ function isVaultSecretsPayload(rawPayload) {
   return isPlainObject(rawPayload) && (
     Array.isArray(rawPayload.hostSecrets) ||
     Array.isArray(rawPayload.sshKeySecrets) ||
-    Array.isArray(rawPayload.keySecrets)
+    Array.isArray(rawPayload.keySecrets) ||
+    isPlainObject(rawPayload.aiSecret)
   );
 }
 
@@ -742,7 +873,10 @@ function mergeConfigAndSecrets(configPayload, secretsPayload) {
     version: vaultSchemaVersion,
     hosts,
     sshKeys,
-    settings: configPayload.settings,
+    settings: {
+      ...configPayload.settings,
+      aiApiKey: secretsPayload.aiSecret?.apiKey || configPayload.settings.aiApiKey,
+    },
     browserBookmarks: configPayload.browserBookmarks,
     preferences: configPayload.preferences,
   });
@@ -962,7 +1096,7 @@ function createPublicVaultSnapshotFromConfig(configPayload) {
       ...key,
       passphrase: '',
     })),
-    settings: configPayload.settings,
+    settings: toConfigSettings(configPayload.settings),
     browserBookmarks: configPayload.browserBookmarks,
     storage: getVaultStorageInfo(),
   };
