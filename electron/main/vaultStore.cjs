@@ -485,6 +485,10 @@ function readRemoteSystemType(value) {
   return remoteSystemTypeChoices.has(normalizedValue) ? normalizedValue : 'unknown';
 }
 
+function readHostConnectionStatus(value) {
+  return value === 'success' || value === 'failed' ? value : 'unknown';
+}
+
 function readStoredKeyRecord(rawKey) {
   if (!isPlainObject(rawKey)) {
     throw new Error('密钥数据无效。');
@@ -556,6 +560,14 @@ function readStoredHostRecord(rawHost) {
     }),
     systemType: readRemoteSystemType(rawHost.systemType),
     systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
+    lastConnectionStatus: readHostConnectionStatus(rawHost.lastConnectionStatus),
+    lastConnectionAt: rawHost.lastConnectionAt
+      ? readTimestampString(rawHost.lastConnectionAt, '上次连接时间')
+      : '',
+    lastConnectionError: readBoundedString(rawHost.lastConnectionError ?? '', '上次连接错误', 4096, {
+      required: false,
+      rejectLineBreaks: false,
+    }),
     group: readBoundedString(rawHost.group ?? '', '分组', 120, { required: false }),
     tags: readStringList(rawHost.tags ?? [], '主机标签', 8, 256),
     note: readBoundedString(rawHost.note ?? '', '备注', 20000, {

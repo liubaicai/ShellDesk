@@ -348,6 +348,7 @@ function toKeyFormState(key: SshKey): KeyFormState {
 
 type AuthMethod = 'password' | 'key';
 type ConnectionAuthMethod = AuthMethod | 'agent';
+type HostConnectionStatus = 'unknown' | 'success' | 'failed';
 
 interface Host {
   id: string;
@@ -365,6 +366,9 @@ interface Host {
   group: string;
   tags: string[];
   note: string;
+  lastConnectionStatus: HostConnectionStatus;
+  lastConnectionAt: string;
+  lastConnectionError: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -379,8 +383,8 @@ interface ConnectionErrorNotice {
   message: string;
 }
 
-type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName'>>;
+type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
 
 interface HostFormState {
   name: string;
@@ -497,6 +501,10 @@ function getAuthMethod(value: unknown): AuthMethod {
   return value === 'key' ? 'key' : 'password';
 }
 
+function getHostConnectionStatus(value: unknown): HostConnectionStatus {
+  return value === 'success' || value === 'failed' ? value : 'unknown';
+}
+
 function getAuthLabel(host: Pick<Host, 'authMethod' | 'password'>, key: SshKey | null) {
   if (host.authMethod === 'key') {
     if (!key) {
@@ -511,6 +519,25 @@ function getAuthLabel(host: Pick<Host, 'authMethod' | 'password'>, key: SshKey |
 
 function getHostSystemLabel(host: Pick<Host, 'systemName' | 'systemType'>) {
   return host.systemName || hostSystemLabels[host.systemType];
+}
+
+function getHostConnectionStateView(host: Pick<Host, 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>) {
+  if (host.lastConnectionStatus === 'failed') {
+    const failureDetail = host.lastConnectionError ? `：${host.lastConnectionError}` : '';
+    const failureTime = host.lastConnectionAt ? `（${host.lastConnectionAt}）` : '';
+
+    return {
+      className: 'not-ready',
+      label: '未就绪',
+      title: `上次连接失败${failureTime}${failureDetail}`,
+    };
+  }
+
+  return {
+    className: 'ready',
+    label: '就绪',
+    title: host.lastConnectionStatus === 'success' ? '上次连接成功' : '主机配置就绪',
+  };
 }
 
 function isStoredHost(value: unknown): value is StoredHost {
@@ -545,6 +572,9 @@ function normalizeStoredHost(host: StoredHost): Host {
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
     systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
+    lastConnectionStatus: getHostConnectionStatus(host.lastConnectionStatus),
+    lastConnectionAt: typeof host.lastConnectionAt === 'string' ? host.lastConnectionAt : '',
+    lastConnectionError: typeof host.lastConnectionError === 'string' ? host.lastConnectionError : '',
   };
 }
 
@@ -648,6 +678,9 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
+    lastConnectionStatus: 'unknown',
+    lastConnectionAt: '',
+    lastConnectionError: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -658,6 +691,13 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     host.address !== form.address.trim() ||
     host.port !== Number(form.port) ||
     host.username !== form.username.trim();
+  const nextPassword = form.authMethod === 'password' ? form.password : '';
+  const nextKeyId = form.authMethod === 'key' ? selectedKey?.id ?? '' : '';
+  const connectionProfileChanged =
+    endpointChanged ||
+    host.authMethod !== form.authMethod ||
+    host.password !== nextPassword ||
+    host.keyId !== nextKeyId;
 
   return {
     ...host,
@@ -666,8 +706,8 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     port: Number(form.port),
     username: form.username.trim(),
     authMethod: form.authMethod,
-    password: form.authMethod === 'password' ? form.password : '',
-    keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
+    password: nextPassword,
+    keyId: nextKeyId,
     keyPath: '',
     passphrase: '',
     systemType: endpointChanged ? 'unknown' : host.systemType,
@@ -675,6 +715,9 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
+    lastConnectionStatus: connectionProfileChanged ? 'unknown' : host.lastConnectionStatus,
+    lastConnectionAt: connectionProfileChanged ? '' : host.lastConnectionAt,
+    lastConnectionError: connectionProfileChanged ? '' : host.lastConnectionError,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -1637,6 +1680,25 @@ function App() {
     setStatusMessage('');
   };
 
+  const markHostConnectionResult = (
+    host: Pick<ConnectionHost, 'id'>,
+    status: Exclude<HostConnectionStatus, 'unknown'>,
+    errorMessage = '',
+  ) => {
+    const timestamp = new Date().toISOString();
+
+    setHosts((currentHosts) => currentHosts.map((currentHost) => (
+      currentHost.id === host.id
+        ? {
+            ...currentHost,
+            lastConnectionStatus: status,
+            lastConnectionAt: timestamp,
+            lastConnectionError: status === 'failed' ? errorMessage : '',
+          }
+        : currentHost
+    )));
+  };
+
   const submitHost = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1709,7 +1771,9 @@ function App() {
 
   const connectHost = async (host: ConnectionHost, credentials?: CredentialFormState) => {
     if (!window.guiSSH?.connections) {
-      showConnectionError(host, '当前运行环境不支持 SSH 连接。');
+      const message = '当前运行环境不支持 SSH 连接。';
+      markHostConnectionResult(host, 'failed', message);
+      showConnectionError(host, message);
       return false;
     }
 
@@ -1720,7 +1784,9 @@ function App() {
     const shouldUseHostKeyPath = effectiveAuthMethod === 'key' && !selectedKey && Boolean(host.keyPath);
 
     if (effectiveAuthMethod === 'key' && !selectedKey && !shouldUseHostKeyPath) {
-      showConnectionError(host, '该主机未选择有效密钥。');
+      const message = '该主机未选择有效密钥。';
+      markHostConnectionResult(host, 'failed', message);
+      showConnectionError(host, message);
       return false;
     }
 
@@ -1744,41 +1810,45 @@ function App() {
       const detectedSystemType = getHostSystemType(nextConnection.host?.systemType, nextConnection.host?.systemName);
       const detectedSystemName = typeof nextConnection.host?.systemName === 'string' ? nextConnection.host.systemName : '';
       const hasDetectedSystem = detectedSystemType !== 'unknown' || Boolean(detectedSystemName);
+      const connectionFinishedAt = new Date().toISOString();
 
-      if (credentials?.saveCredential || hasDetectedSystem) {
-        setHosts((currentHosts) =>
-          currentHosts.map((currentHost) =>
-            currentHost.id === host.id
-              ? {
-                  ...currentHost,
-                  ...(credentials?.saveCredential
-                    ? {
-                        authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
-                        password: effectiveAuthMethod === 'password' ? credentials.password : '',
-                        keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
-                        keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
-                        passphrase: effectiveAuthMethod === 'key' && !selectedKey ? credentials.passphrase : '',
-                      }
-                    : {}),
-                  ...(hasDetectedSystem
-                    ? {
-                        systemType: detectedSystemType,
-                        systemName: detectedSystemName,
-                      }
-                    : {}),
-                  updatedAt: new Date().toISOString(),
-                }
-              : currentHost,
-          ),
-        );
+      setHosts((currentHosts) =>
+        currentHosts.map((currentHost) =>
+          currentHost.id === host.id
+            ? {
+                ...currentHost,
+                ...(credentials?.saveCredential
+                  ? {
+                      authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
+                      password: effectiveAuthMethod === 'password' ? credentials.password : '',
+                      keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
+                      keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
+                      passphrase: effectiveAuthMethod === 'key' && !selectedKey ? credentials.passphrase : '',
+                    }
+                  : {}),
+                ...(hasDetectedSystem
+                  ? {
+                      systemType: detectedSystemType,
+                      systemName: detectedSystemName,
+                    }
+                  : {}),
+                lastConnectionStatus: 'success',
+                lastConnectionAt: connectionFinishedAt,
+                lastConnectionError: '',
+                ...(credentials?.saveCredential || hasDetectedSystem
+                  ? { updatedAt: connectionFinishedAt }
+                  : {}),
+              }
+            : currentHost,
+        ),
+      );
 
-        if (credentials?.saveCredential && effectiveAuthMethod === 'key' && selectedKey) {
-          setSshKeys((currentKeys) => currentKeys.map((key) => (
-            key.id === selectedKey.id
-              ? { ...key, passphrase: credentials.passphrase, updatedAt: new Date().toISOString() }
-              : key
-          )));
-        }
+      if (credentials?.saveCredential && effectiveAuthMethod === 'key' && selectedKey) {
+        setSshKeys((currentKeys) => currentKeys.map((key) => (
+          key.id === selectedKey.id
+            ? { ...key, passphrase: credentials.passphrase, updatedAt: connectionFinishedAt }
+            : key
+        )));
       }
 
       if (isConnectionWindow) {
@@ -1795,6 +1865,7 @@ function App() {
       return true;
     } catch (error) {
       const message = getErrorMessage(error);
+      markHostConnectionResult(hostForConnection, 'failed', message);
       addLog('connection', 'error', `连接失败：${host.name}`, `${host.username}@${host.address}:${host.port} — ${message}`);
       showConnectionError(hostForConnection, message);
 
@@ -1844,6 +1915,9 @@ function App() {
       group: '',
       tags: [],
       note: '',
+      lastConnectionStatus: 'unknown',
+      lastConnectionAt: '',
+      lastConnectionError: '',
       createdAt: now,
       updatedAt: now,
     };
@@ -2155,66 +2229,74 @@ function App() {
                 </div>
               ) : filteredHosts.length ? (
                 <div className={`host-grid ${viewMode}`}>
-                  {filteredHosts.map((host) => (
-                    <article
-                      key={host.id}
-                      className="host-card"
-                      onDoubleClick={() => {
-                        if (host.authMethod === 'password' && !host.password) {
-                          openCredentialDialog(host, '请输入该主机的 SSH 密码后连接。');
-                          return;
-                        }
+                  {filteredHosts.map((host) => {
+                    const connectionState = getHostConnectionStateView(host);
 
-                        void connectHost(host);
-                      }}
-                    >
-                      <button type="button" className="host-card-main">
-                        <HostSystemIcon systemName={getHostSystemLabel(host)} systemType={host.systemType} />
-                        <span className="host-summary">
-                          <strong>{host.name}</strong>
-                          <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
-                          <span className="host-card-tags">
-                            {/* <em>SSH</em> */}
-                            <em>{host.group || '未分组'}</em>
-                            <em>{host.tags.length ? host.tags.join(' / ') : '无标签'}</em>
+                    return (
+                      <article
+                        key={host.id}
+                        className="host-card"
+                        onDoubleClick={() => {
+                          if (host.authMethod === 'password' && !host.password) {
+                            openCredentialDialog(host, '请输入该主机的 SSH 密码后连接。');
+                            return;
+                          }
+
+                          void connectHost(host);
+                        }}
+                      >
+                        <button type="button" className="host-card-main">
+                          <HostSystemIcon systemName={getHostSystemLabel(host)} systemType={host.systemType} />
+                          <span className="host-summary">
+                            <strong>{host.name}</strong>
+                            <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
+                            <span className="host-card-tags">
+                              {/* <em>SSH</em> */}
+                              <em>{host.group || '未分组'}</em>
+                              <em>{host.tags.length ? host.tags.join(' / ') : '无标签'}</em>
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                      <span className="host-card-actions">
-                        <span className="host-connection-state">
-                          <i aria-hidden="true" />
-                          就绪
-                        </span>
-                        {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
-                          <span className="credential-icon" title={host.authMethod === 'key' ? '密钥登录' : '密码已保存'}>🔑</span>
-                        ) : null}
-                        <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
-                          <summary aria-label="主机操作">⋯</summary>
-                        <div className="host-card-menu-panel">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              closeHostCardMenu(event.currentTarget);
-                              startEditingHost(host);
-                            }}
+                        </button>
+                        <span className="host-card-actions">
+                          <span
+                            className={`host-connection-state ${connectionState.className}`}
+                            title={connectionState.title}
+                            aria-label={connectionState.title}
                           >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-text"
-                            onClick={(event) => {
-                              closeHostCardMenu(event.currentTarget);
-                              deleteHost(host);
-                            }}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </details>
-                      </span>
-                    </article>
-                  ))}
+                            <i aria-hidden="true" />
+                            {connectionState.label}
+                          </span>
+                          {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
+                            <span className="credential-icon" title={host.authMethod === 'key' ? '密钥登录' : '密码已保存'}>🔑</span>
+                          ) : null}
+                          <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
+                            <summary aria-label="主机操作">⋯</summary>
+                          <div className="host-card-menu-panel">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                closeHostCardMenu(event.currentTarget);
+                                startEditingHost(host);
+                              }}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-text"
+                              onClick={(event) => {
+                                closeHostCardMenu(event.currentTarget);
+                                deleteHost(host);
+                              }}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </details>
+                        </span>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="empty-state">

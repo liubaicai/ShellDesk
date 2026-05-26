@@ -222,6 +222,9 @@ interface ShellDeskStoredHostRecord {
   passphrase?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
+  lastConnectionStatus?: 'unknown' | 'success' | 'failed';
+  lastConnectionAt?: string;
+  lastConnectionError?: string;
   group: string;
   tags: string[];
   note: string;
