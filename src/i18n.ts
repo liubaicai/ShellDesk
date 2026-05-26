@@ -385,6 +385,8 @@ const exactTranslations = new Map<string, string>(Object.entries({
   '端口监听': 'Port Listener',
   '端口占用与连接状态': 'Port usage and connection status',
   '防火墙': 'Firewall',
+  'iptables 管理': 'iptables Manager',
+  'Linux iptables 规则链管理': 'Linux iptables chain management',
   '网络诊断': 'Network Diagnostics',
   '磁盘分析': 'Disk Analyzer',
   '空间占用与大文件定位': 'Space usage and large-file discovery',

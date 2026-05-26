@@ -89,14 +89,14 @@
 
 .scheduled-alert {
   margin: 8px 10px 0;
-  overflow: hidden;
   border: 1px solid;
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 730;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .scheduled-alert.danger {

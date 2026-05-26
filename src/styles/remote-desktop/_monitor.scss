@@ -174,7 +174,6 @@
 }
 
 .monitor-error-strip {
-  overflow: hidden;
   border: 1px solid rgba(255, 156, 173, 0.22);
   border-radius: 8px;
   padding: 7px 10px;
@@ -182,8 +181,9 @@
   color: var(--monitor-danger);
   font-size: 11.5px;
   font-weight: 720;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .monitor-charts-grid {

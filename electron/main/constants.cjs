@@ -56,6 +56,7 @@ const remoteDesktopAppKeys = [
   'container-manager',
   'port-manager',
   'firewall-manager',
+  'iptables-manager',
   'network-diagnostics',
   'disk-analyzer',
   'package-manager',

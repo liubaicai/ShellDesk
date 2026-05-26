@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteLoginSessions, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -30,6 +30,7 @@ const desktopApps = [
   { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
   { key: 'port-manager', label: '端口监听', description: '端口占用与连接状态' },
   { key: 'firewall-manager', label: '防火墙', description: 'ufw / firewalld / Windows Firewall' },
+  { key: 'iptables-manager', label: 'iptables 管理', description: 'Linux iptables 规则链管理' },
   { key: 'network-diagnostics', label: '网络诊断', description: 'Ping / DNS / HTTP / TCP' },
   { key: 'disk-analyzer', label: '磁盘分析', description: '空间占用与大文件定位' },
   { key: 'package-manager', label: '包管理器', description: '系统软件包查询与更新' },
@@ -62,6 +63,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
   'port-manager': new URL('./assets/desktop-icons/port-manager.png', import.meta.url).href,
   'firewall-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
+  'iptables-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
   'network-diagnostics': new URL('./assets/desktop-icons/network-diagnostics.png', import.meta.url).href,
   'disk-analyzer': new URL('./assets/desktop-icons/disk-analyzer.png', import.meta.url).href,
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
@@ -198,6 +200,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
   'firewall-manager': { x: 118, y: 48, width: 1080, height: 650 },
+  'iptables-manager': { x: 106, y: 44, width: 1160, height: 680 },
   'network-diagnostics': { x: 120, y: 52, width: 1060, height: 640 },
   'disk-analyzer': { x: 110, y: 46, width: 1120, height: 650 },
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
@@ -352,7 +355,7 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
 
   return {
     sortMode,
-    items: items.length ? items : defaultLayout.items,
+    items,
   };
 }
 
@@ -1552,6 +1555,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'firewall-manager') {
       return <RemoteFirewallManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'iptables-manager') {
+      return <RemoteIptablesManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'network-diagnostics') {
