@@ -72,6 +72,7 @@ interface NotepadTab {
   readOnly: boolean;
   revisionHint?: string;
   language: string;
+  languageManuallySet: boolean;
   isLoading: boolean;
   isSaving: boolean;
   error: string;
@@ -249,9 +250,14 @@ const LANGUAGE_OPTIONS = [
   { value: 'diff', label: 'Diff' },
 ];
 
+const LANGUAGE_OPTION_VALUES = new Set(LANGUAGE_OPTIONS.map((language) => language.value));
+const AUTO_DETECT_LANGUAGE_VALUES = LANGUAGE_OPTIONS
+  .map((language) => language.value)
+  .filter((language) => language !== 'plaintext');
 const MAX_DIFF_INPUT_LINES = 180;
 const MAX_DIFF_OUTPUT_LINES = 280;
 const MAX_HIGHLIGHT_CHARACTERS = 320000;
+const MAX_LANGUAGE_DETECTION_CHARACTERS = 80000;
 const EDITOR_LINE_HEIGHT = 20;
 const MAX_AI_FILE_CONTEXT_CHARACTERS = 18000;
 const MAX_AI_SELECTION_CHARACTERS = 6000;
@@ -286,14 +292,106 @@ function getFileExtension(name: string): string {
   return name.slice(dotIndex + 1).toLowerCase();
 }
 
-function getLanguage(fileName: string): string {
+function normalizeLanguage(language?: string): string {
+  if (language && LANGUAGE_OPTION_VALUES.has(language) && hljs.getLanguage(language)) {
+    return language;
+  }
+
+  return 'plaintext';
+}
+
+function getFileNameLanguage(fileName: string): string {
   const ext = getFileExtension(fileName);
-  if (EXTENSION_LANGUAGE_MAP[ext]) return EXTENSION_LANGUAGE_MAP[ext];
+  if (EXTENSION_LANGUAGE_MAP[ext]) return normalizeLanguage(EXTENSION_LANGUAGE_MAP[ext]);
   if (fileName === 'Makefile' || fileName === 'makefile') return 'plaintext';
   if (fileName === 'Dockerfile') return 'dockerfile';
+  if (fileName === '.env') return 'ini';
   if (fileName === '.gitignore' || fileName === '.editorconfig') return 'plaintext';
   if (fileName.startsWith('nginx')) return 'nginx';
   return 'plaintext';
+}
+
+function getShebangLanguage(firstLine: string): string {
+  if (!firstLine.startsWith('#!')) {
+    return 'plaintext';
+  }
+
+  if (/\b(ts-node|deno)\b/iu.test(firstLine)) return 'typescript';
+  if (/\b(node|bun)\b/iu.test(firstLine)) return 'javascript';
+  if (/\bpython\d*\b/iu.test(firstLine)) return 'python';
+  if (/\b(bash|sh|zsh|fish|ksh)\b/iu.test(firstLine)) return 'bash';
+  if (/\bruby\b/iu.test(firstLine)) return 'ruby';
+  if (/\bphp\b/iu.test(firstLine)) return 'php';
+  return 'plaintext';
+}
+
+function looksLikeJson(content: string): boolean {
+  const trimmedContent = content.trim();
+  if (!/^[{\[]/u.test(trimmedContent) || !/[\}\]]$/u.test(trimmedContent)) {
+    return false;
+  }
+
+  try {
+    JSON.parse(trimmedContent);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function detectLanguageFromContent(content: string): string {
+  const sample = content.slice(0, MAX_LANGUAGE_DETECTION_CHARACTERS);
+  const trimmed = sample.trim();
+
+  if (trimmed.length < 3) {
+    return 'plaintext';
+  }
+
+  const firstLine = trimmed.split(/\r?\n/u, 1)[0] ?? '';
+  const shebangLanguage = getShebangLanguage(firstLine);
+  if (shebangLanguage !== 'plaintext') return shebangLanguage;
+  if (/^(diff --git|@@\s|---\s|\+\+\+\s)/mu.test(trimmed)) return 'diff';
+  if (/^<!doctype\s+html\b|<html[\s>]/iu.test(trimmed)) return 'html';
+  if (/^<\?xml\b|<svg[\s>]/iu.test(trimmed)) return 'xml';
+  if (/^<\?php\b|<\?=/iu.test(trimmed)) return 'php';
+  if (looksLikeJson(trimmed)) return 'json';
+  if (/^(FROM|RUN|COPY|ADD|ENTRYPOINT|CMD|ARG|ENV|WORKDIR|EXPOSE)\s+/imu.test(trimmed)) return 'dockerfile';
+  if (/\b(server|location|upstream)\s+[^{;\n]*\{/iu.test(trimmed)) return 'nginx';
+  if (/^#{1,6}\s+\S/mu.test(trimmed) || /```[\s\S]*?```/u.test(trimmed)) return 'markdown';
+  if (/^\s*---\s*$/mu.test(trimmed) && /^\s*[\w.-]+:\s+\S/mu.test(trimmed)) return 'yaml';
+  if (/^\s*\[[^\]\n]+\]\s*$/mu.test(trimmed) && /^\s*[\w.-]+\s*=\s*.+$/mu.test(trimmed)) return 'ini';
+  if (/\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\b/iu.test(trimmed)) return 'sql';
+  if (/\bpackage\s+main\b/iu.test(trimmed) && /\bfunc\s+\w+\s*\(/u.test(trimmed)) return 'go';
+  if (/\bfn\s+main\s*\(|\buse\s+std::|\blet\s+mut\b|\bimpl\s+\w+/u.test(trimmed)) return 'rust';
+  if (/^\s*(def|class)\s+\w+.*:\s*$/mu.test(trimmed) || /^(from\s+\S+\s+import|import\s+\S+)/mu.test(trimmed)) return 'python';
+  if (/\b(interface|type)\s+[A-Z_$]\w*|\b(public|private|readonly)\s+\w+|:\s*(string|number|boolean|unknown|any)\b/u.test(trimmed)) return 'typescript';
+  if (/\b(import|export)\s+|\bconst\s+\w+\s*=|\bfunction\s+\w+\s*\(|=>\s*[{(]/u.test(trimmed)) return 'javascript';
+  if (/\bpublic\s+(final\s+)?class\s+\w+|\bimport\s+java\.|\bSystem\.out\.println/u.test(trimmed)) return 'java';
+  if (/^\s*#include\s+<iostream>/mu.test(trimmed) || /\bstd::\w+|\bcout\s*<</u.test(trimmed)) return 'cpp';
+  if (/^\s*#include\s+<[^>]+>/mu.test(trimmed) && /\bint\s+main\s*\(/u.test(trimmed)) return 'c';
+  if (/^\s*def\s+\w+.*$/mu.test(trimmed) && /\bend\s*$/mu.test(trimmed)) return 'ruby';
+  if (/(^|\n)\s*[@.#a-z][^{\n;]+\{[\s\S]*?:[\s\S]*?\}/iu.test(trimmed)) return 'css';
+  if (/^\s*[\w.-]+:\s+\S/mu.test(trimmed) && /^\s*-\s+\S/mu.test(trimmed)) return 'yaml';
+
+  try {
+    const detected = hljs.highlightAuto(sample, AUTO_DETECT_LANGUAGE_VALUES);
+    if (detected.language && detected.relevance >= 8) {
+      return normalizeLanguage(detected.language);
+    }
+  } catch {
+    return 'plaintext';
+  }
+
+  return 'plaintext';
+}
+
+function getLanguage(fileName: string, content = ''): string {
+  const fileNameLanguage = getFileNameLanguage(fileName);
+  if (fileNameLanguage !== 'plaintext') {
+    return fileNameLanguage;
+  }
+
+  return detectLanguageFromContent(content);
 }
 
 function isTextFile(fileName: string): boolean {
@@ -527,7 +625,8 @@ function createNewTab(initialTitle?: string, initialContent = ''): NotepadTab {
     originalContent: '',
     dirty: initialContent.length > 0,
     readOnly: false,
-    language: getLanguage(title),
+    language: getLanguage(title, initialContent),
+    languageManuallySet: false,
     isLoading: false,
     isSaving: false,
     error: '',
@@ -659,6 +758,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       dirty: false,
       readOnly: false,
       language: getLanguage(nextTitle),
+      languageManuallySet: false,
       isLoading: true,
       isSaving: false,
       error: '',
@@ -687,6 +787,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         originalContent: content,
         dirty: false,
         revisionHint: getRevisionHint(content),
+        language: tab.languageManuallySet ? tab.language : getLanguage(nextTitle, content),
         isLoading: false,
         error: '',
       }));
@@ -787,7 +888,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         originalContent: contentToSave,
         dirty: tab.content !== contentToSave,
         revisionHint: getRevisionHint(contentToSave),
-        language: tab.filePath === nextFilePath ? tab.language : getLanguage(nextTitle),
+        language: tab.languageManuallySet || tab.filePath === nextFilePath
+          ? tab.language
+          : getLanguage(nextTitle, contentToSave),
         isSaving: false,
         error: receivedMoreEdits ? '保存完成，保存过程中产生的新编辑仍未写入。' : '',
       }));
@@ -859,6 +962,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       ...tab,
       content: nextContent,
       dirty: nextContent !== tab.originalContent,
+      language: !tab.languageManuallySet && tab.language === 'plaintext'
+        ? getLanguage(tab.title, nextContent)
+        : tab.language,
     });
   }, [activeTabId, updateTab]);
 
@@ -889,6 +995,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       ...tab,
       content: nextContent,
       dirty: nextContent !== tab.originalContent,
+      language: !tab.languageManuallySet && tab.language === 'plaintext'
+        ? getLanguage(tab.title, nextContent)
+        : tab.language,
     });
 
     requestAnimationFrame(() => selectEditorRange(nextSelectionStart, nextSelectionEnd));
@@ -1534,7 +1643,11 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             <select
               className="notepad-toolbar-select"
               value={hljs.getLanguage(activeTab.language) ? activeTab.language : 'plaintext'}
-              onChange={(event) => updateTab(activeTabId, (tab) => ({ ...tab, language: event.target.value }))}
+              onChange={(event) => updateTab(activeTabId, (tab) => ({
+                ...tab,
+                language: event.target.value,
+                languageManuallySet: true,
+              }))}
             >
               {LANGUAGE_OPTIONS.map((language) => (
                 <option key={language.value} value={language.value}>{language.label}</option>
