@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMonitor, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMessageQueuePanel, RemoteMonitor, RemoteMongo, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSearchCluster, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -36,6 +36,9 @@ const desktopApps = [
   { key: 'package-manager', label: '包管理器', description: '系统软件包查询与更新' },
   { key: 'scheduled-tasks', label: '计划任务', description: 'Cron / systemd timer / Task Scheduler' },
   { key: 'postgres', label: 'PostgreSQL', description: 'PostgreSQL 数据库管理' },
+  { key: 'mongo', label: 'MongoDB', description: 'MongoDB 数据库、集合与文档' },
+  { key: 'search-cluster', label: '搜索集群', description: 'Elasticsearch / OpenSearch 巡检' },
+  { key: 'message-queue', label: '消息队列', description: 'RabbitMQ / Kafka 状态观察' },
   { key: 'security-audit', label: '安全巡检', description: 'SSH、端口、登录与权限检查' },
   { key: 'login-sessions', label: '登录会话', description: '在线用户、成功与失败登录' },
   { key: 'api-debugger', label: 'API 调试', description: '从远程主机发起 HTTP 请求' },
@@ -69,6 +72,9 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
   'scheduled-tasks': new URL('./assets/desktop-icons/scheduled-tasks.png', import.meta.url).href,
   postgres: new URL('./assets/desktop-icons/postgres.png', import.meta.url).href,
+  mongo: new URL('./assets/desktop-icons/mongo.png', import.meta.url).href,
+  'search-cluster': new URL('./assets/desktop-icons/search-cluster.png', import.meta.url).href,
+  'message-queue': new URL('./assets/desktop-icons/message-queue.png', import.meta.url).href,
   'security-audit': new URL('./assets/desktop-icons/security-audit.png', import.meta.url).href,
   'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
   'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
@@ -206,6 +212,9 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
   'scheduled-tasks': { x: 118, y: 50, width: 1080, height: 650 },
   postgres: { x: 100, y: 40, width: 1080, height: 650 },
+  mongo: { x: 96, y: 38, width: 1120, height: 660 },
+  'search-cluster': { x: 106, y: 44, width: 1120, height: 650 },
+  'message-queue': { x: 112, y: 46, width: 1120, height: 650 },
   'security-audit': { x: 116, y: 48, width: 1080, height: 650 },
   'login-sessions': { x: 124, y: 52, width: 1080, height: 640 },
   'api-debugger': { x: 118, y: 46, width: 1080, height: 650 },
@@ -1579,6 +1588,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'postgres') {
       return <RemotePostgres connectionId={connection.id} />;
+    }
+
+    if (desktopWindow.appKey === 'mongo') {
+      return <RemoteMongo connectionId={connection.id} />;
+    }
+
+    if (desktopWindow.appKey === 'search-cluster') {
+      return <RemoteSearchCluster connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'message-queue') {
+      return <RemoteMessageQueuePanel connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'security-audit') {

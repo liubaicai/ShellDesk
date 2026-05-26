@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const Redis = require('ioredis');
 const mysql = require('mysql2/promise');
+const { EJSON, MongoClient } = require('mongodb');
 const { Client: PostgresClient } = require('pg');
 const { forwardOut, getActiveConnection, registerConnectionCleanup } = require('./connectionManager.cjs');
 const { execRemoteCommandRaw, statRemotePath, validateRemotePath } = require('./remoteConnectionHandlers.cjs');
@@ -189,6 +190,215 @@ function registerDatabaseHandlers(registerIpcHandler) {
     const [result] = await entry.connection.query(sql, params);
 
     return { affectedRows: result.affectedRows };
+  });
+
+  // ─── MongoDB over SSH tunnel ───────────────────────────────────────────────
+
+  const activeMongoConnections = new Map();
+
+  function getMongoKey(connectionId, mongoId) {
+    return `${connectionId}::${mongoId}`;
+  }
+
+  function createTcpTunnel(client, remoteHost, remotePort) {
+    return new Promise((resolve, reject) => {
+      const localPort = Math.floor(Math.random() * 50000) + 10000;
+      const localHost = '127.0.0.1';
+      const server = net.createServer((localSocket) => {
+        localSocket.on('error', () => undefined);
+
+        forwardOut(client, remoteHost, remotePort).then((remoteStream) => {
+          if (localSocket.destroyed) {
+            remoteStream.destroy();
+            return;
+          }
+
+          localSocket.pipe(remoteStream).pipe(localSocket);
+          remoteStream.on('error', () => localSocket.destroy());
+          remoteStream.on('close', () => localSocket.destroy());
+          localSocket.on('close', () => remoteStream.destroy());
+        }).catch(() => {
+          localSocket.destroy();
+        });
+      });
+
+      server.listen(localPort, localHost, () => {
+        resolve({ server, localPort, localHost });
+      });
+      server.on('error', reject);
+    });
+  }
+
+  function getActiveMongoConnection(connectionId, rawMongoId) {
+    const mongoId = readBoundedString(rawMongoId, 'MongoDB 连接 ID', 128);
+    const key = getMongoKey(connectionId, mongoId);
+    const entry = activeMongoConnections.get(key);
+
+    if (!entry) {
+      throw new Error('MongoDB 连接已断开。');
+    }
+
+    return { mongoId, entry };
+  }
+
+  function parseMongoJson(rawValue, label, fallback) {
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      return fallback;
+    }
+
+    const text = readBoundedString(rawValue, label, 1024 * 1024, { required: false, rejectLineBreaks: false });
+
+    if (!text.trim()) {
+      return fallback;
+    }
+
+    const parsed = EJSON.parse(text, { relaxed: true });
+
+    if (!isPlainObject(parsed)) {
+      throw new Error(`${label}必须是 JSON 对象。`);
+    }
+
+    return parsed;
+  }
+
+  function serializeMongoValue(value) {
+    return EJSON.parse(EJSON.stringify(value, { relaxed: false }));
+  }
+
+  registerIpcHandler('connection:mongo-connect', async (_event, connectionId, rawConfig) => {
+    const activeConnection = getActiveConnection(connectionId);
+
+    if (!isPlainObject(rawConfig)) {
+      throw new Error('MongoDB 连接配置无效。');
+    }
+
+    const mongoHost = readBoundedString(rawConfig.host || '127.0.0.1', 'MongoDB 主机', 256);
+    const mongoPort = readIntegerInRange(rawConfig.port, 'MongoDB 端口', 1, 65535, 27017);
+    const mongoUser = typeof rawConfig.username === 'string' && rawConfig.username.trim()
+      ? readBoundedString(rawConfig.username, 'MongoDB 用户名', 128)
+      : '';
+    const mongoPassword = typeof rawConfig.password === 'string' ? rawConfig.password : '';
+    const authSource = typeof rawConfig.authSource === 'string' && rawConfig.authSource.trim()
+      ? readBoundedString(rawConfig.authSource, 'MongoDB 认证库', 128)
+      : 'admin';
+    const mongoId = readBoundedString(rawConfig.mongoId || crypto.randomUUID(), 'MongoDB 连接 ID', 128);
+    const key = getMongoKey(connectionId, mongoId);
+    const existing = activeMongoConnections.get(key);
+
+    if (existing) {
+      try {
+        await existing.client.db('admin').command({ ping: 1 });
+        return { mongoId, alreadyConnected: true };
+      } catch {
+        activeMongoConnections.delete(key);
+        existing.client.close().catch(() => {});
+        existing.tunnelServer.close();
+      }
+    }
+
+    const { server: tunnelServer, localPort } = await createTcpTunnel(activeConnection.client, mongoHost, mongoPort);
+    const client = new MongoClient(`mongodb://127.0.0.1:${localPort}`, {
+      auth: mongoUser ? { username: mongoUser, password: mongoPassword } : undefined,
+      authSource: mongoUser ? authSource : undefined,
+      connectTimeoutMS: 15000,
+      directConnection: true,
+      serverSelectionTimeoutMS: 15000,
+    });
+
+    try {
+      await client.connect();
+      await client.db(authSource).command({ ping: 1 });
+    } catch (error) {
+      await client.close().catch(() => {});
+      tunnelServer.close();
+      throw error;
+    }
+
+    activeMongoConnections.set(key, { client, connectionId, mongoId, tunnelServer });
+
+    return { mongoId };
+  });
+
+  registerIpcHandler('connection:mongo-disconnect', async (_event, connectionId, rawMongoId) => {
+    const mongoId = readBoundedString(rawMongoId, 'MongoDB 连接 ID', 128);
+    const key = getMongoKey(connectionId, mongoId);
+    const entry = activeMongoConnections.get(key);
+
+    if (entry) {
+      activeMongoConnections.delete(key);
+      await entry.client.close().catch(() => {});
+      entry.tunnelServer.close();
+    }
+
+    return true;
+  });
+
+  registerIpcHandler('connection:mongo-databases', async (_event, connectionId, rawMongoId) => {
+    const { entry } = getActiveMongoConnection(connectionId, rawMongoId);
+    const result = await entry.client.db().admin().listDatabases();
+
+    return result.databases
+      .map((database) => ({
+        name: database.name,
+        sizeOnDisk: database.sizeOnDisk,
+        empty: Boolean(database.empty),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  });
+
+  registerIpcHandler('connection:mongo-collections', async (_event, connectionId, rawMongoId, rawDatabase) => {
+    const database = readBoundedString(rawDatabase, '数据库名', 256);
+    const { entry } = getActiveMongoConnection(connectionId, rawMongoId);
+    const collections = await entry.client.db(database).listCollections({}, { nameOnly: false }).toArray();
+
+    return collections
+      .map((collection) => ({
+        name: collection.name,
+        type: collection.type || 'collection',
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  });
+
+  registerIpcHandler('connection:mongo-indexes', async (_event, connectionId, rawMongoId, rawDatabase, rawCollection) => {
+    const database = readBoundedString(rawDatabase, '数据库名', 256);
+    const collection = readBoundedString(rawCollection, '集合名', 256);
+    const { entry } = getActiveMongoConnection(connectionId, rawMongoId);
+    const indexes = await entry.client.db(database).collection(collection).indexes();
+
+    return indexes.map((index) => ({
+      name: index.name || '',
+      key: serializeMongoValue(index.key || {}),
+      unique: Boolean(index.unique),
+      sparse: Boolean(index.sparse),
+      expireAfterSeconds: typeof index.expireAfterSeconds === 'number' ? index.expireAfterSeconds : undefined,
+    }));
+  });
+
+  registerIpcHandler('connection:mongo-query', async (_event, connectionId, rawMongoId, rawRequest) => {
+    if (!isPlainObject(rawRequest)) {
+      throw new Error('MongoDB 查询参数无效。');
+    }
+
+    const database = readBoundedString(rawRequest.database, '数据库名', 256);
+    const collection = readBoundedString(rawRequest.collection, '集合名', 256);
+    const filter = parseMongoJson(rawRequest.filter, 'Filter', {});
+    const projection = parseMongoJson(rawRequest.projection, 'Projection', undefined);
+    const sort = parseMongoJson(rawRequest.sort, 'Sort', undefined);
+    const limit = readIntegerInRange(rawRequest.limit, 'Limit', 1, 1000, 100);
+    const { entry } = getActiveMongoConnection(connectionId, rawMongoId);
+    const cursor = entry.client.db(database).collection(collection).find(filter, projection ? { projection } : undefined);
+
+    if (sort) {
+      cursor.sort(sort);
+    }
+
+    const documents = await cursor.limit(limit).toArray();
+
+    return {
+      documents: serializeMongoValue(documents),
+      count: documents.length,
+      limit,
+    };
   });
 
   // ─── PostgreSQL over SSH tunnel ─────────────────────────────────────────────
@@ -925,6 +1135,14 @@ function registerDatabaseHandlers(registerIpcHandler) {
       if (entry.connectionId === connectionId) {
         activePostgresConnections.delete(key);
         entry.client.end().catch(() => {});
+      }
+    }
+
+    for (const [key, entry] of activeMongoConnections) {
+      if (entry.connectionId === connectionId) {
+        activeMongoConnections.delete(key);
+        entry.client.close().catch(() => {});
+        entry.tunnelServer.close();
       }
     }
 

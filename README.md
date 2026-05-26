@@ -89,7 +89,9 @@ The project is currently in Alpha and is primarily developed and packaged for Wi
 
 ### Databases and System Tools
 
-- MySQL, PostgreSQL, Redis, and SQLite tools cover connection, browsing, querying, and common editing actions
+- MySQL, PostgreSQL, MongoDB, Redis, and SQLite tools cover connection, browsing, querying, and common editing actions
+- Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
+- RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
 - System Monitor, Process Manager, Service Manager, Container Manager, Port Listener, and Disk Analyzer help with daily checks
 - Firewall, Network Diagnostics, Package Manager, Scheduled Tasks, Login Sessions, and Security Audit support operations troubleshooting
 - System Settings provides views for system information, network interfaces, DNS, mirrors, updates, Hosts, routes, disks, and mounts
@@ -119,6 +121,9 @@ The project is currently in Alpha and is primarily developed and packaged for Wi
 | System Monitor | CPU, memory, network, and system status overview |
 | MySQL | SSH-tunneled MySQL connection, database/table browsing, columns, SQL queries, and cell updates |
 | PostgreSQL | PostgreSQL connection, schema/table browsing, columns, and SQL queries |
+| MongoDB | SSH-tunneled MongoDB connection, database/collection browsing, document queries, and index inspection |
+| Search Cluster | Elasticsearch / OpenSearch health, indices, shards, and `_search` queries |
+| Message Queue | RabbitMQ queues, Kafka topics, and consumer group lag inspection |
 | Redis | Redis connection, key scanning, read, write, delete, and command execution |
 | SQLite | Remote SQLite file browsing, object browsing, SQL queries, and table editing |
 | Service Manager | systemd and Windows Services viewing, start, stop, restart, and startup management |
@@ -216,7 +221,7 @@ More platform packaging scripts are available in [package.json](package.json).
 | SSH / SFTP | ssh2 |
 | Terminal | xterm.js |
 | VNC | @novnc/novnc |
-| Databases | mysql2, pg, ioredis, SQLite IPC |
+| Databases | mysql2, pg, mongodb, ioredis, SQLite IPC |
 | Syntax highlighting | highlight.js |
 | Packaging | electron-builder |
 | Package manager | pnpm |
