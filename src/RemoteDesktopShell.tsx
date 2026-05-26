@@ -76,6 +76,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 };
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
+const launchpadAnimationMs = 180;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const desktopAppKeySet = new Set<DesktopAppKey>(desktopApps.map((app) => app.key));
 const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; label: string }> = [
@@ -857,10 +858,12 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const windowSequenceRef = useRef(0);
   const terminalToolRequestSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
+  const launchpadCloseTimerRef = useRef<number | null>(null);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
+  const [isLaunchpadRendered, setIsLaunchpadRendered] = useState(false);
   const [appContextMenu, setAppContextMenu] = useState<DesktopAppContextMenuState | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<DesktopFolderContextMenuState | null>(null);
   const [surfaceContextMenu, setSurfaceContextMenu] = useState<DesktopSurfaceContextMenuState | null>(null);
@@ -884,6 +887,12 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   useEffect(() => {
     setDesktopLayout(normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
   }, [settings.remoteDesktopLayout]);
+
+  useEffect(() => () => {
+    if (launchpadCloseTimerRef.current !== null) {
+      window.clearTimeout(launchpadCloseTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const surface = desktopSurfaceRef.current;
@@ -929,6 +938,39 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     setAppContextMenu(null);
     setFolderContextMenu(null);
     setSurfaceContextMenu(null);
+  };
+
+  const openLaunchpad = () => {
+    if (launchpadCloseTimerRef.current !== null) {
+      window.clearTimeout(launchpadCloseTimerRef.current);
+      launchpadCloseTimerRef.current = null;
+    }
+
+    setIsLaunchpadRendered(true);
+    setIsLaunchpadOpen(true);
+  };
+
+  const closeLaunchpad = () => {
+    setIsLaunchpadOpen(false);
+    setLaunchpadTooltip(null);
+
+    if (launchpadCloseTimerRef.current !== null) {
+      window.clearTimeout(launchpadCloseTimerRef.current);
+    }
+
+    launchpadCloseTimerRef.current = window.setTimeout(() => {
+      setIsLaunchpadRendered(false);
+      launchpadCloseTimerRef.current = null;
+    }, launchpadAnimationMs);
+  };
+
+  const toggleLaunchpad = () => {
+    if (isLaunchpadOpen) {
+      closeLaunchpad();
+      return;
+    }
+
+    openLaunchpad();
   };
 
   const createFolder = () => {
@@ -1751,7 +1793,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <button
             type="button"
             className={`dock-launchpad-button ${isLaunchpadOpen ? 'active' : ''}`}
-            onClick={() => setIsLaunchpadOpen((isOpen) => !isOpen)}
+            onClick={toggleLaunchpad}
             aria-label="全部应用"
             title="全部应用"
           >
@@ -1803,15 +1845,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       </section>
     </main>
 
-    {isLaunchpadOpen ? createPortal(
-      <div className="launchpad-overlay" role="presentation" onClick={() => setIsLaunchpadOpen(false)}>
+    {isLaunchpadRendered ? createPortal(
+      <div className={`launchpad-overlay ${isLaunchpadOpen ? 'open' : 'closing'}`} role="presentation" onClick={closeLaunchpad}>
         <section className="launchpad-panel" aria-label="全部应用" onClick={(event) => event.stopPropagation()}>
           <header className="launchpad-header">
             <div>
               <span>全部应用</span>
               <strong>{launchpadApps.length} 个组件</strong>
             </div>
-            <button type="button" className="launchpad-close" aria-label="关闭全部应用" onClick={() => setIsLaunchpadOpen(false)}>
+            <button type="button" className="launchpad-close" aria-label="关闭全部应用" onClick={closeLaunchpad}>
               <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
                 <line x1="2" y1="2" x2="10" y2="10" />
                 <line x1="10" y1="2" x2="2" y2="10" />
@@ -1832,8 +1874,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 onFocus={(event) => showLaunchpadTooltip(event.currentTarget, app.description)}
                 onBlur={() => setLaunchpadTooltip(null)}
                 onClick={() => {
-                  setIsLaunchpadOpen(false);
-                  setLaunchpadTooltip(null);
+                  closeLaunchpad();
                   openDesktopWindow(app.key);
                 }}
                 onContextMenu={(event) => {
@@ -1946,7 +1987,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             onClick={() => {
               const { appKey } = appContextMenu;
               setAppContextMenu(null);
-              setIsLaunchpadOpen(false);
+              closeLaunchpad();
               openDesktopWindow(appKey);
             }}
           >

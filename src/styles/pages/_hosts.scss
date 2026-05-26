@@ -1074,20 +1074,51 @@
   min-height: 0;
   overflow: hidden;
   padding: 0;
+  transition: grid-template-columns 180ms ease;
 }
 
 .hosts-content.groups-collapsed {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .hosts-group-panel {
+  min-width: 0;
   min-height: 0;
+  max-height: 100vh;
   overflow: auto;
   padding: 16px 12px 20px 16px;
   border-right: 1px solid var(--window-divider);
   background:
     radial-gradient(ellipse at 55% 0%, rgba(90, 146, 240, 0.09), transparent 38%),
     rgba(18, 27, 38, 0.64);
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease,
+    padding 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    max-height 180ms ease;
+}
+
+.hosts-content.groups-collapsed .hosts-group-panel {
+  max-height: 0;
+  overflow: hidden;
+  padding-right: 0;
+  padding-left: 0;
+  border-color: transparent;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-10px);
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease,
+    padding 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    max-height 180ms ease;
 }
 
 .all-hosts-filter {
@@ -1150,6 +1181,11 @@
 .group-panel-toggle-button span {
   display: block;
   transform: translateY(-1px);
+  transition: transform 180ms ease;
+}
+
+.group-panel-toggle-button.collapsed span {
+  transform: translateY(-1px) rotate(180deg);
 }
 
 .group-add-button {
@@ -1246,6 +1282,15 @@
 .group-card.active .group-icon svg,
 .group-card:hover .group-icon svg {
   transform: translateY(-0.5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hosts-content,
+  .hosts-group-panel,
+  .hosts-content.groups-collapsed .hosts-group-panel,
+  .group-panel-toggle-button span {
+    transition: none;
+  }
 }
 
 .group-card strong {
