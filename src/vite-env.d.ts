@@ -50,6 +50,9 @@ type ShellDeskDesktopAppKey =
   | 'package-manager'
   | 'scheduled-tasks'
   | 'postgres'
+  | 'mongo'
+  | 'search-cluster'
+  | 'message-queue'
   | 'security-audit'
   | 'login-sessions'
   | 'api-debugger'
@@ -442,6 +445,12 @@ interface ShellDeskConnectionControls {
   postgresTables: (connectionId: string, postgresId: string, schema: string) => Promise<ShellDeskPostgresTable[]>;
   postgresColumns: (connectionId: string, postgresId: string, schema: string, table: string) => Promise<ShellDeskPostgresColumn[]>;
   postgresQuery: (connectionId: string, postgresId: string, sql: string) => Promise<ShellDeskPostgresQueryResult>;
+  mongoConnect: (connectionId: string, config: ShellDeskMongoConnectConfig) => Promise<{ mongoId: string; alreadyConnected?: boolean }>;
+  mongoDisconnect: (connectionId: string, mongoId: string) => Promise<boolean>;
+  mongoDatabases: (connectionId: string, mongoId: string) => Promise<ShellDeskMongoDatabase[]>;
+  mongoCollections: (connectionId: string, mongoId: string, database: string) => Promise<ShellDeskMongoCollection[]>;
+  mongoIndexes: (connectionId: string, mongoId: string, database: string, collection: string) => Promise<ShellDeskMongoIndex[]>;
+  mongoQuery: (connectionId: string, mongoId: string, request: ShellDeskMongoQueryRequest) => Promise<ShellDeskMongoQueryResult>;
   redisConnect: (connectionId: string, config: ShellDeskRedisConnectConfig) => Promise<{ redisId: string; alreadyConnected?: boolean }>;
   redisDisconnect: (connectionId: string, redisId: string) => Promise<boolean>;
   redisScan: (connectionId: string, redisId: string, options?: ShellDeskRedisScanOptions) => Promise<ShellDeskRedisScanResult>;
@@ -523,6 +532,49 @@ interface ShellDeskPostgresQueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
   rowCount?: number;
+}
+
+interface ShellDeskMongoConnectConfig {
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  authSource?: string;
+  mongoId?: string;
+}
+
+interface ShellDeskMongoDatabase {
+  name: string;
+  sizeOnDisk?: number;
+  empty?: boolean;
+}
+
+interface ShellDeskMongoCollection {
+  name: string;
+  type: string;
+}
+
+interface ShellDeskMongoIndex {
+  name: string;
+  key: Record<string, unknown>;
+  unique?: boolean;
+  sparse?: boolean;
+  expireAfterSeconds?: number;
+}
+
+interface ShellDeskMongoQueryRequest {
+  database: string;
+  collection: string;
+  filter: string;
+  projection?: string;
+  sort?: string;
+  limit: number;
+}
+
+interface ShellDeskMongoQueryResult {
+  documents: Record<string, unknown>[];
+  count: number;
+  limit: number;
 }
 
 interface ShellDeskSqliteColumn {

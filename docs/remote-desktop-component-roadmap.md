@@ -4,8 +4,8 @@
 
 本文档包含两组材料：
 
-- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-25`。
-- `remote-desktop-components/`：尚未实现的扩展组件设计文档，当前从 `01` 重新编号到 `27`。
+- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-28`。
+- `remote-desktop-components/`：尚未实现的扩展组件设计文档，当前从 `01` 重新编号到 `24`。
 
 组件排序综合考虑：
 
@@ -46,6 +46,9 @@
 | 23 | 登录会话查看器 | [登录会话查看器](./remote-desktop-existing-components/23-login-session-viewer.md) | 在线用户、成功登录、失败登录、来源聚合和详情复制 |
 | 24 | API 调试器 | [API 调试器](./remote-desktop-existing-components/24-api-debugger.md) | 远程 curl 请求、Header/Body、响应查看、JSON 格式化和历史 |
 | 25 | iptables 管理器 | [iptables 管理器](./remote-desktop-existing-components/25-iptables-manager.md) | IPv4/IPv6 iptables 规则链、默认策略、运行时新增/删除、nft 兼容层提示 |
+| 26 | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-existing-components/26-mongodb-manager.md) | SSH 隧道连接 MongoDB、数据库/集合浏览、文档查询和索引查看 |
+| 27 | Elasticsearch / OpenSearch 面板 | [Elasticsearch / OpenSearch 面板](./remote-desktop-existing-components/27-elasticsearch-opensearch-panel.md) | 集群健康、索引、分片和 `_search` 查询诊断 |
+| 28 | RabbitMQ / Kafka 简易面板 | [RabbitMQ / Kafka 简易面板](./remote-desktop-existing-components/28-message-queue-panel.md) | RabbitMQ 队列、Kafka topic、consumer group lag 和原始诊断输出 |
 
 ## 剩余扩展组件优先级
 
@@ -73,13 +76,10 @@
 | 18 | 健康检查卡片生成器 | [健康检查卡片生成器](./remote-desktop-components/18-health-check-report.md) | 自定义检查项并生成服务器健康报告，覆盖系统、网络、磁盘、服务、端口和安全摘要。 |
 | 19 | 会话录制/回放 | [会话录制/回放](./remote-desktop-components/19-session-recorder.md) | 记录终端命令、关键输出、文件操作和诊断步骤，用于审计、复盘或交接。 |
 | 20 | 远程剪贴板 / 临时便签 | [远程剪贴板 / 临时便签](./remote-desktop-components/20-remote-notes-clipboard.md) | 保存当前连接相关的临时命令、路径、账号提示、排查笔记和待办事项。 |
-| 21 | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-components/21-mongodb-manager.md) | 管理 MongoDB 数据库、集合和文档，支持查询、查看索引、基础编辑和连接配置。 |
-| 22 | Elasticsearch / OpenSearch 面板 | [Elasticsearch / OpenSearch 面板](./remote-desktop-components/22-elasticsearch-opensearch-panel.md) | 查看集群健康、节点、索引、分片状态，支持基础查询和常见运维操作。 |
-| 23 | RabbitMQ / Kafka 简易面板 | [RabbitMQ / Kafka 简易面板](./remote-desktop-components/23-message-queue-panel.md) | 查看队列、topic、consumer、consumer lag 和基础消息状态，适合中间件排查。 |
-| 24 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/24-minio-s3-browser.md) | 浏览对象存储 bucket 和对象，支持上传、下载、删除、预签名链接和基础元信息查看。 |
-| 25 | 正则 / 文本处理工具箱 | [正则 / 文本处理工具箱](./remote-desktop-components/25-text-processing-toolbox.md) | 图形化封装 grep、sed、awk、jq 等文本处理能力，用于日志分析、配置提取和批量转换。 |
-| 26 | Hosts / DNS 工具 | [Hosts / DNS 工具](./remote-desktop-components/26-hosts-dns-tool.md) | 专注 hosts 和 DNS 解析诊断，支持解析链路检查、hosts 修改、DNS 服务器测试和缓存提示。 |
-| 27 | 远程桌面启动器 | [远程桌面启动器](./remote-desktop-components/27-remote-desktop-launcher.md) | 作为连接后的工作台首页，展示最近文件、最近命令、常用服务、常用路径和告警摘要。 |
+| 21 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/21-minio-s3-browser.md) | 浏览对象存储 bucket 和对象，支持上传、下载、删除、预签名链接和基础元信息查看。 |
+| 22 | 正则 / 文本处理工具箱 | [正则 / 文本处理工具箱](./remote-desktop-components/22-text-processing-toolbox.md) | 图形化封装 grep、sed、awk、jq 等文本处理能力，用于日志分析、配置提取和批量转换。 |
+| 23 | Hosts / DNS 工具 | [Hosts / DNS 工具](./remote-desktop-components/23-hosts-dns-tool.md) | 专注 hosts 和 DNS 解析诊断，支持解析链路检查、hosts 修改、DNS 服务器测试和缓存提示。 |
+| 24 | 远程桌面启动器 | [远程桌面启动器](./remote-desktop-components/24-remote-desktop-launcher.md) | 作为连接后的工作台首页，展示最近文件、最近命令、常用服务、常用路径和告警摘要。 |
 
 ## 分阶段建议
 
@@ -87,4 +87,4 @@
 
 随后推进 `11-20`：重点增强证书、环境变量、结构化配置、授权密钥、权限、压缩包、批量文件操作、健康报告和会话审计，让安全与配置维护更完整。
 
-最后推进 `21-27`：覆盖更多中间件、对象存储、文本处理、Hosts/DNS 和工作台首页体验，适合作为后续插件化生态的候选组件。
+最后推进 `21-24`：覆盖对象存储、文本处理、Hosts/DNS 和工作台首页体验，适合作为后续插件化生态的候选组件。
