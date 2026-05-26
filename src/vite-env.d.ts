@@ -25,6 +25,7 @@ interface ShellDeskFileControls {
   selectPublicKeyFile: () => Promise<string>;
   importConfig: () => Promise<ShellDeskConfigImportResult | null>;
   exportConfig: () => Promise<string>;
+  saveTextFile: (payload: { title?: string; defaultFileName?: string; content: string }) => Promise<string>;
 }
 
 type ShellDeskDesktopSortMode = 'custom' | 'name-asc' | 'name-desc';

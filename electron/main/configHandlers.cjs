@@ -4,7 +4,7 @@ const path = require('node:path');
 const { maxConfigImportBytes } = require('./constants.cjs');
 const { getSystemFontFamilies } = require('./systemFonts.cjs');
 const { getSenderWindow } = require('./windows.cjs');
-const { readBoundedString, toErrorMessage } = require('./validation.cjs');
+const { isPlainObject, readBoundedString, toErrorMessage } = require('./validation.cjs');
 const {
   buildConfigBundle,
   createPublicVaultSnapshot,
@@ -37,8 +37,11 @@ function getDialogText(language) {
         selectPrivateKey: '选择 SSH 私钥文件',
         selectPublicKey: '选择 SSH 公钥文件',
         exportConfig: '导出完整主机配置',
+        saveTextFile: '保存文本文件',
         importConfig: '导入完整主机配置',
         allFiles: 'All Files',
+        markdown: 'Markdown',
+        textFiles: 'Text Files',
         sshPublicKeys: 'SSH Public Keys',
         shellDeskConfig: 'ShellDesk Config',
         importSizeError: '备份文件为空或超过大小限制。',
@@ -47,12 +50,26 @@ function getDialogText(language) {
         selectPrivateKey: 'Choose SSH Private Key',
         selectPublicKey: 'Choose SSH Public Key',
         exportConfig: 'Export Full Host Configuration',
+        saveTextFile: 'Save Text File',
         importConfig: 'Import Full Host Configuration',
         allFiles: 'All Files',
+        markdown: 'Markdown',
+        textFiles: 'Text Files',
         sshPublicKeys: 'SSH Public Keys',
         shellDeskConfig: 'ShellDesk Config',
         importSizeError: 'The backup file is empty or exceeds the size limit.',
       };
+}
+
+function sanitizeTextFileName(value, fallback) {
+  const rawValue = typeof value === 'string' ? value : '';
+  const sanitizedValue = rawValue
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '-')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 180);
+
+  return sanitizedValue || fallback;
 }
 
 function registerConfigHandlers(registerIpcHandler) {
@@ -147,6 +164,46 @@ function registerConfigHandlers(registerIpcHandler) {
     }
 
     fs.writeFileSync(result.filePath, JSON.stringify(bundle, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+
+    return result.filePath;
+  });
+
+  registerIpcHandler('dialog:save-text-file', async (event, rawPayload) => {
+    if (!isPlainObject(rawPayload)) {
+      throw new Error('保存文件请求无效。');
+    }
+
+    const text = getDialogText(getCurrentLanguage());
+    const content = readBoundedString(rawPayload.content, '文件内容', 2_000_000, {
+      trim: false,
+      rejectLineBreaks: false,
+    });
+    const title = typeof rawPayload.title === 'string' && rawPayload.title.trim()
+      ? rawPayload.title.trim().slice(0, 120)
+      : text.saveTextFile;
+    const defaultFileName = sanitizeTextFileName(
+      rawPayload.defaultFileName,
+      `shelldesk-report-${new Date().toISOString().slice(0, 10)}.md`,
+    );
+    const window = getSenderWindow(event);
+    const result = await dialog.showSaveDialog(window ?? undefined, {
+      title,
+      defaultPath: path.join(app.getPath('documents'), defaultFileName),
+      filters: [
+        { name: text.markdown, extensions: ['md'] },
+        { name: text.textFiles, extensions: ['txt'] },
+        { name: text.allFiles, extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return '';
+    }
+
+    fs.writeFileSync(result.filePath, content, {
       encoding: 'utf8',
       mode: 0o600,
     });

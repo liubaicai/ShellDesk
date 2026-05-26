@@ -29,6 +29,7 @@ export interface RemoteProcessManagerLaunchOptions {
 
 interface RemoteProcessManagerProps {
   connectionId: string;
+  settings: ShellDeskAppSettings;
   systemType?: RemoteSystemType;
   launchOptions?: RemoteProcessManagerLaunchOptions;
 }
@@ -81,6 +82,20 @@ interface PendingSignal {
   signal: SignalDefinition;
 }
 
+type ProcessAiReportPhase = 'idle' | 'preparing' | 'requesting' | 'streaming' | 'done' | 'error';
+
+interface ProcessAiSnapshot {
+  text: string;
+  includedCount: number;
+  omittedCount: number;
+}
+
+interface ProcessAiInsight {
+  pid: number;
+  content: string;
+  error?: string;
+}
+
 const SIGNALS: SignalDefinition[] = [
   {
     value: '15',
@@ -111,6 +126,12 @@ const SIGNALS: SignalDefinition[] = [
 const AUTO_REFRESH_OPTIONS = [3000, 5000, 10000] as const;
 const DEFAULT_AUTO_REFRESH_MS = 5000;
 const DEFAULT_SIGNAL = SIGNALS[0];
+const PROCESS_AI_SNAPSHOT_CHAR_LIMIT = 100000;
+const PROCESS_AI_FIELD_CHAR_LIMIT = 260;
+const PROCESS_AI_REPORT_SYSTEM_PROMPT = `你是 ShellDesk 的 SD-Agent 进程安全分析助手。你只能基于用户提供的进程快照做静态研判，不要假装已经扫描文件、查杀病毒或访问外部情报。
+
+请用中文输出 Markdown 报告，重点判断是否存在病毒、木马、挖矿、横向移动、持久化后门、异常高资源占用、伪装系统进程、可疑路径或可疑命令行。对每个可疑项给出 PID、风险等级、依据、建议核验动作。没有明显风险时也要说明仍建议做哪些人工复核，但后续可疑进程、继续核验和建议处置部分要明显简略，不要为了凑结构输出冗长内容。`;
+const PROCESS_AI_INSIGHT_SYSTEM_PROMPT = '你是 ShellDesk 的 SD-Agent 进程解释助手。请用中文简短解释单个进程通常是做什么的，并结合本次快照指出是否有明显异常。不要给出确定性的恶意判定。';
 
 function readInteger(value: string | number | undefined | null) {
   if (typeof value === 'number' && Number.isInteger(value)) {
@@ -177,6 +198,152 @@ function getCpuValue(process: RemoteProcessEntry, isWindowsHost: boolean) {
 
 function getMemoryValue(process: RemoteProcessEntry, isWindowsHost: boolean) {
   return isWindowsHost ? process.memoryMb ?? 0 : process.memoryPercent ?? 0;
+}
+
+function compactAiField(value: string | number | undefined | null, maxLength = PROCESS_AI_FIELD_CHAR_LIMIT) {
+  if (value === undefined || value === null || value === '') {
+    return '-';
+  }
+
+  const normalizedValue = String(value).replace(/\s+/g, ' ').trim();
+
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue || '-';
+  }
+
+  return `${normalizedValue.slice(0, maxLength)}...`;
+}
+
+function getAiReadinessError(settings: ShellDeskAppSettings) {
+  const aiControls = window.guiSSH?.ai;
+
+  if (!aiControls?.chat && !aiControls?.chatStream) {
+    return '当前运行环境未提供 SD-Agent 对话接口。';
+  }
+
+  if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+    return '请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。';
+  }
+
+  return '';
+}
+
+function createAiChatRequest(
+  settings: ShellDeskAppSettings,
+  messages: ShellDeskAiChatMessage[],
+  temperature = 0.2,
+): ShellDeskAiChatRequest {
+  return {
+    provider: settings.aiProvider,
+    apiFormat: settings.aiApiFormat,
+    apiBaseUrl: settings.aiApiBaseUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    temperature,
+    messages,
+  };
+}
+
+function formatProcessAiLine(process: RemoteProcessEntry, isWindowsHost: boolean, index: number) {
+  return [
+    `#${index + 1}`,
+    `pid=${process.pid}`,
+    `ppid=${process.ppid ?? '-'}`,
+    `user=${compactAiField(process.user)}`,
+    `cpu=${compactAiField(formatCpu(process, isWindowsHost))}`,
+    `memory=${compactAiField(formatMemory(process, isWindowsHost))}`,
+    `state=${compactAiField(process.state)}`,
+    `start=${compactAiField(process.startTime)}`,
+    `runtime=${compactAiField(process.runtime || process.cpuTime)}`,
+    `tty=${compactAiField(process.tty)}`,
+    `path=${compactAiField(process.executablePath)}`,
+    `command=${compactAiField(process.command)}`,
+  ].join('\t');
+}
+
+function createProcessAiSnapshot(processes: RemoteProcessEntry[], isWindowsHost: boolean): ProcessAiSnapshot {
+  const header = [
+    `system=${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
+    `processCount=${processes.length}`,
+    `snapshotAt=${new Date().toISOString()}`,
+    'fields=index, pid, ppid, user, cpu, memory, state, start, runtime, tty, path, command',
+  ].join('\n');
+  let text = `${header}\n`;
+  let includedCount = 0;
+
+  for (const [index, process] of processes.entries()) {
+    const line = formatProcessAiLine(process, isWindowsHost, index);
+
+    if (text.length + line.length + 1 > PROCESS_AI_SNAPSHOT_CHAR_LIMIT) {
+      break;
+    }
+
+    text += `${line}\n`;
+    includedCount += 1;
+  }
+
+  const omittedCount = Math.max(0, processes.length - includedCount);
+
+  if (omittedCount > 0) {
+    text += `\n[注意] 由于 SD-Agent 单条消息长度限制，后续 ${omittedCount} 个进程未发送。请在报告里明确说明这个限制。\n`;
+  }
+
+  return {
+    text,
+    includedCount,
+    omittedCount,
+  };
+}
+
+function formatProcessContextForAi(
+  process: RemoteProcessEntry,
+  isWindowsHost: boolean,
+  detail: ProcessDetail | null,
+  parent: RemoteProcessEntry | null,
+  children: RemoteProcessEntry[],
+) {
+  return [
+    `系统：${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
+    `PID：${process.pid}`,
+    `PPID：${process.ppid ?? '-'}`,
+    `用户：${compactAiField(process.user)}`,
+    `CPU：${formatCpu(process, isWindowsHost)}`,
+    `内存：${formatMemory(process, isWindowsHost)}`,
+    `状态：${compactAiField(process.state)}`,
+    `启动：${compactAiField(process.startTime)}`,
+    `运行时间：${compactAiField(process.runtime || process.cpuTime)}`,
+    `TTY：${compactAiField(process.tty)}`,
+    `可执行路径：${compactAiField(detail?.executablePath || process.executablePath, 500)}`,
+    `工作目录：${compactAiField(detail?.cwd, 500)}`,
+    `命令行：${compactAiField(process.command, 900)}`,
+    `父进程：${parent ? `${parent.pid} ${compactAiField(parent.command, 300)}` : '-'}`,
+    `子进程：${children.length ? children.slice(0, 8).map((child) => `${child.pid} ${compactAiField(child.command, 180)}`).join(' | ') : '-'}`,
+    `端口：${detail?.ports.length ? detail.ports.slice(0, 12).map((port) => compactAiField(port, 180)).join(' | ') : '-'}`,
+  ].join('\n');
+}
+
+function getAiReportPhaseLabel(phase: ProcessAiReportPhase) {
+  if (phase === 'preparing') return '正在整理进程快照...';
+  if (phase === 'requesting') return '正在请求 SD-Agent...';
+  if (phase === 'streaming') return '正在接收分析报告...';
+  if (phase === 'done') return '分析完成';
+  if (phase === 'error') return '分析失败';
+  return '等待开始';
+}
+
+function createAiReportDocument(report: string, generatedAt: string, snapshotNote: string) {
+  return [
+    '# ShellDesk 进程 AI 风险分析报告',
+    generatedAt ? `生成时间：${generatedAt}` : '',
+    snapshotNote,
+    '',
+    report.trim(),
+  ].filter(Boolean).join('\n');
+}
+
+function createAiReportFileName() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `shelldesk-process-ai-report-${timestamp}.md`;
 }
 
 function getSignalByValue(value: string) {
@@ -695,7 +862,7 @@ function flattenProcessTree(
   return rows;
 }
 
-function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProcessManagerProps) {
+function ProcessManager({ connectionId, settings, systemType, launchOptions }: RemoteProcessManagerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const isMountedRef = useRef(true);
   const isRefreshingRef = useRef(false);
@@ -718,8 +885,18 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
   const [selectedPid, setSelectedPid] = useState<number | null>(launchOptions?.pid ?? null);
   const [processDetail, setProcessDetail] = useState<ProcessDetail | null>(null);
   const [pendingSignal, setPendingSignal] = useState<PendingSignal | null>(null);
+  const [aiReportOpen, setAiReportOpen] = useState(false);
+  const [aiReportPhase, setAiReportPhase] = useState<ProcessAiReportPhase>('idle');
+  const [aiReportText, setAiReportText] = useState('');
+  const [aiReportError, setAiReportError] = useState('');
+  const [aiReportNotice, setAiReportNotice] = useState('');
+  const [aiReportGeneratedAt, setAiReportGeneratedAt] = useState('');
+  const [aiReportSnapshotNote, setAiReportSnapshotNote] = useState('');
+  const [processInsight, setProcessInsight] = useState<ProcessAiInsight | null>(null);
+  const [processInsightLoadingPid, setProcessInsightLoadingPid] = useState<number | null>(null);
 
   const selectedSignal = getSignalByValue(selectedSignalValue);
+  const isAiReportBusy = aiReportPhase === 'preparing' || aiReportPhase === 'requesting' || aiReportPhase === 'streaming';
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
     if (isRefreshingRef.current) {
@@ -1070,6 +1247,238 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
     }
   };
 
+  const requestAiReport = useCallback(async () => {
+    if (isAiReportBusy) {
+      setAiReportOpen(true);
+      return;
+    }
+
+    setAiReportOpen(true);
+    setAiReportPhase('preparing');
+    setAiReportText('');
+    setAiReportError('');
+    setAiReportNotice('');
+    setAiReportGeneratedAt('');
+    setAiReportSnapshotNote('');
+
+    if (!processes.length) {
+      setAiReportPhase('error');
+      setAiReportError('当前没有可分析的进程快照，请先刷新列表。');
+      return;
+    }
+
+    const readinessError = getAiReadinessError(settings);
+
+    if (readinessError) {
+      setAiReportPhase('error');
+      setAiReportError(readinessError);
+      return;
+    }
+
+    const aiControls = window.guiSSH?.ai;
+    const snapshot = createProcessAiSnapshot(processes, isWindowsHost);
+    const snapshotNote = snapshot.omittedCount > 0
+      ? `已发送 ${snapshot.includedCount} / ${processes.length} 个进程；${snapshot.omittedCount} 个进程因单条消息长度限制未发送。`
+      : `已发送 ${snapshot.includedCount} 个进程。`;
+    const messages: ShellDeskAiChatMessage[] = [
+      {
+        role: 'system',
+        content: PROCESS_AI_REPORT_SYSTEM_PROMPT,
+      },
+      {
+        role: 'user',
+        content: [
+          '请分析下面这份 ShellDesk 远程主机进程快照，判断是否存在病毒木马、异常后门、挖矿、伪装系统进程、异常路径、异常命令行、高风险网络服务或其他安全风险。',
+          '输出格式：',
+          '1. 总体结论：用 2-4 句话概括整体风险。',
+          '2. 高风险/可疑进程：用表格列出 PID、进程/命令、风险等级、可疑依据、建议动作。',
+          '3. 需要继续核验：列出无法仅凭进程快照确认但值得检查的项。',
+          '4. 建议处置：按优先级给出低破坏性的核验和处置步骤。',
+          '如果没有明确的威胁进程，请明确说明未发现明显恶意特征，并将第 2、3、4 部分压缩为简短要点；第 2 部分可以写“未发现明确威胁进程”。',
+          '',
+          snapshot.text,
+        ].join('\n'),
+      },
+    ];
+    const request = createAiChatRequest(settings, messages, 0.1);
+    let streamedContent = '';
+
+    setAiReportSnapshotNote(snapshotNote);
+    setAiReportPhase(aiControls?.chatStream ? 'streaming' : 'requesting');
+
+    try {
+      let resultContent = '';
+
+      if (aiControls?.chatStream) {
+        try {
+          const result = await aiControls.chatStream(request, {
+            onChunk: (chunk) => {
+              streamedContent += chunk;
+              setAiReportText(streamedContent || '正在生成报告...');
+            },
+          });
+          resultContent = result.content || streamedContent;
+        } catch (streamError) {
+          if (streamedContent || !aiControls.chat) {
+            throw streamError;
+          }
+
+          setAiReportPhase('requesting');
+          const result = await aiControls.chat(request);
+          resultContent = result.content;
+        }
+      } else if (aiControls?.chat) {
+        const result = await aiControls.chat(request);
+        resultContent = result.content;
+      }
+
+      setAiReportText(resultContent || 'SD-Agent 没有返回报告内容。');
+      setAiReportGeneratedAt(new Date().toLocaleString('zh-CN'));
+      setAiReportPhase('done');
+    } catch (err) {
+      setAiReportPhase('error');
+      setAiReportError(`SD-Agent 请求失败：${getErrorMessage(err)}`);
+    }
+  }, [isAiReportBusy, isWindowsHost, processes, settings]);
+
+  const requestProcessInsight = useCallback(async () => {
+    if (!selectedProcess || processInsightLoadingPid !== null) {
+      return;
+    }
+
+    const readinessError = getAiReadinessError(settings);
+
+    if (readinessError) {
+      setProcessInsight({
+        pid: selectedProcess.pid,
+        content: '',
+        error: readinessError,
+      });
+      return;
+    }
+
+    const aiControls = window.guiSSH?.ai;
+    const detail = processDetail?.pid === selectedProcess.pid ? processDetail : null;
+    const messages: ShellDeskAiChatMessage[] = [
+      {
+        role: 'system',
+        content: PROCESS_AI_INSIGHT_SYSTEM_PROMPT,
+      },
+      {
+        role: 'user',
+        content: [
+          '请介绍这个进程通常是做什么的。本次回答只需要 2-4 句话，先说常见用途，再说当前快照中是否有明显异常和需要核验的点。',
+          '',
+          formatProcessContextForAi(selectedProcess, isWindowsHost, detail, selectedParent, selectedChildren),
+        ].join('\n'),
+      },
+    ];
+    const request = createAiChatRequest(settings, messages, 0.2);
+    let streamedContent = '';
+
+    setProcessInsightLoadingPid(selectedProcess.pid);
+    setProcessInsight({
+      pid: selectedProcess.pid,
+      content: 'SD-Agent 正在分析这个进程...',
+    });
+
+    try {
+      let resultContent = '';
+
+      if (aiControls?.chatStream) {
+        try {
+          const result = await aiControls.chatStream(request, {
+            onChunk: (chunk) => {
+              streamedContent += chunk;
+              setProcessInsight({
+                pid: selectedProcess.pid,
+                content: streamedContent || 'SD-Agent 正在分析这个进程...',
+              });
+            },
+          });
+          resultContent = result.content || streamedContent;
+        } catch (streamError) {
+          if (streamedContent || !aiControls.chat) {
+            throw streamError;
+          }
+
+          const result = await aiControls.chat(request);
+          resultContent = result.content;
+        }
+      } else if (aiControls?.chat) {
+        const result = await aiControls.chat(request);
+        resultContent = result.content;
+      }
+
+      setProcessInsight({
+        pid: selectedProcess.pid,
+        content: resultContent || 'SD-Agent 没有返回进程简介。',
+      });
+    } catch (err) {
+      setProcessInsight({
+        pid: selectedProcess.pid,
+        content: '',
+        error: `SD-Agent 请求失败：${getErrorMessage(err)}`,
+      });
+    } finally {
+      setProcessInsightLoadingPid(null);
+    }
+  }, [
+    isWindowsHost,
+    processDetail,
+    processInsightLoadingPid,
+    selectedChildren,
+    selectedParent,
+    selectedProcess,
+    settings,
+  ]);
+
+  const copyAiReport = async () => {
+    if (!aiReportText.trim()) {
+      return;
+    }
+
+    setAiReportNotice('');
+    setAiReportError('');
+
+    try {
+      await navigator.clipboard.writeText(createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote));
+      setAiReportNotice('已复制 AI 报告。');
+    } catch (err) {
+      setAiReportError(`复制失败：${getErrorMessage(err)}`);
+    }
+  };
+
+  const exportAiReport = async () => {
+    if (!aiReportText.trim()) {
+      return;
+    }
+
+    const saveTextFile = window.guiSSH?.files?.saveTextFile;
+
+    if (!saveTextFile) {
+      setAiReportError('当前运行环境不支持导出报告。');
+      return;
+    }
+
+    setAiReportNotice('');
+    setAiReportError('');
+
+    try {
+      const filePath = await saveTextFile({
+        title: '导出 AI 进程分析报告',
+        defaultFileName: createAiReportFileName(),
+        content: createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote),
+      });
+
+      if (filePath) {
+        setAiReportNotice(`已导出 AI 报告：${filePath}`);
+      }
+    } catch (err) {
+      setAiReportError(`导出失败：${getErrorMessage(err)}`);
+    }
+  };
+
   const renderSortHeader = (key: RemoteProcessManagerSortKey, label: string, className: string) => (
     <th className={className}>
       <button type="button" className="proc-sort-button" onClick={() => toggleSort(key)}>
@@ -1126,6 +1535,15 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
     <div className="proc-manager">
       <div className="proc-toolbar">
         <div className="proc-toolbar-left">
+          <button
+            type="button"
+            className="proc-tool-button ai"
+            onClick={() => void requestAiReport()}
+            disabled={loading || (!processes.length && !isAiReportBusy)}
+          >
+            {isAiReportBusy ? 'AI 分析中' : 'AI分析'}
+          </button>
+
           <button type="button" className="proc-tool-button primary" onClick={() => void refresh()} disabled={loading}>
             {loading ? '刷新中' : '刷新'}
           </button>
@@ -1226,9 +1644,19 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
               <header className="proc-detail-header">
                 <span>PID</span>
                 <strong>{selectedProcess.pid}</strong>
-                <button type="button" onClick={() => void copyToClipboard(String(selectedProcess.pid), ' PID')}>
-                  复制
-                </button>
+                <div className="proc-detail-header-actions">
+                  <button
+                    type="button"
+                    onClick={() => void requestProcessInsight()}
+                    disabled={processInsightLoadingPid !== null}
+                    title="AI 简介"
+                  >
+                    {processInsightLoadingPid === selectedProcess.pid ? '分析中' : 'AI'}
+                  </button>
+                  <button type="button" onClick={() => void copyToClipboard(String(selectedProcess.pid), ' PID')}>
+                    复制
+                  </button>
+                </div>
               </header>
 
               <div className="proc-detail-metrics">
@@ -1268,6 +1696,17 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
                   <dd>{selectedProcess.tty || '-'}</dd>
                 </div>
               </dl>
+
+              {processInsight?.pid === selectedProcess.pid ? (
+                <section className={`proc-ai-insight ${processInsight.error ? 'danger' : ''}`} aria-label="AI 进程简介">
+                  <strong>AI 简介</strong>
+                  {processInsight.error ? (
+                    <span>{processInsight.error}</span>
+                  ) : (
+                    <p data-i18n-skip>{processInsight.content}</p>
+                  )}
+                </section>
+              ) : null}
 
               <section className="proc-detail-section">
                 <div className="proc-section-title">
@@ -1369,6 +1808,50 @@ function ProcessManager({ connectionId, systemType, launchOptions }: RemoteProce
           )}
         </aside>
       </div>
+
+      {aiReportOpen ? createPortal(
+        <div className="proc-modal-overlay" role="presentation" onClick={() => setAiReportOpen(false)}>
+          <div
+            className="proc-modal proc-ai-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proc-ai-report-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="proc-ai-modal-header">
+              <div>
+                <span>SD-Agent</span>
+                <strong id="proc-ai-report-title">进程风险分析</strong>
+              </div>
+              <button type="button" className="proc-ai-close" onClick={() => setAiReportOpen(false)} aria-label="关闭 AI 分析弹窗">×</button>
+            </div>
+
+            <div className={`proc-ai-progress ${aiReportPhase}`}>
+              <div className="proc-ai-progress-bar" aria-hidden="true">
+                <span />
+              </div>
+              <strong>{getAiReportPhaseLabel(aiReportPhase)}</strong>
+              <em>{aiReportSnapshotNote || '将当前进程快照发送给 SD-Agent 进行静态研判。'}</em>
+            </div>
+
+            {aiReportError ? <div className="proc-alert danger">{aiReportError}</div> : null}
+            {aiReportNotice ? <div className="proc-alert success">{aiReportNotice}</div> : null}
+
+            <pre className={`proc-ai-report ${aiReportText ? '' : 'empty'}`} data-i18n-skip>{aiReportText || (isAiReportBusy ? '报告生成中...' : '点击 AI分析 后会在这里显示报告。')}</pre>
+
+            <div className="proc-modal-actions proc-ai-modal-actions">
+              <button type="button" className="proc-modal-btn" onClick={() => setAiReportOpen(false)}>关闭</button>
+              <button type="button" className="proc-modal-btn" onClick={() => void copyAiReport()} disabled={!aiReportText.trim()}>
+                复制报告
+              </button>
+              <button type="button" className="proc-modal-btn primary" onClick={() => void exportAiReport()} disabled={!aiReportText.trim()}>
+                导出报告
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
 
       {pendingSignal ? createPortal(
         <div className="proc-modal-overlay" role="presentation" onClick={() => setPendingSignal(null)}>

@@ -1493,7 +1493,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'procmanager') {
-      return <RemoteProcessManager connectionId={connection.id} systemType={connection.host.systemType} launchOptions={desktopWindow.processManagerLaunchOptions} />;
+      return <RemoteProcessManager connectionId={connection.id} settings={settings} systemType={connection.host.systemType} launchOptions={desktopWindow.processManagerLaunchOptions} />;
     }
 
     if (desktopWindow.appKey === 'service-manager') {

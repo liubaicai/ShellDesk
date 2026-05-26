@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     selectPublicKeyFile: () => ipcRenderer.invoke('dialog:select-public-key'),
     importConfig: () => ipcRenderer.invoke('config:import'),
     exportConfig: () => ipcRenderer.invoke('config:export'),
+    saveTextFile: (payload) => ipcRenderer.invoke('dialog:save-text-file', payload),
   },
   vault: {
     initialPublicSnapshot: initialPublicVaultSnapshot,
