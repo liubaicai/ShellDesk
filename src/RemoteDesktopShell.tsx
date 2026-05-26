@@ -63,7 +63,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
   'port-manager': new URL('./assets/desktop-icons/port-manager.png', import.meta.url).href,
   'firewall-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
-  'iptables-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
+  'iptables-manager': new URL('./assets/desktop-icons/iptables-manager.png', import.meta.url).href,
   'network-diagnostics': new URL('./assets/desktop-icons/network-diagnostics.png', import.meta.url).href,
   'disk-analyzer': new URL('./assets/desktop-icons/disk-analyzer.png', import.meta.url).href,
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
