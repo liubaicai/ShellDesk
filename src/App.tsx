@@ -2162,7 +2162,13 @@ function App() {
           </div>
 
           <section className={`vault-content hosts-content ${isHostGroupPanelCollapsed ? 'groups-collapsed' : ''}`}>
-            <aside id="hosts-group-panel" className="hosts-group-panel" aria-label="主机分组" hidden={isHostGroupPanelCollapsed}>
+            <aside
+              id="hosts-group-panel"
+              className="hosts-group-panel"
+              aria-label="主机分组"
+              aria-hidden={isHostGroupPanelCollapsed}
+              inert={isHostGroupPanelCollapsed ? true : undefined}
+            >
               <button type="button" className={`filter-tab all-hosts-filter ${!activeGroupKey && !searchQuery ? 'active' : ''}`} onClick={clearFilters}>
                 <span>全部主机</span>
                 <b>{hosts.length}</b>
