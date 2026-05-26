@@ -125,6 +125,7 @@ The project is currently in Alpha and is primarily developed and packaged for Wi
 | Container Manager | Docker / Podman container, image, and basic status management |
 | Port Listener | View port usage, listening services, and connection state |
 | Firewall | ufw, firewalld, and Windows Firewall inspection and management |
+| iptables | Linux IPv4 / IPv6 iptables rule chains, default policies, and runtime rule updates |
 | Network Diagnostics | Ping, DNS, HTTP, TCP, and related connectivity tests |
 | Disk Analyzer | Disk space, directory usage, and large file discovery |
 | Package Manager | Installed package search, upgradeable packages, and package-manager updates |

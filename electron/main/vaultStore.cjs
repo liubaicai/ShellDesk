@@ -264,7 +264,7 @@ function readRemoteDesktopLayout(rawLayout) {
 
   return {
     sortMode,
-    items: items.length ? items : defaults.items,
+    items,
   };
 }
 

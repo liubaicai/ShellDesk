@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import RemoteDesktop from './RemoteDesktopShell';
@@ -1386,15 +1386,31 @@ function App() {
     }
 
     return window.guiSSH.events.onVaultChanged((payload) => {
-      if (payload.kind !== 'bookmarks' && !isConnectionWindow) {
+      if (payload.kind !== 'vault' && payload.kind !== 'bookmarks' && !isConnectionWindow) {
         return;
       }
 
       void vaultControls.getSnapshot().then((snapshot) => {
-        applyVaultSnapshot(snapshot, { updateCollections: isConnectionWindow });
+        applyVaultSnapshot(snapshot, { updateCollections: isConnectionWindow || payload.kind === 'vault' });
       }).catch(() => undefined);
     });
   }, [isConnectionWindow, vaultControls]);
+
+  const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
+    setSettings(nextSettings);
+    setViewMode(nextSettings.defaultHostView);
+
+    if (!vaultControls || !isVaultReady) {
+      return;
+    }
+
+    void vaultControls.saveCollections({ settings: nextSettings }).then((snapshot) => {
+      setStorageInfo(snapshot.storage);
+      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    }).catch((error: unknown) => {
+      setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
+    });
+  }, [isVaultReady, vaultControls]);
 
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '') => {
     setLogs((current) => {
@@ -1960,11 +1976,9 @@ function App() {
 
   const changeViewMode = (nextViewMode: ViewMode) => {
     setViewMode(nextViewMode);
-    setSettings((currentSettings: ShellDeskAppSettings) => (
-      currentSettings.defaultHostView === nextViewMode
-        ? currentSettings
-        : { ...currentSettings, defaultHostView: nextViewMode }
-    ));
+    if (settings.defaultHostView !== nextViewMode) {
+      updateSettings({ ...settings, defaultHostView: nextViewMode });
+    }
   };
 
   const exportConfig = async () => {
@@ -2089,7 +2103,7 @@ function App() {
       ) : null}
 
       {connection ? (
-        <RemoteDesktop connection={connection} settings={settings} onSettingsChange={(nextSettings) => setSettings(nextSettings)} />
+        <RemoteDesktop connection={connection} settings={settings} onSettingsChange={updateSettings} />
       ) : isConnectionWindow ? (
         <main className="vault-page no-drag">
           <div className="empty-state">
@@ -2337,7 +2351,7 @@ function App() {
               settings={settings}
               storageInfo={storageInfo}
               isConfigTransferPending={isConfigTransferPending}
-              onSettingsChange={(nextSettings) => setSettings(nextSettings)}
+              onSettingsChange={updateSettings}
               onImportConfig={importConfig}
               onExportConfig={exportConfig}
             />

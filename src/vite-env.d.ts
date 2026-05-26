@@ -44,6 +44,7 @@ type ShellDeskDesktopAppKey =
   | 'container-manager'
   | 'port-manager'
   | 'firewall-manager'
+  | 'iptables-manager'
   | 'network-diagnostics'
   | 'disk-analyzer'
   | 'package-manager'
@@ -266,9 +267,9 @@ interface ShellDeskVaultSnapshot {
 interface ShellDeskConfigImportResult extends ShellDeskVaultSnapshot {}
 
 interface ShellDeskVaultCollectionsPayload {
-  hosts: ShellDeskStoredHostRecord[];
-  sshKeys: ShellDeskStoredKeyRecord[];
-  settings: ShellDeskAppSettings;
+  hosts?: ShellDeskStoredHostRecord[];
+  sshKeys?: ShellDeskStoredKeyRecord[];
+  settings?: ShellDeskAppSettings;
 }
 
 interface ShellDeskVaultControls {

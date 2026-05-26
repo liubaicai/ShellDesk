@@ -1,10 +1,10 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-05-24，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
+截至 2026-05-26，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
 
 本文档包含两组材料：
 
-- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-24`。
+- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-25`。
 - `remote-desktop-components/`：尚未实现的扩展组件设计文档，当前从 `01` 重新编号到 `27`。
 
 组件排序综合考虑：
@@ -45,6 +45,7 @@
 | 22 | 安全巡检面板 | [安全巡检面板](./remote-desktop-existing-components/22-security-audit-panel.md) | SSH 配置、高权限账号、失败登录、端口、敏感权限和报告复制 |
 | 23 | 登录会话查看器 | [登录会话查看器](./remote-desktop-existing-components/23-login-session-viewer.md) | 在线用户、成功登录、失败登录、来源聚合和详情复制 |
 | 24 | API 调试器 | [API 调试器](./remote-desktop-existing-components/24-api-debugger.md) | 远程 curl 请求、Header/Body、响应查看、JSON 格式化和历史 |
+| 25 | iptables 管理器 | [iptables 管理器](./remote-desktop-existing-components/25-iptables-manager.md) | IPv4/IPv6 iptables 规则链、默认策略、运行时新增/删除、nft 兼容层提示 |
 
 ## 剩余扩展组件优先级
 
