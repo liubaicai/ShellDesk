@@ -34,7 +34,7 @@ function readAiApiBaseUrl(value) {
 
 function readAiModelListRequest(rawRequest) {
   if (!isPlainObject(rawRequest)) {
-    throw new Error('AI 模型列表请求无效。');
+    throw new Error('SD-Agent 模型列表请求无效。');
   }
 
   const provider = rawRequest.provider === 'anthropic' ? 'anthropic' : rawRequest.provider;
@@ -54,11 +54,11 @@ function readAiModelListRequest(rawRequest) {
 
 function readAiChatMessage(rawMessage) {
   if (!isPlainObject(rawMessage)) {
-    throw new Error('AI 消息无效。');
+    throw new Error('SD-Agent 消息无效。');
   }
 
   const role = rawMessage.role === 'assistant' || rawMessage.role === 'system' ? rawMessage.role : 'user';
-  const content = readBoundedString(rawMessage.content, 'AI 消息内容', maxAiMessageLength, {
+  const content = readBoundedString(rawMessage.content, 'SD-Agent 消息内容', maxAiMessageLength, {
     trim: false,
     rejectLineBreaks: false,
   });
@@ -68,14 +68,14 @@ function readAiChatMessage(rawMessage) {
 
 function readAiChatRequest(rawRequest) {
   const baseRequest = readAiModelListRequest(rawRequest);
-  const model = readBoundedString(rawRequest.model, 'AI 模型', maxAiModelNameLength);
+  const model = readBoundedString(rawRequest.model, 'SD-Agent 模型', maxAiModelNameLength);
   const messages = Array.isArray(rawRequest.messages)
     ? rawRequest.messages.slice(-maxAiMessageCount).map((message) => readAiChatMessage(message))
     : [];
   const temperature = Number(rawRequest.temperature);
 
   if (!messages.length) {
-    throw new Error('AI 消息不能为空。');
+    throw new Error('SD-Agent 消息不能为空。');
   }
 
   return {
@@ -88,7 +88,7 @@ function readAiChatRequest(rawRequest) {
 
 function readAiChatStreamRequest(rawRequest) {
   const request = readAiChatRequest(rawRequest);
-  const streamId = readBoundedString(rawRequest.streamId, 'AI 流式请求 ID', maxAiStreamIdLength);
+  const streamId = readBoundedString(rawRequest.streamId, 'SD-Agent 流式请求 ID', maxAiStreamIdLength);
 
   return {
     ...request,
@@ -245,12 +245,12 @@ function readOpenAiChatContent(payload) {
     return content;
   }
 
-  throw new Error('AI 响应为空。');
+  throw new Error('SD-Agent 响应为空。');
 }
 
 function readAnthropicChatContent(payload) {
   if (!Array.isArray(payload?.content)) {
-    throw new Error('AI 响应为空。');
+    throw new Error('SD-Agent 响应为空。');
   }
 
   const content = payload.content
@@ -262,7 +262,7 @@ function readAnthropicChatContent(payload) {
     return content;
   }
 
-  throw new Error('AI 响应为空。');
+  throw new Error('SD-Agent 响应为空。');
 }
 
 function createChatPayload(request, stream = false) {
@@ -374,7 +374,7 @@ async function readEventStream(response, onEvent) {
   const reader = response.body?.getReader?.();
 
   if (!reader) {
-    throw new Error('AI 提供商未返回可读取的流。');
+    throw new Error('SD-Agent 提供商未返回可读取的流。');
   }
 
   const decoder = new TextDecoder();
@@ -439,7 +439,7 @@ async function requestAiChat(rawRequest) {
     };
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('AI 请求超时。');
+      throw new Error('SD-Agent 请求超时。');
     }
 
     throw error;
@@ -499,7 +499,7 @@ async function requestAiChatStream(event, rawRequest) {
     });
 
     if (!content.trim()) {
-      throw new Error('AI 响应为空。');
+      throw new Error('SD-Agent 响应为空。');
     }
 
     return {
@@ -508,7 +508,7 @@ async function requestAiChatStream(event, rawRequest) {
     };
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('AI 流式请求超时。');
+      throw new Error('SD-Agent 流式请求超时。');
     }
 
     throw error;

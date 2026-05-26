@@ -264,7 +264,7 @@ const MAX_AI_SELECTION_CHARACTERS = 6000;
 const MAX_AI_ENVIRONMENT_CHARACTERS = 12000;
 const MAX_AI_COMMAND_OUTPUT_CHARACTERS = 12000;
 const MAX_AI_HISTORY_MESSAGES = 14;
-const NOTEPAD_AI_SYSTEM_PROMPT = `你是 ShellDesk 远程记事本中的 AI Agent。你帮助用户理解、生成和修改当前远程文件内容。
+const NOTEPAD_AI_SYSTEM_PROMPT = `你是 ShellDesk 的全局 SD-Agent。SD-Agent 具备基础对话能力，也可以在用户确认后通过 SSH 隧道执行命令等操作。当前你嵌入在远程记事本中，帮助用户理解、生成和修改当前远程文件内容。
 
 要求：
 - 用中文回答，除非用户明确要求其他语言。
@@ -1095,12 +1095,12 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const chatStream = aiControls?.chatStream;
 
     if (!chat && !chatStream) {
-      setAiError('当前运行环境未提供 AI 对话接口。');
+      setAiError('当前运行环境未提供 SD-Agent 对话接口。');
       return;
     }
 
     if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
-      setAiError('请先在设置中完成 AI 提供商、API 密钥和模型配置。');
+      setAiError('请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。');
       return;
     }
 
@@ -1175,7 +1175,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
       setAiMessages([...nextMessages, assistantMessage]);
     } catch (error) {
-      setAiError(`AI 请求失败：${getErrorMessage(error)}`);
+      setAiError(`SD-Agent 请求失败：${getErrorMessage(error)}`);
       setAiMessages(nextMessages);
     } finally {
       setIsAiBusy(false);
@@ -1198,7 +1198,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }
 
     if (!isAiConfigured) {
-      setAiError('请先在设置中完成 AI 提供商、API 密钥和模型配置。');
+      setAiError('请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。');
       return;
     }
 
@@ -1278,7 +1278,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }
 
     if (activeTab.readOnly) {
-      setAiError('当前标签是只读状态，无法应用 AI 修改。');
+      setAiError('当前标签是只读状态，无法应用 SD-Agent 修改。');
       return;
     }
 
@@ -1665,7 +1665,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
               setTimeout(() => aiInputRef.current?.focus(), 0);
             }}
             aria-pressed={isAiSidebarOpen}
-            title="AI Agent"
+            title="SD-Agent"
           >
             AI
           </button>
@@ -1770,17 +1770,17 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         )}
 
         {isAiSidebarOpen ? (
-          <aside className="notepad-ai-sidebar" aria-label="AI Agent 侧边栏">
+          <aside className="notepad-ai-sidebar" aria-label="SD-Agent 侧边栏">
             <div className="notepad-ai-header">
               <span>
-                <strong>AI Agent</strong>
+                <strong>SD-Agent</strong>
               </span>
-              <button type="button" className="notepad-ai-close" onClick={() => setIsAiSidebarOpen(false)} aria-label="关闭 AI 侧边栏">×</button>
+              <button type="button" className="notepad-ai-close" onClick={() => setIsAiSidebarOpen(false)} aria-label="关闭 SD-Agent 侧边栏">×</button>
             </div>
 
             {!isAiConfigured ? (
               <div className="notepad-ai-warning">
-                请先在设置里配置 AI 提供商、API 密钥和默认模型。
+                请先在设置里配置 SD-Agent 提供商、API 密钥和默认模型。
               </div>
             ) : null}
 
@@ -1789,7 +1789,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             <div className="notepad-ai-messages">
               {aiMessages.length === 0 ? (
                 <div className="notepad-ai-empty">
-                  <strong>可以让 Agent 生成、重构或解释当前文件。</strong>
+                  <strong>可以让 SD-Agent 生成、重构或解释当前文件。</strong>
                   <span>发送时会自动探测环境；当前文件内容默认会带入上下文，可在发送前取消。</span>
                 </div>
               ) : null}
@@ -1797,7 +1797,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
               {aiMessages.map((message) => (
                 <div key={message.id} className={`notepad-ai-message ${message.role}`}>
                   <div className="notepad-ai-message-role">
-                    {message.role === 'assistant' ? 'Agent' : message.role === 'tool' ? '工具' : '你'}
+                    {message.role === 'assistant' ? 'SD-Agent' : message.role === 'tool' ? '工具' : '你'}
                   </div>
                   <div className="notepad-ai-message-content">{message.content}</div>
                   {message.action ? (
@@ -1835,7 +1835,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                 </div>
               ))}
               {isAiProbing ? <div className="notepad-ai-thinking">正在自动探测环境...</div> : null}
-              {!isAiProbing && isAiBusy ? <div className="notepad-ai-thinking">Agent 正在思考...</div> : null}
+              {!isAiProbing && isAiBusy ? <div className="notepad-ai-thinking">SD-Agent 正在思考...</div> : null}
               <div ref={aiMessagesEndRef} />
             </div>
 

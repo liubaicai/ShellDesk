@@ -12,7 +12,7 @@ const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
   { key: 'appearance', label: '外观', summary: '主题、强调色、壁纸' },
   { key: 'terminal', label: '终端', summary: '主题、字体、滚动' },
-  { key: 'ai', label: 'AI', summary: '提供商、密钥、模型' },
+  { key: 'ai', label: 'SD-Agent', summary: '提供商、密钥、模型' },
   { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
   { key: 'backup', label: '备份与导入', summary: '配置迁移' },
 ] as const;
@@ -291,7 +291,7 @@ function SettingsPage({
     const listModels = window.guiSSH?.ai?.listModels;
 
     if (!listModels) {
-      setAiModelsError('当前运行环境未提供 AI 模型列表接口。');
+      setAiModelsError('当前运行环境未提供 SD-Agent 模型列表接口。');
       setAiModelsMessage('');
       return;
     }
@@ -951,7 +951,7 @@ function SettingsPage({
           {activeSection === 'ai' ? (
             <>
               <section className="settings-section">
-                <h2>AI 提供商</h2>
+                <h2>SD-Agent 提供商</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
@@ -972,7 +972,7 @@ function SettingsPage({
                     <label className="settings-row">
                       <span>
                         <strong>提供商名称</strong>
-                        <small>用于后续组件展示当前 AI 来源</small>
+                        <small>用于后续组件展示当前 SD-Agent 来源</small>
                       </span>
                       <input
                         className="settings-text-input"
@@ -1116,7 +1116,7 @@ function SettingsPage({
                     </div>
                   </div>
                 </div>
-                <p className="settings-caption">当前只完成全局 AI 配置和模型发现，后续终端、文件、数据库等组件可以复用这套配置接入 AI 能力。</p>
+                <p className="settings-caption">SD-Agent 使用全局配置和模型发现，后续终端、文件、数据库等组件可以复用这套能力；它支持基础对话，也可以在用户确认后通过 SSH 隧道执行命令等操作。</p>
               </section>
             </>
           ) : null}

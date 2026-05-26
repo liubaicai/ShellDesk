@@ -359,7 +359,7 @@ function readAppSettings(rawSettings) {
     aiProvider,
     aiProviderName: readBoundedString(
       rawSettings.aiProviderName ?? defaultAiProviderName,
-      'AI 提供商名称',
+      'SD-Agent 提供商名称',
       maxAiProviderNameLength,
       { required: false },
     ) || defaultAiProviderName,
@@ -368,7 +368,7 @@ function readAppSettings(rawSettings) {
     aiApiKey: readAiApiKey(rawSettings.aiApiKey),
     aiModel: readBoundedString(
       rawSettings.aiModel ?? defaults.aiModel,
-      'AI 模型',
+      'SD-Agent 模型',
       maxAiModelNameLength,
       { required: false },
     ),
