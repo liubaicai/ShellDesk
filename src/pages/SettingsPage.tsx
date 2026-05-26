@@ -178,6 +178,19 @@ function getFontListErrorMessage(error: unknown) {
   return '读取系统字体失败。';
 }
 
+function getAiModelDisplayName(model: ShellDeskAiModelInfo) {
+  return model.name && model.name !== model.id ? model.name : model.id;
+}
+
+function getAiModelDetail(model: ShellDeskAiModelInfo) {
+  const details = [
+    model.name && model.name !== model.id ? model.id : '',
+    model.ownedBy ? `by ${model.ownedBy}` : '',
+  ].filter(Boolean);
+
+  return details.join(' · ');
+}
+
 interface SettingsPageProps {
   hostCount: number;
   keyCount: number;
@@ -210,6 +223,7 @@ function SettingsPage({
   const [isAiModelsLoading, setIsAiModelsLoading] = useState(false);
   const [aiModelsMessage, setAiModelsMessage] = useState('');
   const [aiModelsError, setAiModelsError] = useState('');
+  const [isAiModelListOpen, setIsAiModelListOpen] = useState(false);
 
   const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
@@ -223,6 +237,7 @@ function SettingsPage({
   const visibleAiModelOptions = selectedAiModelInList || !settings.aiModel
     ? aiModelOptions
     : [{ id: settings.aiModel, name: settings.aiModel }, ...aiModelOptions];
+  const selectedAiModelOption = visibleAiModelOptions.find((model) => model.id === settings.aiModel) ?? null;
   const aiModelStatus = aiModelsError || aiModelsMessage || (
     aiModelOptions.length ? `已获取 ${aiModelOptions.length} 个模型` : '获取模型列表后可从下拉框选择'
   );
@@ -261,6 +276,7 @@ function SettingsPage({
     setAiModelOptions([]);
     setAiModelsMessage('');
     setAiModelsError('');
+    setIsAiModelListOpen(false);
     onSettingsChange({
       ...settings,
       aiProvider: providerChoice.value,
@@ -307,8 +323,10 @@ function SettingsPage({
 
       setAiModelOptions(models);
       setAiModelsMessage(`已获取 ${models.length} 个模型`);
+      setIsAiModelListOpen(models.length > 0);
     } catch (error) {
       setAiModelOptions([]);
+      setIsAiModelListOpen(false);
       setAiModelsError(error instanceof Error ? error.message : '获取模型列表失败。');
     } finally {
       setIsAiModelsLoading(false);
@@ -977,6 +995,7 @@ function SettingsPage({
                         setAiModelOptions([]);
                         setAiModelsMessage('');
                         setAiModelsError('');
+                        setIsAiModelListOpen(false);
                         updateSetting('aiApiFormat', event.target.value as ShellDeskAiApiFormat);
                       }}
                       disabled={settings.aiProvider !== 'custom'}
@@ -999,6 +1018,7 @@ function SettingsPage({
                         setAiModelOptions([]);
                         setAiModelsMessage('');
                         setAiModelsError('');
+                        setIsAiModelListOpen(false);
                         updateSetting('aiApiBaseUrl', event.target.value);
                       }}
                       placeholder={settings.aiApiFormat === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.example.com/v1'}
@@ -1024,20 +1044,67 @@ function SettingsPage({
 
               <section className="settings-section">
                 <h2>模型</h2>
-                <div className="settings-card">
+                <div className="settings-card ai-model-card">
                   <div className="settings-row ai-model-row">
                     <span>
                       <strong>默认模型</strong>
                       <small className={aiModelsError ? 'settings-error-text' : undefined}>{aiModelStatus}</small>
                     </span>
                     <div className="ai-model-control">
-                      <input
-                        className="settings-text-input"
-                        list="ai-model-options"
-                        value={settings.aiModel}
-                        onChange={(event) => updateSetting('aiModel', event.target.value)}
-                        placeholder="先获取模型列表，或手动输入模型 ID"
-                      />
+                      <div className="ai-model-input-wrap">
+                        <input
+                          className="settings-text-input"
+                          value={settings.aiModel}
+                          onFocus={() => setIsAiModelListOpen(visibleAiModelOptions.length > 0)}
+                          onBlur={() => {
+                            window.setTimeout(() => setIsAiModelListOpen(false), 120);
+                          }}
+                          onChange={(event) => {
+                            updateSetting('aiModel', event.target.value);
+                            setIsAiModelListOpen(visibleAiModelOptions.length > 0);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              setIsAiModelListOpen(false);
+                            }
+
+                            if (event.key === 'ArrowDown' && visibleAiModelOptions.length > 0) {
+                              setIsAiModelListOpen(true);
+                            }
+                          }}
+                          placeholder="先获取模型列表，或手动输入模型 ID"
+                          role="combobox"
+                          aria-controls="ai-model-options"
+                          aria-expanded={isAiModelListOpen}
+                          aria-autocomplete="list"
+                        />
+                        {isAiModelListOpen && visibleAiModelOptions.length ? (
+                          <div className="ai-model-options" id="ai-model-options" role="listbox">
+                            {visibleAiModelOptions.map((model) => {
+                              const isSelected = model.id === selectedAiModelOption?.id;
+                              const modelDetail = getAiModelDetail(model);
+
+                              return (
+                                <button
+                                  key={model.id}
+                                  type="button"
+                                  className={isSelected ? 'selected' : ''}
+                                  role="option"
+                                  aria-selected={isSelected}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSetting('aiModel', model.id);
+                                    setIsAiModelListOpen(false);
+                                  }}
+                                >
+                                  <strong>{getAiModelDisplayName(model)}</strong>
+                                  {modelDetail ? <small>{modelDetail}</small> : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         className="command-button"
@@ -1046,13 +1113,6 @@ function SettingsPage({
                       >
                         {isAiModelsLoading ? '获取中...' : '获取模型'}
                       </button>
-                      <datalist id="ai-model-options">
-                        {visibleAiModelOptions.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name === model.id ? model.id : `${model.name} · ${model.id}`}
-                          </option>
-                        ))}
-                      </datalist>
                     </div>
                   </div>
                 </div>

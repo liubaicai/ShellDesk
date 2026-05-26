@@ -1409,6 +1409,15 @@
   box-shadow: 0 0 16px rgba(56, 212, 122, 0.62);
 }
 
+.host-connection-state.not-ready {
+  color: var(--danger-text-soft);
+}
+
+.host-connection-state.not-ready i {
+  background: var(--danger);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--danger) 58%, transparent);
+}
+
 .credential-icon {
   width: 20px;
   height: 20px;
