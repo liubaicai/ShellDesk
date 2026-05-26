@@ -4,6 +4,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -446,6 +447,11 @@ function countOccurrences(content: string, searchText: string): number {
   return count;
 }
 
+function areLineHeightsEqual(firstHeights: number[], secondHeights: number[]) {
+  return firstHeights.length === secondHeights.length
+    && firstHeights.every((height, index) => height === secondHeights[index]);
+}
+
 function normalizeDiffLines(content: string): string[] {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
@@ -670,6 +676,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const [remoteEnvironment, setRemoteEnvironment] = useState('');
   const [includeAiFileContext, setIncludeAiFileContext] = useState(true);
   const [lastAiSelection, setLastAiSelection] = useState<EditorSelectionSnapshot | null>(null);
+  const [lineNumberHeights, setLineNumberHeights] = useState<number[]>([EDITOR_LINE_HEIGHT]);
 
   const [filePickerVisible, setFilePickerVisible] = useState(false);
   const [filePickerMode, setFilePickerMode] = useState<'open' | 'save'>('open');
@@ -679,6 +686,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const lineHeightMeasureRef = useRef<HTMLTextAreaElement>(null);
   const goToLineInputRef = useRef<HTMLInputElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
@@ -821,7 +829,84 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }
   }, [activeContent, activeTab.language]);
 
-  const lineCount = useMemo(() => activeTab.content.split('\n').length, [activeTab.content]);
+  const logicalLines = useMemo(() => activeTab.content.split('\n'), [activeTab.content]);
+  const lineCount = logicalLines.length;
+  const syncLineNumberHeights = useCallback(() => {
+    const textarea = textareaRef.current;
+    const measure = lineHeightMeasureRef.current;
+
+    if (!wrapEnabled) {
+      setLineNumberHeights((currentHeights) => (
+        areLineHeightsEqual(currentHeights, [EDITOR_LINE_HEIGHT]) ? currentHeights : [EDITOR_LINE_HEIGHT]
+      ));
+      return;
+    }
+
+    if (!textarea || !measure) {
+      const defaultHeights = Array.from({ length: lineCount }, () => EDITOR_LINE_HEIGHT);
+      setLineNumberHeights((currentHeights) => (
+        areLineHeightsEqual(currentHeights, defaultHeights) ? currentHeights : defaultHeights
+      ));
+      return;
+    }
+
+    const computedStyle = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computedStyle.lineHeight) || EDITOR_LINE_HEIGHT;
+    const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
+    measure.style.width = `${textarea.clientWidth}px`;
+    measure.style.boxSizing = 'border-box';
+    measure.style.paddingLeft = computedStyle.paddingLeft;
+    measure.style.paddingRight = computedStyle.paddingRight;
+    measure.style.paddingTop = computedStyle.paddingTop;
+    measure.style.paddingBottom = computedStyle.paddingBottom;
+    measure.style.fontFamily = computedStyle.fontFamily;
+    measure.style.fontSize = computedStyle.fontSize;
+    measure.style.fontWeight = computedStyle.fontWeight;
+    measure.style.fontStyle = computedStyle.fontStyle;
+    measure.style.letterSpacing = computedStyle.letterSpacing;
+    measure.style.lineHeight = computedStyle.lineHeight;
+    measure.style.setProperty('tab-size', computedStyle.getPropertyValue('tab-size') || '2');
+
+    const nextHeights = logicalLines.map((line) => {
+      measure.value = line || ' ';
+      const contentHeight = Math.max(0, measure.scrollHeight - paddingTop - paddingBottom);
+      return Math.max(lineHeight, Math.ceil(contentHeight / lineHeight) * lineHeight);
+    });
+
+    setLineNumberHeights((currentHeights) => (
+      areLineHeightsEqual(currentHeights, nextHeights) ? currentHeights : nextHeights
+    ));
+  }, [lineCount, logicalLines, wrapEnabled]);
+
+  useLayoutEffect(() => {
+    syncLineNumberHeights();
+  }, [syncLineNumberHeights]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+
+    if (!wrapEnabled || !textarea || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(() => syncLineNumberHeights());
+    resizeObserver.observe(textarea);
+
+    return () => resizeObserver.disconnect();
+  }, [syncLineNumberHeights, wrapEnabled]);
+
+  const lineNumberRows = useMemo(() => logicalLines.flatMap((_, index) => {
+    const visualLineCount = wrapEnabled
+      ? Math.max(1, Math.round((lineNumberHeights[index] ?? EDITOR_LINE_HEIGHT) / EDITOR_LINE_HEIGHT))
+      : 1;
+
+    return Array.from({ length: visualLineCount }, (__, visualIndex) => ({
+      key: `${index + 1}-${visualIndex}`,
+      lineNumber: visualIndex === 0 ? index + 1 : '',
+      active: visualIndex === 0 && cursorLine === index + 1,
+    }));
+  }), [cursorLine, lineNumberHeights, logicalLines, wrapEnabled]);
 
   const saveTabToPath = useCallback(async (tabId: string, filePath: string, options: SaveOptions = {}) => {
     const tabToSave = tabsRef.current.find((tab) => tab.id === tabId);
@@ -986,9 +1071,12 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     textarea.focus();
     textarea.setSelectionRange(start, end);
     const targetLine = textarea.value.slice(0, start).split('\n').length;
-    textarea.scrollTop = Math.max(0, targetLine - 5) * EDITOR_LINE_HEIGHT;
+    const previousLinesHeight = wrapEnabled
+      ? lineNumberHeights.slice(0, Math.max(0, targetLine - 1)).reduce((total, height) => total + height, 0)
+      : (targetLine - 1) * EDITOR_LINE_HEIGHT;
+    textarea.scrollTop = Math.max(0, previousLinesHeight - EDITOR_LINE_HEIGHT * 4);
     updateCursorPosition();
-  }, [updateCursorPosition]);
+  }, [lineNumberHeights, updateCursorPosition, wrapEnabled]);
 
   const replaceActiveContent = useCallback((nextContent: string, nextSelectionStart: number, nextSelectionEnd: number) => {
     updateTab(activeTabId, (tab) => tab.readOnly ? tab : {
@@ -1742,11 +1830,21 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         ) : (
           <div className={`notepad-editor-wrap ${wrapEnabled ? 'wrapped' : ''}`}>
             <div ref={lineNumbersRef} className="notepad-line-numbers" aria-hidden="true">
-              {Array.from({ length: lineCount }, (_, index) => (
-                <span key={index + 1} className={cursorLine === index + 1 ? 'active' : ''}>{index + 1}</span>
+              {lineNumberRows.map((row) => (
+                <span key={row.key} className={row.active ? 'active' : ''}>
+                  {row.lineNumber}
+                </span>
               ))}
             </div>
             <div className="notepad-editor-container">
+              <textarea
+                ref={lineHeightMeasureRef}
+                className="notepad-line-height-measure"
+                tabIndex={-1}
+                readOnly
+                aria-hidden="true"
+                wrap="soft"
+              />
               <pre ref={highlightRef} className="notepad-highlight-layer" aria-hidden="true">
                 <code dangerouslySetInnerHTML={{ __html: `${highlightedHtml}\n` }} />
               </pre>

@@ -187,10 +187,19 @@ interface TerminalTitlebarMenuState {
   y: number;
 }
 
+interface DesktopWindowTitlebarClickState {
+  windowId: string;
+  timestamp: number;
+  x: number;
+  y: number;
+}
+
 const windowEdgePadding = 14;
 const windowDockSafeArea = 92;
 const windowMinWidth = 360;
 const windowMinHeight = 260;
+const titlebarDoubleClickDelayMs = 500;
+const titlebarDoubleClickDistance = 8;
 
 const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   files: { x: 132, y: 54, width: 980, height: 580 },
@@ -866,6 +875,7 @@ function getDesktopWallpaperStyle(settings: ShellDeskAppSettings): CSSProperties
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
+  const titlebarClickStateRef = useRef<DesktopWindowTitlebarClickState | null>(null);
   const desktopDragPayloadRef = useRef<DesktopDragPayload | null>(null);
   const windowSequenceRef = useRef(0);
   const terminalToolRequestSequenceRef = useRef(0);
@@ -1340,6 +1350,43 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }));
   };
 
+  const handleWindowTitlebarPointerDown = (event: ReactPointerEvent<HTMLElement>, windowId: string) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const target = event.target instanceof HTMLElement ? event.target : null;
+
+    if (target?.closest('.win-titlebar-controls')) {
+      return;
+    }
+
+    const now = window.performance.now();
+    const previousClick = titlebarClickStateRef.current;
+    const isDoubleClick = Boolean(
+      previousClick &&
+      previousClick.windowId === windowId &&
+      now - previousClick.timestamp <= titlebarDoubleClickDelayMs &&
+      Math.hypot(event.clientX - previousClick.x, event.clientY - previousClick.y) <= titlebarDoubleClickDistance,
+    );
+
+    if (isDoubleClick) {
+      titlebarClickStateRef.current = null;
+      event.preventDefault();
+      toggleWindowMaximize(windowId);
+      return;
+    }
+
+    titlebarClickStateRef.current = {
+      windowId,
+      timestamp: now,
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    startWindowInteraction(event, windowId, 'move');
+  };
+
   const startWindowInteraction = (event: ReactPointerEvent<HTMLElement>, windowId: string, mode: DesktopWindowInteractionMode) => {
     if (event.button !== 0) {
       return;
@@ -1380,6 +1427,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     const deltaX = event.clientX - pointerState.originX;
     const deltaY = event.clientY - pointerState.originY;
+
+    if (pointerState.mode === 'move' && Math.hypot(deltaX, deltaY) > titlebarDoubleClickDistance) {
+      titlebarClickStateRef.current = null;
+    }
+
     const nextFrame = pointerState.mode === 'move'
       ? {
           ...pointerState.startFrame,
@@ -1716,7 +1768,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             >
               <header
                 className="desktop-window-titlebar"
-                onPointerDown={(event) => startWindowInteraction(event, desktopWindow.id, 'move')}
+                onPointerDown={(event) => handleWindowTitlebarPointerDown(event, desktopWindow.id)}
                 onPointerMove={updateWindowInteraction}
                 onPointerUp={finishWindowInteraction}
                 onPointerCancel={finishWindowInteraction}
