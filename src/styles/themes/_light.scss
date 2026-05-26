@@ -292,9 +292,15 @@
   border-color: rgba(16, 32, 51, 0.1);
 }
 
-[data-theme="light"] .settings-row select {
+[data-theme="light"] .settings-row select,
+[data-theme="light"] .settings-row .settings-text-input {
   border-color: rgba(16, 32, 51, 0.14);
   background: var(--surface-input);
+}
+
+[data-theme="light"] .settings-row .settings-text-input:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 [data-theme="light"] .theme-switch {

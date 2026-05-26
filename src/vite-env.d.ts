@@ -75,6 +75,52 @@ interface ShellDeskRemoteDesktopLayout {
   items: ShellDeskDesktopLayoutItem[];
 }
 
+type ShellDeskAiProvider = 'openai' | 'anthropic' | 'openai-compatible' | 'custom';
+type ShellDeskAiApiFormat = 'openai' | 'anthropic';
+
+interface ShellDeskAiModelInfo {
+  id: string;
+  name: string;
+  createdAt?: string;
+  ownedBy?: string;
+}
+
+interface ShellDeskAiModelListRequest {
+  provider: ShellDeskAiProvider;
+  apiFormat: ShellDeskAiApiFormat;
+  apiBaseUrl: string;
+  apiKey: string;
+}
+
+interface ShellDeskAiModelListResult {
+  endpoint: string;
+  models: ShellDeskAiModelInfo[];
+}
+
+interface ShellDeskAiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface ShellDeskAiChatRequest {
+  provider: ShellDeskAiProvider;
+  apiFormat: ShellDeskAiApiFormat;
+  apiBaseUrl: string;
+  apiKey: string;
+  model: string;
+  messages: ShellDeskAiChatMessage[];
+  temperature?: number;
+}
+
+interface ShellDeskAiChatResult {
+  endpoint: string;
+  content: string;
+}
+
+interface ShellDeskAiChatStreamCallbacks {
+  onChunk?: (chunk: string) => void;
+}
+
 interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
   interfaceFont: string;
@@ -87,6 +133,12 @@ interface ShellDeskAppSettings {
   remoteDesktopLayout: ShellDeskRemoteDesktopLayout;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
+  aiProvider: ShellDeskAiProvider;
+  aiProviderName: string;
+  aiApiFormat: ShellDeskAiApiFormat;
+  aiApiBaseUrl: string;
+  aiApiKey: string;
+  aiModel: string;
   terminalFontSize: number;
   terminalFontFamily: string;
   terminalFontWeight: number;
@@ -590,6 +642,12 @@ interface ShellDeskSystemControls {
   listFonts: () => Promise<string[]>;
 }
 
+interface ShellDeskAiControls {
+  listModels: (request: ShellDeskAiModelListRequest) => Promise<ShellDeskAiModelListResult>;
+  chat: (request: ShellDeskAiChatRequest) => Promise<ShellDeskAiChatResult>;
+  chatStream?: (request: ShellDeskAiChatRequest, callbacks?: ShellDeskAiChatStreamCallbacks) => Promise<ShellDeskAiChatResult>;
+}
+
 interface ShellDeskTransferProgress {
   type: 'download' | 'upload';
   fileName: string;
@@ -626,6 +684,7 @@ interface ShellDeskApi {
   logs: ShellDeskLogsControls;
   preferences: ShellDeskPreferenceControls;
   system: ShellDeskSystemControls;
+  ai: ShellDeskAiControls;
   connections: ShellDeskConnectionControls;
   events: ShellDeskEventControls;
 }
