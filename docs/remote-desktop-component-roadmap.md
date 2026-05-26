@@ -1,11 +1,11 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-05-26，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
+截至 2026-05-27，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
 
 本文档包含两组材料：
 
-- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-28`。
-- `remote-desktop-components/`：尚未实现的扩展组件设计文档，当前从 `01` 重新编号到 `24`。
+- `remote-desktop-existing-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-31`。
+- `remote-desktop-components/`：尚未实现的扩展组件设计文档，保留原优先级编号；完成项会迁移到 existing 归档。
 
 组件排序综合考虑：
 
@@ -49,17 +49,18 @@
 | 26 | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-existing-components/26-mongodb-manager.md) | SSH 隧道连接 MongoDB、数据库/集合浏览、文档查询和索引查看 |
 | 27 | Elasticsearch / OpenSearch 面板 | [Elasticsearch / OpenSearch 面板](./remote-desktop-existing-components/27-elasticsearch-opensearch-panel.md) | 集群健康、索引、分片和 `_search` 查询诊断 |
 | 28 | RabbitMQ / Kafka 简易面板 | [RabbitMQ / Kafka 简易面板](./remote-desktop-existing-components/28-message-queue-panel.md) | RabbitMQ 队列、Kafka topic、consumer group lag 和原始诊断输出 |
+| 29 | Git 仓库管理器 | [Git 仓库管理器](./remote-desktop-existing-components/29-git-repository-manager.md) | 远程 Git 状态、变更文件、diff、提交记录、fetch、pull 和 checkout |
+| 30 | Nginx / Apache / Caddy 管理器 | [Nginx / Apache / Caddy 管理器](./remote-desktop-existing-components/30-nginx-apache-caddy-manager.md) | Web 服务检测、站点配置摘要、配置测试、reload 和 restart |
+| 31 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-existing-components/31-minio-s3-browser.md) | 基于远程 `mc` / `aws` CLI 浏览 bucket、prefix、对象，支持删除、下载和复制 URL |
 
 ## 剩余扩展组件优先级
 
-`remote-desktop-components/` 中的待办文档已经从 `01` 开始重新编号。下面的优先级即当前剩余实现顺序。
+`remote-desktop-components/` 中保留的是尚未实现的扩展文档。下面的优先级沿用原始编号；已完成的 `02`、`04`、`21` 已迁移到 existing 归档。
 
 | 优先级 | 组件 | 设计文档 | 简要功能介绍 |
 | --- | --- | --- | --- |
 | 01 | SSH 隧道管理器 | [SSH 隧道管理器](./remote-desktop-components/01-ssh-tunnel-manager.md) | 管理本地转发、远程转发和动态 SOCKS，支持保存常用隧道、启动停止和状态查看。 |
-| 02 | Git 仓库管理器 | [Git 仓库管理器](./remote-desktop-components/02-git-repository-manager.md) | 查看远程目录中的 Git 状态、分支、diff、提交记录，支持 fetch、pull、checkout 等轻量维护操作。 |
 | 03 | 代码部署面板 | [代码部署面板](./remote-desktop-components/03-deployment-panel.md) | 将常用部署流程图形化，支持拉代码、构建、重启服务、回滚、查看执行日志和部署历史。 |
-| 04 | Nginx / Apache 管理器 | [Nginx / Apache 管理器](./remote-desktop-components/04-nginx-apache-manager.md) | 查看站点配置、启停/reload 服务、配置测试、虚拟主机编辑、证书路径和日志入口。 |
 | 05 | 远程搜索器 | [远程搜索器](./remote-desktop-components/05-remote-searcher.md) | 按文件名、内容、扩展名、大小、修改时间搜索远程文件，结果可直接打开或定位目录。 |
 | 06 | 文件差异比较器 | [文件差异比较器](./remote-desktop-components/06-file-diff-viewer.md) | 比较两个远程文件，或比较远程文件与本地缓存版本，适合配置文件变更检查。 |
 | 07 | 备份/同步面板 | [备份/同步面板](./remote-desktop-components/07-backup-sync-panel.md) | 图形化管理 rsync、scp、tar 等备份同步任务，显示历史、体积、耗时和执行结果。 |
@@ -76,15 +77,14 @@
 | 18 | 健康检查卡片生成器 | [健康检查卡片生成器](./remote-desktop-components/18-health-check-report.md) | 自定义检查项并生成服务器健康报告，覆盖系统、网络、磁盘、服务、端口和安全摘要。 |
 | 19 | 会话录制/回放 | [会话录制/回放](./remote-desktop-components/19-session-recorder.md) | 记录终端命令、关键输出、文件操作和诊断步骤，用于审计、复盘或交接。 |
 | 20 | 远程剪贴板 / 临时便签 | [远程剪贴板 / 临时便签](./remote-desktop-components/20-remote-notes-clipboard.md) | 保存当前连接相关的临时命令、路径、账号提示、排查笔记和待办事项。 |
-| 21 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/21-minio-s3-browser.md) | 浏览对象存储 bucket 和对象，支持上传、下载、删除、预签名链接和基础元信息查看。 |
 | 22 | 正则 / 文本处理工具箱 | [正则 / 文本处理工具箱](./remote-desktop-components/22-text-processing-toolbox.md) | 图形化封装 grep、sed、awk、jq 等文本处理能力，用于日志分析、配置提取和批量转换。 |
 | 23 | Hosts / DNS 工具 | [Hosts / DNS 工具](./remote-desktop-components/23-hosts-dns-tool.md) | 专注 hosts 和 DNS 解析诊断，支持解析链路检查、hosts 修改、DNS 服务器测试和缓存提示。 |
 | 24 | 远程桌面启动器 | [远程桌面启动器](./remote-desktop-components/24-remote-desktop-launcher.md) | 作为连接后的工作台首页，展示最近文件、最近命令、常用服务、常用路径和告警摘要。 |
 
 ## 分阶段建议
 
-下一阶段优先做 `01-10`：这些组件补齐开发、部署、站点维护、搜索、备份和多主机执行能力，能直接建立远程工作台的日常操作闭环。
+下一阶段优先做剩余 `01-10`：这些组件补齐隧道、部署、搜索、备份和多主机执行能力，能直接建立远程工作台的日常操作闭环。
 
 随后推进 `11-20`：重点增强证书、环境变量、结构化配置、授权密钥、权限、压缩包、批量文件操作、健康报告和会话审计，让安全与配置维护更完整。
 
-最后推进 `21-24`：覆盖对象存储、文本处理、Hosts/DNS 和工作台首页体验，适合作为后续插件化生态的候选组件。
+最后推进剩余 `22-24`：覆盖文本处理、Hosts/DNS 和工作台首页体验，适合作为后续插件化生态的候选组件。

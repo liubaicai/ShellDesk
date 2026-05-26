@@ -85,9 +85,9 @@ interface GitCommitSummary {
 
 ## IPC 与代码落点
 
-首版可复用 `runCommand`。为了复用路径选择，可和文件管理器增加“在 Git 管理器中打开”入口。
+首版复用 `runCommand`，不新增主进程 IPC。路径、分支和文件参数在渲染进程构造命令前校验并分别使用 POSIX shell / PowerShell 引号处理。
 
-建议文件：
+已实现文件：
 
 - `src/components/remote-desktop/RemoteGitManager.tsx`
 - `src/components/remote-desktop/gitUtils.ts`
@@ -95,16 +95,17 @@ interface GitCommitSummary {
 - `src/components/remote-desktop/index.ts`
 - `src/RemoteDesktopShell.tsx`
 - `src/styles/index.scss`
+- `src/assets/desktop-icons/git-manager.png`
 
 ## 开发计划
 
-1. 接入桌面入口和路径输入。
-2. 实现仓库检测、根目录解析和状态展示。
-3. 实现变更文件列表和 diff 查看。
-4. 实现提交历史列表。
-5. 实现 fetch、pull、checkout。
-6. 增加文件管理器跳转入口。
-7. 完成错误状态、空状态、浅色主题。
+1. 已接入远程桌面入口、窗口尺寸和图标。
+2. 已实现仓库检测、根目录解析和状态展示。
+3. 已实现变更文件列表、staged/unstaged diff 查看。
+4. 已实现最近 50 条提交历史列表。
+5. 已实现 fetch、pull --ff-only、checkout 本地分支。
+6. 文件管理器跳转入口保留为后续联动。
+7. 已完成错误状态、空状态、确认弹窗和浅色主题。
 
 ## 验收标准
 

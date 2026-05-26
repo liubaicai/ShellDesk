@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMessageQueuePanel, RemoteMonitor, RemoteMongo, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteScheduledTasks, RemoteSearchCluster, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer } from './components/remote-desktop';
+import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteGitManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMessageQueuePanel, RemoteMonitor, RemoteMongo, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteS3Browser, RemoteScheduledTasks, RemoteSearchCluster, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer, RemoteWebServerManager } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -34,11 +34,14 @@ const desktopApps = [
   { key: 'network-diagnostics', label: '网络诊断', description: 'Ping / DNS / HTTP / TCP' },
   { key: 'disk-analyzer', label: '磁盘分析', description: '空间占用与大文件定位' },
   { key: 'package-manager', label: '包管理器', description: '系统软件包查询与更新' },
+  { key: 'git-manager', label: 'Git 仓库', description: '分支、变更、Diff 与同步操作' },
+  { key: 'web-server-manager', label: 'Web 服务', description: 'Nginx / Apache / Caddy 配置与 reload' },
   { key: 'scheduled-tasks', label: '计划任务', description: 'Cron / systemd timer / Task Scheduler' },
   { key: 'postgres', label: 'PostgreSQL', description: 'PostgreSQL 数据库管理' },
   { key: 'mongo', label: 'MongoDB', description: 'MongoDB 数据库、集合与文档' },
   { key: 'search-cluster', label: '搜索集群', description: 'Elasticsearch / OpenSearch 巡检' },
   { key: 'message-queue', label: '消息队列', description: 'RabbitMQ / Kafka 状态观察' },
+  { key: 's3-browser', label: 'MinIO / S3', description: 'Bucket、Prefix 与对象浏览' },
   { key: 'security-audit', label: '安全巡检', description: 'SSH、端口、登录与权限检查' },
   { key: 'login-sessions', label: '登录会话', description: '在线用户、成功与失败登录' },
   { key: 'api-debugger', label: 'API 调试', description: '从远程主机发起 HTTP 请求' },
@@ -70,11 +73,14 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'network-diagnostics': new URL('./assets/desktop-icons/network-diagnostics.png', import.meta.url).href,
   'disk-analyzer': new URL('./assets/desktop-icons/disk-analyzer.png', import.meta.url).href,
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
+  'git-manager': new URL('./assets/desktop-icons/git-manager.png', import.meta.url).href,
+  'web-server-manager': new URL('./assets/desktop-icons/web-server-manager.png', import.meta.url).href,
   'scheduled-tasks': new URL('./assets/desktop-icons/scheduled-tasks.png', import.meta.url).href,
   postgres: new URL('./assets/desktop-icons/postgres.png', import.meta.url).href,
   mongo: new URL('./assets/desktop-icons/mongo.png', import.meta.url).href,
   'search-cluster': new URL('./assets/desktop-icons/search-cluster.png', import.meta.url).href,
   'message-queue': new URL('./assets/desktop-icons/message-queue.png', import.meta.url).href,
+  's3-browser': new URL('./assets/desktop-icons/s3-browser.png', import.meta.url).href,
   'security-audit': new URL('./assets/desktop-icons/security-audit.png', import.meta.url).href,
   'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
   'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
@@ -219,11 +225,14 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'network-diagnostics': { x: 120, y: 52, width: 1060, height: 640 },
   'disk-analyzer': { x: 110, y: 46, width: 1120, height: 650 },
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
+  'git-manager': { x: 112, y: 46, width: 1120, height: 660 },
+  'web-server-manager': { x: 112, y: 46, width: 1120, height: 660 },
   'scheduled-tasks': { x: 118, y: 50, width: 1080, height: 650 },
   postgres: { x: 100, y: 40, width: 1080, height: 650 },
   mongo: { x: 96, y: 38, width: 1120, height: 660 },
   'search-cluster': { x: 106, y: 44, width: 1120, height: 650 },
   'message-queue': { x: 112, y: 46, width: 1120, height: 650 },
+  's3-browser': { x: 106, y: 44, width: 1180, height: 680 },
   'security-audit': { x: 116, y: 48, width: 1080, height: 650 },
   'login-sessions': { x: 124, y: 52, width: 1080, height: 640 },
   'api-debugger': { x: 118, y: 46, width: 1080, height: 650 },
@@ -1634,6 +1643,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return <RemotePackageManager connectionId={connection.id} systemType={connection.host.systemType} onOpenTerminal={openTerminalWindow} />;
     }
 
+    if (desktopWindow.appKey === 'git-manager') {
+      return <RemoteGitManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'web-server-manager') {
+      return <RemoteWebServerManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
     if (desktopWindow.appKey === 'scheduled-tasks') {
       return <RemoteScheduledTasks connectionId={connection.id} systemType={connection.host.systemType} />;
     }
@@ -1652,6 +1669,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'message-queue') {
       return <RemoteMessageQueuePanel connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 's3-browser') {
+      return <RemoteS3Browser connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'security-audit') {
