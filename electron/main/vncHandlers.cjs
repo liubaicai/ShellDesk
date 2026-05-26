@@ -78,7 +78,7 @@ function registerVncHandlers(registerIpcHandler) {
       let settled = false;
       const connectTimer = setTimeout(() => {
         settled = true;
-        reject(new Error('SSH 隧道连接 VNC 超时。'));
+        reject(new Error('SSH 通道连接 VNC 超时。'));
       }, connectTimeoutMs);
 
       forwardOut(client, vncHost, vncPort).then((stream) => {

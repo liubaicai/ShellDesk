@@ -2,14 +2,28 @@ const { BrowserWindow } = require('electron');
 const crypto = require('node:crypto');
 const net = require('node:net');
 const { Client } = require('ssh2');
-const { toErrorMessage } = require('./validation.cjs');
+const {
+  createPowerShellCommand,
+  escapeShellSingleQuotedArg,
+  quotePowerShellString,
+  toErrorMessage,
+} = require('./validation.cjs');
 
 const activeConnections = new Map();
 const connectionCleanupHandlers = new Set();
+const clientConnectionMetadata = new WeakMap();
 
 function registerConnectionCleanup(handler) {
   connectionCleanupHandlers.add(handler);
   return () => connectionCleanupHandlers.delete(handler);
+}
+
+function setClientConnectionMetadata(client, metadata) {
+  if (!client || !metadata) {
+    return;
+  }
+
+  clientConnectionMetadata.set(client, { ...metadata });
 }
 
 function connectSshClient(sshConfig) {
@@ -152,7 +166,60 @@ function formatIpv6Address(bytes) {
   return parts.join(':');
 }
 
-function forwardOut(client, destinationHost, destinationPort, sourcePort = randomSourcePort()) {
+function createUnixTcpRelayCommand(host, port) {
+  const hostArg = escapeShellSingleQuotedArg(host);
+  const portArg = escapeShellSingleQuotedArg(String(port));
+  const script = `
+host=${hostArg}
+port=${portArg}
+if command -v nc >/dev/null 2>&1; then
+  exec nc "$host" "$port"
+fi
+if command -v ncat >/dev/null 2>&1; then
+  exec ncat "$host" "$port"
+fi
+if command -v socat >/dev/null 2>&1; then
+  exec socat - "TCP:\${host}:$port"
+fi
+if command -v bash >/dev/null 2>&1; then
+  exec bash -c 'exec 3<>"/dev/tcp/$1/$2"; cat <&3 & cat >&3; wait' sh "$host" "$port"
+fi
+printf '%s\\n' 'ShellDesk: SSH TCP forwarding failed and no remote TCP relay command was found. Install nc, ncat, socat, or enable Bash /dev/tcp.' >&2
+exit 127
+`;
+
+  return `sh -lc ${escapeShellSingleQuotedArg(script)}`;
+}
+
+function createWindowsTcpRelayCommand(host, port) {
+  return createPowerShellCommand(`
+$hostName = ${quotePowerShellString(host)}
+$port = ${Number(port)}
+$client = [System.Net.Sockets.TcpClient]::new()
+try {
+  $client.Connect($hostName, $port)
+  $network = $client.GetStream()
+  $stdin = [Console]::OpenStandardInput()
+  $stdout = [Console]::OpenStandardOutput()
+  $toRemote = $stdin.CopyToAsync($network)
+  $fromRemote = $network.CopyToAsync($stdout)
+  [System.Threading.Tasks.Task]::WaitAny(@($toRemote, $fromRemote)) | Out-Null
+} finally {
+  try { $client.Close() } catch {}
+}
+`);
+}
+
+function markTransport(stream, transport, details = {}) {
+  Object.defineProperties(stream, {
+    shellDeskTransport: { value: transport, enumerable: false },
+    shellDeskTransportDetails: { value: details, enumerable: false },
+  });
+
+  return stream;
+}
+
+function openSshTcpStream(client, destinationHost, destinationPort, sourcePort) {
   return new Promise((resolve, reject) => {
     try {
       client.forwardOut('127.0.0.1', sourcePort, destinationHost, destinationPort, (error, stream) => {
@@ -167,6 +234,82 @@ function forwardOut(client, destinationHost, destinationPort, sourcePort = rando
       reject(error);
     }
   });
+}
+
+function openExecTcpRelayStream(client, destinationHost, destinationPort, tunnelError) {
+  const metadata = clientConnectionMetadata.get(client) || {};
+  const command = metadata.systemType === 'windows'
+    ? createWindowsTcpRelayCommand(destinationHost, destinationPort)
+    : createUnixTcpRelayCommand(destinationHost, destinationPort);
+
+  return new Promise((resolve, reject) => {
+    try {
+      client.exec(command, (error, stream) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        const stderrChunks = [];
+        let stderrLength = 0;
+        let settled = false;
+
+        const getStderr = () => Buffer.concat(stderrChunks).toString('utf8').trim();
+
+        const finish = (callback) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(readyTimer);
+          callback();
+        };
+
+        const readyTimer = setTimeout(() => {
+          finish(() => {
+            resolve(markTransport(stream, 'ssh-exec', {
+              tunnelError,
+              getStderr,
+            }));
+          });
+        }, 50);
+
+        stream.on('error', (streamError) => {
+          finish(() => reject(streamError));
+        });
+        stream.once('close', (code) => {
+          finish(() => reject(new Error(getStderr() || `远程 TCP 代理已退出，退出码 ${code ?? 'unknown'}。`)));
+        });
+        stream.stderr.on('data', (chunk) => {
+          if (stderrLength >= 8192) {
+            return;
+          }
+
+          const buffer = Buffer.from(chunk);
+          stderrLength += buffer.length;
+          stderrChunks.push(buffer);
+        });
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function forwardOut(client, destinationHost, destinationPort, sourcePort = randomSourcePort()) {
+  try {
+    const stream = await openSshTcpStream(client, destinationHost, destinationPort, sourcePort);
+    return markTransport(stream, 'ssh-tunnel');
+  } catch (tunnelError) {
+    console.info(`[shelldesk] SSH TCP forwarding failed for ${destinationHost}:${destinationPort}, trying exec relay: ${toErrorMessage(tunnelError)}`);
+
+    try {
+      return await openExecTcpRelayStream(client, destinationHost, destinationPort, tunnelError);
+    } catch (relayError) {
+      throw new Error(`SSH TCP 转发失败，远程 TCP 代理也无法启动：${toErrorMessage(relayError)}。请确认服务器允许 TCP 转发，或远端安装 nc/ncat/socat。原始转发错误：${toErrorMessage(tunnelError)}`);
+    }
+  }
 }
 
 async function handleSocksClient(client, socket) {
@@ -376,5 +519,6 @@ module.exports = {
   forwardOut,
   getActiveConnection,
   registerConnectionCleanup,
+  setClientConnectionMetadata,
   toConnectionInfo,
 };

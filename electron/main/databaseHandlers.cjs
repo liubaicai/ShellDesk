@@ -21,6 +21,34 @@ function registerDatabaseHandlers(registerIpcHandler) {
     return forwardOut(client, host, port);
   }
 
+  async function createMysqlConnection(activeConnection, config) {
+    const stream = await createMysqlTunnelStream(activeConnection.client, config.host, config.port);
+
+    try {
+      const connection = await mysql.createConnection({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        stream,
+        connectTimeout: 15000,
+        charset: 'utf8mb4',
+      });
+
+      return { connection, transport: stream.shellDeskTransport || 'ssh-tunnel' };
+    } catch (error) {
+      stream.destroy();
+      const relayStderr = stream.shellDeskTransportDetails?.getStderr?.();
+
+      if (relayStderr) {
+        throw new Error(`MySQL 连接失败：${relayStderr}`);
+      }
+
+      throw error;
+    }
+  }
+
   registerIpcHandler('connection:mysql-connect', async (_event, connectionId, rawConfig) => {
     const activeConnection = getActiveConnection(connectionId);
 
@@ -43,26 +71,24 @@ function registerDatabaseHandlers(registerIpcHandler) {
     if (existing) {
       try {
         await existing.connection.query('SELECT 1');
-        return { mysqlId, alreadyConnected: true };
+        return { mysqlId, alreadyConnected: true, transport: existing.transport || 'ssh-tunnel' };
       } catch {
         activeMysqlConnections.delete(key);
+        existing.connection.end().catch(() => {});
       }
     }
 
-    const stream = await createMysqlTunnelStream(activeConnection.client, mysqlHost, mysqlPort);
-    const connection = await mysql.createConnection({
+    const { connection, transport } = await createMysqlConnection(activeConnection, {
       host: mysqlHost,
       user: mysqlUser,
       password: mysqlPassword,
       database: mysqlDatabase,
-      stream,
-      connectTimeout: 15000,
-      charset: 'utf8mb4',
+      port: mysqlPort,
     });
 
-    activeMysqlConnections.set(key, { connection, connectionId, mysqlId });
+    activeMysqlConnections.set(key, { connection, connectionId, mysqlId, transport });
 
-    return { mysqlId };
+    return { mysqlId, transport };
   });
 
   registerIpcHandler('connection:mysql-disconnect', async (_event, connectionId, rawMysqlId) => {

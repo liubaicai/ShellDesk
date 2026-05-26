@@ -305,7 +305,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
               <span className="mongo-connect-mark">MDB</span>
               <div>
                 <h3>MongoDB 管理器</h3>
-                <p>通过当前 SSH 连接建立隧道，浏览数据库、集合、文档和索引。</p>
+                <p>通过当前 SSH 通道浏览数据库、集合、文档和索引。</p>
               </div>
             </div>
 

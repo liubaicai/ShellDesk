@@ -554,7 +554,7 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
             <span className="redis-connect-mark">R</span>
             <div>
               <h3>连接 Redis 数据库</h3>
-              <p className="redis-connect-hint">通过 SSH 隧道访问远程 Redis 实例</p>
+              <p className="redis-connect-hint">通过 SSH 通道访问远程 Redis 实例</p>
             </div>
           </div>
           {errorMessage ? <div className="redis-error-banner">{errorMessage}</div> : null}
@@ -581,7 +581,7 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
           <div className="redis-tunnel-note">
             <span>连接目标</span>
             <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort} · DB {parseInt(dbNum, 10) || 0}</strong>
-            <em>TLS 由远端 Redis 监听策略决定，当前流量经 SSH 转发。</em>
+            <em>TLS 由远端 Redis 监听策略决定，转发失败时会自动尝试远程 TCP 代理。</em>
           </div>
           <button type="submit" className="redis-connect-btn" disabled={status === 'connecting'}>
             {status === 'connecting' ? '连接中...' : '连接 Redis'}

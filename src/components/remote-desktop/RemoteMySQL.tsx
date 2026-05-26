@@ -383,7 +383,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       setDbTables(nextTables);
       setMessage({
         type: 'success',
-        text: `已通过 SSH 隧道连接到 ${user || 'root'}@${host || '127.0.0.1'}:${parseInt(port, 10) || defaultPort}。`,
+        text: `已通过 ${result.transport === 'ssh-exec' ? '远程 TCP 代理' : 'SSH 隧道'}连接到 ${user || 'root'}@${host || '127.0.0.1'}:${parseInt(port, 10) || defaultPort}。`,
       });
     } catch (error) {
       setStatus('error');
@@ -820,9 +820,9 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
             />
           </label>
           <div className="mysql-tunnel-note">
-            <span>SSH 隧道</span>
+            <span>SSH 通道</span>
             <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort}</strong>
-            <em>SSL 配置由远端数据库策略决定</em>
+            <em>转发失败时会自动尝试远程 TCP 代理</em>
           </div>
           <button
             type="submit"

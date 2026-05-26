@@ -6,6 +6,7 @@ const {
   connectSshClient,
   createSocksProxy,
   getActiveConnection,
+  setClientConnectionMetadata,
   toConnectionInfo,
 } = require('./connectionManager.cjs');
 const { detectRemoteSystem } = require('./remoteConnectionHandlers.cjs');
@@ -25,6 +26,7 @@ function registerConnectionHandlers(registerIpcHandler) {
       } catch (systemError) {
         console.info(`[shelldesk] remote system detection failed: ${toErrorMessage(systemError)}`);
       }
+      setClientConnectionMetadata(client, { systemType: displayHost.systemType });
       const { server, port } = await createSocksProxy(client);
       const id = crypto.randomUUID();
       const partition = `shelldesk-${id}`;

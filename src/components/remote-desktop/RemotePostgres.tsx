@@ -279,7 +279,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
               <span className="postgres-connect-mark">PG</span>
               <div>
                 <h3>连接 PostgreSQL</h3>
-                <p>通过当前 SSH 连接建立隧道，默认连接 127.0.0.1:5432。</p>
+                <p>通过当前 SSH 通道访问远程 PostgreSQL，默认连接 127.0.0.1:5432。</p>
               </div>
             </div>
             {error ? <div className="postgres-message error">{error}</div> : null}

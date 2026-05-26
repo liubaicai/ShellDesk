@@ -420,7 +420,7 @@ interface ShellDeskConnectionControls {
   getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
   getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;
   runCommand: (connectionId: string, command: string, stdin?: string) => Promise<{ stdout: string; stderr: string; code: number }>;
-  mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<{ mysqlId: string; alreadyConnected?: boolean }>;
+  mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<ShellDeskMysqlConnectResult>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
   mysqlTables: (connectionId: string, mysqlId: string, database: string) => Promise<string[]>;
@@ -486,6 +486,14 @@ interface ShellDeskMysqlConnectConfig {
   password?: string;
   database?: string;
   mysqlId?: string;
+}
+
+type ShellDeskMysqlTransport = 'ssh-tunnel' | 'ssh-exec';
+
+interface ShellDeskMysqlConnectResult {
+  mysqlId: string;
+  alreadyConnected?: boolean;
+  transport?: ShellDeskMysqlTransport;
 }
 
 interface ShellDeskMysqlColumn {

@@ -456,7 +456,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         clearScreen();
         setStatus('error');
         setFailureKind('timeout');
-        setErrorMessage('SSH 隧道已打开，但 noVNC 没有完成 RFB 握手。请确认 VNC 密码、安全类型和目标服务状态。');
+        setErrorMessage('SSH 通道已打开，但 noVNC 没有完成 RFB 握手。请确认 VNC 密码、安全类型和目标服务状态。');
         appendDiagnostic('rfb', 'RFB 握手等待超过 25 秒。', 'error');
         void stopProxy(nextVncId);
       }, 25000);
@@ -662,12 +662,12 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       const duration = formatDuration(performance.now() - probeStartedAt);
       setLatencyLabel(`探测 ${duration}`);
       setStatus('idle');
-      appendDiagnostic('probe', `隧道检测成功：${formatVncProbeResult(probe)}，耗时 ${duration}。`, 'success');
+      appendDiagnostic('probe', `通道检测成功：${formatVncProbeResult(probe)}，耗时 ${duration}。`, 'success');
     } catch (error) {
       setStatus('error');
       setFailureKind('target');
-      setErrorMessage(`VNC 隧道检测失败：${getErrorMessage(error)}`);
-      appendDiagnostic('probe', `隧道检测失败：${getErrorMessage(error)}`, 'error');
+      setErrorMessage(`VNC 通道检测失败：${getErrorMessage(error)}`);
+      appendDiagnostic('probe', `通道检测失败：${getErrorMessage(error)}`, 'error');
     }
   }, [api, appendDiagnostic, connectionId, host, isTargetLocked, port]);
 
@@ -931,7 +931,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       <form className={`vnc-toolbar ${isConnected ? 'compact' : ''}`} onSubmit={handleSubmit}>
         {isConnected ? (
           <div className="vnc-connected-target">
-            <span>SSH 隧道</span>
+            <span>SSH 通道</span>
             <strong title={desktopName || targetLabel}>{desktopName || targetLabel}</strong>
             <em>{targetLabel}</em>
           </div>
@@ -1032,7 +1032,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
             <div className="vnc-stage-overlay">
               <strong>{status === 'error' ? failureCopy.title : getVncStatusLabel(status)}</strong>
               {status === 'error' && failureCopy.detail ? <span>{failureCopy.detail}</span> : null}
-              <small>SSH 隧道 · {targetLabel}</small>
+              <small>SSH 通道 · {targetLabel}</small>
               {!isBusy ? (
                 <div className="vnc-overlay-actions">
                   <button type="button" className="vnc-control-btn primary" onClick={() => void connectVnc()}>
@@ -1048,7 +1048,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           <footer className="vnc-statusbar">
             <span className={`vnc-status-dot ${isConnected ? 'online' : ''}`} aria-hidden="true" />
             <strong>{getVncStatusLabel(status)}</strong>
-            <span>{desktopName || `SSH 隧道 · ${targetLabel}`}</span>
+            <span>{desktopName || `SSH 通道 · ${targetLabel}`}</span>
             {latencyLabel ? <em className="latency">{latencyLabel}</em> : null}
             {latestDiagnostic ? <em title={latestDiagnostic.detail}>{latestDiagnostic.stage}: {latestDiagnostic.detail}</em> : null}
             {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString('zh-CN')}</time> : null}
