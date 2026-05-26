@@ -286,6 +286,76 @@ function evaluateOpenPorts(result: SecurityCommandResult): SecurityCheckResult {
   );
 }
 
+function getProcessCpuValue(line: string) {
+  const linuxMatch = line.match(/^\s*\d+\s+\d+\s+\S+\s+([\d.]+)\s+[\d.]+\s+\S+\s+/);
+  const windowsMatch = line.match(/\bCPU=([\d.]+)/i);
+  const value = linuxMatch?.[1] ?? windowsMatch?.[1];
+  const parsedValue = value ? Number.parseFloat(value) : Number.NaN;
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function getProcessMemoryValue(line: string) {
+  const linuxMatch = line.match(/^\s*\d+\s+\d+\s+\S+\s+[\d.]+\s+([\d.]+)\s+\S+\s+/);
+  const windowsMatch = line.match(/\bWS_MB=([\d.]+)/i);
+  const value = linuxMatch?.[1] ?? windowsMatch?.[1];
+  const parsedValue = value ? Number.parseFloat(value) : Number.NaN;
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function isSuspiciousProcessLine(line: string) {
+  return /(xmrig|kinsing|kdevtmpfsi|cryptonight|masscan|\/tmp\/|\/var\/tmp\/|\/dev\/shm\/|\/run\/user\/\d+\/|\\appdata\\local\\temp\\|\\windows\\temp\\|\\users\\public\\|encodedcommand|\s-enc\s|downloadstring|invoke-webrequest|certutil\s+.*-decode|bitsadmin|mshta|regsvr32|rundll32|nc\s+-e|socat\s+.*exec|bash\s+-i|\/dev\/tcp|python\s+-c|perl\s+-e|php\s+-r)/i.test(line);
+}
+
+function evaluateProcessAnalysis(result: SecurityCommandResult): SecurityCheckResult {
+  const outputLines = lines(raw(result));
+  const processLines = outputLines
+    .filter((line) => line.startsWith('PROC:'))
+    .map((line) => line.slice('PROC:'.length).trim())
+    .filter(Boolean);
+  const portLines = outputLines
+    .filter((line) => line.startsWith('PORT_PROC:'))
+    .map((line) => line.slice('PORT_PROC:'.length).trim())
+    .filter(Boolean);
+  const suspiciousLines = processLines.filter(isSuspiciousProcessLine);
+  const highCpuLines = processLines.filter((line) => getProcessCpuValue(line) >= 80);
+  const highMemoryLines = processLines.filter((line) => {
+    const memoryValue = getProcessMemoryValue(line);
+    return /\bWS_MB=/i.test(line) ? memoryValue >= 4096 : memoryValue >= 50;
+  });
+  const riskyPortLines = getPublicHighRiskPortLines(portLines);
+  const severity: SecuritySeverity = suspiciousLines.length
+    ? 'high'
+    : highCpuLines.length || highMemoryLines.length || riskyPortLines.length
+      ? 'medium'
+      : 'info';
+  const status: SecurityStatus = suspiciousLines.length ? 'failed' : severity === 'medium' ? 'warning' : 'passed';
+
+  return createResult(
+    'process-analysis',
+    '进程分析',
+    severity,
+    status,
+    suspiciousLines.length
+      ? `发现 ${suspiciousLines.length} 条可疑进程特征。`
+      : highCpuLines.length || highMemoryLines.length || riskyPortLines.length
+        ? `发现 ${highCpuLines.length + highMemoryLines.length + riskyPortLines.length} 条需要复核的进程/端口线索。`
+        : `采样 ${processLines.length} 个进程，未发现明显异常进程特征。`,
+    [
+      processLines.length ? `进程采样: ${processLines.length} 条。` : '未读取到进程采样。',
+      suspiciousLines.length ? `可疑进程: ${suspiciousLines.slice(0, 8).join(' | ')}` : '未命中常见挖矿、临时目录执行、反弹 Shell 或高风险脚本特征。',
+      highCpuLines.length ? `高 CPU: ${highCpuLines.slice(0, 6).join(' | ')}` : '未发现单进程 CPU 采样超过 80%。',
+      highMemoryLines.length ? `高内存: ${highMemoryLines.slice(0, 6).join(' | ')}` : '未发现明显高内存进程采样。',
+      riskyPortLines.length ? `公网高敏感端口进程: ${riskyPortLines.slice(0, 6).join(' | ')}` : '未发现公网高敏感端口与进程采样联动异常。',
+    ],
+    status === 'passed'
+      ? ['保持基线进程清单，服务变更后复查进程路径、启动参数和监听端口。']
+      : ['优先核验可疑进程的可执行路径、父进程、启动时间和文件签名/包来源。', '不要直接结束业务进程；先确认服务归属、保留现场输出，并结合进程管理器查看端口和命令行。'],
+    result,
+  );
+}
+
 function evaluateFirewallExposure(result: SecurityCommandResult): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const provider = outputLines.find((line) => line.startsWith('FIREWALL_PROVIDER:'))?.slice('FIREWALL_PROVIDER:'.length) ?? 'unknown';
@@ -476,6 +546,21 @@ fi
 `;
 }
 
+function linuxProcessAnalysisCommand() {
+  return `
+if command -v ps >/dev/null 2>&1; then
+  ps -eo pid=,ppid=,user=,pcpu=,pmem=,stat=,args= --sort=-pcpu 2>/dev/null | head -120 | sed 's/^/PROC:/'
+else
+  printf 'PROCESS:ps unavailable\\n'
+fi
+if command -v ss >/dev/null 2>&1; then
+  ss -H -tunlp 2>/dev/null | head -100 | sed 's/^/PORT_PROC:/'
+elif command -v netstat >/dev/null 2>&1; then
+  netstat -tunlp 2>/dev/null | head -100 | sed 's/^/PORT_PROC:/'
+fi
+`;
+}
+
 function linuxFirewallExposureCommand() {
   return `
 if command -v ufw >/dev/null 2>&1; then
@@ -592,6 +677,25 @@ Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object
 `);
 }
 
+function windowsProcessAnalysisCommand() {
+  return powershellCommand(`
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Sort-Object -Property WorkingSetSize -Descending |
+  Select-Object -First 120 |
+  ForEach-Object {
+    $path = if ($_.ExecutablePath) { $_.ExecutablePath } else { "-" }
+    $command = if ($_.CommandLine) { ($_.CommandLine -replace "\\s+", " ").Trim() } else { $_.Name }
+    $workingSetMb = if ($_.WorkingSetSize) { [math]::Round($_.WorkingSetSize / 1MB, 1) } else { 0 }
+    "PROC:PID=$($_.ProcessId) PPID=$($_.ParentProcessId) Name=$($_.Name) WS_MB=$workingSetMb Path=$path Command=$command"
+  }
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -First 100 |
+  ForEach-Object {
+    "PORT_PROC:LocalPort=$($_.LocalPort) LocalAddress=$($_.LocalAddress) OwningProcess=$($_.OwningProcess)"
+  }
+`);
+}
+
 function windowsFirewallExposureCommand() {
   return powershellCommand(`
 "FIREWALL_PROVIDER:windows"
@@ -671,6 +775,13 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean): Security
       description: '公网监听与高敏感端口摘要。',
       createCommand: isWindowsHost ? windowsPortsCommand : linuxPortsCommand,
       evaluate: evaluateOpenPorts,
+    },
+    {
+      id: 'process-analysis',
+      title: '进程分析',
+      description: '进程路径、命令行、资源占用和监听归属。',
+      createCommand: isWindowsHost ? windowsProcessAnalysisCommand : linuxProcessAnalysisCommand,
+      evaluate: evaluateProcessAnalysis,
     },
     {
       id: 'firewall-exposure',

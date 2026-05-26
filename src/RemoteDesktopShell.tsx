@@ -1533,7 +1533,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'security-audit') {
-      return <RemoteSecurityAudit connectionId={connection.id} systemType={connection.host.systemType} hostLabel={connection.host.name} />;
+      return <RemoteSecurityAudit connectionId={connection.id} settings={settings} systemType={connection.host.systemType} hostLabel={connection.host.name} />;
     }
 
     if (desktopWindow.appKey === 'login-sessions') {

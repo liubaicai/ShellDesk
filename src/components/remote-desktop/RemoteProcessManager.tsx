@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import MarkdownReport from './MarkdownReport';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -344,6 +345,41 @@ function createAiReportDocument(report: string, generatedAt: string, snapshotNot
 function createAiReportFileName() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `shelldesk-process-ai-report-${timestamp}.md`;
+}
+
+function createStreamedTextUpdater(setText: (value: string) => void, fallbackText: string) {
+  let nextText = '';
+  let timerId: number | undefined;
+
+  const doFlush = () => {
+    timerId = undefined;
+    setText(nextText || fallbackText);
+  };
+
+  return {
+    append(chunk: string) {
+      nextText += chunk;
+
+      if (timerId !== undefined) {
+        return;
+      }
+
+      timerId = window.setTimeout(doFlush, 250);
+    },
+    cancel() {
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+        timerId = undefined;
+      }
+    },
+    flush() {
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+
+      doFlush();
+    },
+  };
 }
 
 function getSignalByValue(value: string) {
@@ -1302,6 +1338,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     ];
     const request = createAiChatRequest(settings, messages, 0.1);
     let streamedContent = '';
+    const streamedTextUpdater = createStreamedTextUpdater(setAiReportText, '正在生成报告...');
 
     setAiReportSnapshotNote(snapshotNote);
     setAiReportPhase(aiControls?.chatStream ? 'streaming' : 'requesting');
@@ -1314,11 +1351,14 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
           const result = await aiControls.chatStream(request, {
             onChunk: (chunk) => {
               streamedContent += chunk;
-              setAiReportText(streamedContent || '正在生成报告...');
+              streamedTextUpdater.append(chunk);
             },
           });
+          streamedTextUpdater.flush();
           resultContent = result.content || streamedContent;
         } catch (streamError) {
+          streamedTextUpdater.cancel();
+
           if (streamedContent || !aiControls.chat) {
             throw streamError;
           }
@@ -1837,7 +1877,13 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             {aiReportError ? <div className="proc-alert danger">{aiReportError}</div> : null}
             {aiReportNotice ? <div className="proc-alert success">{aiReportNotice}</div> : null}
 
-            <pre className={`proc-ai-report ${aiReportText ? '' : 'empty'}`} data-i18n-skip>{aiReportText || (isAiReportBusy ? '报告生成中...' : '点击 AI分析 后会在这里显示报告。')}</pre>
+            <MarkdownReport
+              className="proc-ai-report"
+              content={aiReportText}
+              placeholder={isAiReportBusy ? '报告生成中...' : '点击 AI分析 后会在这里显示报告。'}
+              renderMarkdown={!isAiReportBusy}
+              stickToBottom={isAiReportBusy}
+            />
 
             <div className="proc-modal-actions proc-ai-modal-actions">
               <button type="button" className="proc-modal-btn" onClick={() => setAiReportOpen(false)}>关闭</button>
