@@ -367,6 +367,21 @@ interface ShellDeskRemoteDirectoryResult {
   entries: ShellDeskRemoteFileEntry[];
 }
 
+interface ShellDeskRemotePathStat {
+  type: string;
+  size: number;
+  mode: number;
+  owner: number;
+  group: number;
+  modifiedAt: string;
+  accessedAt: string;
+}
+
+interface ShellDeskRemotePathPermissionOptions {
+  mode: number;
+  recursive?: boolean;
+}
+
 interface ShellDeskRemoteStatusReport {
   refreshedAt: string;
   items: Array<{
@@ -444,15 +459,8 @@ interface ShellDeskConnectionControls {
   cancelTransfer: (connectionId: string) => Promise<void>;
   compress: (connectionId: string, sourcePaths: string[], format: string, destPath: string) => Promise<{ format: string; destPath: string }>;
   decompress: (connectionId: string, archivePath: string, destDir?: string) => Promise<{ archivePath: string; destDir: string }>;
-  statPath: (connectionId: string, remotePath: string) => Promise<{
-    type: string;
-    size: number;
-    mode: number;
-    owner: number;
-    group: number;
-    modifiedAt: string;
-    accessedAt: string;
-  }>;
+  statPath: (connectionId: string, remotePath: string) => Promise<ShellDeskRemotePathStat>;
+  setPathPermissions: (connectionId: string, remotePath: string, options: ShellDeskRemotePathPermissionOptions) => Promise<boolean>;
   getStatus: (connectionId: string) => Promise<ShellDeskRemoteStatusReport>;
   getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
   getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;

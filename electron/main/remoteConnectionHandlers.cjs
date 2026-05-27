@@ -12,8 +12,12 @@ const {
   createPowerShellCommand,
   escapeShellSingleQuotedArg,
   quotePowerShellString,
+  readBoolean,
   readBoundedString,
+  readIntegerInRange,
 } = require('./validation.cjs');
+
+const maxRemotePermissionTargets = 5000;
 
 function validateRemotePath(rawPath) {
   const remotePath = typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : '.';
@@ -904,6 +908,119 @@ function statRemotePath(client, remotePath) {
   });
 }
 
+function chmodRemotePath(client, remotePath, mode, recursive) {
+  return new Promise((resolve, reject) => {
+    client.sftp((sftpError, sftp) => {
+      if (sftpError) {
+        reject(sftpError);
+        return;
+      }
+
+      const statPath = (targetPath) => new Promise((resolveStat, rejectStat) => {
+        sftp.stat(targetPath, (statError, attrs) => {
+          if (statError) {
+            rejectStat(statError);
+            return;
+          }
+
+          resolveStat(attrs);
+        });
+      });
+
+      const readDirectory = (targetPath) => new Promise((resolveEntries, rejectEntries) => {
+        sftp.readdir(targetPath, (readError, entries) => {
+          if (readError) {
+            rejectEntries(readError);
+            return;
+          }
+
+          resolveEntries(entries);
+        });
+      });
+
+      const chmodTarget = (targetPath) => new Promise((resolveChmod, rejectChmod) => {
+        const finish = (chmodError) => {
+          if (chmodError) {
+            rejectChmod(chmodError);
+            return;
+          }
+
+          resolveChmod(true);
+        };
+
+        if (typeof sftp.chmod === 'function') {
+          sftp.chmod(targetPath, mode, finish);
+          return;
+        }
+
+        sftp.setstat(targetPath, { mode }, finish);
+      });
+
+      const targets = [];
+      const addTarget = (targetPath) => {
+        if (targets.length >= maxRemotePermissionTargets) {
+          throw new Error(`递归目标超过 ${maxRemotePermissionTargets} 项，请在终端中分批修改。`);
+        }
+
+        targets.push(targetPath);
+      };
+
+      const walk = async (targetPath, entryType) => {
+        addTarget(targetPath);
+
+        if (!recursive || entryType !== 'directory') {
+          return;
+        }
+
+        const entries = await readDirectory(targetPath);
+
+        for (const entry of entries) {
+          if (entry.filename === '.' || entry.filename === '..') {
+            continue;
+          }
+
+          const childPath = joinRemoteChildPath(targetPath, entry.filename);
+          const childType = getSftpEntryType(entry.attrs);
+
+          if (childType === 'directory') {
+            await walk(childPath, childType);
+          } else {
+            addTarget(childPath);
+          }
+        }
+      };
+
+      (async () => {
+        try {
+          const rootAttrs = await statPath(remotePath);
+          await walk(remotePath, getSftpEntryType(rootAttrs));
+
+          for (const targetPath of targets) {
+            await chmodTarget(targetPath);
+          }
+
+          resolve(true);
+        } catch (error) {
+          reject(error);
+        } finally {
+          sftp.end();
+        }
+      })();
+    });
+  });
+}
+
+function readPathPermissionOptions(rawOptions) {
+  if (!rawOptions || typeof rawOptions !== 'object' || Array.isArray(rawOptions)) {
+    throw new Error('权限设置无效。');
+  }
+
+  return {
+    mode: readIntegerInRange(rawOptions.mode, '权限值', 0, 0o777),
+    recursive: readBoolean(rawOptions.recursive, '递归设置', false),
+  };
+}
+
 function countReplacementChars(value) {
   return (value.match(/\uFFFD/g) ?? []).length;
 }
@@ -1271,6 +1388,14 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateRemotePath(rawPath);
     return await statRemotePath(activeConnection.client, remotePath);
+  });
+
+  registerIpcHandler('connection:set-path-permissions', async (_event, connectionId, rawPath, rawOptions) => {
+    const activeConnection = getActiveConnection(connectionId);
+    const remotePath = validateMutableRemotePath(rawPath);
+    const options = readPathPermissionOptions(rawOptions);
+    await chmodRemotePath(activeConnection.client, remotePath, options.mode, options.recursive);
+    return true;
   });
 
   registerIpcHandler('connection:read-file', async (_event, connectionId, rawPath) => {

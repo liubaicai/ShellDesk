@@ -160,6 +160,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
     compress: (connectionId, sourcePaths, format, destPath) => ipcRenderer.invoke('connection:compress', connectionId, sourcePaths, format, destPath),
     decompress: (connectionId, archivePath, destDir) => ipcRenderer.invoke('connection:decompress', connectionId, archivePath, destDir),
     statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),
+    setPathPermissions: (connectionId, remotePath, options) =>
+      ipcRenderer.invoke('connection:set-path-permissions', connectionId, remotePath, options),
     getStatus: (connectionId) => ipcRenderer.invoke('connection:get-status', connectionId),
     getSystemInfo: (connectionId) => ipcRenderer.invoke('connection:get-system-info', connectionId),
     getMetrics: (connectionId) => ipcRenderer.invoke('connection:get-metrics', connectionId),
