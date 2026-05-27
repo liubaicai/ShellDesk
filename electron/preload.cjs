@@ -67,6 +67,11 @@ function getPublicVaultSnapshot() {
 contextBridge.exposeInMainWorld('guiSSH', {
   appName: 'ShellDesk',
   platform: process.platform,
+  app: {
+    getInfo: () => ipcRenderer.invoke('app:get-info'),
+    checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+    openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+  },
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
@@ -105,6 +110,12 @@ contextBridge.exposeInMainWorld('guiSSH', {
     listModels: (request) => ipcRenderer.invoke('ai:list-models', request),
     chat: (request) => ipcRenderer.invoke('ai:chat', request),
     chatStream,
+  },
+  sync: {
+    getConfig: () => ipcRenderer.invoke('sync:get-config'),
+    saveConfig: (config) => ipcRenderer.invoke('sync:save-config', config),
+    testWebDav: (config) => ipcRenderer.invoke('sync:test-webdav', config),
+    runNow: (config) => ipcRenderer.invoke('sync:run-now', config),
   },
   connections: {
     connect: connectHost,

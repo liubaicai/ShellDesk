@@ -20,6 +20,40 @@ interface ShellDeskWindowControls {
   close: () => Promise<void>;
 }
 
+interface ShellDeskAppInfo {
+  name: string;
+  productName: string;
+  version: string;
+  description: string;
+  homepage: string;
+  author: string;
+  platform: NodeJS.Platform;
+  arch: string;
+  isPackaged: boolean;
+}
+
+interface ShellDeskUpdateCheckResult {
+  repository: string;
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseName: string;
+  releaseTag: string;
+  releaseUrl: string;
+  releaseDate: string | null;
+  latestYmlUrl: string;
+  downloadName: string;
+  downloadUrl: string | null;
+  downloadSize: number;
+  checkedAt: string;
+}
+
+interface ShellDeskAppControls {
+  getInfo: () => Promise<ShellDeskAppInfo>;
+  checkForUpdates: () => Promise<ShellDeskUpdateCheckResult>;
+  openExternal: (url: string) => Promise<boolean>;
+}
+
 interface ShellDeskFileControls {
   selectPrivateKeyFile: () => Promise<string>;
   selectPublicKeyFile: () => Promise<string>;
@@ -716,6 +750,70 @@ interface ShellDeskAiControls {
   chatStream?: (request: ShellDeskAiChatRequest, callbacks?: ShellDeskAiChatStreamCallbacks) => Promise<ShellDeskAiChatResult>;
 }
 
+type ShellDeskSyncStatus = 'idle' | 'success' | 'warning' | 'error';
+
+interface ShellDeskSyncPublicConfig {
+  enabled: boolean;
+  provider: 'webdav';
+  webdavUrl: string;
+  webdavUsername: string;
+  webdavRemotePath: string;
+  ignoreCertificateErrors: boolean;
+  intervalMinutes: number;
+  syncOnStartup: boolean;
+  lastSyncAt: string;
+  lastSyncStatus: ShellDeskSyncStatus;
+  lastSyncMessage: string;
+  lastConflictCount: number;
+  deviceId: string;
+  hasWebDavPassword: boolean;
+  hasSyncPassphrase: boolean;
+}
+
+interface ShellDeskSyncConfigInput {
+  enabled: boolean;
+  webdavUrl: string;
+  webdavUsername: string;
+  webdavPassword: string;
+  webdavRemotePath: string;
+  ignoreCertificateErrors: boolean;
+  syncPassphrase: string;
+  intervalMinutes: number;
+  syncOnStartup: boolean;
+}
+
+interface ShellDeskSyncConflict {
+  type: 'host' | 'bookmark' | 'settings';
+  id: string;
+  name: string;
+  reason: string;
+}
+
+interface ShellDeskSyncResult {
+  ok: boolean;
+  syncedAt: string;
+  uploaded: number;
+  downloaded: number;
+  deleted: number;
+  conflictCount: number;
+  conflicts: ShellDeskSyncConflict[];
+  snapshot: ShellDeskVaultSnapshot;
+  config: ShellDeskSyncPublicConfig;
+}
+
+interface ShellDeskWebDavTestResult {
+  ok: boolean;
+  checkedAt: string;
+  message: string;
+}
+
+interface ShellDeskSyncControls {
+  getConfig: () => Promise<ShellDeskSyncPublicConfig>;
+  saveConfig: (config: ShellDeskSyncConfigInput) => Promise<ShellDeskSyncPublicConfig>;
+  testWebDav: (config: ShellDeskSyncConfigInput) => Promise<ShellDeskWebDavTestResult>;
+  runNow: (config?: ShellDeskSyncConfigInput) => Promise<ShellDeskSyncResult>;
+}
+
 interface ShellDeskTransferProgress {
   type: 'download' | 'upload';
   fileName: string;
@@ -746,6 +844,7 @@ interface ShellDeskEventControls {
 interface ShellDeskApi {
   appName: string;
   platform: NodeJS.Platform;
+  app: ShellDeskAppControls;
   window: ShellDeskWindowControls;
   files: ShellDeskFileControls;
   vault: ShellDeskVaultControls;
@@ -753,6 +852,7 @@ interface ShellDeskApi {
   preferences: ShellDeskPreferenceControls;
   system: ShellDeskSystemControls;
   ai: ShellDeskAiControls;
+  sync: ShellDeskSyncControls;
   connections: ShellDeskConnectionControls;
   events: ShellDeskEventControls;
 }

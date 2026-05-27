@@ -130,6 +130,10 @@
   color: var(--text);
 }
 
+.settings-section-nav-about {
+  margin-top: auto;
+}
+
 .settings-content {
   min-height: 0;
   overflow: auto;
@@ -324,6 +328,170 @@
 
 .settings-error-text {
   color: var(--danger-text-soft) !important;
+}
+
+.settings-about-section {
+  margin-bottom: 18px;
+}
+
+.settings-about-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  max-width: 800px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 62%),
+    var(--surface-soft);
+}
+
+.settings-about-hero img {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+}
+
+.settings-about-hero span {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.settings-about-hero strong {
+  color: var(--text);
+  font-size: 25px;
+  font-weight: 880;
+  line-height: 1.1;
+}
+
+.settings-about-hero small {
+  max-width: 680px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.settings-link-button {
+  max-width: min(360px, 42vw);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 760;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-link-button:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.settings-update-status {
+  color: var(--muted);
+}
+
+.settings-update-status.available {
+  color: var(--accent) !important;
+}
+
+.settings-update-status.success {
+  color: var(--text-success) !important;
+}
+
+.settings-update-status.error {
+  color: var(--danger-text-soft) !important;
+}
+
+[data-theme="light"] .settings-update-status.success {
+  color: #157347 !important;
+}
+
+.settings-sync-card .settings-sync-input-row {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 460px);
+}
+
+.settings-sync-status {
+  color: var(--muted);
+}
+
+.settings-sync-status.success {
+  color: var(--text-success) !important;
+}
+
+.settings-sync-status.warning {
+  color: var(--accent) !important;
+}
+
+.settings-sync-status.error {
+  color: var(--danger-text-soft) !important;
+}
+
+[data-theme="light"] .settings-sync-status.success {
+  color: #157347 !important;
+}
+
+.settings-sync-actions-row {
+  align-items: start;
+}
+
+.settings-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-sync-actions .command-button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.settings-sync-conflicts {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--danger-soft);
+  color: var(--text);
+}
+
+.settings-sync-conflicts > strong {
+  color: var(--danger-text-soft);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.settings-sync-conflicts div {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid color-mix(in srgb, var(--danger-border) 68%, transparent);
+  padding-top: 8px;
+}
+
+.settings-sync-conflicts span {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 760;
+}
+
+.settings-sync-conflicts small {
+  color: var(--danger-text-soft);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.45;
 }
 
 .terminal-theme-row {
@@ -677,9 +845,14 @@ button:disabled {
     border-bottom: 1px solid var(--border);
   }
 
+  .settings-section-nav-about {
+    margin-top: 0;
+  }
+
   .settings-row,
   .desktop-wallpaper-row,
-  .ai-model-row {
+  .ai-model-row,
+  .settings-sync-card .settings-sync-input-row {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
@@ -688,6 +861,24 @@ button:disabled {
   .settings-row .settings-text-input {
     width: 100%;
     min-width: 0;
+  }
+
+  .settings-about-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-about-hero img {
+    width: 68px;
+    height: 68px;
+  }
+
+  .settings-link-button {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .settings-sync-actions {
+    justify-content: flex-start;
   }
 
   .desktop-wallpaper-control {
