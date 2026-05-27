@@ -49,7 +49,7 @@
 | 26 | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-existing-components/26-mongodb-manager.md) | SSH 隧道连接 MongoDB、数据库/集合浏览、文档查询和索引查看 |
 | 27 | Elasticsearch / OpenSearch 面板 | [Elasticsearch / OpenSearch 面板](./remote-desktop-existing-components/27-elasticsearch-opensearch-panel.md) | 集群健康、索引、分片和 `_search` 查询诊断 |
 | 28 | RabbitMQ / Kafka 简易面板 | [RabbitMQ / Kafka 简易面板](./remote-desktop-existing-components/28-message-queue-panel.md) | RabbitMQ 队列、Kafka topic、consumer group lag 和原始诊断输出 |
-| 29 | Git 仓库管理器 | [Git 仓库管理器](./remote-desktop-existing-components/29-git-repository-manager.md) | 远程 Git 状态、变更文件、diff、提交记录、fetch、pull 和 checkout |
+| 29 | Git 仓库管理器 | [Git 仓库管理器](./remote-desktop-existing-components/29-git-repository-manager.md) | 远程 Git 状态、变更文件、diff、提交记录、暂存/提交、fetch、pull、push 和 checkout |
 | 30 | Nginx / Apache / Caddy 管理器 | [Nginx / Apache / Caddy 管理器](./remote-desktop-existing-components/30-nginx-apache-caddy-manager.md) | Web 服务检测、站点配置摘要、配置测试、reload 和 restart |
 | 31 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-existing-components/31-minio-s3-browser.md) | 基于远程 `mc` / `aws` CLI 浏览 bucket、prefix、对象，支持删除、下载和复制 URL |
 

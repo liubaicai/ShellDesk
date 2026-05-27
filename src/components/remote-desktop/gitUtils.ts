@@ -39,7 +39,8 @@ export interface GitRepositorySnapshot {
   rawOutput: string;
 }
 
-export type GitAction = 'fetch' | 'pull' | 'checkout';
+export type GitAction = 'fetch' | 'pull' | 'push' | 'checkout';
+export type GitStageMode = 'stage' | 'unstage';
 
 const sectionNames = ['root', 'status', 'branches', 'log', 'remotes', 'error'] as const;
 type GitSectionName = (typeof sectionNames)[number];
@@ -60,6 +61,20 @@ function validateText(value: string, label: string, maxLength = 520) {
   }
 
   return trimmedValue;
+}
+
+function validateGitCommitMessage(value: string) {
+  const normalizedValue = value.replace(/\r\n?/g, '\n').trim();
+
+  if (!normalizedValue) {
+    throw new Error('请输入提交信息。');
+  }
+
+  if (normalizedValue.length > 2000 || normalizedValue.includes('\u0000')) {
+    throw new Error('提交信息无效。');
+  }
+
+  return normalizedValue;
 }
 
 export function validateGitPath(value: string) {
@@ -177,7 +192,7 @@ export function createGitActionCommand(path: string, action: GitAction, branch: 
       return powershellStdinCommand(`& git -C ${powershellSingleQuote(repoPath)} checkout ${powershellSingleQuote(safeBranch)}; exit $LASTEXITCODE`);
     }
 
-    const command = action === 'fetch' ? 'fetch --prune' : 'pull --ff-only';
+    const command = action === 'fetch' ? 'fetch --prune' : action === 'push' ? 'push' : 'pull --ff-only';
     return powershellStdinCommand(`& git -C ${powershellSingleQuote(repoPath)} ${command}; exit $LASTEXITCODE`);
   }
 
@@ -188,7 +203,87 @@ export function createGitActionCommand(path: string, action: GitAction, branch: 
   return {
     command: action === 'fetch'
       ? `git -C ${shellSingleQuote(repoPath)} fetch --prune`
+      : action === 'push'
+        ? `git -C ${shellSingleQuote(repoPath)} push`
       : `git -C ${shellSingleQuote(repoPath)} pull --ff-only`,
+  };
+}
+
+export function createGitStageCommand(path: string, filePath: string, mode: GitStageMode, isWindowsHost: boolean): RemoteCommandInput {
+  const repoPath = validateGitPath(path);
+  const targetFile = validateGitFilePath(filePath);
+
+  if (isWindowsHost) {
+    return powershellStdinCommand(`
+$Repo = ${powershellSingleQuote(repoPath)}
+$File = ${powershellSingleQuote(targetFile)}
+${mode === 'stage'
+    ? '& git -C $Repo add -- $File'
+    : `& git -C $Repo reset -- $File 2>$null
+if ($LASTEXITCODE -ne 0) {
+  & git -C $Repo rm -r --cached -- $File
+}`}
+exit $LASTEXITCODE
+`);
+  }
+
+  if (mode === 'stage') {
+    return { command: `git -C ${shellSingleQuote(repoPath)} add -- ${shellSingleQuote(targetFile)}` };
+  }
+
+  return {
+    command: `git -C ${shellSingleQuote(repoPath)} reset -- ${shellSingleQuote(targetFile)} 2>/dev/null || git -C ${shellSingleQuote(repoPath)} rm -r --cached -- ${shellSingleQuote(targetFile)}`,
+  };
+}
+
+export function createGitStageAllCommand(path: string, mode: GitStageMode, isWindowsHost: boolean): RemoteCommandInput {
+  const repoPath = validateGitPath(path);
+
+  if (isWindowsHost) {
+    return powershellStdinCommand(`
+$Repo = ${powershellSingleQuote(repoPath)}
+${mode === 'stage'
+    ? '& git -C $Repo add -A'
+    : `& git -C $Repo reset -- . 2>$null
+if ($LASTEXITCODE -ne 0) {
+  & git -C $Repo rm -r --cached -- .
+}`}
+exit $LASTEXITCODE
+`);
+  }
+
+  if (mode === 'stage') {
+    return { command: `git -C ${shellSingleQuote(repoPath)} add -A` };
+  }
+
+  return {
+    command: `git -C ${shellSingleQuote(repoPath)} reset -- . 2>/dev/null || git -C ${shellSingleQuote(repoPath)} rm -r --cached -- .`,
+  };
+}
+
+export function createGitCommitCommand(path: string, message: string, isWindowsHost: boolean): RemoteCommandInput {
+  const repoPath = validateGitPath(path);
+  const commitMessage = validateGitCommitMessage(message);
+
+  if (isWindowsHost) {
+    return powershellStdinCommand(`
+$Repo = ${powershellSingleQuote(repoPath)}
+$Message = ${powershellSingleQuote(commitMessage)}
+$TempMessageFile = [System.IO.Path]::GetTempFileName()
+try {
+  $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($TempMessageFile, $Message, $Utf8NoBom)
+  & git -C $Repo commit -F $TempMessageFile
+  exit $LASTEXITCODE
+} finally {
+  Remove-Item -LiteralPath $TempMessageFile -Force -ErrorAction SilentlyContinue
+}
+`);
+  }
+
+  return {
+    command: `git -C ${shellSingleQuote(repoPath)} commit -F -`,
+    stdin: `${commitMessage}\n`,
   };
 }
 
