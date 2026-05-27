@@ -621,29 +621,34 @@ button.explorer-row {
   position: fixed;
   top: 50%;
   left: 50%;
-  z-index: 10000;
-  width: min(380px, calc(100vw - 48px));
+  z-index: 10001;
+  display: grid;
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(86vh, 680px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   transform: translate(-50%, -50%);
-  border: 1px solid #d7deea;
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
+  color: var(--text);
 }
 
 .properties-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   padding: 14px 16px;
-  border-bottom: 1px solid #eef2f7;
-  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
 }
 
 .properties-header strong {
   font-size: 14px;
   font-weight: 800;
-  color: #172033;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -652,19 +657,28 @@ button.explorer-row {
 .properties-header button {
   border: 0;
   background: transparent;
-  color: #526178;
+  color: var(--muted-strong);
   cursor: pointer;
   font-size: 16px;
   padding: 4px;
 }
 
+.properties-header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .properties-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
   padding: 14px 16px;
 }
 
 .properties-loading {
   text-align: center;
-  color: #526178;
+  color: var(--muted);
   padding: 16px 0;
   font-size: 12px;
 }
@@ -677,13 +691,13 @@ button.explorer-row {
 .properties-table td {
   padding: 6px 0;
   font-size: 12px;
-  color: #172033;
+  color: var(--text);
   vertical-align: top;
 }
 
 .properties-table td:first-child {
   width: 80px;
-  color: #526178;
+  color: var(--muted);
   font-weight: 700;
 }
 
@@ -692,29 +706,188 @@ button.explorer-row {
   font-size: 11.5px;
 }
 
-.properties-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-top: 1px solid #eef2f7;
-  background: #f8fafc;
+.properties-permission-editor {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
-.properties-close-btn {
+.properties-section-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.permission-mode-field {
+  display: grid;
+  grid-template-columns: 72px 74px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-mode-field input {
+  width: 74px;
   height: 32px;
-  border: 1px solid #cfd8e6;
-  border-radius: 6px;
-  padding: 0 16px;
-  background: #ffffff;
-  color: #172033;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.permission-mode-field input:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.permission-mode-field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.permission-mode-field code {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-grid {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-input);
+  grid-template-columns: 92px repeat(3, minmax(0, 1fr));
+}
+
+.permission-grid > span {
+  display: grid;
+  min-height: 32px;
+  place-items: center;
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.permission-grid > span:first-child {
+  border-left: 0;
+}
+
+.permission-grid-row {
+  display: contents;
+}
+
+.permission-grid-row > strong {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  border-top: 1px solid var(--border);
+  padding: 0 12px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.permission-checkbox {
+  display: grid;
+  min-height: 36px;
+  place-items: center;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.permission-checkbox input,
+.properties-toggle-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.permission-checkbox:has(input:disabled),
+.properties-toggle-row:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.properties-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--muted-strong);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
 }
 
-.properties-close-btn:hover {
-  background: #eaf3ff;
-  border-color: #b0c4e8;
+.properties-error {
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.properties-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.properties-close-btn,
+.properties-save-btn {
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 16px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.properties-close-btn:hover:not(:disabled),
+.properties-save-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.properties-save-btn {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.properties-save-btn:hover:not(:disabled) {
+  background: var(--accent-border);
+  color: var(--text);
+}
+
+.properties-close-btn:disabled,
+.properties-save-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
 }
 
 .explorer-sidebar .sidebar-section-title {

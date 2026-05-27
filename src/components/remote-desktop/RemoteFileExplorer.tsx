@@ -56,6 +56,25 @@ interface ContextMenuState {
   targetEntry: RemoteFileEntry | null;
 }
 
+type PermissionGroupKey = 'owner' | 'group' | 'others';
+type PermissionActionKey = 'read' | 'write' | 'execute';
+
+const PERMISSION_GROUPS: Array<{
+  key: PermissionGroupKey;
+  label: string;
+  bits: Record<PermissionActionKey, number>;
+}> = [
+  { key: 'owner', label: '所有者', bits: { read: 0o400, write: 0o200, execute: 0o100 } },
+  { key: 'group', label: '用户组', bits: { read: 0o040, write: 0o020, execute: 0o010 } },
+  { key: 'others', label: '其他人', bits: { read: 0o004, write: 0o002, execute: 0o001 } },
+];
+
+const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; label: string }> = [
+  { key: 'read', label: '读' },
+  { key: 'write', label: '写' },
+  { key: 'execute', label: '执行' },
+];
+
 export function normalizeWindowsRemotePath(remotePath: string) {
   return remotePath.replace(/\\/g, '/');
 }
@@ -247,18 +266,27 @@ function getOpenActionLabel(entry: RemoteFileEntry) {
 }
 
 function formatMode(mode: number) {
+  const permissionMode = mode & 0o777;
   const perms = [
-    (mode & 0o400) ? 'r' : '-',
-    (mode & 0o200) ? 'w' : '-',
-    (mode & 0o100) ? 'x' : '-',
-    (mode & 0o040) ? 'r' : '-',
-    (mode & 0o020) ? 'w' : '-',
-    (mode & 0o010) ? 'x' : '-',
-    (mode & 0o004) ? 'r' : '-',
-    (mode & 0o002) ? 'w' : '-',
-    (mode & 0o001) ? 'x' : '-',
+    (permissionMode & 0o400) ? 'r' : '-',
+    (permissionMode & 0o200) ? 'w' : '-',
+    (permissionMode & 0o100) ? 'x' : '-',
+    (permissionMode & 0o040) ? 'r' : '-',
+    (permissionMode & 0o020) ? 'w' : '-',
+    (permissionMode & 0o010) ? 'x' : '-',
+    (permissionMode & 0o004) ? 'r' : '-',
+    (permissionMode & 0o002) ? 'w' : '-',
+    (permissionMode & 0o001) ? 'x' : '-',
   ];
   return perms.join('');
+}
+
+function formatOctalMode(mode: number) {
+  return (mode & 0o777).toString(8).padStart(3, '0');
+}
+
+function parseOctalModeDraft(draft: string) {
+  return /^[0-7]{3}$/.test(draft) ? Number.parseInt(draft, 8) : null;
 }
 
 function isValidFileName(name: string, isWindowsHost = false) {
@@ -304,6 +332,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const [propertiesEntry, setPropertiesEntry] = useState<RemoteFileEntry | null>(null);
   const [propertiesData, setPropertiesData] = useState<RemotePathStat | null>(null);
   const [propertiesLoading, setPropertiesLoading] = useState(false);
+  const [permissionDraft, setPermissionDraft] = useState('');
+  const [permissionRecursive, setPermissionRecursive] = useState(false);
+  const [propertiesSaving, setPropertiesSaving] = useState(false);
+  const [propertiesError, setPropertiesError] = useState('');
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [lastClickedName, setLastClickedName] = useState<string | null>(null);
   const [deleteConfirmationEntries, setDeleteConfirmationEntries] = useState<RemoteFileEntry[] | null>(null);
@@ -475,6 +507,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   );
 
   useEffect(() => {
+    if (propertiesEntry) {
+      return;
+    }
+
     if (!isDetailsOpen || selectedEntries.length !== 1 || !primarySelectedEntry || !window.guiSSH?.connections) {
       setPropertiesData(null);
       setPropertiesLoading(false);
@@ -510,7 +546,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     return () => {
       cancelled = true;
     };
-  }, [connectionId, isDetailsOpen, isWindowsHost, primarySelectedEntry, remotePath, selectedEntries.length]);
+  }, [connectionId, isDetailsOpen, isWindowsHost, primarySelectedEntry, propertiesEntry, remotePath, selectedEntries.length]);
 
   const navigateToPath = useCallback((nextPath: string) => {
     const normalizedPath = normalizeRemotePath(nextPath, isWindowsHost);
@@ -587,6 +623,29 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
+
+  const closePropertiesDialog = useCallback(() => {
+    if (propertiesSaving) {
+      return;
+    }
+
+    setPropertiesEntry(null);
+    setPropertiesError('');
+    setPermissionDraft('');
+    setPermissionRecursive(false);
+  }, [propertiesSaving]);
+
+  const updatePermissionBit = useCallback((bit: number, enabled: boolean) => {
+    const baseMode = parseOctalModeDraft(permissionDraft) ?? (propertiesData?.mode ?? 0);
+    const nextMode = enabled ? (baseMode | bit) : (baseMode & ~bit);
+    setPermissionDraft(formatOctalMode(nextMode));
+  }, [permissionDraft, propertiesData]);
+
+  const toggleExecutableDraft = useCallback((enabled: boolean) => {
+    const baseMode = parseOctalModeDraft(permissionDraft) ?? (propertiesData?.mode ?? 0);
+    const nextMode = enabled ? (baseMode | 0o111) : (baseMode & ~0o111);
+    setPermissionDraft(formatOctalMode(nextMode));
+  }, [permissionDraft, propertiesData]);
 
   const handleRowClick = useCallback((entry: RemoteFileEntry, event: ReactMouseEvent) => {
     closeContextMenu();
@@ -782,18 +841,67 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     closeContextMenu();
     setPropertiesEntry(entry);
     setPropertiesData(null);
+    setPropertiesError('');
+    setPermissionDraft('');
+    setPermissionRecursive(false);
     setPropertiesLoading(true);
 
     try {
       const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
       const stat = await window.guiSSH?.connections.statPath(connectionId, entryPath);
       setPropertiesData(stat ?? null);
-    } catch {
+      setPermissionDraft(stat ? formatOctalMode(stat.mode) : '');
+    } catch (error) {
       setPropertiesData(null);
+      setPropertiesError(getErrorMessage(error));
     } finally {
       setPropertiesLoading(false);
     }
   }, [closeContextMenu, connectionId, isWindowsHost, remotePath]);
+
+  const submitPropertiesPermissions = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!propertiesEntry || !propertiesData || propertiesSaving) {
+      return;
+    }
+
+    const nextMode = parseOctalModeDraft(permissionDraft);
+
+    if (nextMode === null) {
+      setPropertiesError('权限值需为 3 位八进制数字。');
+      return;
+    }
+
+    try {
+      setPropertiesSaving(true);
+      setPropertiesError('');
+      const entryPath = joinRemotePath(remotePath, propertiesEntry.name, isWindowsHost);
+      await window.guiSSH?.connections.setPathPermissions(connectionId, entryPath, {
+        mode: nextMode,
+        recursive: propertiesEntry.type === 'directory' && permissionRecursive,
+      });
+      const stat = await window.guiSSH?.connections.statPath(connectionId, entryPath);
+      setPropertiesData(stat ?? null);
+      setPermissionDraft(stat ? formatOctalMode(stat.mode) : formatOctalMode(nextMode));
+      setPermissionRecursive(false);
+      refreshFiles();
+    } catch (error) {
+      setPropertiesError(getErrorMessage(error));
+    } finally {
+      setPropertiesSaving(false);
+    }
+  }, [
+    connectionId,
+    isWindowsHost,
+    permissionDraft,
+    permissionRecursive,
+    propertiesData,
+    propertiesEntry,
+    propertiesSaving,
+    refreshFiles,
+    remotePath,
+  ]);
 
   const downloadFile = useCallback(async (entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -954,6 +1062,18 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     primarySelectedEntry?.type === 'file' &&
     isArchiveFile(primarySelectedEntry.name) &&
     (!isWindowsHost || primarySelectedEntry.name.toLowerCase().endsWith('.zip'));
+  const permissionDraftMode = parseOctalModeDraft(permissionDraft);
+  const originalPermissionMode = propertiesData ? (propertiesData.mode & 0o777) : null;
+  const executableDraftChecked = permissionDraftMode !== null
+    ? (permissionDraftMode & 0o111) !== 0
+    : Boolean(propertiesData && (propertiesData.mode & 0o111));
+  const canSaveProperties = Boolean(
+    propertiesEntry &&
+    propertiesData &&
+    permissionDraftMode !== null &&
+    !propertiesSaving &&
+    (permissionDraftMode !== originalPermissionMode || (propertiesEntry.type === 'directory' && permissionRecursive)),
+  );
 
   const sortIndicator = useCallback((field: SortField) => {
     if (sortField !== field) return '';
@@ -1225,7 +1345,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     <>
                       <div>
                         <dt>权限</dt>
-                        <dd><code>{formatMode(propertiesData.mode)}</code></dd>
+                        <dd><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></dd>
                       </div>
                       <div>
                         <dt>所有者</dt>
@@ -1450,39 +1570,118 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       ) : null}
 
       {propertiesEntry ? createPortal(
-        <>
-          <div className="context-menu-overlay" onClick={() => setPropertiesEntry(null)} />
-          <div className="properties-dialog">
+        <div className="notepad-modal-overlay" role="presentation" onClick={closePropertiesDialog}>
+          <form
+            className="properties-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="explorer-properties-title"
+            onSubmit={submitPropertiesPermissions}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="properties-header">
-              <strong>{propertiesEntry.name}</strong>
-              <button type="button" onClick={() => setPropertiesEntry(null)}>&times;</button>
+              <strong id="explorer-properties-title">{propertiesEntry.name}</strong>
+              <button type="button" onClick={closePropertiesDialog} disabled={propertiesSaving}>&times;</button>
             </div>
             <div className="properties-body">
               {propertiesLoading ? (
                 <div className="properties-loading">正在读取属性...</div>
               ) : (
-                <table className="properties-table">
-                  <tbody>
-                    <tr><td>名称</td><td>{propertiesEntry.name}</td></tr>
-                    <tr><td>类型</td><td>{getFileTypeLabel(propertiesEntry)}</td></tr>
-                    <tr><td>大小</td><td>{propertiesEntry.type === 'directory' ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
-                    <tr><td>修改时间</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
-                    {propertiesData ? (
-                      <>
-                        <tr><td>权限</td><td><code>{formatMode(propertiesData.mode)}</code></td></tr>
-                        <tr><td>所有者</td><td>UID {propertiesData.owner} / GID {propertiesData.group}</td></tr>
-                        <tr><td>访问时间</td><td>{formatDateTime(propertiesData.accessedAt)}</td></tr>
-                      </>
-                    ) : null}
-                  </tbody>
-                </table>
+                <>
+                  <table className="properties-table">
+                    <tbody>
+                      <tr><td>名称</td><td>{propertiesEntry.name}</td></tr>
+                      <tr><td>类型</td><td>{getFileTypeLabel(propertiesEntry)}</td></tr>
+                      <tr><td>大小</td><td>{propertiesEntry.type === 'directory' ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
+                      <tr><td>修改时间</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
+                      {propertiesData ? (
+                        <>
+                          <tr><td>权限</td><td><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></td></tr>
+                          <tr><td>所有者</td><td>UID {propertiesData.owner} / GID {propertiesData.group}</td></tr>
+                          <tr><td>访问时间</td><td>{formatDateTime(propertiesData.accessedAt)}</td></tr>
+                        </>
+                      ) : null}
+                    </tbody>
+                  </table>
+
+                  {propertiesData ? (
+                    <div className="properties-permission-editor">
+                      <div className="properties-section-title">权限</div>
+                      <label className="permission-mode-field">
+                        <span>八进制</span>
+                        <input
+                          value={permissionDraft}
+                          maxLength={3}
+                          inputMode="numeric"
+                          pattern="[0-7]{3}"
+                          onChange={(event) => setPermissionDraft(event.target.value.replace(/[^0-7]/g, '').slice(0, 3))}
+                          disabled={propertiesSaving}
+                          spellCheck={false}
+                        />
+                        <code>{permissionDraftMode !== null ? formatMode(permissionDraftMode) : '---------'}</code>
+                      </label>
+                      <div className="permission-grid" role="group" aria-label="权限位">
+                        <span />
+                        {PERMISSION_ACTIONS.map((action) => (
+                          <span key={action.key}>{action.label}</span>
+                        ))}
+                        {PERMISSION_GROUPS.map((group) => (
+                          <div className="permission-grid-row" key={group.key}>
+                            <strong>{group.label}</strong>
+                            {PERMISSION_ACTIONS.map((action) => {
+                              const bit = group.bits[action.key];
+                              const checked = permissionDraftMode !== null
+                                ? Boolean(permissionDraftMode & bit)
+                                : Boolean(propertiesData.mode & bit);
+
+                              return (
+                                <label key={action.key} className="permission-checkbox" aria-label={`${group.label}${action.label}`} title={`${group.label}${action.label}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) => updatePermissionBit(bit, event.target.checked)}
+                                    disabled={propertiesSaving}
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      <label className="properties-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={executableDraftChecked}
+                          onChange={(event) => toggleExecutableDraft(event.target.checked)}
+                          disabled={propertiesSaving}
+                        />
+                        <span>可执行</span>
+                      </label>
+                      {propertiesEntry.type === 'directory' ? (
+                        <label className="properties-toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={permissionRecursive}
+                            onChange={(event) => setPermissionRecursive(event.target.checked)}
+                            disabled={propertiesSaving}
+                          />
+                          <span>递归应用到子文件和子文件夹</span>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {propertiesError ? <div className="properties-error">{propertiesError}</div> : null}
+                </>
               )}
             </div>
             <div className="properties-footer">
-              <button type="button" className="properties-close-btn" onClick={() => setPropertiesEntry(null)}>确定</button>
+              <button type="button" className="properties-close-btn" onClick={closePropertiesDialog} disabled={propertiesSaving}>取消</button>
+              <button type="submit" className="properties-save-btn" disabled={!canSaveProperties}>
+                {propertiesSaving ? '保存中...' : '保存权限'}
+              </button>
             </div>
-          </div>
-        </>,
+          </form>
+        </div>,
         document.body,
       ) : null}
 
