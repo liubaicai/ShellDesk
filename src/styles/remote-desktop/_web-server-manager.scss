@@ -69,6 +69,7 @@
 .web-service-switch button,
 .web-tabs button,
 .web-confirm-actions button,
+.web-config-panel-head button,
 .web-site-scroll button {
   border: 1px solid var(--web-border);
   border-radius: 6px;
@@ -83,7 +84,8 @@
 .web-toolbar button,
 .web-service-switch button,
 .web-tabs button,
-.web-confirm-actions button {
+.web-confirm-actions button,
+.web-config-panel-head button {
   height: 30px;
   padding: 0 11px;
 }
@@ -93,6 +95,7 @@
 .web-service-switch button.active,
 .web-tabs button:hover:not(:disabled),
 .web-tabs button.active,
+.web-config-panel-head button:hover:not(:disabled),
 .web-confirm-actions button:hover:not(:disabled) {
   border-color: rgba(114, 199, 255, 0.34);
   background: rgba(114, 199, 255, 0.12);
@@ -100,6 +103,8 @@
 }
 
 .web-toolbar button.primary,
+.web-tabs button.primary,
+.web-config-panel-head button,
 .web-confirm-actions button.primary {
   border-color: rgba(114, 199, 255, 0.36);
   background: rgba(114, 199, 255, 0.14);
@@ -116,6 +121,7 @@
 .web-toolbar button:disabled,
 .web-service-switch button:disabled,
 .web-tabs button:disabled,
+.web-config-panel-head button:disabled,
 .web-confirm-actions button:disabled {
   opacity: 0.52;
   cursor: not-allowed;
@@ -361,6 +367,37 @@
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.web-config-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.web-config-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.web-config-panel-head span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--web-muted);
+  font-size: 11px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-config-panel .web-config-output {
+  margin: 0;
 }
 
 .web-empty-state {

@@ -221,7 +221,7 @@ export default function RemoteFilePicker({
         parts.push({ label: remotePath, path: remotePath });
       }
     } else {
-      parts.push({ label: '/', path: '/' });
+      parts.push({ label: '根目录', path: '/' });
       if (remotePath !== '/') {
         const segments = remotePath.split('/').filter(Boolean);
         let current = '';

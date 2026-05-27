@@ -1648,7 +1648,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'web-server-manager') {
-      return <RemoteWebServerManager connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteWebServerManager connectionId={connection.id} systemType={connection.host.systemType} onOpenConfigFile={openNotepadFile} />;
     }
 
     if (desktopWindow.appKey === 'scheduled-tasks') {

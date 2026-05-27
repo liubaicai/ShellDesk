@@ -19,6 +19,7 @@ import {
 interface RemoteWebServerManagerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
+  onOpenConfigFile?: (filePath: string) => void;
 }
 
 type WebTab = 'summary' | 'config' | 'raw';
@@ -58,7 +59,7 @@ function getSiteTitle(site: WebSiteConfigSummary) {
   return site.serverNames[0] || site.filePath.split(/[\\/]/).pop() || site.filePath;
 }
 
-function RemoteWebServerManager({ connectionId, systemType }: RemoteWebServerManagerProps) {
+function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: RemoteWebServerManagerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [snapshot, setSnapshot] = useState<WebServerSnapshot | null>(null);
   const [activeKind, setActiveKind] = useState<WebServerKind>('nginx');
@@ -197,6 +198,18 @@ function RemoteWebServerManager({ connectionId, systemType }: RemoteWebServerMan
     setNotice('已复制配置内容。');
   };
 
+  const openConfigInNotepad = () => {
+    if (!selectedSite) return;
+
+    if (!onOpenConfigFile) {
+      setError('当前窗口无法打开记事本。');
+      return;
+    }
+
+    onOpenConfigFile(selectedSite.filePath);
+    setNotice(`已在记事本打开：${selectedSite.filePath}`);
+  };
+
   return (
     <section className="web-server-manager">
       <header className="web-toolbar">
@@ -248,6 +261,10 @@ function RemoteWebServerManager({ connectionId, systemType }: RemoteWebServerMan
                 type="button"
                 className={selectedSite?.id === site.id ? 'active' : ''}
                 onClick={() => setSelectedSiteId(site.id)}
+                onDoubleClick={() => {
+                  setSelectedSiteId(site.id);
+                  onOpenConfigFile?.(site.filePath);
+                }}
               >
                 <span className={site.enabled ? 'enabled' : 'available'}>{site.enabled ? 'enabled' : 'available'}</span>
                 <strong title={getSiteTitle(site)}>{getSiteTitle(site)}</strong>
@@ -263,6 +280,7 @@ function RemoteWebServerManager({ connectionId, systemType }: RemoteWebServerMan
             <button type="button" className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>摘要</button>
             <button type="button" className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>配置</button>
             <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>命令输出</button>
+            <button type="button" className="primary" onClick={openConfigInNotepad} disabled={!selectedSite}>记事本打开</button>
             <button type="button" onClick={copySiteSummary} disabled={!selectedSite}>复制摘要</button>
             <button type="button" onClick={copyConfig} disabled={!selectedSite}>复制配置</button>
           </nav>
@@ -290,7 +308,13 @@ function RemoteWebServerManager({ connectionId, systemType }: RemoteWebServerMan
           ) : null}
 
           {activeTab === 'config' ? (
-            <pre className="web-config-output">{selectedSite?.rawConfig || '选择站点后显示配置内容。'}</pre>
+            <section className="web-config-panel">
+              <div className="web-config-panel-head">
+                <span title={selectedSite?.filePath}>{selectedSite?.filePath ?? '选择站点后显示配置内容。'}</span>
+                <button type="button" onClick={openConfigInNotepad} disabled={!selectedSite}>记事本打开</button>
+              </div>
+              <pre className="web-config-output">{selectedSite?.rawConfig || '选择站点后显示配置内容。'}</pre>
+            </section>
           ) : null}
 
           {activeTab === 'raw' ? (

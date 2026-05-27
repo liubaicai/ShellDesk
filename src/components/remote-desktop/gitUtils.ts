@@ -21,6 +21,13 @@ export interface GitCommitSummary {
 export interface GitBranchSummary {
   name: string;
   current: boolean;
+  kind: 'local' | 'remote';
+  upstream?: string;
+}
+
+export interface GitTagSummary {
+  name: string;
+  subject?: string;
 }
 
 export interface GitRepositorySnapshot {
@@ -35,15 +42,19 @@ export interface GitRepositorySnapshot {
   branches: GitBranchSummary[];
   commits: GitCommitSummary[];
   remotes: string[];
+  tags: GitTagSummary[];
   rawStatus: string;
   rawOutput: string;
 }
 
 export type GitAction = 'fetch' | 'pull' | 'push' | 'checkout';
+export type GitBranchAction = 'create' | 'delete' | 'checkoutRemote';
 export type GitStageMode = 'stage' | 'unstage';
 
-const sectionNames = ['root', 'status', 'branches', 'log', 'remotes', 'error'] as const;
+const sectionNames = ['root', 'status', 'branches', 'log', 'remotes', 'tags', 'error'] as const;
 type GitSectionName = (typeof sectionNames)[number];
+const gitLocalBranchFormat = 'LOCAL\t%(HEAD)\t%(refname:short)\t%(upstream:short)';
+const gitRemoteBranchFormat = 'REMOTE\t%(refname:short)';
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -90,8 +101,14 @@ export function validateGitBranchName(value: string) {
 
   if (
     trimmedValue.startsWith('-')
+    || trimmedValue.startsWith('/')
+    || trimmedValue.endsWith('/')
+    || trimmedValue.endsWith('.')
     || trimmedValue.includes('..')
+    || trimmedValue.includes('//')
     || trimmedValue.includes('@{')
+    || trimmedValue.includes('\\')
+    || trimmedValue.includes('.lock')
     || /[\s~^:?*[\\\u0000]/.test(trimmedValue)
   ) {
     throw new Error('分支名包含不安全字符。');
@@ -117,12 +134,15 @@ printf '%s\\n' "$root"
 section STATUS
 git -C "$root" status --porcelain=v1 -b 2>&1
 section BRANCHES
-git -C "$root" branch --format='%(HEAD)%(refname:short)' 2>&1
+git -C "$root" branch --format=${shellSingleQuote(gitLocalBranchFormat)} 2>&1
+git -C "$root" branch -r --format=${shellSingleQuote(gitRemoteBranchFormat)} 2>&1 || true
 section LOG
 git -C "$root" log --date=iso-strict --pretty=format:'%H%x09%an%x09%ad%x09%s' -n 50 2>&1 || true
 printf '\\n'
 section REMOTES
 git -C "$root" remote -v 2>&1 || true
+section TAGS
+git -C "$root" tag --sort=-creatordate -n 1 2>&1 | head -n 40 || true
 `.trim();
 }
 
@@ -144,11 +164,14 @@ Write-Section "ROOT"
 Write-Section "STATUS"
 & git -C $Root status --porcelain=v1 -b 2>&1 | Out-String -Width 240
 Write-Section "BRANCHES"
-& git -C $Root branch --format='%(HEAD)%(refname:short)' 2>&1 | Out-String -Width 240
+& git -C $Root branch --format=${powershellSingleQuote(gitLocalBranchFormat)} 2>&1 | Out-String -Width 240
+& git -C $Root branch -r --format=${powershellSingleQuote(gitRemoteBranchFormat)} 2>&1 | Out-String -Width 240
 Write-Section "LOG"
 & git -C $Root log --date=iso-strict --pretty=format:'%H%x09%an%x09%ad%x09%s' -n 50 2>&1 | Out-String -Width 240
 Write-Section "REMOTES"
 & git -C $Root remote -v 2>&1 | Out-String -Width 240
+Write-Section "TAGS"
+& git -C $Root tag --sort=-creatordate -n 1 2>&1 | Select-Object -First 40 | Out-String -Width 240
 `);
 }
 
@@ -207,6 +230,31 @@ export function createGitActionCommand(path: string, action: GitAction, branch: 
         ? `git -C ${shellSingleQuote(repoPath)} push`
       : `git -C ${shellSingleQuote(repoPath)} pull --ff-only`,
   };
+}
+
+export function createGitBranchActionCommand(path: string, action: GitBranchAction, branchName: string, isWindowsHost: boolean): RemoteCommandInput {
+  const repoPath = validateGitPath(path);
+  const safeBranch = validateGitBranchName(branchName);
+
+  if (isWindowsHost) {
+    const command = action === 'create'
+      ? `checkout -b ${powershellSingleQuote(safeBranch)}`
+      : action === 'delete'
+        ? `branch -d ${powershellSingleQuote(safeBranch)}`
+        : `checkout -t ${powershellSingleQuote(safeBranch)}`;
+
+    return powershellStdinCommand(`& git -C ${powershellSingleQuote(repoPath)} ${command}; exit $LASTEXITCODE`);
+  }
+
+  if (action === 'create') {
+    return { command: `git -C ${shellSingleQuote(repoPath)} checkout -b ${shellSingleQuote(safeBranch)}` };
+  }
+
+  if (action === 'delete') {
+    return { command: `git -C ${shellSingleQuote(repoPath)} branch -d ${shellSingleQuote(safeBranch)}` };
+  }
+
+  return { command: `git -C ${shellSingleQuote(repoPath)} checkout -t ${shellSingleQuote(safeBranch)}` };
 }
 
 export function createGitStageCommand(path: string, filePath: string, mode: GitStageMode, isWindowsHost: boolean): RemoteCommandInput {
@@ -292,7 +340,7 @@ function splitSections(output: string) {
   let activeSection: GitSectionName | null = null;
 
   output.split(/\r?\n/).forEach((line) => {
-    const marker = line.match(/^__SHELLDESK_GIT_(ROOT|STATUS|BRANCHES|LOG|REMOTES|ERROR)__$/);
+    const marker = line.match(/^__SHELLDESK_GIT_(ROOT|STATUS|BRANCHES|LOG|REMOTES|TAGS|ERROR)__$/);
 
     if (marker) {
       const sectionName = marker[1].toLowerCase() as GitSectionName;
@@ -374,17 +422,47 @@ function parseBranches(lines: string[], currentBranch: string): GitBranchSummary
     .filter(Boolean)
     .filter((line) => !/^fatal:/i.test(line))
     .map((line) => {
+      const [kindMarker, headMarker = '', rawName = '', upstream = ''] = line.includes('\t') ? line.split('\t') : line.split('%x09');
+
+      if (kindMarker === 'LOCAL' || kindMarker === 'REMOTE') {
+        const name = (kindMarker === 'REMOTE' ? headMarker : rawName).trim();
+        const kind: GitBranchSummary['kind'] = kindMarker === 'REMOTE' ? 'remote' : 'local';
+
+        return {
+          name,
+          current: kindMarker === 'LOCAL' && (headMarker === '*' || name === currentBranch),
+          kind,
+          upstream: upstream.trim() || undefined,
+        };
+      }
+
       const current = line.startsWith('*');
       const name = line.replace(/^\*\s*/, '').trim();
-      return { name, current: current || name === currentBranch };
+      return { name, current: current || name === currentBranch, kind: 'local' as const };
     })
     .filter((branch) => branch.name && !branch.name.includes('->'));
 
   if (!branches.some((branch) => branch.current) && currentBranch !== 'DETACHED') {
-    branches.unshift({ name: currentBranch, current: true });
+    branches.unshift({ name: currentBranch, current: true, kind: 'local' });
   }
 
   return branches;
+}
+
+function parseTags(lines: string[]): GitTagSummary[] {
+  return lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^fatal:/i.test(line))
+    .map((line) => {
+      const [name = '', ...subjectParts] = line.split(/\s+/);
+
+      return {
+        name,
+        subject: subjectParts.join(' ') || undefined,
+      };
+    })
+    .filter((tag) => tag.name);
 }
 
 function parseCommits(lines: string[]): GitCommitSummary[] {
@@ -423,6 +501,7 @@ export function parseGitSnapshotOutput(inputPath: string, stdout: string, stderr
   const branches = parseBranches(sections.branches ?? [], header.branch);
   const commits = parseCommits(sections.log ?? []);
   const remotes = Array.from(new Set((sections.remotes ?? []).map((line) => line.trim()).filter(Boolean)));
+  const tags = parseTags(sections.tags ?? []);
 
   return {
     inputPath,
@@ -436,6 +515,7 @@ export function parseGitSnapshotOutput(inputPath: string, stdout: string, stderr
     branches,
     commits,
     remotes,
+    tags,
     rawStatus: statusLines.join('\n'),
     rawOutput,
   };
