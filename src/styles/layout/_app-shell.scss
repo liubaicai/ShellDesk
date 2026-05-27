@@ -24,6 +24,10 @@
     var(--chrome);
 }
 
+.app-shell-macos .top-chrome {
+  padding-left: 92px;
+}
+
 .titlebar-controls {
   display: inline-flex;
   align-items: center;

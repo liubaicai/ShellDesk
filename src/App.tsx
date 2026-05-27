@@ -939,7 +939,8 @@ function App() {
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const vaultControls = window.guiSSH?.vault;
-  const showWindowControls = Boolean(windowControls) && platform !== 'darwin';
+  const isMacOS = platform === 'darwin';
+  const showWindowControls = Boolean(windowControls) && !isMacOS;
   const isConnectionWindow = Boolean(windowConnectionId);
   const titlebarConnectionAddress = connection
     ? `${connection.host.username}@${connection.host.address}:${connection.host.port}`
@@ -2042,7 +2043,7 @@ function App() {
       : '连接成功后记住本次密码';
 
   return (
-    <div className="app-shell">
+    <div className={isMacOS ? 'app-shell app-shell-macos' : 'app-shell'}>
       <header className="top-chrome drag-region">
         <div className="workspace-title">
           <img className="app-window-icon" src={appIconUrl} alt="" />
