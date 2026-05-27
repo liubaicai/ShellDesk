@@ -5,7 +5,7 @@
 <h1 align="center">ShellDesk</h1>
 
 <p align="center">
-  <strong>A graphical SSH client, remote desktop workspace, and server management toolkit</strong>
+  <strong>A virtual remote desktop and graphical server management toolkit</strong>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge">
+  <img alt="Version" src="https://img.shields.io/github/package-json/v/liubaicai/ShellDesk?label=version&style=for-the-badge&color=blue">
   &nbsp;
   <img alt="Stage" src="https://img.shields.io/badge/stage-Alpha-orange?style=for-the-badge">
   &nbsp;
@@ -25,6 +25,10 @@
 
 <p align="center">
   English | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshot-en.png" alt="ShellDesk English interface screenshot" width="920">
 </p>
 
 ---
@@ -41,6 +45,7 @@
 - [Project Structure](#project-structure)
 - [Development Notes](#development-notes)
 - [Roadmap](#roadmap)
+- [Compatibility Notes](#compatibility-notes)
 - [License](#license)
 
 ---
@@ -303,6 +308,62 @@ See [AGENTS.md](AGENTS.md) for the full collaboration and engineering notes.
 - Improve remote system tool compatibility across Linux distributions and Windows environments
 - Add automated tests for key IPC paths, data validation, and remote tool parsers
 - Continue improving accessibility, keyboard navigation, and high-contrast experiences
+
+---
+
+## Compatibility Notes
+
+This table tracks the planned compatibility matrix for ShellDesk remote system tools. The status and notes columns are intentionally blank for now; after an environment is tested, put `✓` in the second column and add notes as needed.
+
+| Distribution / environment | Status | Notes |
+| :--- | :---: | :--- |
+| Ubuntu 24.04 LTS |  |  |
+| Ubuntu 22.04 LTS |  |  |
+| Ubuntu 20.04 LTS |  |  |
+| Debian 12 Bookworm |  |  |
+| Debian 11 Bullseye |  |  |
+| RHEL 9 |  |  |
+| RHEL 8 |  |  |
+| Rocky Linux 9 |  |  |
+| Rocky Linux 8 |  |  |
+| AlmaLinux 9 |  |  |
+| AlmaLinux 8 |  |  |
+| CentOS Stream 9 |  |  |
+| CentOS Stream 8 |  |  |
+| CentOS 7 |  |  |
+| Fedora Server 41 |  |  |
+| Fedora Workstation 41 |  |  |
+| openSUSE Leap 15.6 |  |  |
+| openSUSE Tumbleweed |  |  |
+| SUSE Linux Enterprise Server 15 SP6 |  |  |
+| Amazon Linux 2023 |  |  |
+| Amazon Linux 2 |  |  |
+| Oracle Linux 9 |  |  |
+| Oracle Linux 8 |  |  |
+| Alibaba Cloud Linux 3 |  |  |
+| TencentOS Server 4 |  |  |
+| openEuler 24.03 LTS |  |  |
+| openEuler 22.03 LTS |  |  |
+| Anolis OS 8 |  |  |
+| Kylin Server V10 |  |  |
+| UOS Server 20 |  |  |
+| Linux Mint 22 |  |  |
+| Pop!_OS 22.04 LTS |  |  |
+| Raspberry Pi OS 12 Bookworm |  |  |
+| Alpine Linux 3.20 |  |  |
+| Alpine Linux 3.19 |  |  |
+| Windows Server 2025 |  |  |
+| Windows Server 2022 |  |  |
+| Windows Server 2019 |  |  |
+| Windows Server 2016 |  |  |
+| Windows Server 2022 Server Core |  |  |
+| Windows Server 2019 Server Core |  |  |
+| Windows 11 24H2 |  |  |
+| Windows 11 23H2 |  |  |
+| Windows 10 22H2 |  |  |
+| Windows 10 LTSC 2021 |  |  |
+| Windows 10 LTSC 2019 |  |  |
+| Windows Server 2012 R2 |  |  |
 
 ---
 

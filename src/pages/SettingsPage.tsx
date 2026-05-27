@@ -116,7 +116,7 @@ const aiProviderChoices: Array<{
 ];
 const shellDeskRepositoryUrl = 'https://github.com/liubaicai/ShellDesk';
 const shellDeskContactEmail = 'liushuai.baicai@hotmail.com';
-const shellDeskIntro = 'ShellDesk 是一个面向日常运维的图形化 SSH 客户端，集成主机管理、远程终端、SFTP 文件管理、数据库工具和远程桌面工作台。';
+const shellDeskIntro = 'ShellDesk 是一个面向日常运维的虚拟远程桌面与图形化服务器管理工具，集成主机管理、远程终端、SFTP 文件管理、数据库工具、系统监控和运维诊断能力。';
 const defaultSyncRemotePath = '/ShellDesk/shelldesk-sync.json';
 const syncIntervalChoices = [5, 15, 30, 60, 120, 360];
 

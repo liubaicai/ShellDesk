@@ -5,7 +5,7 @@
 <h1 align="center">ShellDesk</h1>
 
 <p align="center">
-  <strong>图形化 SSH 客户端、远程桌面工作台与服务器管理工具</strong>
+  <strong>虚拟远程桌面与图形化服务器管理工具</strong>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge">
+  <img alt="Version" src="https://img.shields.io/github/package-json/v/liubaicai/ShellDesk?label=version&style=for-the-badge&color=blue">
   &nbsp;
   <img alt="Stage" src="https://img.shields.io/badge/stage-Alpha-orange?style=for-the-badge">
   &nbsp;
@@ -25,6 +25,10 @@
 
 <p align="center">
   <a href="README.md">English</a> | 简体中文
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshot-zh.png" alt="ShellDesk 中文界面截图" width="920">
 </p>
 
 ---
@@ -41,6 +45,7 @@
 - [项目结构](#项目结构)
 - [开发约定](#开发约定)
 - [路线方向](#路线方向)
+- [兼容性说明](#兼容性说明)
 - [开源协议](#开源协议)
 
 ---
@@ -302,6 +307,62 @@ ShellDesk/
 - 提升远程系统工具在不同 Linux 发行版与 Windows 环境下的适配
 - 为关键 IPC、数据校验和远程工具解析器补充自动化测试
 - 逐步完善可访问性、键盘导航和高对比度体验
+
+---
+
+## 兼容性说明
+
+以下列表用于记录 ShellDesk 远程系统工具的兼容性验证计划。状态列和说明列暂时留空；完成对应环境测试后，可在第二列填入 `✓`，并按需补充说明。
+
+| 发行版 / 环境 | 状态 | 说明 |
+| :--- | :---: | :--- |
+| Ubuntu 24.04 LTS |  |  |
+| Ubuntu 22.04 LTS |  |  |
+| Ubuntu 20.04 LTS |  |  |
+| Debian 12 Bookworm |  |  |
+| Debian 11 Bullseye |  |  |
+| RHEL 9 |  |  |
+| RHEL 8 |  |  |
+| Rocky Linux 9 |  |  |
+| Rocky Linux 8 |  |  |
+| AlmaLinux 9 |  |  |
+| AlmaLinux 8 |  |  |
+| CentOS Stream 9 |  |  |
+| CentOS Stream 8 |  |  |
+| CentOS 7 |  |  |
+| Fedora Server 41 |  |  |
+| Fedora Workstation 41 |  |  |
+| openSUSE Leap 15.6 |  |  |
+| openSUSE Tumbleweed |  |  |
+| SUSE Linux Enterprise Server 15 SP6 |  |  |
+| Amazon Linux 2023 |  |  |
+| Amazon Linux 2 |  |  |
+| Oracle Linux 9 |  |  |
+| Oracle Linux 8 |  |  |
+| Alibaba Cloud Linux 3 |  |  |
+| TencentOS Server 4 |  |  |
+| openEuler 24.03 LTS |  |  |
+| openEuler 22.03 LTS |  |  |
+| Anolis OS 8 |  |  |
+| Kylin Server V10 |  |  |
+| UOS Server 20 |  |  |
+| Linux Mint 22 |  |  |
+| Pop!_OS 22.04 LTS |  |  |
+| Raspberry Pi OS 12 Bookworm |  |  |
+| Alpine Linux 3.20 |  |  |
+| Alpine Linux 3.19 |  |  |
+| Windows Server 2025 |  |  |
+| Windows Server 2022 |  |  |
+| Windows Server 2019 |  |  |
+| Windows Server 2016 |  |  |
+| Windows Server 2022 Server Core |  |  |
+| Windows Server 2019 Server Core |  |  |
+| Windows 11 24H2 |  |  |
+| Windows 11 23H2 |  |  |
+| Windows 10 22H2 |  |  |
+| Windows 10 LTSC 2021 |  |  |
+| Windows 10 LTSC 2019 |  |  |
+| Windows Server 2012 R2 |  |  |
 
 ---
 
