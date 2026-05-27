@@ -15,8 +15,8 @@
   display: flex;
   flex-direction: column;
   width: 640px;
+  height: min(620px, calc(100vh - 48px));
   max-width: 90vw;
-  max-height: 80vh;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -133,9 +133,10 @@
 }
 
 .file-picker-list {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .file-picker-status,

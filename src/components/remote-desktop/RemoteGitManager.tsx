@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { getErrorMessage } from './desktopUtils';
 import {
   createGitActionCommand,
+  createGitBranchActionCommand,
   createGitCommitCommand,
   createGitDiffCommand,
   createGitSnapshotCommand,
@@ -12,6 +13,9 @@ import {
   getGitStatusLabel,
   parseGitSnapshotOutput,
   type GitAction,
+  type GitBranchAction,
+  type GitBranchSummary,
+  type GitCommitSummary,
   type GitFileChange,
   type GitRepositorySnapshot,
   type GitStageMode,
@@ -27,7 +31,7 @@ interface RemoteGitManagerProps {
 
 type GitTab = 'changes' | 'commits' | 'diff' | 'raw';
 type DiffMode = 'worktree' | 'staged';
-type PendingGitActionKind = GitAction | 'commit';
+type PendingGitActionKind = GitAction | 'commit' | 'branchCreate' | 'branchDelete' | 'branchCheckoutRemote';
 
 interface PendingGitAction {
   action: PendingGitActionKind;
@@ -79,17 +83,48 @@ function hasUnstagedChange(change: GitFileChange) {
   return Boolean(change.worktreeStatus.trim()) || change.indexStatus === '?' || change.worktreeStatus === '?';
 }
 
+function groupBranches(branches: GitBranchSummary[]) {
+  const groups = new Map<string, GitBranchSummary[]>();
+
+  branches.forEach((branch) => {
+    const [groupName = '其他'] = branch.name.split('/');
+    const key = branch.name.includes('/') ? groupName : '本地';
+    groups.set(key, [...(groups.get(key) ?? []), branch]);
+  });
+
+  return Array.from(groups, ([name, items]) => ({ name, items }));
+}
+
+function getBranchLeafName(name: string) {
+  const parts = name.split('/');
+  return parts.at(-1) ?? name;
+}
+
+function getRemoteName(name: string) {
+  return name.split('/')[0] ?? 'origin';
+}
+
+function getRemoteBranchLabel(name: string) {
+  const [, ...parts] = name.split('/');
+  return parts.join('/') || name;
+}
+
 function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const commitMessageRef = useRef<HTMLTextAreaElement | null>(null);
+  const branchNameInputRef = useRef<HTMLInputElement | null>(null);
   const [repoPath, setRepoPath] = useState(() => rememberedGitRepositoryPaths.get(connectionId) ?? '');
   const [snapshot, setSnapshot] = useState<GitRepositorySnapshot | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('');
+  const [selectedRemoteBranch, setSelectedRemoteBranch] = useState('');
+  const [selectedCommitHash, setSelectedCommitHash] = useState('');
   const [activeTab, setActiveTab] = useState<GitTab>('changes');
   const [diffMode, setDiffMode] = useState<DiffMode>('worktree');
   const [diffText, setDiffText] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
+  const [newBranchName, setNewBranchName] = useState('');
+  const [commitSearch, setCommitSearch] = useState('');
   const [commandOutput, setCommandOutput] = useState('');
   const [loading, setLoading] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
@@ -110,7 +145,37 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
   const conflictedCount = snapshot?.files.filter((file) => file.kind === 'conflicted').length ?? 0;
   const selectedFileCanStage = selectedFile ? hasUnstagedChange(selectedFile) : false;
   const selectedFileCanUnstage = selectedFile ? hasStagedChange(selectedFile) : false;
-  const branchOptions = snapshot?.branches.filter((branch) => branch.name !== 'DETACHED') ?? [];
+  const localBranches = useMemo(() => snapshot?.branches.filter((branch) => branch.kind === 'local' && branch.name !== 'DETACHED') ?? [], [snapshot?.branches]);
+  const remoteBranches = useMemo(() => snapshot?.branches.filter((branch) => branch.kind === 'remote' && !/\/HEAD$/i.test(branch.name)) ?? [], [snapshot?.branches]);
+  const localBranchGroups = useMemo(() => groupBranches(localBranches), [localBranches]);
+  const remoteBranchGroups = useMemo(() => {
+    const groups = new Map<string, GitBranchSummary[]>();
+
+    remoteBranches.forEach((branch) => {
+      const remoteName = getRemoteName(branch.name);
+      groups.set(remoteName, [...(groups.get(remoteName) ?? []), branch]);
+    });
+
+    return Array.from(groups, ([name, items]) => ({ name, items }));
+  }, [remoteBranches]);
+  const selectedLocalBranch = localBranches.find((branch) => branch.name === selectedBranch) ?? null;
+  const selectedRemoteBranchItem = remoteBranches.find((branch) => branch.name === selectedRemoteBranch) ?? null;
+  const filteredCommits = useMemo(() => {
+    const query = commitSearch.trim().toLowerCase();
+    const commits = snapshot?.commits ?? [];
+
+    if (!query) return commits;
+
+    return commits.filter((commit) => (
+      commit.subject.toLowerCase().includes(query)
+      || commit.author.toLowerCase().includes(query)
+      || commit.hash.toLowerCase().includes(query)
+      || commit.shortHash.toLowerCase().includes(query)
+    ));
+  }, [commitSearch, snapshot?.commits]);
+  const selectedCommit = useMemo<GitCommitSummary | null>(() => {
+    return filteredCommits.find((commit) => commit.hash === selectedCommitHash) ?? filteredCommits[0] ?? null;
+  }, [filteredCommits, selectedCommitHash]);
 
   const loadRepository = useCallback(async (path: string) => {
     setLoading(true);
@@ -137,6 +202,16 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           ? current
           : nextSnapshot.files[0]?.path ?? ''
       ));
+      setSelectedRemoteBranch((current) => (
+        current && nextSnapshot.branches.some((branch) => branch.kind === 'remote' && branch.name === current)
+          ? current
+          : nextSnapshot.branches.find((branch) => branch.kind === 'remote')?.name ?? ''
+      ));
+      setSelectedCommitHash((current) => (
+        current && nextSnapshot.commits.some((commit) => commit.hash === current)
+          ? current
+          : nextSnapshot.commits[0]?.hash ?? ''
+      ));
       setCommandOutput(nextSnapshot.rawOutput);
       setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
       setNotice(nextSnapshot.clean ? '工作区干净。' : `读取到 ${nextSnapshot.files.length} 个变更文件。`);
@@ -158,6 +233,8 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
       setSnapshot(null);
       setSelectedFilePath('');
       setSelectedBranch('');
+      setSelectedRemoteBranch('');
+      setSelectedCommitHash('');
       setCommandOutput('');
       setDiffText('');
       setNotice('');
@@ -258,6 +335,58 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
     }
   };
 
+  const prepareCheckoutBranch = (branchName: string) => {
+    if (!snapshot) return;
+
+    try {
+      const command = createGitActionCommand(snapshot.rootPath, 'checkout', branchName, isWindowsHost);
+
+      setPendingAction({
+        action: 'checkout',
+        label: 'Checkout',
+        command,
+        branch: branchName,
+        danger: true,
+      });
+    } catch (error) {
+      setError(getErrorMessage(error));
+    }
+  };
+
+  const prepareBranchAction = (action: GitBranchAction, branchName: string) => {
+    if (!snapshot) return;
+
+    try {
+      const labels: Record<GitBranchAction, string> = {
+        create: '新建分支',
+        delete: '删除分支',
+        checkoutRemote: '跟踪远程分支',
+      };
+      const pendingActions: Record<GitBranchAction, PendingGitActionKind> = {
+        create: 'branchCreate',
+        delete: 'branchDelete',
+        checkoutRemote: 'branchCheckoutRemote',
+      };
+      const command = createGitBranchActionCommand(snapshot.rootPath, action, branchName, isWindowsHost);
+
+      setPendingAction({
+        action: pendingActions[action],
+        label: labels[action],
+        command,
+        branch: branchName,
+        danger: action === 'delete',
+      });
+    } catch (error) {
+      setError(getErrorMessage(error));
+    }
+  };
+
+  const prepareCreateBranch = () => {
+    setError('');
+    setNotice('');
+    prepareBranchAction('create', newBranchName);
+  };
+
   const prepareCommit = () => {
     if (!snapshot) return;
 
@@ -308,6 +437,9 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
       if (pendingAction.action === 'commit') {
         setCommitMessage('');
       }
+      if (pendingAction.action === 'branchCreate') {
+        setNewBranchName('');
+      }
       setPendingAction(null);
       await loadRepository(snapshot?.rootPath ?? repoPath);
       setCommandOutput(output);
@@ -348,172 +480,213 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
   return (
     <section className="git-manager">
-      <header className="git-toolbar">
-        <div className={`git-branch-card ${snapshot?.clean ? 'clean' : 'dirty'}`}>
-          <span>Git 仓库</span>
-          <strong>{snapshot?.branch ?? '未加载'}</strong>
-          <em>{snapshot?.upstream ? `${snapshot.upstream} · +${snapshot.ahead} / -${snapshot.behind}` : lastRefreshedAt || '请选择仓库目录'}</em>
+      <header className="git-sourcetree-toolbar">
+        <div className="git-toolbar-actions-main" aria-label="Git 常用操作">
+          <button type="button" onClick={prepareCommit} disabled={!snapshot || loading || actionRunning || stagedCount === 0 || conflictedCount > 0}>
+            <strong>提交</strong>
+          </button>
+          <button type="button" onClick={() => prepareAction('pull')} disabled={!snapshot || loading || actionRunning}>
+            <strong>拉取</strong>
+          </button>
+          <button type="button" onClick={() => prepareAction('push')} disabled={!snapshot || loading || actionRunning}>
+            <strong>推送</strong>
+          </button>
+          <button type="button" onClick={() => prepareAction('fetch')} disabled={!snapshot || loading || actionRunning}>
+            <strong>获取</strong>
+          </button>
+          <button type="button" onClick={() => branchNameInputRef.current?.focus()} disabled={!snapshot || loading || actionRunning}>
+            <strong>分支</strong>
+          </button>
+          <button type="button" onClick={() => prepareAction('checkout')} disabled={!snapshot || loading || actionRunning || !selectedBranch || selectedBranch === snapshot.branch}>
+            <strong>切换</strong>
+          </button>
         </div>
         <form
-          className="git-path-form"
+          className="git-repo-picker"
           onSubmit={(event) => {
             event.preventDefault();
             setFilePickerVisible(true);
           }}
         >
           <input value={repoPath} readOnly placeholder="点击打开选择 Git 仓库目录" />
-          <button type="submit" className="primary" disabled={loading || actionRunning}>{loading ? '读取中' : '打开'}</button>
-        </form>
-        <div className="git-toolbar-actions">
+          <button type="submit" disabled={loading || actionRunning}>{loading ? '读取中' : '打开'}</button>
           <button type="button" onClick={() => loadRepository(snapshot?.rootPath ?? repoPath)} disabled={loading || actionRunning || !repoPath}>刷新</button>
-        </div>
+        </form>
       </header>
 
-      <section className="git-action-strip" aria-label="Git 常用操作">
-        <div className="git-action-strip-title">
-          <span>常用操作</span>
-          <strong>{snapshot ? `${snapshot.branch} · ${snapshot.clean ? 'clean' : `${changedCount} files changed`}` : '选择仓库后可用'}</strong>
+      {(error || notice) ? (
+        <div className="git-alert-stack">
+          {error ? <div className="git-alert danger">{error}</div> : null}
+          {notice ? <div className="git-alert info">{notice}</div> : null}
         </div>
-        <div className="git-action-buttons">
-          <button type="button" className="stage" onClick={() => void executeStageAction('stage')} disabled={!snapshot || loading || actionRunning || unstagedCount === 0}>
-            <span>Stage All</span>
-            <em>暂存变更</em>
-          </button>
-          <button type="button" className="commit" onClick={prepareCommit} disabled={!snapshot || loading || actionRunning || stagedCount === 0 || conflictedCount > 0}>
-            <span>Commit</span>
-            <em>提交暂存</em>
-          </button>
-          <button type="button" className="primary" onClick={() => prepareAction('pull')} disabled={!snapshot || loading || actionRunning}>
-            <span>Pull</span>
-            <em>拉取更新</em>
-          </button>
-          <button type="button" className="push" onClick={() => prepareAction('push')} disabled={!snapshot || loading || actionRunning}>
-            <span>Push</span>
-            <em>推送提交</em>
-          </button>
-          <button type="button" onClick={() => prepareAction('fetch')} disabled={!snapshot || loading || actionRunning}>
-            <span>Fetch</span>
-            <em>同步远端</em>
-          </button>
-          <button type="button" onClick={() => loadRepository(snapshot?.rootPath ?? repoPath)} disabled={loading || actionRunning || !repoPath}>
-            <span>Refresh</span>
-            <em>刷新状态</em>
-          </button>
-        </div>
-      </section>
+      ) : null}
 
-      {error ? <div className="git-alert danger">{error}</div> : null}
-      {notice ? <div className="git-alert info">{notice}</div> : null}
+      <div className="git-sourcetree-shell">
+        <aside className="git-source-sidebar">
+          <section className="git-sidebar-section workspace">
+            <div className="git-section-title"><span>▱</span><strong>WORKSPACE</strong></div>
+            <button type="button" className={activeTab === 'changes' ? 'active' : ''} onClick={() => setActiveTab('changes')}>
+              <span>文件状态</span><em>{changedCount}</em>
+            </button>
+            <button type="button" className={activeTab === 'commits' ? 'active' : ''} onClick={() => setActiveTab('commits')}>
+              <span>History</span><em>{snapshot?.commits.length ?? 0}</em>
+            </button>
+            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>
+              <span>命令输出</span>
+            </button>
+          </section>
 
-      <div className="git-layout">
-        <aside className="git-sidebar">
-          <div className="git-summary-grid">
-            <div><span>变更</span><strong>{changedCount}</strong></div>
-            <div><span>已暂存</span><strong>{stagedCount}</strong></div>
-            <div><span>未暂存</span><strong>{unstagedCount}</strong></div>
-            <div><span>Ahead</span><strong>{snapshot?.ahead ?? 0}</strong></div>
-            <div><span>Behind</span><strong>{snapshot?.behind ?? 0}</strong></div>
-            <div><span>冲突</span><strong>{conflictedCount}</strong></div>
-          </div>
-
-          <label className="git-branch-select">
-            <span>切换分支</span>
-            <select value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)} disabled={!branchOptions.length}>
-              {branchOptions.map((branch) => (
-                <option key={branch.name} value={branch.name}>{branch.current ? `* ${branch.name}` : branch.name}</option>
-              ))}
-            </select>
+          <label className="git-sidebar-search">
+            <span>搜索</span>
+            <input value={commitSearch} onChange={(event) => { setCommitSearch(event.target.value); setActiveTab('commits'); }} placeholder="提交、作者、hash" />
           </label>
-          <button type="button" className="git-checkout-btn" onClick={() => prepareAction('checkout')} disabled={!snapshot || loading || actionRunning || !selectedBranch || selectedBranch === snapshot.branch}>
-            Checkout
-          </button>
 
-          <div className="git-commit-box">
-            <div className="git-commit-box-head">
-              <strong>提交</strong>
-              <span>{stagedCount} staged</span>
-            </div>
-            <textarea
-              ref={commitMessageRef}
-              value={commitMessage}
-              placeholder="提交信息"
-              rows={3}
-              disabled={!snapshot || actionRunning}
-              onChange={(event) => setCommitMessage(event.target.value)}
-            />
-            <div className="git-commit-actions">
-              <button type="button" onClick={() => void executeStageAction('stage')} disabled={!snapshot || actionRunning || unstagedCount === 0}>全部暂存</button>
-              <button type="button" onClick={() => void executeStageAction('unstage')} disabled={!snapshot || actionRunning || stagedCount === 0}>取消暂存</button>
-              <button type="button" className="primary" onClick={prepareCommit} disabled={!snapshot || actionRunning || stagedCount === 0 || conflictedCount > 0}>提交</button>
-            </div>
-          </div>
-
-          <div className="git-file-list-head">
-            <strong>变更文件</strong>
-            <span>{snapshot?.clean ? 'clean' : `${changedCount} files`}</span>
-          </div>
-          <div className="git-selected-actions">
-            <button type="button" onClick={() => void executeStageAction('stage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanStage}>暂存选中</button>
-            <button type="button" onClick={() => void executeStageAction('unstage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanUnstage}>取消暂存</button>
-            <button type="button" onClick={() => loadDiff()} disabled={!selectedFile || diffLoading}>查看 Diff</button>
-          </div>
-          <div className="git-file-list">
-            {(snapshot?.files ?? []).map((file) => (
-              <button
-                key={getChangeKey(file)}
-                type="button"
-                className={selectedFile?.path === file.path ? 'active' : ''}
-                onClick={() => {
-                  setSelectedFilePath(file.path);
-                  void loadDiff(file);
-                }}
-              >
-                <span className={`git-file-status ${getChangeTone(file)}`}>{getGitStatusLabel(file)}</span>
-                <strong title={file.path}>{file.path}</strong>
-                <em>{file.indexStatus.trim() || '-'} / {file.worktreeStatus.trim() || '-'}</em>
-              </button>
+          <section className="git-sidebar-section branch-tree">
+            <div className="git-section-title"><span>⑂</span><strong>分支</strong><em>{localBranches.length}</em></div>
+            {localBranchGroups.map((group) => (
+              <details key={group.name} open>
+                <summary>{group.name}</summary>
+                {group.items.map((branch) => (
+                  <button
+                    key={branch.name}
+                    type="button"
+                    className={`${branch.current ? 'current' : ''} ${selectedBranch === branch.name ? 'active' : ''}`}
+                    onClick={() => setSelectedBranch(branch.name)}
+                    onDoubleClick={() => {
+                      setSelectedBranch(branch.name);
+                      prepareCheckoutBranch(branch.name);
+                    }}
+                  >
+                    <span>{branch.current ? '●' : '○'} {getBranchLeafName(branch.name)}</span>
+                    {branch.upstream ? <em>{branch.upstream}</em> : null}
+                  </button>
+                ))}
+              </details>
             ))}
-            {!snapshot || snapshot.files.length === 0 ? <div className="git-empty-state">没有变更文件。</div> : null}
-          </div>
+            {!localBranches.length ? <div className="git-empty-compact">暂无本地分支</div> : null}
+          </section>
+
+          <section className="git-branch-control">
+            <input
+              ref={branchNameInputRef}
+              value={newBranchName}
+              onChange={(event) => setNewBranchName(event.target.value)}
+              placeholder="新分支名，如 feat/login"
+              disabled={!snapshot || actionRunning}
+            />
+            <div>
+              <button type="button" onClick={prepareCreateBranch} disabled={!snapshot || actionRunning || !newBranchName.trim()}>新建</button>
+              <button type="button" onClick={() => selectedLocalBranch && prepareCheckoutBranch(selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>切换</button>
+              <button type="button" className="danger" onClick={() => selectedLocalBranch && prepareBranchAction('delete', selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>删除</button>
+            </div>
+          </section>
+
+          <section className="git-sidebar-section branch-tree">
+            <div className="git-section-title"><span>☁</span><strong>远程</strong><em>{remoteBranches.length}</em></div>
+            {remoteBranchGroups.map((group) => (
+              <details key={group.name} open>
+                <summary>{group.name}</summary>
+                {group.items.map((branch) => (
+                  <button
+                    key={branch.name}
+                    type="button"
+                    className={selectedRemoteBranch === branch.name ? 'active' : ''}
+                    onClick={() => setSelectedRemoteBranch(branch.name)}
+                    onDoubleClick={() => {
+                      setSelectedRemoteBranch(branch.name);
+                      prepareBranchAction('checkoutRemote', branch.name);
+                    }}
+                  >
+                    <span>{getRemoteBranchLabel(branch.name)}</span>
+                  </button>
+                ))}
+              </details>
+            ))}
+            {!remoteBranches.length ? <div className="git-empty-compact">暂无远程分支</div> : null}
+            <button type="button" className="git-track-remote-btn" onClick={() => prepareBranchAction('checkoutRemote', selectedRemoteBranch)} disabled={!snapshot || actionRunning || !selectedRemoteBranchItem}>
+              跟踪并切换
+            </button>
+          </section>
+
+          <details className="git-sidebar-section tags" open={false}>
+            <summary><span>◇</span><strong>标签</strong><em>{snapshot?.tags.length ?? 0}</em></summary>
+            {(snapshot?.tags ?? []).slice(0, 12).map((tag) => (
+              <div key={tag.name} className="git-tag-row"><span>{tag.name}</span><em>{tag.subject}</em></div>
+            ))}
+          </details>
         </aside>
 
-        <main className="git-main">
-          <nav className="git-tabs">
-            <button type="button" className={activeTab === 'changes' ? 'active' : ''} onClick={() => setActiveTab('changes')}>状态</button>
-            <button type="button" className={activeTab === 'commits' ? 'active' : ''} onClick={() => setActiveTab('commits')}>历史</button>
-            <button type="button" className={activeTab === 'diff' ? 'active' : ''} onClick={() => loadDiff()}>Diff</button>
-            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>原始输出</button>
-            <button type="button" onClick={copyRepositorySummary} disabled={!snapshot}>复制摘要</button>
-            <button type="button" onClick={copyCommandOutput} disabled={!commandOutput && !snapshot?.rawOutput}>复制输出</button>
-          </nav>
+        <main className="git-sourcetree-main">
+          <div className="git-history-filterbar">
+            <strong>{activeTab === 'changes' ? '文件状态' : activeTab === 'raw' ? '命令输出' : 'History'}</strong>
+            <span>{filteredCommits.length} commits · {localBranches.length} local branches · {remoteBranches.length} remote branches</span>
+            <div className={`git-branch-card ${snapshot?.clean ? 'clean' : 'dirty'}`}>
+              <strong>{snapshot?.branch ?? '未加载'}</strong>
+              <span>{snapshot?.upstream ? `${snapshot.upstream} · +${snapshot.ahead} / -${snapshot.behind}` : lastRefreshedAt || '请选择仓库目录'}</span>
+            </div>
+          </div>
 
           {activeTab === 'changes' ? (
-            <section className="git-status-panel">
-              <div className="git-hero">
-                <span>{snapshot?.rootPath ?? '尚未打开仓库'}</span>
-                <strong>{snapshot?.clean ? '工作区干净' : `${changedCount} 个文件有变更`}</strong>
-                <em>{snapshot?.upstream ? `上游：${snapshot.upstream}` : '未检测到上游分支'}</em>
+            <section className="git-workspace-panel">
+              <div className="git-commit-box">
+                <div className="git-commit-box-head">
+                  <strong>提交暂存区</strong>
+                  <span>{stagedCount} staged · {unstagedCount} unstaged</span>
+                </div>
+                <textarea
+                  ref={commitMessageRef}
+                  value={commitMessage}
+                  placeholder="提交信息"
+                  rows={3}
+                  disabled={!snapshot || actionRunning}
+                  onChange={(event) => setCommitMessage(event.target.value)}
+                />
+                <div className="git-commit-actions">
+                  <button type="button" onClick={() => void executeStageAction('stage')} disabled={!snapshot || actionRunning || unstagedCount === 0}>全部暂存</button>
+                  <button type="button" onClick={() => void executeStageAction('unstage')} disabled={!snapshot || actionRunning || stagedCount === 0}>取消暂存</button>
+                  <button type="button" className="primary" onClick={prepareCommit} disabled={!snapshot || actionRunning || stagedCount === 0 || conflictedCount > 0}>提交</button>
+                </div>
               </div>
-              <div className="git-metric-grid">
+              <div className="git-workspace-metrics">
+                <div><span>变更</span><strong>{changedCount}</strong></div>
                 <div><span>已暂存</span><strong>{stagedCount}</strong></div>
                 <div><span>未暂存</span><strong>{unstagedCount}</strong></div>
                 <div><span>冲突</span><strong>{conflictedCount}</strong></div>
-                <div><span>提交历史</span><strong>{snapshot?.commits.length ?? 0}</strong></div>
               </div>
               <pre className="git-raw-status">{snapshot?.rawStatus || '点击“打开”选择远程 Git 仓库目录。'}</pre>
             </section>
           ) : null}
 
           {activeTab === 'commits' ? (
-            <section className="git-commit-list">
-              {(snapshot?.commits ?? []).map((commit) => (
-                <article key={commit.hash} className="git-commit-row">
-                  <strong>{commit.subject}</strong>
-                  <span>{commit.author} · {formatDate(commit.date)}</span>
-                  <code>{commit.shortHash}</code>
-                </article>
-              ))}
-              {!snapshot?.commits.length ? <div className="git-empty-state">暂无提交记录。</div> : null}
+            <section className="git-history-table">
+              <div className="git-history-head">
+                <span>图谱</span>
+                <span>描述</span>
+                <span>日期</span>
+                <span>作者</span>
+                <span>提交</span>
+              </div>
+              <div className="git-history-body">
+                {filteredCommits.map((commit, index) => (
+                  <button
+                    key={commit.hash}
+                    type="button"
+                    className={selectedCommit?.hash === commit.hash ? 'active' : ''}
+                    onClick={() => setSelectedCommitHash(commit.hash)}
+                  >
+                    <span className={`git-graph-cell lane-${index % 4}`}><i /></span>
+                    <span className="git-history-message">
+                      {index === 0 && snapshot?.branch ? <em className="git-ref-badge">{snapshot.branch}</em> : null}
+                      {index === 0 && snapshot?.upstream ? <em className="git-ref-badge remote">{snapshot.upstream}</em> : null}
+                      <strong>{commit.subject}</strong>
+                    </span>
+                    <span>{formatDate(commit.date)}</span>
+                    <span>{commit.author}</span>
+                    <code>{commit.shortHash}</code>
+                  </button>
+                ))}
+                {!filteredCommits.length ? <div className="git-empty-state">暂无提交记录。</div> : null}
+              </div>
             </section>
           ) : null}
 
@@ -534,24 +707,53 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           ) : null}
 
           {activeTab === 'raw' ? <pre className="git-command-output">{commandOutput || snapshot?.rawOutput || '暂无输出。'}</pre> : null}
-        </main>
 
-        <aside className="git-detail">
-          <div className="git-detail-head">
-            <strong>仓库摘要</strong>
-            <span>{snapshot?.rootPath ?? '-'}</span>
-          </div>
-          <dl>
-            <div><dt>当前分支</dt><dd>{snapshot?.branch ?? '-'}</dd></div>
-            <div><dt>上游分支</dt><dd>{snapshot?.upstream ?? '-'}</dd></div>
-            <div><dt>同步状态</dt><dd>+{snapshot?.ahead ?? 0} / -{snapshot?.behind ?? 0}</dd></div>
-            <div><dt>远程地址</dt><dd>{snapshot?.remotes[0] ?? '-'}</dd></div>
-            <div><dt>刷新时间</dt><dd>{lastRefreshedAt || '-'}</dd></div>
-          </dl>
-          <div className="git-detail-note">
-            Commit 只提交已暂存内容；Pull 使用 `--ff-only`，Push 使用当前仓库默认 upstream；会改变仓库或远端状态的操作都会先确认。
-          </div>
-        </aside>
+          <section className="git-bottom-panes">
+            <div className="git-commit-detail">
+              <div className="git-pane-head">
+                <strong>{selectedCommit ? selectedCommit.subject : '未选择提交'}</strong>
+                <button type="button" onClick={copyRepositorySummary} disabled={!snapshot}>复制摘要</button>
+              </div>
+              <dl>
+                <div><dt>提交</dt><dd>{selectedCommit?.hash ?? '-'}</dd></div>
+                <div><dt>父级</dt><dd>{snapshot?.commits[1]?.shortHash ?? '-'}</dd></div>
+                <div><dt>作者</dt><dd>{selectedCommit?.author ?? '-'}</dd></div>
+                <div><dt>日期</dt><dd>{selectedCommit ? formatDate(selectedCommit.date) : '-'}</dd></div>
+              </dl>
+              <p>{selectedCommit?.subject ?? (snapshot ? '选择历史记录查看详情。' : '请选择仓库目录。')}</p>
+            </div>
+            <div className="git-changed-files-panel">
+              <div className="git-pane-head">
+                <strong>变更文件</strong>
+                <span>{snapshot?.clean ? 'clean' : `${changedCount} files`}</span>
+                <button type="button" onClick={copyCommandOutput} disabled={!commandOutput && !snapshot?.rawOutput}>复制输出</button>
+              </div>
+              <div className="git-selected-actions">
+                <button type="button" onClick={() => void executeStageAction('stage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanStage}>暂存选中</button>
+                <button type="button" onClick={() => void executeStageAction('unstage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanUnstage}>取消暂存</button>
+                <button type="button" onClick={() => loadDiff()} disabled={!selectedFile || diffLoading}>查看 Diff</button>
+              </div>
+              <div className="git-file-list">
+                {(snapshot?.files ?? []).map((file) => (
+                  <button
+                    key={getChangeKey(file)}
+                    type="button"
+                    className={selectedFile?.path === file.path ? 'active' : ''}
+                    onClick={() => {
+                      setSelectedFilePath(file.path);
+                      void loadDiff(file);
+                    }}
+                  >
+                    <span className={`git-file-status ${getChangeTone(file)}`}>{getGitStatusLabel(file)}</span>
+                    <strong title={file.path}>{file.path}</strong>
+                    <em>{file.indexStatus.trim() || '-'} / {file.worktreeStatus.trim() || '-'}</em>
+                  </button>
+                ))}
+                {!snapshot || snapshot.files.length === 0 ? <div className="git-empty-state">没有变更文件。</div> : null}
+              </div>
+            </div>
+          </section>
+        </main>
       </div>
 
       {pendingAction ? createPortal(
