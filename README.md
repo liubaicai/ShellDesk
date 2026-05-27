@@ -93,7 +93,7 @@ The project is currently in Alpha and is primarily developed and packaged for Wi
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
 - System Monitor, Process Manager, Service Manager, Container Manager, Port Listener, and Disk Analyzer help with daily checks
-- Git Repository Manager shows remote branch status, changed files, diffs, recent commits, fetch, pull, and checkout
+- Git Repository Manager shows remote branch status, changed files, diffs, recent commits, stage/unstage, commit, fetch, pull, push, and checkout
 - Web Server Manager covers Nginx, Apache/httpd, and Caddy config discovery, config test, reload, and restart flows
 - MinIO / S3 Browser uses remote `mc` or `aws` CLI to browse buckets, prefixes, objects, delete objects, copy object URLs, and download to a remote directory
 - Firewall, Network Diagnostics, Package Manager, Scheduled Tasks, Login Sessions, and Security Audit support operations troubleshooting
@@ -138,7 +138,7 @@ The project is currently in Alpha and is primarily developed and packaged for Wi
 | Network Diagnostics | Ping, DNS, HTTP, TCP, and related connectivity tests |
 | Disk Analyzer | Disk space, directory usage, and large file discovery |
 | Package Manager | Installed package search, upgradeable packages, and package-manager updates |
-| Git Repository | Remote Git status, changed files, diffs, commits, fetch, pull, and checkout |
+| Git Repository | Remote Git status, changed files, diffs, commits, stage/unstage, commit, fetch, pull, push, and checkout |
 | Web Server | Nginx, Apache/httpd, and Caddy config discovery, config test, reload, and restart |
 | Scheduled Tasks | Cron, systemd timer, and Windows Task Scheduler viewing |
 | Security Audit | SSH config, sensitive ports, failed logins, permissions, and update checks |

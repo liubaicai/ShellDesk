@@ -197,6 +197,15 @@
   background: var(--accent-soft, rgba(67, 199, 255, 0.12));
 }
 
+.file-picker-row.disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.file-picker-row.disabled:hover {
+  background: transparent;
+}
+
 .file-picker-col-name {
   display: inline-flex;
   align-items: center;

@@ -28,7 +28,7 @@ interface RemoteFileEntry {
 export interface RemoteFilePickerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
-  mode: 'open' | 'save';
+  mode: 'open' | 'save' | 'directory';
   title: string;
   visible: boolean;
   initialPath?: string;
@@ -83,6 +83,7 @@ export default function RemoteFilePicker({
   onCancel,
 }: RemoteFilePickerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
+  const isDirectoryMode = mode === 'directory';
   const [remotePath, setRemotePath] = useState('.');
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [selectedName, setSelectedName] = useState('');
@@ -142,6 +143,11 @@ export default function RemoteFilePicker({
   }, [remotePath, isWindowsHost, navigateTo]);
 
   const handleEntryClick = useCallback((entry: RemoteFileEntry) => {
+    if (isDirectoryMode && entry.type !== 'directory') {
+      setSelectedName('');
+      return;
+    }
+
     setSelectedName(entry.name);
     if (entry.type === 'directory') {
       setFileName('');
@@ -150,7 +156,7 @@ export default function RemoteFilePicker({
     } else {
       setFileName(entry.name);
     }
-  }, [mode]);
+  }, [isDirectoryMode, mode]);
 
   const handleEntryDoubleClick = useCallback((entry: RemoteFileEntry) => {
     if (entry.type === 'directory') {
@@ -170,12 +176,18 @@ export default function RemoteFilePicker({
       if (!name) return;
       const filePath = joinRemotePath(remotePath, name, isWindowsHost);
       onConfirm(filePath);
+    } else if (mode === 'directory') {
+      const selectedEntry = entries.find((entry) => entry.name === selectedName);
+      const directoryPath = selectedEntry?.type === 'directory'
+        ? joinRemotePath(remotePath, selectedEntry.name, isWindowsHost)
+        : remotePath;
+      onConfirm(directoryPath);
     } else {
       if (!selectedName) return;
       const filePath = joinRemotePath(remotePath, selectedName, isWindowsHost);
       onConfirm(filePath);
     }
-  }, [mode, remotePath, isWindowsHost, fileName, selectedName, onConfirm]);
+  }, [entries, mode, remotePath, isWindowsHost, fileName, selectedName, onConfirm]);
 
   // Sort entries: directories first, then by name
   const sortedEntries = useMemo(() => {
@@ -277,7 +289,7 @@ export default function RemoteFilePicker({
                   <button
                     key={entry.name}
                     type="button"
-                    className={`file-picker-row ${selectedName === entry.name ? 'selected' : ''}`}
+                    className={`file-picker-row ${selectedName === entry.name ? 'selected' : ''} ${isDirectoryMode && entry.type !== 'directory' ? 'disabled' : ''}`}
                     onClick={() => handleEntryClick(entry)}
                     onDoubleClick={() => handleEntryDoubleClick(entry)}
                   >
@@ -322,9 +334,9 @@ export default function RemoteFilePicker({
             type="button"
             className="file-picker-btn file-picker-btn-primary"
             onClick={handleConfirm}
-            disabled={mode === 'open' ? !selectedName : !fileName.trim()}
+            disabled={mode === 'open' ? !selectedName : mode === 'save' ? !fileName.trim() : loading}
           >
-            {confirmLabel || (mode === 'open' ? '打开' : '保存')}
+            {confirmLabel || (mode === 'open' ? '打开' : mode === 'directory' ? '选择文件夹' : '保存')}
           </button>
         </div>
       </div>

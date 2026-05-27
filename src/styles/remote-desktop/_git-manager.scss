@@ -19,8 +19,12 @@
 }
 
 .git-toolbar,
+.git-action-strip,
+.git-action-buttons,
 .git-tabs,
 .git-diff-toolbar,
+.git-commit-actions,
+.git-selected-actions,
 .git-confirm-actions {
   display: flex;
   align-items: center;
@@ -34,6 +38,47 @@
   background: rgba(255, 255, 255, 0.035);
 }
 
+.git-action-strip {
+  min-height: 70px;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--git-border);
+  padding: 10px;
+  background:
+    linear-gradient(90deg, rgba(88, 213, 218, 0.12), rgba(246, 163, 95, 0.08)),
+    rgba(255, 255, 255, 0.026);
+}
+
+.git-action-strip-title {
+  display: grid;
+  min-width: 180px;
+  gap: 4px;
+}
+
+.git-action-strip-title span,
+.git-action-buttons button em {
+  color: var(--git-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.git-action-strip-title strong {
+  overflow: hidden;
+  color: var(--git-text);
+  font-size: 14px;
+  font-weight: 880;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-action-buttons {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .git-branch-card {
   display: grid;
   min-width: 190px;
@@ -45,6 +90,7 @@
 .git-file-list-head span,
 .git-detail-head span,
 .git-detail-note,
+.git-commit-box-head span,
 .git-confirm-header span {
   color: var(--git-muted);
   font-size: 11px;
@@ -70,9 +116,9 @@
 }
 
 .git-path-form input,
-.git-branch-select select {
+.git-branch-select select,
+.git-commit-box textarea {
   min-width: 0;
-  height: 32px;
   border: 1px solid var(--git-border);
   border-radius: 7px;
   padding: 0 10px;
@@ -84,20 +130,36 @@
   outline: none;
 }
 
+.git-path-form input,
+.git-branch-select select {
+  height: 32px;
+}
+
+.git-commit-box textarea {
+  min-height: 66px;
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .git-path-form input {
   flex: 1 1 auto;
 }
 
 .git-path-form input:focus,
-.git-branch-select select:focus {
+.git-branch-select select:focus,
+.git-commit-box textarea:focus {
   border-color: rgba(88, 213, 218, 0.48);
   box-shadow: 0 0 0 3px rgba(88, 213, 218, 0.12);
 }
 
 .git-toolbar button,
+.git-action-buttons button,
 .git-tabs button,
 .git-diff-actions button,
 .git-checkout-btn,
+.git-commit-actions button,
+.git-selected-actions button,
 .git-confirm-actions button,
 .git-file-list button,
 .git-detail-actions button {
@@ -115,17 +177,37 @@
 .git-tabs button,
 .git-diff-actions button,
 .git-checkout-btn,
+.git-commit-actions button,
+.git-selected-actions button,
 .git-confirm-actions button {
   height: 30px;
   padding: 0 11px;
 }
 
+.git-action-buttons button {
+  display: grid;
+  min-width: 104px;
+  height: 48px;
+  align-content: center;
+  gap: 2px;
+  padding: 0 14px;
+  text-align: left;
+}
+
+.git-action-buttons button span {
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .git-toolbar button:hover:not(:disabled),
+.git-action-buttons button:hover:not(:disabled),
 .git-tabs button:hover:not(:disabled),
 .git-tabs button.active,
 .git-diff-actions button:hover,
 .git-diff-actions button.active,
 .git-checkout-btn:hover:not(:disabled),
+.git-commit-actions button:hover:not(:disabled),
+.git-selected-actions button:hover:not(:disabled),
 .git-confirm-actions button:hover:not(:disabled) {
   border-color: rgba(88, 213, 218, 0.34);
   background: rgba(88, 213, 218, 0.12);
@@ -133,10 +215,35 @@
 }
 
 .git-toolbar button.primary,
+.git-action-buttons button.primary,
+.git-commit-actions button.primary,
 .git-confirm-actions button.primary {
   border-color: rgba(88, 213, 218, 0.36);
   background: rgba(88, 213, 218, 0.14);
   color: #e3fdff;
+}
+
+.git-action-buttons button.stage {
+  border-color: rgba(126, 226, 168, 0.32);
+  background: rgba(126, 226, 168, 0.12);
+  color: #dfffe9;
+}
+
+.git-action-buttons button.commit {
+  border-color: rgba(88, 213, 218, 0.38);
+  background: rgba(88, 213, 218, 0.15);
+  color: #e3fdff;
+}
+
+.git-action-buttons button.push {
+  border-color: rgba(246, 163, 95, 0.34);
+  background: rgba(246, 163, 95, 0.13);
+  color: #ffe7cf;
+}
+
+.git-action-buttons button.push:hover:not(:disabled) {
+  border-color: rgba(246, 163, 95, 0.5);
+  background: rgba(246, 163, 95, 0.18);
 }
 
 .git-toolbar button.danger,
@@ -147,8 +254,11 @@
 }
 
 .git-toolbar button:disabled,
+.git-action-buttons button:disabled,
 .git-tabs button:disabled,
 .git-checkout-btn:disabled,
+.git-commit-actions button:disabled,
+.git-selected-actions button:disabled,
 .git-confirm-actions button:disabled {
   opacity: 0.52;
   cursor: not-allowed;
@@ -245,6 +355,43 @@
   gap: 6px;
 }
 
+.git-commit-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--git-border);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.git-commit-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.git-commit-box-head strong {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.git-commit-actions,
+.git-selected-actions {
+  flex-wrap: wrap;
+}
+
+.git-commit-actions button {
+  flex: 1 1 auto;
+  padding-inline: 8px;
+}
+
+.git-selected-actions button {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  padding-inline: 7px;
+}
+
 .git-file-list-head,
 .git-detail-head {
   display: flex;
@@ -338,6 +485,13 @@
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
+}
+
+.git-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 10px 10px;
 }
 
 .git-hero {
@@ -535,9 +689,22 @@
 }
 
 @media (max-width: 760px) {
-  .git-toolbar {
+  .git-toolbar,
+  .git-action-strip {
     align-items: stretch;
     flex-wrap: wrap;
+  }
+
+  .git-action-buttons {
+    justify-content: stretch;
+  }
+
+  .git-action-buttons button {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .git-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .git-layout {
@@ -561,8 +728,23 @@
 
 [data-theme="light"] .git-path-form input,
 [data-theme="light"] .git-branch-select select,
+[data-theme="light"] .git-commit-box textarea,
 [data-theme="light"] .git-raw-status,
 [data-theme="light"] .git-command-output,
 [data-theme="light"] .git-diff-output {
   background: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="light"] .git-action-strip {
+  background:
+    linear-gradient(90deg, rgba(42, 160, 170, 0.08), rgba(210, 126, 42, 0.07)),
+    rgba(255, 255, 255, 0.62);
+}
+
+[data-theme="light"] .git-action-buttons button.push {
+  color: #8f4f11;
+}
+
+[data-theme="light"] .git-action-buttons button.stage {
+  color: #176338;
 }
