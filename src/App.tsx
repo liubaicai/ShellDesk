@@ -411,8 +411,6 @@ type DeleteConfirmationRequest =
   | { kind: 'host'; host: Host }
   | { kind: 'ssh-key'; key: SshKey; relatedHostCount: number };
 
-type ViewMode = 'grid' | 'list';
-
 interface ConnectionClosedPayload {
   connectionId: string;
   reason?: string;
@@ -442,7 +440,7 @@ const emptyHostForm: HostFormState = {
   name: '',
   address: '',
   port: '22',
-  username: '',
+  username: 'root',
   authMethod: 'password',
   password: '',
   keyId: '',
@@ -915,7 +913,6 @@ function App() {
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>(initialPublicSnapshot?.settings.defaultHostView ?? defaultAppSettings.defaultHostView);
   const [settings, setSettings] = useState<ShellDeskAppSettings>(initialPublicSnapshot?.settings ?? defaultAppSettings);
   const [storageInfo, setStorageInfo] = useState<ShellDeskStorageInfo | null>(initialPublicSnapshot?.storage ?? null);
   const [bookmarkCount, setBookmarkCount] = useState(() => (
@@ -1040,7 +1037,6 @@ function App() {
     setSettings(snapshot.settings);
     setStorageInfo(snapshot.storage);
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
-    setViewMode(snapshot.settings.defaultHostView);
     setIsVaultReady(true);
 
     if (hydrated) {
@@ -1398,7 +1394,6 @@ function App() {
 
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     setSettings(nextSettings);
-    setViewMode(nextSettings.defaultHostView);
 
     if (!vaultControls || !isVaultReady) {
       return;
@@ -1974,13 +1969,6 @@ function App() {
     setIsHostGroupPanelCollapsed((current) => !current);
   };
 
-  const changeViewMode = (nextViewMode: ViewMode) => {
-    setViewMode(nextViewMode);
-    if (settings.defaultHostView !== nextViewMode) {
-      updateSettings({ ...settings, defaultHostView: nextViewMode });
-    }
-  };
-
   const exportConfig = async () => {
     if (!window.guiSSH?.files.exportConfig) {
       setStatusMessage('当前运行环境不支持导出配置。');
@@ -2167,11 +2155,6 @@ function App() {
               {isConnecting ? '连接中...' : '连接'}
             </button>
 
-            <div className="view-switch" aria-label="视图切换">
-              <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => changeViewMode('grid')}>网格</button>
-              <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => changeViewMode('list')}>列表</button>
-            </div>
-
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
           </div>
 
@@ -2248,7 +2231,7 @@ function App() {
                   <p>正在从本地安全库载入已保存的 SSH 主机。</p>
                 </div>
               ) : filteredHosts.length ? (
-                <div className={`host-grid ${viewMode}`}>
+                <div className="host-grid grid">
                   {filteredHosts.map((host) => {
                     const connectionState = getHostConnectionStateView(host);
 

@@ -64,7 +64,6 @@ function KeysPage({
                 <span className="key-card-icon">🔑</span>
                 <span className="key-card-summary">
                   <strong>{key.name}</strong>
-                  <small>{key.source === 'generated' ? '本地生成' : '导入复制'} · {key.algorithm || 'SSH'}</small>
                   <em>{key.fingerprint || (key.publicKey ? '已载入公钥' : '未提供公钥')}</em>
                 </span>
                 <div className="key-card-actions">

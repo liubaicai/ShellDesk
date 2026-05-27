@@ -442,7 +442,8 @@
 }
 
 [data-theme="light"] .hosts-group-panel,
-[data-theme="light"] .host-card {
+[data-theme="light"] .host-card,
+[data-theme="light"] .key-card {
   background: rgba(248, 250, 252, 0.84);
 }
 
@@ -454,12 +455,15 @@
 
 [data-theme="light"] .group-panel-heading h2,
 [data-theme="light"] .host-list-heading h2,
-[data-theme="light"] .host-summary strong {
+[data-theme="light"] .host-summary strong,
+[data-theme="light"] .key-card-summary strong {
   color: #172033;
 }
 
 [data-theme="light"] .group-card strong,
 [data-theme="light"] .host-summary small,
+[data-theme="light"] .key-card-summary small,
+[data-theme="light"] .key-card-summary em,
 [data-theme="light"] .host-card-tags em,
 [data-theme="light"] .host-list-heading > span {
   color: #526178;

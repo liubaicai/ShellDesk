@@ -809,21 +809,21 @@
 
 .host-form {
   display: grid;
-  gap: 13px;
+  gap: 10px;
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 13px 14px 14px;
 }
 
 .editor-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 9px;
 }
 
 .field {
   display: grid;
-  gap: 7px;
+  gap: 5px;
   color: var(--muted-strong);
   font-size: 11.5px;
   font-weight: 700;
@@ -850,8 +850,8 @@
 
 .field input,
 .field select {
-  height: 40px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 10px;
 }
 
 .field select {
@@ -859,9 +859,9 @@
 }
 
 .field textarea {
-  min-height: 94px;
+  min-height: 76px;
   resize: vertical;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .field input:focus,
@@ -879,32 +879,52 @@
 
 .key-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 300px));
+  align-items: start;
+  justify-content: start;
   gap: 12px;
 }
 
 .key-card {
-  display: flex;
+  position: relative;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  padding: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-soft);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  border: 1px solid rgba(154, 177, 210, 0.12);
+  border-radius: 14px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(35, 47, 62, 0.78), rgba(19, 28, 39, 0.62)),
+    var(--surface);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 22px 50px rgba(0, 0, 0, 0.18);
+}
+
+.key-card:hover {
+  border-color: var(--accent-border);
+  background:
+    linear-gradient(135deg, rgba(39, 54, 72, 0.84), rgba(21, 32, 45, 0.72)),
+    var(--surface);
 }
 
 .key-card-icon {
   display: grid;
-  width: 45px;
-  height: 45px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 11px;
-  background: rgba(119, 244, 197, 0.1);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 68% 22%, rgba(255, 255, 255, 0.16), transparent 42%),
+    linear-gradient(145deg, rgba(56, 212, 122, 0.22), rgba(25, 74, 62, 0.64));
   color: #c6ffeb;
-  font-size: 18px;
+  font-size: 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 28px rgba(20, 91, 70, 0.22);
 }
 
 .key-card-summary {
@@ -922,21 +942,37 @@
 }
 
 .key-card-summary strong {
-  font-size: 13.5px;
+  color: #f4f7ff;
+  font-size: 15px;
+  font-weight: 860;
 }
 
 .key-card-summary small,
 .key-card-summary em {
-  margin-top: 4px;
+  margin-top: 5px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-style: normal;
 }
 
+.key-card-summary small {
+  color: #b7c3d2;
+  font-weight: 620;
+}
+
+.key-card-summary em {
+  color: #9facbf;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
 .key-card-actions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 7px;
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
 }
 /* Current hosts page visuals */
 
@@ -948,7 +984,7 @@
 }
 
 .command-bar {
-  grid-template-columns: minmax(300px, 1fr) 80px auto 126px;
+  grid-template-columns: minmax(300px, 1fr) 104px 150px;
   gap: 12px;
   padding: 8px 18px;
   border-bottom-color: var(--window-divider);
@@ -957,12 +993,19 @@
 }
 
 .key-command-bar {
-  grid-template-columns: minmax(300px, 1fr) 90px auto;
-  column-gap: 16px;
+  grid-template-columns: minmax(300px, 1fr) 104px 150px;
+  column-gap: 12px;
 }
 
-.key-command-bar .key-import-button {
-  width: 90px;
+.command-bar > .command-button {
+  width: 104px;
+  padding-inline: 0;
+  white-space: nowrap;
+}
+
+.command-bar > .primary-action {
+  width: 150px;
+  justify-self: end;
   padding-inline: 0;
   white-space: nowrap;
 }

@@ -22,12 +22,12 @@
 
 .search-cluster-toolbar {
   display: grid;
-  min-height: 58px;
-  grid-template-columns: 230px minmax(180px, 1fr) 130px 140px 86px auto;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) minmax(120px, 150px) minmax(130px, 160px) 90px max-content;
   align-items: end;
-  gap: 8px;
+  gap: 10px;
   border-bottom: 1px solid var(--search-border);
-  padding: 8px 10px;
+  padding: 10px 12px 12px;
   background: rgba(255, 255, 255, 0.035);
 }
 
@@ -36,6 +36,16 @@
   display: grid;
   min-width: 0;
   gap: 4px;
+}
+
+.search-health {
+  align-self: stretch;
+  align-content: center;
+  min-height: 58px;
+}
+
+.search-cluster-toolbar label {
+  align-self: end;
 }
 
 .search-health span,
@@ -99,6 +109,7 @@
 .search-cluster-toolbar input,
 .search-index-panel input,
 .search-query-form input {
+  width: 100%;
   height: 32px;
   padding: 0 10px;
   font-size: 12px;
@@ -131,6 +142,12 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.search-cluster-toolbar button {
+  align-self: end;
+  min-width: 112px;
 }
 
 .search-cluster-toolbar button.primary,
@@ -158,6 +175,7 @@
 }
 
 .search-alert {
+  flex: 0 0 auto;
   margin: 8px 10px 0;
   border: 1px solid;
   border-radius: 8px;
@@ -183,7 +201,7 @@
 .search-cluster-layout {
   display: grid;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   grid-template-columns: 290px minmax(0, 1fr);
   overflow: hidden;
 }
@@ -280,6 +298,8 @@
 
 .search-tabs {
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 8px;
   border-bottom: 1px solid var(--search-border);
   padding: 10px;
@@ -287,8 +307,12 @@
 
 .search-overview {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: start;
   gap: 10px;
+  overflow: auto;
   padding: 10px;
 }
 
@@ -429,6 +453,54 @@
   color: var(--search-muted);
   font-size: 12px;
   font-weight: 740;
+}
+
+@media (max-width: 980px) {
+  .search-cluster-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .search-health,
+  .search-cluster-toolbar label,
+  .search-cluster-toolbar .timeout,
+  .search-cluster-toolbar button {
+    width: 100%;
+  }
+
+  .search-health {
+    grid-column: 1 / -1;
+  }
+
+  .search-cluster-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .search-index-panel {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--search-border);
+  }
+
+  .search-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .search-query-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .search-cluster-toolbar,
+  .search-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .search-query-form,
+  .search-query-actions {
+    flex-wrap: wrap;
+  }
 }
 
 [data-theme="light"] .search-cluster {

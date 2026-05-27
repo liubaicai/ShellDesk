@@ -122,7 +122,8 @@
 }
 
 [data-theme="light"] .group-card,
-[data-theme="light"] .host-card {
+[data-theme="light"] .host-card,
+[data-theme="light"] .key-card {
   border-color: rgba(16, 32, 51, 0.1);
   box-shadow: 0 6px 18px rgba(43, 67, 92, 0.08);
 }
@@ -272,14 +273,23 @@
   color: var(--accent);
 }
 
-[data-theme="light"] .key-card {
-  border-color: rgba(16, 32, 51, 0.1);
-  box-shadow: 0 6px 18px rgba(43, 67, 92, 0.08);
+[data-theme="light"] .key-card-icon {
+  background:
+    radial-gradient(circle at 68% 22%, rgba(255, 255, 255, 0.72), transparent 42%),
+    linear-gradient(145deg, rgba(34, 160, 90, 0.16), rgba(255, 255, 255, 0.82));
+  color: #1a8a55;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 10px 20px rgba(34, 160, 90, 0.12);
 }
 
-[data-theme="light"] .key-card-icon {
-  background: rgba(34, 160, 90, 0.1);
-  color: #1a8a55;
+[data-theme="light"] .key-card-summary strong {
+  color: #172033;
+}
+
+[data-theme="light"] .key-card-summary small,
+[data-theme="light"] .key-card-summary em {
+  color: #526178;
 }
 
 [data-theme="light"] .key-card-actions button {

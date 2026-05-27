@@ -578,21 +578,21 @@
 
 .auth-method-section {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .auth-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .auth-switch button {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 10px;
+  padding: 9px 10px;
   background: var(--surface-panel);
   color: var(--text);
   cursor: pointer;
@@ -612,7 +612,7 @@
 
 .auth-switch small {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -639,7 +639,7 @@
 
 .form-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .check-field {

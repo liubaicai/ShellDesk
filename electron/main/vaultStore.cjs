@@ -83,7 +83,7 @@ function readAiApiBaseUrl(value, fallback = '') {
     return fallback;
   }
 
-  const apiBaseUrl = value.trim().replace(/\/+$/u, '');
+  const apiBaseUrl = value.trim();
 
   if (!apiBaseUrl) {
     return '';
@@ -359,7 +359,7 @@ function readAppSettings(rawSettings) {
     aiProvider,
     aiProviderName: readBoundedString(
       rawSettings.aiProviderName ?? defaultAiProviderName,
-      'SD-Agent 提供商名称',
+      'AI 提供商名称',
       maxAiProviderNameLength,
       { required: false },
     ) || defaultAiProviderName,
@@ -368,7 +368,7 @@ function readAppSettings(rawSettings) {
     aiApiKey: readAiApiKey(rawSettings.aiApiKey),
     aiModel: readBoundedString(
       rawSettings.aiModel ?? defaults.aiModel,
-      'SD-Agent 模型',
+      'AI 模型',
       maxAiModelNameLength,
       { required: false },
     ),

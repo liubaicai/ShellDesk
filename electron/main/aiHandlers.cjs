@@ -34,7 +34,7 @@ function readAiApiBaseUrl(value) {
 
 function readAiModelListRequest(rawRequest) {
   if (!isPlainObject(rawRequest)) {
-    throw new Error('SD-Agent 模型列表请求无效。');
+    throw new Error('AI 模型列表请求无效。');
   }
 
   const provider = rawRequest.provider === 'anthropic' ? 'anthropic' : rawRequest.provider;
