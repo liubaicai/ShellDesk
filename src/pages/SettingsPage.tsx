@@ -1,4 +1,4 @@
-import { type ChangeEvent, type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   getTerminalThemeChoice,
@@ -7,6 +7,7 @@ import {
   terminalThemeChoices,
 } from '../components/remote-desktop/terminalPresets';
 import defaultDesktopWallpaperUrl from '../assets/images/default-desktop-wallpaper.png';
+import appIconUrl from '../assets/images/icon.png';
 
 const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
@@ -15,6 +16,7 @@ const settingsSections = [
   { key: 'ai', label: 'AI', summary: '提供商、密钥、模型' },
   { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
   { key: 'backup', label: '备份与导入', summary: '配置迁移' },
+  { key: 'about', label: '关于', summary: '版本、更新、联系' },
 ] as const;
 
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
@@ -112,6 +114,88 @@ const aiProviderChoices: Array<{
     defaultApiBaseUrl: '',
   },
 ];
+const shellDeskRepositoryUrl = 'https://github.com/liubaicai/ShellDesk';
+const shellDeskContactEmail = 'liushuai.baicai@hotmail.com';
+const shellDeskIntro = 'ShellDesk 是一个面向日常运维的图形化 SSH 客户端，集成主机管理、远程终端、SFTP 文件管理、数据库工具和远程桌面工作台。';
+const defaultSyncRemotePath = '/ShellDesk/shelldesk-sync.json';
+const syncIntervalChoices = [5, 15, 30, 60, 120, 360];
+
+function createDefaultSyncForm(): ShellDeskSyncConfigInput {
+  return {
+    enabled: false,
+    webdavUrl: '',
+    webdavUsername: '',
+    webdavPassword: '',
+    webdavRemotePath: defaultSyncRemotePath,
+    ignoreCertificateErrors: false,
+    syncPassphrase: '',
+    intervalMinutes: 15,
+    syncOnStartup: true,
+  };
+}
+
+function createSyncFormFromConfig(config: ShellDeskSyncPublicConfig | null): ShellDeskSyncConfigInput {
+  if (!config) {
+    return createDefaultSyncForm();
+  }
+
+  return {
+    enabled: config.enabled,
+    webdavUrl: config.webdavUrl,
+    webdavUsername: config.webdavUsername,
+    webdavPassword: '',
+    webdavRemotePath: config.webdavRemotePath || defaultSyncRemotePath,
+    ignoreCertificateErrors: config.ignoreCertificateErrors,
+    syncPassphrase: '',
+    intervalMinutes: config.intervalMinutes,
+    syncOnStartup: config.syncOnStartup,
+  };
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getSettingsSectionNavClass(sectionKey: (typeof settingsSections)[number]['key'], activeSection: (typeof settingsSections)[number]['key']) {
+  return [
+    'settings-section-nav-item',
+    sectionKey === 'about' ? 'settings-section-nav-about' : '',
+    activeSection === sectionKey ? 'active' : '',
+  ].filter(Boolean).join(' ');
+}
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -178,6 +262,42 @@ function getFontListErrorMessage(error: unknown) {
   return '读取系统字体失败。';
 }
 
+function getUpdateCheckErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+
+  return '检查更新失败。';
+}
+
+function getSettingsErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+
+  return '操作失败。';
+}
+
+function getSyncStatusClassName(status: ShellDeskSyncStatus | undefined, hasError: boolean) {
+  if (hasError) {
+    return 'error';
+  }
+
+  if (status === 'success' || status === 'warning' || status === 'error') {
+    return status;
+  }
+
+  return '';
+}
+
 function getAiModelDisplayName(model: ShellDeskAiModelInfo) {
   return model.name && model.name !== model.id ? model.name : model.id;
 }
@@ -224,6 +344,16 @@ function SettingsPage({
   const [aiModelsMessage, setAiModelsMessage] = useState('');
   const [aiModelsError, setAiModelsError] = useState('');
   const [isAiModelListOpen, setIsAiModelListOpen] = useState(false);
+  const [appInfo, setAppInfo] = useState<ShellDeskAppInfo | null>(null);
+  const [updateCheckResult, setUpdateCheckResult] = useState<ShellDeskUpdateCheckResult | null>(null);
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+  const [updateCheckError, setUpdateCheckError] = useState('');
+  const [syncConfig, setSyncConfig] = useState<ShellDeskSyncPublicConfig | null>(null);
+  const [syncForm, setSyncForm] = useState<ShellDeskSyncConfigInput>(() => createDefaultSyncForm());
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncError, setSyncError] = useState('');
+  const [syncConflicts, setSyncConflicts] = useState<ShellDeskSyncConflict[]>([]);
+  const [syncPendingAction, setSyncPendingAction] = useState<'load' | 'save' | 'test' | 'run' | ''>('');
 
   const updateSetting = <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => {
     onSettingsChange({
@@ -259,6 +389,31 @@ function SettingsPage({
   const wallpaperPreviewStyle: CSSProperties = {
     backgroundImage: `linear-gradient(180deg, rgba(8, 13, 20, 0.16), rgba(8, 13, 20, 0.34)), url(${JSON.stringify(wallpaperPreviewUrl)})`,
   };
+  const appDisplayName = appInfo?.productName || window.guiSSH?.appName || 'ShellDesk';
+  const appVersion = appInfo?.version || '0.0.1';
+  const appPlatform = appInfo ? `${appInfo.platform} ${appInfo.arch}` : '当前运行环境';
+  const updateStatusText = updateCheckError
+    ? updateCheckError
+    : isCheckingForUpdates
+      ? '正在读取 GitHub 最新 Release 的 latest.yml'
+      : updateCheckResult
+        ? updateCheckResult.updateAvailable
+          ? `发现新版本 ${updateCheckResult.latestVersion}`
+          : '当前已是最新版本'
+        : '尚未检查更新';
+  const updateStatusClassName = updateCheckError
+    ? 'error'
+    : updateCheckResult?.updateAvailable
+      ? 'available'
+      : updateCheckResult
+        ? 'success'
+        : '';
+  const hasSavedWebDavPassword = Boolean(syncConfig?.hasWebDavPassword);
+  const hasSavedSyncPassphrase = Boolean(syncConfig?.hasSyncPassphrase);
+  const isSyncBusy = Boolean(syncPendingAction);
+  const syncStatusClassName = getSyncStatusClassName(syncConfig?.lastSyncStatus, Boolean(syncError));
+  const syncStatusText = syncError || syncMessage || syncConfig?.lastSyncMessage || '尚未配置自动同步';
+  const syncLastSyncText = syncConfig?.lastSyncAt ? formatDateTime(syncConfig.lastSyncAt) : '尚未同步';
 
   const resetDesktopWallpaper = () => {
     setWallpaperError('');
@@ -332,6 +487,188 @@ function SettingsPage({
       setIsAiModelsLoading(false);
     }
   };
+
+  const openExternalLink = useCallback((url: string) => {
+    const openExternal = window.guiSSH?.app?.openExternal;
+    const openFallback = () => {
+      if (/^mailto:/i.test(url)) {
+        window.location.href = url;
+        return;
+      }
+
+      window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    if (openExternal) {
+      void openExternal(url).catch(openFallback);
+      return;
+    }
+
+    openFallback();
+  }, []);
+
+  const checkForUpdates = async () => {
+    const checkUpdates = window.guiSSH?.app?.checkForUpdates;
+
+    if (!checkUpdates) {
+      setUpdateCheckError('当前运行环境未提供更新检查接口。');
+      return;
+    }
+
+    setIsCheckingForUpdates(true);
+    setUpdateCheckError('');
+
+    try {
+      const result = await checkUpdates();
+      setUpdateCheckResult(result);
+    } catch (error) {
+      setUpdateCheckResult(null);
+      setUpdateCheckError(getUpdateCheckErrorMessage(error));
+    } finally {
+      setIsCheckingForUpdates(false);
+    }
+  };
+
+  const applySyncConfig = useCallback((config: ShellDeskSyncPublicConfig) => {
+    setSyncConfig(config);
+    setSyncForm(createSyncFormFromConfig(config));
+  }, []);
+
+  const updateSyncForm = <Field extends keyof ShellDeskSyncConfigInput>(field: Field, value: ShellDeskSyncConfigInput[Field]) => {
+    setSyncForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const saveAutoSyncConfig = async () => {
+    const syncControls = window.guiSSH?.sync;
+
+    if (!syncControls) {
+      setSyncError('当前运行环境未提供自动同步接口。');
+      return;
+    }
+
+    setSyncPendingAction('save');
+    setSyncError('');
+    setSyncMessage('');
+
+    try {
+      const config = await syncControls.saveConfig(syncForm);
+      applySyncConfig(config);
+      setSyncMessage('自动同步设置已保存。');
+      setSyncConflicts([]);
+    } catch (error) {
+      setSyncError(getSettingsErrorMessage(error));
+    } finally {
+      setSyncPendingAction('');
+    }
+  };
+
+  const testAutoSyncConnection = async () => {
+    const syncControls = window.guiSSH?.sync;
+
+    if (!syncControls) {
+      setSyncError('当前运行环境未提供自动同步接口。');
+      return;
+    }
+
+    setSyncPendingAction('test');
+    setSyncError('');
+    setSyncMessage('');
+
+    try {
+      const result = await syncControls.testWebDav(syncForm);
+      setSyncMessage(result.message);
+      setSyncConflicts([]);
+    } catch (error) {
+      setSyncError(getSettingsErrorMessage(error));
+    } finally {
+      setSyncPendingAction('');
+    }
+  };
+
+  const runAutoSyncNow = async () => {
+    const syncControls = window.guiSSH?.sync;
+
+    if (!syncControls) {
+      setSyncError('当前运行环境未提供自动同步接口。');
+      return;
+    }
+
+    setSyncPendingAction('run');
+    setSyncError('');
+    setSyncMessage('');
+
+    try {
+      const result = await syncControls.runNow(syncForm);
+      applySyncConfig(result.config);
+      setSyncConflicts(result.conflicts);
+      setSyncMessage(result.conflictCount
+        ? `同步完成，发现 ${result.conflictCount} 个冲突，已避免静默覆盖。`
+        : `同步完成：上传 ${result.uploaded} 项，下载 ${result.downloaded} 项，删除 ${result.deleted} 项。`);
+    } catch (error) {
+      setSyncError(getSettingsErrorMessage(error));
+    } finally {
+      setSyncPendingAction('');
+    }
+  };
+
+  useEffect(() => {
+    const getInfo = window.guiSSH?.app?.getInfo;
+
+    if (!getInfo) {
+      return;
+    }
+
+    let disposed = false;
+
+    void getInfo()
+      .then((info) => {
+        if (!disposed) {
+          setAppInfo(info);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const getSyncConfig = window.guiSSH?.sync?.getConfig;
+
+    if (!getSyncConfig) {
+      setSyncError('当前运行环境未提供自动同步接口。');
+      return;
+    }
+
+    let disposed = false;
+    setSyncPendingAction('load');
+
+    void getSyncConfig()
+      .then((config) => {
+        if (!disposed) {
+          applySyncConfig(config);
+          setSyncError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setSyncError(getSettingsErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setSyncPendingAction('');
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [applySyncConfig]);
 
   useEffect(() => {
     const listFonts = window.guiSSH?.system?.listFonts;
@@ -433,7 +770,7 @@ function SettingsPage({
             <button
               key={section.key}
               type="button"
-              className={`settings-section-nav-item ${activeSection === section.key ? 'active' : ''}`}
+              className={getSettingsSectionNavClass(section.key, activeSection)}
               onClick={() => setActiveSection(section.key)}
               aria-current={activeSection === section.key ? 'page' : undefined}
             >
@@ -1180,41 +1517,342 @@ function SettingsPage({
           ) : null}
 
           {activeSection === 'backup' ? (
-            <section className="settings-section">
-              <h2>配置备份</h2>
-              <div className="settings-card">
-                <div className="settings-row">
-                  <span>
-                    <strong>完整导出</strong>
-                    <small>导出主机、密钥、设置和浏览器书签，包含密码、私钥内容、密钥口令和 AI API 密钥。</small>
-                  </span>
-                  <button
-                    type="button"
-                    className="command-button"
-                    onClick={onExportConfig}
-                    disabled={isConfigTransferPending}
-                  >
-                    {isConfigTransferPending ? '处理中...' : '导出配置'}
-                  </button>
-                </div>
+            <>
+              <section className="settings-section">
+                <h2>配置备份</h2>
+                <div className="settings-card">
+                  <div className="settings-row">
+                    <span>
+                      <strong>完整导出</strong>
+                      <small>导出主机、密钥、设置和浏览器书签，包含密码、私钥内容、密钥口令和 AI API 密钥。</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="command-button"
+                      onClick={onExportConfig}
+                      disabled={isConfigTransferPending}
+                    >
+                      {isConfigTransferPending ? '处理中...' : '导出配置'}
+                    </button>
+                  </div>
 
-                <div className="settings-row">
-                  <span>
-                    <strong>导入配置</strong>
-                    <small>从完整备份恢复本地仓库，当前主机、密钥和书签会被导入内容替换。</small>
-                  </span>
-                  <button
-                    type="button"
-                    className="command-button"
-                    onClick={onImportConfig}
-                    disabled={isConfigTransferPending}
-                  >
-                    {isConfigTransferPending ? '处理中...' : '导入配置'}
-                  </button>
+                  <div className="settings-row">
+                    <span>
+                      <strong>导入配置</strong>
+                      <small>从完整备份恢复本地仓库，当前主机、密钥和书签会被导入内容替换。</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="command-button"
+                      onClick={onImportConfig}
+                      disabled={isConfigTransferPending}
+                    >
+                      {isConfigTransferPending ? '处理中...' : '导入配置'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <p className="settings-caption">导出的 JSON 属于明文高敏备份，只适合放在你完全信任的位置；日常使用请依赖应用自身的本地加密仓库。</p>
-            </section>
+                <p className="settings-caption">导出的 JSON 属于明文高敏备份，只适合放在你完全信任的位置；日常使用请依赖应用自身的本地加密仓库。</p>
+              </section>
+
+              <section className="settings-section">
+                <h2>自动同步</h2>
+                <div className="settings-card settings-sync-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>启用 WebDAV 同步</strong>
+                      <small>启动后按间隔自动同步，也可以手动立即同步。</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={syncForm.enabled}
+                      onChange={(event) => updateSyncForm('enabled', event.target.checked)}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row settings-sync-input-row">
+                    <span>
+                      <strong>WebDAV 地址</strong>
+                      <small>例如坚果云、Nextcloud 或 NAS 的 WebDAV 根地址。</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-url-input"
+                      type="text"
+                      inputMode="url"
+                      value={syncForm.webdavUrl}
+                      onChange={(event) => updateSyncForm('webdavUrl', event.target.value)}
+                      placeholder="https://dav.example.com/remote.php/dav/files/user/"
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row settings-sync-input-row">
+                    <span>
+                      <strong>WebDAV 用户名</strong>
+                      <small>部分服务需要使用邮箱或专用应用用户名。</small>
+                    </span>
+                    <input
+                      className="settings-text-input"
+                      value={syncForm.webdavUsername}
+                      onChange={(event) => updateSyncForm('webdavUsername', event.target.value)}
+                      placeholder="username"
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row settings-sync-input-row">
+                    <span>
+                      <strong>WebDAV 密码</strong>
+                      <small>{hasSavedWebDavPassword ? '已保存，留空表示不修改。' : '建议使用服务商提供的应用密码。'}</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-secret-input"
+                      type="password"
+                      value={syncForm.webdavPassword}
+                      onChange={(event) => updateSyncForm('webdavPassword', event.target.value)}
+                      placeholder={hasSavedWebDavPassword ? '已保存，留空不改' : '应用密码'}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row settings-sync-input-row">
+                    <span>
+                      <strong>远程文件路径</strong>
+                      <small>ShellDesk 会自动创建中间目录，最终文件只保存加密同步包。</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-url-input"
+                      value={syncForm.webdavRemotePath}
+                      onChange={(event) => updateSyncForm('webdavRemotePath', event.target.value)}
+                      placeholder={defaultSyncRemotePath}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>忽略证书错误</strong>
+                      <small>仅用于内网或自签名 WebDAV；开启后将不验证该 WebDAV 服务的 TLS 证书。</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={syncForm.ignoreCertificateErrors}
+                      onChange={(event) => updateSyncForm('ignoreCertificateErrors', event.target.checked)}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <label className="settings-row settings-sync-input-row">
+                    <span>
+                      <strong>同步密码</strong>
+                      <small>{hasSavedSyncPassphrase ? '已保存，留空表示不修改；其他设备必须输入同一个密码。' : '用于加密远端同步文件，忘记后无法恢复。'}</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-secret-input"
+                      type="password"
+                      value={syncForm.syncPassphrase}
+                      onChange={(event) => updateSyncForm('syncPassphrase', event.target.value)}
+                      placeholder={hasSavedSyncPassphrase ? '已保存，留空不改' : '至少 8 个字符'}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>同步频率</strong>
+                      <small>定时同步只在应用运行时生效。</small>
+                    </span>
+                    <select
+                      value={syncForm.intervalMinutes}
+                      onChange={(event) => updateSyncForm('intervalMinutes', Number(event.target.value))}
+                      disabled={syncPendingAction === 'load'}
+                    >
+                      {syncIntervalChoices.map((minutes) => (
+                        <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} 分钟` : `${minutes / 60} 小时`}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>启动时同步</strong>
+                      <small>应用启动后自动拉取远端更新，再写回合并后的同步文件。</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={syncForm.syncOnStartup}
+                      onChange={(event) => updateSyncForm('syncOnStartup', event.target.checked)}
+                      disabled={syncPendingAction === 'load'}
+                    />
+                  </label>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>同步状态</strong>
+                      <small className={syncStatusClassName ? `settings-sync-status ${syncStatusClassName}` : 'settings-sync-status'}>
+                        {syncStatusText}
+                      </small>
+                    </span>
+                    <code className="settings-inline-code">{syncLastSyncText}</code>
+                  </div>
+
+                  <div className="settings-row settings-sync-actions-row">
+                    <span>
+                      <strong>同步操作</strong>
+                      <small>测试会写入一个临时文件；立即同步会合并本机和远端数据。</small>
+                    </span>
+                    <div className="settings-sync-actions">
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={saveAutoSyncConfig}
+                        disabled={isSyncBusy}
+                      >
+                        {syncPendingAction === 'save' ? '保存中...' : '保存设置'}
+                      </button>
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={testAutoSyncConnection}
+                        disabled={isSyncBusy}
+                      >
+                        {syncPendingAction === 'test' ? '测试中...' : '测试连接'}
+                      </button>
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={runAutoSyncNow}
+                        disabled={isSyncBusy}
+                      >
+                        {syncPendingAction === 'run' ? '同步中...' : '立即同步'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <p className="settings-caption">第一版同步主机配置、应用设置、桌面布局和浏览器书签；不会上传 SSH 密码、私钥内容、密钥口令、AI API Key 或本地日志。主机和书签冲突会保留副本，设置冲突会保留本机版本并提示。</p>
+
+                {syncConflicts.length ? (
+                  <div className="settings-sync-conflicts">
+                    <strong>同步冲突</strong>
+                    {syncConflicts.slice(0, 6).map((conflict) => (
+                      <div key={`${conflict.type}:${conflict.id}`}>
+                        <span>{conflict.name}</span>
+                        <small>{conflict.reason}</small>
+                      </div>
+                    ))}
+                    {syncConflicts.length > 6 ? <small>另有 {syncConflicts.length - 6} 个冲突未显示。</small> : null}
+                  </div>
+                ) : null}
+              </section>
+            </>
+          ) : null}
+
+          {activeSection === 'about' ? (
+            <>
+              <section className="settings-section settings-about-section">
+                <div className="settings-about-hero">
+                  <img src={appIconUrl} alt="" draggable={false} />
+                  <span>
+                    <strong>{appDisplayName}</strong>
+                    <small>{shellDeskIntro}</small>
+                  </span>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h2>应用信息</h2>
+                <div className="settings-card">
+                  <div className="settings-row">
+                    <span>
+                      <strong>版本</strong>
+                      <small>{appPlatform}</small>
+                    </span>
+                    <code className="settings-inline-code">v{appVersion}</code>
+                  </div>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>联系方式</strong>
+                      <small>问题反馈、建议和协作沟通</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="settings-link-button"
+                      onClick={() => openExternalLink(`mailto:${shellDeskContactEmail}`)}
+                    >
+                      {shellDeskContactEmail}
+                    </button>
+                  </div>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>GitHub</strong>
+                      <small>源码、Release 与问题追踪</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="settings-link-button"
+                      onClick={() => openExternalLink(shellDeskRepositoryUrl)}
+                    >
+                      liubaicai/ShellDesk
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h2>软件更新</h2>
+                <div className="settings-card">
+                  <div className="settings-row">
+                    <span>
+                      <strong>更新状态</strong>
+                      <small className={updateStatusClassName ? `settings-update-status ${updateStatusClassName}` : 'settings-update-status'}>
+                        {updateStatusText}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="command-button"
+                      onClick={checkForUpdates}
+                      disabled={isCheckingForUpdates}
+                    >
+                      {isCheckingForUpdates ? '检查中...' : '检查更新'}
+                    </button>
+                  </div>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>最新版本</strong>
+                      <small>
+                        {updateCheckResult
+                          ? [updateCheckResult.releaseName, formatDateTime(updateCheckResult.releaseDate)].filter(Boolean).join(' · ')
+                          : '点击检查更新后读取 latest.yml'}
+                      </small>
+                    </span>
+                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? '未检查'}</code>
+                  </div>
+
+                  {updateCheckResult?.updateAvailable ? (
+                    <div className="settings-row">
+                      <span>
+                        <strong>下载更新</strong>
+                        <small>{[updateCheckResult.downloadName || 'Release 产物', formatFileSize(updateCheckResult.downloadSize)].filter(Boolean).join(' · ')}</small>
+                      </span>
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={() => openExternalLink(updateCheckResult.downloadUrl ?? updateCheckResult.releaseUrl)}
+                      >
+                        打开下载
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            </>
           ) : null}
         </div>
       </section>
