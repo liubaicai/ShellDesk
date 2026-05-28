@@ -386,6 +386,28 @@ function getSignalByValue(value: string) {
   return SIGNALS.find((signal) => signal.value === value) ?? DEFAULT_SIGNAL;
 }
 
+function getVisibleProcessSortKey(sortKey: RemoteProcessManagerSortKey | undefined): RemoteProcessManagerSortKey {
+  if (sortKey && sortKey !== 'state' && sortKey !== 'startTime' && sortKey !== 'runtime') {
+    return sortKey;
+  }
+
+  return 'cpu';
+}
+
+function getLinuxSignalCommand(signalValue: string, pid: number) {
+  const signal = getSignalByValue(signalValue).value;
+
+  return `
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+  kill -${signal} ${pid} 2>&1
+elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  sudo -n kill -${signal} ${pid} 2>&1
+else
+  kill -${signal} ${pid} 2>&1
+fi
+`;
+}
+
 function parseLinuxProcessLine(line: string): RemoteProcessEntry | null {
   const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/);
 
@@ -914,7 +936,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
   const [userFilter, setUserFilter] = useState(launchOptions?.user ?? 'all');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [autoRefreshMs, setAutoRefreshMs] = useState<(typeof AUTO_REFRESH_OPTIONS)[number]>(DEFAULT_AUTO_REFRESH_MS);
-  const [sortKey, setSortKey] = useState<RemoteProcessManagerSortKey>(launchOptions?.sortKey ?? 'cpu');
+  const [sortKey, setSortKey] = useState<RemoteProcessManagerSortKey>(getVisibleProcessSortKey(launchOptions?.sortKey));
   const [sortDir, setSortDir] = useState<SortDir>(launchOptions?.sortDir ?? 'desc');
   const [viewMode, setViewMode] = useState<RemoteProcessManagerViewMode>(launchOptions?.viewMode ?? 'table');
   const [selectedSignalValue, setSelectedSignalValue] = useState(DEFAULT_SIGNAL.value);
@@ -1039,7 +1061,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     }
 
     if (launchOptions.sortKey) {
-      setSortKey(launchOptions.sortKey);
+      setSortKey(getVisibleProcessSortKey(launchOptions.sortKey));
     }
 
     if (launchOptions.sortDir) {
@@ -1264,7 +1286,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     try {
       const command = isWindowsHost
         ? powershellCommand(`Stop-Process -Id ${pending.pid} -Force -ErrorAction Stop`)
-        : `kill -${pending.signal.value} ${pending.pid} 2>&1`;
+        : getLinuxSignalCommand(pending.signal.value, pending.pid);
       const result = await runCmd(connectionId, command);
 
       if (result.code !== 0) {
@@ -1557,11 +1579,6 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             <span>{formatMemory(process, isWindowsHost)}</span>
           </div>
         </td>
-        <td className="proc-stat">
-          <span className={`proc-stat-tag ${stateTone}`}>{process.state || '-'}</span>
-        </td>
-        <td className="proc-start">{process.startTime || '-'}</td>
-        <td className="proc-runtime">{process.runtime || process.cpuTime || '-'}</td>
         <td className="proc-command" title={process.command}>
           {viewMode === 'tree' ? <span className="proc-tree-indent" style={{ width: depth * 14 }} /> : null}
           {viewMode === 'tree' && depth > 0 ? <span className="proc-tree-branch" aria-hidden="true">└</span> : null}
@@ -1657,16 +1674,13 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                   {renderSortHeader('user', '用户', 'proc-col-user')}
                   {renderSortHeader('cpu', isWindowsHost ? 'CPU(s)' : 'CPU%', 'proc-col-cpu')}
                   {renderSortHeader('memory', isWindowsHost ? '内存 MB' : 'MEM%', 'proc-col-mem')}
-                  {renderSortHeader('state', '状态', 'proc-col-stat')}
-                  {renderSortHeader('startTime', '启动', 'proc-col-start')}
-                  {renderSortHeader('runtime', isWindowsHost ? 'CPU 时间' : '运行', 'proc-col-runtime')}
                   {renderSortHeader('command', '命令', 'proc-col-command')}
                 </tr>
               </thead>
               <tbody>
                 {processRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="proc-empty">
+                    <td colSpan={6} className="proc-empty">
                       {loading ? '正在加载进程列表...' : '暂无匹配的进程。'}
                     </td>
                   </tr>

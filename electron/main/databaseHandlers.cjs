@@ -2,13 +2,50 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const Redis = require('ioredis');
 const mysql = require('mysql2/promise');
-const { EJSON, MongoClient } = require('mongodb');
+const mongodb = require('mongodb');
+const { MongoClient } = mongodb;
+const EJSON = mongodb.EJSON || mongodb.BSON?.EJSON;
 const { Client: PostgresClient } = require('pg');
 const { forwardOut, getActiveConnection, registerConnectionCleanup } = require('./connectionManager.cjs');
 const { execRemoteCommandRaw, statRemotePath, validateRemotePath } = require('./remoteConnectionHandlers.cjs');
 const { isPlainObject, readBoundedString, readIntegerInRange } = require('./validation.cjs');
 
 function registerDatabaseHandlers(registerIpcHandler) {
+  if (!EJSON) {
+    throw new Error('MongoDB EJSON 工具不可用，请检查 mongodb 依赖版本。');
+  }
+
+  function adaptConnectedSocketStream(stream) {
+    if (typeof stream.setNoDelay !== 'function') {
+      stream.setNoDelay = () => stream;
+    }
+
+    if (typeof stream.setKeepAlive !== 'function') {
+      stream.setKeepAlive = () => stream;
+    }
+
+    if (typeof stream.connect !== 'function') {
+      stream.connect = () => {
+        process.nextTick(() => {
+          if (!stream.destroyed) {
+            stream.emit('connect');
+          }
+        });
+        return stream;
+      };
+    }
+
+    if (typeof stream.ref !== 'function') {
+      stream.ref = () => stream;
+    }
+
+    if (typeof stream.unref !== 'function') {
+      stream.unref = () => stream;
+    }
+
+    return stream;
+  }
+
   // ─── MySQL over SSH tunnel ──────────────────────────────────────────────────
 
   const activeMysqlConnections = new Map();
@@ -473,7 +510,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
       }
     }
 
-    const stream = await forwardOut(activeConnection.client, postgresHost, postgresPort);
+    const stream = adaptConnectedSocketStream(await forwardOut(activeConnection.client, postgresHost, postgresPort));
     const client = new PostgresClient({
       host: postgresHost,
       port: postgresPort,

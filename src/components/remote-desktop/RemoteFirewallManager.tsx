@@ -52,6 +52,7 @@ function getActionLabel(action: FirewallRule['action']) {
   if (action === 'allow') return '允许';
   if (action === 'deny') return '拒绝';
   if (action === 'reject') return '拒收';
+  if (action === 'limit') return '限速';
   return '未知';
 }
 
@@ -331,9 +332,11 @@ function RemoteFirewallManager({ connectionId, systemType }: RemoteFirewallManag
                       <td title={rule.source}>{rule.source || '-'}</td>
                       <td>{rule.direction || '-'}</td>
                       <td title={rule.raw}>{rule.raw}</td>
-                      <td>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>复制</button>
-                        <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>删除</button>
+                      <td className="firewall-table-actions">
+                        <div>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>复制</button>
+                          <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>删除</button>
+                        </div>
                       </td>
                     </tr>
                   ))}

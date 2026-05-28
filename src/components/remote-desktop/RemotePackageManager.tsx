@@ -33,10 +33,9 @@ interface PendingPackageAction {
   danger?: boolean;
 }
 
-const packageViews: Array<{ key: PackageView; label: string }> = [
+const packageViews: Array<{ key: Exclude<PackageView, 'search'>; label: string }> = [
   { key: 'upgradable', label: '可升级' },
   { key: 'installed', label: '已安装' },
-  { key: 'search', label: '搜索' },
 ];
 
 function runCmd(connectionId: string, command: string) {
@@ -63,7 +62,8 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
   const [activeView, setActiveView] = useState<PackageView>('upgradable');
   const [packages, setPackages] = useState<RemotePackageInfo[]>([]);
   const [selectedName, setSelectedName] = useState('');
-  const [searchQuery, setSearchQuery] = useState('htop');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lastSearchQuery, setLastSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionRunning, setActionRunning] = useState(false);
   const [error, setError] = useState('');
@@ -92,7 +92,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
     }
   }, [connectionId, isWindowsHost]);
 
-  const loadPackages = useCallback(async (view: PackageView, kind = managerKind) => {
+  const loadPackages = useCallback(async (view: PackageView, kind = managerKind, query = '') => {
     if (kind === 'unknown') {
       setPackages([]);
       setError('未检测到支持的包管理器。');
@@ -105,13 +105,16 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
 
     try {
       const command = view === 'search'
-        ? createPackageSearchCommand(kind, searchQuery)
+        ? createPackageSearchCommand(kind, query)
         : createPackageListCommand(kind, view);
       const result = await runCmd(connectionId, command);
       const nextPackages = parsePackageOutput(kind, view, result.stdout);
       setPackages(nextPackages);
       setSelectedName(nextPackages[0]?.name ?? '');
       setActiveView(view);
+      if (view === 'search') {
+        setLastSearchQuery(query.trim());
+      }
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       if (result.stderr.trim()) {
         setNotice(result.stderr.trim());
@@ -121,7 +124,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
     } finally {
       setLoading(false);
     }
-  }, [connectionId, managerKind, searchQuery]);
+  }, [connectionId, managerKind]);
 
   useEffect(() => {
     const boot = async () => {
@@ -184,7 +187,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
       const result = await runCmd(connectionId, pendingAction.command);
       setNotice(result.stdout || result.stderr || `${pendingAction.label}命令已执行。`);
       setPendingAction(null);
-      await loadPackages(activeView);
+      await loadPackages(activeView, managerKind, activeView === 'search' ? lastSearchQuery : '');
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -212,26 +215,47 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
 
       <div className="package-layout">
         <aside className="package-sidebar">
-          <div className="package-tabs">
-            {packageViews.map((view) => (
-              <button
-                key={view.key}
-                type="button"
-                className={activeView === view.key ? 'active' : ''}
-                onClick={() => loadPackages(view.key)}
-                disabled={loading || managerKind === 'unknown'}
-              >
-                {view.label}
-              </button>
-            ))}
+          <div className="package-nav-group">
+            <span className="package-sidebar-label">列表视图</span>
+            <div className="package-tabs">
+              {packageViews.map((view) => (
+                <button
+                  key={view.key}
+                  type="button"
+                  className={activeView === view.key ? 'active' : ''}
+                  onClick={() => loadPackages(view.key)}
+                  disabled={loading || managerKind === 'unknown'}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="package-search-box">
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void loadPackages('search'); }} placeholder="搜索包名" />
-            <button type="button" onClick={() => loadPackages('search')} disabled={loading || managerKind === 'unknown'}>搜索</button>
+            <span className="package-sidebar-label">仓库查询</span>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void loadPackages('search', managerKind, searchQuery);
+              }}
+              placeholder="包名，例如 htop"
+              aria-label="查询仓库包名"
+            />
+            <button type="button" onClick={() => loadPackages('search', managerKind, searchQuery)} disabled={loading || managerKind === 'unknown'}>
+              查询包名
+            </button>
           </div>
+          {activeView === 'search' ? (
+            <div className="package-search-state">
+              <span>当前结果</span>
+              <strong>{lastSearchQuery || '-'}</strong>
+            </div>
+          ) : null}
           <div className="package-summary">
             <strong>{packages.length}</strong>
-            <span>{activeView === 'upgradable' ? '个可升级包' : activeView === 'installed' ? '个已安装包' : '条搜索结果'}</span>
+            <span>{activeView === 'upgradable' ? '个可升级包' : activeView === 'installed' ? '个已安装包' : '条查询结果'}</span>
           </div>
         </aside>
 

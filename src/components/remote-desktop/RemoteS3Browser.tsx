@@ -104,6 +104,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
   const [loading, setLoading] = useState(false);
   const [objectLoading, setObjectLoading] = useState(false);
   const [actionRunning, setActionRunning] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
@@ -162,6 +163,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       }
 
       const nextBuckets = parseS3Buckets(mode, result.stdout);
+      setConnected(true);
       setBuckets(nextBuckets);
       setSelectedBucketName((current) => current && nextBuckets.some((bucket) => bucket.name === current) ? current : nextBuckets[0]?.name ?? '');
       setObjects([]);
@@ -175,6 +177,21 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const disconnect = () => {
+    setConnected(false);
+    setBuckets([]);
+    setObjects([]);
+    setSelectedBucketName('');
+    setSelectedObjectKey('');
+    setPrefix('');
+    setSearch('');
+    setRawOutput('');
+    setLastRefreshedAt('');
+    setError('');
+    setNotice('MinIO / S3 已断开。');
+    setActiveTab('objects');
   };
 
   const loadObjects = useCallback(async (bucketName = selectedBucket?.name ?? '', nextPrefix = prefix) => {
@@ -304,44 +321,49 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
         </div>
         <button type="button" onClick={detectTools}>检测工具</button>
         <button type="button" className="primary" onClick={loadBuckets} disabled={loading}>
-          {loading ? '连接中' : '连接 / Buckets'}
+          {loading ? '连接中' : connected ? '刷新 Buckets' : '连接 / Buckets'}
+        </button>
+        <button type="button" onClick={disconnect} disabled={!connected || loading}>
+          断开
         </button>
       </header>
 
       {error ? <div className="s3-alert danger">{error}</div> : null}
       {notice ? <div className="s3-alert info">{notice}</div> : null}
 
-      <div className="s3-layout">
-        <aside className="s3-config">
-          <div className="s3-config-head">
-            <strong>连接配置</strong>
-            <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'}</span>
-          </div>
-          <label>
-            <span>Endpoint</span>
-            <input value={config.endpoint} onChange={(event) => updateConfig('endpoint', event.target.value)} placeholder="http://127.0.0.1:9000" />
-          </label>
-          <label>
-            <span>Access Key</span>
-            <input value={config.accessKey} onChange={(event) => updateConfig('accessKey', event.target.value)} />
-          </label>
-          <label>
-            <span>Secret Key</span>
-            <input type="password" value={config.secretKey} onChange={(event) => updateConfig('secretKey', event.target.value)} />
-          </label>
-          <label>
-            <span>Region</span>
-            <input value={config.region} onChange={(event) => updateConfig('region', event.target.value)} />
-          </label>
-          <label className="s3-check-row">
-            <input type="checkbox" checked={config.pathStyle} onChange={(event) => updateConfig('pathStyle', event.target.checked)} />
-            <span>Path-style URL</span>
-          </label>
-          <label>
-            <span>远程下载目录</span>
-            <input value={downloadDirectory} onChange={(event) => setDownloadDirectory(event.target.value)} />
-          </label>
-        </aside>
+      <div className={`s3-layout ${connected ? 'connected' : ''}`}>
+        {!connected ? (
+          <aside className="s3-config">
+            <div className="s3-config-head">
+              <strong>连接配置</strong>
+              <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'}</span>
+            </div>
+            <label>
+              <span>Endpoint</span>
+              <input value={config.endpoint} onChange={(event) => updateConfig('endpoint', event.target.value)} placeholder="http://127.0.0.1:9000" />
+            </label>
+            <label>
+              <span>Access Key</span>
+              <input value={config.accessKey} onChange={(event) => updateConfig('accessKey', event.target.value)} />
+            </label>
+            <label>
+              <span>Secret Key</span>
+              <input type="password" value={config.secretKey} onChange={(event) => updateConfig('secretKey', event.target.value)} />
+            </label>
+            <label>
+              <span>Region</span>
+              <input value={config.region} onChange={(event) => updateConfig('region', event.target.value)} />
+            </label>
+            <label className="s3-check-row">
+              <input type="checkbox" checked={config.pathStyle} onChange={(event) => updateConfig('pathStyle', event.target.checked)} />
+              <span>Path-style URL</span>
+            </label>
+            <label>
+              <span>远程下载目录</span>
+              <input value={downloadDirectory} onChange={(event) => setDownloadDirectory(event.target.value)} />
+            </label>
+          </aside>
+        ) : null}
 
         <aside className="s3-bucket-list">
           <div className="s3-panel-head">

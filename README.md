@@ -35,11 +35,20 @@
 
 ## Table of Contents
 
+- [Table of Contents](#table-of-contents)
 - [Purpose](#purpose)
 - [Feature Overview](#feature-overview)
+  - [Hosts and Credentials](#hosts-and-credentials)
+  - [Connection Desktop](#connection-desktop)
+  - [Terminal, Files, and Editing](#terminal-files-and-editing)
+  - [Databases and System Tools](#databases-and-system-tools)
+  - [App Settings, Logs, Backup, and Language](#app-settings-logs-backup-and-language)
 - [Remote Desktop Apps](#remote-desktop-apps)
 - [Data and Security](#data-and-security)
 - [Quick Start](#quick-start)
+  - [Requirements](#requirements)
+  - [Install Dependencies](#install-dependencies)
+  - [Start Development Mode](#start-development-mode)
 - [Scripts](#scripts)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -317,7 +326,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 
 | Distribution / environment | Status | Notes |
 | :--- | :---: | :--- |
-| Ubuntu 24.04 LTS |  |  |
+| Ubuntu 24.04 LTS | ✅ | [Report](docs/system-compatibility-reports/ubuntu2404.md) |
 | Ubuntu 22.04 LTS |  |  |
 | Ubuntu 20.04 LTS |  |  |
 | Debian 12 Bookworm |  |  |

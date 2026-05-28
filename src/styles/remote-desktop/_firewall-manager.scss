@@ -28,20 +28,28 @@
 }
 
 .firewall-toolbar {
-  min-height: 52px;
+  min-height: 44px;
   justify-content: space-between;
   border-bottom: 1px solid var(--firewall-border);
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.035);
 }
 
-.firewall-status-block,
 .firewall-form-title,
 .firewall-detail,
 .firewall-confirm-header {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.firewall-status-block {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .firewall-status-block span,
@@ -56,6 +64,23 @@
   font-size: 11px;
   font-style: normal;
   font-weight: 760;
+}
+
+.firewall-status-block span {
+  flex: 0 0 auto;
+}
+
+.firewall-status-block strong {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.firewall-status-block em,
+.firewall-toolbar-actions span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .firewall-status-block strong,
@@ -78,6 +103,8 @@
   height: 30px;
   border: 1px solid var(--firewall-border);
   border-radius: 6px;
+  flex: 0 0 auto;
+  min-height: 30px;
   padding: 0 11px;
   background: rgba(255, 255, 255, 0.045);
   color: var(--firewall-muted-strong);
@@ -85,6 +112,14 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.firewall-toolbar-actions {
+  min-width: 0;
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .firewall-toolbar button:hover:not(:disabled),
@@ -105,6 +140,13 @@
   border-color: rgba(255, 189, 110, 0.38);
   background: rgba(255, 189, 110, 0.16);
   color: #ffe6c2;
+}
+
+.firewall-add-button {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
 }
 
 .firewall-detail-actions button.danger,
@@ -265,13 +307,14 @@
 .firewall-table-wrap {
   min-height: 0;
   flex: 1 1 auto;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .firewall-table {
   width: 100%;
-  min-width: 850px;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 12px;
 }
 
@@ -281,6 +324,36 @@
   padding: 8px 9px;
   text-align: left;
   vertical-align: middle;
+}
+
+.firewall-table th:nth-child(1),
+.firewall-table td:nth-child(1) {
+  width: 92px;
+}
+
+.firewall-table th:nth-child(2),
+.firewall-table td:nth-child(2) {
+  width: 72px;
+}
+
+.firewall-table th:nth-child(3),
+.firewall-table td:nth-child(3) {
+  width: 112px;
+}
+
+.firewall-table th:nth-child(4),
+.firewall-table td:nth-child(4) {
+  width: 18%;
+}
+
+.firewall-table th:nth-child(5),
+.firewall-table td:nth-child(5) {
+  width: 72px;
+}
+
+.firewall-table th:nth-child(7),
+.firewall-table td:nth-child(7) {
+  width: 142px;
 }
 
 .firewall-table th {
@@ -294,15 +367,24 @@
 }
 
 .firewall-table td {
-  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.firewall-table td:last-child {
-  display: flex;
+.firewall-table-actions {
+  padding-right: 8px;
+}
+
+.firewall-table-actions > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.firewall-table-actions button {
+  min-width: 0;
+  padding: 0 8px;
 }
 
 .firewall-table tbody tr {
@@ -329,6 +411,11 @@
 .firewall-action.allow {
   background: rgba(118, 224, 169, 0.13);
   color: var(--firewall-ok);
+}
+
+.firewall-action.limit {
+  background: rgba(255, 189, 110, 0.13);
+  color: var(--firewall-accent);
 }
 
 .firewall-action.deny,
@@ -413,10 +500,21 @@
   .firewall-content {
     grid-template-columns: 1fr;
   }
+}
 
+@media (max-width: 620px) {
   .firewall-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .firewall-status-block,
+  .firewall-toolbar-actions {
+    width: 100%;
+  }
+
+  .firewall-toolbar-actions {
+    justify-content: flex-start;
   }
 }
 

@@ -315,9 +315,6 @@
 .proc-col-user { width: 96px; }
 .proc-col-cpu { width: 96px; }
 .proc-col-mem { width: 104px; }
-.proc-col-stat { width: 82px; }
-.proc-col-start { width: 82px; }
-.proc-col-runtime { width: 86px; }
 .proc-col-command { width: auto; }
 
 .proc-table td {
@@ -350,8 +347,6 @@
 
 .proc-pid,
 .proc-ppid,
-.proc-runtime,
-.proc-start,
 .proc-command,
 .proc-bar-wrap span {
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
@@ -364,9 +359,7 @@
 }
 
 .proc-ppid,
-.proc-user,
-.proc-start,
-.proc-runtime {
+.proc-user {
   color: var(--proc-muted-strong) !important;
 }
 

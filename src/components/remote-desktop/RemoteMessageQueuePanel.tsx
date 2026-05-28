@@ -6,6 +6,7 @@ import {
   createKafkaTopicsCommand,
   createRabbitCtlCommand,
   createRabbitManagementCommand,
+  formatRabbitCommandError,
   parseKafkaLag,
   parseKafkaTopics,
   parseRabbitCtlQueues,
@@ -95,7 +96,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
     const result = await runCmd(connectionId, command);
 
     if (result.code !== 0) {
-      throw new Error(result.stderr || result.stdout || `RabbitMQ 命令退出码 ${result.code}`);
+      throw new Error(formatRabbitCommandError(result.stdout, result.stderr, result.code));
     }
 
     const nextQueues = rabbitMode === 'rabbitmqctl'

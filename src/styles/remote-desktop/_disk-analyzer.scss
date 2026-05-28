@@ -137,19 +137,33 @@
 
 .disk-mount-strip {
   display: flex;
+  flex: 0 0 62px;
   gap: 8px;
+  min-height: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   border-bottom: 1px solid var(--disk-border);
-  padding: 8px 10px;
+  padding: 6px 10px;
+  scrollbar-gutter: stable;
 }
 
 .disk-mount-strip button {
   display: grid;
-  min-width: 190px;
-  gap: 5px;
+  flex: 0 0 190px;
+  min-width: 0;
+  max-width: 190px;
+  height: 50px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title percent"
+    "size percent"
+    "bar bar";
+  gap: 3px 8px;
+  align-items: center;
   border: 1px solid var(--disk-border);
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px 8px;
   background: rgba(255, 255, 255, 0.04);
   color: inherit;
   cursor: pointer;
@@ -164,6 +178,7 @@
 
 .disk-mount-strip span {
   display: flex;
+  grid-area: title;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
@@ -179,8 +194,13 @@
 }
 
 .disk-mount-strip strong {
+  min-width: 0;
   font-size: 12px;
   font-weight: 840;
+}
+
+.disk-mount-strip small {
+  grid-area: size;
 }
 
 .disk-mount-strip em,
@@ -200,6 +220,10 @@
   background: rgba(148, 170, 204, 0.13);
 }
 
+.disk-mount-strip i {
+  grid-area: bar;
+}
+
 .disk-mount-strip i b,
 .disk-size-bar i {
   display: block;
@@ -209,9 +233,10 @@
 }
 
 .disk-mount-strip mark {
-  justify-self: start;
+  grid-area: percent;
+  justify-self: end;
   border-radius: 999px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   background: rgba(128, 211, 155, 0.12);
   color: var(--disk-accent);
   font-size: 10px;

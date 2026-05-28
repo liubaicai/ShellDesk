@@ -48,14 +48,28 @@ function normalizeUrl(value: string) {
   return trimmed;
 }
 
+function stripAnsi(value: string) {
+  return value.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+export function formatRabbitCommandError(stdout: string, stderr: string, code: number) {
+  const output = stripAnsi(stderr || stdout).trim();
+
+  if (/Usage\s+rabbitmqctl/i.test(output)) {
+    return 'RabbitMQ CLI 返回了帮助信息，请检查 rabbitmqctl 路径或版本是否支持 list_queues。';
+  }
+
+  return output || `RabbitMQ 命令退出码 ${code}`;
+}
+
 export function createRabbitCtlCommand(commandPath: string, isWindowsHost: boolean) {
   const executable = normalizeCommandPath(commandPath, 'rabbitmqctl');
 
   if (isWindowsHost) {
-    return powershellCommand(`& ${powershellSingleQuote(executable)} -q list_queues name messages consumers state`);
+    return powershellCommand(`& ${powershellSingleQuote(executable)} --quiet list_queues name messages consumers state`);
   }
 
-  return `${shellSingleQuote(executable)} -q list_queues name messages consumers state`;
+  return `${shellSingleQuote(executable)} --quiet list_queues name messages consumers state`;
 }
 
 export function createRabbitManagementCommand(config: { url: string; username: string; password: string }, isWindowsHost: boolean) {

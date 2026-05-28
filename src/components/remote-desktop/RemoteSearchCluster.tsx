@@ -48,6 +48,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [timeoutSeconds, setTimeoutSeconds] = useState('10');
+  const [ignoreSslCertificate, setIgnoreSslCertificate] = useState(false);
   const [health, setHealth] = useState<SearchClusterHealth | null>(null);
   const [indices, setIndices] = useState<SearchClusterIndex[]>([]);
   const [shards, setShards] = useState<SearchClusterShard[]>([]);
@@ -69,7 +70,8 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
     username,
     password,
     timeoutSeconds: Number.parseInt(timeoutSeconds, 10) || 10,
-  }), [password, timeoutSeconds, url, username]);
+    ignoreSslCertificate,
+  }), [ignoreSslCertificate, password, timeoutSeconds, url, username]);
 
   const filteredIndices = useMemo(() => {
     const keyword = indexSearch.trim().toLowerCase();
@@ -204,6 +206,10 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
         <label className="timeout">
           <span>Timeout</span>
           <input value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(event.target.value)} inputMode="numeric" />
+        </label>
+        <label className="search-tls-option" title="连接 HTTPS 集群时跳过证书校验">
+          <input type="checkbox" checked={ignoreSslCertificate} onChange={(event) => setIgnoreSslCertificate(event.target.checked)} />
+          <span>忽略证书</span>
         </label>
         <button type="button" className="primary" onClick={refreshCluster} disabled={loading}>
           {loading ? '刷新中' : '连接 / 刷新'}

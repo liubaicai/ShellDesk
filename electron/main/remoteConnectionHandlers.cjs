@@ -960,7 +960,7 @@ function createRemoteFile(client, remotePath) {
           return;
         }
 
-        sftp.closeHandle(handle, (closeError) => {
+        sftp.close(handle, (closeError) => {
           sftp.end();
 
           if (closeError) {
@@ -1224,6 +1224,67 @@ function execRemoteCommandRaw(client, command, stdin = '') {
         stream.end(stdin, 'utf8');
       }
       stream.on('close', (code) => {
+        const stdout = decodeSshOutputBuffer(Buffer.concat(stdoutChunks));
+        const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
+      });
+      stream.once('error', reject);
+    });
+  });
+}
+
+function execRemoteCommandStream(event, client, command, stdin = '', streamId) {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const stdoutChunks = [];
+      const stderrChunks = [];
+      const stdoutDecoder = new TextDecoder('utf-8');
+      const stderrDecoder = new TextDecoder('utf-8');
+
+      const sendChunk = (source, chunk) => {
+        const buffer = Buffer.from(chunk);
+        const chunks = source === 'stdout' ? stdoutChunks : stderrChunks;
+        const decoder = source === 'stdout' ? stdoutDecoder : stderrDecoder;
+        chunks.push(buffer);
+
+        const text = decoder.decode(buffer, { stream: true });
+
+        if (text && !event.sender.isDestroyed()) {
+          event.sender.send('connection:run-command-stream:chunk', {
+            streamId,
+            stream: source,
+            chunk: text,
+          });
+        }
+      };
+
+      const flushDecoder = (source) => {
+        const decoder = source === 'stdout' ? stdoutDecoder : stderrDecoder;
+        const text = decoder.decode();
+
+        if (text && !event.sender.isDestroyed()) {
+          event.sender.send('connection:run-command-stream:chunk', {
+            streamId,
+            stream: source,
+            chunk: text,
+          });
+        }
+      };
+
+      stream.on('data', (chunk) => sendChunk('stdout', chunk));
+      stream.stderr.on('data', (chunk) => sendChunk('stderr', chunk));
+      if (stdin) {
+        stream.end(stdin, 'utf8');
+      }
+      stream.on('close', (code) => {
+        flushDecoder('stdout');
+        flushDecoder('stderr');
+
         const stdout = decodeSshOutputBuffer(Buffer.concat(stdoutChunks));
         const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
@@ -1739,6 +1800,16 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       ? readBoundedString(rawStdin, '命令输入', maxRemoteCommandInputLength, { required: false, trim: false, rejectLineBreaks: false })
       : '';
     return execRemoteCommandRaw(activeConnection.client, command, stdin);
+  });
+
+  registerIpcHandler('connection:run-command-stream', async (event, connectionId, rawCommand, rawStdin, rawStreamId) => {
+    const activeConnection = getActiveConnection(connectionId);
+    const command = readBoundedString(rawCommand, '命令', maxRemoteCommandLength, { rejectLineBreaks: false });
+    const stdin = typeof rawStdin === 'string'
+      ? readBoundedString(rawStdin, '命令输入', maxRemoteCommandInputLength, { required: false, trim: false, rejectLineBreaks: false })
+      : '';
+    const streamId = readBoundedString(rawStreamId, '命令流标识', 120);
+    return execRemoteCommandStream(event, activeConnection.client, command, stdin, streamId);
   });
 
   registerIpcHandler('connection:compress', async (_event, connectionId, rawSourcePaths, rawFormat, rawDestPath) => {

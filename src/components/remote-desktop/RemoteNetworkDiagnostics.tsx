@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -10,7 +10,7 @@ interface RemoteNetworkDiagnosticsProps {
 }
 
 type NetworkToolKey = 'ping' | 'dns' | 'trace' | 'curl' | 'tcp' | 'routes';
-type RunStatus = 'success' | 'error';
+type RunStatus = 'running' | 'success' | 'error';
 
 interface NetworkDiagnosticRun {
   id: string;
@@ -21,6 +21,7 @@ interface NetworkDiagnosticRun {
   exitCode: number;
   stdout: string;
   stderr: string;
+  output: string;
   summary: Array<{ label: string; value: string }>;
   status: RunStatus;
 }
@@ -62,6 +63,34 @@ function runCmd(connectionId: string, command: string) {
   }
 
   return api.runCommand(connectionId, command);
+}
+
+function runCmdStream(
+  connectionId: string,
+  command: string,
+  onChunk: (chunk: string, stream: 'stdout' | 'stderr') => void,
+) {
+  const api = window.guiSSH?.connections;
+
+  if (!api) {
+    throw new Error('ShellDesk IPC 未就绪。');
+  }
+
+  if (api.runCommandStream) {
+    return api.runCommandStream(connectionId, command, undefined, { onChunk });
+  }
+
+  return runCmd(connectionId, command).then((result) => {
+    if (result.stdout) {
+      onChunk(result.stdout, 'stdout');
+    }
+
+    if (result.stderr) {
+      onChunk(result.stderr, 'stderr');
+    }
+
+    return result;
+  });
 }
 
 function shellSingleQuote(value: string) {
@@ -248,14 +277,29 @@ function extractSummary(tool: NetworkToolKey, stdout: string, stderr: string, ex
 function formatRunOutput(run: NetworkDiagnosticRun) {
   return [
     `[${run.title}] ${run.startedAt}`,
-    `退出码: ${run.exitCode}`,
+    `退出码: ${run.status === 'running' ? '执行中' : run.exitCode}`,
     run.stdout ? `\nSTDOUT\n${run.stdout}` : '',
     run.stderr ? `\nSTDERR\n${run.stderr}` : '',
+    !run.stdout && !run.stderr && run.output ? `\nOUTPUT\n${run.output}` : '',
   ].filter(Boolean).join('\n');
+}
+
+function getRunBadge(run: NetworkDiagnosticRun) {
+  if (run.status === 'running') return 'RUN';
+  return run.exitCode === 0 ? 'OK' : 'ERR';
+}
+
+function getRunHistoryMeta(run: NetworkDiagnosticRun) {
+  if (run.status === 'running') {
+    return `${run.startedAt} · 执行中`;
+  }
+
+  return `${run.startedAt} · ${run.durationMs} ms · code ${run.exitCode}`;
 }
 
 function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDiagnosticsProps) {
   const isWindowsHost = isWindowsSystem(systemType);
+  const outputRef = useRef<HTMLPreElement | null>(null);
   const [activeTool, setActiveTool] = useState<NetworkToolKey>('ping');
   const [form, setForm] = useState<NetworkFormState>(initialFormState);
   const [runs, setRuns] = useState<NetworkDiagnosticRun[]>([]);
@@ -269,6 +313,18 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
 
   const activeDefinition = toolDefinitions.find((tool) => tool.key === activeTool) ?? toolDefinitions[0];
 
+  useEffect(() => {
+    if (activeRun?.status !== 'running') {
+      return;
+    }
+
+    const outputElement = outputRef.current;
+
+    if (outputElement) {
+      outputElement.scrollTop = outputElement.scrollHeight;
+    }
+  }, [activeRun?.output, activeRun?.status]);
+
   const updateForm = (key: keyof NetworkFormState, value: string) => {
     setForm((currentForm) => ({ ...currentForm, [key]: value }));
   };
@@ -277,28 +333,95 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
     setRunning(true);
     setError('');
     const started = performance.now();
+    let runId = '';
 
     try {
       const command = buildCommand(activeTool, form, isWindowsHost);
-      const result = await runCmd(connectionId, command);
-      const durationMs = Math.round(performance.now() - started);
-      const run: NetworkDiagnosticRun = {
-        id: createId('network-run'),
+      runId = createId('network-run');
+      const startedAt = new Date().toLocaleTimeString(getShellDeskLocale());
+      const title = `${activeDefinition.label} · ${getToolTarget(activeTool, form)}`;
+      const initialRun: NetworkDiagnosticRun = {
+        id: runId,
         tool: activeTool,
-        title: `${activeDefinition.label} · ${getToolTarget(activeTool, form)}`,
-        startedAt: new Date().toLocaleTimeString(getShellDeskLocale()),
-        durationMs,
-        exitCode: result.code,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        summary: extractSummary(activeTool, result.stdout, result.stderr, result.code, durationMs),
-        status: result.code === 0 ? 'success' : 'error',
+        title,
+        startedAt,
+        durationMs: 0,
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        output: '',
+        summary: [
+          { label: '状态', value: '执行中' },
+          { label: '退出码', value: '-' },
+        ],
+        status: 'running',
       };
 
-      setRuns((currentRuns) => [run, ...currentRuns].slice(0, maxHistoryRuns));
-      setActiveRunId(run.id);
+      setRuns((currentRuns) => [initialRun, ...currentRuns].slice(0, maxHistoryRuns));
+      setActiveRunId(runId);
+
+      const result = await runCmdStream(connectionId, command, (chunk, stream) => {
+        setRuns((currentRuns) => currentRuns.map((run) => {
+          if (run.id !== runId) {
+            return run;
+          }
+
+          return {
+            ...run,
+            stdout: stream === 'stdout' ? `${run.stdout}${chunk}` : run.stdout,
+            stderr: stream === 'stderr' ? `${run.stderr}${chunk}` : run.stderr,
+            output: `${run.output}${chunk}`,
+          };
+        }));
+      });
+      const durationMs = Math.round(performance.now() - started);
+      const fallbackOutput = [result.stdout, result.stderr].filter(Boolean).join('\n');
+
+      setRuns((currentRuns) => currentRuns.map((run) => {
+        if (run.id !== runId) {
+          return run;
+        }
+
+        return {
+          ...run,
+          durationMs,
+          exitCode: result.code,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          output: run.output || fallbackOutput,
+          summary: extractSummary(activeTool, result.stdout, result.stderr, result.code, durationMs),
+          status: result.code === 0 ? 'success' : 'error',
+        };
+      }));
     } catch (error) {
-      setError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+
+      if (!runId) {
+        setError(message);
+      } else {
+        const durationMs = Math.round(performance.now() - started);
+
+        setRuns((currentRuns) => currentRuns.map((run) => {
+          if (run.id !== runId) {
+            return run;
+          }
+
+          const stderr = `${run.stderr}${run.stderr ? '\n' : ''}${message}`;
+
+          return {
+            ...run,
+            durationMs,
+            exitCode: 1,
+            stderr,
+            output: `${run.output}${run.output ? '\n' : ''}${message}`,
+            summary: [
+              { label: '退出码', value: '1' },
+              { label: '耗时', value: `${durationMs} ms` },
+            ],
+            status: 'error',
+          };
+        }));
+      }
     } finally {
       setRunning(false);
     }
@@ -332,7 +455,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
                 <strong>{tool.label}</strong>
                 <small>{tool.description}</small>
               </span>
-              {latestRun ? <em className={latestRun.status}>{latestRun.exitCode === 0 ? 'OK' : 'ERR'}</em> : null}
+              {latestRun ? <em className={latestRun.status}>{getRunBadge(latestRun)}</em> : null}
             </button>
           );
         })}
@@ -418,7 +541,9 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
                   </div>
                 ))}
               </div>
-              <pre className="network-output">{activeRun.stdout || activeRun.stderr || '命令没有输出。'}</pre>
+              <pre ref={outputRef} className="network-output">
+                {activeRun.output || activeRun.stdout || activeRun.stderr || (activeRun.status === 'running' ? '等待远程输出...' : '命令没有输出。')}
+              </pre>
             </>
           ) : (
             <div className="network-placeholder">选择工具并执行后，这里会显示摘要和原始输出。</div>
@@ -440,7 +565,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
               onClick={() => setActiveRunId(run.id)}
             >
               <strong>{run.title}</strong>
-              <span>{run.startedAt} · {run.durationMs} ms · code {run.exitCode}</span>
+              <span>{getRunHistoryMeta(run)}</span>
             </button>
           ))}
           {runs.length === 0 ? <div className="network-history-empty">暂无历史。</div> : null}

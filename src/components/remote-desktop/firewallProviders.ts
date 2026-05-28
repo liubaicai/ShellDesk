@@ -1,7 +1,7 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
 
 export type FirewallBackend = 'ufw' | 'firewalld' | 'windows' | 'unknown';
-export type FirewallAction = 'allow' | 'deny' | 'reject' | 'unknown';
+export type FirewallAction = 'allow' | 'deny' | 'reject' | 'limit' | 'unknown';
 export type FirewallProtocol = 'tcp' | 'udp' | 'any';
 
 export interface FirewallRule {
@@ -25,7 +25,7 @@ export interface FirewallSnapshot {
 }
 
 export interface FirewallRuleDraft {
-  action: Exclude<FirewallAction, 'unknown'>;
+  action: 'allow' | 'deny' | 'reject';
   protocol: FirewallProtocol;
   port: string;
   source: string;
@@ -35,6 +35,7 @@ const backendMarker = '__SHELLDESK_FIREWALL_BACKEND__';
 const stateMarker = '__SHELLDESK_FIREWALL_STATE__';
 const zoneMarker = '__SHELLDESK_FIREWALL_ZONE__';
 const listMarker = '__SHELLDESK_FIREWALL_LIST__';
+const ufwAddedMarker = '__SHELLDESK_UFW_ADDED__';
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -67,6 +68,7 @@ function normalizeAction(value: string): FirewallAction {
   if (normalized === 'allow' || normalized === 'allowed') return 'allow';
   if (normalized === 'deny' || normalized === 'block' || normalized === 'blocked') return 'deny';
   if (normalized === 'reject') return 'reject';
+  if (normalized === 'limit' || normalized === 'limited') return 'limit';
   return 'unknown';
 }
 
@@ -92,38 +94,140 @@ function parsePortAndProtocol(value: string) {
   };
 }
 
+function parseUfwStatusRuleLine(line: string, index: number): FirewallRule | null {
+  if (
+    !line
+    || line.startsWith(backendMarker)
+    || line.startsWith(ufwAddedMarker)
+    || /^Status:|^Default:|^Logging:|^New profiles:|^To\s+Action\s+From|^-+\s+-+\s+-+/i.test(line)
+    || /^ERROR:|^sudo:|^WARN/i.test(line)
+  ) {
+    return null;
+  }
+
+  const numberedPrefix = line.match(/^\[\s*(\d+)\]\s*(.+)$/);
+  const ruleNumber = numberedPrefix?.[1];
+  const body = (numberedPrefix?.[2] ?? line).trim();
+  const columns = body.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
+  let targetText = '';
+  let actionText = '';
+  let directionText = '';
+  let sourceText = '';
+
+  if (columns.length >= 3) {
+    targetText = columns[0];
+    const actionParts = columns[1].split(/\s+/).filter(Boolean);
+    actionText = actionParts[0] ?? '';
+    directionText = actionParts.slice(1).join(' ');
+    sourceText = columns.slice(2).join(' ');
+  } else {
+    const fallbackMatch = body.match(/^(.+?)\s+(ALLOW|DENY|REJECT|LIMIT)(?:\s+(IN|OUT|FWD))?\s+(.+)$/i);
+
+    if (!fallbackMatch) {
+      return null;
+    }
+
+    targetText = fallbackMatch[1] ?? '';
+    actionText = fallbackMatch[2] ?? '';
+    directionText = fallbackMatch[3] ?? '';
+    sourceText = fallbackMatch[4] ?? '';
+  }
+
+  const action = normalizeAction(actionText);
+
+  if (action === 'unknown') {
+    return null;
+  }
+
+  const parsed = parsePortAndProtocol(targetText);
+
+  return {
+    id: ruleNumber ? `ufw:${ruleNumber}` : `ufw:raw:${index}`,
+    action,
+    protocol: parsed.protocol,
+    port: parsed.port,
+    source: sourceText.trim() || undefined,
+    target: targetText.trim() || undefined,
+    direction: directionText.trim() || undefined,
+    raw: line,
+  };
+}
+
+function parseUfwAddedRuleLine(line: string, index: number): FirewallRule | null {
+  const match = line.trim().match(/^ufw\s+(?:(route)\s+)?(allow|deny|reject|limit)\b\s*(.*)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const routeText = match[1];
+  const actionText = match[2] ?? '';
+  const rest = (match[3] ?? '').replace(/\s+comment\s+(['"]).*?\1\s*$/i, '').trim();
+  const sourceMatch = rest.match(/\bfrom\s+(.+?)(?=\s+\bto\b|\s+\bport\b|\s+\bproto\b|$)/i);
+  const targetMatch = rest.match(/\bto\s+(.+?)(?=\s+\bport\b|\s+\bproto\b|$)/i);
+  const portMatch = rest.match(/\bport\s+([^\s]+)(?:\s*\/\s*(tcp|udp|any))?/i);
+  const protoMatch = rest.match(/\bproto\s+(tcp|udp|any)\b/i);
+  const directionMatch = rest.match(/\b(in|out)\b/i);
+  const directTarget = !/\b(from|to|port|proto|in|out|on)\b/i.test(rest)
+    ? rest.trim()
+    : rest
+      .replace(/\bfrom\s+.+?(?=\s+\bto\b|\s+\bport\b|\s+\bproto\b|$)/i, ' ')
+      .replace(/\bto\s+.+?(?=\s+\bport\b|\s+\bproto\b|$)/i, ' ')
+      .replace(/\bport\s+[^\s]+(?:\s*\/\s*(?:tcp|udp|any))?/i, ' ')
+      .replace(/\bproto\s+(?:tcp|udp|any)\b/i, ' ')
+      .replace(/\b(?:in|out)\b(?:\s+on\s+\S+)?/ig, ' ')
+      .replace(/\bon\s+\S+/ig, ' ')
+      .trim()
+      .split(/\s+/)[0] ?? '';
+  const parsed = parsePortAndProtocol(portMatch?.[1] ?? directTarget);
+  const protocol = normalizeProtocol(protoMatch?.[1] ?? portMatch?.[2]) ?? parsed.protocol;
+
+  return {
+    id: `ufw:added:${index}`,
+    action: normalizeAction(actionText),
+    protocol,
+    port: parsed.port,
+    source: sourceMatch?.[1]?.trim() || undefined,
+    target: targetMatch?.[1]?.trim() || directTarget || undefined,
+    direction: routeText ? 'route' : directionMatch?.[1]?.toUpperCase(),
+    raw: line,
+  };
+}
+
 function parseUfwRules(stdout: string): FirewallRule[] {
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .map<FirewallRule | null>((line, index) => {
-      const numberedMatch = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|REJECT)\s+(IN|OUT)\s+(.+)$/i);
-      const compactMatch = line.match(/^(.+?)\s+(ALLOW|DENY|REJECT)\s+(IN|OUT)?\s*(.*)$/i);
-      const match = numberedMatch ?? compactMatch;
+  const statusLines: string[] = [];
+  const addedLines: string[] = [];
+  let inAddedSection = false;
 
-      if (!match || /^Status:|^Default:|^To\s+Action\s+From/i.test(line)) {
-        return null;
-      }
+  stdout.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trimEnd();
 
-      const ruleNumber = numberedMatch?.[1];
-      const targetText = numberedMatch ? numberedMatch[2] : compactMatch?.[1] ?? '';
-      const actionText = numberedMatch ? numberedMatch[3] : compactMatch?.[2] ?? '';
-      const directionText = numberedMatch ? numberedMatch[4] : compactMatch?.[3] ?? '';
-      const sourceText = numberedMatch ? numberedMatch[5] : compactMatch?.[4] ?? '';
-      const parsed = parsePortAndProtocol(targetText);
+    if (!line.trim()) {
+      return;
+    }
 
-      return {
-        id: ruleNumber ? `ufw:${ruleNumber}` : `ufw:raw:${index}`,
-        action: normalizeAction(actionText),
-        protocol: parsed.protocol,
-        port: parsed.port,
-        source: sourceText.trim() || undefined,
-        target: targetText.trim() || undefined,
-        direction: directionText.trim() || undefined,
-        raw: line,
-      };
-    })
+    if (line.startsWith(ufwAddedMarker)) {
+      inAddedSection = true;
+      return;
+    }
+
+    if (inAddedSection) {
+      addedLines.push(line);
+    } else {
+      statusLines.push(line);
+    }
+  });
+
+  const statusRules = statusLines
+    .map(parseUfwStatusRuleLine)
+    .filter((rule): rule is FirewallRule => Boolean(rule));
+
+  if (statusRules.length) {
+    return statusRules;
+  }
+
+  return addedLines
+    .map(parseUfwAddedRuleLine)
     .filter((rule): rule is FirewallRule => Boolean(rule));
 }
 
@@ -232,7 +336,17 @@ $rules = Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -ErrorAction
   return `
 if command -v ufw >/dev/null 2>&1; then
   printf '${backendMarker}\\tufw\\n'
-  sudo -n ufw status numbered verbose 2>&1 || ufw status numbered verbose 2>&1
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo -n ufw status numbered verbose 2>/dev/null || sudo -n ufw status numbered 2>/dev/null || sudo -n ufw status verbose 2>/dev/null || sudo -n ufw status 2>/dev/null
+  else
+    ufw status numbered verbose 2>/dev/null || ufw status numbered 2>/dev/null || ufw status verbose 2>/dev/null || ufw status 2>/dev/null
+  fi
+  printf '${ufwAddedMarker}\\n'
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo -n ufw show added 2>/dev/null || true
+  else
+    ufw show added 2>/dev/null || true
+  fi
   exit 0
 fi
 if command -v firewall-cmd >/dev/null 2>&1; then
