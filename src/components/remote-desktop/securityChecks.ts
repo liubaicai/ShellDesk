@@ -1,3 +1,4 @@
+import { getShellDeskLocale } from './desktopUtils';
 import { powershellCommand } from './remoteSystem';
 
 export type SecuritySeverity = 'high' | 'medium' | 'low' | 'info';
@@ -872,7 +873,7 @@ export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: 
     `# ShellDesk 安全巡检报告`,
     '',
     `- 主机：${hostLabel || '当前连接'}`,
-    `- 时间：${scannedAt || new Date().toLocaleString('zh-CN')}`,
+    `- 时间：${scannedAt || new Date().toLocaleString(getShellDeskLocale())}`,
     `- 安全评分：${score.score ?? '--'}（${score.label}）`,
     `- 风险：高 ${counts.high} / 中 ${counts.medium} / 低 ${counts.low} / 信息 ${counts.info}`,
     score.deductions.length ? `- 扣分项：${score.deductions.slice(0, 6).join('；')}` : '- 扣分项：无明显扣分项',

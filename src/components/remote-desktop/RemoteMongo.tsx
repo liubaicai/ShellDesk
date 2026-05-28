@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 
 interface RemoteMongoProps {
   connectionId: string;
@@ -269,7 +269,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       const durationMs = Math.round(performance.now() - startedAt);
       setQueryResult(result);
       setSelectedDocumentIndex(0);
-      setLastQueryAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastQueryAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(`查询完成，返回 ${result.count} 个文档，${durationMs} ms。`);
     } catch (error) {
       setError(getErrorMessage(error));

@@ -28,10 +28,11 @@ export interface ApiDebugResponse {
   raw: string;
 }
 
-const metaMarker = '__SHELLDESK_API_META__';
-const headersMarker = '__SHELLDESK_API_HEADERS__';
-const bodyMarker = '__SHELLDESK_API_BODY__';
-const exitMarker = '__SHELLDESK_API_EXIT__';
+const markerToken = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const metaMarker = `__SHELLDESK_API_META_${markerToken}__`;
+const headersMarker = `__SHELLDESK_API_HEADERS_${markerToken}__`;
+const bodyMarker = `__SHELLDESK_API_BODY_${markerToken}__`;
+const exitMarker = `__SHELLDESK_API_EXIT_${markerToken}__`;
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;

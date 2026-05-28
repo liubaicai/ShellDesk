@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import {
   buildTerminalFontStack,
@@ -946,7 +946,7 @@ function RemoteTerminal({
             {onOpenNote ? (
               <button type="button" role="menuitem" onClick={() => {
                 onOpenNote({
-                  title: `终端片段 ${new Date().toLocaleTimeString('zh-CN')}`,
+                  title: `终端片段 ${new Date().toLocaleTimeString(getShellDeskLocale())}`,
                   content: contextMenu.selection,
                 });
                 setContextMenu(null);

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import {
   createSearchClusterCommand,
@@ -111,7 +111,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
       setShards(nextShards);
       setSelectedIndexName((current) => current && nextIndices.some((index) => index.index === current) ? current : nextIndices[0]?.index ?? '');
       setQueryIndex((current) => current || nextIndices[0]?.index || '');
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(`集群已刷新：${nextIndices.length} 个索引，${nextShards.length} 个分片。`);
     } catch (error) {
       setError(getErrorMessage(error));
@@ -235,7 +235,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
                 }}
               >
                 <strong>{index.index}</strong>
-                <span>{index.docsCount.toLocaleString('zh-CN')} docs · {index.storeSize || '-'}</span>
+                <span>{index.docsCount.toLocaleString(getShellDeskLocale())} docs · {index.storeSize || '-'}</span>
                 <em>{index.health || 'unknown'} · {index.status || '-'}</em>
               </button>
             ))}
@@ -274,7 +274,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
               ))}
               <div className="search-selected-index">
                 <strong>{selectedIndex?.index ?? '未选择索引'}</strong>
-                <span>{selectedIndex ? `${selectedIndex.docsCount.toLocaleString('zh-CN')} docs · ${selectedIndex.storeSize || '-'}` : '刷新后选择索引查看详情'}</span>
+                <span>{selectedIndex ? `${selectedIndex.docsCount.toLocaleString(getShellDeskLocale())} docs · ${selectedIndex.storeSize || '-'}` : '刷新后选择索引查看详情'}</span>
               </div>
             </section>
           ) : null}

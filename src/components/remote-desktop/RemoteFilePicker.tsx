@@ -21,6 +21,7 @@ interface RemoteFileEntry {
   name: string;
   longname: string;
   type: 'directory' | 'file' | 'symlink';
+  targetType?: 'directory' | 'file' | 'symlink' | 'unknown';
   size: number;
   modifiedAt: string;
 }
@@ -50,7 +51,7 @@ function formatBytes(size: number) {
 }
 
 function getFileIcon(entry: RemoteFileEntry) {
-  if (entry.type === 'directory') return '\u{1F4C1}';
+  if (isDirectoryEntry(entry)) return '\u{1F4C1}';
   if (entry.type === 'symlink') return '\u{1F517}';
   const ext = entry.name.slice(entry.name.lastIndexOf('.') + 1).toLowerCase();
   const iconMap: Record<string, string> = {
@@ -69,6 +70,20 @@ function getFileIcon(entry: RemoteFileEntry) {
     sql: '\u{1F5C3}\uFE0F', db: '\u{1F5C3}\uFE0F', sqlite: '\u{1F5C3}\uFE0F',
   };
   return iconMap[ext] ?? '\u{1F4C4}';
+}
+
+function getEffectiveEntryType(entry: RemoteFileEntry) {
+  if (entry.type !== 'symlink') {
+    return entry.type;
+  }
+
+  return entry.targetType === 'directory' || entry.targetType === 'file'
+    ? entry.targetType
+    : 'symlink';
+}
+
+function isDirectoryEntry(entry: RemoteFileEntry) {
+  return getEffectiveEntryType(entry) === 'directory';
 }
 
 export default function RemoteFilePicker({
@@ -143,13 +158,13 @@ export default function RemoteFilePicker({
   }, [remotePath, isWindowsHost, navigateTo]);
 
   const handleEntryClick = useCallback((entry: RemoteFileEntry) => {
-    if (isDirectoryMode && entry.type !== 'directory') {
+    if (isDirectoryMode && !isDirectoryEntry(entry)) {
       setSelectedName('');
       return;
     }
 
     setSelectedName(entry.name);
-    if (entry.type === 'directory') {
+    if (isDirectoryEntry(entry)) {
       setFileName('');
     } else if (mode === 'open') {
       setFileName(entry.name);
@@ -159,7 +174,7 @@ export default function RemoteFilePicker({
   }, [isDirectoryMode, mode]);
 
   const handleEntryDoubleClick = useCallback((entry: RemoteFileEntry) => {
-    if (entry.type === 'directory') {
+    if (isDirectoryEntry(entry)) {
       const newPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
       navigateTo(newPath);
       return;
@@ -178,7 +193,7 @@ export default function RemoteFilePicker({
       onConfirm(filePath);
     } else if (mode === 'directory') {
       const selectedEntry = entries.find((entry) => entry.name === selectedName);
-      const directoryPath = selectedEntry?.type === 'directory'
+      const directoryPath = selectedEntry && isDirectoryEntry(selectedEntry)
         ? joinRemotePath(remotePath, selectedEntry.name, isWindowsHost)
         : remotePath;
       onConfirm(directoryPath);
@@ -192,8 +207,8 @@ export default function RemoteFilePicker({
   // Sort entries: directories first, then by name
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) => {
-      if (a.type === 'directory' && b.type !== 'directory') return -1;
-      if (a.type !== 'directory' && b.type === 'directory') return 1;
+      if (isDirectoryEntry(a) && !isDirectoryEntry(b)) return -1;
+      if (!isDirectoryEntry(a) && isDirectoryEntry(b)) return 1;
       return a.name.localeCompare(b.name);
     });
   }, [entries]);
@@ -289,7 +304,7 @@ export default function RemoteFilePicker({
                   <button
                     key={entry.name}
                     type="button"
-                    className={`file-picker-row ${selectedName === entry.name ? 'selected' : ''} ${isDirectoryMode && entry.type !== 'directory' ? 'disabled' : ''}`}
+                    className={`file-picker-row ${selectedName === entry.name ? 'selected' : ''} ${isDirectoryMode && !isDirectoryEntry(entry) ? 'disabled' : ''}`}
                     onClick={() => handleEntryClick(entry)}
                     onDoubleClick={() => handleEntryDoubleClick(entry)}
                   >
@@ -301,7 +316,7 @@ export default function RemoteFilePicker({
                       {formatDateTime(entry.modifiedAt)}
                     </span>
                     <span className="file-picker-col-size">
-                      {entry.type === 'directory' ? '' : formatBytes(entry.size)}
+                      {isDirectoryEntry(entry) ? '' : formatBytes(entry.size)}
                     </span>
                   </button>
                 ))}

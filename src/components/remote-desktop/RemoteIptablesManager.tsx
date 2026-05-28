@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   createIptablesAddRuleCommand,
   createIptablesDeleteRuleCommand,
@@ -155,7 +155,7 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
           ? currentId
           : nextSnapshot.rules[0]?.id ?? ''
       ));
-      setRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
 
       if (nextSnapshot.notice) {
         setNotice(nextSnapshot.notice);

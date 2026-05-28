@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -279,7 +279,7 @@ function compareServices(first: RemoteServiceSummary, second: RemoteServiceSumma
     return stateCompare;
   }
 
-  return first.name.localeCompare(second.name, 'zh-CN');
+  return first.name.localeCompare(second.name, getShellDeskLocale());
 }
 
 function parseLinuxServiceListOutput(stdout: string): ServiceListParseResult {

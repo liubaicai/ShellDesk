@@ -1,3 +1,4 @@
+import { getShellDeskLocale } from './desktopUtils';
 import { powershellCommand } from './remoteSystem';
 
 export type LoginSessionTab = 'current' | 'history' | 'failed';
@@ -199,7 +200,7 @@ export function aggregateLoginSources(entries: LoginHistoryEntry[]): LoginSource
 
   return [...counts.entries()]
     .map(([source, count]) => ({ source, count }))
-    .sort((first, second) => second.count - first.count || first.source.localeCompare(second.source, 'zh-CN'));
+    .sort((first, second) => second.count - first.count || first.source.localeCompare(second.source, getShellDeskLocale()));
 }
 
 export function formatLoginRecord(entry: LoginSessionEntry | LoginHistoryEntry) {

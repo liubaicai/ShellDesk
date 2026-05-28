@@ -1,7 +1,6 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, lazy, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { RemoteApiDebugger, RemoteBrowser, RemoteContainerManager, RemoteDiskAnalyzer, RemoteFileExplorer, RemoteFirewallManager, RemoteGitManager, RemoteIptablesManager, RemoteLoginSessions, RemoteLogViewer, RemoteMessageQueuePanel, RemoteMonitor, RemoteMongo, RemoteMySQL, RemoteNetworkDiagnostics, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres, RemoteProcessManager, RemoteRedis, RemoteS3Browser, RemoteScheduledTasks, RemoteSearchCluster, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite, RemoteTerminal, RemoteVncViewer, RemoteWebServerManager } from './components/remote-desktop';
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
 import type {
   RemoteTerminalChromePayload,
@@ -15,6 +14,38 @@ import type {
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import defaultDesktopWallpaperUrl from './assets/images/default-desktop-wallpaper.png';
 import { getAppLocale, translateText } from './i18n';
+
+const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
+const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
+const RemoteContainerManager = lazy(() => import('./components/remote-desktop/RemoteContainerManager'));
+const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/RemoteDiskAnalyzer'));
+const RemoteFileExplorer = lazy(() => import('./components/remote-desktop/RemoteFileExplorer'));
+const RemoteFirewallManager = lazy(() => import('./components/remote-desktop/RemoteFirewallManager'));
+const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
+const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
+const RemoteLoginSessions = lazy(() => import('./components/remote-desktop/RemoteLoginSessions'));
+const RemoteLogViewer = lazy(() => import('./components/remote-desktop/RemoteLogViewer'));
+const RemoteMessageQueuePanel = lazy(() => import('./components/remote-desktop/RemoteMessageQueuePanel'));
+const RemoteMonitor = lazy(() => import('./components/remote-desktop/RemoteMonitor'));
+const RemoteMongo = lazy(() => import('./components/remote-desktop/RemoteMongo'));
+const RemoteMySQL = lazy(() => import('./components/remote-desktop/RemoteMySQL'));
+const RemoteNetworkDiagnostics = lazy(() => import('./components/remote-desktop/RemoteNetworkDiagnostics'));
+const RemoteNotepad = lazy(() => import('./components/remote-desktop/RemoteNotepad'));
+const RemotePackageManager = lazy(() => import('./components/remote-desktop/RemotePackageManager'));
+const RemotePortManager = lazy(() => import('./components/remote-desktop/RemotePortManager'));
+const RemotePostgres = lazy(() => import('./components/remote-desktop/RemotePostgres'));
+const RemoteProcessManager = lazy(() => import('./components/remote-desktop/RemoteProcessManager'));
+const RemoteRedis = lazy(() => import('./components/remote-desktop/RemoteRedis'));
+const RemoteS3Browser = lazy(() => import('./components/remote-desktop/RemoteS3Browser'));
+const RemoteScheduledTasks = lazy(() => import('./components/remote-desktop/RemoteScheduledTasks'));
+const RemoteSearchCluster = lazy(() => import('./components/remote-desktop/RemoteSearchCluster'));
+const RemoteSecurityAudit = lazy(() => import('./components/remote-desktop/RemoteSecurityAudit'));
+const RemoteServiceManager = lazy(() => import('./components/remote-desktop/RemoteServiceManager'));
+const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSettings'));
+const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
+const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
+const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVncViewer'));
+const RemoteWebServerManager = lazy(() => import('./components/remote-desktop/RemoteWebServerManager'));
 
 const desktopApps = [
   { key: 'files', label: '文件管理', description: 'Windows 风格 SFTP 资源管理器' },
@@ -1875,7 +1906,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   </button>
                 </div>
               </header>
-              <div className="desktop-window-body">{renderWindowContent(desktopWindow)}</div>
+              <div className="desktop-window-body">
+                <Suspense fallback={<div className="desktop-window-loading">加载中...</div>}>
+                  {renderWindowContent(desktopWindow)}
+                </Suspense>
+              </div>
               {!desktopWindow.isMaximized ? (
                 <div
                   className="desktop-window-resize-handle"

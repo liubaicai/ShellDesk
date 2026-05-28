@@ -73,6 +73,24 @@ const exactTranslations = new Map<string, string>(Object.entries({
   '凭据与本地仓库': 'Credentials and local vault',
   '备份与导入': 'Backup & Import',
   '配置迁移': 'Configuration transfer',
+  '关于': 'About',
+  '版本、更新、联系': 'Version, updates, contact',
+  'ShellDesk 是一个面向日常运维的虚拟远程桌面与图形化服务器管理工具，集成主机管理、远程终端、SFTP 文件管理、数据库工具、系统监控和运维诊断能力。': 'ShellDesk is a virtual remote desktop and graphical server management tool for daily operations. It brings together host management, remote terminals, SFTP file management, database tools, system monitoring, and operations diagnostics.',
+  '应用信息': 'App Information',
+  '联系方式': 'Contact',
+  '问题反馈、建议和协作沟通': 'Bug reports, suggestions, and collaboration',
+  '源码、Release 与问题追踪': 'Source code, releases, and issue tracking',
+  '软件更新': 'Software Updates',
+  '更新状态': 'Update Status',
+  '检查中...': 'Checking...',
+  '最新版本': 'Latest Version',
+  '尚未检查更新': 'Updates not checked',
+  '点击检查更新后读取 latest.yml': 'Run Check Updates to read latest.yml',
+  '未检查': 'Not checked',
+  '正在读取 GitHub 最新 Release 的 latest.yml': 'Reading latest.yml from the latest GitHub release',
+  '当前已是最新版本': 'Already up to date',
+  '尚未配置自动同步': 'Automatic sync is not configured',
+  '尚未同步': 'Not synced yet',
   '设置': 'Settings',
   '设置分类': 'Settings categories',
   '应用行为': 'App Behavior',
@@ -592,6 +610,7 @@ const patternTranslations: Array<[RegExp, (...matches: string[]) => string]> = [
   [/^(\d+) 个密钥$/u, (count) => `${count} keys`],
   [/^共 (\d+) 个主机$/u, (count) => `${count} hosts total`],
   [/^(\d+) 行$/u, (count) => `${Number(count).toLocaleString('en-US')} lines`],
+  [/^发现新版本 (.+)$/u, (version) => `New version found: ${version}`],
   [/^打开(.+)$/u, (name) => `Open ${name}`],
   [/^切换到(.+)$/u, (name) => `Switch to ${name}`],
   [/^还原(.+)$/u, (name) => `Restore ${name}`],
@@ -826,6 +845,14 @@ export function getAppLocale(language: AppLanguage) {
   return language === 'zh-CN' ? 'zh-CN' : 'en-US';
 }
 
+export function getCurrentAppLocale() {
+  if (typeof document === 'undefined') {
+    return getAppLocale(getSystemLanguage());
+  }
+
+  return getAppLocale(normalizeAppLanguage(document.documentElement.getAttribute('data-language')));
+}
+
 function getSortedReplacementTranslations() {
   if (sortedReplacementTranslations) {
     return sortedReplacementTranslations;
@@ -876,6 +903,10 @@ export function translateText(value: string, language: AppLanguage) {
 
   for (const [source, target] of getSortedReplacementTranslations()) {
     translated = translated.split(source).join(target);
+  }
+
+  if (chineseTextPattern.test(translated)) {
+    return value;
   }
 
   return `${leading}${translated}${trailing}`;

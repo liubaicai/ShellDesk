@@ -168,7 +168,7 @@ const BINARY_EXTENSIONS = new Set([
   'apk', 'ipa', 'war', 'jar', 'ear', 'class', 'pyc', 'pyo', 'whl',
   'o', 'obj', 'a', 'lib', 'pdb',
   // 数据库/二进制数据
-  'db', 'sqlite', 'sqlite3', 'mdb', 'accdb',
+  'db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb', 'mdb', 'accdb',
   // 文档（二进制格式）
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
   // 字体（二进制格式）

@@ -12,7 +12,7 @@ import {
   type ApiDebugRequest,
   type ApiDebugResponse,
 } from './apiDebuggerUtils';
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -136,7 +136,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
         id: createRequestId(),
         request: requestSnapshot,
         response,
-        startedAt: new Date().toLocaleTimeString('zh-CN'),
+        startedAt: new Date().toLocaleTimeString(getShellDeskLocale()),
       };
 
       setHistory((currentHistory) => [run, ...currentHistory].slice(0, maxHistory));

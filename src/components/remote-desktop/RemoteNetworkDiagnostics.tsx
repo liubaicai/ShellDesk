@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -286,7 +286,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
         id: createId('network-run'),
         tool: activeTool,
         title: `${activeDefinition.label} · ${getToolTarget(activeTool, form)}`,
-        startedAt: new Date().toLocaleTimeString('zh-CN'),
+        startedAt: new Date().toLocaleTimeString(getShellDeskLocale()),
         durationMs,
         exitCode: result.code,
         stdout: result.stdout,

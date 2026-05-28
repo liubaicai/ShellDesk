@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
 import {
   createS3DeleteObjectCommand,
@@ -65,7 +65,7 @@ function formatSize(value?: number) {
 function formatDate(value?: string) {
   if (!value) return '-';
   const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? value : new Date(timestamp).toLocaleString('zh-CN');
+  return Number.isNaN(timestamp) ? value : new Date(timestamp).toLocaleString(getShellDeskLocale());
 }
 
 function ensurePrefix(value: string) {
@@ -168,7 +168,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       setSelectedObjectKey('');
       setPrefix('');
       setRawOutput(result.stdout || result.stderr);
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(`已读取 ${nextBuckets.length} 个 bucket。`);
     } catch (error) {
       setError(getErrorMessage(error));
@@ -202,7 +202,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       setSelectedObjectKey(nextObjects[0]?.key ?? '');
       setRawOutput(result.stdout || result.stderr);
       setActiveTab('objects');
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(`已读取 ${nextObjects.length} 个对象或前缀。`);
     } catch (error) {
       setError(getErrorMessage(error));

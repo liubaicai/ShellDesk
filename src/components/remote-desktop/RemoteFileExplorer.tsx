@@ -2,6 +2,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type UIEvent as ReactUIEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -10,7 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatDateTime, getErrorMessage } from './desktopUtils';
+import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import { isTextFile } from './RemoteNotepad';
 import type { RemoteSystemType } from './types';
@@ -24,10 +25,14 @@ interface RemoteFileExplorerProps {
   onOpenTerminal?: (directoryPath: string) => void;
 }
 
+type RemoteFileEntryType = 'directory' | 'file' | 'symlink';
+type RemoteSymlinkTargetType = RemoteFileEntryType | 'unknown';
+
 interface RemoteFileEntry {
   name: string;
   longname: string;
-  type: 'directory' | 'file' | 'symlink';
+  type: RemoteFileEntryType;
+  targetType?: RemoteSymlinkTargetType;
   size: number;
   modifiedAt: string;
 }
@@ -74,6 +79,106 @@ const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; label: string }> = [
   { key: 'write', label: '写' },
   { key: 'execute', label: '执行' },
 ];
+
+const EXPLORER_HEADER_HEIGHT = 44;
+const EXPLORER_ROW_HEIGHT = 42;
+const EXPLORER_ROW_OVERSCAN = 12;
+
+type ExplorerSidebarIconType = 'home' | 'root' | 'folder' | 'drive' | 'favorite';
+
+function ExplorerNavIcon({ icon }: { icon: 'back' | 'forward' | 'up' | 'home' }) {
+  if (icon === 'home') {
+    return (
+      <svg className="explorer-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4.5 10.5 12 4.25l7.5 6.25" />
+        <path d="M6.75 9.75v9.75h10.5V9.75" />
+      </svg>
+    );
+  }
+
+  if (icon === 'up') {
+    return (
+      <svg className="explorer-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 19.25V4.75" />
+        <path d="m6.5 10.25 5.5-5.5 5.5 5.5" />
+      </svg>
+    );
+  }
+
+  const isForward = icon === 'forward';
+
+  return (
+    <svg className="explorer-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={isForward ? 'M4.75 12h14.5' : 'M19.25 12H4.75'} />
+      <path d={isForward ? 'M13.75 6.5 19.25 12l-5.5 5.5' : 'M10.25 6.5 4.75 12l5.5 5.5'} />
+    </svg>
+  );
+}
+
+function ExplorerSearchIcon() {
+  return (
+    <svg className="explorer-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="10.75" cy="10.75" r="5.75" />
+      <path d="m15.25 15.25 4.25 4.25" />
+    </svg>
+  );
+}
+
+function ExplorerSidebarIcon({ icon }: { icon: ExplorerSidebarIconType }) {
+  if (icon === 'drive') {
+    return (
+      <span className="sidebar-path-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <rect x="4.75" y="5.5" width="14.5" height="13" rx="2.25" />
+          <path d="M7.75 15.75h8.5" />
+          <path d="M16 9.25h.01" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (icon === 'folder') {
+    return (
+      <span className="sidebar-path-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M4.5 8.25h6.35l1.55 2h7.1" />
+          <path d="M4.5 7.5v9.75c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2v-7c0-1.1-.9-2-2-2h-6.4L9.55 6.5H6.5c-1.1 0-2 .9-2 2Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (icon === 'favorite') {
+    return (
+      <span className="sidebar-path-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="m12 4.75 2.2 4.45 4.9.7-3.55 3.46.84 4.89L12 15.95l-4.39 2.3.84-4.89L4.9 9.9l4.9-.7L12 4.75Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (icon === 'root') {
+    return (
+      <span className="sidebar-path-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M12 4.75v14.5" />
+          <path d="M7.5 9.25 12 4.75l4.5 4.5" />
+          <path d="M6 19.25h12" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <span className="sidebar-path-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false">
+        <path d="M4.5 10.5 12 4.25l7.5 6.25" />
+        <path d="M6.75 9.75v9.75h10.5V9.75" />
+      </svg>
+    </span>
+  );
+}
 
 export function normalizeWindowsRemotePath(remotePath: string) {
   return remotePath.replace(/\\/g, '/');
@@ -192,16 +297,51 @@ function isSqliteFile(name: string): boolean {
   return SQLITE_EXTENSIONS.has(getFileExtension(name));
 }
 
+function getDeleteEntryTypeLabel(entry: RemoteFileEntry) {
+  if (entry.type === 'directory') {
+    return '目录';
+  }
+
+  if (entry.type === 'symlink') {
+    return '快捷方式';
+  }
+
+  return '文件';
+}
+
 function getDeleteEntriesLabel(entries: RemoteFileEntry[]) {
   const names = entries.map((entry) => entry.name).join('\u3001');
 
   return entries.length === 1
-    ? `${entries[0].type === 'directory' ? '目录' : '文件'}\u300C${names}\u300D`
+    ? `${getDeleteEntryTypeLabel(entries[0])}\u300C${names}\u300D`
     : `${entries.length} 个项目（${names}）`;
 }
 
+function getEffectiveEntryType(entry: RemoteFileEntry): RemoteFileEntryType {
+  if (entry.type !== 'symlink') {
+    return entry.type;
+  }
+
+  return entry.targetType === 'directory' || entry.targetType === 'file'
+    ? entry.targetType
+    : 'symlink';
+}
+
+function isDirectoryEntry(entry: RemoteFileEntry) {
+  return getEffectiveEntryType(entry) === 'directory';
+}
+
+function isFileEntry(entry: RemoteFileEntry) {
+  return getEffectiveEntryType(entry) === 'file';
+}
+
+function getFileIconClass(entry: RemoteFileEntry) {
+  const effectiveType = getEffectiveEntryType(entry);
+  return effectiveType === 'directory' ? 'directory' : effectiveType === 'file' ? 'file' : 'symlink';
+}
+
 function getFileIcon(entry: RemoteFileEntry) {
-  if (entry.type === 'directory') {
+  if (isDirectoryEntry(entry)) {
     return '\u{1F4C1}';
   }
 
@@ -233,12 +373,20 @@ function getFileIcon(entry: RemoteFileEntry) {
 }
 
 function getFileTypeLabel(entry: RemoteFileEntry) {
-  if (entry.type === 'directory') {
-    return '文件夹';
+  if (entry.type === 'symlink') {
+    if (entry.targetType === 'directory') {
+      return '快捷方式（目录）';
+    }
+
+    if (entry.targetType === 'file') {
+      return '快捷方式（文件）';
+    }
+
+    return '快捷方式';
   }
 
-  if (entry.type === 'symlink') {
-    return '快捷方式';
+  if (entry.type === 'directory') {
+    return '文件夹';
   }
 
   const ext = getFileExtension(entry.name);
@@ -250,16 +398,20 @@ function isHiddenEntry(entry: RemoteFileEntry) {
 }
 
 function getOpenActionLabel(entry: RemoteFileEntry) {
-  if (entry.type === 'directory') {
+  if (isDirectoryEntry(entry)) {
     return '打开目录';
   }
 
-  if (entry.type === 'file' && isSqliteFile(entry.name)) {
+  if (isFileEntry(entry) && isSqliteFile(entry.name)) {
     return '用 SQLite 打开';
   }
 
-  if (entry.type === 'file' && isTextFile(entry.name)) {
+  if (isFileEntry(entry) && isTextFile(entry.name)) {
     return '用记事本打开';
+  }
+
+  if (entry.type === 'symlink') {
+    return '打开快捷方式';
   }
 
   return '';
@@ -301,8 +453,8 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   switch (field) {
     case 'name': return entry.name.toLowerCase();
     case 'modifiedAt': return entry.modifiedAt || '';
-    case 'type': return entry.type === 'directory' ? 0 : entry.type === 'symlink' ? 1 : 2;
-    case 'size': return entry.type === 'directory' ? -1 : entry.size;
+    case 'type': return isDirectoryEntry(entry) ? 0 : entry.type === 'symlink' ? 1 : 2;
+    case 'size': return isDirectoryEntry(entry) ? -1 : entry.size;
     default: return '';
   }
 }
@@ -320,7 +472,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showHiddenEntries, setShowHiddenEntries] = useState(false);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(true);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [favoritePaths, setFavoritePaths] = useState<string[]>([]);
   const [navigationHistory, setNavigationHistory] = useState<string[]>([initialPath || '.']);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -340,6 +492,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const [lastClickedName, setLastClickedName] = useState<string | null>(null);
   const [deleteConfirmationEntries, setDeleteConfirmationEntries] = useState<RemoteFileEntry[] | null>(null);
   const [transferProgress, setTransferProgress] = useState<{ type: 'download' | 'upload'; fileName: string; transferred: number; total: number } | null>(null);
+  const [tableViewport, setTableViewport] = useState({ scrollTop: 0, height: 0 });
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
@@ -436,6 +589,54 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   }, [copiedPath]);
 
   useEffect(() => {
+    const table = tableRef.current;
+
+    if (!table) {
+      return;
+    }
+
+    const updateViewport = () => {
+      setTableViewport((currentViewport) => {
+        const nextViewport = {
+          scrollTop: table.scrollTop,
+          height: table.clientHeight,
+        };
+
+        return currentViewport.scrollTop === nextViewport.scrollTop && currentViewport.height === nextViewport.height
+          ? currentViewport
+          : nextViewport;
+      });
+    };
+
+    updateViewport();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(updateViewport);
+    resizeObserver.observe(table);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const table = tableRef.current;
+
+    if (!table) {
+      return;
+    }
+
+    table.scrollTop = 0;
+    setTableViewport((currentViewport) => ({
+      scrollTop: 0,
+      height: table.clientHeight || currentViewport.height,
+    }));
+  }, [fileSearchQuery, remotePath, showHiddenEntries, sortDirection, sortField]);
+
+  useEffect(() => {
     const unsubscribe = window.guiSSH?.events.onTransferProgress((payload) => {
       setTransferProgress(payload);
     });
@@ -444,6 +645,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     });
     return () => { unsubscribe?.(); unsubEnd?.(); };
   }, []);
+
+  const sortCollator = useMemo(() => (
+    new Intl.Collator(getShellDeskLocale(), { numeric: true, sensitivity: 'base' })
+  ), []);
 
   const sortedEntries = useMemo(() => {
     const sorted = [...fileEntries].sort((a, b) => {
@@ -454,14 +659,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       if (typeof aVal === 'number' && typeof bVal === 'number') {
         cmp = aVal - bVal;
       } else {
-        cmp = String(aVal).localeCompare(String(bVal), 'zh-CN');
+        cmp = sortCollator.compare(String(aVal), String(bVal));
       }
 
       return sortDirection === 'asc' ? cmp : -cmp;
     });
 
     return sorted;
-  }, [fileEntries, sortField, sortDirection]);
+  }, [fileEntries, sortCollator, sortField, sortDirection]);
 
   const displayedEntries = useMemo(() => {
     const query = fileSearchQuery.trim().toLowerCase();
@@ -479,13 +684,33 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     });
   }, [fileSearchQuery, showHiddenEntries, sortedEntries]);
 
+  const virtualEntryWindow = useMemo(() => {
+    const viewportHeight = Math.max(tableViewport.height - EXPLORER_HEADER_HEIGHT, EXPLORER_ROW_HEIGHT);
+    const rowCapacity = Math.max(
+      1,
+      Math.ceil(viewportHeight / EXPLORER_ROW_HEIGHT) + EXPLORER_ROW_OVERSCAN * 2,
+    );
+    const maxStartIndex = Math.max(0, displayedEntries.length - rowCapacity);
+    const rawStartIndex = Math.floor(
+      Math.max(0, tableViewport.scrollTop - EXPLORER_HEADER_HEIGHT) / EXPLORER_ROW_HEIGHT,
+    ) - EXPLORER_ROW_OVERSCAN;
+    const startIndex = Math.min(maxStartIndex, Math.max(0, rawStartIndex));
+    const endIndex = Math.min(displayedEntries.length, startIndex + rowCapacity);
+
+    return {
+      entries: displayedEntries.slice(startIndex, endIndex),
+      offsetY: startIndex * EXPLORER_ROW_HEIGHT,
+      totalHeight: displayedEntries.length * EXPLORER_ROW_HEIGHT,
+    };
+  }, [displayedEntries, tableViewport]);
+
   const selectedEntries = useMemo(
     () => sortedEntries.filter((entry) => selectedNames.has(entry.name)),
     [selectedNames, sortedEntries],
   );
 
   const selectedFileEntries = useMemo(
-    () => selectedEntries.filter((entry) => entry.type === 'file'),
+    () => selectedEntries.filter(isFileEntry),
     [selectedEntries],
   );
 
@@ -595,18 +820,54 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       : [remotePath, ...paths].slice(0, 8));
   }, [remotePath]);
 
-  const openFileEntry = useCallback((entry: RemoteFileEntry) => {
-    if (entry.type === 'directory') {
-      navigateToPath(joinRemotePath(remotePath, entry.name, isWindowsHost));
-    } else if (entry.type === 'file' && isTextFile(entry.name) && onOpenFile) {
-      onOpenFile(joinRemotePath(remotePath, entry.name, isWindowsHost));
-    } else if (entry.type === 'file' && isSqliteFile(entry.name) && onOpenSqliteFile) {
-      onOpenSqliteFile(joinRemotePath(remotePath, entry.name, isWindowsHost));
+  const openFileEntry = useCallback(async (entry: RemoteFileEntry) => {
+    const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
+    let effectiveType = getEffectiveEntryType(entry);
+
+    if (entry.type === 'symlink' && effectiveType === 'symlink' && window.guiSSH?.connections) {
+      try {
+        const stat = await window.guiSSH.connections.statPath(connectionId, entryPath);
+        const resolvedType = stat?.type === 'directory' || stat?.type === 'file' ? stat.type : null;
+
+        if (resolvedType) {
+          effectiveType = resolvedType;
+          setFileEntries((entries) => entries.map((currentEntry) => (
+            currentEntry.name === entry.name
+              ? { ...currentEntry, targetType: resolvedType }
+              : currentEntry
+          )));
+        }
+      } catch (error) {
+        setFilesError(getErrorMessage(error));
+        return;
+      }
     }
-  }, [isWindowsHost, navigateToPath, remotePath, onOpenFile, onOpenSqliteFile]);
+
+    if (effectiveType === 'directory') {
+      navigateToPath(entryPath);
+    } else if (effectiveType === 'file' && isSqliteFile(entry.name) && onOpenSqliteFile) {
+      onOpenSqliteFile(entryPath);
+    } else if (effectiveType === 'file' && isTextFile(entry.name) && onOpenFile) {
+      onOpenFile(entryPath);
+    }
+  }, [connectionId, isWindowsHost, navigateToPath, remotePath, onOpenFile, onOpenSqliteFile]);
 
   const refreshFiles = useCallback(() => {
     setFilesRefreshToken((currentToken) => currentToken + 1);
+  }, []);
+
+  const handleTableScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
+    const table = event.currentTarget;
+    setTableViewport((currentViewport) => {
+      const nextViewport = {
+        scrollTop: table.scrollTop,
+        height: table.clientHeight,
+      };
+
+      return currentViewport.scrollTop === nextViewport.scrollTop && currentViewport.height === nextViewport.height
+        ? currentViewport
+        : nextViewport;
+    });
   }, []);
 
   const handleSort = useCallback((field: SortField) => {
@@ -680,7 +941,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
   const handleRowDoubleClick = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
-    openFileEntry(entry);
+    void openFileEntry(entry);
   }, [closeContextMenu, openFileEntry]);
 
   const handleRowContextMenu = useCallback((entry: RemoteFileEntry, event: ReactMouseEvent) => {
@@ -918,7 +1179,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   }, [closeContextMenu, connectionId, isWindowsHost, remotePath]);
 
   const downloadFiles = useCallback(async (entries: RemoteFileEntry[]) => {
-    const files = entries.filter((entry) => entry.type === 'file');
+    const files = entries.filter(isFileEntry);
 
     if (!files.length) {
       return;
@@ -997,7 +1258,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       case 'Enter': {
         event.preventDefault();
         const target = displayedEntries.find((e) => selectedNames.has(e.name));
-        if (target) openFileEntry(target);
+        if (target) void openFileEntry(target);
         break;
       }
       case 'a': {
@@ -1035,23 +1296,23 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
   const quickAccessPaths = useMemo(() => isWindowsHost
     ? [
-        { label: 'Home', path: '.', icon: '⌂' },
-        { label: '根目录', path: '/', icon: '⌂' },
-        { label: 'C:/', path: 'C:/', icon: '□' },
-        { label: 'C:/Users', path: 'C:/Users', icon: '□' },
-        { label: 'C:/Program Files', path: 'C:/Program Files', icon: '□' },
-        { label: 'C:/Windows', path: 'C:/Windows', icon: '□' },
-        { label: 'C:/Temp', path: 'C:/Temp', icon: '□' },
+        { label: 'Home', path: '.', icon: 'home' as const },
+        { label: '根目录', path: '/', icon: 'root' as const },
+        { label: 'C:/', path: 'C:/', icon: 'drive' as const },
+        { label: 'C:/Users', path: 'C:/Users', icon: 'folder' as const },
+        { label: 'C:/Program Files', path: 'C:/Program Files', icon: 'folder' as const },
+        { label: 'C:/Windows', path: 'C:/Windows', icon: 'folder' as const },
+        { label: 'C:/Temp', path: 'C:/Temp', icon: 'folder' as const },
       ]
     : [
-        { label: 'Home', path: '.', icon: '⌂' },
-        { label: '根目录', path: '/', icon: '⌂' },
-        { label: '/home', path: '/home', icon: '□' },
-        { label: '/tmp', path: '/tmp', icon: '□' },
-        { label: '/var/log', path: '/var/log', icon: '□' },
-        { label: '/etc', path: '/etc', icon: '□' },
-        { label: '/opt', path: '/opt', icon: '□' },
-        { label: '/usr/local', path: '/usr/local', icon: '□' },
+        { label: 'Home', path: '.', icon: 'home' as const },
+        { label: '根目录', path: '/', icon: 'root' as const },
+        { label: '/home', path: '/home', icon: 'folder' as const },
+        { label: '/tmp', path: '/tmp', icon: 'folder' as const },
+        { label: '/var/log', path: '/var/log', icon: 'folder' as const },
+        { label: '/etc', path: '/etc', icon: 'folder' as const },
+        { label: '/opt', path: '/opt', icon: 'folder' as const },
+        { label: '/usr/local', path: '/usr/local', icon: 'folder' as const },
       ], [isWindowsHost]);
 
   const isFavoritePath = favoritePaths.includes(remotePath);
@@ -1059,7 +1320,8 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     ? getOpenActionLabel(primarySelectedEntry)
     : '';
   const selectedArchiveCanDecompress = selectedEntries.length === 1 &&
-    primarySelectedEntry?.type === 'file' &&
+    primarySelectedEntry !== null &&
+    isFileEntry(primarySelectedEntry) &&
     isArchiveFile(primarySelectedEntry.name) &&
     (!isWindowsHost || primarySelectedEntry.name.toLowerCase().endsWith('.zip'));
   const permissionDraftMode = parseOctalModeDraft(permissionDraft);
@@ -1085,16 +1347,16 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
         <div className="explorer-nav-buttons" aria-label="目录导航">
           <button type="button" onClick={navigateBack} disabled={historyIndex <= 0} aria-label="后退" title="后退">
-            ←
+            <ExplorerNavIcon icon="back" />
           </button>
           <button type="button" onClick={navigateForward} disabled={historyIndex >= navigationHistory.length - 1} aria-label="前进" title="前进">
-            →
+            <ExplorerNavIcon icon="forward" />
           </button>
           <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回上级目录">
-            ↑
+            <ExplorerNavIcon icon="up" />
           </button>
           <button type="button" onClick={() => navigateToPath(isWindowsHost ? '.' : '/home')} aria-label="打开 Home" title="Home">
-            ⌂
+            <ExplorerNavIcon icon="home" />
           </button>
         </div>
         <div className="addressbar-breadcrumb-input">
@@ -1120,7 +1382,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           />
         </div>
         <label className="explorer-search">
-          <span aria-hidden="true">⌕</span>
+          <ExplorerSearchIcon />
           <input
             value={fileSearchQuery}
             onChange={(event) => setFileSearchQuery(event.target.value)}
@@ -1173,19 +1435,22 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           <div className="sidebar-section-title">快速访问</div>
           {quickAccessPaths.slice(0, 2).map((item) => (
             <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
-              <span aria-hidden="true">{item.icon}</span>{item.label}
+              <ExplorerSidebarIcon icon={item.icon} />
+              <span className="sidebar-path-label">{item.label}</span>
             </button>
           ))}
           <div className="sidebar-section-title">常用目录</div>
           {quickAccessPaths.slice(2).map((item) => (
             <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
-              <span aria-hidden="true">{item.icon}</span>{item.label}
+              <ExplorerSidebarIcon icon={item.icon} />
+              <span className="sidebar-path-label">{item.label}</span>
             </button>
           ))}
           <div className="sidebar-section-title">收藏路径</div>
           {favoritePaths.length ? favoritePaths.map((path) => (
             <button key={path} type="button" className={remotePath === path ? 'active' : ''} onClick={() => navigateToPath(path)} title={path}>
-              <span aria-hidden="true">★</span>{path}
+              <ExplorerSidebarIcon icon="favorite" />
+              <span className="sidebar-path-label">{path}</span>
             </button>
           )) : (
             <div className="explorer-sidebar-note">暂无收藏路径</div>
@@ -1239,7 +1504,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             </div>
           ) : null}
 
-          <div className="explorer-table" role="table" ref={tableRef}>
+          <div className="explorer-table" role="table" ref={tableRef} onScroll={handleTableScroll}>
             <div className="explorer-row explorer-header" role="row">
               <button type="button" className="sort-header" onClick={() => handleSort('name')}>
                 名称{sortIndicator('name')}
@@ -1254,47 +1519,54 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                 大小{sortIndicator('size')}
               </button>
             </div>
-            {displayedEntries.map((entry) => {
-              const isRenaming = renamingName === entry.name;
+            <div className="explorer-virtual-body" style={{ height: virtualEntryWindow.totalHeight }}>
+              <div
+                className="explorer-virtual-window"
+                style={{ transform: `translate3d(0, ${virtualEntryWindow.offsetY}px, 0)` }}
+              >
+                {virtualEntryWindow.entries.map((entry) => {
+                  const isRenaming = renamingName === entry.name;
 
-              return (
-                <div
-                  key={`${entry.type}:${entry.name}`}
-                  className={`explorer-row ${selectedNames.has(entry.name) ? 'selected' : ''}`}
-                  onClick={(e) => handleRowClick(entry, e)}
-                  onDoubleClick={() => handleRowDoubleClick(entry)}
-                  onContextMenu={(e) => handleRowContextMenu(entry, e)}
-                  role="row"
-                >
-                  {isRenaming ? (
-                    <span className="explorer-name-cell">
-                      <b className={`file-kind-icon ${entry.type}`}>{getFileIcon(entry)}</b>
-                      <input
-                        ref={renameInputRef}
-                        className="inline-rename-input"
-                        value={renameDraft}
-                        onChange={(e) => setRenameDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); void commitRename(); }
-                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={() => void commitRename()}
-                        onClick={(e) => e.stopPropagation()}
-                        spellCheck={false}
-                      />
-                    </span>
-                  ) : (
-                    <span className="explorer-name-cell">
-                      <b className={`file-kind-icon ${entry.type}`}>{getFileIcon(entry)}</b>
-                      {entry.name}
-                    </span>
-                  )}
-                  <span>{formatDateTime(entry.modifiedAt)}</span>
-                  <span>{getFileTypeLabel(entry)}</span>
-                  <span>{entry.type === 'directory' ? '' : formatBytes(entry.size)}</span>
-                </div>
-              );
-            })}
+                  return (
+                    <div
+                      key={`${entry.type}:${entry.name}`}
+                      className={`explorer-row ${selectedNames.has(entry.name) ? 'selected' : ''}`}
+                      onClick={(e) => handleRowClick(entry, e)}
+                      onDoubleClick={() => handleRowDoubleClick(entry)}
+                      onContextMenu={(e) => handleRowContextMenu(entry, e)}
+                      role="row"
+                    >
+                      {isRenaming ? (
+                        <span className="explorer-name-cell">
+                          <b className={`file-kind-icon ${getFileIconClass(entry)}`}>{getFileIcon(entry)}</b>
+                          <input
+                            ref={renameInputRef}
+                            className="inline-rename-input"
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); void commitRename(); }
+                              if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                            }}
+                            onBlur={() => void commitRename()}
+                            onClick={(e) => e.stopPropagation()}
+                            spellCheck={false}
+                          />
+                        </span>
+                      ) : (
+                        <span className="explorer-name-cell">
+                          <b className={`file-kind-icon ${getFileIconClass(entry)}`}>{getFileIcon(entry)}</b>
+                          {entry.name}
+                        </span>
+                      )}
+                      <span>{formatDateTime(entry.modifiedAt)}</span>
+                      <span>{getFileTypeLabel(entry)}</span>
+                      <span>{isDirectoryEntry(entry) ? '' : formatBytes(entry.size)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {!isFilesLoading && !filesError && !displayedEntries.length ? (
@@ -1314,7 +1586,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             {primarySelectedEntry && selectedEntries.length === 1 ? (
               <>
                 <div className="explorer-details-hero">
-                  <b className={`file-kind-icon ${primarySelectedEntry.type}`}>{getFileIcon(primarySelectedEntry)}</b>
+                  <b className={`file-kind-icon ${getFileIconClass(primarySelectedEntry)}`}>{getFileIcon(primarySelectedEntry)}</b>
                   <div>
                     <strong>{primarySelectedEntry.name}</strong>
                     <span>{getFileTypeLabel(primarySelectedEntry)}</span>
@@ -1329,7 +1601,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                   </div>
                   <div>
                     <dt>大小</dt>
-                    <dd>{primarySelectedEntry.type === 'directory' ? '-' : formatBytes(primarySelectedEntry.size)}</dd>
+                    <dd>{isDirectoryEntry(primarySelectedEntry) ? '-' : formatBytes(primarySelectedEntry.size)}</dd>
                   </div>
                   <div>
                     <dt>修改时间</dt>
@@ -1360,11 +1632,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                 </dl>
                 <div className="explorer-details-actions">
                   {selectedOpenActionLabel ? (
-                    <button type="button" onClick={() => openFileEntry(primarySelectedEntry)}>
+                    <button type="button" onClick={() => void openFileEntry(primarySelectedEntry)}>
                       {selectedOpenActionLabel}
                     </button>
                   ) : null}
-                  {primarySelectedEntry.type === 'file' ? (
+                  {isFileEntry(primarySelectedEntry) ? (
                     <button type="button" onClick={() => void downloadFile(primarySelectedEntry)}>
                       下载
                     </button>
@@ -1374,7 +1646,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                       解压缩
                     </button>
                   ) : null}
-                  {primarySelectedEntry.type === 'directory' && onOpenTerminal ? (
+                  {isDirectoryEntry(primarySelectedEntry) && onOpenTerminal ? (
                     <button type="button" onClick={() => onOpenTerminal(joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost))}>
                       在终端中打开
                     </button>
@@ -1441,12 +1713,12 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           >
             {contextMenu.targetEntry ? (
               <>
-                {contextMenu.targetEntry.type === 'directory' && (
-                  <button type="button" role="menuitem" onClick={() => { closeContextMenu(); openFileEntry(contextMenu.targetEntry!); }}>
+                {(isDirectoryEntry(contextMenu.targetEntry) || (contextMenu.targetEntry.type === 'symlink' && !isFileEntry(contextMenu.targetEntry))) && (
+                  <button type="button" role="menuitem" onClick={() => { closeContextMenu(); void openFileEntry(contextMenu.targetEntry!); }}>
                     打开
                   </button>
                 )}
-                {contextMenu.targetEntry.type === 'directory' && onOpenTerminal ? (
+                {isDirectoryEntry(contextMenu.targetEntry) && onOpenTerminal ? (
                   <button type="button" role="menuitem" onClick={() => {
                     closeContextMenu();
                     onOpenTerminal(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
@@ -1454,7 +1726,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     在终端中打开
                   </button>
                 ) : null}
-                {contextMenu.targetEntry.type === 'file' && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
+                {isFileEntry(contextMenu.targetEntry) && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
                   <button type="button" role="menuitem" onClick={() => {
                     closeContextMenu();
                     onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
@@ -1462,7 +1734,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     用记事本打开
                   </button>
                 )}
-                {contextMenu.targetEntry.type === 'file' && isSqliteFile(contextMenu.targetEntry.name) && onOpenSqliteFile && (
+                {isFileEntry(contextMenu.targetEntry) && isSqliteFile(contextMenu.targetEntry.name) && onOpenSqliteFile && (
                   <button type="button" role="menuitem" onClick={() => {
                     closeContextMenu();
                     onOpenSqliteFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
@@ -1476,12 +1748,12 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                 <button type="button" role="menuitem" onClick={() => copyEntryPath(contextMenu.targetEntry!)}>
                   复制路径
                 </button>
-                {contextMenu.targetEntry.type === 'file' && (
+                {isFileEntry(contextMenu.targetEntry) && (
                   <button type="button" role="menuitem" onClick={() => void downloadFile(contextMenu.targetEntry!)}>
                     下载
                   </button>
                 )}
-                {isArchiveFile(contextMenu.targetEntry.name) && contextMenu.targetEntry.type === 'file' && (!isWindowsHost || contextMenu.targetEntry.name.toLowerCase().endsWith('.zip')) && (
+                {isArchiveFile(contextMenu.targetEntry.name) && isFileEntry(contextMenu.targetEntry) && (!isWindowsHost || contextMenu.targetEntry.name.toLowerCase().endsWith('.zip')) && (
                   <button type="button" role="menuitem" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
                     解压缩
                   </button>
@@ -1592,7 +1864,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     <tbody>
                       <tr><td>名称</td><td>{propertiesEntry.name}</td></tr>
                       <tr><td>类型</td><td>{getFileTypeLabel(propertiesEntry)}</td></tr>
-                      <tr><td>大小</td><td>{propertiesEntry.type === 'directory' ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
+                      <tr><td>大小</td><td>{isDirectoryEntry(propertiesEntry) ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
                       <tr><td>修改时间</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
                       {propertiesData ? (
                         <>

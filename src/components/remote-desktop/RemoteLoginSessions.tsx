@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   aggregateLoginSources,
   createCurrentSessionsCommand,
@@ -86,7 +86,7 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
         setSelectedId((currentId) => (entries.some((entry) => entry.id === currentId) ? currentId : entries[0]?.id ?? ''));
       }
 
-      setLoadedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLoadedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setLoadedTabs((current) => new Set(current).add(tab));
       if (result.code !== 0 || result.stderr.trim()) {
         setNotice(result.stderr || '命令返回非零状态，已尽量解析可用输出。');

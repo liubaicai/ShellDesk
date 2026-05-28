@@ -18,6 +18,9 @@ const {
 } = require('./validation.cjs');
 
 const maxRemotePermissionTargets = 5000;
+const maxRemoteDeleteTargets = 5000;
+const maxDirectorySymlinkTargetStats = 80;
+const remoteEntryCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
 
 function validateRemotePath(rawPath) {
   const remotePath = typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : '.';
@@ -173,31 +176,60 @@ function listRemoteDirectory(client, remotePath) {
       }
 
       sftp.readdir(remotePath, (readError, entries) => {
-        sftp.end();
-
         if (readError) {
+          sftp.end();
           reject(readError);
           return;
         }
 
-        resolve(
-          entries
-            .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
-            .map((entry) => ({
-              name: entry.filename,
-              longname: entry.longname,
-              type: getSftpEntryType(entry.attrs),
-              size: entry.attrs.size ?? 0,
-              modifiedAt: entry.attrs.mtime ? new Date(entry.attrs.mtime * 1000).toISOString() : '',
-            }))
-            .sort((left, right) => {
-              if (left.type === right.type) {
-                return left.name.localeCompare(right.name, 'zh-CN');
+        const visibleEntries = entries.filter((entry) => entry.filename !== '.' && entry.filename !== '..');
+        const shouldResolveSymlinkTargets = visibleEntries
+          .filter((entry) => getSftpEntryType(entry.attrs) === 'symlink')
+          .length <= maxDirectorySymlinkTargetStats;
+
+        const statSymlinkTarget = (targetPath) => new Promise((resolveStat) => {
+          sftp.stat(targetPath, (statError, attrs) => {
+            resolveStat(statError || !attrs ? 'unknown' : getSftpEntryType(attrs));
+          });
+        });
+
+        (async () => {
+          try {
+            const listedEntries = await Promise.all(visibleEntries
+              .map(async (entry) => {
+                const type = getSftpEntryType(entry.attrs);
+                const targetType = type === 'symlink'
+                  ? shouldResolveSymlinkTargets
+                    ? await statSymlinkTarget(joinRemoteChildPath(remotePath, entry.filename))
+                    : 'unknown'
+                  : undefined;
+
+                return {
+                  name: entry.filename,
+                  longname: entry.longname,
+                  type,
+                  targetType,
+                  size: entry.attrs.size ?? 0,
+                  modifiedAt: entry.attrs.mtime ? new Date(entry.attrs.mtime * 1000).toISOString() : '',
+                };
+              }));
+
+            resolve(listedEntries.sort((left, right) => {
+              const leftSortType = left.type === 'symlink' && left.targetType === 'directory' ? 'directory' : left.type;
+              const rightSortType = right.type === 'symlink' && right.targetType === 'directory' ? 'directory' : right.type;
+
+              if (leftSortType === rightSortType) {
+                return remoteEntryCollator.compare(left.name, right.name);
               }
 
-              return left.type === 'directory' ? -1 : 1;
-            }),
-        );
+              return leftSortType === 'directory' ? -1 : 1;
+            }));
+          } catch (error) {
+            reject(error);
+          } finally {
+            sftp.end();
+          }
+        })();
       });
     });
   });
@@ -233,22 +265,87 @@ function deleteRemotePath(client, remotePath, entryType) {
         return;
       }
 
-      const finish = (deleteError) => {
-        sftp.end();
+      let deleteTargetCount = 0;
 
-        if (deleteError) {
-          reject(deleteError);
-          return;
+      const countTarget = () => {
+        deleteTargetCount += 1;
+        if (deleteTargetCount > maxRemoteDeleteTargets) {
+          throw new Error(`删除目标超过 ${maxRemoteDeleteTargets} 项，请在终端中分批删除。`);
         }
-
-        resolve(true);
       };
 
-      if (entryType === 'directory') {
-        sftp.rmdir(remotePath, finish);
-      } else {
-        sftp.unlink(remotePath, finish);
-      }
+      const readDirectory = (targetPath) => new Promise((resolveEntries, rejectEntries) => {
+        sftp.readdir(targetPath, (readError, entries) => {
+          if (readError) {
+            rejectEntries(readError);
+            return;
+          }
+
+          resolveEntries(entries);
+        });
+      });
+
+      const unlinkPath = (targetPath) => new Promise((resolveUnlink, rejectUnlink) => {
+        sftp.unlink(targetPath, (unlinkError) => {
+          if (unlinkError) {
+            rejectUnlink(unlinkError);
+            return;
+          }
+
+          resolveUnlink(true);
+        });
+      });
+
+      const rmdirPath = (targetPath) => new Promise((resolveRmdir, rejectRmdir) => {
+        sftp.rmdir(targetPath, (rmdirError) => {
+          if (rmdirError) {
+            rejectRmdir(rmdirError);
+            return;
+          }
+
+          resolveRmdir(true);
+        });
+      });
+
+      const removeDirectory = async (targetPath) => {
+        countTarget();
+        const entries = await readDirectory(targetPath);
+
+        for (const entry of entries) {
+          if (entry.filename === '.' || entry.filename === '..') {
+            continue;
+          }
+
+          const childPath = joinRemoteChildPath(targetPath, entry.filename);
+          const childType = getSftpEntryType(entry.attrs);
+
+          if (childType === 'directory') {
+            await removeDirectory(childPath);
+          } else {
+            countTarget();
+            await unlinkPath(childPath);
+          }
+        }
+
+        await rmdirPath(targetPath);
+      };
+
+      (async () => {
+        try {
+          if (entryType === 'directory') {
+            await removeDirectory(remotePath);
+          } else {
+            countTarget();
+            await unlinkPath(remotePath);
+          }
+
+          resolve(true);
+        } catch (deleteError) {
+          reject(deleteError);
+        } finally {
+          sftp.end();
+        }
+      })();
     });
   });
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   createFirewallAddRuleCommand,
   createFirewallDeleteRuleCommand,
@@ -104,7 +104,7 @@ function RemoteFirewallManager({ connectionId, systemType }: RemoteFirewallManag
       const nextSnapshot = parseFirewallSnapshot(result.stdout, result.stderr, isWindowsHost);
       setSnapshot(nextSnapshot);
       setSelectedRuleId((currentId) => (nextSnapshot.rules.some((rule) => rule.id === currentId) ? currentId : nextSnapshot.rules[0]?.id ?? ''));
-      setRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
 
       if (result.code !== 0 && nextSnapshot.backend === 'unknown') {
         setNotice(result.stderr || result.stdout || '未检测到可用防火墙工具。');

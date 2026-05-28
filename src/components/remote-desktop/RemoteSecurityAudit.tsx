@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
 import { isWindowsSystem } from './remoteSystem';
 import {
@@ -168,7 +168,7 @@ function createSecurityAiEvidence(
   const header = [
     `主机：${hostLabel || '当前连接'}`,
     `系统：${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
-    `采集时间：${scannedAt || new Date().toLocaleString('zh-CN')}`,
+    `采集时间：${scannedAt || new Date().toLocaleString(getShellDeskLocale())}`,
     `AI 规划理由：${planReason}`,
     `采集项数量：${results.length}`,
   ].join('\n');
@@ -333,7 +333,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
       const commandResult = await runCmd(connectionId, command);
       const result = definition.evaluate(commandResult);
       upsertResult(result);
-      setScannedAt(new Date().toLocaleString('zh-CN'));
+      setScannedAt(new Date().toLocaleString(getShellDeskLocale()));
       return result;
     } catch (error) {
       const result = createFailedResult(definition, error);
@@ -362,7 +362,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
         setResults([...completedResults]);
       }
       setResults(completedResults);
-      setScannedAt(new Date().toLocaleString('zh-CN'));
+      setScannedAt(new Date().toLocaleString(getShellDeskLocale()));
       setNotice('巡检完成，报告已刷新。');
     } catch (error) {
       setError(getErrorMessage(error));
@@ -464,7 +464,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
       completedResults.push(await runCheck(definition));
     }
 
-    const generatedAt = new Date().toLocaleString('zh-CN');
+    const generatedAt = new Date().toLocaleString(getShellDeskLocale());
     const evidence = createSecurityAiEvidence(completedResults, hostLabel, generatedAt, plan.reason, isWindowsHost);
     const snapshotNote = evidence.omittedCount > 0
       ? `已发送 ${evidence.includedCount} / ${completedResults.length} 个检查项；${evidence.omittedCount} 个检查项因单条消息长度限制未发送。`

@@ -158,6 +158,14 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function withLinuxPrivilege(command: string) {
+  return `if [ "$(id -u 2>/dev/null)" = "0" ]; then
+${command}
+else
+sudo -n sh -c ${shellQuote(command)}
+fi`;
+}
+
 function isSafeHostname(value: string) {
   return /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(value);
 }
@@ -474,7 +482,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'} 2>&1`);
+      const result = await runCmd(connectionId, withLinuxPrivilege(`ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'} 2>&1`));
       if (result.code !== 0) throw new Error(result.stderr || '操作失败，可能需要 root 权限。');
       setSuccess(`接口 ${ifaceName} 已${bringUp ? '启用' : '禁用'}。`);
       await refresh();
@@ -563,7 +571,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, command);
+      const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0 && !result.stdout.includes('dhclient')) {
         throw new Error(result.stderr || result.stdout || '配置失败，可能需要 root 权限。');
       }
@@ -619,7 +627,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setSuccess('');
     try {
       const quotedName = shellQuote(name);
-      const result = await runCmd(connectionId, `hostnamectl set-hostname ${quotedName} 2>&1 || hostname ${quotedName} 2>&1`);
+      const result = await runCmd(connectionId, withLinuxPrivilege(`hostnamectl set-hostname ${quotedName} 2>&1 || hostname ${quotedName} 2>&1`));
       if (result.code !== 0) throw new Error(result.stderr || '设置主机名失败。');
       setSuccess(`主机名已设置为 ${name}。`);
       setHostname(name);
@@ -677,7 +685,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `cp /etc/resolv.conf /etc/resolv.conf.bak.$(date +%s) 2>/dev/null; printf '%s' ${shellQuote(nextContent)} > /etc/resolv.conf`);
+      const result = await runCmd(connectionId, withLinuxPrivilege(`cp /etc/resolv.conf /etc/resolv.conf.bak.$(date +%s) 2>/dev/null; printf '%s' ${shellQuote(nextContent)} > /etc/resolv.conf`));
       if (result.code !== 0) {
         throw new Error(result.stderr || result.stdout || '写入 DNS 配置失败，可能需要 root 权限。');
       }
@@ -1055,8 +1063,8 @@ MIRROR_EOF`;
     setSuccess('');
     try {
       const plan = getMirrorPlan(mirrorUrl);
-      const backupResult = await runCmd(connectionId, plan.backupCommand);
-      const writeResult = await runCmd(connectionId, plan.writeCommand);
+      const backupResult = await runCmd(connectionId, withLinuxPrivilege(plan.backupCommand));
+      const writeResult = await runCmd(connectionId, withLinuxPrivilege(plan.writeCommand));
 
       if (writeResult.code !== 0) {
         throw new Error(writeResult.stderr || writeResult.stdout || '写入镜像源失败，可能需要 root 权限。');
@@ -1191,14 +1199,14 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     try {
       if (distroType === 'debian') {
         setUpdateOutput('正在更新软件包索引...\n');
-        const updateResult = await runCmd(connectionId, 'apt-get update 2>&1');
+        const updateResult = await runCmd(connectionId, withLinuxPrivilege('apt-get update 2>&1'));
         setUpdateOutput((prev) => prev + updateResult.stdout + (updateResult.stderr ? '\n' + updateResult.stderr : ''));
         const listResult = await runCmd(connectionId, 'apt list --upgradable 2>/dev/null | head -50');
         setUpgradable(listResult.stdout || '所有软件包已是最新版本。');
         setSuccess('软件包索引更新完成。');
       } else if (distroType === 'redhat') {
         setUpdateOutput('正在检查可用更新...\n');
-        const checkResult = await runCmd(connectionId, 'yum check-update 2>&1 || true');
+        const checkResult = await runCmd(connectionId, withLinuxPrivilege('yum check-update 2>&1 || true'));
         setUpdateOutput((prev) => prev + checkResult.stdout + (checkResult.stderr ? '\n' + checkResult.stderr : ''));
         setUpgradable(checkResult.stdout || '所有软件包已是最新版本。');
         setSuccess('更新检查完成。');
@@ -1220,12 +1228,12 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     try {
       if (distroType === 'debian') {
         setUpdateOutput('正在升级所有软件包（apt-get upgrade -y）...\n');
-        const result = await runCmd(connectionId, 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1');
+        const result = await runCmd(connectionId, withLinuxPrivilege('DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1'));
         setUpdateOutput((prev) => prev + result.stdout + (result.stderr ? '\n' + result.stderr : ''));
         setSuccess(result.code === 0 ? '系统升级完成。' : '升级过程中可能存在警告，请查看输出。');
       } else if (distroType === 'redhat') {
         setUpdateOutput('正在升级所有软件包（yum update -y）...\n');
-        const result = await runCmd(connectionId, 'yum update -y 2>&1');
+        const result = await runCmd(connectionId, withLinuxPrivilege('yum update -y 2>&1'));
         setUpdateOutput((prev) => prev + result.stdout + (result.stderr ? '\n' + result.stderr : ''));
         setSuccess(result.code === 0 ? '系统升级完成。' : '升级过程中可能存在警告，请查看输出。');
       }
@@ -1342,7 +1350,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     setError('');
     setSuccess('');
     try {
-      const result = await runCmd(connectionId, `printf '%s' ${shellQuote(draft)} > /etc/hosts`);
+      const result = await runCmd(connectionId, withLinuxPrivilege(`printf '%s' ${shellQuote(draft)} > /etc/hosts`));
       if (result.code !== 0) {
         throw new Error(result.stderr || '写入失败，可能需要 root 权限。');
       }
@@ -1386,7 +1394,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     setSuccess('');
     try {
       const line = `${addIp.trim()} ${addHostname.trim()}`;
-      const result = await runCmd(connectionId, `printf '%s\n' ${shellQuote(line)} >> /etc/hosts`);
+      const result = await runCmd(connectionId, withLinuxPrivilege(`printf '%s\n' ${shellQuote(line)} >> /etc/hosts`));
       if (result.code !== 0) {
         throw new Error(result.stderr || '追加失败，可能需要 root 权限。');
       }
@@ -1499,7 +1507,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     try {
       setError('');
       setSuccess('');
-      const result = await runCmd(connectionId, command);
+      const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0) {
         throw new Error(result.stderr || '添加路由失败，可能需要 root 权限。');
       }
@@ -1539,7 +1547,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     try {
       setError('');
       setSuccess('');
-      const result = await runCmd(connectionId, command);
+      const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0) {
         throw new Error(result.stderr || '删除路由失败，可能需要 root 权限。');
       }

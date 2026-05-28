@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 
 interface RemoteRedisProps {
   connectionId: string;
@@ -103,7 +103,7 @@ function formatSizeHint(type: string, size?: number): string {
 
 function formatTimestamp(value?: string): string {
   if (!value) return '';
-  return new Date(value).toLocaleTimeString('zh-CN', {
+  return new Date(value).toLocaleTimeString(getShellDeskLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
