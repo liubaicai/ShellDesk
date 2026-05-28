@@ -358,6 +358,7 @@ interface ShellDeskRemoteFileEntry {
   name: string;
   longname: string;
   type: 'directory' | 'file' | 'symlink';
+  targetType?: 'directory' | 'file' | 'symlink' | 'unknown';
   size: number;
   modifiedAt: string;
 }

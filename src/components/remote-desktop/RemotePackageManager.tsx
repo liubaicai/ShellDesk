@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   createDetectPackageManagerCommand,
   createPackageActionCommand,
@@ -112,7 +112,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
       setPackages(nextPackages);
       setSelectedName(nextPackages[0]?.name ?? '');
       setActiveView(view);
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       if (result.stderr.trim()) {
         setNotice(result.stderr.trim());
       }

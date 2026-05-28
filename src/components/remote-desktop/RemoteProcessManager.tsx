@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteSystemType } from './types';
@@ -824,7 +824,7 @@ function compareProcesses(
     return (firstValue - secondValue) * direction;
   }
 
-  return String(firstValue).localeCompare(String(secondValue), 'zh-CN') * direction;
+  return String(firstValue).localeCompare(String(secondValue), getShellDeskLocale()) * direction;
 }
 
 function matchesQuery(process: RemoteProcessEntry, query: string) {
@@ -1108,7 +1108,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         .filter((user): user is string => Boolean(user && user !== '-')),
     );
 
-    return [...uniqueUsers].sort((first, second) => first.localeCompare(second, 'zh-CN'));
+    return [...uniqueUsers].sort((first, second) => first.localeCompare(second, getShellDeskLocale()));
   }, [processes]);
 
   const baseFilteredProcesses = useMemo(() => {
@@ -1373,7 +1373,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       }
 
       setAiReportText(resultContent || 'SD-Agent 没有返回报告内容。');
-      setAiReportGeneratedAt(new Date().toLocaleString('zh-CN'));
+      setAiReportGeneratedAt(new Date().toLocaleString(getShellDeskLocale()));
       setAiReportPhase('done');
     } catch (err) {
       setAiReportPhase('error');

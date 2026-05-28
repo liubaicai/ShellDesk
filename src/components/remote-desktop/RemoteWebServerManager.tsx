@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 import {
@@ -104,7 +104,7 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
           ? current
           : nextSnapshot.sites.find((site) => site.kind === nextKind)?.id ?? ''
       ));
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(nextSnapshot.services.length
         ? `检测到 ${nextSnapshot.services.length} 个 Web 服务，${nextSnapshot.sites.length} 个配置文件。`
         : '未检测到 Nginx、Apache 或 Caddy。');

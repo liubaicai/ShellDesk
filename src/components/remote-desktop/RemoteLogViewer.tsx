@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -156,7 +156,7 @@ function formatLoadedAt(value: number | null) {
     return '尚未查询';
   }
 
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(getShellDeskLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

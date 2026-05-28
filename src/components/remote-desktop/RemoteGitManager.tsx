@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   createGitActionCommand,
   createGitBranchActionCommand,
@@ -61,7 +61,7 @@ function formatDate(value: string) {
     return value || '-';
   }
 
-  return new Date(timestamp).toLocaleString('zh-CN');
+  return new Date(timestamp).toLocaleString(getShellDeskLocale());
 }
 
 function getChangeKey(change: GitFileChange) {
@@ -213,7 +213,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           : nextSnapshot.commits[0]?.hash ?? ''
       ));
       setCommandOutput(nextSnapshot.rawOutput);
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(nextSnapshot.clean ? '工作区干净。' : `读取到 ${nextSnapshot.files.length} 个变更文件。`);
     } catch (error) {
       setSnapshot(null);

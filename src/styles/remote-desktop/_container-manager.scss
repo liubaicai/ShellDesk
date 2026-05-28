@@ -381,8 +381,7 @@
 .container-detail-header p,
 .container-status-row small,
 .container-overview small,
-.container-detail-empty span,
-.container-placeholder span {
+.container-detail-empty span {
   min-width: 0;
   overflow: hidden;
   color: var(--container-muted);
@@ -670,8 +669,7 @@
 }
 
 .container-empty,
-.container-detail-empty,
-.container-placeholder {
+.container-detail-empty {
   display: grid;
   min-height: 180px;
   place-content: center;
@@ -682,13 +680,11 @@
   text-align: center;
 }
 
-.container-detail-empty,
-.container-placeholder {
+.container-detail-empty {
   height: 100%;
 }
 
-.container-detail-empty strong,
-.container-placeholder strong {
+.container-detail-empty strong {
   color: var(--container-muted-strong);
   font-size: 13px;
 }
@@ -765,10 +761,6 @@
   color: var(--container-muted) !important;
   font-size: 13px !important;
   text-align: center;
-}
-
-.container-placeholder {
-  flex: 1 1 auto;
 }
 
 .container-modal-overlay {

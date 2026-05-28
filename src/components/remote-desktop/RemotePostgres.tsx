@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 
 interface RemotePostgresProps {
   connectionId: string;
@@ -218,7 +218,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
         status: 'success',
         rowCount: result.rowCount ?? result.rows.length,
         durationMs,
-        createdAt: new Date().toLocaleTimeString('zh-CN'),
+        createdAt: new Date().toLocaleTimeString(getShellDeskLocale()),
       };
       setQueryResult(result);
       setQueryColumns(nextColumns);
@@ -233,7 +233,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
         status: 'error',
         error: message,
         durationMs,
-        createdAt: new Date().toLocaleTimeString('zh-CN'),
+        createdAt: new Date().toLocaleTimeString(getShellDeskLocale()),
       };
       setError(message);
       setHistory((items) => [historyItem, ...items].slice(0, maxHistoryItems));

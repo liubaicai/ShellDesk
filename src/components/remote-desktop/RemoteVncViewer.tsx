@@ -2,7 +2,7 @@ import type RFB from '@novnc/novnc';
 import type { RfbCredentials } from '@novnc/novnc';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 
 interface RemoteVncViewerProps {
   connectionId: string;
@@ -763,7 +763,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       }
 
       const currentVncId = vncIdRef.current;
-      const time = new Date().toLocaleTimeString('zh-CN');
+      const time = new Date().toLocaleTimeString(getShellDeskLocale());
       vncIdRef.current = '';
       clearHandshakeTimer();
       clearViewportRefreshTimers();
@@ -1051,7 +1051,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
             <span>{desktopName || `SSH 通道 · ${targetLabel}`}</span>
             {latencyLabel ? <em className="latency">{latencyLabel}</em> : null}
             {latestDiagnostic ? <em title={latestDiagnostic.detail}>{latestDiagnostic.stage}: {latestDiagnostic.detail}</em> : null}
-            {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString('zh-CN')}</time> : null}
+            {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString(getShellDeskLocale())}</time> : null}
           </footer>
         </div>
 
@@ -1134,7 +1134,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
                 <ol className="vnc-diagnostic-list">
                   {diagnostics.map((diagnostic) => (
                     <li key={diagnostic.id} className={diagnostic.tone}>
-                      <time dateTime={diagnostic.timestamp}>{new Date(diagnostic.timestamp).toLocaleTimeString('zh-CN')}</time>
+                      <time dateTime={diagnostic.timestamp}>{new Date(diagnostic.timestamp).toLocaleTimeString(getShellDeskLocale())}</time>
                       <strong>{diagnostic.stage}</strong>
                       <span>{diagnostic.detail}</span>
                     </li>

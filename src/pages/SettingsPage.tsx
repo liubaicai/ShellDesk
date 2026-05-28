@@ -8,6 +8,7 @@ import {
 } from '../components/remote-desktop/terminalPresets';
 import defaultDesktopWallpaperUrl from '../assets/images/default-desktop-wallpaper.png';
 import appIconUrl from '../assets/images/icon.png';
+import { getCurrentAppLocale } from '../i18n';
 
 const settingsSections = [
   { key: 'general', label: '常规', summary: '语言、字体、视图' },
@@ -180,7 +181,7 @@ function formatDateTime(value: string | null | undefined) {
     return value;
   }
 
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(getCurrentAppLocale(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -1122,7 +1123,7 @@ function SettingsPage({
                       onChange={(event) => updateSetting('terminalScrollback', Number(event.target.value))}
                     >
                       {[1000, 3000, 5000, 10000, 20000, 50000].map((value) => (
-                        <option key={value} value={value}>{value.toLocaleString('zh-CN')} 行</option>
+                        <option key={value} value={value}>{value.toLocaleString(getCurrentAppLocale())} 行</option>
                       ))}
                     </select>
                   </label>

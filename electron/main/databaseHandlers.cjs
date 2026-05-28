@@ -962,59 +962,70 @@ function registerDatabaseHandlers(registerIpcHandler) {
   }
 
   function parseSqliteCsv(csvText) {
-    const normalizedText = String(csvText ?? '').trim();
+    const normalizedText = String(csvText ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-    if (!normalizedText) {
+    if (!normalizedText.trim()) {
       return { columns: [], rows: [] };
     }
 
-    const lines = normalizedText.split('\n');
-    if (lines.length === 0) return { columns: [], rows: [] };
-    const columns = lines[0].split(',').map((c) => c.trim());
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = [];
-      let current = '';
-      let inQuotes = false;
-      for (let j = 0; j < lines[i].length; j++) {
-        const ch = lines[i][j];
-        if (inQuotes) {
-          if (ch === '"') {
-            if (j + 1 < lines[i].length && lines[i][j + 1] === '"') {
-              current += '"';
-              j++;
-            } else {
-              inQuotes = false;
-            }
+    const parsedRows = [];
+    let row = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < normalizedText.length; index++) {
+      const ch = normalizedText[index];
+
+      if (inQuotes) {
+        if (ch === '"') {
+          if (normalizedText[index + 1] === '"') {
+            current += '"';
+            index++;
           } else {
-            current += ch;
+            inQuotes = false;
           }
-        } else if (ch === '"') {
-          inQuotes = true;
-        } else if (ch === ',') {
-          values.push(current);
-          current = '';
         } else {
           current += ch;
         }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(current);
+        current = '';
+      } else if (ch === '\n') {
+        row.push(current);
+        parsedRows.push(row);
+        row = [];
+        current = '';
+      } else {
+        current += ch;
       }
-      values.push(current);
-      const row = {};
-      for (let k = 0; k < columns.length; k++) {
-        row[columns[k]] = values[k] !== undefined ? values[k] : null;
-      }
-      rows.push(row);
     }
+
+    if (current || row.length) {
+      row.push(current);
+      parsedRows.push(row);
+    }
+
+    if (parsedRows.length === 0) return { columns: [], rows: [] };
+
+    const columns = parsedRows[0].map((column) => column.trim());
+    const rows = parsedRows.slice(1).map((values) => {
+      const nextRow = {};
+
+      for (let index = 0; index < columns.length; index++) {
+        nextRow[columns[index]] = values[index] !== undefined ? values[index] : null;
+      }
+
+      return nextRow;
+    });
+
     return { columns, rows };
   }
 
-  function parseSqliteObjectRows(stdout) {
-    return parseSqliteCsv(stdout).rows.map((row) => ({
-      type: row.type || '',
-      name: row.name || '',
-      tableName: row.tableName || row.tbl_name || '',
-      sql: row.sql || '',
-    })).filter((item) => item.type && item.name);
+  function parseSqliteNameList(stdout) {
+    const parsed = parseSqliteCsv(stdout);
+    return parsed.rows.map((row) => row.name || row.Name || '').filter(Boolean);
   }
 
   async function execSqliteOnRemote(client, filePath, command) {
@@ -1038,11 +1049,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
     if (stat.type !== 'file') {
       throw new Error('请选择可读取的 SQLite 文件。');
     }
-    // Validate the file is a SQLite database
-    const stdout = await execSqliteOnRemote(activeConnection.client, filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' LIMIT 1');
-    if (!stdout.trim()) {
-      throw new Error('无法打开该文件作为 SQLite 数据库。请确认文件是有效的 SQLite 数据库。');
-    }
+    await execSqliteOnRemote(activeConnection.client, filePath, 'PRAGMA schema_version');
     const sqliteId = crypto.randomUUID();
     const key = getSqliteKey(connectionId, sqliteId);
     activeSqliteSessions.set(key, { connectionId, sqliteId, filePath, client: activeConnection.client });
@@ -1059,11 +1066,17 @@ function registerDatabaseHandlers(registerIpcHandler) {
   registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const stdout = await execSqliteOnRemote(entry.client, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
-    const lines = stdout.trim().split('\n');
-    if (lines.length <= 1) return [];
-    // First line is header "name", skip it
-    return lines.slice(1).map((l) => l.trim()).filter(Boolean);
+    return parseSqliteNameList(stdout);
   });
+
+  function parseSqliteObjectRows(stdout) {
+    return parseSqliteCsv(stdout).rows.map((row) => ({
+      type: row.type || '',
+      name: row.name || '',
+      tableName: row.tableName || row.tbl_name || '',
+      sql: row.sql || '',
+    })).filter((item) => item.type && item.name);
+  }
 
   registerIpcHandler('connection:sqlite-objects', async (_event, connectionId, rawSqliteId) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);

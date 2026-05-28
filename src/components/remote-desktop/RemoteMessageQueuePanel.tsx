@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
   createKafkaLagCommand,
   createKafkaTopicsCommand,
@@ -38,7 +38,7 @@ function runCmd(connectionId: string, command: string) {
 
 function formatNumber(value?: number) {
   if (value === undefined || Number.isNaN(value)) return '-';
-  return value.toLocaleString('zh-CN');
+  return value.toLocaleString(getShellDeskLocale());
 }
 
 function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueuePanelProps) {
@@ -106,7 +106,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
     setSelectedQueueName((current) => current && nextQueues.some((queue) => queue.name === current) ? current : nextQueues[0]?.name ?? '');
     setRawOutput(result.stdout || result.stderr);
     setActiveTab('queues');
-    setNotice(`RabbitMQ 已刷新：${nextQueues.length} 个队列，累计 ${nextQueues.reduce((sum, queue) => sum + queue.messages, 0).toLocaleString('zh-CN')} 条消息。`);
+    setNotice(`RabbitMQ 已刷新：${nextQueues.length} 个队列，累计 ${nextQueues.reduce((sum, queue) => sum + queue.messages, 0).toLocaleString(getShellDeskLocale())} 条消息。`);
   };
 
   const refreshKafka = async () => {
@@ -147,7 +147,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
         await refreshKafka();
       }
 
-      setLastRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {

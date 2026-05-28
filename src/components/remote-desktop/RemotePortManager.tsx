@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
@@ -603,7 +603,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       const nextEntries = isWindowsHost ? parseWindowsPorts(result.stdout) : parseUnixPorts(result.stdout);
       setEntries(nextEntries);
       setSelectedId((currentId) => (nextEntries.some((entry) => entry.id === currentId) ? currentId : nextEntries[0]?.id ?? ''));
-      setRefreshedAt(new Date().toLocaleTimeString('zh-CN'));
+      setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       if (result.stderr.trim()) {
         setNotice(result.stderr.trim());
       }

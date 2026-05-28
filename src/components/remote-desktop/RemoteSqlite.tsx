@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import RemoteFilePicker from './RemoteFilePicker';
 import type { RemoteSystemType } from './types';
 
@@ -93,7 +93,7 @@ function formatCellValue(value: unknown): string {
 }
 
 function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+  return new Date(timestamp).toLocaleTimeString(getShellDeskLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

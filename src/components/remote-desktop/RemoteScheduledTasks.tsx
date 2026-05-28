@@ -53,6 +53,14 @@ function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function withLinuxPrivilege(command: string) {
+  return `if [ "$(id -u 2>/dev/null)" = "0" ]; then
+${command}
+else
+sudo -n sh -c ${shellSingleQuote(command)}
+fi`;
+}
+
 function createWriteCrontabCommand(content: string) {
   const marker = `SHELLDESK_CRON_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   return `tmp="\${TMPDIR:-/tmp}/shelldesk-cron-$(date +%s)-$$"; cat > "$tmp" <<'${marker}'\n${content}\n${marker}\ncrontab "$tmp" && rm -f "$tmp"`;
@@ -114,7 +122,7 @@ function createWindowsTaskActionCommand(action: 'enable' | 'disable' | 'start', 
 }
 
 function createSystemdTimerActionCommand(action: 'start' | 'stop' | 'enable' | 'disable', timer: SystemdTimerSummary) {
-  return `systemctl ${action} ${shellSingleQuote(timer.name)}`;
+  return withLinuxPrivilege(`systemctl ${action} ${shellSingleQuote(timer.name)}`);
 }
 
 function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasksProps) {

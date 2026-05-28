@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -61,7 +61,7 @@ interface ContainerDetail {
   inspectError?: string;
 }
 
-type ManagerTab = 'containers' | 'images' | 'volumes' | 'networks' | 'compose';
+type ManagerTab = 'containers' | 'images';
 type ContainerFilter = 'all' | ContainerState;
 type DetailTab = 'summary' | 'logs' | 'inspect' | 'exec';
 type ContainerAction = 'start' | 'stop' | 'restart' | 'remove';
@@ -74,12 +74,9 @@ const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
 const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
 const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
 
-const managerTabs: Array<{ key: ManagerTab; label: string; disabled?: boolean }> = [
+const managerTabs: Array<{ key: ManagerTab; label: string }> = [
   { key: 'containers', label: '容器' },
   { key: 'images', label: '镜像' },
-  { key: 'volumes', label: '卷', disabled: true },
-  { key: 'networks', label: '网络', disabled: true },
-  { key: 'compose', label: 'Compose', disabled: true },
 ];
 
 const containerFilters: Array<{ key: ContainerFilter; label: string }> = [
@@ -751,7 +748,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
             return firstWeight - secondWeight;
           }
 
-          return first.name.localeCompare(second.name, 'zh-CN');
+          return first.name.localeCompare(second.name, getShellDeskLocale());
         });
 
       if (result.code !== 0 && nextContainers.length === 0) {
@@ -802,7 +799,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       const nextImages = parseJsonLines(result.stdout || '')
         .map(parseImageSummary)
         .filter((image): image is ImageSummary => Boolean(image))
-        .sort((first, second) => getImageReference(first).localeCompare(getImageReference(second), 'zh-CN'));
+        .sort((first, second) => getImageReference(first).localeCompare(getImageReference(second), getShellDeskLocale()));
 
       if (result.code !== 0 && nextImages.length === 0) {
         throw new Error(result.stderr || result.stdout || '无法读取镜像列表。');
@@ -1290,8 +1287,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
               type="button"
               role="tab"
               className={activeTab === tab.key ? 'active' : ''}
-              disabled={tab.disabled}
-              title={tab.disabled ? '后续版本支持' : tab.label}
+              title={tab.label}
               onClick={() => setActiveTab(tab.key)}
             >
               {tab.label}
@@ -1464,13 +1460,6 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
               </tbody>
             </table>
           </div>
-        </div>
-      ) : null}
-
-      {activeTab !== 'containers' && activeTab !== 'images' ? (
-        <div className="container-placeholder">
-          <strong>该页签将在后续版本开放</strong>
-          <span>当前首版已实现容器与镜像管理。</span>
         </div>
       ) : null}
 
