@@ -454,16 +454,23 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
       {error ? <div className="disk-alert danger">{error}</div> : null}
       {notice ? <div className="disk-alert info">{notice}</div> : null}
 
-      <div className="disk-mount-strip">
-        {mounts.map((mount) => (
-          <button key={`${mount.filesystem}-${mount.mountPoint}`} type="button" onClick={() => scanPath(mount.mountPoint)}>
-            <span><strong>{mount.mountPoint}</strong><em>{mount.filesystem}</em></span>
-            <small>{mount.used} / {mount.size}</small>
-            <i><b style={{ width: `${mount.usePercent}%` }} /></i>
-            <mark>{mount.usePercent}%</mark>
-          </button>
-        ))}
-      </div>
+      {mounts.length ? (
+        <div className="disk-mount-strip" aria-label="磁盘挂载点">
+          {mounts.map((mount) => (
+            <button
+              key={`${mount.filesystem}-${mount.mountPoint}`}
+              type="button"
+              title={`${mount.mountPoint} ${mount.filesystem} ${mount.used} / ${mount.size}`}
+              onClick={() => scanPath(mount.mountPoint)}
+            >
+              <span><strong>{mount.mountPoint}</strong><em>{mount.filesystem}</em></span>
+              <small>{mount.used} / {mount.size}</small>
+              <i><b style={{ width: `${mount.usePercent}%` }} /></i>
+              <mark>{mount.usePercent}%</mark>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="disk-layout">
         <aside className="disk-side">

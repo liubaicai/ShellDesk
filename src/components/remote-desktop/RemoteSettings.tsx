@@ -953,6 +953,13 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 /* ─── Mirrors ─────────────────────────────────────────────────────────────── */
 
 const MIRROR_PRESETS = {
+  ubuntu: [
+    { label: '阿里云', url: 'mirrors.aliyun.com' },
+    { label: '清华 TUNA', url: 'mirrors.tuna.tsinghua.edu.cn' },
+    { label: '中科大 USTC', url: 'mirrors.ustc.edu.cn' },
+    { label: '华为云', url: 'mirrors.huaweicloud.com' },
+    { label: '官方源', url: 'archive.ubuntu.com' },
+  ],
   debian: [
     { label: '阿里云', url: 'mirrors.aliyun.com' },
     { label: '清华 TUNA', url: 'mirrors.tuna.tsinghua.edu.cn' },
@@ -968,9 +975,202 @@ const MIRROR_PRESETS = {
   ],
 };
 
+type MirrorDistroType = 'debian' | 'redhat' | 'unknown';
+type AptSourceFormat = 'legacy' | 'deb822';
+type AptMirrorFlavor = 'ubuntu' | 'debian';
+
+interface AptSourceTarget {
+  path: string;
+  format: AptSourceFormat;
+  flavor: AptMirrorFlavor;
+}
+
+const APT_SOURCE_CONTENT_MARKER = 'SHELLDESK_APT_SOURCE_CONTENT';
+const LEGACY_APT_SOURCE_PATH = '/etc/apt/sources.list';
+const UBUNTU_DEB822_SOURCE_PATH = '/etc/apt/sources.list.d/ubuntu.sources';
+const DEBIAN_DEB822_SOURCE_PATH = '/etc/apt/sources.list.d/debian.sources';
+
+function createAptSourceInspectionCommand() {
+  return [
+    'if [ -f /etc/os-release ]; then',
+    '  . /etc/os-release',
+    'fi',
+    'apt_source_path=',
+    'apt_source_format=legacy',
+    'if [ "${ID:-}" = "ubuntu" ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then',
+    '  apt_source_path=/etc/apt/sources.list.d/ubuntu.sources',
+    '  apt_source_format=deb822',
+    'elif [ "${ID:-}" = "debian" ] && [ -f /etc/apt/sources.list.d/debian.sources ]; then',
+    '  apt_source_path=/etc/apt/sources.list.d/debian.sources',
+    '  apt_source_format=deb822',
+    'elif [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then',
+    '  apt_source_path=/etc/apt/sources.list.d/ubuntu.sources',
+    '  apt_source_format=deb822',
+    'elif [ -f /etc/apt/sources.list.d/debian.sources ]; then',
+    '  apt_source_path=/etc/apt/sources.list.d/debian.sources',
+    '  apt_source_format=deb822',
+    'elif [ -f /etc/apt/sources.list ]; then',
+    '  apt_source_path=/etc/apt/sources.list',
+    '  apt_source_format=legacy',
+    'elif [ "${ID:-}" = "ubuntu" ]; then',
+    '  apt_source_path=/etc/apt/sources.list.d/ubuntu.sources',
+    '  apt_source_format=deb822',
+    'else',
+    '  apt_source_path=/etc/apt/sources.list',
+    '  apt_source_format=legacy',
+    'fi',
+    'printf "APT_SOURCE_PATH=%s\\n" "$apt_source_path"',
+    'printf "APT_SOURCE_FORMAT=%s\\n" "$apt_source_format"',
+    `printf '%s\\n' '${APT_SOURCE_CONTENT_MARKER}'`,
+    'if [ -n "$apt_source_path" ] && [ -f "$apt_source_path" ]; then',
+    '  sed -n "1,160p" "$apt_source_path" 2>/dev/null',
+    'fi',
+  ].join('\n');
+}
+
+function getAptFlavorFromDistroOutput(output: string): AptMirrorFlavor {
+  const values = parseKeyValueOutput(output);
+  const id = (values.get('ID') ?? '').toLowerCase();
+  const idLike = (values.get('ID_LIKE') ?? '').toLowerCase();
+
+  if (['ubuntu', 'linuxmint', 'pop', 'elementary'].includes(id) || /(^|[\s,])ubuntu(?=$|[\s,])/.test(idLike)) {
+    return 'ubuntu';
+  }
+
+  return 'debian';
+}
+
+function getDefaultAptSourceTarget(flavor: AptMirrorFlavor): AptSourceTarget {
+  if (flavor === 'ubuntu') {
+    return { path: UBUNTU_DEB822_SOURCE_PATH, format: 'deb822', flavor };
+  }
+
+  return { path: LEGACY_APT_SOURCE_PATH, format: 'legacy', flavor };
+}
+
+function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor) {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === APT_SOURCE_CONTENT_MARKER);
+  const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : lines;
+  const contentLines = markerIndex >= 0 ? lines.slice(markerIndex + 1) : [];
+  const values = parseKeyValueOutput(metadataLines.join('\n'));
+  const fallbackTarget = getDefaultAptSourceTarget(flavor);
+  const path = values.get('APT_SOURCE_PATH') || fallbackTarget.path;
+  const format: AptSourceFormat = values.get('APT_SOURCE_FORMAT') === 'deb822' || path.endsWith('.sources') ? 'deb822' : 'legacy';
+  const target: AptSourceTarget = { path, format, flavor };
+  const content = contentLines.join('\n').trimEnd();
+  const display = [
+    `配置文件：${path}`,
+    `格式：${format === 'deb822' ? 'deb822 (.sources)' : 'legacy sources.list'}`,
+    '',
+    content || '无法读取，应用镜像源时将创建该文件。',
+  ].join('\n');
+
+  return { target, display };
+}
+
+function normalizeAptCodename(rawCodename: string | undefined, flavor: AptMirrorFlavor) {
+  const fallback = flavor === 'ubuntu' ? 'noble' : 'bookworm';
+  const codename = (rawCodename ?? '').trim();
+  return /^[A-Za-z0-9._-]+$/.test(codename) ? codename : fallback;
+}
+
+function buildUbuntuLegacySources(mirrorUrl: string, codename: string) {
+  const components = 'main restricted universe multiverse';
+  const archiveUri = `http://${mirrorUrl}/ubuntu/`;
+  const securityUri = mirrorUrl === 'archive.ubuntu.com' ? 'http://security.ubuntu.com/ubuntu/' : archiveUri;
+
+  return [
+    `deb ${archiveUri} ${codename} ${components}`,
+    `deb ${archiveUri} ${codename}-updates ${components}`,
+    `deb ${archiveUri} ${codename}-backports ${components}`,
+    `deb ${securityUri} ${codename}-security ${components}`,
+  ].join('\n');
+}
+
+function buildDebianLegacySources(mirrorUrl: string, codename: string) {
+  const components = 'main contrib non-free non-free-firmware';
+
+  return [
+    `deb http://${mirrorUrl}/debian/ ${codename} ${components}`,
+    `deb http://${mirrorUrl}/debian/ ${codename}-updates ${components}`,
+    `deb http://${mirrorUrl}/debian/ ${codename}-backports ${components}`,
+    `deb http://${mirrorUrl}/debian-security ${codename}-security ${components}`,
+  ].join('\n');
+}
+
+function buildUbuntuDeb822Sources(mirrorUrl: string, codename: string) {
+  const components = 'main restricted universe multiverse';
+  const signedBy = '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
+  const archiveUri = `http://${mirrorUrl}/ubuntu/`;
+  const securityUri = mirrorUrl === 'archive.ubuntu.com' ? 'http://security.ubuntu.com/ubuntu/' : archiveUri;
+
+  if (securityUri === archiveUri) {
+    return [
+      'Types: deb',
+      `URIs: ${archiveUri}`,
+      `Suites: ${codename} ${codename}-updates ${codename}-backports ${codename}-security`,
+      `Components: ${components}`,
+      `Signed-By: ${signedBy}`,
+    ].join('\n');
+  }
+
+  return [
+    [
+      'Types: deb',
+      `URIs: ${archiveUri}`,
+      `Suites: ${codename} ${codename}-updates ${codename}-backports`,
+      `Components: ${components}`,
+      `Signed-By: ${signedBy}`,
+    ].join('\n'),
+    [
+      'Types: deb',
+      `URIs: ${securityUri}`,
+      `Suites: ${codename}-security`,
+      `Components: ${components}`,
+      `Signed-By: ${signedBy}`,
+    ].join('\n'),
+  ].join('\n\n');
+}
+
+function buildDebianDeb822Sources(mirrorUrl: string, codename: string) {
+  const components = 'main contrib non-free non-free-firmware';
+  const signedBy = '/usr/share/keyrings/debian-archive-keyring.gpg';
+
+  return [
+    [
+      'Types: deb',
+      `URIs: http://${mirrorUrl}/debian/`,
+      `Suites: ${codename} ${codename}-updates ${codename}-backports`,
+      `Components: ${components}`,
+      `Signed-By: ${signedBy}`,
+    ].join('\n'),
+    [
+      'Types: deb',
+      `URIs: http://${mirrorUrl}/debian-security`,
+      `Suites: ${codename}-security`,
+      `Components: ${components}`,
+      `Signed-By: ${signedBy}`,
+    ].join('\n'),
+  ].join('\n\n');
+}
+
+function buildAptSourcesContent(mirrorUrl: string, target: AptSourceTarget, codename: string) {
+  if (target.format === 'deb822') {
+    return target.flavor === 'ubuntu'
+      ? buildUbuntuDeb822Sources(mirrorUrl, codename)
+      : buildDebianDeb822Sources(mirrorUrl, codename);
+  }
+
+  return target.flavor === 'ubuntu'
+    ? buildUbuntuLegacySources(mirrorUrl, codename)
+    : buildDebianLegacySources(mirrorUrl, codename);
+}
+
 function MirrorsPanel({ connectionId }: { connectionId: string }) {
-  const [distroType, setDistroType] = useState<'debian' | 'redhat' | 'unknown'>('unknown');
+  const [distroType, setDistroType] = useState<MirrorDistroType>('unknown');
   const [distroName, setDistroName] = useState('');
+  const [aptSourceTarget, setAptSourceTarget] = useState<AptSourceTarget | null>(null);
   const [currentMirror, setCurrentMirror] = useState('');
   const [mirrorDraft, setMirrorDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -987,6 +1187,7 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         if [ -f /etc/os-release ]; then
           . /etc/os-release
           echo "ID=$ID"
+          echo "ID_LIKE=$ID_LIKE"
           echo "VERSION_CODENAME=$VERSION_CODENAME"
           echo "NAME=$NAME"
         elif command -v apt-get >/dev/null 2>&1; then
@@ -998,18 +1199,33 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         fi
       `);
       const output = detectResult.stdout;
+      const distroValues = parseKeyValueOutput(output);
+      const distroId = (distroValues.get('ID') ?? '').toLowerCase();
+      const distroLike = (distroValues.get('ID_LIKE') ?? '').toLowerCase();
       setDistroName(output);
 
-      if (/ID=ubuntu|ID=debian|ID=kali|ID=linuxmint|ID=pop/i.test(output)) {
+      if (
+        ['ubuntu', 'debian', 'kali', 'linuxmint', 'pop', 'elementary', 'raspbian'].includes(distroId)
+        || /(^|[\s,])(ubuntu|debian)(?=$|[\s,])/.test(distroLike)
+        || /TYPE=debian/i.test(output)
+      ) {
         setDistroType('debian');
-        const mirrorResult = await runCmd(connectionId, 'cat /etc/apt/sources.list 2>/dev/null | head -20');
-        setCurrentMirror(mirrorResult.stdout || '无法读取');
-      } else if (/ID=centos|ID=rhel|ID=fedora|ID=rocky|ID=alma|ID=ol|ID=amzn/i.test(output)) {
+        const flavor = getAptFlavorFromDistroOutput(output);
+        const mirrorResult = await runCmd(connectionId, createAptSourceInspectionCommand());
+        const sourceInspection = parseAptSourceInspection(mirrorResult.stdout, flavor);
+        setAptSourceTarget(sourceInspection.target);
+        setCurrentMirror(sourceInspection.display);
+      } else if (
+        ['centos', 'rhel', 'fedora', 'rocky', 'alma', 'almalinux', 'ol', 'amzn'].includes(distroId)
+        || /(^|[\s,])(rhel|fedora|centos)(?=$|[\s,])/.test(distroLike)
+      ) {
         setDistroType('redhat');
+        setAptSourceTarget(null);
         const mirrorResult = await runCmd(connectionId, 'cat /etc/yum.repos.d/*.repo 2>/dev/null | grep -E "^baseurl|^mirrorlist" | head -20');
         setCurrentMirror(mirrorResult.stdout || '无法读取');
       } else {
         setDistroType('unknown');
+        setAptSourceTarget(null);
         setCurrentMirror('');
       }
       setMirrorDraft('');
@@ -1023,22 +1239,28 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
   useEffect(() => { void detectDistro(); }, [detectDistro]);
 
   const getMirrorPlan = (mirrorUrl: string) => {
+    if (!isSafeHostname(mirrorUrl)) {
+      throw new Error('镜像源域名无效。');
+    }
+
     if (distroType === 'debian') {
       const versionMatch = distroName.match(/VERSION_CODENAME=(\S+)/);
-      const codename = versionMatch?.[1] || 'bookworm';
-      const backupCommand = `cp /etc/apt/sources.list /etc/apt/sources.list.bak.$(date +%s) 2>/dev/null`;
-      const writeCommand = `cat > /etc/apt/sources.list << 'MIRROR_EOF'
-deb http://${mirrorUrl}/debian/ ${codename} main contrib non-free non-free-firmware
-deb http://${mirrorUrl}/debian/ ${codename}-updates main contrib non-free non-free-firmware
-deb http://${mirrorUrl}/debian/ ${codename}-backports main contrib non-free non-free-firmware
-deb http://${mirrorUrl}/debian-security ${codename}-security main contrib non-free non-free-firmware
+      const flavor = aptSourceTarget?.flavor ?? getAptFlavorFromDistroOutput(distroName);
+      const target = aptSourceTarget ?? getDefaultAptSourceTarget(flavor);
+      const codename = normalizeAptCodename(versionMatch?.[1], flavor);
+      const pathArg = shellQuote(target.path);
+      const content = buildAptSourcesContent(mirrorUrl, target, codename);
+      const backupCommand = `if [ -f ${pathArg} ]; then cp ${pathArg} ${pathArg}.bak.$(date +%s); fi`;
+      const prepareCommand = target.format === 'deb822' ? 'mkdir -p /etc/apt/sources.list.d' : '';
+      const writeCommand = `${prepareCommand ? `${prepareCommand}\n` : ''}cat > ${pathArg} << 'MIRROR_EOF'
+${content}
 MIRROR_EOF`;
 
       return {
         backupCommand,
         writeCommand,
         preview: `${backupCommand}\n${writeCommand}`,
-        successMessage: `已切换到 ${mirrorUrl}，请前往「系统更新」刷新软件包索引。`,
+        successMessage: `已切换 ${target.path} 到 ${mirrorUrl}，请前往「系统更新」刷新软件包索引。`,
       };
     }
 
@@ -1099,7 +1321,12 @@ MIRROR_EOF`;
     }
   };
 
-  const presets = distroType === 'debian' ? MIRROR_PRESETS.debian : distroType === 'redhat' ? MIRROR_PRESETS.redhat : [];
+  const aptFlavor = aptSourceTarget?.flavor ?? getAptFlavorFromDistroOutput(distroName);
+  const presets = distroType === 'debian'
+    ? MIRROR_PRESETS[aptFlavor]
+    : distroType === 'redhat'
+      ? MIRROR_PRESETS.redhat
+      : [];
 
   return (
     <div className="settings-panel-content">

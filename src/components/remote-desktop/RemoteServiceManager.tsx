@@ -532,7 +532,13 @@ if ! command -v systemctl >/dev/null 2>&1; then
   printf 'systemctl 未安装或当前 PATH 不可用。\\n'
   exit 127
 fi
-systemctl ${action} ${unit} 2>&1
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+  systemctl ${action} ${unit} 2>&1
+elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  sudo -n systemctl ${action} ${unit} 2>&1
+else
+  systemctl ${action} ${unit} 2>&1
+fi
 `;
 }
 
@@ -900,7 +906,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
   };
 
   const isActionDisabled = (action: ServiceAction) => {
-    if (!selectedService || actingAction !== null) {
+    if (!selectedService || !selectedDetail || actingAction !== null) {
       return true;
     }
 
@@ -909,19 +915,19 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
     }
 
     if (action === 'start') {
-      return selectedService.activeState === 'active' || selectedService.activeState === 'activating';
+      return selectedDetail.activeState === 'active' || selectedDetail.activeState === 'activating';
     }
 
     if (action === 'stop') {
-      return selectedService.activeState === 'inactive' || selectedService.activeState === 'deactivating';
+      return selectedDetail.activeState === 'inactive' || selectedDetail.activeState === 'deactivating';
     }
 
     if (action === 'enable') {
-      return selectedService.enabledState === 'enabled';
+      return selectedDetail.enabledState === 'enabled';
     }
 
     if (action === 'disable') {
-      return selectedService.enabledState === 'disabled' || selectedService.enabledState === 'masked';
+      return selectedDetail.enabledState === 'disabled' || selectedDetail.enabledState === 'masked';
     }
 
     return false;

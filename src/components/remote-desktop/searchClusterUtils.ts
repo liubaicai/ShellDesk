@@ -5,6 +5,7 @@ export interface SearchClusterConnectionConfig {
   username: string;
   password: string;
   timeoutSeconds: number;
+  ignoreSslCertificate: boolean;
 }
 
 export interface SearchClusterHealth {
@@ -87,6 +88,35 @@ function getAuthText(config: SearchClusterConnectionConfig) {
   return `${username}:${config.password}`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function summarizeSearchError(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (isRecord(value)) {
+    const reason = typeof value.reason === 'string' ? value.reason : '';
+    const type = typeof value.type === 'string' ? value.type : '';
+
+    if (reason && type) {
+      return `${type}: ${reason}`;
+    }
+
+    if (reason || type) {
+      return reason || type;
+    }
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '未知错误';
+  }
+}
+
 export function createSearchClusterCommand(
   config: SearchClusterConnectionConfig,
   path: string,
@@ -97,9 +127,11 @@ export function createSearchClusterCommand(
   const method = options.method ?? 'GET';
   const body = options.body ?? '';
   const authText = getAuthText(config);
+  const insecureArg = config.ignoreSslCertificate ? '--insecure' : '';
 
   if (options.isWindowsHost) {
     const authArgs = authText ? `$curlArgs += @("-u", ${powershellSingleQuote(authText)})` : '';
+    const insecureArgs = insecureArg ? `$curlArgs += @(${powershellSingleQuote(insecureArg)})` : '';
     const bodySetup = body ? `
 $bodyFile = New-TemporaryFile
 [System.IO.File]::WriteAllText($bodyFile.FullName, ${powershellSingleQuote(body)}, [System.Text.UTF8Encoding]::new($false))
@@ -110,6 +142,7 @@ $curlArgs += @("-H", "Content-Type: application/json", "--data-binary", "@$($bod
       command: powershellCommand(`
 $curlArgs = @("-sS", "--max-time", "${timeout}", "-X", "${method}")
 ${authArgs}
+${insecureArgs}
 ${bodySetup}
 $curlArgs += @(${powershellSingleQuote(url)})
 & curl.exe @curlArgs
@@ -121,6 +154,7 @@ exit $curlCode
   }
 
   const authArgs = authText ? `-u ${shellSingleQuote(authText)}` : '';
+  const insecureArgs = insecureArg ? shellSingleQuote(insecureArg) : '';
 
   if (body) {
     return {
@@ -131,7 +165,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-search-body.XXXXXX")
 cat > "$body_file"
-curl -sS --max-time ${timeout} -X ${method} ${authArgs} -H 'Content-Type: application/json' --data-binary "@$body_file" ${shellSingleQuote(url)}
+curl -sS --max-time ${timeout} -X ${method} ${insecureArgs} ${authArgs} -H 'Content-Type: application/json' --data-binary "@$body_file" ${shellSingleQuote(url)}
 curl_code=$?
 rm -f "$body_file"
 exit "$curl_code"
@@ -146,7 +180,7 @@ if ! command -v curl >/dev/null 2>&1; then
   printf 'curl 未安装或当前 PATH 不可用。\\n' >&2
   exit 127
 fi
-curl -sS --max-time ${timeout} -X ${method} ${authArgs} ${shellSingleQuote(url)}
+curl -sS --max-time ${timeout} -X ${method} ${insecureArgs} ${authArgs} ${shellSingleQuote(url)}
 `,
   };
 }
@@ -156,15 +190,32 @@ export function parseJsonResponse<T>(stdout: string, stderr: string, code: numbe
     throw new Error(stderr || stdout || `${label} 请求失败，退出码 ${code}`);
   }
 
+  let parsed: unknown;
+
   try {
-    return JSON.parse(stdout) as T;
+    parsed = JSON.parse(stdout);
   } catch {
     throw new Error(`${label} 返回不是有效 JSON。`);
   }
+
+  if (isRecord(parsed) && parsed.error !== undefined) {
+    const status = parsed.status !== undefined ? `HTTP ${String(parsed.status)}` : '接口错误';
+    throw new Error(`${label} 请求失败：${status}，${summarizeSearchError(parsed.error)}`);
+  }
+
+  return parsed as T;
 }
 
-export function normalizeIndices(rows: Array<Record<string, unknown>>): SearchClusterIndex[] {
-  return rows.map((row) => ({
+function normalizeCatRows(rows: unknown, label: string): Array<Record<string, unknown>> {
+  if (!Array.isArray(rows)) {
+    throw new Error(`${label} 返回格式无效：预期 JSON 数组。请确认账号有 cat API 权限，或查看“原始响应”。`);
+  }
+
+  return rows.filter(isRecord);
+}
+
+export function normalizeIndices(rows: unknown): SearchClusterIndex[] {
+  return normalizeCatRows(rows, 'Indices').map((row) => ({
     health: String(row.health ?? ''),
     status: String(row.status ?? ''),
     index: String(row.index ?? ''),
@@ -176,8 +227,8 @@ export function normalizeIndices(rows: Array<Record<string, unknown>>): SearchCl
   })).filter((item) => item.index);
 }
 
-export function normalizeShards(rows: Array<Record<string, unknown>>): SearchClusterShard[] {
-  return rows.map((row) => ({
+export function normalizeShards(rows: unknown): SearchClusterShard[] {
+  return normalizeCatRows(rows, 'Shards').map((row) => ({
     index: String(row.index ?? ''),
     shard: String(row.shard ?? ''),
     prirep: String(row.prirep ?? ''),

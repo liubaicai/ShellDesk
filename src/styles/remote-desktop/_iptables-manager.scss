@@ -30,20 +30,28 @@
 }
 
 .iptables-toolbar {
-  min-height: 52px;
+  min-height: 44px;
   justify-content: space-between;
   border-bottom: 1px solid var(--iptables-border);
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.035);
 }
 
-.iptables-status-block,
 .iptables-form-title,
 .iptables-detail,
 .iptables-confirm-header {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.iptables-status-block {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .iptables-status-block span,
@@ -60,6 +68,23 @@
   font-size: 11px;
   font-style: normal;
   font-weight: 760;
+}
+
+.iptables-status-block span {
+  flex: 0 0 auto;
+}
+
+.iptables-status-block strong {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.iptables-status-block em,
+.iptables-toolbar-actions span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .iptables-status-block strong,
@@ -82,6 +107,8 @@
   height: 30px;
   border: 1px solid var(--iptables-border);
   border-radius: 6px;
+  flex: 0 0 auto;
+  min-height: 30px;
   padding: 0 11px;
   background: rgba(255, 255, 255, 0.045);
   color: var(--iptables-muted-strong);
@@ -89,6 +116,14 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.iptables-toolbar-actions {
+  min-width: 0;
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .iptables-toolbar button:hover:not(:disabled),
@@ -109,6 +144,13 @@
   border-color: rgba(115, 216, 189, 0.38);
   background: rgba(115, 216, 189, 0.16);
   color: #caffef;
+}
+
+.iptables-add-button {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
 }
 
 .iptables-detail-actions button.danger,
@@ -470,10 +512,21 @@
   .iptables-content {
     grid-template-columns: 1fr;
   }
+}
 
+@media (max-width: 620px) {
   .iptables-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .iptables-status-block,
+  .iptables-toolbar-actions {
+    width: 100%;
+  }
+
+  .iptables-toolbar-actions {
+    justify-content: flex-start;
   }
 }
 

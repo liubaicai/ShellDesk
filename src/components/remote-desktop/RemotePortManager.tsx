@@ -26,7 +26,7 @@ interface PortListenerEntry {
   pid?: number;
   processName?: string;
   command?: string;
-  source: 'ss' | 'netstat' | 'powershell' | 'unknown';
+  source: 'ss' | 'netstat' | 'lsof' | 'powershell' | 'unknown';
 }
 
 interface EndpointParts {
@@ -109,9 +109,9 @@ function parseEndpoint(rawEndpoint: string): EndpointParts {
 }
 
 function parseProcessText(text: string): { pid?: number; processName?: string; command?: string } {
-  const pidMatch = text.match(/pid=(\d+)/);
+  const pidMatch = text.match(/pid\s*=\s*(\d+)/);
   const quotedNameMatch = text.match(/"([^"]+)"/);
-  const slashProcessMatch = text.match(/\s(\d+)\/([^\s]+)$/);
+  const slashProcessMatch = text.match(/(?:^|\s)(\d+)\/([^\s]+)/);
 
   if (pidMatch) {
     return {
@@ -204,16 +204,182 @@ function parseNetstatLine(line: string, index: number): PortListenerEntry | null
   return { ...entry, id: createEntryId(entry, index) };
 }
 
+function parseLsofLine(line: string, index: number): PortListenerEntry | null {
+  const parts = line.trim().split(/\s+/);
+  const protocolIndex = parts.findIndex((part) => /^(TCP|UDP)$/i.test(part));
+
+  if (protocolIndex < 0 || parts.length <= protocolIndex + 1) {
+    return null;
+  }
+
+  const pid = parseMaybeNumber(parts[1]);
+  const protocolBase = parts[protocolIndex].toLowerCase();
+  const family = (parts[4] ?? '').toLowerCase();
+  const protocol = normalizeProtocol(`${protocolBase}${family === 'ipv6' ? '6' : ''}`);
+  const nameText = parts.slice(protocolIndex + 1).join(' ');
+  const stateMatch = nameText.match(/\(([^)]+)\)\s*$/);
+  const endpointText = nameText.replace(/\s+\([^)]+\)\s*$/, '');
+  const [localText, remoteText] = endpointText.split('->');
+  const local = parseEndpoint(localText ?? '');
+  const remote = parseEndpoint(remoteText ?? '*:*');
+  const entry: Omit<PortListenerEntry, 'id'> = {
+    protocol,
+    state: stateMatch?.[1] || (protocol.startsWith('udp') ? 'UNCONN' : 'UNKNOWN'),
+    localAddress: local.address,
+    localPort: local.port,
+    remoteAddress: remote.address,
+    remotePort: remote.port,
+    pid,
+    processName: parts[0] || undefined,
+    command: line.trim(),
+    source: 'lsof',
+  };
+
+  return { ...entry, id: createEntryId(entry, index) };
+}
+
+function normalizeEndpointAddress(address: string) {
+  return address
+    .trim()
+    .replace(/^\[|\]$/g, '')
+    .replace(/^::ffff:/i, '')
+    .replace(/%[^:]+$/, '')
+    .toLowerCase();
+}
+
+function isWildcardEndpointAddress(address: string) {
+  const normalizedAddress = normalizeEndpointAddress(address);
+  return normalizedAddress === '' || normalizedAddress === '*' || normalizedAddress === '0.0.0.0' || normalizedAddress === '::';
+}
+
+function endpointAddressesMatch(first: string, second: string) {
+  const normalizedFirst = normalizeEndpointAddress(first);
+  const normalizedSecond = normalizeEndpointAddress(second);
+
+  return normalizedFirst === normalizedSecond || isWildcardEndpointAddress(first) || isWildcardEndpointAddress(second);
+}
+
+function findMatchingLsofEntry(entry: PortListenerEntry, candidates: PortListenerEntry[]) {
+  return candidates.find((candidate) => {
+    if (!candidate.pid || !entry.protocol.startsWith(candidate.protocol.startsWith('udp') ? 'udp' : 'tcp')) {
+      return false;
+    }
+
+    if (entry.localPort !== candidate.localPort) {
+      return false;
+    }
+
+    if (!endpointAddressesMatch(entry.localAddress, candidate.localAddress)) {
+      return false;
+    }
+
+    if (candidate.remotePort !== null && entry.remotePort !== candidate.remotePort) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function mergeUnixPortEntries(primaryEntries: PortListenerEntry[], lsofEntries: PortListenerEntry[]) {
+  if (!primaryEntries.length) {
+    return lsofEntries;
+  }
+
+  const mergedEntries = primaryEntries.map((entry, index) => {
+    if (entry.pid && entry.processName) {
+      return entry;
+    }
+
+    const lsofEntry = findMatchingLsofEntry(entry, lsofEntries);
+
+    if (!lsofEntry) {
+      return entry;
+    }
+
+    const nextEntry: Omit<PortListenerEntry, 'id'> = {
+      ...entry,
+      pid: entry.pid ?? lsofEntry.pid,
+      processName: entry.processName ?? lsofEntry.processName,
+      command: entry.command ?? lsofEntry.command,
+      source: entry.source,
+    };
+
+    return { ...nextEntry, id: createEntryId(nextEntry, index) };
+  });
+  const seenKeys = new Set(mergedEntries.map((entry) => [
+    entry.protocol.startsWith('udp') ? 'udp' : 'tcp',
+    normalizeEndpointAddress(entry.localAddress),
+    entry.localPort ?? '*',
+    normalizeEndpointAddress(entry.remoteAddress),
+    entry.remotePort ?? '*',
+  ].join('|')));
+  const extraEntries = lsofEntries.filter((entry) => {
+    if (mergedEntries.some((mergedEntry) => findMatchingLsofEntry(mergedEntry, [entry]))) {
+      return false;
+    }
+
+    const key = [
+      entry.protocol.startsWith('udp') ? 'udp' : 'tcp',
+      normalizeEndpointAddress(entry.localAddress),
+      entry.localPort ?? '*',
+      normalizeEndpointAddress(entry.remoteAddress),
+      entry.remotePort ?? '*',
+    ].join('|');
+
+    if (seenKeys.has(key)) {
+      return false;
+    }
+
+    seenKeys.add(key);
+    return true;
+  });
+
+  return [...mergedEntries, ...extraEntries];
+}
+
 function parseUnixPorts(stdout: string): PortListenerEntry[] {
   const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const markerLine = lines.find((line) => line.startsWith(portToolMarker));
-  const source = markerLine?.includes('netstat') ? 'netstat' : markerLine?.includes('ss') ? 'ss' : 'unknown';
+  let source: PortListenerEntry['source'] = 'unknown';
+  let primarySource: PortListenerEntry['source'] = 'unknown';
+  const primaryLines: string[] = [];
+  const lsofLines: string[] = [];
 
-  return lines
-    .filter((line) => !line.startsWith(portToolMarker))
-    .filter((line) => !/^(Active|Proto|Netid)\b/i.test(line))
-    .map((line, index) => (source === 'netstat' ? parseNetstatLine(line, index) : parseSsLine(line, index)))
+  for (const line of lines) {
+    if (line.startsWith(portToolMarker)) {
+      if (line.includes('netstat')) {
+        source = 'netstat';
+        primarySource = 'netstat';
+      } else if (line.includes('ss')) {
+        source = 'ss';
+        primarySource = 'ss';
+      } else if (line.includes('lsof')) {
+        source = 'lsof';
+      } else {
+        source = 'unknown';
+      }
+      continue;
+    }
+
+    if (/^(Active|Proto|Netid|COMMAND)\b/i.test(line)) {
+      continue;
+    }
+
+    if (source === 'lsof') {
+      lsofLines.push(line);
+    } else {
+      primaryLines.push(line);
+    }
+  }
+
+  const primaryEntries = primaryLines
+    .map((line, index) => (primarySource === 'netstat' ? parseNetstatLine(line, index) : parseSsLine(line, index)))
     .filter((entry): entry is PortListenerEntry => Boolean(entry));
+  const lsofEntries = lsofLines
+    .map(parseLsofLine)
+    .filter((entry): entry is PortListenerEntry => Boolean(entry));
+
+  return mergeUnixPortEntries(primaryEntries, lsofEntries);
 }
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
@@ -311,10 +477,14 @@ function parseWindowsPorts(stdout: string): PortListenerEntry[] {
 
 function createUnixPortCommand() {
   return [
-    `if command -v ss >/dev/null 2>&1; then echo ${portToolMarker}\\tss; ss -H -tunap 2>/dev/null || ss -H -tunp 2>/dev/null;`,
-    `elif command -v netstat >/dev/null 2>&1; then echo ${portToolMarker}\\tnetstat; netstat -tunap 2>/dev/null || netstat -tunp 2>/dev/null;`,
-    `else echo ${portToolMarker}\\tnone; echo '缺少 ss 或 netstat，无法读取端口列表。' >&2; exit 127; fi`,
-  ].join(' ');
+    'can_sudo() { command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; }',
+    'run_maybe_sudo() { if can_sudo; then sudo -n "$@" 2>/dev/null || "$@" 2>/dev/null; else "$@" 2>/dev/null; fi; }',
+    `if command -v ss >/dev/null 2>&1; then echo '${portToolMarker}\\tss'; run_maybe_sudo ss -H -tunap || ss -H -tunlp 2>/dev/null || ss -H -tuna 2>/dev/null;`,
+    `elif command -v netstat >/dev/null 2>&1; then echo '${portToolMarker}\\tnetstat'; run_maybe_sudo netstat -tunap || netstat -tunlp 2>/dev/null || netstat -tuna 2>/dev/null;`,
+    `else echo '${portToolMarker}\\tnone'; echo '缺少 ss 或 netstat，无法读取完整端口列表。' >&2; fi`,
+    `echo '${portToolMarker}\\tlsof'`,
+    'if command -v lsof >/dev/null 2>&1; then run_maybe_sudo lsof -nP -iTCP -iUDP | head -n 1500; fi',
+  ].join('\n');
 }
 
 function createWindowsPortCommand() {
@@ -601,11 +771,21 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       }
 
       const nextEntries = isWindowsHost ? parseWindowsPorts(result.stdout) : parseUnixPorts(result.stdout);
+      const missingPidCount = isWindowsHost
+        ? 0
+        : nextEntries.filter((entry) => (getStateFilter(entry) === 'listen' || entry.protocol.startsWith('udp')) && !entry.pid).length;
+      const noticeLines = [
+        result.stderr.trim(),
+        missingPidCount > 0
+          ? `${missingPidCount} 条监听记录未返回 PID/进程。已尝试 sudo -n ss/lsof；如果仍为空，通常是当前用户没有查看其他用户 socket 归属的权限。`
+          : '',
+      ].filter(Boolean);
+
       setEntries(nextEntries);
       setSelectedId((currentId) => (nextEntries.some((entry) => entry.id === currentId) ? currentId : nextEntries[0]?.id ?? ''));
       setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      if (result.stderr.trim()) {
-        setNotice(result.stderr.trim());
+      if (noticeLines.length) {
+        setNotice(noticeLines.join('\n'));
       }
     } catch (error) {
       setError(getErrorMessage(error));

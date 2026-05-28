@@ -148,6 +148,11 @@
   color: var(--network-success);
 }
 
+.network-tool-list button em.running {
+  background: rgba(103, 183, 255, 0.14);
+  color: var(--network-accent);
+}
+
 .network-tool-list button em.error {
   background: rgba(255, 143, 163, 0.12);
   color: var(--network-danger);
@@ -343,6 +348,10 @@
 
 .network-history-list button.active.success {
   border-color: rgba(117, 228, 170, 0.28);
+}
+
+.network-history-list button.active.running {
+  border-color: rgba(103, 183, 255, 0.32);
 }
 
 .network-history-list button.active.error {

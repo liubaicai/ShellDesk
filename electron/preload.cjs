@@ -40,6 +40,19 @@ function chatStream(request, callbacks = {}) {
   });
 }
 
+function runCommandStream(connectionId, command, stdin, callbacks = {}) {
+  const streamId = createIpcRequestId('command-stream');
+  const removeChunkListener = onIpc('connection:run-command-stream:chunk', (payload) => {
+    if (payload?.streamId === streamId && typeof payload.chunk === 'string') {
+      callbacks.onChunk?.(payload.chunk, payload.stream === 'stderr' ? 'stderr' : 'stdout');
+    }
+  });
+
+  return ipcRenderer.invoke('connection:run-command-stream', connectionId, command, stdin, streamId).finally(() => {
+    removeChunkListener();
+  });
+}
+
 async function connectHost(host) {
   const result = await ipcRenderer.invoke('connection:connect', host);
 
@@ -166,6 +179,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     getSystemInfo: (connectionId) => ipcRenderer.invoke('connection:get-system-info', connectionId),
     getMetrics: (connectionId) => ipcRenderer.invoke('connection:get-metrics', connectionId),
     runCommand: (connectionId, command, stdin) => ipcRenderer.invoke('connection:run-command', connectionId, command, stdin),
+    runCommandStream,
     mysqlConnect: (connectionId, config) => ipcRenderer.invoke('connection:mysql-connect', connectionId, config),
     mysqlDisconnect: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-disconnect', connectionId, mysqlId),
     mysqlDatabases: (connectionId, mysqlId) => ipcRenderer.invoke('connection:mysql-databases', connectionId, mysqlId),

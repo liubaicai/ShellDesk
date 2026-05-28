@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { getErrorMessage } from './desktopUtils';
 import {
   createIptablesAddRuleCommand,
   createIptablesDeleteRuleCommand,
   createIptablesStatusCommand,
-  getIptablesDefaultPolicy,
   getIptablesTargetLabel,
   getIptablesTargetTone,
   isRiskyIptablesDraft,
@@ -109,7 +108,6 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
   const [actionRunning, setActionRunning] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [refreshedAt, setRefreshedAt] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingIptablesAction | null>(null);
 
   const filteredRules = useMemo(() => {
@@ -132,7 +130,6 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
     return filteredRules.find((rule) => rule.id === selectedRuleId) ?? filteredRules[0] ?? null;
   }, [filteredRules, selectedRuleId]);
   const riskHint = useMemo(() => isRiskyIptablesDraft(draft), [draft]);
-  const defaultPolicy = useMemo(() => getIptablesDefaultPolicy(snapshot?.policies ?? []), [snapshot?.policies]);
 
   const refreshIptables = useCallback(async () => {
     setError('');
@@ -155,7 +152,6 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
           ? currentId
           : nextSnapshot.rules[0]?.id ?? ''
       ));
-      setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
 
       if (nextSnapshot.notice) {
         setNotice(nextSnapshot.notice);
@@ -263,7 +259,6 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
           <button type="button" className="primary" onClick={refreshIptables} disabled={loading}>
             {loading ? '刷新中' : '刷新'}
           </button>
-          <span>{defaultPolicy}{refreshedAt ? ` · ${refreshedAt}` : ''}</span>
         </div>
       </header>
 

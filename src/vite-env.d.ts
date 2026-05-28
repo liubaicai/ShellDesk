@@ -422,6 +422,10 @@ interface ShellDeskTerminalIpcOptions {
   workingDirectory?: string;
 }
 
+interface ShellDeskRunCommandStreamCallbacks {
+  onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void;
+}
+
 interface ShellDeskConnectionControls {
   connect: (host: ShellDeskHostConnectionRequest) => Promise<ShellDeskConnectionInfo>;
   getInfo: (connectionId: string) => Promise<ShellDeskConnectionInfo>;
@@ -466,6 +470,12 @@ interface ShellDeskConnectionControls {
   getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
   getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;
   runCommand: (connectionId: string, command: string, stdin?: string) => Promise<{ stdout: string; stderr: string; code: number }>;
+  runCommandStream: (
+    connectionId: string,
+    command: string,
+    stdin?: string,
+    callbacks?: ShellDeskRunCommandStreamCallbacks,
+  ) => Promise<{ stdout: string; stderr: string; code: number }>;
   mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<ShellDeskMysqlConnectResult>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;

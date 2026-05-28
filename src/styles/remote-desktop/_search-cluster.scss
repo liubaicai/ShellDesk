@@ -23,7 +23,7 @@
 .search-cluster-toolbar {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) minmax(120px, 150px) minmax(130px, 160px) 90px max-content;
+  grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) minmax(120px, 150px) minmax(130px, 160px) 90px max-content max-content;
   align-items: end;
   gap: 10px;
   border-bottom: 1px solid var(--search-border);
@@ -120,12 +120,37 @@
   width: 86px;
 }
 
+.search-cluster-toolbar .search-tls-option {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  gap: 7px;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.search-cluster-toolbar .search-tls-option input {
+  min-width: 15px;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  accent-color: var(--search-accent);
+}
+
 .search-cluster-toolbar input:focus,
 .search-index-panel input:focus,
 .search-query-form input:focus,
 .search-query-grid textarea:focus {
   border-color: rgba(116, 215, 255, 0.5);
   box-shadow: 0 0 0 3px rgba(116, 215, 255, 0.12);
+}
+
+.search-cluster-toolbar .search-tls-option input:focus {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .search-cluster-toolbar button,
@@ -464,6 +489,7 @@
   .search-health,
   .search-cluster-toolbar label,
   .search-cluster-toolbar .timeout,
+  .search-cluster-toolbar .search-tls-option,
   .search-cluster-toolbar button {
     width: 100%;
   }

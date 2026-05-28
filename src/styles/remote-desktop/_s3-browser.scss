@@ -147,6 +147,10 @@
   padding: 10px;
 }
 
+.s3-layout.connected {
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+}
+
 .s3-config,
 .s3-bucket-list,
 .s3-main,
@@ -482,6 +486,10 @@
     grid-template-columns: 230px 210px minmax(0, 1fr);
   }
 
+  .s3-layout.connected {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
   .s3-detail {
     display: none;
   }
@@ -495,6 +503,10 @@
   }
 
   .s3-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .s3-layout.connected {
     grid-template-columns: 1fr;
   }
 
