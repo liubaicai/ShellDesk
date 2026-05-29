@@ -328,7 +328,7 @@ ShellDesk/
 | Ubuntu 24.04 LTS | ✅ | [报告](docs/system-compatibility-reports/ubuntu2404.md) |
 | Ubuntu 22.04 LTS |  |  |
 | Ubuntu 20.04 LTS |  |  |
-| Debian 12 Bookworm |  |  |
+| Debian 12 Bookworm |  | [报告](docs/system-compatibility-reports/debian12.md) |
 | Debian 11 Bullseye |  |  |
 | RHEL 9 | ✅ | [报告](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |
@@ -341,7 +341,7 @@ ShellDesk/
 | CentOS 7 |  |  |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
-| openSUSE Leap 15.6 |  |  |
+| openSUSE Leap 15.6 |  | [报告](docs/system-compatibility-reports/opensuse-leap156.md) |
 | openSUSE Tumbleweed |  |  |
 | SUSE Linux Enterprise Server 15 SP6 |  |  |
 | Amazon Linux 2023 |  |  |
@@ -350,7 +350,7 @@ ShellDesk/
 | Oracle Linux 8 |  |  |
 | Alibaba Cloud Linux 3 |  |  |
 | TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS |  |  |
+| openEuler 24.03 LTS |  | [报告](docs/system-compatibility-reports/openeuler2403.md) |
 | openEuler 22.03 LTS |  |  |
 | Anolis OS 8 |  |  |
 | Kylin Server V10 |  |  |
