@@ -24,14 +24,14 @@
 | 系统设置 | System Settings | ⚠️ |
 | 记事本 | Notepad | ✅ |
 | 安全巡检 | Security Audit | ✅ |
-| 包管理器 | Package Manager | ℹ️ |
+| 包管理器 | Package Manager | ❌ |
 | 磁盘分析 | Disk Analyzer | ✅ |
 | 登录会话 | Login Sessions | ✅ |
 | 端口监听 | Port Listener Manager | ✅ |
 | 防火墙 | Firewall Manager | ✅ |
 | 服务管理 | Service Manager | ✅ |
 | 计划任务 | Scheduled Tasks | ✅ |
-| 进程管理 | Process Manager | ℹ️ |
+| 进程管理 | Process Manager | ✅ |
 | 日志查看 | Log Viewer | ✅ |
 | 容器管理 | Container Manager | ✅ |
 | 搜索集群 | Search Cluster | ✅ |
@@ -41,11 +41,11 @@
 | API 调试 | API Debugger | ✅ |
 | Git 仓库 | Git Repository Manager | ✅ |
 | iptables 管理 | iptables Manager | ❌ |
-| MinIO / S3 | MinIO / S3 Browser | ℹ️ |
+| MinIO / S3 | MinIO / S3 Browser | ❌ |
 | MongoDB | MongoDB Manager | ✅ |
 | MySQL | MySQL Manager | ✅ |
 | PostgreSQL | PostgreSQL Manager | ✅ |
 | Redis | Redis Manager | ✅ |
-| SQLite | SQLite Manager | ℹ️ |
+| SQLite | SQLite Manager | ✅ |
 | VNC Viewer | VNC Viewer | ✅ |
 | Web 服务 | Web Server Manager | ❌ |

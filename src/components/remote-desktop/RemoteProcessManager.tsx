@@ -560,7 +560,6 @@ function getLinuxProcessListCommand() {
 function getWindowsProcessListCommand() {
   return powershellStdinCommand(`
 $tab = [char]9
-$hasInvokeCimMethod = [bool](Get-Command Invoke-CimMethod -ErrorAction SilentlyContinue)
 
 function Clean-Field($value) {
   if ($null -eq $value) { return '' }
@@ -602,22 +601,16 @@ function Get-ProcessRecords {
   }
 }
 
-function Get-OwnerText($processRecord) {
-  $owner = '-'
+function Get-ProcessOwnerText($processEntry) {
+  if ($null -eq $processEntry) { return '-' }
   try {
-    $ownerInfo = $null
-    if ($hasInvokeCimMethod) {
-      $ownerInfo = Invoke-CimMethod -InputObject $processRecord -MethodName GetOwner -ErrorAction Stop
-    } elseif ($processRecord.PSObject.Methods['GetOwner']) {
-      $ownerInfo = $processRecord.GetOwner()
-    }
-
-    if ($ownerInfo -and $ownerInfo.ReturnValue -eq 0 -and $ownerInfo.User) {
-      if ($ownerInfo.Domain) { $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)" } else { $owner = $ownerInfo.User }
+    $userNameProperty = $processEntry.PSObject.Properties['UserName']
+    if ($userNameProperty -and -not (Is-Blank $userNameProperty.Value)) {
+      return [string]$userNameProperty.Value
     }
   } catch {}
 
-  return $owner
+  return '-'
 }
 
 function Format-ProcessDate($value) {
@@ -647,7 +640,7 @@ foreach ($record in @($processRecords)) {
 
   $_ = $record
   $proc = $processById[[int]$_.ProcessId]
-  $owner = Get-OwnerText $_
+  $owner = Get-ProcessOwnerText $proc
 
   $cpuSeconds = $null
   if ($proc -and $null -ne $proc.CPU) { $cpuSeconds = [double][math]::Round($proc.CPU, 1) }
@@ -695,6 +688,11 @@ foreach ($record in @($processRecords)) {
 
     Write-ProcessRow ([int]$_.Id) '' '-' $cpuSeconds $memoryMb $state $startTime '' $cpuTime $_.ProcessName $path
   }
+}
+
+if ($rowCount -eq 0) {
+  [Console]::Error.WriteLine("未能读取 Windows 进程列表。请确认当前账号允许执行 Get-Process 或 WMI/CIM 查询。")
+  exit 1
 }
 `);
 }

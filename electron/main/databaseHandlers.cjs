@@ -8,7 +8,12 @@ const EJSON = mongodb.EJSON || mongodb.BSON?.EJSON;
 const { Client: PostgresClient } = require('pg');
 const { forwardOut, getActiveConnection, registerConnectionCleanup } = require('./connectionManager.cjs');
 const { execRemoteCommandRaw, statRemotePath, validateRemotePath } = require('./remoteConnectionHandlers.cjs');
-const { isPlainObject, readBoundedString, readIntegerInRange } = require('./validation.cjs');
+const {
+  isPlainObject,
+  quotePowerShellString,
+  readBoundedString,
+  readIntegerInRange,
+} = require('./validation.cjs');
 
 function registerDatabaseHandlers(registerIpcHandler) {
   if (!EJSON) {
@@ -1065,13 +1070,52 @@ function registerDatabaseHandlers(registerIpcHandler) {
     return parsed.rows.map((row) => row.name || row.Name || '').filter(Boolean);
   }
 
-  async function execSqliteOnRemote(client, filePath, command) {
+  function createPowerShellStdinCommand(script) {
+    const utf8Prelude = `
+try {
+$__shelldeskUtf8 = New-Object System.Text.UTF8Encoding $false
+[Console]::InputEncoding = $__shelldeskUtf8
+[Console]::OutputEncoding = $__shelldeskUtf8
+$OutputEncoding = $__shelldeskUtf8
+} catch {}
+try { chcp.com 65001 > $null } catch {}
+$ProgressPreference = 'SilentlyContinue'
+$VerbosePreference = 'SilentlyContinue'
+$DebugPreference = 'SilentlyContinue'
+$InformationPreference = 'SilentlyContinue'
+`;
+
+    return {
+      command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command -',
+      stdin: `${utf8Prelude}\n${script}`,
+    };
+  }
+
+  function createWindowsSqliteCommand(filePath, command) {
+    return createPowerShellStdinCommand(`
+$DatabasePath = ${quotePowerShellString(filePath.replace(/\\/g, '/').replace(/^\/([a-z]:\/)/i, '$1'))}
+$Sql = ${quotePowerShellString(command)}
+$SqliteCommand = Get-Command sqlite3 -ErrorAction SilentlyContinue
+
+if (-not $SqliteCommand) {
+  [Console]::Error.WriteLine("远端 Windows 未找到 sqlite3。请安装 SQLite CLI 并加入 PATH 后重试。可用命令：winget install SQLite.SQLite")
+  exit 127
+}
+
+& $SqliteCommand.Source -csv -header $DatabasePath $Sql
+exit $LASTEXITCODE
+`);
+  }
+
+  async function execSqliteOnRemote(client, systemType, filePath, command) {
     const escapedPath = escapeShellSingleQuotedArg(filePath);
     const escapedCommand = escapeShellSingleQuotedArg(command);
-    const fullCommand = `sqlite3 -csv -header ${escapedPath} ${escapedCommand}`;
-    const result = await execRemoteCommandRaw(client, fullCommand);
-    if (result.code !== 0 && result.stderr) {
-      throw new Error(result.stderr || `sqlite3 返回码 ${result.code}`);
+    const commandInput = systemType === 'windows'
+      ? createWindowsSqliteCommand(filePath, command)
+      : { command: `sqlite3 -csv -header ${escapedPath} ${escapedCommand}`, stdin: '' };
+    const result = await execRemoteCommandRaw(client, commandInput.command, commandInput.stdin);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || result.stdout || `sqlite3 返回码 ${result.code}`);
     }
     return result.stdout;
   }
@@ -1086,10 +1130,16 @@ function registerDatabaseHandlers(registerIpcHandler) {
     if (stat.type !== 'file') {
       throw new Error('请选择可读取的 SQLite 文件。');
     }
-    await execSqliteOnRemote(activeConnection.client, filePath, 'PRAGMA schema_version');
+    await execSqliteOnRemote(activeConnection.client, activeConnection.displayHost.systemType, filePath, 'PRAGMA schema_version');
     const sqliteId = crypto.randomUUID();
     const key = getSqliteKey(connectionId, sqliteId);
-    activeSqliteSessions.set(key, { connectionId, sqliteId, filePath, client: activeConnection.client });
+    activeSqliteSessions.set(key, {
+      connectionId,
+      sqliteId,
+      filePath,
+      client: activeConnection.client,
+      systemType: activeConnection.displayHost.systemType,
+    });
     return { sqliteId, filePath };
   });
 
@@ -1102,7 +1152,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
 
   registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
-    const stdout = await execSqliteOnRemote(entry.client, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
+    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
     return parseSqliteNameList(stdout);
   });
 
@@ -1119,6 +1169,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const stdout = await execSqliteOnRemote(
       entry.client,
+      entry.systemType,
       entry.filePath,
       "SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type IN ('table','view','index') AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'view' THEN 1 ELSE 2 END, name",
     );
@@ -1129,7 +1180,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
   registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, rawSqliteId, rawTable) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const table = readBoundedString(rawTable, '表名', 256);
-    const stdout = await execSqliteOnRemote(entry.client, entry.filePath, `PRAGMA table_info(${quoteSqliteLiteral(table)})`);
+    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, `PRAGMA table_info(${quoteSqliteLiteral(table)})`);
     const parsed = parseSqliteCsv(stdout);
     return parsed.rows.map((row) => ({
       name: row.name || row.Name || '',
@@ -1146,6 +1197,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
     const objectName = readBoundedString(rawObjectName, '对象名', 256);
     const stdout = await execSqliteOnRemote(
       entry.client,
+      entry.systemType,
       entry.filePath,
       `SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type = ${quoteSqliteLiteral(objectType)} AND name = ${quoteSqliteLiteral(objectName)} LIMIT 1`,
     );
@@ -1161,7 +1213,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
   registerIpcHandler('connection:sqlite-query', async (_event, connectionId, rawSqliteId, rawSql) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
-    const stdout = await execSqliteOnRemote(entry.client, entry.filePath, sql);
+    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, sql);
     const parsed = parseSqliteCsv(stdout);
     return { columns: parsed.columns, rows: parsed.rows };
   });
@@ -1192,7 +1244,7 @@ function registerDatabaseHandlers(registerIpcHandler) {
       'SELECT changes() AS affectedRows;',
       'COMMIT;',
     ].join(' ');
-    const stdout = await execSqliteOnRemote(entry.client, entry.filePath, sql);
+    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, sql);
     const parsed = parseSqliteCsv(stdout);
     const affectedRows = Number(parsed.rows[0]?.affectedRows ?? 0);
 

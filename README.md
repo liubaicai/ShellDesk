@@ -369,7 +369,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Windows Server 2019 Server Core |  |  |
 | Windows 11 24H2 |  |  |
 | Windows 11 23H2 |  |  |
-| Windows 10 |  | [Report](docs/system-compatibility-reports/windows10.md) |
+| Windows 10 | ✅ | [Report](docs/system-compatibility-reports/windows10.md) |
 | Windows Server 2012 R2 |  |  |
 
 ---
