@@ -130,10 +130,22 @@ ${bodyArgScript}
 $curlArgs += @(${powershellSingleQuote(url)})
 & curl.exe @curlArgs
 $curlCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+$headersText = Get-Content -LiteralPath $headersFile.FullName -Raw -ErrorAction SilentlyContinue
+$charset = ''
+if ($headersText -match '(?im)^Content-Type:\\s*.*charset=([^;\\s]+)') {
+  $charset = $matches[1].Trim('"').Trim("'")
+}
+try {
+  $encoding = if ($charset) { [System.Text.Encoding]::GetEncoding($charset) } else { [System.Text.UTF8Encoding]::new($false, $true) }
+} catch {
+  $encoding = [System.Text.UTF8Encoding]::new($false, $false)
+}
+$bodyBytes = [System.IO.File]::ReadAllBytes($bodyFile.FullName)
+$bodyText = $encoding.GetString($bodyBytes)
 "${headersMarker}"
-Get-Content -LiteralPath $headersFile.FullName -Raw -ErrorAction SilentlyContinue
+$headersText
 "${bodyMarker}"
-Get-Content -LiteralPath $bodyFile.FullName -Raw -ErrorAction SilentlyContinue
+$bodyText
 "${exitMarker} $curlCode"
 Remove-Item -LiteralPath $headersFile.FullName, $bodyFile.FullName -Force -ErrorAction SilentlyContinue
 if ($requestBodyFile) { Remove-Item -LiteralPath $requestBodyFile.FullName -Force -ErrorAction SilentlyContinue }
