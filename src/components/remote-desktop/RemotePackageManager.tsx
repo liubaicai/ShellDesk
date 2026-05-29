@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
@@ -70,10 +70,27 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingPackageAction | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const bootKeyRef = useRef('');
 
   const selectedPackage = useMemo(() => {
     return packages.find((pkg) => pkg.name === selectedName) ?? packages[0] ?? null;
   }, [packages, selectedName]);
+  const selectedPrimaryAction = useMemo(() => {
+    if (!selectedPackage) {
+      return null;
+    }
+
+    if (selectedPackage.upgradable) {
+      return { label: '升级', action: 'upgrade' as PackageAction, disabled: false };
+    }
+
+    if (selectedPackage.installed) {
+      return { label: '已安装', action: null, disabled: true };
+    }
+
+    return { label: '安装', action: 'install' as PackageAction, disabled: false };
+  }, [selectedPackage]);
 
   const detectManager = useCallback(async () => {
     setLoading(true);
@@ -93,6 +110,9 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
   }, [connectionId, isWindowsHost]);
 
   const loadPackages = useCallback(async (view: PackageView, kind = managerKind, query = '') => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
     if (kind === 'unknown') {
       setPackages([]);
       setError('未检测到支持的包管理器。');
@@ -102,31 +122,50 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
     setLoading(true);
     setError('');
     setNotice('');
+    setPackages([]);
+    setSelectedName('');
+    setActiveView(view);
+    if (view === 'search') {
+      setLastSearchQuery(query.trim());
+    }
 
     try {
       const command = view === 'search'
         ? createPackageSearchCommand(kind, query)
         : createPackageListCommand(kind, view);
       const result = await runCmd(connectionId, command);
+
+      if (requestId !== loadRequestIdRef.current) {
+        return;
+      }
+
       const nextPackages = parsePackageOutput(kind, view, result.stdout);
       setPackages(nextPackages);
       setSelectedName(nextPackages[0]?.name ?? '');
-      setActiveView(view);
-      if (view === 'search') {
-        setLastSearchQuery(query.trim());
-      }
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       if (result.stderr.trim()) {
         setNotice(result.stderr.trim());
       }
     } catch (error) {
+      if (requestId !== loadRequestIdRef.current) {
+        return;
+      }
+
       setError(getErrorMessage(error));
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [connectionId, managerKind]);
 
   useEffect(() => {
+    const bootKey = `${connectionId}:${isWindowsHost ? 'windows' : 'unix'}`;
+    if (bootKeyRef.current === bootKey) {
+      return;
+    }
+    bootKeyRef.current = bootKey;
+
     const boot = async () => {
       const kind = await detectManager();
       if (kind !== 'unknown') {
@@ -302,10 +341,19 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
                 <div><dt>说明</dt><dd>{selectedPackage.description || selectedPackage.source || '-'}</dd></div>
               </dl>
               <div className="package-detail-actions">
-                <button type="button" className="primary" onClick={() => prepareAction(selectedPackage.upgradable ? 'upgrade' : 'install', selectedPackage)}>
-                  {selectedPackage.upgradable ? '升级' : '安装'}
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    if (selectedPrimaryAction?.action) {
+                      prepareAction(selectedPrimaryAction.action, selectedPackage);
+                    }
+                  }}
+                  disabled={selectedPrimaryAction?.disabled}
+                >
+                  {selectedPrimaryAction?.label ?? '安装'}
                 </button>
-                <button type="button" className="danger" onClick={() => prepareAction('remove', selectedPackage)} disabled={!selectedPackage.installed && activeView === 'search'}>卸载</button>
+                <button type="button" className="danger" onClick={() => prepareAction('remove', selectedPackage)} disabled={!selectedPackage.installed}>卸载</button>
                 <button type="button" onClick={() => navigator.clipboard.writeText(selectedPackage.name).then(() => setNotice('已复制包名。'))}>复制包名</button>
               </div>
               <div className="package-note">

@@ -25,6 +25,74 @@ function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function createRpmPackageNameSearchCommand(kind: 'dnf' | 'yum', query: string) {
+  const quotedQuery = shellSingleQuote(query);
+  const queryFormat = shellSingleQuote('%{name}\\t%{evr}\\t%{summary}');
+
+  return `
+query=${quotedQuery}
+query_lower="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')"
+results="$(
+  {
+    for spec in "$query" "$query-*" "$query.*" "*$query*"; do
+      ${kind} -q repoquery --installed --qf ${queryFormat} "$spec" 2>/dev/null | awk -F '\\t' -v query="$query_lower" 'NF && index(tolower($1), query) { print $0 "\\tinstalled" }'
+    done
+    for spec in "$query" "$query-*" "$query.*" "*$query*"; do
+      ${kind} -q repoquery --available --latest-limit=1 --qf ${queryFormat} "$spec" 2>/dev/null | awk -F '\\t' -v query="$query_lower" 'NF && index(tolower($1), query) { print $0 "\\tavailable" }'
+    done
+  } | awk -F '\\t' 'NF && !seen[$1]++'
+)"
+if [ -n "$results" ]; then
+  printf '%s\\n' "$results" | head -n 300
+else
+  {
+    ${kind} -q list installed "$query" "$query-*" "$query.*" "*$query*" 2>/dev/null | awk '
+      /^[[:space:]]*$/ || /^Installed Packages/ || /^Last metadata expiration check/ { next }
+      {
+        name=$1
+        sub(/\\.(noarch|x86_64|aarch64|i[3-6]86|ppc64le|s390x)$/, "", name)
+        print name "\\t" $2 "\\t" $3 "\\tinstalled"
+      }
+    '
+    ${kind} -q list available "$query" "$query-*" "$query.*" "*$query*" 2>/dev/null | awk '
+      /^[[:space:]]*$/ || /^Available Packages/ || /^Last metadata expiration check/ { next }
+      {
+        name=$1
+        sub(/\\.(noarch|x86_64|aarch64|i[3-6]86|ppc64le|s390x)$/, "", name)
+        print name "\\t" $2 "\\t" $3 "\\tavailable"
+      }
+    '
+  } | awk -F '\\t' -v query="$query_lower" 'NF && index(tolower($1), query) && !seen[$1]++' | head -n 300
+fi
+`.trim();
+}
+
+function createRpmUpgradableListCommand(kind: 'dnf' | 'yum') {
+  return `
+${kind} check-update 2>/dev/null | awk '
+  /^[[:space:]]*$/ || /^Last metadata expiration check/ || /^Obsoleting Packages/ || /^Obsoleted Packages/ || /^取代的软件包/ { next }
+  /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+/ {
+    print $1 "\\t" $2 "\\t" $3
+  }
+' | head -n 600 | while IFS="$(printf '\\t')" read -r package latest repo; do
+  [ -n "$package" ] || continue
+  name="$package"
+  case "$name" in
+    *.noarch|*.x86_64|*.aarch64|*.i[3-6]86|*.ppc64le|*.s390x) name="\${name%.*}" ;;
+  esac
+  installed="$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' "$package" 2>/dev/null | head -n 1)"
+  if [ -z "$installed" ]; then
+    installed="$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' "$name" 2>/dev/null | head -n 1)"
+  fi
+  case "$installed" in
+    0:*) installed="\${installed#0:}" ;;
+    "") installed="-" ;;
+  esac
+  printf '%s\\t%s\\t%s\\t%s\\n' "$package" "$installed" "$latest" "$repo"
+done
+`.trim();
+}
+
 export function getPackageManagerLabel(kind: PackageManagerKind) {
   const labels: Record<PackageManagerKind, string> = {
     apt: 'APT',
@@ -99,7 +167,7 @@ export function createPackageListCommand(kind: PackageManagerKind, view: Exclude
       return "apt list --upgradable 2>/dev/null | tail -n +2 | head -n 600";
     case 'dnf':
     case 'yum':
-      return `${kind} check-update 2>/dev/null | tail -n +2 | head -n 600; test $? -eq 100 -o $? -eq 0`;
+      return createRpmUpgradableListCommand(kind);
     case 'pacman':
       return 'pacman -Qu 2>/dev/null | head -n 600';
     case 'zypper':
@@ -122,7 +190,7 @@ export function createPackageSearchCommand(kind: PackageManagerKind, keyword: st
     throw new Error('请输入搜索关键词。');
   }
 
-  if (query.length > 120 || /[\r\n;&|`$<>]/.test(query)) {
+  if (query.length > 120 || /[\r\n;&|`$<>*?[\]]/.test(query)) {
     throw new Error('搜索关键词包含不安全字符。');
   }
 
@@ -131,7 +199,7 @@ export function createPackageSearchCommand(kind: PackageManagerKind, keyword: st
       return `apt-cache search -- ${shellSingleQuote(query)} | head -n 300`;
     case 'dnf':
     case 'yum':
-      return `${kind} -q search ${shellSingleQuote(query)} | head -n 300`;
+      return createRpmPackageNameSearchCommand(kind, query);
     case 'pacman':
       return `pacman -Ss ${shellSingleQuote(query)} | head -n 400`;
     case 'zypper':
@@ -213,6 +281,104 @@ function splitPackageLine(line: string): string[] {
   return line.split(/\t+/).map((part) => part.trim()).filter(Boolean);
 }
 
+function tokenizePackageVersion(version: string) {
+  return version
+    .toLowerCase()
+    .replace(/^[0-9]+:/, (epoch) => `${epoch.slice(0, -1)}.`)
+    .match(/[0-9]+|[a-z]+/g) ?? [];
+}
+
+function comparePackageVersions(left: string | undefined, right: string | undefined) {
+  const leftTokens = tokenizePackageVersion(left ?? '');
+  const rightTokens = tokenizePackageVersion(right ?? '');
+  const length = Math.max(leftTokens.length, rightTokens.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftToken = leftTokens[index] ?? '';
+    const rightToken = rightTokens[index] ?? '';
+
+    if (leftToken === rightToken) {
+      continue;
+    }
+
+    if (!leftToken) return -1;
+    if (!rightToken) return 1;
+
+    const leftIsNumber = /^\d+$/.test(leftToken);
+    const rightIsNumber = /^\d+$/.test(rightToken);
+
+    if (leftIsNumber && rightIsNumber) {
+      const leftNumber = Number.parseInt(leftToken, 10);
+      const rightNumber = Number.parseInt(rightToken, 10);
+
+      if (leftNumber !== rightNumber) {
+        return leftNumber > rightNumber ? 1 : -1;
+      }
+
+      if (leftToken.length !== rightToken.length) {
+        return leftToken.length > rightToken.length ? 1 : -1;
+      }
+
+      continue;
+    }
+
+    if (leftIsNumber !== rightIsNumber) {
+      return leftIsNumber ? 1 : -1;
+    }
+
+    return leftToken.localeCompare(rightToken);
+  }
+
+  return 0;
+}
+
+function getPackageCandidateVersion(pkg: RemotePackageInfo) {
+  return pkg.latestVersion || pkg.version || '';
+}
+
+function shouldReplaceDuplicatePackage(current: RemotePackageInfo, candidate: RemotePackageInfo) {
+  if (candidate.installed && !current.installed) {
+    return true;
+  }
+
+  if (current.installed && !candidate.installed) {
+    return false;
+  }
+
+  if (candidate.upgradable && !current.upgradable) {
+    return true;
+  }
+
+  if (current.upgradable && !candidate.upgradable) {
+    return false;
+  }
+
+  return comparePackageVersions(getPackageCandidateVersion(candidate), getPackageCandidateVersion(current)) > 0;
+}
+
+function dedupePackageList(packages: RemotePackageInfo[]) {
+  const byName = new Map<string, RemotePackageInfo>();
+
+  for (const pkg of packages) {
+    const key = pkg.name.toLowerCase();
+    const current = byName.get(key);
+
+    if (!current || shouldReplaceDuplicatePackage(current, pkg)) {
+      byName.set(key, pkg);
+    }
+  }
+
+  return Array.from(byName.values());
+}
+
+function isPackageTableNoise(name: string) {
+  return /^(\||Name|Listing|Loading|Available|Installed|Upgrades|Obsoleting|Obsoleted|Last|Security|Bugfix|Enhancement|取代的软件包|可升级的软件包|已安装的软件包|可用的软件包)/i.test(name);
+}
+
+function looksLikePackageName(name: string) {
+  return /^[A-Za-z0-9][A-Za-z0-9+._:@/-]*$/.test(name);
+}
+
 export function parsePackageOutput(kind: PackageManagerKind, view: PackageView, stdout: string): RemotePackageInfo[] {
   const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 
@@ -232,6 +398,34 @@ export function parsePackageOutput(kind: PackageManagerKind, view: PackageView, 
       const [name, description = ''] = line.split(' - ');
       return { name: name.trim(), description: description.trim(), installed: false };
     }).filter((pkg) => Boolean(pkg.name));
+  }
+
+  if ((kind === 'dnf' || kind === 'yum') && view === 'upgradable') {
+    return dedupePackageList(lines.map((line) => {
+      const parts = line.split('\t').map((part) => part.trim());
+      const [name, version, latestVersion = '', description = ''] = parts;
+      return {
+        name,
+        version: version === '-' ? '' : version,
+        latestVersion,
+        description,
+        installed: true,
+        upgradable: true,
+      };
+    }).filter((pkg) => Boolean(pkg.name) && !isPackageTableNoise(pkg.name) && looksLikePackageName(pkg.name)));
+  }
+
+  if ((kind === 'dnf' || kind === 'yum') && view === 'search') {
+    return dedupePackageList(lines.map((line) => {
+      const parts = line.split('\t').map((part) => part.trim());
+      const [name, version, description = '', state = ''] = parts;
+      return {
+        name,
+        version,
+        description,
+        installed: state === 'installed',
+      };
+    }).filter((pkg) => Boolean(pkg.name) && !isPackageTableNoise(pkg.name) && looksLikePackageName(pkg.name)));
   }
 
   if (kind === 'pacman') {
@@ -265,7 +459,7 @@ export function parsePackageOutput(kind: PackageManagerKind, view: PackageView, 
     }).filter((pkg) => Boolean(pkg.name));
   }
 
-  return lines.map((line) => {
+  return dedupePackageList(lines.map((line) => {
     const tabParts = splitPackageLine(line);
     if (tabParts.length >= 2) {
       return {
@@ -288,5 +482,5 @@ export function parsePackageOutput(kind: PackageManagerKind, view: PackageView, 
       upgradable: view === 'upgradable',
       source: line,
     };
-  }).filter((pkg) => Boolean(pkg.name) && !/^(\||Name|Listing|Loading|Available)/i.test(pkg.name));
+  }).filter((pkg) => Boolean(pkg.name) && !isPackageTableNoise(pkg.name) && looksLikePackageName(pkg.name)));
 }

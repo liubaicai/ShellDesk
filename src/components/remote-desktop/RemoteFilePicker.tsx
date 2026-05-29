@@ -8,13 +8,12 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
-import { isWindowsSystem } from './remoteSystem';
+import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 import {
   normalizeRemotePath,
   joinRemotePath,
   getParentRemotePath,
-  isWindowsDriveRoot,
 } from './RemoteFileExplorer';
 
 interface RemoteFileEntry {
@@ -86,6 +85,28 @@ function isDirectoryEntry(entry: RemoteFileEntry) {
   return getEffectiveEntryType(entry) === 'directory';
 }
 
+const UNIX_HOME_DIRECTORY_COMMAND = `
+home=\${HOME:-}
+if [ -z "$home" ]; then
+  user=$(id -un 2>/dev/null || whoami 2>/dev/null || printf '')
+  if [ -n "$user" ] && command -v getent >/dev/null 2>&1; then
+    home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6 | head -n 1)
+  fi
+fi
+if [ -z "$home" ]; then
+  home=$(pwd 2>/dev/null || printf '')
+fi
+printf '%s\\n' "$home"
+`;
+
+const WINDOWS_HOME_DIRECTORY_COMMAND = powershellCommand(`
+$homePath = [Environment]::GetFolderPath('UserProfile')
+if ([string]::IsNullOrWhiteSpace($homePath)) {
+  $homePath = $env:USERPROFILE
+}
+$homePath
+`);
+
 export default function RemoteFilePicker({
   connectionId,
   systemType,
@@ -106,51 +127,80 @@ export default function RemoteFilePicker({
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const fileNameInputRef = useRef<HTMLInputElement>(null);
-  const skipNavLoadRef = useRef(false);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
+    const normalizedPath = normalizeRemotePath(dirPath, isWindowsHost);
     setLoading(true);
     setError('');
     try {
-      const result = await window.guiSSH!.connections.listDirectory(connectionId, dirPath);
+      const result = await window.guiSSH!.connections.listDirectory(connectionId, normalizedPath);
       setRemotePath(result.path);
       setEntries(result.entries);
+      return true;
     } catch (err) {
       setError(getErrorMessage(err));
       setEntries([]);
+      return false;
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, isWindowsHost]);
+
+  const resolveInitialPath = useCallback(async () => {
+    const explicitPath = initialPath?.trim();
+    if (explicitPath) {
+      return normalizeRemotePath(explicitPath, isWindowsHost);
+    }
+
+    try {
+      const command = isWindowsHost ? WINDOWS_HOME_DIRECTORY_COMMAND : UNIX_HOME_DIRECTORY_COMMAND;
+      const result = await window.guiSSH!.connections.runCommand(connectionId, command);
+      const homePath = result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean);
+
+      if (homePath) {
+        return normalizeRemotePath(homePath, isWindowsHost);
+      }
+    } catch {
+      // Fall back to the SSH/SFTP session's default directory.
+    }
+
+    return '.';
+  }, [connectionId, initialPath, isWindowsHost]);
 
   // Initial load when picker becomes visible
   useEffect(() => {
     if (!visible) return;
-    const path = initialPath?.trim() || (isWindowsHost ? '/' : '/');
+    let cancelled = false;
     setFileName('');
     setSelectedName('');
     setError('');
-    skipNavLoadRef.current = true;
-    void loadDirectory(path);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
 
-  // Navigation load — skipped for the initial open to avoid double-loading
-  useEffect(() => {
-    if (!visible) return;
-    if (skipNavLoadRef.current) {
-      skipNavLoadRef.current = false;
-      return;
-    }
-    void loadDirectory(remotePath);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remotePath]);
+    void (async () => {
+      const path = await resolveInitialPath();
+      if (cancelled) return;
+      setRemotePath(path);
+      const loaded = await loadDirectory(path);
+      if (!cancelled && !loaded && path !== '.') {
+        setRemotePath('.');
+        void loadDirectory('.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDirectory, resolveInitialPath, visible]);
 
   const navigateTo = useCallback((dirPath: string) => {
+    const normalizedPath = normalizeRemotePath(dirPath, isWindowsHost);
     setSelectedName('');
     setFileName('');
-    setRemotePath(dirPath);
-  }, []);
+    setRemotePath(normalizedPath);
+    void loadDirectory(normalizedPath);
+  }, [isWindowsHost, loadDirectory]);
 
   const handleNavigateUp = useCallback(() => {
     const parent = getParentRemotePath(remotePath, isWindowsHost);

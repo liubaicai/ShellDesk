@@ -2,7 +2,12 @@
 
 ## 测试方式
 
-xx  
+- 云厂商 / 虚拟化平台：
+- 镜像：Red Hat Enterprise Linux 9.7 (Plow)
+- CPU型号: 
+- CPU / 内存：
+- 用户：
+- SSH 登录方式：
 
 ## 组件兼容性
 

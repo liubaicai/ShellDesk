@@ -670,12 +670,39 @@ const windowsStatusItems = [
   { key: 'network', label: '网络接口', command: 'Get-NetIPConfiguration | Format-List | Out-String -Width 220' },
 ];
 
+const unixCpuInfoCommand = `
+cpu_info="$(
+  LC_ALL=C lscpu 2>/dev/null | grep -E '^(Model name|Socket\\(s\\)|Core\\(s\\) per socket|Thread\\(s\\) per core|CPU\\(s\\)):' | head -6
+)"
+if [ -n "$cpu_info" ]; then
+  printf '%s\\n' "$cpu_info"
+else
+  awk -F: '
+    function trim(value) { sub(/^[[:space:]]+/, "", value); sub(/[[:space:]]+$/, "", value); return value }
+    /^(model name|Hardware|Processor)[[:space:]]*:/ && model == "" { model = trim($2) }
+    /^processor[[:space:]]*:/ { logical += 1 }
+    /^cpu cores[[:space:]]*:/ && cores == "" { cores = trim($2) }
+    /^siblings[[:space:]]*:/ && siblings == "" { siblings = trim($2) }
+    /^physical id[[:space:]]*:/ { socket_id = trim($2); sockets[socket_id] = 1 }
+    END {
+      if (model != "") print "Model name: " model
+      if (logical > 0) print "CPU(s): " logical
+      if (siblings != "" && cores != "" && cores > 0) print "Thread(s) per core: " int(siblings / cores)
+      socket_count = 0
+      for (socket_id in sockets) socket_count += 1
+      if (socket_count > 0) print "Socket(s): " socket_count
+      if (cores != "") print "Core(s) per socket: " cores
+    }
+  ' /proc/cpuinfo 2>/dev/null
+fi
+`.trim();
+
 const unixSystemInfoItems = [
   { key: 'os', label: '操作系统', icon: '\u{1F5A5}\uFE0F', command: 'cat /etc/os-release 2>/dev/null | grep -E "^PRETTY_NAME|^NAME|^VERSION" | head -5 || uname -s' },
   { key: 'kernel', label: '内核版本', icon: '\u2699\uFE0F', command: 'uname -r' },
   { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', command: 'hostname -f 2>/dev/null || hostname' },
   { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', command: 'uname -m' },
-  { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', command: 'lscpu 2>/dev/null | grep -E "^Model name|^Socket|^Core|^Thread|^CPU\\(s\\):" | head -6 || cat /proc/cpuinfo 2>/dev/null | grep "model name" | head -1' },
+  { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', command: unixCpuInfoCommand },
   { key: 'memory', label: '内存', icon: '\u{1F9E0}', command: 'free -h 2>/dev/null | grep "^Mem:" || vm_stat 2>/dev/null | head -5' },
   { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', command: 'uptime -p 2>/dev/null || uptime' },
   { key: 'load', label: '系统负载', icon: '\u26A1', command: 'cat /proc/loadavg 2>/dev/null || uptime | sed "s/.*load average: //"' },

@@ -1,13 +1,15 @@
-# Ubuntu 24.04 LTS 兼容性报告
+# RHEL 9 兼容性报告
 
 ## 测试方式
 
-- 云厂商 / 虚拟化平台：腾讯云 CVM
-- 镜像：Ubuntu Server 24.04 LTS 64位 
-- CPU型号: Intel(R) Xeon(R) Platinum 8374C CPU @ 2.70GHz
-- CPU / 内存：2C/4G 
-- 用户：ubuntu
-- SSH 登录方式：SSH密钥登录 
+待补充：  
+
+- 云厂商 / 虚拟化平台：PVE 9.1
+- 镜像：Red Hat Enterprise Linux 9.7 (Plow)
+- CPU型号: Intel(R) Core(TM) i5-10400 CPU @ 2.90GHz
+- CPU / 内存：2C4G
+- 用户：root
+- SSH 登录方式：密码
 
 ## 组件兼容性
 

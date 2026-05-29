@@ -331,7 +331,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Ubuntu 20.04 LTS |  |  |
 | Debian 12 Bookworm |  |  |
 | Debian 11 Bullseye |  |  |
-| RHEL 9 |  |  |
+| RHEL 9 |  | [Report template](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |
 | Rocky Linux 9 |  |  |
 | Rocky Linux 8 |  |  |
