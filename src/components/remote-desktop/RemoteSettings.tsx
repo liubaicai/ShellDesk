@@ -525,8 +525,8 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 
     if (form.method === 'dhcp') {
       return {
-        command: `dhclient -r ${ifaceArg} 2>/dev/null; dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`,
-        preview: [`dhclient -r ${ifaceArg}`, `dhclient ${ifaceArg}`].join('\n'),
+        command: `dhclient -r ${ifaceArg} 2>/dev/null; ip -4 addr flush dev ${ifaceArg} scope global 2>&1 && dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`,
+        preview: [`dhclient -r ${ifaceArg}`, `ip -4 addr flush dev ${ifaceArg} scope global`, `dhclient ${ifaceArg}`].join('\n'),
       };
     }
 
@@ -549,10 +549,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     }
 
     const cidr = `${form.address.trim()}/${prefix}`;
-    let command = `ip addr flush dev ${ifaceArg} 2>/dev/null; ip addr add ${shellQuote(cidr)} dev ${ifaceArg} 2>&1`;
+    let command = `ip -4 addr flush dev ${ifaceArg} scope global 2>&1 && ip addr add ${shellQuote(cidr)} dev ${ifaceArg} 2>&1 && ip link set ${ifaceArg} up 2>&1`;
     const previewLines = [
-      `ip addr flush dev ${ifaceArg}`,
+      `ip -4 addr flush dev ${ifaceArg} scope global`,
       `ip addr add ${shellQuote(cidr)} dev ${ifaceArg}`,
+      `ip link set ${ifaceArg} up`,
     ];
 
     if (form.gateway.trim()) {
