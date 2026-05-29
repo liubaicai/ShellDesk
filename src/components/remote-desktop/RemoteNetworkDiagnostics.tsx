@@ -388,7 +388,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
           exitCode: result.code,
           stdout: result.stdout,
           stderr: result.stderr,
-          output: run.output || fallbackOutput,
+          output: fallbackOutput || run.output,
           summary: extractSummary(activeTool, result.stdout, result.stderr, result.code, durationMs),
           status: result.code === 0 ? 'success' : 'error',
         };

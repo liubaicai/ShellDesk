@@ -33,14 +33,14 @@
 | 计划任务 | Scheduled Tasks | ✅ |
 | 进程管理 | Process Manager | ℹ️ |
 | 日志查看 | Log Viewer | ✅ |
-| 容器管理 | Container Manager | ℹ️ |
+| 容器管理 | Container Manager | ✅ |
 | 搜索集群 | Search Cluster | ℹ️ |
-| 网络诊断 | Network Diagnostics | ℹ️ |
-| 系统监视器 | System Monitor | ℹ️ |
+| 网络诊断 | Network Diagnostics | ✅ |
+| 系统监视器 | System Monitor | ✅ |
 | 消息队列 | Message Queue | ℹ️ |
-| API 调试 | API Debugger | ℹ️ |
+| API 调试 | API Debugger | ✅ |
 | Git 仓库 | Git Repository Manager | ℹ️ |
-| iptables 管理 | iptables Manager | ℹ️ |
+| iptables 管理 | iptables Manager | ❌ |
 | MinIO / S3 | MinIO / S3 Browser | ℹ️ |
 | MongoDB | MongoDB Manager | ℹ️ |
 | MySQL | MySQL Manager | ℹ️ |
@@ -48,4 +48,4 @@
 | Redis | Redis Manager | ℹ️ |
 | SQLite | SQLite Manager | ℹ️ |
 | VNC Viewer | VNC Viewer | ℹ️ |
-| Web 服务 | Web Server Manager | ℹ️ |
+| Web 服务 | Web Server Manager | ❌ |

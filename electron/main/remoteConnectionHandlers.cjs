@@ -1202,11 +1202,54 @@ function extractPowerShellCliXmlMessages(value) {
 
 function cleanPowerShellCliXmlOutput(value) {
   return value
-    .replace(/#< CLIXML\s*<Objs[\s\S]*?<\/Objs>/g, (cliXml) => extractPowerShellCliXmlMessages(cliXml))
+    .replace(/#< CLIXML[ \t]*(?:\r?\n)?/g, '')
+    .replace(/<Objs\b[\s\S]*?<\/Objs>/g, (cliXml) => extractPowerShellCliXmlMessages(cliXml))
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
     .filter((line) => line.trim() !== '#< CLIXML')
     .join('\n');
+}
+
+function createPowerShellCliXmlStreamCleaner() {
+  let buffer = '';
+
+  const push = (text = '', flush = false) => {
+    buffer += text;
+    let output = '';
+
+    while (buffer) {
+      const xmlStart = buffer.indexOf('<Objs');
+
+      if (xmlStart === -1) {
+        output += cleanPowerShellCliXmlOutput(buffer);
+        buffer = '';
+        break;
+      }
+
+      output += cleanPowerShellCliXmlOutput(buffer.slice(0, xmlStart));
+
+      const xmlEnd = buffer.indexOf('</Objs>', xmlStart);
+
+      if (xmlEnd === -1) {
+        if (flush) {
+          output += cleanPowerShellCliXmlOutput(buffer.slice(xmlStart));
+          buffer = '';
+        } else {
+          buffer = buffer.slice(xmlStart);
+        }
+
+        break;
+      }
+
+      const xmlCloseEnd = xmlEnd + '</Objs>'.length;
+      output += extractPowerShellCliXmlMessages(buffer.slice(xmlStart, xmlCloseEnd));
+      buffer = buffer.slice(xmlCloseEnd);
+    }
+
+    return output;
+  };
+
+  return { push };
 }
 
 function decodeSshOutputBuffer(buffer) {
@@ -1307,14 +1350,19 @@ function execRemoteCommandStream(event, client, command, stdin = '', streamId) {
       const stderrChunks = [];
       const stdoutDecoder = new TextDecoder('utf-8');
       const stderrDecoder = new TextDecoder('utf-8');
+      const shouldCleanCliXml = /\bpowershell(?:\.exe)?\b/i.test(command);
+      const stdoutCleaner = createPowerShellCliXmlStreamCleaner();
+      const stderrCleaner = createPowerShellCliXmlStreamCleaner();
 
       const sendChunk = (source, chunk) => {
         const buffer = Buffer.from(chunk);
         const chunks = source === 'stdout' ? stdoutChunks : stderrChunks;
         const decoder = source === 'stdout' ? stdoutDecoder : stderrDecoder;
+        const cleaner = source === 'stdout' ? stdoutCleaner : stderrCleaner;
         chunks.push(buffer);
 
-        const text = decoder.decode(buffer, { stream: true });
+        const decodedText = decoder.decode(buffer, { stream: true });
+        const text = shouldCleanCliXml ? cleaner.push(decodedText) : decodedText;
 
         if (text && !event.sender.isDestroyed()) {
           event.sender.send('connection:run-command-stream:chunk', {
@@ -1327,7 +1375,9 @@ function execRemoteCommandStream(event, client, command, stdin = '', streamId) {
 
       const flushDecoder = (source) => {
         const decoder = source === 'stdout' ? stdoutDecoder : stderrDecoder;
-        const text = decoder.decode();
+        const cleaner = source === 'stdout' ? stdoutCleaner : stderrCleaner;
+        const decodedText = decoder.decode();
+        const text = shouldCleanCliXml ? cleaner.push(decodedText, true) : decodedText;
 
         if (text && !event.sender.isDestroyed()) {
           event.sender.send('connection:run-command-stream:chunk', {
