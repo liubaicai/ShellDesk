@@ -7,6 +7,24 @@ const defaultBrowserUrl = 'http://127.0.0.1/';
 const recentVisitLimit = 8;
 const browserRecentPreferencePrefix = 'browser.recent.';
 const browserBookmarkBarPreferencePrefix = 'browser.bookmark-bar.';
+const browserDefaultPageColorCss = `
+:where(html) {
+  color-scheme: light;
+}
+
+:where(body) {
+  background: #ffffff;
+  color: #111827;
+}
+
+:where(a) {
+  color: #0645ad;
+}
+
+:where(a:visited) {
+  color: #0b0080;
+}
+`;
 
 const loopbackServiceTargets = [
   { label: '开发服务', port: 3000 },
@@ -103,6 +121,7 @@ interface BrowserWebview extends HTMLElement {
   getURL(): string;
   goBack(): void;
   goForward(): void;
+  insertCSS(css: string): Promise<string>;
   isLoading(): boolean;
   loadURL(url: string): Promise<void>;
   reload(): void;
@@ -781,6 +800,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     };
     const handleDomReady = (_event: Event) => {
       isWebviewReadyRef.current = true;
+      void webview.insertCSS(browserDefaultPageColorCss).catch(() => undefined);
       syncNavigationState();
     };
 

@@ -137,15 +137,28 @@
 
 .disk-mount-strip {
   display: flex;
-  flex: 0 0 62px;
+  flex: 0 0 70px;
   gap: 8px;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   border-bottom: 1px solid var(--disk-border);
-  padding: 6px 10px;
+  padding: 6px 10px 16px;
   scrollbar-gutter: stable;
+}
+
+.disk-mount-strip::-webkit-scrollbar {
+  height: 8px;
+}
+
+.disk-mount-strip::-webkit-scrollbar-track {
+  background: rgba(148, 170, 204, 0.08);
+}
+
+.disk-mount-strip::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 170, 204, 0.36);
 }
 
 .disk-mount-strip button {
