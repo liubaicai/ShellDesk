@@ -14,7 +14,9 @@ import { getAppLocale, getSystemLanguage, useShellDeskI18n } from './i18n';
 const hostsStorageKey = 'shelldesk:hosts';
 const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const ungroupedKey = '__ungrouped__';
+const remoteDesktopAppCatalogVersion = 2;
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
+  appCatalogVersion: remoteDesktopAppCatalogVersion,
   sortMode: 'custom',
   items: [
     { id: 'app:files', type: 'app', appKey: 'files' },
@@ -375,6 +377,12 @@ interface Host {
 
 interface ConnectionHost extends Omit<Host, 'authMethod'> {
   authMethod: ConnectionAuthMethod;
+}
+
+interface VaultCollectionsSavePayload {
+  hosts: Host[];
+  sshKeys: SshKey[];
+  settings: ShellDeskAppSettings;
 }
 
 interface ConnectionErrorNotice {
@@ -935,6 +943,8 @@ function App() {
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationRequest | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPersistedCollectionsRef = useRef('');
+  const collectionsSaveInFlightRef = useRef(false);
+  const pendingCollectionsSaveRef = useRef<{ payload: VaultCollectionsSavePayload; serialized: string } | null>(null);
   const lastPersistedLogsRef = useRef('');
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
@@ -1044,6 +1054,40 @@ function App() {
       setIsVaultHydrated(true);
     }
   };
+
+  const flushCollectionsSave = useCallback(() => {
+    if (!vaultControls || collectionsSaveInFlightRef.current) {
+      return;
+    }
+
+    const pendingSave = pendingCollectionsSaveRef.current;
+
+    if (!pendingSave) {
+      return;
+    }
+
+    pendingCollectionsSaveRef.current = null;
+    collectionsSaveInFlightRef.current = true;
+
+    void vaultControls.saveCollections(pendingSave.payload).then((snapshot) => {
+      lastPersistedCollectionsRef.current = pendingSave.serialized;
+      setStorageInfo(snapshot.storage);
+      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    }).catch((error: unknown) => {
+      setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
+    }).finally(() => {
+      collectionsSaveInFlightRef.current = false;
+
+      if (pendingCollectionsSaveRef.current) {
+        flushCollectionsSave();
+      }
+    });
+  }, [vaultControls]);
+
+  const scheduleCollectionsSave = useCallback((payload: VaultCollectionsSavePayload, serialized: string) => {
+    pendingCollectionsSaveRef.current = { payload, serialized };
+    flushCollectionsSave();
+  }, [flushCollectionsSave]);
 
   const refreshHosts = async () => {
     if (!vaultControls) {
@@ -1168,33 +1212,15 @@ function App() {
       return;
     }
 
-    const payload = { hosts, sshKeys, settings };
+    const payload: VaultCollectionsSavePayload = { hosts, sshKeys, settings };
     const serializedPayload = JSON.stringify(payload);
 
     if (serializedPayload === lastPersistedCollectionsRef.current) {
       return;
     }
 
-    let cancelled = false;
-
-    void vaultControls.saveCollections(payload).then((snapshot) => {
-      if (cancelled) {
-        return;
-      }
-
-      lastPersistedCollectionsRef.current = serializedPayload;
-      setStorageInfo(snapshot.storage);
-      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
-    }).catch((error: unknown) => {
-      if (!cancelled) {
-        setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hosts, isVaultHydrated, isVaultReady, settings, sshKeys, vaultControls]);
+    scheduleCollectionsSave(payload, serializedPayload);
+  }, [hosts, isVaultHydrated, isVaultReady, scheduleCollectionsSave, settings, sshKeys, vaultControls]);
 
   useEffect(() => {
     const closeOpenHostCardMenus = (target: EventTarget | null) => {
@@ -1387,6 +1413,10 @@ function App() {
         return;
       }
 
+      if (payload.kind === 'vault' && (collectionsSaveInFlightRef.current || pendingCollectionsSaveRef.current)) {
+        return;
+      }
+
       void vaultControls.getSnapshot().then((snapshot) => {
         applyVaultSnapshot(snapshot, { updateCollections: isConnectionWindow || payload.kind === 'vault' });
       }).catch(() => undefined);
@@ -1395,18 +1425,7 @@ function App() {
 
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     setSettings(nextSettings);
-
-    if (!vaultControls || !isVaultReady) {
-      return;
-    }
-
-    void vaultControls.saveCollections({ settings: nextSettings }).then((snapshot) => {
-      setStorageInfo(snapshot.storage);
-      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
-    }).catch((error: unknown) => {
-      setStatusMessage(`保存本地数据失败：${getErrorMessage(error)}`);
-    });
-  }, [isVaultReady, vaultControls]);
+  }, []);
 
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '') => {
     setLogs((current) => {

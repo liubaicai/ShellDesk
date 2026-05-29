@@ -122,7 +122,19 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
+const desktopAppCatalogVersion = 2;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
+const appCatalogMigrationKeys: DesktopAppKey[] = [
+  'git-manager',
+  'web-server-manager',
+  'mongo',
+  'search-cluster',
+  'message-queue',
+  's3-browser',
+];
+const legacyAllDesktopAppKeys = desktopApps
+  .map((app) => app.key)
+  .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));
 const desktopAppKeySet = new Set<DesktopAppKey>(desktopApps.map((app) => app.key));
 const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; label: string }> = [
   { value: 'custom', label: '自定义' },
@@ -335,6 +347,7 @@ function isDesktopAppKey(value: unknown): value is DesktopAppKey {
 
 function createDefaultRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
   return {
+    appCatalogVersion: desktopAppCatalogVersion,
     sortMode: 'custom',
     items: defaultDesktopAppKeys.map((appKey) => ({
       id: `app:${appKey}`,
@@ -349,6 +362,34 @@ function normalizeFolderName(value: unknown) {
   return name || '文件夹';
 }
 
+function getLayoutAppKeys(items: DesktopLayoutItem[]) {
+  return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
+}
+
+function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersion: number) {
+  if (appCatalogVersion >= desktopAppCatalogVersion) {
+    return items;
+  }
+
+  const appKeys = getLayoutAppKeys(items);
+  const shouldAppendNewApps = legacyAllDesktopAppKeys.every((appKey) => appKeys.has(appKey));
+
+  if (!shouldAppendNewApps) {
+    return items;
+  }
+
+  return [
+    ...items,
+    ...appCatalogMigrationKeys
+      .filter((appKey) => !appKeys.has(appKey))
+      .map((appKey): DesktopLayoutItem => ({
+        id: `app:${appKey}`,
+        type: 'app',
+        appKey,
+      })),
+  ];
+}
+
 function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDesktopLayout {
   const defaultLayout = createDefaultRemoteDesktopLayout();
 
@@ -357,6 +398,10 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
   }
 
   const layout = rawLayout as Partial<ShellDeskRemoteDesktopLayout>;
+  const rawAppCatalogVersion = Number(layout.appCatalogVersion);
+  const appCatalogVersion = Number.isInteger(rawAppCatalogVersion) && rawAppCatalogVersion > 0
+    ? rawAppCatalogVersion
+    : 1;
   const sortMode = layout.sortMode === 'name-asc' || layout.sortMode === 'name-desc'
     ? layout.sortMode
     : 'custom';
@@ -412,8 +457,9 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
   });
 
   return {
+    appCatalogVersion: desktopAppCatalogVersion,
     sortMode,
-    items,
+    items: migrateLegacyAllAppsLayout(items, appCatalogVersion),
   };
 }
 
@@ -923,6 +969,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const launchpadCloseTimerRef = useRef<number | null>(null);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
+  const desktopLayoutRef = useRef(desktopLayout);
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
   const [isLaunchpadRendered, setIsLaunchpadRendered] = useState(false);
@@ -947,8 +994,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   ));
 
   useEffect(() => {
-    setDesktopLayout(normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
+    const normalizedLayout = normalizeRemoteDesktopLayout(settings.remoteDesktopLayout);
+    desktopLayoutRef.current = normalizedLayout;
+    setDesktopLayout(normalizedLayout);
   }, [settings.remoteDesktopLayout]);
+
+  useEffect(() => {
+    desktopLayoutRef.current = desktopLayout;
+  }, [desktopLayout]);
 
   useEffect(() => () => {
     if (launchpadCloseTimerRef.current !== null) {
@@ -985,6 +1038,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   const commitDesktopLayout = (nextLayout: ShellDeskRemoteDesktopLayout) => {
     const normalizedLayout = normalizeRemoteDesktopLayout(nextLayout);
+    desktopLayoutRef.current = normalizedLayout;
     setDesktopLayout(normalizedLayout);
     onSettingsChange?.({
       ...settings,
@@ -993,7 +1047,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   };
 
   const updateDesktopLayout = (updater: (layout: ShellDeskRemoteDesktopLayout) => ShellDeskRemoteDesktopLayout) => {
-    commitDesktopLayout(updater(desktopLayout));
+    commitDesktopLayout(updater(desktopLayoutRef.current));
   };
 
   const closeDesktopMenus = () => {
