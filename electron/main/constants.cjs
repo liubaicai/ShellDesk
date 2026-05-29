@@ -42,6 +42,7 @@ const maxAiApiBaseUrlLength = 2048;
 const maxAiApiKeyLength = 8192;
 const maxAiModelNameLength = 200;
 const maxAiProviderNameLength = 80;
+const remoteDesktopAppCatalogVersion = 2;
 const remoteDesktopAppKeys = [
   'files',
   'terminal',
@@ -76,6 +77,14 @@ const remoteDesktopAppKeys = [
   'sqlite',
 ];
 const remoteDesktopAppKeySet = new Set(remoteDesktopAppKeys);
+const remoteDesktopAppCatalogMigrationKeys = [
+  'git-manager',
+  'web-server-manager',
+  'mongo',
+  'search-cluster',
+  'message-queue',
+  's3-browser',
+];
 const remoteDesktopSortModes = new Set(['custom', 'name-asc', 'name-desc']);
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];
 const remoteSystemTypeChoices = new Set([
@@ -132,6 +141,8 @@ module.exports = {
   maxRemoteTextFileBytes,
   maxRemoteTextWriteBytes,
   maxVaultBytes,
+  remoteDesktopAppCatalogMigrationKeys,
+  remoteDesktopAppCatalogVersion,
   remoteDesktopAppKeys,
   remoteDesktopAppKeySet,
   remoteDesktopSortModes,

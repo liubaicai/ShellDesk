@@ -113,6 +113,7 @@ interface ShellDeskDesktopFolderLayoutItem {
 type ShellDeskDesktopLayoutItem = ShellDeskDesktopAppLayoutItem | ShellDeskDesktopFolderLayoutItem;
 
 interface ShellDeskRemoteDesktopLayout {
+  appCatalogVersion: number;
   sortMode: ShellDeskDesktopSortMode;
   items: ShellDeskDesktopLayoutItem[];
 }

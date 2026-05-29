@@ -22,6 +22,8 @@ const {
   maxLogEntries,
   maxPrivateKeyBytes,
   maxVaultBytes,
+  remoteDesktopAppCatalogMigrationKeys,
+  remoteDesktopAppCatalogVersion,
   remoteDesktopAppKeySet,
   remoteDesktopAppKeys,
   remoteDesktopSortModes,
@@ -188,6 +190,7 @@ function createDefaultSettings() {
 
 function createDefaultRemoteDesktopLayout() {
   return {
+    appCatalogVersion: remoteDesktopAppCatalogVersion,
     sortMode: 'custom',
     items: ['files', 'terminal', 'browser', 'settings'].map((appKey) => ({
       id: `app:${appKey}`,
@@ -195,6 +198,49 @@ function createDefaultRemoteDesktopLayout() {
       appKey,
     })),
   };
+}
+
+function getRemoteDesktopLayoutAppKeys(items) {
+  const appKeys = new Set();
+
+  for (const item of items) {
+    if (item.type === 'app') {
+      appKeys.add(item.appKey);
+      continue;
+    }
+
+    for (const appKey of item.appKeys) {
+      appKeys.add(appKey);
+    }
+  }
+
+  return appKeys;
+}
+
+function migrateLegacyAllRemoteDesktopApps(items, appCatalogVersion) {
+  if (appCatalogVersion >= remoteDesktopAppCatalogVersion) {
+    return items;
+  }
+
+  const currentAppKeys = getRemoteDesktopLayoutAppKeys(items);
+  const migrationKeySet = new Set(remoteDesktopAppCatalogMigrationKeys);
+  const legacyAppKeys = remoteDesktopAppKeys.filter((appKey) => !migrationKeySet.has(appKey));
+  const hasAllLegacyApps = legacyAppKeys.every((appKey) => currentAppKeys.has(appKey));
+
+  if (!hasAllLegacyApps) {
+    return items;
+  }
+
+  return [
+    ...items,
+    ...remoteDesktopAppCatalogMigrationKeys
+      .filter((appKey) => !currentAppKeys.has(appKey))
+      .map((appKey) => ({
+        id: `app:${appKey}`,
+        type: 'app',
+        appKey,
+      })),
+  ];
 }
 
 function readRemoteDesktopLayout(rawLayout) {
@@ -205,6 +251,10 @@ function readRemoteDesktopLayout(rawLayout) {
   }
 
   const sortMode = remoteDesktopSortModes.has(rawLayout.sortMode) ? rawLayout.sortMode : defaults.sortMode;
+  const rawAppCatalogVersion = Number(rawLayout.appCatalogVersion);
+  const appCatalogVersion = Number.isInteger(rawAppCatalogVersion) && rawAppCatalogVersion > 0
+    ? rawAppCatalogVersion
+    : 1;
 
   if (!Array.isArray(rawLayout.items)) {
     return { ...defaults, sortMode };
@@ -263,8 +313,9 @@ function readRemoteDesktopLayout(rawLayout) {
   }
 
   return {
+    appCatalogVersion: remoteDesktopAppCatalogVersion,
     sortMode,
-    items,
+    items: migrateLegacyAllRemoteDesktopApps(items, appCatalogVersion),
   };
 }
 
