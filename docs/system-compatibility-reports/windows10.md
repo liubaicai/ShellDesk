@@ -20,7 +20,7 @@
 | :--- | :--- | :---: |
 | 文件管理 | File Manager | ✅ |
 | 终端 | Terminal | ✅ |
-| 浏览器 | Browser | ℹ️ |
+| 浏览器 | Browser | ✅ |
 | 系统设置 | System Settings | ⚠️ |
 | 记事本 | Notepad | ✅ |
 | 安全巡检 | Security Audit | ✅ |

@@ -13,6 +13,24 @@ const activeConnections = new Map();
 const connectionCleanupHandlers = new Set();
 const clientConnectionMetadata = new WeakMap();
 
+function normalizeSocksDestinationHost(host) {
+  const normalizedHost = String(host || '').trim();
+  const loweredHost = normalizedHost.toLowerCase();
+
+  if (
+    loweredHost === 'localhost' ||
+    loweredHost === 'localhost.' ||
+    loweredHost === '::1' ||
+    loweredHost === '[::1]' ||
+    loweredHost === '0:0:0:0:0:0:0:1' ||
+    loweredHost === '[0:0:0:0:0:0:0:1]'
+  ) {
+    return '127.0.0.1';
+  }
+
+  return normalizedHost;
+}
+
 function registerConnectionCleanup(handler) {
   connectionCleanupHandlers.add(handler);
   return () => connectionCleanupHandlers.delete(handler);
@@ -363,6 +381,7 @@ async function handleSocksClient(client, socket) {
 
     const portBytes = await reader.read(2);
     const destinationPort = portBytes.readUInt16BE(0);
+    destinationHost = normalizeSocksDestinationHost(destinationHost);
 
     if (!destinationHost || destinationPort < 1 || destinationPort > 65535) {
       sendSocksReply(socket, 0x04);

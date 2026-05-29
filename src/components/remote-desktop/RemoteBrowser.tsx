@@ -80,7 +80,7 @@ interface BrowserRecentVisit {
 }
 
 interface BrowserLoadErrorState {
-  kind: 'load' | 'protocol';
+  kind: 'load' | 'protocol' | 'certificate';
   url: string;
   detail: string;
   code?: number;
@@ -150,6 +150,23 @@ function canonicalizeBrowserUrl(value: string) {
   }
 }
 
+function normalizeLoopbackUrlHost(url: URL) {
+  const host = url.hostname.toLowerCase();
+
+  if (
+    host === 'localhost' ||
+    host === 'localhost.' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host === '0:0:0:0:0:0:0:1' ||
+    host === '[0:0:0:0:0:0:0:1]'
+  ) {
+    url.hostname = '127.0.0.1';
+  }
+
+  return url;
+}
+
 function resolveBrowserUrl(value: string) {
   const url = value.trim();
 
@@ -176,7 +193,7 @@ function resolveBrowserUrl(value: string) {
       return null;
     }
 
-    return normalizedUrl.toString();
+    return normalizeLoopbackUrlHost(normalizedUrl).toString();
   } catch {
     return null;
   }
@@ -184,6 +201,19 @@ function resolveBrowserUrl(value: string) {
 
 function normalizeBrowserUrl(value: string) {
   return resolveBrowserUrl(value) ?? defaultBrowserUrl;
+}
+
+function isHttpsBrowserUrl(value: string) {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return /^https:\/\//i.test(value);
+  }
+}
+
+function isCertificateLoadError(detail: string, code?: number) {
+  const signature = `${code ?? ''} ${detail}`.toUpperCase();
+  return (typeof code === 'number' && code <= -200 && code > -300) || /CERT|TLS|SSL/.test(signature);
 }
 
 function getBrowserTitle(url: string, title = '') {
@@ -394,13 +424,13 @@ function getBrowserErrorDiagnosis(error: BrowserLoadErrorState) {
 
   const signature = `${error.code ?? ''} ${error.detail}`.toUpperCase();
 
-  if (/CERT|TLS|SSL|-20\d/.test(signature)) {
+  if (error.kind === 'certificate' || /CERT|TLS|SSL|-20\d/.test(signature)) {
     return {
       title: 'TLS 校验失败',
-      summary: '页面证书或 HTTPS 握手没有通过。',
+      summary: '目标 HTTPS 证书没有通过校验。',
       checks: [
         '确认目标服务证书、域名和系统时间是否匹配。',
-        '内网自签证书需要在服务侧修复或改用明确允许的访问路径。',
+        '如果确认这是可信的内网或自签服务，可以选择继续访问。',
       ],
     };
   }
@@ -427,7 +457,7 @@ function getBrowserErrorDiagnosis(error: BrowserLoadErrorState) {
     };
   }
 
-  if (/PROXY|SOCKS|TUNNEL|-130|-111/.test(signature)) {
+  if (/PROXY|SOCKS|TUNNEL|SOCKET_NOT_CONNECTED|-130|-111|-15/.test(signature)) {
     return {
       title: '代理路径异常',
       summary: '浏览器没有通过当前 SSH 代理完成访问。',
@@ -498,6 +528,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const [pageTitle, setPageTitle] = useState(getBrowserTitle(defaultBrowserUrl));
   const [loadError, setLoadError] = useState<BrowserLoadErrorState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isTrustingCertificate, setIsTrustingCertificate] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
@@ -781,7 +812,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
 
       if (browserEvent.errorCode !== -3) {
         setLoadError({
-          kind: 'load',
+          kind: isCertificateLoadError(browserEvent.errorDescription, browserEvent.errorCode) ? 'certificate' : 'load',
           url: failedUrl,
           detail: browserEvent.errorDescription || '页面加载失败。',
           code: browserEvent.errorCode,
@@ -961,13 +992,55 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     }
 
     void webview.loadURL(nextUrl).catch((error: unknown) => {
+      const detail = getErrorMessage(error);
+
       setLoadError({
-        kind: 'load',
+        kind: isCertificateLoadError(detail) ? 'certificate' : 'load',
+        url: nextUrl,
+        detail,
+      });
+      setIsLoading(false);
+    });
+  };
+
+  const continueWithInvalidCertificate = async (url: string) => {
+    const nextUrl = resolveBrowserUrl(url);
+
+    if (!nextUrl || !isHttpsBrowserUrl(nextUrl)) {
+      setLoadError({
+        kind: 'certificate',
+        url,
+        detail: '只能为 HTTPS 地址添加临时证书例外。',
+      });
+      return;
+    }
+
+    const trustBrowserCertificate = window.guiSSH?.connections.trustBrowserCertificate;
+
+    if (!trustBrowserCertificate) {
+      setLoadError({
+        kind: 'certificate',
+        url: nextUrl,
+        detail: '当前运行环境不支持证书例外。',
+      });
+      return;
+    }
+
+    setIsTrustingCertificate(true);
+
+    try {
+      await trustBrowserCertificate(partition, nextUrl);
+      loadBrowserUrl(nextUrl);
+    } catch (error) {
+      setLoadError({
+        kind: 'certificate',
         url: nextUrl,
         detail: getErrorMessage(error),
       });
       setIsLoading(false);
-    });
+    } finally {
+      setIsTrustingCertificate(false);
+    }
   };
 
   const submitBrowserAddress = (event: FormEvent<HTMLFormElement>) => {
@@ -1439,6 +1512,16 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
                 {errorDiagnosis.checks.map((check) => <li key={check}>{check}</li>)}
               </ul>
               <footer>
+                {loadError.kind === 'certificate' && isHttpsBrowserUrl(loadError.url) ? (
+                  <button
+                    type="button"
+                    className="browser-warning-action"
+                    disabled={isTrustingCertificate}
+                    onClick={() => void continueWithInvalidCertificate(loadError.url)}
+                  >
+                    {isTrustingCertificate ? '正在继续' : '继续访问'}
+                  </button>
+                ) : null}
                 {loadError.kind === 'load' ? (
                   <button type="button" onClick={() => loadBrowserUrl(loadError.url)}>
                     重新加载

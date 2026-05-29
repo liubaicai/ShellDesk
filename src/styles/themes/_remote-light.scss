@@ -636,6 +636,17 @@
   background: #eef4fb;
 }
 
+[data-theme="light"] .browser-error-page .browser-warning-action {
+  border-color: rgba(217, 119, 6, 0.34);
+  background: rgba(217, 119, 6, 0.12);
+  color: #92400e;
+}
+
+[data-theme="light"] .browser-error-page .browser-warning-action:hover {
+  border-color: rgba(217, 119, 6, 0.48);
+  background: rgba(217, 119, 6, 0.18);
+}
+
 [data-theme="light"] .explorer-pane,
 [data-theme="light"] .explorer-layout,
 [data-theme="light"] .explorer-main {
