@@ -78,7 +78,7 @@
   display: grid;
   min-width: 0;
   align-content: center;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 8px;
 }
 

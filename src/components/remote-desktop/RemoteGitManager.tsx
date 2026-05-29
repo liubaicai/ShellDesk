@@ -505,11 +505,17 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           className="git-repo-picker"
           onSubmit={(event) => {
             event.preventDefault();
-            setFilePickerVisible(true);
+            void loadRepository(repoPath);
           }}
         >
-          <input value={repoPath} readOnly placeholder="点击打开选择 Git 仓库目录" />
-          <button type="submit" disabled={loading || actionRunning}>{loading ? '读取中' : '打开'}</button>
+          <input
+            value={repoPath}
+            onChange={(event) => setRepoPath(event.target.value)}
+            placeholder={isWindowsHost ? 'D:\\Code\\project 或 D:/Code/project' : '/home/user/project'}
+            disabled={loading || actionRunning}
+          />
+          <button type="submit" disabled={loading || actionRunning || !repoPath.trim()}>{loading ? '读取中' : '读取'}</button>
+          <button type="button" onClick={() => setFilePickerVisible(true)} disabled={loading || actionRunning}>浏览</button>
           <button type="button" onClick={() => loadRepository(snapshot?.rootPath ?? repoPath)} disabled={loading || actionRunning || !repoPath}>刷新</button>
         </form>
       </header>

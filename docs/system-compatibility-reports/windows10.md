@@ -39,7 +39,7 @@
 | 系统监视器 | System Monitor | ✅ |
 | 消息队列 | Message Queue | ℹ️ |
 | API 调试 | API Debugger | ✅ |
-| Git 仓库 | Git Repository Manager | ℹ️ |
+| Git 仓库 | Git Repository Manager | ✅ |
 | iptables 管理 | iptables Manager | ❌ |
 | MinIO / S3 | MinIO / S3 Browser | ℹ️ |
 | MongoDB | MongoDB Manager | ℹ️ |

@@ -1,4 +1,4 @@
-import { powershellSingleQuote, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
+import { powershellCommand, powershellSingleQuote, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 
 export type GitFileStatusKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'typechange' | 'unknown';
 
@@ -149,30 +149,90 @@ git -C "$root" tag --sort=-creatordate -n 1 2>&1 | head -n 40 || true
 function createWindowsGitSnapshotCommand(path: string): RemoteCommandInput {
   const repoPath = validateGitPath(path);
 
-  return powershellStdinCommand(`
+  const script = `
 $Repo = ${powershellSingleQuote(repoPath)}
-function Write-Section([string]$Name) { [Console]::Out.WriteLine(""); [Console]::Out.WriteLine("__SHELLDESK_GIT_$($Name)__") }
-& git -C $Repo rev-parse --is-inside-work-tree *> $null
-if ($LASTEXITCODE -ne 0) {
+$LocalBranchFormat = ${powershellSingleQuote(gitLocalBranchFormat)}
+$RemoteBranchFormat = ${powershellSingleQuote(gitRemoteBranchFormat)}
+$env:GIT_OPTIONAL_LOCKS = "0"
+$env:GIT_PAGER = "cat"
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:LC_ALL = "C.UTF-8"
+$env:LANG = "C.UTF-8"
+
+function Write-Section([string]$Name) {
+  [Console]::Out.WriteLine("")
+  [Console]::Out.WriteLine("__SHELLDESK_GIT_$($Name)__")
+}
+
+function Write-GitLines($Lines) {
+  if ($null -eq $Lines) {
+    return
+  }
+
+  foreach ($Line in @($Lines)) {
+    [Console]::Out.WriteLine([string]$Line)
+  }
+}
+
+function Invoke-GitSnapshotCommand([string[]]$Arguments, [switch]$AllowFailure) {
+  $Output = & git @Arguments 2>&1
+  $Code = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
+
+  if ($Code -ne 0 -and -not $AllowFailure) {
+    Write-Section "ERROR"
+    Write-GitLines $Output
+    exit $Code
+  }
+
+  Write-GitLines $Output
+}
+
+$GitCommand = Get-Command git -ErrorAction SilentlyContinue
+if (-not $GitCommand) {
   Write-Section "ERROR"
-  & git -C $Repo rev-parse --is-inside-work-tree 2>&1 | Out-String -Width 240
+  [Console]::Out.WriteLine("远端 Windows 没有找到 git 命令，请确认 Git 已安装并加入 PATH。")
+  exit 127
+}
+
+$ProbeOutput = & git -C $Repo rev-parse --is-inside-work-tree 2>&1
+$ProbeCode = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
+if ($ProbeCode -ne 0) {
+  Write-Section "ERROR"
+  Write-GitLines $ProbeOutput
   exit 2
 }
-$Root = (& git -C $Repo rev-parse --show-toplevel 2>$null | Select-Object -First 1)
+
+$RootOutput = & git -C $Repo rev-parse --show-toplevel 2>&1
+$RootCode = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
+if ($RootCode -ne 0) {
+  Write-Section "ERROR"
+  Write-GitLines $RootOutput
+  exit $RootCode
+}
+
+$Root = [string]($RootOutput | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($Root)) {
+  Write-Section "ERROR"
+  [Console]::Out.WriteLine("Git 没有返回仓库根目录。")
+  exit 2
+}
+
 Write-Section "ROOT"
 [Console]::Out.WriteLine($Root)
 Write-Section "STATUS"
-& git -C $Root status --porcelain=v1 -b 2>&1 | Out-String -Width 240
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "-c", "core.quotepath=false", "status", "--porcelain=v1", "-b")
 Write-Section "BRANCHES"
-& git -C $Root branch --format=${powershellSingleQuote(gitLocalBranchFormat)} 2>&1 | Out-String -Width 240
-& git -C $Root branch -r --format=${powershellSingleQuote(gitRemoteBranchFormat)} 2>&1 | Out-String -Width 240
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "branch", "--format=$LocalBranchFormat")
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "branch", "-r", "--format=$RemoteBranchFormat") -AllowFailure
 Write-Section "LOG"
-& git -C $Root log --date=iso-strict --pretty=format:'%H%x09%an%x09%ad%x09%s' -n 50 2>&1 | Out-String -Width 240
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "log", "--date=iso-strict", "--pretty=format:%H%x09%an%x09%ad%x09%s", "-n", "50") -AllowFailure
 Write-Section "REMOTES"
-& git -C $Root remote -v 2>&1 | Out-String -Width 240
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "remote", "-v") -AllowFailure
 Write-Section "TAGS"
-& git -C $Root tag --sort=-creatordate -n 1 2>&1 | Select-Object -First 40 | Out-String -Width 240
-`);
+Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "tag", "--sort=-creatordate", "-n", "1") -AllowFailure
+`;
+
+  return { command: powershellCommand(script) };
 }
 
 export function createGitSnapshotCommand(path: string, isWindowsHost: boolean): RemoteCommandInput {
@@ -340,7 +400,11 @@ function splitSections(output: string) {
   let activeSection: GitSectionName | null = null;
 
   output.split(/\r?\n/).forEach((line) => {
-    const marker = line.match(/^__SHELLDESK_GIT_(ROOT|STATUS|BRANCHES|LOG|REMOTES|TAGS|ERROR)__$/);
+    const normalizedLine = line
+      .replace(/^\uFEFF/, '')
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+      .trim();
+    const marker = normalizedLine.match(/^__SHELLDESK_GIT_(ROOT|STATUS|BRANCHES|LOG|REMOTES|TAGS|ERROR)__$/);
 
     if (marker) {
       const sectionName = marker[1].toLowerCase() as GitSectionName;
@@ -488,10 +552,16 @@ function parseCommits(lines: string[]): GitCommitSummary[] {
 export function parseGitSnapshotOutput(inputPath: string, stdout: string, stderr: string): GitRepositorySnapshot {
   const rawOutput = [stdout, stderr].filter(Boolean).join('\n');
   const sections = splitSections(rawOutput);
+  const hasAnySection = sectionNames.some((sectionName) => (sections[sectionName]?.length ?? 0) > 0);
   const errorText = sections.error?.join('\n').trim();
 
   if (errorText) {
     throw new Error(errorText || '当前路径不是 Git 仓库。');
+  }
+
+  if (!hasAnySection) {
+    const rawText = rawOutput.trim();
+    throw new Error(rawText ? `未识别到 Git 仓库输出：\n${rawText.slice(0, 2000)}` : 'Git 快照命令没有返回任何输出。请确认远端 Windows 的 PowerShell 与 Git 命令可正常执行。');
   }
 
   const statusLines = sections.status ?? [];
