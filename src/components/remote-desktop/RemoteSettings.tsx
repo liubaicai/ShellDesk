@@ -975,7 +975,7 @@ const MIRROR_PRESETS = {
   ],
 };
 
-type MirrorDistroType = 'debian' | 'redhat' | 'unknown';
+type MirrorDistroType = 'debian' | 'redhat' | 'rhel' | 'unknown';
 type AptSourceFormat = 'legacy' | 'deb822';
 type AptMirrorFlavor = 'ubuntu' | 'debian';
 
@@ -989,6 +989,7 @@ const APT_SOURCE_CONTENT_MARKER = 'SHELLDESK_APT_SOURCE_CONTENT';
 const LEGACY_APT_SOURCE_PATH = '/etc/apt/sources.list';
 const UBUNTU_DEB822_SOURCE_PATH = '/etc/apt/sources.list.d/ubuntu.sources';
 const DEBIAN_DEB822_SOURCE_PATH = '/etc/apt/sources.list.d/debian.sources';
+const YUM_REPO_CONTENT_MARKER = 'SHELLDESK_YUM_REPO_CONTENT';
 
 function createAptSourceInspectionCommand() {
   return [
@@ -1067,6 +1068,52 @@ function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor) {
   ].join('\n');
 
   return { target, display };
+}
+
+function createYumRepoInspectionCommand() {
+  return [
+    'repo_dir=/etc/yum.repos.d',
+    'printf "YUM_REPO_DIR=%s\\n" "$repo_dir"',
+    `printf '%s\\n' '${YUM_REPO_CONTENT_MARKER}'`,
+    'found=0',
+    'if ls "$repo_dir"/*.repo >/dev/null 2>&1; then',
+    '  for repo_file in "$repo_dir"/*.repo; do',
+    '    [ -f "$repo_file" ] || continue',
+    '    found=1',
+    '    printf "\\n# %s\\n" "$repo_file"',
+    `    awk '
+      /^[[:space:]]*\\[[^]]+\\][[:space:]]*$/ { print; next }
+      /^[[:space:]]*#?[[:space:]]*(name|baseurl|mirrorlist|metalink|enabled)[[:space:]]*=/ { print; next }
+    ' "$repo_file"`,
+    '  done',
+    'fi',
+    'if [ "$found" -eq 0 ]; then',
+    '  printf "未找到 %s/*.repo\\n" "$repo_dir"',
+    'fi',
+  ].join('\n');
+}
+
+function parseYumRepoInspection(stdout: string) {
+  const lines = stdout.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === YUM_REPO_CONTENT_MARKER);
+  const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : [];
+  const contentLines = markerIndex >= 0 ? lines.slice(markerIndex + 1) : lines;
+  const values = parseKeyValueOutput(metadataLines.join('\n'));
+  const repoDir = values.get('YUM_REPO_DIR') || '/etc/yum.repos.d';
+  const content = contentLines.join('\n').trimEnd();
+
+  return [
+    `配置目录：${repoDir}`,
+    '',
+    content || `无法读取 ${repoDir}/*.repo，请确认 repo 文件存在且当前用户可读。`,
+  ].join('\n');
+}
+
+function isOfficialRhelDistro(values: Map<string, string>) {
+  const id = (values.get('ID') ?? '').toLowerCase();
+  const name = (values.get('NAME') ?? '').toLowerCase();
+
+  return id === 'rhel' || id === 'redhat' || /\bred hat enterprise linux\b/.test(name);
 }
 
 function normalizeAptCodename(rawCodename: string | undefined, flavor: AptMirrorFlavor) {
@@ -1192,7 +1239,7 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
           echo "NAME=$NAME"
         elif command -v apt-get >/dev/null 2>&1; then
           echo "TYPE=debian"
-        elif command -v yum >/dev/null 2>&1; then
+        elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
           echo "TYPE=redhat"
         else
           echo "TYPE=unknown"
@@ -1219,10 +1266,10 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         ['centos', 'rhel', 'fedora', 'rocky', 'alma', 'almalinux', 'ol', 'amzn'].includes(distroId)
         || /(^|[\s,])(rhel|fedora|centos)(?=$|[\s,])/.test(distroLike)
       ) {
-        setDistroType('redhat');
+        setDistroType(isOfficialRhelDistro(distroValues) ? 'rhel' : 'redhat');
         setAptSourceTarget(null);
-        const mirrorResult = await runCmd(connectionId, 'cat /etc/yum.repos.d/*.repo 2>/dev/null | grep -E "^baseurl|^mirrorlist" | head -20');
-        setCurrentMirror(mirrorResult.stdout || '无法读取');
+        const mirrorResult = await runCmd(connectionId, createYumRepoInspectionCommand());
+        setCurrentMirror(parseYumRepoInspection(mirrorResult.stdout || mirrorResult.stderr || ''));
       } else {
         setDistroType('unknown');
         setAptSourceTarget(null);
@@ -1327,6 +1374,7 @@ MIRROR_EOF`;
     : distroType === 'redhat'
       ? MIRROR_PRESETS.redhat
       : [];
+  const canQuickSwitchMirror = distroType !== 'rhel';
 
   return (
     <div className="settings-panel-content">
@@ -1351,38 +1399,47 @@ MIRROR_EOF`;
             <h4>当前镜像源</h4>
             <pre className="settings-output">{currentMirror || '加载中...'}</pre>
           </div>
-          <div className="settings-section">
-            <h4>快速切换</h4>
-            <div className="settings-mirror-grid">
-              {presets.map((preset) => (
-                <button
-                  key={preset.url}
-                  type="button"
-                  className={`settings-mirror-btn ${mirrorDraft === preset.url ? 'selected' : ''}`}
-                  onClick={() => { setMirrorDraft(preset.url); setSuccess(''); setError(''); }}
-                  disabled={applying}
-                >
-                  <strong>{preset.label}</strong>
-                  <small>{preset.url}</small>
-                </button>
-              ))}
-            </div>
-            {mirrorDraft ? (
-              <div className="settings-preview-card">
-                <div>
-                  <strong>待应用镜像源</strong>
-                  <span>{mirrorDraft}</span>
-                </div>
-                <SettingsCommandPreview label="命令预览" content={getMirrorPlan(mirrorDraft).preview} />
-                <div className="settings-preview-actions">
-                  <button type="button" className="settings-action-btn" onClick={() => setMirrorDraft('')} disabled={applying}>清除草稿</button>
-                  <button type="button" className="settings-action-btn primary" onClick={requestApplyMirror} disabled={applying}>
-                    {applying ? '应用中...' : '预览并应用'}
+          {canQuickSwitchMirror ? (
+            <div className="settings-section">
+              <h4>快速切换</h4>
+              <div className="settings-mirror-grid">
+                {presets.map((preset) => (
+                  <button
+                    key={preset.url}
+                    type="button"
+                    className={`settings-mirror-btn ${mirrorDraft === preset.url ? 'selected' : ''}`}
+                    onClick={() => { setMirrorDraft(preset.url); setSuccess(''); setError(''); }}
+                    disabled={applying}
+                  >
+                    <strong>{preset.label}</strong>
+                    <small>{preset.url}</small>
                   </button>
-                </div>
+                ))}
               </div>
-            ) : null}
-          </div>
+              {mirrorDraft ? (
+                <div className="settings-preview-card">
+                  <div>
+                    <strong>待应用镜像源</strong>
+                    <span>{mirrorDraft}</span>
+                  </div>
+                  <SettingsCommandPreview label="命令预览" content={getMirrorPlan(mirrorDraft).preview} />
+                  <div className="settings-preview-actions">
+                    <button type="button" className="settings-action-btn" onClick={() => setMirrorDraft('')} disabled={applying}>清除草稿</button>
+                    <button type="button" className="settings-action-btn primary" onClick={requestApplyMirror} disabled={applying}>
+                      {applying ? '应用中...' : '预览并应用'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="settings-section">
+              <h4>快速切换不可用</h4>
+              <p className="settings-hint">
+                RHEL 官方源通常依赖 Red Hat 订阅、CDN、metalink 和证书授权，不建议自动替换为公共镜像域名。请使用 subscription-manager、Red Hat Satellite 或公司内部镜像源维护 repo 配置。
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <div className="settings-section">

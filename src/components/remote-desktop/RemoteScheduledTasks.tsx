@@ -325,8 +325,16 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
       ) : null}
 
       {activeTab === 'systemd' ? (
-        <div className="scheduled-table-panel">
-          <table className="scheduled-table">
+        <div className="scheduled-table-panel systemd-timers">
+          <table className="scheduled-table systemd-table">
+            <colgroup>
+              <col className="timer-col-name" />
+              <col className="timer-col-next" />
+              <col className="timer-col-left" />
+              <col className="timer-col-last" />
+              <col className="timer-col-unit" />
+              <col className="timer-col-actions" />
+            </colgroup>
             <thead><tr><th>Timer</th><th>下次</th><th>剩余</th><th>上次</th><th>Unit</th><th>操作</th></tr></thead>
             <tbody>
               {timers.map((timer) => (
@@ -336,7 +344,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
                   <td>{timer.left || '-'}</td>
                   <td>{timer.last || '-'}</td>
                   <td>{timer.unit || '-'}</td>
-                  <td>
+                  <td className="scheduled-actions-cell">
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启动 ${timer.name}`, command: createSystemdTimerActionCommand('start', timer), afterRun: loadTimers }); }}>启动</button>
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `停止 ${timer.name}`, command: createSystemdTimerActionCommand('stop', timer), afterRun: loadTimers }); }}>停止</button>
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启用 ${timer.name}`, command: createSystemdTimerActionCommand('enable', timer), afterRun: loadTimers }); }}>启用</button>
@@ -351,7 +359,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
       ) : null}
 
       {activeTab === 'windows' ? (
-        <div className="scheduled-table-panel">
+        <div className="scheduled-table-panel windows-tasks">
           <table className="scheduled-table">
             <thead><tr><th>任务</th><th>路径</th><th>状态</th><th>上次运行</th><th>下次运行</th><th>操作</th></tr></thead>
             <tbody>
@@ -362,7 +370,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
                   <td><span className="scheduled-pill">{task.state || '-'}</span></td>
                   <td>{task.lastRunTime || '-'}</td>
                   <td>{task.nextRunTime || '-'}</td>
-                  <td>
+                  <td className="scheduled-actions-cell">
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `运行 ${task.name}`, command: createWindowsTaskActionCommand('start', task), afterRun: loadWindowsTasks }); }}>运行</button>
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启用 ${task.name}`, command: createWindowsTaskActionCommand('enable', task), afterRun: loadWindowsTasks }); }}>启用</button>
                     <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `禁用 ${task.name}`, command: createWindowsTaskActionCommand('disable', task), afterRun: loadWindowsTasks }); }}>禁用</button>

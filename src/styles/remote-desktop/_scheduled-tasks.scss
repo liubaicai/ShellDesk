@@ -271,15 +271,24 @@
 .scheduled-table-panel {
   flex: 1 1 auto;
   margin: 10px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .scheduled-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
+
+.systemd-table .timer-col-name { width: 18%; }
+.systemd-table .timer-col-next { width: 25%; }
+.systemd-table .timer-col-left { width: 13%; }
+.systemd-table .timer-col-last { width: 22%; }
+.systemd-table .timer-col-unit { width: 10%; }
+.systemd-table .timer-col-actions { width: 12%; }
 
 .scheduled-table th,
 .scheduled-table td {
@@ -312,14 +321,20 @@
 }
 
 .scheduled-table td:last-child {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(46px, 1fr));
   gap: 6px;
+}
+
+.scheduled-actions-cell {
+  max-width: none;
+  white-space: normal;
 }
 
 .scheduled-table button {
   height: 26px;
-  padding: 0 8px;
+  min-width: 0;
+  padding: 0 7px;
   font-size: 10.5px;
 }
 
