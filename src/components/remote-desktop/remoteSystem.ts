@@ -18,6 +18,10 @@ $__shelldeskUtf8 = New-Object System.Text.UTF8Encoding $false
 $OutputEncoding = $__shelldeskUtf8
 } catch {}
 try { chcp.com 65001 > $null } catch {}
+$ProgressPreference = 'SilentlyContinue'
+$VerbosePreference = 'SilentlyContinue'
+$DebugPreference = 'SilentlyContinue'
+$InformationPreference = 'SilentlyContinue'
 `;
 
   return `${utf8Prelude}\n${script}`;

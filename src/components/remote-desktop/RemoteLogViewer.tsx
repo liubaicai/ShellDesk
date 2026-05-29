@@ -532,15 +532,15 @@ function getWindowsTimeScript(query: LogQuery) {
 
 function getWindowsLevelScript(level: LogLevelFilter) {
   if (level === 'error') {
-    return '$events = $events | Where-Object { $_.Level -in 1, 2 -or $_.LevelDisplayName -match "Critical|Error" }';
+    return '$items = $items | Where-Object { $_.level -match "Critical|Error|^1$|^2$" }';
   }
 
   if (level === 'warning') {
-    return '$events = $events | Where-Object { $_.Level -eq 3 -or $_.LevelDisplayName -match "Warning" }';
+    return '$items = $items | Where-Object { $_.level -match "Warning|^3$" }';
   }
 
   if (level === 'info') {
-    return '$events = $events | Where-Object { $_.Level -eq 4 -or $_.LevelDisplayName -match "Information|Info" }';
+    return '$items = $items | Where-Object { $_.level -match "Information|Info|^4$" }';
   }
 
   return '';
@@ -552,30 +552,86 @@ function getWindowsEventCommand(logName: string, query: LogQuery) {
   const fetchLimit = keyword || query.level !== 'all' ? Math.min(lines * 8, 4000) : lines;
   const keywordScript = keyword ? `
 $needle = ${powershellSingleQuote(keyword)}
-$events = $events | Where-Object {
-  ([string]$_.Message).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-  ([string]$_.ProviderName).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-  ([string]$_.Id).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+$items = $items | Where-Object {
+  ([string]$_.message).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+  ([string]$_.providerName).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+  ([string]$_.eventId).IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
 }
 ` : '';
 
   return powershellCommand(`
-$filter = @{ LogName = ${powershellSingleQuote(logName || 'System')} }
+$logName = ${powershellSingleQuote(logName || 'System')}
+$filter = @{ LogName = $logName }
 ${getWindowsTimeScript(query)}
-$events = Get-WinEvent -FilterHashtable $filter -MaxEvents ${fetchLimit} -ErrorAction Stop
+
+function Format-ShellDeskEventTime($value) {
+  if (-not $value) { return "" }
+  try { return $value.ToString("yyyy-MM-dd HH:mm:ss") } catch { return [string]$value }
+}
+
+function Get-ShellDeskEventMessage($event) {
+  try {
+    $text = [string]$event.Message
+    if ($text) { return ($text -replace "\\s+", " ").Trim() }
+  } catch {}
+
+  return ""
+}
+
+function Convert-ShellDeskWinEvent($event) {
+  $message = Get-ShellDeskEventMessage $event
+  $level = [string]$event.LevelDisplayName
+  if (-not $level) { $level = [string]$event.Level }
+
+  [pscustomobject]@{
+    timeCreated = Format-ShellDeskEventTime $event.TimeCreated
+    level = $level
+    providerName = [string]$event.ProviderName
+    eventId = [int]$event.Id
+    message = $message
+    raw = "{0} [{1}] {2} #{3} {4}" -f (Format-ShellDeskEventTime $event.TimeCreated), $level, $event.ProviderName, $event.Id, $message
+  }
+}
+
+function Convert-ShellDeskEventLogEntry($event) {
+  $message = ""
+  try {
+    $message = ([string]$event.Message -replace "\\s+", " ").Trim()
+  } catch {}
+
+  [pscustomobject]@{
+    timeCreated = Format-ShellDeskEventTime $event.TimeGenerated
+    level = [string]$event.EntryType
+    providerName = [string]$event.Source
+    eventId = [int]$event.EventID
+    message = $message
+    raw = "{0} [{1}] {2} #{3} {4}" -f (Format-ShellDeskEventTime $event.TimeGenerated), $event.EntryType, $event.Source, $event.EventID, $message
+  }
+}
+
+try {
+  $events = @(Get-WinEvent -FilterHashtable $filter -MaxEvents ${fetchLimit} -ErrorAction SilentlyContinue)
+} catch {
+  $events = @()
+}
+$items = @($events | ForEach-Object { Convert-ShellDeskWinEvent $_ })
+
+if ($items.Count -eq 0 -and (Get-Command Get-EventLog -ErrorAction SilentlyContinue)) {
+  $fallbackArgs = @{ LogName = $logName; Newest = ${fetchLimit}; ErrorAction = 'SilentlyContinue' }
+  if ($filter.StartTime) { $fallbackArgs.After = $filter.StartTime }
+  if ($filter.EndTime) { $fallbackArgs.Before = $filter.EndTime }
+  try {
+    $fallbackEvents = @(Get-EventLog @fallbackArgs)
+  } catch {
+    $fallbackEvents = @()
+  }
+  $items = @($fallbackEvents | ForEach-Object { Convert-ShellDeskEventLogEntry $_ })
+}
+
 ${getWindowsLevelScript(query.level)}
 ${keywordScript}
-$items = @($events | Select-Object -First ${lines} | ForEach-Object {
-  $message = ([string]$_.Message -replace "\\s+", " ").Trim()
-  [pscustomobject]@{
-    timeCreated = if ($_.TimeCreated) { $_.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss") } else { "" }
-    level = [string]$_.LevelDisplayName
-    providerName = [string]$_.ProviderName
-    eventId = [int]$_.Id
-    message = $message
-    raw = "{0:u} [{1}] {2} #{3} {4}" -f $_.TimeCreated, $_.LevelDisplayName, $_.ProviderName, $_.Id, $message
-  }
-})
+$items = @($items | Select-Object -First ${lines})
+
 if ($items.Count -eq 0) {
   "[]"
 } else {

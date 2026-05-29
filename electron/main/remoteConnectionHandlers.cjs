@@ -1174,19 +1174,54 @@ function looksLikeUtf16Le(buffer) {
   return nullOddBytes / Math.max(1, Math.floor(sampleLength / 2)) > 0.35;
 }
 
+function decodePowerShellCliXmlText(value) {
+  return value
+    .replace(/_x([0-9A-Fa-f]{4})_/g, (_match, code) => String.fromCharCode(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function extractPowerShellCliXmlMessages(value) {
+  const messages = [];
+  const xmlTextRegex = /<S(?:\s+[^>]*)?>([\s\S]*?)<\/S>/g;
+  let match;
+
+  while ((match = xmlTextRegex.exec(value)) !== null) {
+    const message = decodePowerShellCliXmlText(match[1]).trim();
+
+    if (message) {
+      messages.push(message);
+    }
+  }
+
+  return messages.join('\n');
+}
+
+function cleanPowerShellCliXmlOutput(value) {
+  return value
+    .replace(/#< CLIXML\s*<Objs[\s\S]*?<\/Objs>/g, (cliXml) => extractPowerShellCliXmlMessages(cliXml))
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '#< CLIXML')
+    .join('\n');
+}
+
 function decodeSshOutputBuffer(buffer) {
   if (!buffer.length) {
     return '';
   }
 
   if (looksLikeUtf16Le(buffer)) {
-    return buffer.toString('utf16le');
+    return cleanPowerShellCliXmlOutput(buffer.toString('utf16le'));
   }
 
   const utf8Text = buffer.toString('utf8');
 
   if (!utf8Text.includes('\uFFFD')) {
-    return utf8Text;
+    return cleanPowerShellCliXmlOutput(utf8Text);
   }
 
   const candidates = ['gb18030', 'gbk', 'big5']
@@ -1204,7 +1239,7 @@ function decodeSshOutputBuffer(buffer) {
     }
   }
 
-  return bestText;
+  return cleanPowerShellCliXmlOutput(bestText);
 }
 
 function execSshCommand(client, command) {

@@ -91,6 +91,50 @@ function parseSystemdTimers(stdout: string): SystemdTimerSummary[] {
     });
 }
 
+function formatWindowsTaskTimeValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = String(value).trim();
+    const dotNetDateMatch = text.match(/^\/Date\((-?\d+)\)\/$/);
+
+    if (dotNetDateMatch) {
+      const timestamp = Number.parseInt(dotNetDateMatch[1], 10);
+
+      if (Number.isFinite(timestamp)) {
+        return new Date(timestamp).toLocaleString();
+      }
+    }
+
+    return text === '0001-01-01T00:00:00' || text === '1899-12-30T00:00:00' ? '' : text;
+  }
+
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return '';
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidates = [
+    record.DateTime,
+    record.value,
+    record.Value,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' || typeof candidate === 'number') {
+      const text = String(candidate).trim();
+
+      if (text) {
+        return text;
+      }
+    }
+  }
+
+  return '';
+}
+
 function parseWindowsTasks(stdout: string): WindowsTaskSummary[] {
   const trimmedText = stdout.trim();
   if (!trimmedText) return [];
@@ -104,15 +148,29 @@ function parseWindowsTasks(stdout: string): WindowsTaskSummary[] {
       name: String(row.TaskName ?? '').trim(),
       path: String(row.TaskPath ?? '').trim(),
       state: String(row.State ?? '').trim(),
-      lastRunTime: String(row.LastRunTime ?? '').trim(),
-      nextRunTime: String(row.NextRunTime ?? '').trim(),
+      lastRunTime: formatWindowsTaskTimeValue(row.LastRunTime),
+      nextRunTime: formatWindowsTaskTimeValue(row.NextRunTime),
     }))
     .filter((task) => Boolean(task.name));
 }
 
 function createWindowsTasksCommand() {
   return powershellCommand(`
-Get-ScheduledTask | Select-Object -First 400 TaskName,TaskPath,State,@{Name='LastRunTime';Expression={(Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction SilentlyContinue).LastRunTime}},@{Name='NextRunTime';Expression={(Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction SilentlyContinue).NextRunTime}} | ConvertTo-Json -Depth 4
+function Format-ShellDeskTaskTime($value) {
+  if (-not $value -or $value.Year -le 1900) { return '' }
+  return $value.ToString('yyyy-MM-dd HH:mm:ss')
+}
+
+Get-ScheduledTask | Select-Object -First 400 | ForEach-Object {
+  $info = Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction SilentlyContinue
+  [PSCustomObject]@{
+    TaskName = $_.TaskName
+    TaskPath = $_.TaskPath
+    State = [string]$_.State
+    LastRunTime = if ($info) { Format-ShellDeskTaskTime $info.LastRunTime } else { '' }
+    NextRunTime = if ($info) { Format-ShellDeskTaskTime $info.NextRunTime } else { '' }
+  }
+} | ConvertTo-Json -Depth 4
 `);
 }
 
