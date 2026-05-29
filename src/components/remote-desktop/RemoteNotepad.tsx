@@ -260,7 +260,8 @@ const MAX_DIFF_OUTPUT_LINES = 280;
 const MAX_HIGHLIGHT_CHARACTERS = 320000;
 const MAX_LANGUAGE_DETECTION_CHARACTERS = 80000;
 const EDITOR_LINE_HEIGHT = 20;
-const MAX_AI_FILE_CONTEXT_CHARACTERS = 18000;
+const MAX_AI_FILE_CONTEXT_CHARACTERS = 480000;
+const MAX_AI_FILE_CONTEXT_CHUNK_CHARACTERS = 60000;
 const MAX_AI_SELECTION_CHARACTERS = 6000;
 const MAX_AI_ENVIRONMENT_CHARACTERS = 12000;
 const MAX_AI_COMMAND_OUTPUT_CHARACTERS = 12000;
@@ -541,6 +542,55 @@ function truncateMiddle(content: string, maxLength: number) {
   const headLength = Math.floor(maxLength * 0.58);
   const tailLength = Math.max(0, maxLength - headLength - 80);
   return `${content.slice(0, headLength)}\n\n... 已截断 ${content.length - headLength - tailLength} 个字符 ...\n\n${content.slice(-tailLength)}`;
+}
+
+function limitAiFileContext(content: string) {
+  if (content.length <= MAX_AI_FILE_CONTEXT_CHARACTERS) {
+    return {
+      content,
+      truncated: false,
+      omittedCharacters: 0,
+    };
+  }
+
+  const headLength = Math.floor(MAX_AI_FILE_CONTEXT_CHARACTERS * 0.62);
+  const tailLength = Math.max(0, MAX_AI_FILE_CONTEXT_CHARACTERS - headLength);
+  const omittedCharacters = content.length - headLength - tailLength;
+
+  return {
+    content: [
+      content.slice(0, headLength),
+      '',
+      `... 文件超过 SD-Agent 单次上下文上限，已省略中间 ${omittedCharacters} 个字符。需要完整分析时，请缩小选区或分段询问。 ...`,
+      '',
+      content.slice(-tailLength),
+    ].join('\n'),
+    truncated: true,
+    omittedCharacters,
+  };
+}
+
+function splitAiFileContext(content: string) {
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < content.length) {
+    let end = Math.min(start + MAX_AI_FILE_CONTEXT_CHUNK_CHARACTERS, content.length);
+
+    if (end < content.length) {
+      const newlineIndex = content.lastIndexOf('\n', end);
+      const minimumChunkEnd = start + Math.floor(MAX_AI_FILE_CONTEXT_CHUNK_CHARACTERS * 0.72);
+
+      if (newlineIndex >= minimumChunkEnd) {
+        end = newlineIndex + 1;
+      }
+    }
+
+    chunks.push(content.slice(start, end));
+    start = end;
+  }
+
+  return chunks.length ? chunks : [''];
 }
 
 function stripAiActionBlocks(content: string) {
@@ -1119,23 +1169,22 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const environmentContext = environmentSource
       ? truncateMiddle(environmentSource, MAX_AI_ENVIRONMENT_CHARACTERS)
       : '(尚未探测；发送消息时会自动探测，也可以请求 run_command 动作补充上下文)';
-    const fileContextLines = includeAiFileContext
-      ? [
-          '当前文件内容：',
-          '```',
-          truncateMiddle(activeTab.content, MAX_AI_FILE_CONTEXT_CHARACTERS),
-          '```',
-        ]
-      : [
-          '当前文件内容：',
-          '(用户已取消带入当前文件内容上下文；请仅依据文件元数据、选区、对话和工具结果回答)',
-        ];
+    let fileContextState = '用户已取消带入当前文件内容上下文；请仅依据文件元数据、选区、对话和工具结果回答。';
+
+    if (includeAiFileContext) {
+      const fileContext = limitAiFileContext(activeTab.content);
+      const chunkCount = splitAiFileContext(fileContext.content).length;
+      fileContextState = fileContext.truncated
+        ? `当前文件内容超过 ${MAX_AI_FILE_CONTEXT_CHARACTERS} 字符，会在后续 ${chunkCount} 条上下文消息中按顺序提供头尾内容；已省略中间 ${fileContext.omittedCharacters} 个字符。`
+        : `当前文件内容未截断，会在后续 ${chunkCount} 条上下文消息中按顺序完整提供。`;
+    }
 
     return [
       '当前 ShellDesk 记事本上下文：',
       `文件标题：${activeTab.title}`,
       `远程路径：${filePath}`,
       `语言模式：${activeTab.language}`,
+      `文件字符数：${activeTab.content.length}`,
       `只读状态：${activeTab.readOnly ? '只读' : '可编辑'}`,
       `光标：第 ${cursorLine} 行，第 ${cursorCol} 列`,
       `选区范围：${selection.start}-${selection.end}`,
@@ -1146,9 +1195,35 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       '远端环境探测：',
       environmentContext,
       '',
-      ...fileContextLines,
+      '当前文件内容上下文：',
+      fileContextState,
     ].join('\n');
   }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.readOnly, activeTab.title, cursorCol, cursorLine, includeAiFileContext, remoteEnvironment]);
+
+  const buildAiFileContextMessages = useCallback((): ShellDeskAiChatMessage[] => {
+    if (!includeAiFileContext) {
+      return [];
+    }
+
+    const { content, truncated, omittedCharacters } = limitAiFileContext(activeTab.content);
+    const chunks = splitAiFileContext(content);
+    const filePath = activeTab.filePath || '(尚未保存的新文件)';
+
+    return chunks.map((chunk, index) => ({
+      role: 'user',
+      content: [
+        `当前文件内容上下文（第 ${index + 1}/${chunks.length} 段）：`,
+        `文件标题：${activeTab.title}`,
+        `远程路径：${filePath}`,
+        `语言模式：${activeTab.language}`,
+        `完整字符数：${activeTab.content.length}`,
+        truncated ? `截断说明：文件超过 ${MAX_AI_FILE_CONTEXT_CHARACTERS} 字符，已省略中间 ${omittedCharacters} 个字符。` : '截断说明：未截断，当前文件内容已完整带入。',
+        '```',
+        chunk,
+        '```',
+      ].join('\n'),
+    }));
+  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.title, includeAiFileContext]);
 
   const createAiChatMessages = useCallback((
     nextMessages: NotepadAiMessage[],
@@ -1163,9 +1238,10 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     return [
       { role: 'system', content: NOTEPAD_AI_SYSTEM_PROMPT },
       { role: 'user', content: buildAiContextMessage(selection, options) },
+      ...buildAiFileContextMessages(),
       ...recentMessages,
     ];
-  }, [buildAiContextMessage]);
+  }, [buildAiContextMessage, buildAiFileContextMessages]);
 
   const runRemoteEnvironmentProbe = useCallback(async () => {
     const command = getEnvironmentProbeCommand(systemType);
