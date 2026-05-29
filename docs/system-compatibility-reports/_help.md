@@ -8,6 +8,10 @@ podman run --name mysql-server -e MYSQL_ROOT_PASSWORD=password -d -p 3306:3306 m
 ```
 
 ``` shell
+podman run -d --name redis-server -p 6379:6379 docker.io/library/redis:7-alpine
+```
+
+``` shell
 # mongodb
 podman run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=password docker.io/library/mongo:latest
 ```
@@ -19,7 +23,7 @@ podman run --name postgres-db -d -p 5432:5432 -e POSTGRES_PASSWORD=password post
 
 ``` shell
 # elasticsearch
-podman run -d  --name elasticsearch  -p 9200:9200 -p 9300:9300  -e "discovery.type=single-node"   -e "ES_JAVA_OPTS=-Xms1g -Xmx1g"  -v es_data:/usr/share/elasticsearch/data  docker.elastic.co/elasticsearch/elasticsearch:8.17.4
+podman run -d  --name elasticsearch  -p 9200:9200 -p 9300:9300  -e "discovery.type=single-node"   -e "ES_JAVA_OPTS=-Xms1g -Xmx1g" docker.elastic.co/elasticsearch/elasticsearch:8.17.4
 podman exec -it elasticsearch /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 ```
 
