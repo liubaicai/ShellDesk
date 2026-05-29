@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     getInfo: (connectionId) => ipcRenderer.invoke('connection:get-info', connectionId),
     disconnect: (connectionId) => ipcRenderer.invoke('connection:disconnect', connectionId),
     getIpcCapabilities: () => ipcRenderer.invoke('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
+    trustBrowserCertificate: (partition, url) => ipcRenderer.invoke('connection:trust-browser-certificate', partition, url),
     startTerminal: (connectionId, terminalId, columns, rows, options) => {
       if (options?.legacy) {
         return ipcRenderer.invoke('connection:start-terminal', connectionId);

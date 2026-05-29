@@ -432,6 +432,7 @@ interface ShellDeskConnectionControls {
   getInfo: (connectionId: string) => Promise<ShellDeskConnectionInfo>;
   disconnect: (connectionId: string) => Promise<boolean>;
   getIpcCapabilities: () => Promise<ShellDeskIpcCapabilities>;
+  trustBrowserCertificate: (partition: string, url: string) => Promise<{ origin: string }>;
   startTerminal: (
     connectionId: string,
     terminalId: string,

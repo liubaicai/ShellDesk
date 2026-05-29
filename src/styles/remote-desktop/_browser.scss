@@ -881,6 +881,22 @@
   background: rgba(106, 176, 255, 0.22);
 }
 
+.browser-error-page button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.browser-error-page .browser-warning-action {
+  border-color: rgba(251, 191, 36, 0.44);
+  background: rgba(251, 191, 36, 0.18);
+  color: #ffe3a3;
+}
+
+.browser-error-page .browser-warning-action:hover {
+  border-color: rgba(251, 191, 36, 0.62);
+  background: rgba(251, 191, 36, 0.26);
+}
+
 @media (max-width: 760px) {
   .browser-shortcut-panel {
     grid-template-columns: minmax(0, 1fr);
