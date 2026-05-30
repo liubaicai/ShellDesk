@@ -424,6 +424,15 @@ interface ConnectionClosedPayload {
   reason?: string;
 }
 
+interface ConnectionReconnectingPayload {
+  connectionId: string;
+  reason?: string;
+}
+
+interface ConnectionRestoredPayload {
+  connectionId: string;
+}
+
 export type LogCategory = 'connection' | 'host' | 'key' | 'config' | 'system';
 export type LogLevel = 'info' | 'success' | 'warning' | 'error';
 
@@ -1391,7 +1400,7 @@ function App() {
       return;
     }
 
-    return window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
+    const removeClosed = window.guiSSH.events.onConnectionClosed((payload: ConnectionClosedPayload) => {
       if (payload.connectionId === connection.id) {
         const message = payload.reason || 'SSH 连接已断开。';
         const time = new Date().toLocaleTimeString(appLocale);
@@ -1401,6 +1410,30 @@ function App() {
         setWindowConnectionError(`${time} — ${message}`);
       }
     });
+    const removeReconnecting = window.guiSSH.events.onConnectionReconnecting((payload: ConnectionReconnectingPayload) => {
+      if (payload.connectionId !== connection.id) {
+        return;
+      }
+
+      const message = payload.reason || 'SSH 连接已断开，正在自动重连。';
+      setStatusMessage(message);
+    });
+    const removeRestored = window.guiSSH.events.onConnectionRestored((payload: ConnectionRestoredPayload) => {
+      if (payload.connectionId !== connection.id) {
+        return;
+      }
+
+      const time = new Date().toLocaleTimeString(appLocale);
+      addLog('connection', 'success', `连接恢复：${connection.host.address}`, `${time} — SSH 已自动重连。`);
+      setWindowConnectionError('');
+      setStatusMessage('SSH 已自动重连。');
+    });
+
+    return () => {
+      removeClosed();
+      removeReconnecting();
+      removeRestored();
+    };
   }, [appLocale, connection, isConnectionWindow, windowControls]);
 
   useEffect(() => {

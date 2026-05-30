@@ -44,6 +44,26 @@ function setClientConnectionMetadata(client, metadata) {
   clientConnectionMetadata.set(client, { ...metadata });
 }
 
+function getConnectionAddress(activeConnection) {
+  const displayHost = activeConnection?.displayHost || {};
+  const address = displayHost.address || 'unknown';
+  const port = displayHost.port || 22;
+
+  return `${address}:${port}`;
+}
+
+function isConnectionWindowAlive(activeConnection) {
+  return Boolean(activeConnection?.window && !activeConnection.window.isDestroyed());
+}
+
+function notifyConnectionEvent(channel, payload) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.webContents.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  }
+}
+
 function connectSshClient(sshConfig) {
   return new Promise((resolve, reject) => {
     const client = new Client();
@@ -81,6 +101,179 @@ function connectSshClient(sshConfig) {
       rejectConnection(error);
     }
   });
+}
+
+function cleanupTerminalSessions(activeConnection) {
+  if (!activeConnection.terminalSessions) {
+    return;
+  }
+
+  for (const stream of activeConnection.terminalSessions.values()) {
+    stream.removeAllListeners();
+    stream.on('error', () => undefined);
+    try {
+      stream.end();
+    } catch {
+      try {
+        stream.destroy();
+      } catch {
+        // Ignore stale terminal stream cleanup errors.
+      }
+    }
+  }
+
+  activeConnection.terminalSessions.clear();
+}
+
+function isRecoverableSshError(error) {
+  const message = toErrorMessage(error);
+
+  return /Channel open failure|open failed|Not connected|No response from server|Cannot open channel|Unable to open channel|Unable to open session/i.test(message);
+}
+
+function markActiveConnectionDisconnected(activeConnection, reason) {
+  if (!activeConnection || activeConnection.isClosing) {
+    return;
+  }
+
+  activeConnection.clientOnline = false;
+  activeConnection.disconnectedAt = new Date().toISOString();
+  activeConnection.lastDisconnectReason = reason || 'SSH 连接已断开。';
+  cleanupTerminalSessions(activeConnection);
+  notifyConnectionClosed(activeConnection.id, activeConnection.lastDisconnectReason);
+}
+
+function bindActiveConnectionClient(activeConnection, client) {
+  if (!activeConnection || !client) {
+    return;
+  }
+
+  activeConnection.client = client;
+  activeConnection.clientOnline = true;
+  activeConnection.disconnectedAt = '';
+  activeConnection.lastDisconnectReason = '';
+  setClientConnectionMetadata(client, { systemType: activeConnection.displayHost?.systemType });
+
+  client.on('error', (err) => {
+    console.warn(`[shelldesk] SSH error ${getConnectionAddress(activeConnection)}:`, toErrorMessage(err));
+  });
+
+  client.once('close', (hadError) => {
+    const currentConnection = activeConnections.get(activeConnection.id);
+
+    if (
+      currentConnection !== activeConnection ||
+      activeConnection.client !== client ||
+      activeConnection.isClosing
+    ) {
+      return;
+    }
+
+    const address = getConnectionAddress(activeConnection);
+    const reason = hadError
+      ? `SSH 连接异常断开 (${address})`
+      : `SSH 连接已断开 (${address})`;
+
+    console.info(`[shelldesk] SSH close ${address} hadError=${Boolean(hadError)}`);
+    markActiveConnectionDisconnected(activeConnection, reason);
+  });
+}
+
+async function reconnectActiveConnection(activeConnection, reason = 'SSH 连接已断开。') {
+  if (!activeConnection) {
+    throw new Error('连接已断开，请重新连接。');
+  }
+
+  if (!isConnectionWindowAlive(activeConnection)) {
+    throw new Error('连接窗口已关闭，不再自动重连。');
+  }
+
+  if (!activeConnection.sshConfig) {
+    throw new Error('缺少 SSH 重连配置，请重新连接。');
+  }
+
+  if (activeConnection.reconnectPromise) {
+    return activeConnection.reconnectPromise;
+  }
+
+  activeConnection.reconnectPromise = (async () => {
+    const oldClient = activeConnection.client;
+    activeConnection.clientOnline = false;
+    notifyConnectionEvent('connection:reconnecting', {
+      connectionId: activeConnection.id,
+      reason,
+      startedAt: new Date().toISOString(),
+    });
+
+    if (oldClient) {
+      try {
+        oldClient.removeAllListeners('close');
+        oldClient.removeAllListeners('error');
+        oldClient.on('error', () => undefined);
+        oldClient.end();
+      } catch {
+        // Ignore stale client shutdown errors before reconnecting.
+      }
+    }
+
+    const nextClient = await connectSshClient(activeConnection.sshConfig);
+
+    if (
+      activeConnections.get(activeConnection.id) !== activeConnection ||
+      !isConnectionWindowAlive(activeConnection)
+    ) {
+      nextClient.end();
+      throw new Error('连接窗口已关闭，不再自动重连。');
+    }
+
+    bindActiveConnectionClient(activeConnection, nextClient);
+    activeConnection.reconnectedAt = new Date().toISOString();
+    notifyConnectionEvent('connection:restored', {
+      connectionId: activeConnection.id,
+      restoredAt: activeConnection.reconnectedAt,
+    });
+
+    return activeConnection;
+  })().catch((error) => {
+    activeConnection.clientOnline = false;
+    activeConnection.lastDisconnectReason = `SSH 自动重连失败：${toErrorMessage(error)}`;
+    throw error;
+  }).finally(() => {
+    activeConnection.reconnectPromise = null;
+  });
+
+  return activeConnection.reconnectPromise;
+}
+
+async function ensureActiveConnectionClient(connectionId) {
+  const activeConnection = getActiveConnection(connectionId);
+
+  if (activeConnection.clientOnline && activeConnection.client) {
+    return activeConnection;
+  }
+
+  return reconnectActiveConnection(
+    activeConnection,
+    activeConnection.lastDisconnectReason || 'SSH 连接已断开，正在自动重连。',
+  );
+}
+
+async function withActiveConnectionClientRetry(connectionId, operation) {
+  const activeConnection = await ensureActiveConnectionClient(connectionId);
+
+  try {
+    return await operation(activeConnection);
+  } catch (error) {
+    if (!isRecoverableSshError(error)) {
+      throw error;
+    }
+
+    const reason = `SSH 通道不可用，正在自动重连：${toErrorMessage(error)}`;
+    markActiveConnectionDisconnected(activeConnection, reason);
+    const reconnectedConnection = await reconnectActiveConnection(activeConnection, reason);
+
+    return operation(reconnectedConnection);
+  }
 }
 
 function createBufferedReader(socket) {
@@ -330,7 +523,11 @@ async function forwardOut(client, destinationHost, destinationPort, sourcePort =
   }
 }
 
-async function handleSocksClient(client, socket) {
+async function resolveSocksClient(clientOrProvider) {
+  return typeof clientOrProvider === 'function' ? await clientOrProvider() : clientOrProvider;
+}
+
+async function handleSocksClient(clientOrProvider, socket) {
   const reader = createBufferedReader(socket);
 
   try {
@@ -394,6 +591,7 @@ async function handleSocksClient(client, socket) {
 
     let stream;
     try {
+      const client = await resolveSocksClient(clientOrProvider);
       stream = await forwardOut(client, destinationHost, destinationPort);
     } catch (error) {
       console.warn(`[shelldesk] SOCKS CONNECT failed ${target}: ${toErrorMessage(error)}`);
@@ -420,10 +618,10 @@ async function handleSocksClient(client, socket) {
   }
 }
 
-function createSocksProxy(client) {
+function createSocksProxy(clientOrProvider) {
   return new Promise((resolve, reject) => {
     const server = net.createServer((socket) => {
-      void handleSocksClient(client, socket);
+      void handleSocksClient(clientOrProvider, socket);
     });
 
     const fail = (error) => {
@@ -474,6 +672,10 @@ function notifyConnectionClosed(connectionId, reason) {
 }
 
 function closeServer(server) {
+  if (!server) {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => {
     try {
       server.close(() => resolve());
@@ -491,6 +693,7 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   }
 
   activeConnections.delete(connectionId);
+  activeConnection.isClosing = true;
   if (activeConnection.terminalSessions) {
     for (const stream of activeConnection.terminalSessions.values()) {
       stream.removeAllListeners();
@@ -531,13 +734,17 @@ function toConnectionInfo(activeConnection) {
 
 module.exports = {
   activeConnections,
+  bindActiveConnectionClient,
   closeActiveConnection,
   connectSshClient,
   createBufferedReader,
   createSocksProxy,
+  ensureActiveConnectionClient,
   forwardOut,
   getActiveConnection,
   registerConnectionCleanup,
+  reconnectActiveConnection,
   setClientConnectionMetadata,
   toConnectionInfo,
+  withActiveConnectionClientRetry,
 };

@@ -6,7 +6,11 @@ const mongodb = require('mongodb');
 const { MongoClient } = mongodb;
 const EJSON = mongodb.EJSON || mongodb.BSON?.EJSON;
 const { Client: PostgresClient } = require('pg');
-const { forwardOut, getActiveConnection, registerConnectionCleanup } = require('./connectionManager.cjs');
+const {
+  forwardOut,
+  registerConnectionCleanup,
+  withActiveConnectionClientRetry,
+} = require('./connectionManager.cjs');
 const { execRemoteCommandRaw, statRemotePath, validateRemotePath } = require('./remoteConnectionHandlers.cjs');
 const {
   isPlainObject,
@@ -92,8 +96,6 @@ function registerDatabaseHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:mysql-connect', async (_event, connectionId, rawConfig) => {
-    const activeConnection = getActiveConnection(connectionId);
-
     if (!isPlainObject(rawConfig)) {
       throw new Error('MySQL 连接配置无效。');
     }
@@ -120,13 +122,13 @@ function registerDatabaseHandlers(registerIpcHandler) {
       }
     }
 
-    const { connection, transport } = await createMysqlConnection(activeConnection, {
+    const { connection, transport } = await withActiveConnectionClientRetry(connectionId, (activeConnection) => createMysqlConnection(activeConnection, {
       host: mysqlHost,
       user: mysqlUser,
       password: mysqlPassword,
       database: mysqlDatabase,
       port: mysqlPort,
-    });
+    }));
 
     activeMysqlConnections.set(key, { connection, connectionId, mysqlId, transport });
 
@@ -334,8 +336,6 @@ function registerDatabaseHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:mongo-connect', async (_event, connectionId, rawConfig) => {
-    const activeConnection = getActiveConnection(connectionId);
-
     if (!isPlainObject(rawConfig)) {
       throw new Error('MongoDB 连接配置无效。');
     }
@@ -364,7 +364,8 @@ function registerDatabaseHandlers(registerIpcHandler) {
       }
     }
 
-    const { server: tunnelServer, localPort } = await createTcpTunnel(activeConnection.client, mongoHost, mongoPort);
+    const { server: tunnelServer, localPort } = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      createTcpTunnel(activeConnection.client, mongoHost, mongoPort));
     const client = new MongoClient(`mongodb://127.0.0.1:${localPort}`, {
       auth: mongoUser ? { username: mongoUser, password: mongoPassword } : undefined,
       authSource: mongoUser ? authSource : undefined,
@@ -490,8 +491,6 @@ function registerDatabaseHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:postgres-connect', async (_event, connectionId, rawConfig) => {
-    const activeConnection = getActiveConnection(connectionId);
-
     if (!isPlainObject(rawConfig)) {
       throw new Error('PostgreSQL 连接配置无效。');
     }
@@ -515,7 +514,8 @@ function registerDatabaseHandlers(registerIpcHandler) {
       }
     }
 
-    const stream = adaptConnectedSocketStream(await forwardOut(activeConnection.client, postgresHost, postgresPort));
+    const stream = adaptConnectedSocketStream(await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      forwardOut(activeConnection.client, postgresHost, postgresPort)));
     const client = new PostgresClient({
       host: postgresHost,
       port: postgresPort,
@@ -758,7 +758,6 @@ function registerDatabaseHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:redis-connect', async (_event, connectionId, rawConfig) => {
-    const activeConnection = getActiveConnection(connectionId);
     if (!isPlainObject(rawConfig)) { throw new Error('Redis 连接配置无效。'); }
     const redisHost = readBoundedString(rawConfig.host || '127.0.0.1', 'Redis 主机', 256);
     const redisPort = readIntegerInRange(rawConfig.port, 'Redis 端口', 1, 65535, 6379);
@@ -771,7 +770,8 @@ function registerDatabaseHandlers(registerIpcHandler) {
       try { await existing.connection.ping(); return { redisId, alreadyConnected: true }; }
       catch { existing.tunnelServer.close(); activeRedisConnections.delete(key); }
     }
-    const { server: tunnelServer, localPort } = await createRedisTunnel(activeConnection.client, redisHost, redisPort);
+    const { server: tunnelServer, localPort } = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      createRedisTunnel(activeConnection.client, redisHost, redisPort));
     const redis = new Redis({
       host: '127.0.0.1', port: localPort, password: redisPassword, db: redisDb,
       lazyConnect: true, connectTimeout: 15000, maxRetriesPerRequest: 1,
@@ -1121,16 +1121,20 @@ exit $LASTEXITCODE
   }
 
   registerIpcHandler('connection:sqlite-open', async (_event, connectionId, rawFilePath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const filePath = validateRemotePath(rawFilePath);
     if (filePath === '.' || filePath === '/') {
       throw new Error('无效的 SQLite 文件路径。');
     }
-    const stat = await statRemotePath(activeConnection.client, filePath);
-    if (stat.type !== 'file') {
-      throw new Error('请选择可读取的 SQLite 文件。');
-    }
-    await execSqliteOnRemote(activeConnection.client, activeConnection.displayHost.systemType, filePath, 'PRAGMA schema_version');
+    const activeConnection = await withActiveConnectionClientRetry(connectionId, async (connection) => {
+      const stat = await statRemotePath(connection.client, filePath);
+
+      if (stat.type !== 'file') {
+        throw new Error('请选择可读取的 SQLite 文件。');
+      }
+
+      await execSqliteOnRemote(connection.client, connection.displayHost.systemType, filePath, 'PRAGMA schema_version');
+      return connection;
+    });
     const sqliteId = crypto.randomUUID();
     const key = getSqliteKey(connectionId, sqliteId);
     activeSqliteSessions.set(key, {

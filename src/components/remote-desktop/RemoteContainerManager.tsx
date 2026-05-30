@@ -61,6 +61,13 @@ interface ContainerDetail {
   inspectError?: string;
 }
 
+interface ContainerTroubleshooting {
+  title: string;
+  message: string;
+  commands: string;
+  rawOutput: string;
+}
+
 type ManagerTab = 'containers' | 'images';
 type ContainerFilter = 'all' | ContainerState;
 type DetailTab = 'summary' | 'logs' | 'inspect' | 'exec';
@@ -650,6 +657,57 @@ function buildContainerDiagnostics(detail: ContainerDetail) {
   ].join('\n');
 }
 
+function buildDockerRestartCommand(containerId: string) {
+  const target = shellSingleQuote(containerId);
+
+  return [
+    '# 会重启 Docker daemon，请先确认这台主机上的运行中容器可短暂中断。',
+    'set -e',
+    'if command -v systemctl >/dev/null 2>&1; then',
+    '  if [ "$(id -u)" -eq 0 ]; then',
+    '    systemctl restart docker',
+    '  else',
+    '    sudo systemctl restart docker',
+    '  fi',
+    'else',
+    '  if [ "$(id -u)" -eq 0 ]; then',
+    '    service docker restart',
+    '  else',
+    '    sudo service docker restart',
+    '  fi',
+    'fi',
+    `docker start ${target}`,
+  ].join('\n');
+}
+
+function createContainerTroubleshooting(
+  output: string,
+  runtime: ContainerRuntime,
+  action: ContainerAction,
+  container: ContainerSummary,
+): ContainerTroubleshooting | null {
+  if (
+    runtime !== 'docker' ||
+    (action !== 'start' && action !== 'restart') ||
+    !/iptables/i.test(output) ||
+    !/\bDOCKER\b/.test(output) ||
+    !/No chain\/target\/match by that name/i.test(output)
+  ) {
+    return null;
+  }
+
+  return {
+    title: 'Docker NAT 规则链缺失',
+    message: [
+      'Docker 在发布端口时找不到 iptables nat 表里的 DOCKER 链。',
+      '这通常发生在 firewalld、iptables 或 nftables 规则被 reload/flush 后，Docker daemon 还没重建自己的链。',
+      '一般处理方式是重启 Docker daemon，然后重新启动该容器。',
+    ].join(' '),
+    commands: buildDockerRestartCommand(container.id),
+    rawOutput: output,
+  };
+}
+
 function RemoteContainerManager({ connectionId, systemType }: RemoteContainerManagerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const runtimeRef = useRef<ContainerRuntime | null>(null);
@@ -679,6 +737,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [success, setSuccess] = useState('');
+  const [troubleshooting, setTroubleshooting] = useState<ContainerTroubleshooting | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const setRuntimeValue = useCallback((value: ContainerRuntime | null) => {
@@ -698,6 +757,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setRuntimeLoading(true);
     setError('');
     setNotice('');
+    setTroubleshooting(null);
 
     try {
       const result = await runCmd(connectionId, getDetectRuntimeCommand(isWindowsHost));
@@ -733,6 +793,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     setError('');
     setNotice('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
@@ -792,6 +853,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     setError('');
     setNotice('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
@@ -837,6 +899,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     detailRequestIdRef.current = requestId;
     setDetailLoading(true);
     setError('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = await detectRuntime();
@@ -936,13 +999,22 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setError('');
     setNotice('');
     setSuccess('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = await detectRuntime();
       const result = await runCmd(connectionId, getContainerActionCommand(activeRuntime, action, container.id, isWindowsHost));
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '容器操作失败，可能需要更高权限。');
+        const output = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
+        const nextTroubleshooting = createContainerTroubleshooting(output, activeRuntime, action, container);
+
+        if (nextTroubleshooting) {
+          setTroubleshooting(nextTroubleshooting);
+          throw new Error('容器启动失败：Docker 网络规则异常，已生成诊断与修复命令。');
+        }
+
+        throw new Error(output || '容器操作失败，可能需要更高权限。');
       }
 
       setSuccess(`${containerActionLabels[action].success}：${container.name}`);
@@ -977,6 +1049,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setError('');
     setNotice('');
     setSuccess('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = await detectRuntime();
@@ -1004,6 +1077,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setError('');
     setNotice('');
     setSuccess('');
+    setTroubleshooting(null);
 
     try {
       const activeRuntime = await detectRuntime();
@@ -1037,6 +1111,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setError('');
     setNotice('');
     setSuccess('');
+    setTroubleshooting(null);
     setExecOutput('');
 
     try {
@@ -1303,6 +1378,23 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       {error ? <div className="container-alert danger">{error}</div> : null}
       {notice ? <div className="container-alert info">{notice}</div> : null}
       {success ? <div className="container-alert success">{success}</div> : null}
+      {troubleshooting ? (
+        <section className="container-troubleshooting" aria-label="容器故障诊断">
+          <div>
+            <strong>{troubleshooting.title}</strong>
+            <p>{troubleshooting.message}</p>
+          </div>
+          <div className="container-troubleshooting-actions">
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.commands, '修复命令')}>
+              复制修复命令
+            </button>
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.rawOutput, '原始错误')}>
+              复制原始错误
+            </button>
+          </div>
+          <pre>{troubleshooting.commands}</pre>
+        </section>
+      ) : null}
 
       {activeTab === 'containers' ? (
         <div className="container-content">

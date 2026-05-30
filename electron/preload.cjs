@@ -228,6 +228,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
     onTerminalExit: (callback) => onIpc('terminal:exit', callback),
     onVncDiagnostic: (callback) => onIpc('vnc:diagnostic', callback),
     onConnectionClosed: (callback) => onIpc('connection:closed', callback),
+    onConnectionReconnecting: (callback) => onIpc('connection:reconnecting', callback),
+    onConnectionRestored: (callback) => onIpc('connection:restored', callback),
     onWindowMaximizedChange: (callback) => onIpc('window:maximize-state-changed', callback),
     onVaultChanged: (callback) => onIpc('vault:changed', callback),
     onTransferProgress: (callback) => onIpc('transfer:progress', callback),
