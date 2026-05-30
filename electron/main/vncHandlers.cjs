@@ -3,9 +3,11 @@ const http = require('node:http');
 const { WebSocket, WebSocketServer } = require('ws');
 const {
   createBufferedReader,
+  ensureActiveConnectionClient,
   forwardOut,
   getActiveConnection,
   registerConnectionCleanup,
+  withActiveConnectionClientRetry,
 } = require('./connectionManager.cjs');
 const { isPlainObject, readBoundedString, readIntegerInRange, toErrorMessage } = require('./validation.cjs');
 
@@ -233,7 +235,11 @@ function registerVncHandlers(registerIpcHandler) {
     };
   }
 
-  function createVncWebSocketProxy(client, vncHost, vncPort, onDiagnostic) {
+  async function resolveVncClient(clientOrProvider) {
+    return typeof clientOrProvider === 'function' ? await clientOrProvider() : clientOrProvider;
+  }
+
+  function createVncWebSocketProxy(clientOrProvider, vncHost, vncPort, onDiagnostic) {
     return new Promise((resolve, reject) => {
       const webSockets = new Set();
       const remoteStreams = new Set();
@@ -372,7 +378,8 @@ function registerVncHandlers(registerIpcHandler) {
           pendingClientChunks.push(chunk);
         });
 
-        createVncTargetStream(client, vncHost, vncPort).then((stream) => {
+        resolveVncClient(clientOrProvider).then((client) =>
+          createVncTargetStream(client, vncHost, vncPort)).then((stream) => {
           if (isClosed) {
             stream.destroy();
             return;
@@ -454,8 +461,6 @@ function registerVncHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:vnc-probe', async (_event, connectionId, rawConfig) => {
-    const activeConnection = getActiveConnection(connectionId);
-
     if (!isPlainObject(rawConfig)) {
       throw new Error('VNC 连接配置无效。');
     }
@@ -463,7 +468,8 @@ function registerVncHandlers(registerIpcHandler) {
     const vncHost = readBoundedString(rawConfig.host || '127.0.0.1', 'VNC 主机', 256);
     const vncPort = readIntegerInRange(rawConfig.port, 'VNC 端口', 1, 65535, 5900);
 
-    return probeVncTarget(activeConnection.client, vncHost, vncPort);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      probeVncTarget(activeConnection.client, vncHost, vncPort));
   });
 
   registerIpcHandler('connection:vnc-start', async (event, connectionId, rawConfig) => {
@@ -489,7 +495,10 @@ function registerVncHandlers(registerIpcHandler) {
         event.sender.send('vnc:diagnostic', { connectionId, vncId, stage, detail });
       }
     };
-    const proxy = await createVncWebSocketProxy(activeConnection.client, vncHost, vncPort, sendDiagnostic);
+    const proxy = await createVncWebSocketProxy(async () => {
+      const connection = await ensureActiveConnectionClient(connectionId);
+      return connection.client;
+    }, vncHost, vncPort, sendDiagnostic);
 
     activeVncSessions.set(key, {
       ...proxy,

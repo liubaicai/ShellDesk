@@ -7,7 +7,10 @@ const {
   maxRemoteTextFileBytes,
   maxRemoteTextWriteBytes,
 } = require('./constants.cjs');
-const { getActiveConnection } = require('./connectionManager.cjs');
+const {
+  getActiveConnection,
+  withActiveConnectionClientRetry,
+} = require('./connectionManager.cjs');
 const {
   createPowerShellCommand,
   escapeShellSingleQuotedArg,
@@ -1408,7 +1411,6 @@ function execRemoteCommandStream(event, client, command, stdin = '', streamId) {
 
 function registerRemoteConnectionHandlers(registerIpcHandler) {
   registerIpcHandler('connection:start-terminal', async (event, connectionId, rawTerminalId, rawColumns, rawRows, rawLaunchOptions) => {
-    const activeConnection = getActiveConnection(connectionId);
     const terminalId = validateTerminalId(rawTerminalId);
     const columns = Number(rawColumns) || 100;
     const rows = Number(rawRows) || 30;
@@ -1418,80 +1420,84 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       throw new Error('终端尺寸无效。');
     }
 
-    const existingStream = activeConnection.terminalSessions.get(terminalId);
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      const existingStream = activeConnection.terminalSessions.get(terminalId);
 
-    if (existingStream && !existingStream.destroyed) {
-      return true;
-    }
+      if (existingStream && !existingStream.destroyed) {
+        return true;
+      }
 
-    await new Promise((resolve, reject) => {
-      let settled = false;
-      const startTimer = setTimeout(() => {
-        settled = true;
-        reject(new Error('终端启动超时：远程服务器未返回交互式 Shell。'));
-      }, 15000);
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const startTimer = setTimeout(() => {
+          settled = true;
+          reject(new Error('终端启动超时：远程服务器未返回交互式 Shell。'));
+        }, 15000);
 
-      activeConnection.client.shell({ term: 'xterm-256color', cols: columns, rows }, (error, stream) => {
-        if (settled) {
-          if (stream) {
-            stream.on('error', () => undefined);
-            stream.end();
-          }
-          return;
-        }
-
-        settled = true;
-        clearTimeout(startTimer);
-
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        activeConnection.terminalSessions.set(terminalId, stream);
-        let streamClosed = false;
-        let exitCode = null;
-        let exitSignal = null;
-        const closeTerminalStream = () => {
-          if (streamClosed) {
+        activeConnection.client.shell({ term: 'xterm-256color', cols: columns, rows }, (error, stream) => {
+          if (settled) {
+            if (stream) {
+              stream.on('error', () => undefined);
+              stream.end();
+            }
             return;
           }
 
-          streamClosed = true;
+          settled = true;
+          clearTimeout(startTimer);
 
-          if (activeConnection.terminalSessions.get(terminalId) === stream) {
-            activeConnection.terminalSessions.delete(terminalId);
+          if (error) {
+            reject(error);
+            return;
           }
 
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('terminal:exit', { connectionId, terminalId, code: exitCode, signal: exitSignal });
-          }
-        };
+          activeConnection.terminalSessions.set(terminalId, stream);
+          let streamClosed = false;
+          let exitCode = null;
+          let exitSignal = null;
+          const closeTerminalStream = () => {
+            if (streamClosed) {
+              return;
+            }
 
-        stream.on('data', (chunk) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
+            streamClosed = true;
+
+            if (activeConnection.terminalSessions.get(terminalId) === stream) {
+              activeConnection.terminalSessions.delete(terminalId);
+            }
+
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('terminal:exit', { connectionId, terminalId, code: exitCode, signal: exitSignal });
+            }
+          };
+
+          stream.on('data', (chunk) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
+            }
+          });
+          stream.stderr.on('data', (chunk) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
+            }
+          });
+          stream.once('exit', (code, signal) => {
+            exitCode = Number.isInteger(code) ? code : null;
+            exitSignal = typeof signal === 'string' ? signal : null;
+          });
+          stream.once('error', closeTerminalStream);
+          stream.once('close', closeTerminalStream);
+          const startupInput = createTerminalStartupInput(launchOptions, activeConnection.displayHost.systemType);
+
+          if (startupInput) {
+            stream.write(startupInput);
           }
+
+          resolve();
         });
-        stream.stderr.on('data', (chunk) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
-          }
-        });
-        stream.once('exit', (code, signal) => {
-          exitCode = Number.isInteger(code) ? code : null;
-          exitSignal = typeof signal === 'string' ? signal : null;
-        });
-        stream.once('error', closeTerminalStream);
-        stream.once('close', closeTerminalStream);
-        const startupInput = createTerminalStartupInput(launchOptions, activeConnection.displayHost.systemType);
-
-        if (startupInput) {
-          stream.write(startupInput);
-        }
-
-        resolve();
       });
+
+      return true;
     });
 
     return true;
@@ -1549,40 +1555,40 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
   });
 
   registerIpcHandler('connection:list-directory', async (_event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateRemotePath(rawPath);
-    const entries = await listRemoteDirectory(activeConnection.client, remotePath);
+    const entries = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      listRemoteDirectory(activeConnection.client, remotePath));
 
     return { path: remotePath, entries };
   });
 
   registerIpcHandler('connection:create-directory', async (_event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateMutableRemotePath(rawPath);
-    await createRemoteDirectory(activeConnection.client, remotePath);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      createRemoteDirectory(activeConnection.client, remotePath));
     return true;
   });
 
   registerIpcHandler('connection:delete-path', async (_event, connectionId, rawPath, rawType) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateMutableRemotePath(rawPath);
     const entryType = rawType === 'directory' ? 'directory' : 'file';
-    await deleteRemotePath(activeConnection.client, remotePath, entryType);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      deleteRemotePath(activeConnection.client, remotePath, entryType));
     return true;
   });
 
   registerIpcHandler('connection:rename-path', async (_event, connectionId, rawOldPath, rawNewPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const oldPath = validateMutableRemotePath(rawOldPath);
     const newPath = validateMutableRemotePath(rawNewPath);
-    await renameRemotePath(activeConnection.client, oldPath, newPath);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      renameRemotePath(activeConnection.client, oldPath, newPath));
     return true;
   });
 
   registerIpcHandler('connection:create-file', async (_event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateMutableRemotePath(rawPath);
-    await createRemoteFile(activeConnection.client, remotePath);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      createRemoteFile(activeConnection.client, remotePath));
     return true;
   });
 
@@ -1655,32 +1661,32 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:stat-path', async (_event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateRemotePath(rawPath);
-    return await statRemotePath(activeConnection.client, remotePath);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      statRemotePath(activeConnection.client, remotePath));
   });
 
   registerIpcHandler('connection:set-path-permissions', async (_event, connectionId, rawPath, rawOptions) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateMutableRemotePath(rawPath);
     const options = readPathPermissionOptions(rawOptions);
-    await chmodRemotePath(activeConnection.client, remotePath, options.mode, options.recursive);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      chmodRemotePath(activeConnection.client, remotePath, options.mode, options.recursive));
     return true;
   });
 
   registerIpcHandler('connection:read-file', async (_event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateRemotePath(rawPath);
-    return await readRemoteFile(activeConnection.client, remotePath);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      readRemoteFile(activeConnection.client, remotePath));
   });
 
   registerIpcHandler('connection:write-file', async (_event, connectionId, rawPath, content) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateMutableRemotePath(rawPath);
     if (typeof content !== 'string') {
       throw new Error('文件内容必须是字符串。');
     }
-    await writeRemoteFile(activeConnection.client, remotePath, content);
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      writeRemoteFile(activeConnection.client, remotePath, content));
     return true;
   });
 
@@ -1780,7 +1786,6 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
   }
 
   registerIpcHandler('connection:download-file', async (event, connectionId, rawPath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const remotePath = validateRemotePath(rawPath);
     const remoteFileName = getRemoteFileName(remotePath);
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1794,12 +1799,12 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       return { canceled: true };
     }
 
-    const size = await downloadRemoteFileToPath(activeConnection.client, remotePath, result.filePath, event.sender, connectionId);
+    const size = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      downloadRemoteFileToPath(activeConnection.client, remotePath, result.filePath, event.sender, connectionId));
     return { canceled: false, filePath: result.filePath, size };
   });
 
   registerIpcHandler('connection:upload-file', async (event, connectionId, rawRemotePath) => {
-    const activeConnection = getActiveConnection(connectionId);
     const currentPath = validateRemotePath(rawRemotePath);
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
 
@@ -1824,7 +1829,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
     destroyActiveStream(connectionId);
 
-    await new Promise((resolve, reject) => {
+    await withActiveConnectionClientRetry(connectionId, (activeConnection) => new Promise((resolve, reject) => {
       activeConnection.client.sftp((sftpError, sftp) => {
         if (sftpError) { reject(sftpError); return; }
         let settled = false;
@@ -1885,43 +1890,43 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         writeStream.on('close', () => end(true, null));
         readStream.pipe(writeStream);
       });
-    });
+    }));
 
     return { canceled: false, remotePath: targetRemotePath, size: stats.size };
   });
 
   registerIpcHandler('connection:get-status', async (_event, connectionId) => {
-    const activeConnection = getActiveConnection(connectionId);
-    return getRemoteStatus(activeConnection.client, activeConnection.displayHost.systemType);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      getRemoteStatus(activeConnection.client, activeConnection.displayHost.systemType));
   });
 
   registerIpcHandler('connection:get-system-info', async (_event, connectionId) => {
-    const activeConnection = getActiveConnection(connectionId);
-    return getRemoteSystemInfo(activeConnection.client, activeConnection.displayHost.systemType);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      getRemoteSystemInfo(activeConnection.client, activeConnection.displayHost.systemType));
   });
 
   registerIpcHandler('connection:get-metrics', async (_event, connectionId) => {
-    const activeConnection = getActiveConnection(connectionId);
-    return getRemoteMetrics(activeConnection.client, activeConnection.displayHost.systemType);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      getRemoteMetrics(activeConnection.client, activeConnection.displayHost.systemType));
   });
 
   registerIpcHandler('connection:run-command', async (_event, connectionId, rawCommand, rawStdin) => {
-    const activeConnection = getActiveConnection(connectionId);
     const command = readBoundedString(rawCommand, '命令', maxRemoteCommandLength, { rejectLineBreaks: false });
     const stdin = typeof rawStdin === 'string'
       ? readBoundedString(rawStdin, '命令输入', maxRemoteCommandInputLength, { required: false, trim: false, rejectLineBreaks: false })
       : '';
-    return execRemoteCommandRaw(activeConnection.client, command, stdin);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      execRemoteCommandRaw(activeConnection.client, command, stdin));
   });
 
   registerIpcHandler('connection:run-command-stream', async (event, connectionId, rawCommand, rawStdin, rawStreamId) => {
-    const activeConnection = getActiveConnection(connectionId);
     const command = readBoundedString(rawCommand, '命令', maxRemoteCommandLength, { rejectLineBreaks: false });
     const stdin = typeof rawStdin === 'string'
       ? readBoundedString(rawStdin, '命令输入', maxRemoteCommandInputLength, { required: false, trim: false, rejectLineBreaks: false })
       : '';
     const streamId = readBoundedString(rawStreamId, '命令流标识', 120);
-    return execRemoteCommandStream(event, activeConnection.client, command, stdin, streamId);
+    return withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+      execRemoteCommandStream(event, activeConnection.client, command, stdin, streamId));
   });
 
   registerIpcHandler('connection:compress', async (_event, connectionId, rawSourcePaths, rawFormat, rawDestPath) => {
@@ -1942,7 +1947,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
       const sourceArray = `@(${sourcePaths.map(quotePowerShellString).join(', ')})`;
       const command = createPowerShellCommand(`Compress-Archive -LiteralPath ${sourceArray} -DestinationPath ${quotePowerShellString(destPath)} -Force`);
-      await execSshCommand(activeConnection.client, command);
+      await withActiveConnectionClientRetry(connectionId, (connection) =>
+        execSshCommand(connection.client, command));
       return { format, destPath };
     }
 
@@ -1969,7 +1975,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         command = `zip -r ${escapedDest} ${escapedSources}`;
     }
 
-    await execSshCommand(activeConnection.client, command);
+    await withActiveConnectionClientRetry(connectionId, (connection) =>
+      execSshCommand(connection.client, command));
     return { format, destPath };
   });
 
@@ -1989,7 +1996,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       }
 
       command = createPowerShellCommand(`Expand-Archive -LiteralPath ${quotePowerShellString(archivePath)} -DestinationPath ${quotePowerShellString(destDir)} -Force`);
-      await execSshCommand(activeConnection.client, command);
+      await withActiveConnectionClientRetry(connectionId, (connection) =>
+        execSshCommand(connection.client, command));
       return { archivePath, destDir };
     }
 
@@ -2014,7 +2022,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       throw new Error(`不支持的压缩格式：${archiveName}`);
     }
 
-    await execSshCommand(activeConnection.client, command);
+    await withActiveConnectionClientRetry(connectionId, (connection) =>
+      execSshCommand(connection.client, command));
     return { archivePath, destDir };
   });
 }

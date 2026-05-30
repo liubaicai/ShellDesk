@@ -208,7 +208,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Oracle Linux 8 |  |  |
 | Alibaba Cloud Linux 3 |  |  |
 | TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS |  | [Report](docs/system-compatibility-reports/openeuler2403.md) |
+| openEuler 24.03 LTS | ✅ | [Report](docs/system-compatibility-reports/openeuler2403.md) |
 | openEuler 22.03 LTS |  |  |
 | Anolis OS 8 |  |  |
 | Kylin Server V10 |  |  |

@@ -2,11 +2,12 @@ const { app, ipcMain, session } = require('electron');
 const crypto = require('node:crypto');
 const {
   activeConnections,
+  bindActiveConnectionClient,
   closeActiveConnection,
   connectSshClient,
   createSocksProxy,
+  ensureActiveConnectionClient,
   getActiveConnection,
-  setClientConnectionMetadata,
   toConnectionInfo,
 } = require('./connectionManager.cjs');
 const { detectRemoteSystem } = require('./remoteConnectionHandlers.cjs');
@@ -72,6 +73,7 @@ function registerConnectionHandlers(registerIpcHandler) {
 
   ipcMain.handle('connection:connect', async (_event, rawHost) => {
     let client;
+    let activeConnection;
 
     try {
       const { displayHost, sshConfig } = validateHostRequest(rawHost);
@@ -81,11 +83,34 @@ function registerConnectionHandlers(registerIpcHandler) {
       } catch (systemError) {
         console.info(`[shelldesk] remote system detection failed: ${toErrorMessage(systemError)}`);
       }
-      setClientConnectionMetadata(client, { systemType: displayHost.systemType });
-      const { server, port } = await createSocksProxy(client);
       const id = crypto.randomUUID();
       const partition = `shelldesk-${id}`;
       const remoteSession = session.fromPartition(partition);
+      activeConnection = {
+        id,
+        client: null,
+        sshConfig,
+        socksServer: null,
+        proxyPort: 0,
+        partition,
+        browserSession: remoteSession,
+        browserCertificateTrust: new Set(),
+        displayHost,
+        connectedAt: new Date().toISOString(),
+        terminalSessions: new Map(),
+        clientOnline: false,
+        reconnectPromise: null,
+        lastDisconnectReason: '',
+      };
+
+      bindActiveConnectionClient(activeConnection, client);
+      activeConnections.set(id, activeConnection);
+      const { server, port } = await createSocksProxy(async () => {
+        const connection = await ensureActiveConnectionClient(id);
+        return connection.client;
+      });
+      activeConnection.socksServer = server;
+      activeConnection.proxyPort = port;
 
       await remoteSession.setProxy({
         mode: 'fixed_servers',
@@ -96,33 +121,6 @@ function registerConnectionHandlers(registerIpcHandler) {
       const publicProxy = await remoteSession.resolveProxy('http://example.com/');
       console.info(`[shelldesk] webview proxy ${partition}: 127.0.0.1 => ${loopbackProxy}; example.com => ${publicProxy}`);
       remoteSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-
-      const activeConnection = {
-        id,
-        client,
-        socksServer: server,
-        proxyPort: port,
-        partition,
-        browserSession: remoteSession,
-        browserCertificateTrust: new Set(),
-        displayHost,
-        connectedAt: new Date().toISOString(),
-        terminalSessions: new Map(),
-      };
-
-      activeConnections.set(id, activeConnection);
-      client.on('error', (err) => {
-        const address = `${displayHost.address}:${displayHost.port}`;
-        console.warn(`[shelldesk] SSH error ${address}:`, toErrorMessage(err));
-      });
-      client.once('close', (hadError) => {
-        const address = `${displayHost.address}:${displayHost.port}`;
-        const reason = hadError
-          ? `SSH 连接异常断开 (${address})`
-          : `SSH 连接已断开 (${address})`;
-        console.info(`[shelldesk] SSH close ${address} hadError=${Boolean(hadError)}`);
-        void closeActiveConnection(id, reason, true);
-      });
       createConnectionWindow(activeConnection);
 
       return {
@@ -130,7 +128,11 @@ function registerConnectionHandlers(registerIpcHandler) {
         connection: toConnectionInfo(activeConnection),
       };
     } catch (error) {
-      client?.end();
+      if (activeConnection) {
+        await closeActiveConnection(activeConnection.id, '连接初始化失败。').catch(() => undefined);
+      } else {
+        client?.end();
+      }
       return { ok: false, error: toConnectionErrorMessage(error) };
     }
   });

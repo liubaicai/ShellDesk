@@ -241,6 +241,52 @@
   color: var(--container-success);
 }
 
+.container-troubleshooting {
+  display: grid;
+  gap: 8px;
+  margin: 8px 10px 0;
+  border: 1px solid rgba(255, 207, 90, 0.26);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 207, 90, 0.08);
+  color: var(--container-muted-strong);
+}
+
+.container-troubleshooting strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--container-warning);
+  font-size: 12px;
+  font-weight: 860;
+}
+
+.container-troubleshooting p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.48;
+}
+
+.container-troubleshooting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.container-troubleshooting pre {
+  max-height: 170px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--container-border);
+  border-radius: 7px;
+  padding: 9px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--container-text);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .container-content {
   display: grid;
   min-height: 0;
@@ -895,7 +941,8 @@
 
 [data-theme="light"] .container-detail-body,
 [data-theme="light"] .container-chip-list code,
-[data-theme="light"] .container-modal-message code {
+[data-theme="light"] .container-modal-message code,
+[data-theme="light"] .container-troubleshooting pre {
   background: rgba(16, 32, 51, 0.035);
 }
 

@@ -208,7 +208,7 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | Oracle Linux 8 |  |  |
 | Alibaba Cloud Linux 3 |  |  |
 | TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS |  | [报告](docs/system-compatibility-reports/openeuler2403.md) |
+| openEuler 24.03 LTS | ✅ | [报告](docs/system-compatibility-reports/openeuler2403.md) |
 | openEuler 22.03 LTS |  |  |
 | Anolis OS 8 |  |  |
 | Kylin Server V10 |  |  |

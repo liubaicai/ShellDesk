@@ -789,6 +789,14 @@ function RemoteTerminal({
       setSessionStatus('disconnected');
       terminal.writeln(`\r\nSSH 连接已断开${payload.reason ? `：${payload.reason}` : '。'}`);
     });
+    const removeConnectionRestored = api.events.onConnectionRestored((payload) => {
+      if (payload.connectionId !== connectionId || disposed) {
+        return;
+      }
+
+      terminal.writeln('\r\nSSH 已自动重连，正在重新创建终端会话...\r\n');
+      void startTerminalSession();
+    });
     const inputDisposable = terminal.onData((data) => {
       if (!isTerminalReadyRef.current) {
         return;
@@ -824,6 +832,7 @@ function RemoteTerminal({
       removeTerminalData();
       removeTerminalExit();
       removeConnectionClosed();
+      removeConnectionRestored();
 
       if (supportsTerminalIpcOptions && !useLegacyTerminalIpcRef.current) {
         api.connections.closeTerminal(connectionId, terminalId).catch(() => undefined);
