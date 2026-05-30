@@ -45,6 +45,7 @@
   - [应用设置、日志和备份](#应用设置日志和备份)
 - [远程桌面应用](#远程桌面应用)
 - [数据与安全](#数据与安全)
+- [兼容性说明](#兼容性说明)
 - [快速开始](#快速开始)
   - [环境要求](#环境要求)
   - [安装依赖](#安装依赖)
@@ -54,7 +55,6 @@
 - [项目结构](#项目结构)
 - [开发约定](#开发约定)
 - [路线方向](#路线方向)
-- [兼容性说明](#兼容性说明)
 - [开源协议](#开源协议)
 
 ---
@@ -174,6 +174,59 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 - 导出的配置 JSON 可能包含主机、密码、私钥内容和密钥口令，只应保存在可信位置
 - 渲染进程启用 `contextIsolation`、禁用 `nodeIntegration`，通过 preload 暴露受控 API
 - Electron sandbox 下不可用的 `prompt`、`confirm`、`alert` 已用自定义模态替代
+
+---
+
+## 兼容性说明
+
+以下列表用于记录 ShellDesk 远程系统工具的兼容性验证计划。状态列和说明列暂时留空；完成对应环境测试后，可在第二列填入 `✓`，并按需补充说明。
+
+| 发行版 / 环境 | 状态 | 说明 |
+| :--- | :---: | :--- |
+| Ubuntu 24.04 LTS | ✅ | [报告](docs/system-compatibility-reports/ubuntu2404.md) |
+| Ubuntu 22.04 LTS |  |  |
+| Ubuntu 20.04 LTS |  |  |
+| Debian 12 Bookworm | ✅ | [报告](docs/system-compatibility-reports/debian12.md) |
+| Debian 11 Bullseye |  |  |
+| RHEL 9 | ✅ | [报告](docs/system-compatibility-reports/rhel9.md) |
+| RHEL 8 |  |  |
+| Rocky Linux 9 |  |  |
+| Rocky Linux 8 |  |  |
+| AlmaLinux 9 |  |  |
+| AlmaLinux 8 |  |  |
+| CentOS Stream 9 |  |  |
+| CentOS Stream 8 |  |  |
+| CentOS 7 |  |  |
+| Fedora Server 41 |  |  |
+| Fedora Workstation 41 |  |  |
+| openSUSE Leap 15.6 |  | [报告](docs/system-compatibility-reports/opensuse-leap156.md) |
+| openSUSE Tumbleweed |  |  |
+| SUSE Linux Enterprise Server 15 SP6 |  |  |
+| Amazon Linux 2023 |  |  |
+| Amazon Linux 2 |  |  |
+| Oracle Linux 9 |  |  |
+| Oracle Linux 8 |  |  |
+| Alibaba Cloud Linux 3 |  |  |
+| TencentOS Server 4 |  |  |
+| openEuler 24.03 LTS |  | [报告](docs/system-compatibility-reports/openeuler2403.md) |
+| openEuler 22.03 LTS |  |  |
+| Anolis OS 8 |  |  |
+| Kylin Server V10 |  |  |
+| UOS Server 20 |  |  |
+| Linux Mint 22 |  |  |
+| Pop!_OS 22.04 LTS |  |  |
+| Raspberry Pi OS 12 Bookworm |  |  |
+| Alpine Linux 3.20 |  |  |
+| Alpine Linux 3.19 |  |  |
+| Windows Server 2025 |  |  |
+| Windows Server 2022 |  |  |
+| Windows Server 2019 |  |  |
+| Windows Server 2016 |  |  |
+| Windows Server 2022 Server Core |  |  |
+| Windows Server 2019 Server Core |  |  |
+| Windows 11 | ✅ | [报告](docs/system-compatibility-reports/windows11.md) |
+| Windows 10 | ✅ | [报告](docs/system-compatibility-reports/windows10.md) |
+| Windows Server 2012 R2 |  |  |
 
 ---
 
@@ -316,60 +369,6 @@ ShellDesk/
 - 提升远程系统工具在不同 Linux 发行版与 Windows 环境下的适配
 - 为关键 IPC、数据校验和远程工具解析器补充自动化测试
 - 逐步完善可访问性、键盘导航和高对比度体验
-
----
-
-## 兼容性说明
-
-以下列表用于记录 ShellDesk 远程系统工具的兼容性验证计划。状态列和说明列暂时留空；完成对应环境测试后，可在第二列填入 `✓`，并按需补充说明。
-
-| 发行版 / 环境 | 状态 | 说明 |
-| :--- | :---: | :--- |
-| Ubuntu 24.04 LTS | ✅ | [报告](docs/system-compatibility-reports/ubuntu2404.md) |
-| Ubuntu 22.04 LTS |  |  |
-| Ubuntu 20.04 LTS |  |  |
-| Debian 12 Bookworm | ✅ | [报告](docs/system-compatibility-reports/debian12.md) |
-| Debian 11 Bullseye |  |  |
-| RHEL 9 | ✅ | [报告](docs/system-compatibility-reports/rhel9.md) |
-| RHEL 8 |  |  |
-| Rocky Linux 9 |  |  |
-| Rocky Linux 8 |  |  |
-| AlmaLinux 9 |  |  |
-| AlmaLinux 8 |  |  |
-| CentOS Stream 9 |  |  |
-| CentOS Stream 8 |  |  |
-| CentOS 7 |  |  |
-| Fedora Server 41 |  |  |
-| Fedora Workstation 41 |  |  |
-| openSUSE Leap 15.6 |  | [报告](docs/system-compatibility-reports/opensuse-leap156.md) |
-| openSUSE Tumbleweed |  |  |
-| SUSE Linux Enterprise Server 15 SP6 |  |  |
-| Amazon Linux 2023 |  |  |
-| Amazon Linux 2 |  |  |
-| Oracle Linux 9 |  |  |
-| Oracle Linux 8 |  |  |
-| Alibaba Cloud Linux 3 |  |  |
-| TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS |  | [报告](docs/system-compatibility-reports/openeuler2403.md) |
-| openEuler 22.03 LTS |  |  |
-| Anolis OS 8 |  |  |
-| Kylin Server V10 |  |  |
-| UOS Server 20 |  |  |
-| Linux Mint 22 |  |  |
-| Pop!_OS 22.04 LTS |  |  |
-| Raspberry Pi OS 12 Bookworm |  |  |
-| Alpine Linux 3.20 |  |  |
-| Alpine Linux 3.19 |  |  |
-| Windows Server 2025 |  |  |
-| Windows Server 2022 |  |  |
-| Windows Server 2019 |  |  |
-| Windows Server 2016 |  |  |
-| Windows Server 2022 Server Core |  |  |
-| Windows Server 2019 Server Core |  |  |
-| Windows 11 24H2 |  |  |
-| Windows 11 23H2 |  |  |
-| Windows 10 | ✅ | [报告](docs/system-compatibility-reports/windows10.md) |
-| Windows Server 2012 R2 |  |  |
 
 ---
 

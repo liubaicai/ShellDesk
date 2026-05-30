@@ -45,6 +45,7 @@
   - [App Settings, Logs, Backup, and Language](#app-settings-logs-backup-and-language)
 - [Remote Desktop Apps](#remote-desktop-apps)
 - [Data and Security](#data-and-security)
+- [Compatibility Notes](#compatibility-notes)
 - [Quick Start](#quick-start)
   - [Requirements](#requirements)
   - [Install Dependencies](#install-dependencies)
@@ -54,7 +55,6 @@
 - [Project Structure](#project-structure)
 - [Development Notes](#development-notes)
 - [Roadmap](#roadmap)
-- [Compatibility Notes](#compatibility-notes)
 - [License](#license)
 
 ---
@@ -174,6 +174,59 @@ ShellDesk stores local data in the Electron user data directory. The Settings pa
 - Exported config JSON may include hosts, passwords, private keys, and key passphrases, so it should only be stored in trusted locations
 - The renderer process uses `contextIsolation`, disables `nodeIntegration`, and accesses controlled APIs through preload
 - Electron sandbox limitations around `prompt`, `confirm`, and `alert` are handled with custom modals
+
+---
+
+## Compatibility Notes
+
+This table tracks the planned compatibility matrix for ShellDesk remote system tools. The status and notes columns are intentionally blank for now; after an environment is tested, put `✓` in the second column and add notes as needed.
+
+| Distribution / environment | Status | Notes |
+| :--- | :---: | :--- |
+| Ubuntu 24.04 LTS | ✅ | [Report](docs/system-compatibility-reports/ubuntu2404.md) |
+| Ubuntu 22.04 LTS |  |  |
+| Ubuntu 20.04 LTS |  |  |
+| Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
+| Debian 11 Bullseye |  |  |
+| RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
+| RHEL 8 |  |  |
+| Rocky Linux 9 |  |  |
+| Rocky Linux 8 |  |  |
+| AlmaLinux 9 |  |  |
+| AlmaLinux 8 |  |  |
+| CentOS Stream 9 |  |  |
+| CentOS Stream 8 |  |  |
+| CentOS 7 |  |  |
+| Fedora Server 41 |  |  |
+| Fedora Workstation 41 |  |  |
+| openSUSE Leap 15.6 |  | [Report](docs/system-compatibility-reports/opensuse-leap156.md) |
+| openSUSE Tumbleweed |  |  |
+| SUSE Linux Enterprise Server 15 SP6 |  |  |
+| Amazon Linux 2023 |  |  |
+| Amazon Linux 2 |  |  |
+| Oracle Linux 9 |  |  |
+| Oracle Linux 8 |  |  |
+| Alibaba Cloud Linux 3 |  |  |
+| TencentOS Server 4 |  |  |
+| openEuler 24.03 LTS |  | [Report](docs/system-compatibility-reports/openeuler2403.md) |
+| openEuler 22.03 LTS |  |  |
+| Anolis OS 8 |  |  |
+| Kylin Server V10 |  |  |
+| UOS Server 20 |  |  |
+| Linux Mint 22 |  |  |
+| Pop!_OS 22.04 LTS |  |  |
+| Raspberry Pi OS 12 Bookworm |  |  |
+| Alpine Linux 3.20 |  |  |
+| Alpine Linux 3.19 |  |  |
+| Windows Server 2025 |  |  |
+| Windows Server 2022 |  |  |
+| Windows Server 2019 |  |  |
+| Windows Server 2016 |  |  |
+| Windows Server 2022 Server Core |  |  |
+| Windows Server 2019 Server Core |  |  |
+| Windows 11 | ✅ | [Report](docs/system-compatibility-reports/windows11.md) |
+| Windows 10 | ✅ | [Report](docs/system-compatibility-reports/windows10.md) |
+| Windows Server 2012 R2 |  |  |
 
 ---
 
@@ -317,60 +370,6 @@ See [AGENTS.md](AGENTS.md) for the full collaboration and engineering notes.
 - Improve remote system tool compatibility across Linux distributions and Windows environments
 - Add automated tests for key IPC paths, data validation, and remote tool parsers
 - Continue improving accessibility, keyboard navigation, and high-contrast experiences
-
----
-
-## Compatibility Notes
-
-This table tracks the planned compatibility matrix for ShellDesk remote system tools. The status and notes columns are intentionally blank for now; after an environment is tested, put `✓` in the second column and add notes as needed.
-
-| Distribution / environment | Status | Notes |
-| :--- | :---: | :--- |
-| Ubuntu 24.04 LTS | ✅ | [Report](docs/system-compatibility-reports/ubuntu2404.md) |
-| Ubuntu 22.04 LTS |  |  |
-| Ubuntu 20.04 LTS |  |  |
-| Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
-| Debian 11 Bullseye |  |  |
-| RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
-| RHEL 8 |  |  |
-| Rocky Linux 9 |  |  |
-| Rocky Linux 8 |  |  |
-| AlmaLinux 9 |  |  |
-| AlmaLinux 8 |  |  |
-| CentOS Stream 9 |  |  |
-| CentOS Stream 8 |  |  |
-| CentOS 7 |  |  |
-| Fedora Server 41 |  |  |
-| Fedora Workstation 41 |  |  |
-| openSUSE Leap 15.6 |  | [Report](docs/system-compatibility-reports/opensuse-leap156.md) |
-| openSUSE Tumbleweed |  |  |
-| SUSE Linux Enterprise Server 15 SP6 |  |  |
-| Amazon Linux 2023 |  |  |
-| Amazon Linux 2 |  |  |
-| Oracle Linux 9 |  |  |
-| Oracle Linux 8 |  |  |
-| Alibaba Cloud Linux 3 |  |  |
-| TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS |  | [Report](docs/system-compatibility-reports/openeuler2403.md) |
-| openEuler 22.03 LTS |  |  |
-| Anolis OS 8 |  |  |
-| Kylin Server V10 |  |  |
-| UOS Server 20 |  |  |
-| Linux Mint 22 |  |  |
-| Pop!_OS 22.04 LTS |  |  |
-| Raspberry Pi OS 12 Bookworm |  |  |
-| Alpine Linux 3.20 |  |  |
-| Alpine Linux 3.19 |  |  |
-| Windows Server 2025 |  |  |
-| Windows Server 2022 |  |  |
-| Windows Server 2019 |  |  |
-| Windows Server 2016 |  |  |
-| Windows Server 2022 Server Core |  |  |
-| Windows Server 2019 Server Core |  |  |
-| Windows 11 24H2 |  |  |
-| Windows 11 23H2 |  |  |
-| Windows 10 | ✅ | [Report](docs/system-compatibility-reports/windows10.md) |
-| Windows Server 2012 R2 |  |  |
 
 ---
 
