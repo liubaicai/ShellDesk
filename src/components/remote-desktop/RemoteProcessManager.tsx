@@ -466,13 +466,81 @@ function parsePsAuxLine(line: string): RemoteProcessEntry | null {
   };
 }
 
+function readProcFsStatusValue(statusText: string, key: string) {
+  const match = statusText.match(new RegExp(`(?:^|\\s)${key}=([^\\s]+)`));
+  const value = match?.[1];
+
+  return value && value !== '-' ? value : '';
+}
+
+function parseProcFsLinuxProcessLine(line: string): RemoteProcessEntry | null {
+  const parts = line.split('\t');
+
+  if (parts[0] !== 'PROCFS' || parts.length < 4) {
+    return null;
+  }
+
+  const pid = readInteger(parts[1]);
+
+  if (pid === undefined) {
+    return null;
+  }
+
+  const statusText = parts[2] || '';
+  const uid = readProcFsStatusValue(statusText, 'uid');
+
+  return {
+    pid,
+    ppid: readInteger(readProcFsStatusValue(statusText, 'ppid')),
+    user: uid ? `uid:${uid}` : '-',
+    vszKb: readInteger(readProcFsStatusValue(statusText, 'vsz')),
+    rssKb: readInteger(readProcFsStatusValue(statusText, 'rss')),
+    tty: '-',
+    state: readProcFsStatusValue(statusText, 'state') || '-',
+    startTime: '-',
+    runtime: '',
+    cpuTime: '',
+    command: parts.slice(3).join('\t').trim() || '(无命令)',
+  };
+}
+
+function parseDelimitedLinuxProcessLine(line: string): RemoteProcessEntry | null {
+  const parts = line.split('\t');
+
+  if (parts[0] !== 'PROC' || parts.length < 13) {
+    return null;
+  }
+
+  const pid = readInteger(parts[1]);
+
+  if (pid === undefined) {
+    return null;
+  }
+
+  return {
+    pid,
+    ppid: readInteger(parts[2]),
+    user: parts[3] || '-',
+    cpuPercent: readNumber(parts[4]),
+    memoryPercent: readNumber(parts[5]),
+    vszKb: readInteger(parts[6]),
+    rssKb: readInteger(parts[7]),
+    tty: parts[8] || '-',
+    state: parts[9] || '-',
+    startTime: parts[10] || '-',
+    runtime: parts[11] || '',
+    cpuTime: parts[12] || '',
+    command: parts.slice(13).join('\t').trim() || '(无命令)',
+  };
+}
+
 function parseLinuxProcessOutput(stdout: string): RemoteProcessEntry[] {
   return stdout
     .trim()
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
     .filter(Boolean)
-    .map((line) => parseLinuxProcessLine(line) ?? parsePsAuxLine(line))
+    .map((line) => parseProcFsLinuxProcessLine(line) ?? parseDelimitedLinuxProcessLine(line) ?? parseLinuxProcessLine(line) ?? parsePsAuxLine(line))
     .filter((process): process is RemoteProcessEntry => Boolean(process));
 }
 
@@ -554,7 +622,82 @@ function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] {
 }
 
 function getLinuxProcessListCommand() {
-  return "(ps -eo pid=,ppid=,user=,pcpu=,pmem=,vsz=,rss=,tty=,stat=,start=,etime=,time=,args= 2>/dev/null || ps aux 2>/dev/null) | head -n 800";
+  return `
+format='pid=,ppid=,user=,pcpu=,pmem=,vsz=,rss=,tty=,stat=,start=,etime=,time=,args='
+output="$(ps -eo "$format" 2>/dev/null || true)"
+if [ -z "$output" ]; then
+  output="$(ps -eo pid=,ppid=,user=,pcpu=,pmem=,vsz=,rss=,tty=,stat=,start=,etime=,time=,command= 2>/dev/null || true)"
+fi
+if [ -z "$output" ]; then
+  output="$(ps aux 2>/dev/null || true)"
+fi
+if [ -n "$output" ]; then
+  if printf '%s\\n' "$output" | head -n 800 | awk '
+    BEGIN { OFS = "\\t"; count = 0 }
+    /^[[:space:]]*USER[[:space:]]+PID[[:space:]]+/ { next }
+    {
+      if ($1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/) {
+        command = ""
+        for (i = 13; i <= NF; i++) command = command (i == 13 ? "" : " ") $i
+        print "PROC", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, command
+        count += 1
+        next
+      }
+      if ($2 ~ /^[0-9]+$/) {
+        command = ""
+        for (i = 11; i <= NF; i++) command = command (i == 11 ? "" : " ") $i
+        print "PROC", $2, "", $1, $3, $4, $5, $6, $7, $8, $9, "", $10, command
+        count += 1
+      }
+    }
+    END { exit count > 0 ? 0 : 1 }
+  '; then
+    exit 0
+  fi
+fi
+
+if [ -d /proc ]; then
+  count=0
+  for d in /proc/[0-9]*; do
+    [ -d "$d" ] || continue
+    pid="\${d##*/}"
+    status="$(awk '
+      /^PPid:/ { ppid = $2 }
+      /^Uid:/ { uid = $2 }
+      /^State:/ { state = $2 }
+      /^VmSize:/ { vsz = $2 }
+      /^VmRSS:/ { rss = $2 }
+      END {
+        if (ppid == "") ppid = "-"
+        if (uid == "") uid = "-"
+        if (state == "") state = "-"
+        if (vsz == "") vsz = "-"
+        if (rss == "") rss = "-"
+        printf "ppid=%s uid=%s state=%s vsz=%s rss=%s", ppid, uid, state, vsz, rss
+      }
+    ' "$d/status" 2>/dev/null || true)"
+    [ -n "$status" ] || continue
+
+    command=""
+    if [ -r "$d/cmdline" ]; then
+      command="$(tr '\\000' ' ' < "$d/cmdline" 2>/dev/null | sed 's/[[:space:]]*$//')"
+    fi
+    if [ -z "$command" ] && [ -r "$d/comm" ]; then
+      comm="$(cat "$d/comm" 2>/dev/null | head -n 1)"
+      [ -n "$comm" ] && command="[$comm]"
+    fi
+    [ -n "$command" ] || command="(无命令)"
+
+    printf 'PROCFS\\t%s\\t%s\\t%s\\n' "$pid" "$status" "$command"
+    count=$((count + 1))
+    [ "$count" -ge 800 ] && break
+  done
+  [ "$count" -gt 0 ] && exit 0
+fi
+
+printf '%s\\n' '无法读取进程列表：ps 和 /proc 均未返回可用输出。' >&2
+exit 1
+`;
 }
 
 function getWindowsProcessListCommand() {
@@ -972,9 +1115,10 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         connectionId,
         isWindowsHost ? getWindowsProcessListCommand() : getLinuxProcessListCommand(),
       );
+      const stdout = result.stdout || '';
       const nextProcesses = isWindowsHost
-        ? parseWindowsProcessOutput(result.stdout || '')
-        : parseLinuxProcessOutput(result.stdout || '');
+        ? parseWindowsProcessOutput(stdout)
+        : parseLinuxProcessOutput(stdout);
 
       if (!isMountedRef.current) {
         return;
@@ -984,6 +1128,10 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
       if (result.code !== 0 && !nextProcesses.length) {
         setError(result.stderr || '无法读取远程进程列表。');
+      } else if (!nextProcesses.length && stdout.trim()) {
+        setError(`远程进程命令已返回内容，但当前版本无法解析：${compactAiField(stdout, 200)}`);
+      } else if (!nextProcesses.length) {
+        setError(result.stderr || '远程进程命令没有返回进程数据，请确认 /proc 已挂载且当前账号有读取权限。');
       }
     } catch (err) {
       if (isMountedRef.current) {

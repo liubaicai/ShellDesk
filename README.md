@@ -181,6 +181,11 @@ ShellDesk stores local data in the Electron user data directory. The Settings pa
 
 This table tracks the planned compatibility matrix for ShellDesk remote system tools. The status and notes columns are intentionally blank for now; after an environment is tested, put `✓` in the second column and add notes as needed.
 
+✅ Supported
+ℹ️ Untested
+⚠️ Limited support
+❌ Unsupported
+
 | Distribution / environment | Status | Notes |
 | :--- | :---: | :--- |
 | Ubuntu 26.04 LTS |  |  |
@@ -196,7 +201,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Rocky Linux 8 |  |  |
 | AlmaLinux 9 |  |  |
 | AlmaLinux 8 |  |  |
-| CentOS 7 |  | [Report](docs/system-compatibility-reports/centos7.md) |
+| CentOS 7 | ⚠️ | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
 | openSUSE Leap 15.6 |  | [Report](docs/system-compatibility-reports/opensuse-leap156.md) |

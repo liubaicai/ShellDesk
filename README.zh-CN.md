@@ -181,6 +181,11 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 
 以下列表用于记录 ShellDesk 远程系统工具的兼容性验证计划。状态列和说明列暂时留空；完成对应环境测试后，可在第二列填入 `✓`，并按需补充说明。
 
+✅ 已支持
+ℹ️ 未测试
+⚠️ 有限支持
+❌ 不支持
+
 | 发行版 / 环境 | 状态 | 说明 |
 | :--- | :---: | :--- |
 | Ubuntu 26.04 LTS |  |  |
@@ -196,7 +201,7 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | Rocky Linux 8 |  |  |
 | AlmaLinux 9 |  |  |
 | AlmaLinux 8 |  |  |
-| CentOS 7 |  | [报告](docs/system-compatibility-reports/centos7.md) |
+| CentOS 7 | ⚠️ | [报告](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
 | openSUSE Leap 15.6 |  | [报告](docs/system-compatibility-reports/opensuse-leap156.md) |

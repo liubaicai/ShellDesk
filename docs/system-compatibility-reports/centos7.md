@@ -2,14 +2,12 @@
 
 ## 测试方式
 
-待补充：
-
-- 云厂商 / 虚拟化平台：
-- 镜像：CentOS 7
-- CPU型号:
-- CPU / 内存：
-- 用户：
-- SSH 登录方式：
+- 云厂商 / 虚拟化平台：PVE
+- 镜像：CentOS Linux 7 (Core)
+- CPU型号: Common KVM processor
+- CPU / 内存：2c4g
+- 用户：root
+- SSH 登录方式：密码
 
 ## 组件兼容性
 
@@ -20,29 +18,29 @@
 
 | 组件名 | 英文名 | 是否支持 |
 | :--- | :--- | :---: |
-| 文件管理 | File Manager | ℹ️ |
-| 终端 | Terminal | ℹ️ |
-| 浏览器 | Browser | ℹ️ |
-| 系统设置 | System Settings | ℹ️ |
-| 记事本 | Notepad | ℹ️ |
-| 安全巡检 | Security Audit | ℹ️ |
-| 包管理器 | Package Manager | ℹ️ |
-| 磁盘分析 | Disk Analyzer | ℹ️ |
-| 登录会话 | Login Sessions | ℹ️ |
-| 端口监听 | Port Listener Manager | ℹ️ |
-| 防火墙 | Firewall Manager | ℹ️ |
-| 服务管理 | Service Manager | ℹ️ |
-| 计划任务 | Scheduled Tasks | ℹ️ |
-| 进程管理 | Process Manager | ℹ️ |
-| 日志查看 | Log Viewer | ℹ️ |
+| 文件管理 | File Manager | ✅ |
+| 终端 | Terminal | ✅ |
+| 浏览器 | Browser | ✅ |
+| 系统设置 | System Settings | ⚠️ |
+| 记事本 | Notepad | ✅ |
+| 安全巡检 | Security Audit | ✅ |
+| 包管理器 | Package Manager | ❌ |
+| 磁盘分析 | Disk Analyzer | ✅ |
+| 登录会话 | Login Sessions | ✅ |
+| 端口监听 | Port Listener Manager | ✅ |
+| 防火墙 | Firewall Manager | ✅ |
+| 服务管理 | Service Manager | ✅ |
+| 计划任务 | Scheduled Tasks | ✅ |
+| 进程管理 | Process Manager | ⚠️ |
+| 日志查看 | Log Viewer | ✅ |
 | 容器管理 | Container Manager | ℹ️ |
 | 搜索集群 | Search Cluster | ℹ️ |
-| 网络诊断 | Network Diagnostics | ℹ️ |
-| 系统监视器 | System Monitor | ℹ️ |
+| 网络诊断 | Network Diagnostics | ✅ |
+| 系统监视器 | System Monitor | ✅ |
 | 消息队列 | Message Queue | ℹ️ |
-| API 调试 | API Debugger | ℹ️ |
+| API 调试 | API Debugger | ✅ |
 | Git 仓库 | Git Repository Manager | ℹ️ |
-| iptables 管理 | iptables Manager | ℹ️ |
+| iptables 管理 | iptables Manager | ✅ |
 | MinIO / S3 | MinIO / S3 Browser | ℹ️ |
 | MongoDB | MongoDB Manager | ℹ️ |
 | MySQL | MySQL Manager | ℹ️ |
