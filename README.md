@@ -183,9 +183,11 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 
 | Distribution / environment | Status | Notes |
 | :--- | :---: | :--- |
+| Ubuntu 26.04 LTS |  |  |
 | Ubuntu 24.04 LTS | ✅ | [Report](docs/system-compatibility-reports/ubuntu2404.md) |
 | Ubuntu 22.04 LTS |  |  |
 | Ubuntu 20.04 LTS |  |  |
+| Debian 13 Trixie |  |  |
 | Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
 | Debian 11 Bullseye |  |  |
 | RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
@@ -194,9 +196,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Rocky Linux 8 |  |  |
 | AlmaLinux 9 |  |  |
 | AlmaLinux 8 |  |  |
-| CentOS Stream 9 |  |  |
-| CentOS Stream 8 |  |  |
-| CentOS 7 |  |  |
+| CentOS 7 |  | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
 | openSUSE Leap 15.6 |  | [Report](docs/system-compatibility-reports/opensuse-leap156.md) |
@@ -214,19 +214,14 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Kylin Server V10 |  |  |
 | UOS Server 20 |  |  |
 | Linux Mint 22 |  |  |
-| Pop!_OS 22.04 LTS |  |  |
 | Raspberry Pi OS 12 Bookworm |  |  |
-| Alpine Linux 3.20 |  |  |
-| Alpine Linux 3.19 |  |  |
-| Windows Server 2025 |  |  |
+| Alpine Linux 3.23 |  |  |
+| Alpine Linux 3.22 |  |  |
 | Windows Server 2022 |  |  |
 | Windows Server 2019 |  |  |
 | Windows Server 2016 |  |  |
-| Windows Server 2022 Server Core |  |  |
-| Windows Server 2019 Server Core |  |  |
 | Windows 11 | ✅ | [Report](docs/system-compatibility-reports/windows11.md) |
 | Windows 10 | ✅ | [Report](docs/system-compatibility-reports/windows10.md) |
-| Windows Server 2012 R2 |  |  |
 
 ---
 
