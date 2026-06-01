@@ -204,7 +204,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | CentOS 7 | ⚠️ | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
-| openSUSE Leap 15.6 |  | [Report](docs/system-compatibility-reports/opensuse-leap156.md) |
+| openSUSE Leap 15.6 |  |  |
 | openSUSE Tumbleweed |  |  |
 | SUSE Linux Enterprise Server 15 SP6 |  |  |
 | Amazon Linux 2023 |  |  |

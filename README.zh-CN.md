@@ -204,7 +204,7 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | CentOS 7 | ⚠️ | [报告](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
-| openSUSE Leap 15.6 |  | [报告](docs/system-compatibility-reports/opensuse-leap156.md) |
+| openSUSE Leap 15.6 |  |  |
 | openSUSE Tumbleweed |  |  |
 | SUSE Linux Enterprise Server 15 SP6 |  |  |
 | Amazon Linux 2023 |  |  |
