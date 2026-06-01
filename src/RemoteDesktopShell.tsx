@@ -223,9 +223,11 @@ interface DesktopWindowPointerState {
   pointerId: number;
   windowId: string;
   mode: DesktopWindowInteractionMode;
+  element: HTMLElement;
   originX: number;
   originY: number;
   startFrame: DesktopWindowFrame;
+  latestFrame: DesktopWindowFrame;
   surfaceWidth: number;
   surfaceHeight: number;
 }
@@ -298,6 +300,19 @@ function clampWindowFrame(frame: DesktopWindowFrame, surfaceWidth: number, surfa
     width,
     height,
   };
+}
+
+function areWindowFramesEqual(firstFrame: DesktopWindowFrame, secondFrame: DesktopWindowFrame) {
+  return firstFrame.x === secondFrame.x
+    && firstFrame.y === secondFrame.y
+    && firstFrame.width === secondFrame.width
+    && firstFrame.height === secondFrame.height;
+}
+
+function applyWindowFrameToElement(element: HTMLElement, frame: DesktopWindowFrame) {
+  element.style.width = `${frame.width}px`;
+  element.style.height = `${frame.height}px`;
+  element.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0)`;
 }
 
 function getMaximizedWindowFrame(surfaceWidth: number, surfaceHeight: number) {
@@ -1250,12 +1265,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   };
 
   const bringWindowToFront = (windowId: string) => {
-    zIndexRef.current += 1;
-    const nextZIndex = zIndexRef.current;
     setFocusedWindowId(windowId);
-    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
-      desktopWindow.id === windowId ? { ...desktopWindow, isMinimized: false, zIndex: nextZIndex } : desktopWindow
-    )));
+    setDesktopWindows((currentWindows) => {
+      const targetWindow = currentWindows.find((desktopWindow) => desktopWindow.id === windowId);
+
+      if (!targetWindow) {
+        return currentWindows;
+      }
+
+      const highestZIndex = currentWindows.reduce((highest, desktopWindow) => Math.max(highest, desktopWindow.zIndex), 0);
+      const alreadyFront = !targetWindow.isMinimized && targetWindow.zIndex >= highestZIndex;
+
+      if (alreadyFront) {
+        return currentWindows;
+      }
+
+      zIndexRef.current = Math.max(zIndexRef.current, highestZIndex) + 1;
+      const nextZIndex = zIndexRef.current;
+      return currentWindows.map((desktopWindow) => (
+        desktopWindow.id === windowId ? { ...desktopWindow, isMinimized: false, zIndex: nextZIndex } : desktopWindow
+      ));
+    });
   };
 
   const appendDesktopWindow = (
@@ -1495,19 +1525,26 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     const surfaceRect = surface.getBoundingClientRect();
     const startFrame = clampWindowFrame(desktopWindow.frame, surfaceRect.width, surfaceRect.height);
+    const windowElement = event.currentTarget.closest('.desktop-window') as HTMLElement | null;
+
+    if (!windowElement) {
+      return;
+    }
 
     windowPointerStateRef.current = {
       pointerId: event.pointerId,
       windowId,
       mode,
+      element: windowElement,
       originX: event.clientX,
       originY: event.clientY,
       startFrame,
+      latestFrame: startFrame,
       surfaceWidth: surfaceRect.width,
       surfaceHeight: surfaceRect.height,
     };
 
-    bringWindowToFront(windowId);
+    windowElement.classList.add('interacting', mode === 'move' ? 'moving' : 'resizing');
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -1537,12 +1574,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           width: pointerState.startFrame.width + deltaX,
           height: pointerState.startFrame.height + deltaY,
         };
+    const clampedFrame = clampWindowFrame(nextFrame, pointerState.surfaceWidth, pointerState.surfaceHeight);
 
-    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
-      desktopWindow.id === pointerState.windowId
-        ? { ...desktopWindow, frame: clampWindowFrame(nextFrame, pointerState.surfaceWidth, pointerState.surfaceHeight) }
-        : desktopWindow
-    )));
+    pointerState.latestFrame = clampedFrame;
+    applyWindowFrameToElement(pointerState.element, clampedFrame);
     event.preventDefault();
   };
 
@@ -1557,7 +1592,23 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
+    const finalFrame = pointerState.latestFrame;
+    pointerState.element.classList.remove('interacting', 'moving', 'resizing');
     windowPointerStateRef.current = null;
+
+    setDesktopWindows((currentWindows) => {
+      let didChangeFrame = false;
+      const nextWindows = currentWindows.map((desktopWindow) => {
+        if (desktopWindow.id !== pointerState.windowId || areWindowFramesEqual(desktopWindow.frame, finalFrame)) {
+          return desktopWindow;
+        }
+
+        didChangeFrame = true;
+        return { ...desktopWindow, frame: finalFrame };
+      });
+
+      return didChangeFrame ? nextWindows : currentWindows;
+    });
   };
 
   const updateWindowChrome = (
@@ -1856,10 +1907,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
+          const livePointerFrame = windowPointerStateRef.current?.windowId === desktopWindow.id
+            ? windowPointerStateRef.current.latestFrame
+            : null;
+          const renderedFrame = livePointerFrame ?? desktopWindow.frame;
           const desktopWindowStyle: CSSProperties = {
-            width: desktopWindow.frame.width,
-            height: desktopWindow.frame.height,
-            transform: `translate3d(${desktopWindow.frame.x}px, ${desktopWindow.frame.y}px, 0)`,
+            width: renderedFrame.width,
+            height: renderedFrame.height,
+            transform: `translate3d(${renderedFrame.x}px, ${renderedFrame.y}px, 0)`,
             zIndex: 10 + desktopWindow.zIndex,
           };
 

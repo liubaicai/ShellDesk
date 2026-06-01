@@ -659,6 +659,14 @@
   box-shadow: 0 30px 96px rgba(0, 0, 0, 0.52);
 }
 
+.desktop-window.interacting {
+  user-select: none;
+}
+
+.desktop-window.moving .desktop-window-titlebar {
+  cursor: grabbing;
+}
+
 .desktop-window.minimized {
   visibility: hidden;
   opacity: 0;
@@ -666,7 +674,7 @@
 }
 
 .desktop-window.maximized {
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .desktop-window-titlebar {
@@ -863,7 +871,7 @@
 .desktop-window {
   grid-template-rows: 52px minmax(0, 1fr);
   border-color: rgba(154, 177, 210, 0.24);
-  border-radius: 18px;
+  border-radius: 10px;
   background: rgba(17, 25, 36, 0.9);
   box-shadow:
     0 34px 90px rgba(0, 0, 0, 0.48),
@@ -897,7 +905,7 @@
 }
 
 .desktop-window-browser {
-  border-radius: 20px;
+  border-radius: 10px;
 }
 
 .desktop-window-browser .desktop-window-titlebar {
@@ -908,7 +916,7 @@
 
 .desktop-window {
   grid-template-rows: 42px minmax(0, 1fr);
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .desktop-window-titlebar {
