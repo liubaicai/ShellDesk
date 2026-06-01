@@ -1,0 +1,17 @@
+name: Delete Old Workflow Runs
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天运行
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  delete_runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        uses: ophub/delete-releases-workflows@main
+        with:
+          delete_workflows: true
+          workflows_keep_day: 3 # 保留最近10天
+          gh_token: ${{ secrets.GH_API_KEY }}
