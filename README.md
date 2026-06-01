@@ -195,30 +195,29 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Debian 13 Trixie |  |  |
 | Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
 | Debian 11 Bullseye |  |  |
+| RHEL 10 |  |  |
 | RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |
+| Rocky Linux 10 |  |  |
 | Rocky Linux 9 |  |  |
 | Rocky Linux 8 |  |  |
+| AlmaLinux 10 |  |  |
 | AlmaLinux 9 |  |  |
 | AlmaLinux 8 |  |  |
 | CentOS 7 | ⚠️ | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
 | openSUSE Leap 15.6 |  |  |
-| openSUSE Tumbleweed |  |  |
-| SUSE Linux Enterprise Server 15 SP6 |  |  |
-| Amazon Linux 2023 |  |  |
-| Amazon Linux 2 |  |  |
-| Oracle Linux 9 |  |  |
-| Oracle Linux 8 |  |  |
 | Alibaba Cloud Linux 3 |  |  |
 | TencentOS Server 4 |  |  |
 | openEuler 24.03 LTS | ✅ | [Report](docs/system-compatibility-reports/openeuler2403.md) |
-| openEuler 22.03 LTS |  |  |
-| Anolis OS 8 |  |  |
 | Kylin Server V10 |  |  |
 | UOS Server 20 |  |  |
 | Linux Mint 22 |  |  |
+| Arch Linux |  |  |
+| Manjaro |  |  |
+| Pop!_OS |  |  |
+| Kali Linux |  |  |
 | Raspberry Pi OS 12 Bookworm |  |  |
 | Alpine Linux 3.23 |  |  |
 | Alpine Linux 3.22 |  |  |
