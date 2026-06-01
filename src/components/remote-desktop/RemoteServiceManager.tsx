@@ -1042,12 +1042,12 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
           {selectedDetail ? (
             <>
               <header className="service-detail-header">
-                <div>
-                  <span>服务</span>
-                  <strong title={selectedDetail.name}>{selectedDetail.displayName || selectedDetail.name}</strong>
+                <span className="service-detail-header-label">服务</span>
+                <strong title={selectedDetail.name}>{selectedDetail.displayName || selectedDetail.name}</strong>
+                {selectedDetail.displayName && selectedDetail.displayName !== selectedDetail.name ? (
                   <code title={selectedDetail.name}>{selectedDetail.name}</code>
-                  {selectedDetail.description ? <p title={selectedDetail.description}>{selectedDetail.description}</p> : null}
-                </div>
+                ) : null}
+                {selectedDetail.description ? <small className="service-detail-header-desc" title={selectedDetail.description}>{selectedDetail.description}</small> : null}
                 <button
                   type="button"
                   className="service-copy-btn"

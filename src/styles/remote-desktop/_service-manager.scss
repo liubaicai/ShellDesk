@@ -338,7 +338,7 @@
 }
 
 .service-list-main small,
-.service-detail-header p,
+.service-detail-header-desc,
 .service-overview small,
 .service-detail-empty span {
   min-width: 0;
@@ -401,34 +401,32 @@
 }
 
 .service-detail-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   border-bottom: 1px solid var(--service-border);
   padding-bottom: 10px;
 }
 
-.service-detail-header div {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
-.service-detail-header span,
-.service-overview span {
+.service-detail-header-label {
   color: var(--service-muted);
   font-size: 10.5px;
   font-weight: 820;
   letter-spacing: 0;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .service-detail-header strong {
   color: var(--service-text);
-  font-size: 23px;
+  font-size: 15px;
   font-weight: 880;
-  line-height: 1.05;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-detail-header code {
@@ -442,9 +440,21 @@
   white-space: nowrap;
 }
 
-.service-detail-header p {
-  margin: 0;
-  white-space: normal;
+.service-detail-header-desc {
+  min-width: 0;
+}
+
+.service-detail-header .service-copy-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.service-overview span {
+  color: var(--service-muted);
+  font-size: 10.5px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .service-overview {
