@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
@@ -245,8 +246,8 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
         </div>
       </header>
 
-      {error ? <div className="web-alert danger">{error}</div> : null}
-      {notice ? <div className="web-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="web-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="web-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="web-layout">
         <aside className="web-site-list">

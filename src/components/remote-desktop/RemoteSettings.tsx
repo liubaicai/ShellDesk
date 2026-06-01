@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 
@@ -731,8 +732,16 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-warning-banner">
         网络接口、默认路由和 DNS 变更可能让当前 SSH 会话失联。应用前请确认你有备用连接路径。
       </div>
@@ -1388,8 +1397,16 @@ MIRROR_EOF`;
           {loading ? '检测中...' : '重新检测'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-info-card">
         <span className="settings-info-label">发行版</span>
         <strong className="settings-info-value">{distroName.split('\n').filter(l => l.startsWith('NAME=')).map(l => l.replace('NAME=', '')).join('') || '检测中...'}</strong>
@@ -1574,8 +1591,16 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
           </button>
         </div>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-warning-banner">
         设置页只执行系统级更新；包安装、卸载和锁定建议交给包管理中心处理。
       </div>
@@ -1713,8 +1738,16 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
           )}
         </div>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       {!editing ? (
         <>
           <div className="settings-section">
@@ -1874,8 +1907,16 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-section">
         <h4>添加路由</h4>
         <div className="settings-inline-form">
@@ -1942,7 +1983,11 @@ function DiskPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-section">
         <h4>磁盘使用情况</h4>
         <pre className="settings-output">{diskInfo || '加载中...'}</pre>
@@ -2226,7 +2271,11 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
 
       {/* Hero Card */}
       {osItem ? (
@@ -2292,7 +2341,11 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
       {osItem ? (
         <div className="sysinfo-hero">
           <div className="sysinfo-hero-icon">{'\u{1F5A5}\uFE0F'}</div>
@@ -2356,7 +2409,11 @@ function WindowsNetworkPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-info-card">
         <div className="settings-info-row">
           <span className="settings-info-label">主机名</span>
@@ -2467,8 +2524,16 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
           </button>
         </div>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {success ? <div className="settings-success-banner">{success}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
+      {success ? (
+        <DismissibleAlert className="settings-success-banner" onDismiss={() => setSuccess('')}>
+          {success}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-section">
         <h4>新增映射</h4>
         <div className="settings-inline-form">
@@ -2524,7 +2589,11 @@ function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-section">
         <h4>路由表</h4>
         <pre className="settings-output">{routes || '加载中...'}</pre>
@@ -2572,7 +2641,11 @@ function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
           {loading ? '加载中...' : '刷新'}
         </button>
       </div>
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? (
+        <DismissibleAlert className="error-banner" onDismiss={() => setError('')} role="alert">
+          {error}
+        </DismissibleAlert>
+      ) : null}
       <div className="settings-section">
         <h4>本地磁盘</h4>
         <pre className="settings-output">{diskInfo || '加载中...'}</pre>

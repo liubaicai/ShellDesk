@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -1137,9 +1138,9 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
         ) : null}
       </div>
 
-      {error ? <div className="log-alert danger">{error}</div> : null}
-      {notice ? <div className="log-alert info">{notice}</div> : null}
-      {success ? <div className="log-alert success">{success}</div> : null}
+      {error ? <DismissibleAlert className="log-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="log-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
+      {success ? <DismissibleAlert className="log-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="log-content">
         <aside className="log-source-panel" aria-label="日志来源">

@@ -12,6 +12,7 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import { isTextFile } from './RemoteNotepad';
 import type { RemoteSystemType } from './types';
@@ -1674,7 +1675,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             }
           }}
         >
-          {filesError ? <div className="error-banner">{filesError}</div> : null}
+          {filesError ? (
+            <DismissibleAlert className="error-banner" onDismiss={() => setFilesError('')} role="alert">
+              {filesError}
+            </DismissibleAlert>
+          ) : null}
 
           {isCreatingNew ? (
             <div className="explorer-row new-item-row">

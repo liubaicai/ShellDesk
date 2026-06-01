@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 
 interface RemotePostgresProps {
   connectionId: string;
@@ -282,7 +283,11 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
                 <p>通过当前 SSH 通道访问远程 PostgreSQL，默认连接 127.0.0.1:5432。</p>
               </div>
             </div>
-            {error ? <div className="postgres-message error">{error}</div> : null}
+            {error ? (
+              <DismissibleAlert className="postgres-message error" onDismiss={() => setError('')} role="alert">
+                {error}
+              </DismissibleAlert>
+            ) : null}
             <div className="postgres-connect-grid">
               <label><span>主机</span><input value={host} onChange={(event) => setHost(event.target.value)} /></label>
               <label><span>端口</span><input value={port} inputMode="numeric" onChange={(event) => setPort(event.target.value)} /></label>
@@ -348,8 +353,16 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
           <button type="button" className="postgres-disconnect-btn" onClick={handleDisconnect}>断开</button>
         </header>
 
-        {error ? <div className="postgres-message error">{error}</div> : null}
-        {notice ? <div className="postgres-message info">{notice}</div> : null}
+        {error ? (
+          <DismissibleAlert className="postgres-message error" onDismiss={() => setError('')} role="alert">
+            {error}
+          </DismissibleAlert>
+        ) : null}
+        {notice ? (
+          <DismissibleAlert className="postgres-message info" onDismiss={() => setNotice('')}>
+            {notice}
+          </DismissibleAlert>
+        ) : null}
 
         <section className="postgres-editor">
           <div className="postgres-editor-toolbar">

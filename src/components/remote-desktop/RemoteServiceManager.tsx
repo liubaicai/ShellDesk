@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -1015,9 +1016,9 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
         </div>
       </div>
 
-      {error ? <div className="service-alert danger">{error}</div> : null}
-      {notice ? <div className="service-alert info">{notice}</div> : null}
-      {success ? <div className="service-alert success">{success}</div> : null}
+      {error ? <DismissibleAlert className="service-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="service-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
+      {success ? <DismissibleAlert className="service-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="service-content">
         <aside className="service-list-panel" aria-label="服务列表">

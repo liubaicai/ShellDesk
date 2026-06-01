@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
@@ -522,8 +523,8 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
       {(error || notice) ? (
         <div className="git-alert-stack">
-          {error ? <div className="git-alert danger">{error}</div> : null}
-          {notice ? <div className="git-alert info">{notice}</div> : null}
+          {error ? <DismissibleAlert className="git-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+          {notice ? <DismissibleAlert className="git-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
         </div>
       ) : null}
 

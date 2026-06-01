@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
@@ -328,8 +329,8 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
         </button>
       </header>
 
-      {error ? <div className="s3-alert danger">{error}</div> : null}
-      {notice ? <div className="s3-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="s3-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="s3-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className={`s3-layout ${connected ? 'connected' : ''}`}>
         {!connected ? (

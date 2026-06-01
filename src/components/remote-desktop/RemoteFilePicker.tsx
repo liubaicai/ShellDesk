@@ -8,6 +8,7 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 import {
@@ -310,7 +311,9 @@ export default function RemoteFilePicker({
             {loading ? (
               <div className="file-picker-status">正在加载...</div>
             ) : error ? (
-              <div className="file-picker-error">{error}</div>
+              <DismissibleAlert className="file-picker-error" onDismiss={() => setError('')} role="alert">
+                {error}
+              </DismissibleAlert>
             ) : sortedEntries.length === 0 ? (
               <div className="file-picker-status">此文件夹为空</div>
             ) : (

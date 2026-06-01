@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -472,7 +473,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
           </button>
         </header>
 
-        {error ? <div className="network-alert danger">{error}</div> : null}
+        {error ? <DismissibleAlert className="network-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
 
         <section className="network-form">
           {activeTool === 'ping' || activeTool === 'trace' || activeTool === 'tcp' ? (

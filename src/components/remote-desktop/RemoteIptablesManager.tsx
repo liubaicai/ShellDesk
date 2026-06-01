@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage } from './desktopUtils';
 import {
@@ -262,8 +263,8 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
         </div>
       </header>
 
-      {error ? <div className="iptables-alert danger">{error}</div> : null}
-      {notice ? <div className="iptables-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="iptables-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="iptables-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="iptables-content">
         <aside className="iptables-form-panel">

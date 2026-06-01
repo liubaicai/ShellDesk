@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
@@ -142,8 +143,8 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
         </div>
       </header>
 
-      {error ? <div className="login-alert danger">{error}</div> : null}
-      {notice ? <div className="login-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="login-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="login-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="login-content">
         <main className="login-table-panel">

@@ -2,6 +2,7 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 import RemoteFilePicker from './RemoteFilePicker';
 import type { RemoteSystemType } from './types';
 
@@ -618,7 +619,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                 <p className="sqlite-connect-hint">选择远程文件并进入表、视图、索引工作区</p>
               </div>
             </div>
-            {errorMessage ? <div className="sqlite-error-banner">{errorMessage}</div> : null}
+            {errorMessage ? (
+              <DismissibleAlert className="sqlite-error-banner" onDismiss={() => setErrorMessage('')} role="alert">
+                {errorMessage}
+              </DismissibleAlert>
+            ) : null}
             <label className="sqlite-field">
               <span>数据库文件路径</span>
               <div className="sqlite-path-input-row">
@@ -776,7 +781,15 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               <button type="button" className={activePanel === 'data' ? 'active' : ''} onClick={() => setActivePanel('data')}>数据</button>
               <button type="button" className={activePanel === 'schema' ? 'active' : ''} onClick={() => setActivePanel('schema')}>Schema</button>
             </div>
-            {message ? <div className={`sqlite-message-banner ${message.type}`}>{message.text}</div> : null}
+            {message ? (
+              <DismissibleAlert
+                className={`sqlite-message-banner ${message.type}`}
+                onDismiss={() => setMessage(null)}
+                role={message.type === 'error' ? 'alert' : 'status'}
+              >
+                {message.text}
+              </DismissibleAlert>
+            ) : null}
 
             {activePanel === 'schema' ? (
               <div className="sqlite-schema-panel">

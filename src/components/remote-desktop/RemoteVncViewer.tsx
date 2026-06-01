@@ -3,6 +3,7 @@ import type { RfbCredentials } from '@novnc/novnc';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 
 interface RemoteVncViewerProps {
   connectionId: string;
@@ -1018,7 +1019,11 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         </div>
       </form>
 
-      {errorMessage ? <div className="vnc-error-banner">{errorMessage}</div> : null}
+      {errorMessage ? (
+        <DismissibleAlert className="vnc-error-banner" onDismiss={() => setErrorMessage('')} role="alert">
+          {errorMessage}
+        </DismissibleAlert>
+      ) : null}
 
       <div className={`vnc-workspace ${showInspector ? '' : 'inspector-closed'}`}>
         <div ref={stageRef} className="vnc-stage">

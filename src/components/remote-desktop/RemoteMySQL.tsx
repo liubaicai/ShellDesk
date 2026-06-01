@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 
 interface RemoteMySQLProps {
   connectionId: string;
@@ -764,7 +765,11 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
               <p className="mysql-connect-hint">经当前 SSH 会话转发到远程 MySQL 或兼容数据库</p>
             </div>
           </div>
-          {errorMessage ? <div className="mysql-error-banner">{errorMessage}</div> : null}
+          {errorMessage ? (
+            <DismissibleAlert className="mysql-error-banner" onDismiss={() => setErrorMessage('')} role="alert">
+              {errorMessage}
+            </DismissibleAlert>
+          ) : null}
           <div className="mysql-connect-grid">
             <label className="mysql-field">
               <span>主机</span>
@@ -1035,7 +1040,15 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
           </section>
 
           <section className="mysql-result-area">
-            {message ? <div className={`mysql-message-banner ${message.type}`}>{message.text}</div> : null}
+            {message ? (
+              <DismissibleAlert
+                className={`mysql-message-banner ${message.type}`}
+                onDismiss={() => setMessage(null)}
+                role={message.type === 'error' ? 'alert' : 'status'}
+              >
+                {message.text}
+              </DismissibleAlert>
+            ) : null}
             <div className="mysql-result-tabs">
               {resultTabs.length === 0 ? (
                 <span className="mysql-result-tabs-empty">结果</span>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
@@ -244,8 +245,8 @@ function RemoteFirewallManager({ connectionId, systemType }: RemoteFirewallManag
         </div>
       </header>
 
-      {error ? <div className="firewall-alert danger">{error}</div> : null}
-      {notice ? <div className="firewall-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="firewall-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="firewall-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="firewall-content">
         <aside className="firewall-form-panel">

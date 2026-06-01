@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -460,8 +461,8 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
         </div>
       </header>
 
-      {error ? <div className="disk-alert danger">{error}</div> : null}
-      {notice ? <div className="disk-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="disk-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="disk-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       {mounts.length ? (
         <div className="disk-mount-strip" aria-label="磁盘挂载点">

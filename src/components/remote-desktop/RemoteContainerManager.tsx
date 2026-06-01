@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
@@ -1375,9 +1376,9 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         </div>
       </div>
 
-      {error ? <div className="container-alert danger">{error}</div> : null}
-      {notice ? <div className="container-alert info">{notice}</div> : null}
-      {success ? <div className="container-alert success">{success}</div> : null}
+      {error ? <DismissibleAlert className="container-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="container-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
+      {success ? <DismissibleAlert className="container-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
       {troubleshooting ? (
         <section className="container-troubleshooting" aria-label="容器故障诊断">
           <div>

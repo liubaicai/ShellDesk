@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
@@ -176,8 +177,8 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
         <button type="button" className="primary" onClick={refresh} disabled={loading}>{loading ? '刷新中' : '刷新'}</button>
       </header>
 
-      {error ? <div className="mq-alert danger">{error}</div> : null}
-      {notice ? <div className="mq-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="mq-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="mq-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="mq-layout">
         <aside className="mq-config">

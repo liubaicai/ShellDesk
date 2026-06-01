@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
@@ -83,6 +84,12 @@ interface PendingSignal {
   signal: SignalDefinition;
 }
 
+interface ProcessContextMenuState {
+  x: number;
+  y: number;
+  process: RemoteProcessEntry;
+}
+
 type ProcessAiReportPhase = 'idle' | 'preparing' | 'requesting' | 'streaming' | 'done' | 'error';
 
 interface ProcessAiSnapshot {
@@ -133,6 +140,19 @@ const PROCESS_AI_REPORT_SYSTEM_PROMPT = `你是 ShellDesk 的 SD-Agent 进程安
 
 请用中文输出 Markdown 报告，重点判断是否存在病毒、木马、挖矿、横向移动、持久化后门、异常高资源占用、伪装系统进程、可疑路径或可疑命令行。对每个可疑项给出 PID、风险等级、依据、建议核验动作。没有明显风险时也要说明仍建议做哪些人工复核，但后续可疑进程、继续核验和建议处置部分要明显简略，不要为了凑结构输出冗长内容。`;
 const PROCESS_AI_INSIGHT_SYSTEM_PROMPT = '你是 ShellDesk 的 SD-Agent 进程解释助手。请用中文简短解释单个进程通常是做什么的，并结合本次快照指出是否有明显异常。不要给出确定性的恶意判定。';
+
+function getProcessContextMenuPosition(clientX: number, clientY: number) {
+  const menuWidth = 184;
+  const menuHeight = 172;
+  const edgePadding = 8;
+  const maxX = Math.max(edgePadding, window.innerWidth - menuWidth - edgePadding);
+  const maxY = Math.max(edgePadding, window.innerHeight - menuHeight - edgePadding);
+
+  return {
+    x: Math.min(Math.max(edgePadding, clientX), maxX),
+    y: Math.min(Math.max(edgePadding, clientY), maxY),
+  };
+}
 
 function readInteger(value: string | number | undefined | null) {
   if (typeof value === 'number' && Number.isInteger(value)) {
@@ -1093,6 +1113,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
   const [aiReportSnapshotNote, setAiReportSnapshotNote] = useState('');
   const [processInsight, setProcessInsight] = useState<ProcessAiInsight | null>(null);
   const [processInsightLoadingPid, setProcessInsightLoadingPid] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<ProcessContextMenuState | null>(null);
 
   const selectedSignal = getSignalByValue(selectedSignalValue);
   const isAiReportBusy = aiReportPhase === 'preparing' || aiReportPhase === 'requesting' || aiReportPhase === 'streaming';
@@ -1265,6 +1286,21 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     void loadProcessDetails(selectedPid);
   }, [loadProcessDetails, selectedPid]);
 
+  useEffect(() => {
+    if (!contextMenu) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [contextMenu]);
+
   const compare = useCallback((first: RemoteProcessEntry, second: RemoteProcessEntry) => (
     compareProcesses(first, second, sortKey, sortDir, isWindowsHost)
   ), [isWindowsHost, sortDir, sortKey]);
@@ -1388,6 +1424,16 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     }
 
     return <span className="proc-sort-icon" aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>;
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  const openProcessContextMenu = (event: MouseEvent<HTMLTableRowElement>, process: RemoteProcessEntry) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedPid(process.pid);
+    const position = getProcessContextMenuPosition(event.clientX, event.clientY);
+    setContextMenu({ ...position, process });
   };
 
   const copyToClipboard = async (value: string, label: string) => {
@@ -1709,6 +1755,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         key={process.pid}
         className={`proc-row ${isSelected ? 'selected' : ''} ${stateTone === 'zombie' ? 'proc-zombie' : ''}`}
         onClick={() => setSelectedPid(process.pid)}
+        onContextMenu={(event) => openProcessContextMenu(event, process)}
       >
         <td className="proc-pid">{process.pid}</td>
         <td className="proc-ppid">{process.ppid ?? '-'}</td>
@@ -1805,9 +1852,9 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         </div>
       </div>
 
-      {error ? <div className="proc-alert danger">{error}</div> : null}
-      {notice ? <div className="proc-alert info">{notice}</div> : null}
-      {success ? <div className="proc-alert success">{success}</div> : null}
+      {error ? <DismissibleAlert className="proc-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="proc-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
+      {success ? <DismissibleAlert className="proc-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="proc-content">
         <section className="proc-table-panel" aria-label="进程列表">
@@ -2009,6 +2056,67 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         </aside>
       </div>
 
+      {contextMenu ? createPortal(
+        <>
+          <div
+            className="proc-context-menu-overlay"
+            onClick={closeContextMenu}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              closeContextMenu();
+            }}
+          />
+          <div
+            className="proc-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            role="menu"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="proc-context-menu-title">
+              <strong>PID {contextMenu.process.pid}</strong>
+              <span title={contextMenu.process.command}>{contextMenu.process.command}</span>
+            </div>
+            <button
+              type="button"
+              role="menuitem"
+              className="danger-text"
+              disabled={signalingPid === contextMenu.process.pid}
+              onClick={() => {
+                const targetProcess = contextMenu.process;
+                closeContextMenu();
+                requestSignal(targetProcess);
+              }}
+            >
+              {signalingPid === contextMenu.process.pid ? '处理中' : isWindowsHost ? '结束进程' : `结束进程 (${selectedSignal.name})`}
+            </button>
+            <div className="proc-context-menu-sep" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const targetPid = contextMenu.process.pid;
+                closeContextMenu();
+                void copyToClipboard(String(targetPid), ' PID');
+              }}
+            >
+              复制 PID
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const targetCommand = contextMenu.process.command;
+                closeContextMenu();
+                void copyToClipboard(targetCommand, '命令行');
+              }}
+            >
+              复制命令行
+            </button>
+          </div>
+        </>,
+        document.body,
+      ) : null}
+
       {aiReportOpen ? createPortal(
         <div className="proc-modal-overlay" role="presentation" onClick={() => setAiReportOpen(false)}>
           <div
@@ -2034,8 +2142,8 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
               <em>{aiReportSnapshotNote || '将当前进程快照发送给 SD-Agent 进行静态研判。'}</em>
             </div>
 
-            {aiReportError ? <div className="proc-alert danger">{aiReportError}</div> : null}
-            {aiReportNotice ? <div className="proc-alert success">{aiReportNotice}</div> : null}
+            {aiReportError ? <DismissibleAlert className="proc-alert danger" onDismiss={() => setAiReportError('')} role="alert">{aiReportError}</DismissibleAlert> : null}
+            {aiReportNotice ? <DismissibleAlert className="proc-alert success" onDismiss={() => setAiReportNotice('')}>{aiReportNotice}</DismissibleAlert> : null}
 
             <MarkdownReport
               className="proc-ai-report"

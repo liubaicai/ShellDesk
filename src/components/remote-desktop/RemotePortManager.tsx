@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
@@ -884,8 +885,8 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
         </div>
       </header>
 
-      {error ? <div className="port-alert danger">{error}</div> : null}
-      {notice ? <div className="port-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="port-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="port-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="port-layout">
         <div className="port-table-panel">

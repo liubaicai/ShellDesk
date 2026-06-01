@@ -4,6 +4,7 @@
 @use "./pages/hosts" as *;
 @use "./pages/settings" as *;
 @use "./remote-desktop/shell" as *;
+@use "./remote-desktop/dismissible-alert" as *;
 @use "./remote-desktop/terminal" as *;
 @use "./remote-desktop/browser" as *;
 @use "./remote-desktop/vnc" as *;

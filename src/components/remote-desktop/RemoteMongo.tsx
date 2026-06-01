@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 
@@ -332,8 +333,8 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
               </label>
             </div>
 
-            {error ? <div className="mongo-alert danger">{error}</div> : null}
-            {notice ? <div className="mongo-alert info">{notice}</div> : null}
+            {error ? <DismissibleAlert className="mongo-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+            {notice ? <DismissibleAlert className="mongo-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
             <button type="button" className="mongo-connect-btn" onClick={connect} disabled={status === 'connecting'}>
               {status === 'connecting' ? '连接中' : '连接 MongoDB'}
@@ -401,8 +402,8 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
           <button type="button" onClick={handleDisconnect}>断开</button>
         </header>
 
-        {error ? <div className="mongo-alert danger">{error}</div> : null}
-        {notice ? <div className="mongo-alert info">{notice}</div> : null}
+        {error ? <DismissibleAlert className="mongo-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+        {notice ? <DismissibleAlert className="mongo-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
         <section className="mongo-query-panel">
           <label className="mongo-editor wide">

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import RemoteDesktop from './RemoteDesktopShell';
 import appIconUrl from './assets/images/icon.png';
+import DismissibleAlert from './components/DismissibleAlert';
 import NavIcon, { type NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import { buildFontStack } from './fontUtils';
@@ -2571,7 +2572,11 @@ function App() {
                   />
                 </label>
 
-                {formError ? <div className="error-banner">{formError}</div> : null}
+                {formError ? (
+                  <DismissibleAlert className="error-banner" onDismiss={() => setFormError('')} role="alert">
+                    {formError}
+                  </DismissibleAlert>
+                ) : null}
 
                 <div className="form-actions">
                   <button type="submit" className="primary-action">{editingHost ? '保存修改' : '添加主机'}</button>
@@ -2664,7 +2669,11 @@ function App() {
                   />
                 </label>
 
-                {keyFormError ? <div className="error-banner">{keyFormError}</div> : null}
+                {keyFormError ? (
+                  <DismissibleAlert className="error-banner" onDismiss={() => setKeyFormError('')} role="alert">
+                    {keyFormError}
+                  </DismissibleAlert>
+                ) : null}
 
                 <div className="form-actions">
                   <button type="submit" className="primary-action">
@@ -2775,7 +2784,11 @@ function App() {
                   </label>
                 ) : null}
 
-                {credentialError ? <div className="error-banner">{credentialError}</div> : null}
+                {credentialError ? (
+                  <DismissibleAlert className="error-banner" onDismiss={() => setCredentialError('')} role="alert">
+                    {credentialError}
+                  </DismissibleAlert>
+                ) : null}
 
                 <div className="form-actions">
                   <button type="submit" className="primary-action" disabled={isConnectionPending}>

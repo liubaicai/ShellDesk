@@ -774,6 +774,94 @@
   font-size: 12px;
 }
 
+/* Context menu */
+
+.proc-context-menu-overlay {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  background: transparent;
+}
+
+.proc-context-menu {
+  position: fixed;
+  z-index: 10001;
+  display: grid;
+  width: 184px;
+  overflow: hidden;
+  border: 1px solid var(--proc-border-strong);
+  border-radius: 8px;
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgba(22, 33, 47, 0.98), rgba(11, 17, 25, 0.98)),
+    #101923;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.36);
+}
+
+.proc-context-menu-title {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px 8px;
+}
+
+.proc-context-menu-title strong {
+  color: var(--proc-accent);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 850;
+}
+
+.proc-context-menu-title span {
+  overflow: hidden;
+  color: var(--proc-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proc-context-menu button {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--proc-muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+  text-align: left;
+}
+
+.proc-context-menu button:hover:not(:disabled) {
+  background: var(--proc-panel-hover);
+  color: var(--proc-text);
+}
+
+.proc-context-menu button.danger-text {
+  color: var(--proc-danger);
+}
+
+.proc-context-menu button.danger-text:hover:not(:disabled) {
+  background: var(--proc-danger-soft);
+}
+
+.proc-context-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.proc-context-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--proc-border);
+}
+
 /* Confirm modal */
 
 .proc-modal-overlay {
@@ -1260,6 +1348,15 @@
     linear-gradient(180deg, rgba(255, 246, 248, 0.98), rgba(255, 255, 255, 0.98)),
     #ffffff;
   box-shadow: 0 24px 70px rgba(43, 67, 92, 0.22);
+}
+
+[data-theme="light"] .proc-context-menu {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 252, 0.98)),
+    #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 18px 42px rgba(43, 67, 92, 0.18);
 }
 
 [data-theme="light"] .proc-ai-modal {

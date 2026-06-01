@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import {
   createEmptyCronTask,
@@ -333,8 +334,8 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
         </button>
       </header>
 
-      {error ? <div className="scheduled-alert danger">{error}</div> : null}
-      {notice ? <div className="scheduled-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="scheduled-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="scheduled-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       {activeTab === 'cron' ? (
         <div className="scheduled-layout cron">

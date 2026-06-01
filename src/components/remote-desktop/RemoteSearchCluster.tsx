@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
@@ -216,8 +217,8 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
         </button>
       </header>
 
-      {error ? <div className="search-alert danger">{error}</div> : null}
-      {notice ? <div className="search-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="search-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="search-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="search-cluster-layout">
         <aside className="search-index-panel">

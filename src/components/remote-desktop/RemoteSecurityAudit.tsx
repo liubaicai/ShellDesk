@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
@@ -603,8 +604,8 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
         </div>
       </header>
 
-      {error ? <div className="security-alert danger">{error}</div> : null}
-      {notice ? <div className="security-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="security-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="security-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="security-summary">
         <div className={`security-score-card ${score.tone}`}>
@@ -718,8 +719,8 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
               <em>{aiAuditSnapshotNote || aiAuditPlanNote || 'SD-Agent 会先选择需要采集的检查项，再生成安全巡检报告。'}</em>
             </div>
 
-            {aiAuditError ? <div className="security-alert danger">{aiAuditError}</div> : null}
-            {aiAuditNotice ? <div className="security-alert success">{aiAuditNotice}</div> : null}
+            {aiAuditError ? <DismissibleAlert className="security-alert danger" onDismiss={() => setAiAuditError('')} role="alert">{aiAuditError}</DismissibleAlert> : null}
+            {aiAuditNotice ? <DismissibleAlert className="security-alert success" onDismiss={() => setAiAuditNotice('')}>{aiAuditNotice}</DismissibleAlert> : null}
 
             <MarkdownReport
               className="security-ai-report"

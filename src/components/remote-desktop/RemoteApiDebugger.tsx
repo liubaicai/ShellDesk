@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import DismissibleAlert from './DismissibleAlert';
 
 import {
   createApiDebugCommand,
@@ -235,8 +236,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
           <button type="button" className="primary" onClick={sendRequest} disabled={loading}>{loading ? '发送中' : '发送'}</button>
         </header>
 
-        {error ? <div className="api-alert danger">{error}</div> : null}
-        {notice ? <div className="api-alert info">{notice}</div> : null}
+        {error ? <DismissibleAlert className="api-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+        {notice ? <DismissibleAlert className="api-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
         <section className="api-request-panel">
           <div className="api-tabs">

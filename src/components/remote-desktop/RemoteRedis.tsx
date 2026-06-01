@@ -2,6 +2,7 @@ import { type KeyboardEvent, useCallback, useMemo, useRef, useState, useEffect }
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DismissibleAlert from './DismissibleAlert';
 
 interface RemoteRedisProps {
   connectionId: string;
@@ -557,7 +558,11 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
               <p className="redis-connect-hint">通过 SSH 通道访问远程 Redis 实例</p>
             </div>
           </div>
-          {errorMessage ? <div className="redis-error-banner">{errorMessage}</div> : null}
+          {errorMessage ? (
+            <DismissibleAlert className="redis-error-banner" onDismiss={() => setErrorMessage('')} role="alert">
+              {errorMessage}
+            </DismissibleAlert>
+          ) : null}
           <div className="redis-connect-grid">
             <label className="redis-field">
               <span>主机</span>
@@ -741,7 +746,15 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
                 {cmdRunning ? '执行中...' : '执行'}
               </button>
             </div>
-            {message ? <div className={`redis-message-banner ${message.type}`}>{message.text}</div> : null}
+            {message ? (
+              <DismissibleAlert
+                className={`redis-message-banner ${message.type}`}
+                onDismiss={() => setMessage(null)}
+                role={message.type === 'error' ? 'alert' : 'status'}
+              >
+                {message.text}
+              </DismissibleAlert>
+            ) : null}
             {cmdResult !== null ? (
               <pre className="redis-cmd-result">{cmdResult}</pre>
             ) : (

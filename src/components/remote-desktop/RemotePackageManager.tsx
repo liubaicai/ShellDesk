@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
@@ -326,8 +327,8 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
         </div>
       </header>
 
-      {error ? <div className="package-alert danger">{error}</div> : null}
-      {notice ? <div className="package-alert info">{notice}</div> : null}
+      {error ? <DismissibleAlert className="package-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
+      {notice ? <DismissibleAlert className="package-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       <div className="package-layout">
         <aside className="package-sidebar">
