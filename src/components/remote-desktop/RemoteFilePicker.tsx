@@ -8,12 +8,13 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage } from './desktopUtils';
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 import {
   normalizeRemotePath,
   joinRemotePath,
   getParentRemotePath,
+  resolveRemoteHomeDirectory,
 } from './RemoteFileExplorer';
 
 interface RemoteFileEntry {
@@ -85,28 +86,6 @@ function isDirectoryEntry(entry: RemoteFileEntry) {
   return getEffectiveEntryType(entry) === 'directory';
 }
 
-const UNIX_HOME_DIRECTORY_COMMAND = `
-home=\${HOME:-}
-if [ -z "$home" ]; then
-  user=$(id -un 2>/dev/null || whoami 2>/dev/null || printf '')
-  if [ -n "$user" ] && command -v getent >/dev/null 2>&1; then
-    home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6 | head -n 1)
-  fi
-fi
-if [ -z "$home" ]; then
-  home=$(pwd 2>/dev/null || printf '')
-fi
-printf '%s\\n' "$home"
-`;
-
-const WINDOWS_HOME_DIRECTORY_COMMAND = powershellCommand(`
-$homePath = [Environment]::GetFolderPath('UserProfile')
-if ([string]::IsNullOrWhiteSpace($homePath)) {
-  $homePath = $env:USERPROFILE
-}
-$homePath
-`);
-
 export default function RemoteFilePicker({
   connectionId,
   systemType,
@@ -153,16 +132,7 @@ export default function RemoteFilePicker({
     }
 
     try {
-      const command = isWindowsHost ? WINDOWS_HOME_DIRECTORY_COMMAND : UNIX_HOME_DIRECTORY_COMMAND;
-      const result = await window.guiSSH!.connections.runCommand(connectionId, command);
-      const homePath = result.stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find(Boolean);
-
-      if (homePath) {
-        return normalizeRemotePath(homePath, isWindowsHost);
-      }
+      return await resolveRemoteHomeDirectory(connectionId, isWindowsHost) || '.';
     } catch {
       // Fall back to the SSH/SFTP session's default directory.
     }

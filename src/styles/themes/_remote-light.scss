@@ -658,12 +658,42 @@
   background: var(--surface);
 }
 
+[data-theme="light"] .explorer-table-loading {
+  background:
+    radial-gradient(circle at center, rgba(37, 99, 235, 0.16), transparent 44%),
+    rgba(241, 245, 249, 0.7);
+}
+
+[data-theme="light"] .explorer-loading-card {
+  border-color: rgba(59, 130, 246, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 20px 44px rgba(34, 55, 84, 0.16);
+  color: #172033;
+}
+
+[data-theme="light"] .explorer-loading-card strong {
+  color: #172033;
+}
+
+[data-theme="light"] .explorer-loading-card span:last-child {
+  color: #657489;
+}
+
+[data-theme="light"] .explorer-loading-spinner {
+  border-color: rgba(37, 99, 235, 0.18);
+  border-top-color: #2563eb;
+}
+
 [data-theme="light"] .explorer-row {
   color: #344054;
 }
 
 [data-theme="light"] .explorer-header {
   background: var(--surface-soft);
+  box-shadow: 0 1px 0 rgba(16, 32, 51, 0.1);
   color: #657489;
 }
 

@@ -100,6 +100,7 @@
 }
 
 .explorer-main {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -123,6 +124,7 @@
 }
 
 .explorer-table {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -131,6 +133,68 @@
   background:
     linear-gradient(180deg, rgba(28, 40, 56, 0.7), rgba(19, 29, 42, 0.76)),
     #152130;
+}
+
+.explorer-table-loading {
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at center, rgba(91, 157, 255, 0.18), transparent 44%),
+    rgba(9, 15, 23, 0.58);
+  backdrop-filter: blur(5px);
+  pointer-events: auto;
+}
+
+.explorer-loading-card {
+  display: grid;
+  width: min(320px, calc(100% - 20px));
+  justify-items: center;
+  gap: 8px;
+  border: 1px solid rgba(122, 174, 255, 0.26);
+  border-radius: 10px;
+  padding: 18px 20px;
+  background:
+    linear-gradient(180deg, rgba(27, 42, 60, 0.96), rgba(16, 26, 39, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 20px 44px rgba(0, 0, 0, 0.28);
+  color: #dce6f2;
+  text-align: center;
+}
+
+.explorer-loading-card strong {
+  color: #f4f8ff;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.explorer-loading-card span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  color: #9eb1c8;
+  font-size: 11px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(142, 183, 247, 0.22);
+  border-top-color: #8fb8f7;
+  border-radius: 50%;
+  animation: explorer-loading-spin 0.85s linear infinite;
+}
+
+@keyframes explorer-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .explorer-virtual-body {
@@ -178,7 +242,8 @@ button.explorer-row {
   top: 0;
   z-index: 1;
   min-height: 44px;
-  background: rgba(42, 56, 74, 0.58);
+  background: #263548;
+  box-shadow: 0 1px 0 rgba(154, 177, 210, 0.16);
   color: #8fa0b6;
   font-size: 12px;
   font-weight: 860;
@@ -356,7 +421,7 @@ button.explorer-row {
 }
 
 .explorer-nav-buttons button,
-.explorer-go-button {
+.addressbar-go-button {
   display: flex;
   width: 28px;
   height: 28px;
@@ -403,10 +468,6 @@ button.explorer-row {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
-.explorer-go-button {
-  display: none;
-}
-
 .explorer-addressbar span {
   color: #526178;
   font-size: 12px;
@@ -435,7 +496,7 @@ button.explorer-row {
   border: 0;
   border-radius: 8px;
   outline: 0;
-  padding: 0 10px;
+  padding: 0 40px 0 10px;
   background: transparent;
   color: transparent;
   font-size: 13px;
@@ -451,13 +512,50 @@ button.explorer-row {
   box-shadow: 0 0 0 3px rgba(98, 168, 255, 0.13);
 }
 
+.addressbar-go-button {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  z-index: 3;
+  transform: translateY(-50%);
+  color: #8fb8f7;
+}
+
+.explorer-addressbar .addressbar-go-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.addressbar-go-button .explorer-nav-icon {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.addressbar-go-button:hover {
+  border-color: rgba(122, 174, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(72, 127, 214, 0.28), rgba(45, 86, 154, 0.18));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 8px 18px rgba(35, 78, 148, 0.2);
+  color: #f4f8ff;
+}
+
+.addressbar-go-button:active {
+  transform: translateY(calc(-50% + 1px));
+  background: rgba(57, 105, 184, 0.22);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
 .breadcrumb-trail {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   overflow: hidden;
-  padding: 0 9px;
+  padding: 0 40px 0 9px;
   pointer-events: none;
   z-index: 1;
 }

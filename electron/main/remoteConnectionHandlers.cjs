@@ -71,6 +71,32 @@ function joinRemoteChildPath(parentPath, childName) {
   return `${normalizedParent.replace(/\/+$/, '')}/${childName}`;
 }
 
+function shouldResolveDirectoryDisplayPath(remotePath) {
+  const normalizedPath = remotePath.trim();
+  return normalizedPath === '.' || normalizedPath === '~';
+}
+
+function resolveSftpDisplayPath(sftp, remotePath) {
+  if (!shouldResolveDirectoryDisplayPath(remotePath) || typeof sftp.realpath !== 'function') {
+    return Promise.resolve(remotePath);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      sftp.realpath(remotePath, (realpathError, resolvedPath) => {
+        if (realpathError || typeof resolvedPath !== 'string' || !resolvedPath.trim()) {
+          resolve(remotePath);
+          return;
+        }
+
+        resolve(resolvedPath.trim());
+      });
+    } catch {
+      resolve(remotePath);
+    }
+  });
+}
+
 function getRemoteParentPath(remotePath) {
   const normalizedPath = remotePath.replace(/\\/g, '/').replace(/\/+$/, '');
   const driveChildMatch = normalizedPath.match(/^(\/?[a-z]:)\/[^/]+$/i);
@@ -217,7 +243,7 @@ function listRemoteDirectory(client, remotePath) {
                 };
               }));
 
-            resolve(listedEntries.sort((left, right) => {
+            const sortedEntries = listedEntries.sort((left, right) => {
               const leftSortType = left.type === 'symlink' && left.targetType === 'directory' ? 'directory' : left.type;
               const rightSortType = right.type === 'symlink' && right.targetType === 'directory' ? 'directory' : right.type;
 
@@ -226,7 +252,10 @@ function listRemoteDirectory(client, remotePath) {
               }
 
               return leftSortType === 'directory' ? -1 : 1;
-            }));
+            });
+            const displayPath = await resolveSftpDisplayPath(sftp, remotePath);
+
+            resolve({ path: displayPath, entries: sortedEntries });
           } catch (error) {
             reject(error);
           } finally {
@@ -1556,10 +1585,10 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
   registerIpcHandler('connection:list-directory', async (_event, connectionId, rawPath) => {
     const remotePath = validateRemotePath(rawPath);
-    const entries = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+    const directory = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
       listRemoteDirectory(activeConnection.client, remotePath));
 
-    return { path: remotePath, entries };
+    return directory;
   });
 
   registerIpcHandler('connection:create-directory', async (_event, connectionId, rawPath) => {

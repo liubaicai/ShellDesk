@@ -12,7 +12,7 @@ import {
 import { createPortal } from 'react-dom';
 
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
-import { isWindowsSystem } from './remoteSystem';
+import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import { isTextFile } from './RemoteNotepad';
 import type { RemoteSystemType } from './types';
 
@@ -83,6 +83,29 @@ const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; label: string }> = [
 const EXPLORER_HEADER_HEIGHT = 44;
 const EXPLORER_ROW_HEIGHT = 42;
 const EXPLORER_ROW_OVERSCAN = 12;
+const DEFAULT_REMOTE_PATH = '.';
+
+const UNIX_HOME_DIRECTORY_COMMAND = `
+home=\${HOME:-}
+if [ -z "$home" ]; then
+  user=$(id -un 2>/dev/null || whoami 2>/dev/null || printf '')
+  if [ -n "$user" ] && command -v getent >/dev/null 2>&1; then
+    home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6 | head -n 1)
+  fi
+fi
+if [ -z "$home" ]; then
+  home=$(pwd 2>/dev/null || printf '')
+fi
+printf '%s\\n' "$home"
+`;
+
+const WINDOWS_HOME_DIRECTORY_COMMAND = powershellCommand(`
+$homePath = [Environment]::GetFolderPath('UserProfile')
+if ([string]::IsNullOrWhiteSpace($homePath)) {
+  $homePath = $env:USERPROFILE
+}
+$homePath
+`);
 
 type ExplorerSidebarIconType = 'home' | 'root' | 'folder' | 'drive' | 'favorite';
 
@@ -189,8 +212,32 @@ export function isWindowsDriveRoot(remotePath: string) {
 }
 
 export function normalizeRemotePath(remotePath: string, isWindowsHost: boolean) {
-  const trimmed = remotePath.trim() || '.';
+  const trimmed = remotePath.trim() || DEFAULT_REMOTE_PATH;
   return isWindowsHost ? normalizeWindowsRemotePath(trimmed) : trimmed;
+}
+
+export async function resolveRemoteHomeDirectory(connectionId: string, isWindowsHost: boolean) {
+  if (!window.guiSSH?.connections) {
+    return '';
+  }
+
+  const command = isWindowsHost ? WINDOWS_HOME_DIRECTORY_COMMAND : UNIX_HOME_DIRECTORY_COMMAND;
+  const result = await window.guiSSH.connections.runCommand(connectionId, command);
+  const homePath = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return homePath ? normalizeRemotePath(homePath, isWindowsHost) : '';
+}
+
+function isRemoteHomeAlias(remotePath: string) {
+  return remotePath === DEFAULT_REMOTE_PATH || remotePath === '~';
+}
+
+function getExplicitInitialPath(initialPath: string | undefined, isWindowsHost: boolean) {
+  const explicitPath = initialPath?.trim();
+  return explicitPath ? normalizeRemotePath(explicitPath, isWindowsHost) : '';
 }
 
 export function joinRemotePath(basePath: string, entryName: string, isWindowsHost = false) {
@@ -451,7 +498,7 @@ function isValidFileName(name: string, isWindowsHost = false) {
 
 function getSortValue(entry: RemoteFileEntry, field: SortField): string | number {
   switch (field) {
-    case 'name': return entry.name.toLowerCase();
+    case 'name': return entry.name;
     case 'modifiedAt': return entry.modifiedAt || '';
     case 'type': return isDirectoryEntry(entry) ? 0 : entry.type === 'symlink' ? 1 : 2;
     case 'size': return isDirectoryEntry(entry) ? -1 : entry.size;
@@ -459,10 +506,26 @@ function getSortValue(entry: RemoteFileEntry, field: SortField): string | number
   }
 }
 
+function isEditableShortcutTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest(
+    'input, textarea, select, button, [contenteditable="true"], [contenteditable=""]',
+  ));
+}
+
+function getTrackedTableScrollTop(scrollTop: number) {
+  if (scrollTop <= EXPLORER_HEADER_HEIGHT) {
+    return 0;
+  }
+
+  const visibleRowIndex = Math.floor((scrollTop - EXPLORER_HEADER_HEIGHT) / EXPLORER_ROW_HEIGHT);
+  return EXPLORER_HEADER_HEIGHT + visibleRowIndex * EXPLORER_ROW_HEIGHT;
+}
+
 function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
-  const [remotePath, setRemotePath] = useState(initialPath || '.');
-  const [pathDraft, setPathDraft] = useState(initialPath || '.');
+  const initialRemotePath = getExplicitInitialPath(initialPath, isWindowsHost) || DEFAULT_REMOTE_PATH;
+  const [remotePath, setRemotePath] = useState(initialRemotePath);
+  const [pathDraft, setPathDraft] = useState(initialRemotePath);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileEntries, setFileEntries] = useState<RemoteFileEntry[]>([]);
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
@@ -489,6 +552,8 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const [propertiesSaving, setPropertiesSaving] = useState(false);
   const [propertiesError, setPropertiesError] = useState('');
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [homePath, setHomePath] = useState('');
+  const [isResolvingDefaultPath, setIsResolvingDefaultPath] = useState(!getExplicitInitialPath(initialPath, isWindowsHost));
   const [lastClickedName, setLastClickedName] = useState<string | null>(null);
   const [deleteConfirmationEntries, setDeleteConfirmationEntries] = useState<RemoteFileEntry[] | null>(null);
   const [transferProgress, setTransferProgress] = useState<{ type: 'download' | 'upload'; fileName: string; transferred: number; total: number } | null>(null);
@@ -498,23 +563,89 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const newItemInputRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialPathRef = useRef(initialPath || '.');
+  const initialPathRef = useRef(initialRemotePath);
+  const pendingDefaultPathRef = useRef(!getExplicitInitialPath(initialPath, isWindowsHost));
+  const tableScrollFrameRef = useRef<number | null>(null);
+
+  const updateTableViewport = useCallback((table: HTMLDivElement) => {
+    setTableViewport((currentViewport) => {
+      const nextViewport = {
+        scrollTop: getTrackedTableScrollTop(table.scrollTop),
+        height: table.clientHeight,
+      };
+
+      return currentViewport.scrollTop === nextViewport.scrollTop && currentViewport.height === nextViewport.height
+        ? currentViewport
+        : nextViewport;
+    });
+  }, []);
+
+  const scheduleTableViewportUpdate = useCallback((table: HTMLDivElement) => {
+    if (tableScrollFrameRef.current !== null) {
+      return;
+    }
+
+    tableScrollFrameRef.current = window.requestAnimationFrame(() => {
+      tableScrollFrameRef.current = null;
+      updateTableViewport(table);
+    });
+  }, [updateTableViewport]);
 
   useEffect(() => {
     setPathDraft(remotePath);
   }, [remotePath]);
 
   useEffect(() => {
-    if (!initialPath || initialPath === initialPathRef.current) {
+    const explicitPath = getExplicitInitialPath(initialPath, isWindowsHost);
+
+    if (explicitPath) {
+      setIsResolvingDefaultPath(false);
+      pendingDefaultPathRef.current = false;
+
+      if (explicitPath === initialPathRef.current) {
+        return;
+      }
+
+      initialPathRef.current = explicitPath;
+      setRemotePath(explicitPath);
+      setPathDraft(explicitPath);
+      setNavigationHistory([explicitPath]);
+      setHistoryIndex(0);
       return;
     }
 
-    initialPathRef.current = initialPath;
-    setRemotePath(initialPath);
-    setPathDraft(initialPath);
-    setNavigationHistory([initialPath]);
-    setHistoryIndex(0);
-  }, [initialPath]);
+    let cancelled = false;
+    setIsResolvingDefaultPath(true);
+    pendingDefaultPathRef.current = true;
+
+    void (async () => {
+      let resolvedPath = DEFAULT_REMOTE_PATH;
+
+      try {
+        resolvedPath = await resolveRemoteHomeDirectory(connectionId, isWindowsHost) || DEFAULT_REMOTE_PATH;
+      } catch {
+        resolvedPath = DEFAULT_REMOTE_PATH;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      initialPathRef.current = resolvedPath;
+      if (!isRemoteHomeAlias(resolvedPath)) {
+        setHomePath(resolvedPath);
+      }
+      setRemotePath(resolvedPath);
+      setPathDraft(resolvedPath);
+      setNavigationHistory([resolvedPath]);
+      setHistoryIndex(0);
+      setIsResolvingDefaultPath(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId, initialPath, isWindowsHost]);
 
   useEffect(() => {
     return () => {
@@ -525,6 +656,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   useEffect(() => {
     if (!window.guiSSH?.connections) {
       setFilesError('当前运行环境不支持 SFTP 文件浏览。');
+      return;
+    }
+
+    if (isResolvingDefaultPath) {
       return;
     }
 
@@ -542,15 +677,31 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         const result: RemoteDirectoryResult = await window.guiSSH!.connections.listDirectory(connectionId, remotePath);
 
         if (!cancelled) {
+          pendingDefaultPathRef.current = false;
           setFileEntries(result.entries);
           setRemotePath(result.path);
           setPathDraft(result.path);
+          setHomePath((currentHomePath) => currentHomePath || (
+            isRemoteHomeAlias(remotePath) && result.path !== remotePath
+              ? result.path
+              : currentHomePath
+          ));
           setNavigationHistory((history) => history.map((path, index) => (
             index === historyIndex ? result.path : path
           )));
         }
       } catch (error) {
         if (!cancelled) {
+          if (pendingDefaultPathRef.current && remotePath !== DEFAULT_REMOTE_PATH) {
+            pendingDefaultPathRef.current = false;
+            setRemotePath(DEFAULT_REMOTE_PATH);
+            setPathDraft(DEFAULT_REMOTE_PATH);
+            setNavigationHistory((history) => history.map((path, index) => (
+              index === historyIndex ? DEFAULT_REMOTE_PATH : path
+            )));
+            return;
+          }
+
           setFileEntries([]);
           setFilesError(getErrorMessage(error));
         }
@@ -566,7 +717,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     return () => {
       cancelled = true;
     };
-  }, [connectionId, filesRefreshToken, historyIndex, remotePath]);
+  }, [connectionId, filesRefreshToken, historyIndex, isResolvingDefaultPath, remotePath]);
 
   useEffect(() => {
     if (renamingName && renameInputRef.current) {
@@ -595,23 +746,17 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       return;
     }
 
-    const updateViewport = () => {
-      setTableViewport((currentViewport) => {
-        const nextViewport = {
-          scrollTop: table.scrollTop,
-          height: table.clientHeight,
-        };
-
-        return currentViewport.scrollTop === nextViewport.scrollTop && currentViewport.height === nextViewport.height
-          ? currentViewport
-          : nextViewport;
-      });
-    };
+    const updateViewport = () => updateTableViewport(table);
 
     updateViewport();
 
     if (typeof ResizeObserver === 'undefined') {
-      return;
+      return () => {
+        if (tableScrollFrameRef.current !== null) {
+          window.cancelAnimationFrame(tableScrollFrameRef.current);
+          tableScrollFrameRef.current = null;
+        }
+      };
     }
 
     const resizeObserver = new ResizeObserver(updateViewport);
@@ -619,8 +764,12 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
     return () => {
       resizeObserver.disconnect();
+      if (tableScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(tableScrollFrameRef.current);
+        tableScrollFrameRef.current = null;
+      }
     };
-  }, []);
+  }, [updateTableViewport]);
 
   useEffect(() => {
     const table = tableRef.current;
@@ -670,18 +819,30 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
   const displayedEntries = useMemo(() => {
     const query = fileSearchQuery.trim().toLowerCase();
-    const visibleEntries = showHiddenEntries
-      ? sortedEntries
-      : sortedEntries.filter((entry) => !isHiddenEntry(entry));
-
-    if (!query) {
-      return visibleEntries;
+    if (!query && showHiddenEntries) {
+      return sortedEntries;
     }
 
-    return visibleEntries.filter((entry) => {
-      const haystack = `${entry.name} ${getFileTypeLabel(entry)}`.toLowerCase();
-      return haystack.includes(query);
-    });
+    const entries: RemoteFileEntry[] = [];
+
+    for (const entry of sortedEntries) {
+      if (!showHiddenEntries && isHiddenEntry(entry)) {
+        continue;
+      }
+
+      if (query) {
+        const nameMatches = entry.name.toLowerCase().includes(query);
+        const typeMatches = !nameMatches && getFileTypeLabel(entry).toLowerCase().includes(query);
+
+        if (!nameMatches && !typeMatches) {
+          continue;
+        }
+      }
+
+      entries.push(entry);
+    }
+
+    return entries;
   }, [fileSearchQuery, showHiddenEntries, sortedEntries]);
 
   const virtualEntryWindow = useMemo(() => {
@@ -704,10 +865,29 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     };
   }, [displayedEntries, tableViewport]);
 
-  const selectedEntries = useMemo(
-    () => sortedEntries.filter((entry) => selectedNames.has(entry.name)),
-    [selectedNames, sortedEntries],
-  );
+  const entryByName = useMemo(() => {
+    const entriesByName = new Map<string, RemoteFileEntry>();
+
+    for (const entry of sortedEntries) {
+      entriesByName.set(entry.name, entry);
+    }
+
+    return entriesByName;
+  }, [sortedEntries]);
+
+  const selectedEntries = useMemo(() => {
+    const entries: RemoteFileEntry[] = [];
+
+    selectedNames.forEach((name) => {
+      const entry = entryByName.get(name);
+
+      if (entry) {
+        entries.push(entry);
+      }
+    });
+
+    return entries;
+  }, [entryByName, selectedNames]);
 
   const selectedFileEntries = useMemo(
     () => selectedEntries.filter(isFileEntry),
@@ -715,8 +895,8 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   );
 
   const primarySelectedEntry = useMemo(() => {
-    if (lastClickedName) {
-      const lastClickedEntry = selectedEntries.find((entry) => entry.name === lastClickedName);
+    if (lastClickedName && selectedNames.has(lastClickedName)) {
+      const lastClickedEntry = entryByName.get(lastClickedName);
 
       if (lastClickedEntry) {
         return lastClickedEntry;
@@ -724,7 +904,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
 
     return selectedEntries[0] ?? null;
-  }, [lastClickedName, selectedEntries]);
+  }, [entryByName, lastClickedName, selectedEntries, selectedNames]);
 
   const selectedFilesSize = useMemo(
     () => selectedFileEntries.reduce((totalSize, entry) => totalSize + Math.max(entry.size, 0), 0),
@@ -857,18 +1037,8 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   }, []);
 
   const handleTableScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
-    const table = event.currentTarget;
-    setTableViewport((currentViewport) => {
-      const nextViewport = {
-        scrollTop: table.scrollTop,
-        height: table.clientHeight,
-      };
-
-      return currentViewport.scrollTop === nextViewport.scrollTop && currentViewport.height === nextViewport.height
-        ? currentViewport
-        : nextViewport;
-    });
-  }, []);
+    scheduleTableViewportUpdate(event.currentTarget);
+  }, [scheduleTableViewportUpdate]);
 
   const handleSort = useCallback((field: SortField) => {
     setSortField((prevField) => {
@@ -922,15 +1092,35 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         return next;
       });
     } else if (event.shiftKey && lastClickedName) {
-      const names = displayedEntries.map((e) => e.name);
-      const anchorIndex = names.indexOf(lastClickedName);
-      const currentIndex = names.indexOf(entry.name);
+      let anchorIndex = -1;
+      let currentIndex = -1;
+
+      for (let index = 0; index < displayedEntries.length; index += 1) {
+        const currentName = displayedEntries[index].name;
+
+        if (currentName === lastClickedName) {
+          anchorIndex = index;
+        }
+
+        if (currentName === entry.name) {
+          currentIndex = index;
+        }
+
+        if (anchorIndex >= 0 && currentIndex >= 0) {
+          break;
+        }
+      }
 
       if (anchorIndex >= 0 && currentIndex >= 0) {
         const start = Math.min(anchorIndex, currentIndex);
         const end = Math.max(anchorIndex, currentIndex);
-        const rangeNames = names.slice(start, end + 1);
-        setSelectedNames(new Set(rangeNames));
+        const rangeNames = new Set<string>();
+
+        for (let index = start; index <= end; index += 1) {
+          rangeNames.add(displayedEntries[index].name);
+        }
+
+        setSelectedNames(rangeNames);
       }
     } else {
       setSelectedNames(new Set([entry.name]));
@@ -1241,6 +1431,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   }, [closeContextMenu, connectionId, isWindowsHost, remotePath, refreshFiles]);
 
   const handleKeydown = useCallback((event: ReactKeyboardEvent) => {
+    if (isEditableShortcutTarget(event.target)) {
+      return;
+    }
+
     if (renamingName || isCreatingNew) return;
 
     switch (event.key) {
@@ -1294,9 +1488,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     navigateToPath(pathValue);
   }, [navigateToPath]);
 
+  const homeQuickPath = homePath || DEFAULT_REMOTE_PATH;
   const quickAccessPaths = useMemo(() => isWindowsHost
     ? [
-        { label: 'Home', path: '.', icon: 'home' as const },
+        { label: 'Home', path: homeQuickPath, icon: 'home' as const },
         { label: '根目录', path: '/', icon: 'root' as const },
         { label: 'C:/', path: 'C:/', icon: 'drive' as const },
         { label: 'C:/Users', path: 'C:/Users', icon: 'folder' as const },
@@ -1305,7 +1500,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         { label: 'C:/Temp', path: 'C:/Temp', icon: 'folder' as const },
       ]
     : [
-        { label: 'Home', path: '.', icon: 'home' as const },
+        { label: 'Home', path: homeQuickPath, icon: 'home' as const },
         { label: '根目录', path: '/', icon: 'root' as const },
         { label: '/home', path: '/home', icon: 'folder' as const },
         { label: '/tmp', path: '/tmp', icon: 'folder' as const },
@@ -1313,7 +1508,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         { label: '/etc', path: '/etc', icon: 'folder' as const },
         { label: '/opt', path: '/opt', icon: 'folder' as const },
         { label: '/usr/local', path: '/usr/local', icon: 'folder' as const },
-      ], [isWindowsHost]);
+      ], [homeQuickPath, isWindowsHost]);
 
   const isFavoritePath = favoritePaths.includes(remotePath);
   const selectedOpenActionLabel = selectedEntries.length === 1 && primarySelectedEntry
@@ -1355,7 +1550,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回上级目录">
             <ExplorerNavIcon icon="up" />
           </button>
-          <button type="button" onClick={() => navigateToPath(isWindowsHost ? '.' : '/home')} aria-label="打开 Home" title="Home">
+          <button type="button" onClick={() => navigateToPath(homeQuickPath)} aria-label="打开 Home" title="Home">
             <ExplorerNavIcon icon="home" />
           </button>
         </div>
@@ -1380,6 +1575,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             spellCheck={false}
             placeholder={isWindowsHost ? '输入路径，如 C:/Users 后按回车...' : '输入路径后按回车...'}
           />
+          <button type="submit" className="addressbar-go-button" aria-label="进入路径" title="进入路径">
+            <ExplorerNavIcon icon="forward" />
+          </button>
         </div>
         <label className="explorer-search">
           <ExplorerSearchIcon />
@@ -1390,7 +1588,6 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             spellCheck={false}
           />
         </label>
-        <button type="submit" className="explorer-go-button">转到</button>
       </form>
 
       <div className="explorer-commandbar" aria-label="文件工具栏">
@@ -1434,14 +1631,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         <aside className="explorer-sidebar" aria-label="快速访问">
           <div className="sidebar-section-title">快速访问</div>
           {quickAccessPaths.slice(0, 2).map((item) => (
-            <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
+            <button key={`${item.label}-${item.path}`} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
               <ExplorerSidebarIcon icon={item.icon} />
               <span className="sidebar-path-label">{item.label}</span>
             </button>
           ))}
           <div className="sidebar-section-title">常用目录</div>
           {quickAccessPaths.slice(2).map((item) => (
-            <button key={item.path} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
+            <button key={`${item.label}-${item.path}`} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
               <ExplorerSidebarIcon icon={item.icon} />
               <span className="sidebar-path-label">{item.label}</span>
             </button>
@@ -1504,7 +1701,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             </div>
           ) : null}
 
-          <div className="explorer-table" role="table" ref={tableRef} onScroll={handleTableScroll}>
+          <div className="explorer-table" role="table" aria-busy={isFilesLoading} ref={tableRef} onScroll={handleTableScroll}>
             <div className="explorer-row explorer-header" role="row">
               <button type="button" className="sort-header" onClick={() => handleSort('name')}>
                 名称{sortIndicator('name')}
@@ -1568,6 +1765,16 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               </div>
             </div>
           </div>
+
+          {isFilesLoading ? (
+            <div className="explorer-table-loading" role="status" aria-live="polite">
+              <div className="explorer-loading-card">
+                <span className="explorer-loading-spinner" aria-hidden="true" />
+                <strong>正在读取目录</strong>
+                <span title={remotePath}>{remotePath}</span>
+              </div>
+            </div>
+          ) : null}
 
           {!isFilesLoading && !filesError && !displayedEntries.length ? (
             <div className="empty-inline">{fileEntries.length ? '没有匹配的文件。' : '该目录为空。'}</div>
