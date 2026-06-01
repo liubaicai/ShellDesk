@@ -1424,6 +1424,78 @@
     var(--surface);
 }
 
+.host-card.connecting {
+  border-color: var(--accent-border);
+}
+
+.host-card-main:disabled {
+  cursor: wait;
+}
+
+.host-card-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at center, rgba(67, 199, 255, 0.18), transparent 48%),
+    rgba(10, 18, 28, 0.74);
+  backdrop-filter: blur(5px);
+  color: #edf7ff;
+  text-align: center;
+}
+
+.host-card-loading::before {
+  position: absolute;
+  inset: 1px;
+  border: 1px solid rgba(122, 217, 255, 0.18);
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+.host-card-loading > * {
+  position: relative;
+}
+
+.host-card-loading {
+  gap: 6px;
+}
+
+.host-card-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(183, 231, 255, 0.22);
+  border-top-color: #7ee7ff;
+  border-radius: 50%;
+  animation: host-card-loading-spin 0.85s linear infinite;
+}
+
+.host-card-loading strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 860;
+}
+
+.host-card-loading small {
+  display: block;
+  max-width: calc(100% - 32px);
+  overflow: hidden;
+  color: #b7d9ea;
+  font-size: 11px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes host-card-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .host-card-main {
   gap: 16px;
   padding: 0;

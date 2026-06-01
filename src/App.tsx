@@ -391,6 +391,8 @@ interface ConnectionErrorNotice {
   message: string;
 }
 
+type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
+
 type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
   Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
 
@@ -943,7 +945,9 @@ function App() {
   const [windowConnectionId] = useState(readWindowConnectionId);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [windowConnectionError, setWindowConnectionError] = useState('');
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingHostId, setConnectingHostId] = useState<string | null>(null);
+  const [isQuickConnecting, setIsQuickConnecting] = useState(false);
+  const [isCredentialConnecting, setIsCredentialConnecting] = useState(false);
   const [connectionErrorNotice, setConnectionErrorNotice] = useState<ConnectionErrorNotice | null>(null);
   const [credentialHost, setCredentialHost] = useState<ConnectionHost | null>(null);
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
@@ -964,6 +968,7 @@ function App() {
   const titlebarConnectionAddress = connection
     ? `${connection.host.username}@${connection.host.address}:${connection.host.port}`
     : '';
+  const isConnectionPending = Boolean(connectingHostId) || isQuickConnecting || isCredentialConnecting;
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
   const sshKeyById = useMemo(() => new Map(sshKeys.map((key) => [key.id, key])), [sshKeys]);
@@ -1833,7 +1838,15 @@ function App() {
     }
   };
 
-  const connectHost = async (host: ConnectionHost, credentials?: CredentialFormState) => {
+  const connectHost = async (
+    host: ConnectionHost,
+    credentials?: CredentialFormState,
+    launchSource: ConnectionLaunchSource = 'host-card',
+  ) => {
+    if (isConnectionPending) {
+      return false;
+    }
+
     if (!window.guiSSH?.connections) {
       const message = '当前运行环境不支持 SSH 连接。';
       markHostConnectionResult(host, 'failed', message);
@@ -1865,9 +1878,15 @@ function App() {
         : '',
     };
 
-    setIsConnecting(true);
+    if (launchSource === 'quick-connect') {
+      setIsQuickConnecting(true);
+    } else if (launchSource === 'credential') {
+      setIsCredentialConnecting(true);
+    } else {
+      setConnectingHostId(host.id);
+    }
+
     setConnectionErrorNotice(null);
-    setStatusMessage(`正在连接 ${host.name}...`);
 
     try {
       const nextConnection = await window.guiSSH.connections.connect(hostForConnection);
@@ -1939,11 +1958,21 @@ function App() {
 
       return false;
     } finally {
-      setIsConnecting(false);
+      if (launchSource === 'quick-connect') {
+        setIsQuickConnecting(false);
+      } else if (launchSource === 'credential') {
+        setIsCredentialConnecting(false);
+      } else {
+        setConnectingHostId((currentHostId) => (currentHostId === host.id ? null : currentHostId));
+      }
     }
   };
 
   const connectCommandBarInput = async () => {
+    if (isConnectionPending) {
+      return;
+    }
+
     const parsedCommand = parseQuickConnectCommand(searchQuery);
 
     if (!parsedCommand) {
@@ -1958,7 +1987,7 @@ function App() {
     ));
 
     if (matchedHost && !parsedCommand.keyPath) {
-      await connectHost(matchedHost);
+      await connectHost(matchedHost, undefined, 'quick-connect');
       return;
     }
 
@@ -1986,13 +2015,13 @@ function App() {
       updatedAt: now,
     };
 
-    await connectHost(quickConnectHost);
+    await connectHost(quickConnectHost, undefined, 'quick-connect');
   };
 
   const submitCredentialConnection = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!credentialHost) {
+    if (!credentialHost || isConnectionPending) {
       return;
     }
 
@@ -2010,7 +2039,7 @@ function App() {
       return;
     }
 
-    await connectHost(credentialHost, credentialForm);
+    await connectHost(credentialHost, credentialForm, 'credential');
   };
 
   const clearFilters = () => {
@@ -2204,8 +2233,8 @@ function App() {
               <kbd>Ctrl + K</kbd>
             </label>
 
-            <button type="button" className="command-button" onClick={connectCommandBarInput} disabled={isConnecting}>
-              {isConnecting ? '连接中...' : '连接'}
+            <button type="button" className="command-button" onClick={connectCommandBarInput} disabled={isConnectionPending}>
+              {isQuickConnecting ? '连接中...' : '连接'}
             </button>
 
             <button type="button" className="primary-action" onClick={openCreateHost}>+ 新建主机</button>
@@ -2287,21 +2316,27 @@ function App() {
                 <div className="host-grid grid">
                   {filteredHosts.map((host) => {
                     const connectionState = getHostConnectionStateView(host);
+                    const isHostConnecting = connectingHostId === host.id;
 
                     return (
                       <article
                         key={host.id}
-                        className="host-card"
-                        onDoubleClick={() => {
+                        className={`host-card ${isHostConnecting ? 'connecting' : ''}`}
+                        aria-busy={isHostConnecting}
+                      >
+                        <button
+                          type="button"
+                          className="host-card-main"
+                          disabled={isConnectionPending}
+                          onClick={() => {
                           if (host.authMethod === 'password' && !host.password) {
                             openCredentialDialog(host, '请输入该主机的 SSH 密码后连接。');
                             return;
                           }
 
-                          void connectHost(host);
+                          void connectHost(host, undefined, 'host-card');
                         }}
-                      >
-                        <button type="button" className="host-card-main">
+                        >
                           <HostSystemIcon systemName={getHostSystemLabel(host)} systemType={host.systemType} />
                           <span className="host-summary">
                             <strong>{host.name}</strong>
@@ -2313,6 +2348,13 @@ function App() {
                             </span>
                           </span>
                         </button>
+                        {isHostConnecting ? (
+                          <div className="host-card-loading" role="status" aria-live="polite">
+                            <span className="host-card-spinner" aria-hidden="true" />
+                            <strong>正在连接</strong>
+                            <small>{host.username}@{host.address}:{host.port}</small>
+                          </div>
+                        ) : null}
                         <span className="host-card-actions">
                           <span
                             className={`host-connection-state ${connectionState.className}`}
@@ -2736,8 +2778,8 @@ function App() {
                 {credentialError ? <div className="error-banner">{credentialError}</div> : null}
 
                 <div className="form-actions">
-                  <button type="submit" className="primary-action" disabled={isConnecting}>
-                    {isConnecting ? '连接中...' : '连接'}
+                  <button type="submit" className="primary-action" disabled={isConnectionPending}>
+                    {isCredentialConnecting ? '连接中...' : '连接'}
                   </button>
                   <button type="button" className="command-button" onClick={closeCredentialDialog}>取消</button>
                 </div>
