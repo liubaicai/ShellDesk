@@ -19,6 +19,7 @@ import {
   type S3ObjectEntry,
 } from './s3CliParsers';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteS3BrowserProps {
   connectionId: string;
@@ -49,7 +50,7 @@ function runCmd(connectionId: string, input: RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteS3Browser.g77vf3'));
   }
 
   return api.runCommand(connectionId, input.command, input.stdin);
@@ -160,7 +161,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       const result = await runCmd(connectionId, createS3ListBucketsCommand(mode, config, isWindowsHost));
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || `${mode} bucket 列表读取失败。`);
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.7anxqo', { value0: mode }));
       }
 
       const nextBuckets = parseS3Buckets(mode, result.stdout);
@@ -172,7 +173,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       setPrefix('');
       setRawOutput(result.stdout || result.stderr);
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      setNotice(`已读取 ${nextBuckets.length} 个 bucket。`);
+      setNotice(tCurrent('auto.remoteS3Browser.rp1fyr', { value0: nextBuckets.length }));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -191,7 +192,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
     setRawOutput('');
     setLastRefreshedAt('');
     setError('');
-    setNotice('MinIO / S3 已断开。');
+    setNotice(tCurrent('auto.remoteS3Browser.1veqr5f'));
     setActiveTab('objects');
   };
 
@@ -210,7 +211,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       const result = await runCmd(connectionId, createS3ListObjectsCommand(mode, config, bucketName, normalizedPrefix, isWindowsHost));
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || `${mode} 对象列表读取失败。`);
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.z0wjzo', { value0: mode }));
       }
 
       const nextObjects = parseS3Objects(mode, result.stdout, normalizedPrefix);
@@ -221,7 +222,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       setRawOutput(result.stdout || result.stderr);
       setActiveTab('objects');
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      setNotice(`已读取 ${nextObjects.length} 个对象或前缀。`);
+      setNotice(tCurrent('auto.remoteS3Browser.1s0sz3e', { value0: nextObjects.length }));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -244,7 +245,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
     try {
       setPendingAction({
         kind: 'delete',
-        title: `删除 ${object.key}`,
+        title: tCurrent('auto.remoteS3Browser.1i54laq', { value0: object.key }),
         bucket: selectedBucket.name,
         object,
         command: createS3DeleteObjectCommand(mode, config, selectedBucket.name, object.key, isWindowsHost),
@@ -261,7 +262,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
     try {
       setPendingAction({
         kind: 'download',
-        title: `下载 ${object.key}`,
+        title: tCurrent('auto.remoteS3Browser.6mkll2', { value0: object.key }),
         bucket: selectedBucket.name,
         object,
         command: createS3DownloadObjectCommand(mode, config, selectedBucket.name, object.key, downloadDirectory, isWindowsHost),
@@ -280,7 +281,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
 
     try {
       const result = await runCmd(connectionId, pendingAction.command);
-      const output = result.stdout || result.stderr || '操作已完成。';
+      const output = result.stdout || result.stderr || tCurrent('auto.remoteS3Browser.1m6h6ak');
 
       if (result.code !== 0) {
         throw new Error(output);
@@ -305,28 +306,27 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
     if (!selectedBucket || !object || object.type !== 'object') return;
 
     await navigator.clipboard.writeText(createS3ObjectUrl(config, selectedBucket.name, object.key));
-    setNotice('已复制对象 URL。');
+    setNotice(tCurrent('auto.remoteS3Browser.1e8pmj5'));
   };
 
   return (
     <section className="s3-browser">
       <header className="s3-toolbar">
         <div className="s3-status-card">
-          <span>对象存储</span>
+          <span>{tCurrent('auto.remoteS3Browser.1vc65bb')}</span>
           <strong>{selectedBucket?.name ?? 'MinIO / S3'}</strong>
-          <em>{lastRefreshedAt || (availableTools.length ? `${availableTools.join(' / ')} 可用` : '等待检测')}</em>
+          <em>{lastRefreshedAt || (availableTools.length ? tCurrent('auto.remoteS3Browser.1hi73fv', { value0: availableTools.join(' / ') }) : tCurrent('auto.remoteS3Browser.12iu3xi'))}</em>
         </div>
         <div className="s3-mode-switch">
           <button type="button" className={mode === 'mc' ? 'active' : ''} onClick={() => setMode('mc')}>mc</button>
           <button type="button" className={mode === 'aws' ? 'active' : ''} onClick={() => setMode('aws')}>aws</button>
         </div>
-        <button type="button" onClick={detectTools}>检测工具</button>
+        <button type="button" onClick={detectTools}>{tCurrent('auto.remoteS3Browser.93b684')}</button>
         <button type="button" className="primary" onClick={loadBuckets} disabled={loading}>
-          {loading ? '连接中' : connected ? '刷新 Buckets' : '连接 / Buckets'}
+          {loading ? tCurrent('auto.remoteS3Browser.h7vocz') : connected ? tCurrent('auto.remoteS3Browser.nabcrd') : tCurrent('auto.remoteS3Browser.1u8k4u')}
         </button>
         <button type="button" onClick={disconnect} disabled={!connected || loading}>
-          断开
-        </button>
+          {tCurrent('auto.remoteS3Browser.a4u4dk')}</button>
       </header>
 
       {error ? <DismissibleAlert className="s3-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
@@ -336,7 +336,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
         {!connected ? (
           <aside className="s3-config">
             <div className="s3-config-head">
-              <strong>连接配置</strong>
+              <strong>{tCurrent('auto.remoteS3Browser.1qcyuf')}</strong>
               <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'}</span>
             </div>
             <label>
@@ -360,7 +360,7 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
               <span>Path-style URL</span>
             </label>
             <label>
-              <span>远程下载目录</span>
+              <span>{tCurrent('auto.remoteS3Browser.1srg6m9')}</span>
               <input value={downloadDirectory} onChange={(event) => setDownloadDirectory(event.target.value)} />
             </label>
           </aside>
@@ -383,27 +383,27 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
                 <span>{formatDate(bucket.createdAt)}</span>
               </button>
             ))}
-            {!buckets.length ? <div className="s3-empty-state">连接后显示 bucket。</div> : null}
+            {!buckets.length ? <div className="s3-empty-state">{tCurrent('auto.remoteS3Browser.xiyqv6')}</div> : null}
           </div>
         </aside>
 
         <main className="s3-main">
           <div className="s3-addressbar">
-            <button type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', getParentPrefix(prefix))} disabled={!selectedBucket || !prefix}>上级</button>
-            <button type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', prefix)} disabled={!selectedBucket || objectLoading}>{objectLoading ? '刷新中' : '刷新'}</button>
+            <button type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', getParentPrefix(prefix))} disabled={!selectedBucket || !prefix}>{tCurrent('auto.remoteS3Browser.1cs0t8u')}</button>
+            <button type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', prefix)} disabled={!selectedBucket || objectLoading}>{objectLoading ? tCurrent('auto.remoteS3Browser.1taxqz1') : tCurrent('auto.remoteS3Browser.12qo56a')}</button>
             <div className="s3-breadcrumb">
               <button type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', '')}>{selectedBucket?.name ?? 'bucket'}</button>
               {breadcrumbs.map((item) => (
                 <button key={item.prefix} type="button" onClick={() => loadObjects(selectedBucket?.name ?? '', item.prefix)}>{item.label}</button>
               ))}
             </div>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索当前 prefix" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tCurrent('auto.remoteS3Browser.5fs9hd')} />
           </div>
 
           <nav className="s3-tabs">
-            <button type="button" className={activeTab === 'objects' ? 'active' : ''} onClick={() => setActiveTab('objects')}>对象</button>
-            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>原始输出</button>
-            <button type="button" onClick={() => copyObjectUrl(selectedObject)} disabled={!selectedObject || selectedObject.type !== 'object'}>复制 URL</button>
+            <button type="button" className={activeTab === 'objects' ? 'active' : ''} onClick={() => setActiveTab('objects')}>{tCurrent('auto.remoteS3Browser.1hptjin')}</button>
+            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteS3Browser.1sxtwbe')}</button>
+            <button type="button" onClick={() => copyObjectUrl(selectedObject)} disabled={!selectedObject || selectedObject.type !== 'object'}>{tCurrent('auto.remoteS3Browser.19gy30v')}</button>
           </nav>
 
           {activeTab === 'objects' ? (
@@ -411,11 +411,11 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
               <table className="s3-table">
                 <thead>
                   <tr>
-                    <th>名称</th>
-                    <th>类型</th>
-                    <th>大小</th>
-                    <th>修改时间</th>
-                    <th>操作</th>
+                    <th>{tCurrent('auto.remoteS3Browser.hzx914')}</th>
+                    <th>{tCurrent('auto.remoteS3Browser.anh4cj')}</th>
+                    <th>{tCurrent('auto.remoteS3Browser.1i41a3v')}</th>
+                    <th>{tCurrent('auto.remoteS3Browser.gdxblm')}</th>
+                    <th>{tCurrent('auto.remoteS3Browser.501w24')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -432,42 +432,41 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
                       <td>{formatDate(object.lastModified)}</td>
                       <td>
                         {object.type === 'prefix' ? (
-                          <button type="button" onClick={(event) => { event.stopPropagation(); openPrefix(object); }}>打开</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); openPrefix(object); }}>{tCurrent('auto.remoteS3Browser.2lh37q')}</button>
                         ) : (
                           <>
-                            <button type="button" onClick={(event) => { event.stopPropagation(); prepareDownload(object); }}>下载</button>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); prepareDownload(object); }}>{tCurrent('auto.remoteS3Browser.1osfjit')}</button>
                             <button type="button" onClick={(event) => { event.stopPropagation(); void copyObjectUrl(object); }}>URL</button>
-                            <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDelete(object); }}>删除</button>
+                            <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDelete(object); }}>{tCurrent('auto.remoteS3Browser.1t2vi4h')}</button>
                           </>
                         )}
                       </td>
                     </tr>
                   ))}
-                  {!filteredObjects.length ? <tr><td colSpan={5} className="s3-empty-cell">当前 prefix 没有对象。</td></tr> : null}
+                  {!filteredObjects.length ? <tr><td colSpan={5} className="s3-empty-cell">{tCurrent('auto.remoteS3Browser.c96qxh')}</td></tr> : null}
                 </tbody>
               </table>
             </section>
           ) : (
-            <pre className="s3-raw-output">{rawOutput || '连接或刷新后显示原始 CLI 输出。'}</pre>
+            <pre className="s3-raw-output">{rawOutput || tCurrent('auto.remoteS3Browser.tzh8so')}</pre>
           )}
         </main>
 
         <aside className="s3-detail">
           <div className="s3-detail-head">
-            <strong>对象详情</strong>
+            <strong>{tCurrent('auto.remoteS3Browser.1ja60i2')}</strong>
             <span>{selectedObject?.type ?? '-'}</span>
           </div>
           <dl>
             <div><dt>Bucket</dt><dd>{selectedBucket?.name ?? '-'}</dd></div>
             <div><dt>Key</dt><dd>{selectedObject?.key ?? '-'}</dd></div>
-            <div><dt>名称</dt><dd>{selectedObject?.name ?? '-'}</dd></div>
-            <div><dt>大小</dt><dd>{formatSize(selectedObject?.size)}</dd></div>
-            <div><dt>修改时间</dt><dd>{formatDate(selectedObject?.lastModified)}</dd></div>
+            <div><dt>{tCurrent('auto.remoteS3Browser.hzx9142')}</dt><dd>{selectedObject?.name ?? '-'}</dd></div>
+            <div><dt>{tCurrent('auto.remoteS3Browser.1i41a3v2')}</dt><dd>{formatSize(selectedObject?.size)}</dd></div>
+            <div><dt>{tCurrent('auto.remoteS3Browser.gdxblm2')}</dt><dd>{formatDate(selectedObject?.lastModified)}</dd></div>
             <div><dt>Content-Type</dt><dd>{selectedObject?.contentType ?? '-'}</dd></div>
           </dl>
           <div className="s3-detail-note">
-            首版通过远程 `mc` 或 `aws` CLI 工作；删除对象会先确认，下载会复制到远程主机指定目录。
-          </div>
+            {tCurrent('auto.remoteS3Browser.ulgymz')}</div>
         </aside>
       </div>
 
@@ -475,22 +474,21 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
         <div className="s3-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className={`s3-confirm-dialog ${pendingAction.danger ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="s3-confirm-header">
-              <span>{pendingAction.danger ? '危险操作确认' : '确认操作'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remoteS3Browser.ts3yek') : tCurrent('auto.remoteS3Browser.1gm39ou')}</span>
               <strong>{pendingAction.title}</strong>
             </div>
             <dl>
               <div><dt>Bucket</dt><dd>{pendingAction.bucket}</dd></div>
               <div><dt>Key</dt><dd>{pendingAction.object.key}</dd></div>
-              <div><dt>模式</dt><dd>{mode}</dd></div>
-              {pendingAction.kind === 'download' ? <div><dt>目标目录</dt><dd>{downloadDirectory}</dd></div> : null}
+              <div><dt>{tCurrent('auto.remoteS3Browser.10317x5')}</dt><dd>{mode}</dd></div>
+              {pendingAction.kind === 'download' ? <div><dt>{tCurrent('auto.remoteS3Browser.1k5xqpv')}</dt><dd>{downloadDirectory}</dd></div> : null}
             </dl>
             <div className="s3-confirm-note">
-              命令中包含访问凭据，ShellDesk 不在确认框展示完整命令。
-            </div>
+              {tCurrent('auto.remoteS3Browser.14cndvr')}</div>
             <div className="s3-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteS3Browser.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '执行'}
+                {actionRunning ? tCurrent('auto.remoteS3Browser.6svkbt') : tCurrent('auto.remoteS3Browser.6azgji')}
               </button>
             </div>
           </div>

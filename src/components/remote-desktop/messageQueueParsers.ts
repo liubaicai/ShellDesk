@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export interface RabbitQueueSummary {
   name: string;
@@ -42,7 +43,7 @@ function normalizeUrl(value: string) {
   const trimmed = value.trim().replace(/\/+$/, '');
 
   if (!trimmed || /[\r\n]/.test(trimmed)) {
-    throw new Error('Management API URL 无效。');
+    throw new Error(tCurrent('auto.messageQueueParsers.1ij6jbt'));
   }
 
   return trimmed;
@@ -56,10 +57,10 @@ export function formatRabbitCommandError(stdout: string, stderr: string, code: n
   const output = stripAnsi(stderr || stdout).trim();
 
   if (/Usage\s+rabbitmqctl/i.test(output)) {
-    return 'RabbitMQ CLI 返回了帮助信息，请检查 rabbitmqctl 路径或版本是否支持 list_queues。';
+    return tCurrent('auto.messageQueueParsers.6v3pbs');
   }
 
-  return output || `RabbitMQ 命令退出码 ${code}`;
+  return output || tCurrent('auto.messageQueueParsers.hd8mha', { value0: code });
 }
 
 export function createRabbitCtlCommand(commandPath: string, isWindowsHost: boolean) {
@@ -135,7 +136,7 @@ export function parseRabbitManagementQueues(stdout: string): RabbitQueueSummary[
   const rows = JSON.parse(stdout) as Array<Record<string, unknown>>;
 
   if (!Array.isArray(rows)) {
-    throw new Error('RabbitMQ Management API 返回格式无效。');
+    throw new Error(tCurrent('auto.messageQueueParsers.e8ywwx'));
   }
 
   return rows.map((row) => ({

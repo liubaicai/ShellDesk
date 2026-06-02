@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { tCurrent } from '../../i18n';
 
 interface RemoteMySQLProps {
   connectionId: string;
@@ -86,7 +87,7 @@ function createId(prefix: string): string {
 function createQueryTab(index: number, sql = 'SELECT 1;'): MysqlQueryTab {
   return {
     id: createId('query'),
-    title: `查询 ${index}`,
+    title: tCurrent('auto.remoteMySQL.1vq2agf', { value0: index }),
     sql,
     running: false,
   };
@@ -103,7 +104,7 @@ function quoteMysqlIdentifier(identifier: string): string {
 
 function formatSqlPreview(sql: string, length = 56): string {
   const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return '空查询';
+  if (!compact) return tCurrent('auto.remoteMySQL.18ivnwu');
   return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
 }
 
@@ -156,10 +157,10 @@ function isWriteStatement(sql: string): boolean {
 
 function describeResult(result: ShellDeskMysqlQueryResult): string {
   if (result.affectedRows !== undefined) {
-    const insertText = result.insertId ? ` · 插入 ID ${result.insertId}` : '';
-    return `影响 ${result.affectedRows} 行${insertText}`;
+    const insertText = result.insertId ? tCurrent('auto.remoteMySQL.12xfbkn', { value0: result.insertId }) : '';
+    return tCurrent('auto.remoteMySQL.4g1j50', { value0: result.affectedRows, value1: insertText });
   }
-  return `${result.rows.length} 行`;
+  return tCurrent('auto.remoteMySQL.18tehe0', { value0: result.rows.length });
 }
 
 function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
@@ -333,7 +334,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       setDatabases(dbs);
       setExpandedDbs(new Set(expanded));
       setDbTables(nextTables);
-      setMessage({ type: 'success', text: '对象列表已刷新。' });
+      setMessage({ type: 'success', text: tCurrent('auto.remoteMySQL.1cb3a9') });
 
       if (activeDb && !dbs.includes(activeDb)) {
         setActiveDb(dbs[0] ?? '');
@@ -384,7 +385,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       setDbTables(nextTables);
       setMessage({
         type: 'success',
-        text: `已通过 ${result.transport === 'ssh-exec' ? '远程 TCP 代理' : 'SSH 隧道'}连接到 ${user || 'root'}@${host || '127.0.0.1'}:${parseInt(port, 10) || defaultPort}。`,
+        text: tCurrent('auto.remoteMySQL.1ltkkjj', { value0: result.transport === 'ssh-exec' ? tCurrent('mysql.transport.remoteTcpProxy') : tCurrent('mysql.transport.sshTunnel'), value1: user || 'root', value2: host || '127.0.0.1', value3: parseInt(port, 10) || defaultPort }),
       });
     } catch (error) {
       setStatus('error');
@@ -554,8 +555,8 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       const queryTime = Math.round(performance.now() - startTime);
       const resultTab: MysqlResultTab = {
         id: createId('result'),
-        title: isWriteStatement(sqlText) ? '写操作结果' : formatSqlPreview(sqlText, 28),
-        subtitle: database ? `库 ${database}` : '未指定库',
+        title: isWriteStatement(sqlText) ? tCurrent('auto.remoteMySQL.11b0x22') : formatSqlPreview(sqlText, 28),
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx'),
         sql: sqlText,
         database,
         status: 'success',
@@ -576,7 +577,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       });
 
       if (result.affectedRows !== undefined) {
-        setMessage({ type: 'success', text: `写操作已完成，影响 ${result.affectedRows} 行。` });
+        setMessage({ type: 'success', text: tCurrent('auto.remoteMySQL.90ms1c', { value0: result.affectedRows }) });
       }
     } catch (error) {
       const queryTime = Math.round(performance.now() - startTime);
@@ -584,8 +585,8 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
       addResultTab({
         id: createId('result'),
-        title: '查询错误',
-        subtitle: database ? `库 ${database}` : '未指定库',
+        title: tCurrent('auto.remoteMySQL.wq5uqu'),
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr2', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx2'),
         sql: sqlText,
         database,
         status: 'error',
@@ -608,17 +609,17 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
   const handleCellEdit = useCallback((rowIndex: number, column: string, currentValue: unknown) => {
     if (!activeResultTab || !activeResult || !activeResultTab.table) {
-      setMessage({ type: 'info', text: '只有从左侧表对象打开的结果集支持单元格编辑，手写 SQL 结果保持只读。' });
+      setMessage({ type: 'info', text: tCurrent('auto.remoteMySQL.6buiou') });
       return;
     }
 
     if (activeResultPrimaryKeys.length === 0) {
-      setMessage({ type: 'info', text: '当前表没有可识别主键，结果集保持只读。' });
+      setMessage({ type: 'info', text: tCurrent('auto.remoteMySQL.phmbzg') });
       return;
     }
 
     if (activeResultPrimaryKeys.includes(column)) {
-      setMessage({ type: 'info', text: '主键列不允许直接修改。' });
+      setMessage({ type: 'info', text: tCurrent('auto.remoteMySQL.16w0dof') });
       return;
     }
 
@@ -698,7 +699,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
       setMessage({
         type: result.affectedRows === 1 ? 'success' : 'info',
-        text: `更新已提交，影响 ${result.affectedRows} 行。`,
+        text: tCurrent('auto.remoteMySQL.44ms0s', { value0: result.affectedRows }),
       });
       setPendingEdit(null);
     } catch (error) {
@@ -761,8 +762,8 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
           <div className="mysql-connect-heading">
             <span className="mysql-connect-mark">SQL</span>
             <div>
-              <h3>连接 MySQL 数据库</h3>
-              <p className="mysql-connect-hint">经当前 SSH 会话转发到远程 MySQL 或兼容数据库</p>
+              <h3>{tCurrent('auto.remoteMySQL.6w99hh')}</h3>
+              <p className="mysql-connect-hint">{tCurrent('auto.remoteMySQL.o2b4fb')}</p>
             </div>
           </div>
           {errorMessage ? (
@@ -772,7 +773,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
           ) : null}
           <div className="mysql-connect-grid">
             <label className="mysql-field">
-              <span>主机</span>
+              <span>{tCurrent('auto.remoteMySQL.5kj63k')}</span>
               <input
                 type="text"
                 value={host}
@@ -782,7 +783,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
               />
             </label>
             <label className="mysql-field">
-              <span>端口</span>
+              <span>{tCurrent('auto.remoteMySQL.19ijc5j')}</span>
               <input
                 type="text"
                 value={port}
@@ -794,7 +795,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
           </div>
           <div className="mysql-connect-grid">
             <label className="mysql-field">
-              <span>用户名</span>
+              <span>{tCurrent('auto.remoteMySQL.u9jq8n')}</span>
               <input
                 type="text"
                 value={user}
@@ -804,37 +805,37 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
               />
             </label>
             <label className="mysql-field">
-              <span>默认库</span>
+              <span>{tCurrent('auto.remoteMySQL.aw16vy')}</span>
               <input
                 type="text"
                 value={initialDatabase}
                 onChange={(event) => setInitialDatabase(event.target.value)}
-                placeholder="可选"
+                placeholder={tCurrent('auto.remoteMySQL.zflkxh')}
                 disabled={status === 'connecting'}
               />
             </label>
           </div>
           <label className="mysql-field">
-            <span>密码</span>
+            <span>{tCurrent('auto.remoteMySQL.1aph6eg')}</span>
             <input
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="留空表示无密码"
+              placeholder={tCurrent('auto.remoteMySQL.1g8lhz1')}
               disabled={status === 'connecting'}
             />
           </label>
           <div className="mysql-tunnel-note">
-            <span>SSH 通道</span>
+            <span>{tCurrent('auto.remoteMySQL.18eis48')}</span>
             <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort}</strong>
-            <em>转发失败时会自动尝试远程 TCP 代理</em>
+            <em>{tCurrent('auto.remoteMySQL.rbi1mz')}</em>
           </div>
           <button
             type="submit"
             className="mysql-connect-btn"
             disabled={status === 'connecting'}
           >
-            {status === 'connecting' ? '连接中...' : '连接数据库'}
+            {status === 'connecting' ? tCurrent('auto.remoteMySQL.1i0m8cf') : tCurrent('auto.remoteMySQL.5je50n')}
           </button>
         </form>
       </div>
@@ -847,10 +848,10 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
         <aside className="mysql-sidebar">
           <div className="mysql-sidebar-header">
             <div>
-              <strong>对象浏览</strong>
-              <span>{databases.length} 个数据库</span>
+              <strong>{tCurrent('auto.remoteMySQL.dzec2g')}</strong>
+              <span>{databases.length} {tCurrent('auto.remoteMySQL.1bg3e3c')}</span>
             </div>
-            <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title="刷新对象">
+            <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title={tCurrent('auto.remoteMySQL.oj1z9s')}>
               {schemaLoading ? '...' : '↻'}
             </button>
           </div>
@@ -859,11 +860,11 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
               type="search"
               value={objectSearch}
               onChange={(event) => setObjectSearch(event.target.value)}
-              placeholder="搜索库或表"
+              placeholder={tCurrent('auto.remoteMySQL.jj14o6')}
               spellCheck={false}
             />
             {objectSearch ? (
-              <button type="button" onClick={() => setObjectSearch('')} title="清空搜索">×</button>
+              <button type="button" onClick={() => setObjectSearch('')} title={tCurrent('auto.remoteMySQL.18bjen0')}>×</button>
             ) : null}
           </div>
           <div className="mysql-tree">
@@ -887,7 +888,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                       role="button"
                       tabIndex={0}
                       className="mysql-tree-refresh"
-                      title="刷新该库"
+                      title={tCurrent('auto.remoteMySQL.tw6kuq')}
                       onClick={(event) => handleRefreshDatabase(database, event)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -900,7 +901,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   </button>
                   {expanded ? (
                     <div className="mysql-tree-tables">
-                      {loading ? <div className="mysql-tree-loading">加载中...</div> : null}
+                      {loading ? <div className="mysql-tree-loading">{tCurrent('auto.remoteMySQL.ldc0z9')}</div> : null}
                       {!loading && visibleTables.map((table) => (
                         <div key={table}>
                           <button
@@ -925,23 +926,23 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                         </div>
                       ))}
                       {!loading && dbTables[database] !== undefined && visibleTables.length === 0 ? (
-                        <div className="mysql-tree-empty">无匹配表</div>
+                        <div className="mysql-tree-empty">{tCurrent('auto.remoteMySQL.1r39nj')}</div>
                       ) : null}
                     </div>
                   ) : null}
                 </div>
               );
             })}
-            {filteredDatabases.length === 0 ? <div className="mysql-tree-empty">没有匹配的对象</div> : null}
+            {filteredDatabases.length === 0 ? <div className="mysql-tree-empty">{tCurrent('auto.remoteMySQL.1kuvtrp')}</div> : null}
           </div>
           <div className="mysql-history">
             <div className="mysql-history-title">
-              <strong>查询历史</strong>
+              <strong>{tCurrent('auto.remoteMySQL.air9hy')}</strong>
               <span>{history.length}</span>
             </div>
             <div className="mysql-history-list">
               {history.length === 0 ? (
-                <div className="mysql-history-empty">执行查询后会记录在这里</div>
+                <div className="mysql-history-empty">{tCurrent('auto.remoteMySQL.mkpr6n')}</div>
               ) : history.map((item) => (
                 <button
                   key={item.id}
@@ -953,7 +954,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   <span className="mysql-history-sql">{formatSqlPreview(item.sql, 34)}</span>
                   <span className="mysql-history-meta">
                     {formatTimestamp(item.createdAt)}
-                    {item.status === 'success' ? ` · ${item.affectedRows !== undefined ? `影响 ${item.affectedRows}` : `${item.rowCount ?? 0} 行`}` : ' · 错误'}
+                    {item.status === 'success' ? ` · ${item.affectedRows !== undefined ? tCurrent('auto.remoteMySQL.1p5p2l4', { value0: item.affectedRows }) : tCurrent('auto.remoteMySQL.18tehe02', { value0: item.rowCount ?? 0 })}` : tCurrent('auto.remoteMySQL.gzim04')}
                   </span>
                 </button>
               ))}
@@ -966,16 +967,16 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
             <div className="mysql-connection-summary">
               <span className="mysql-status-dot" />
               <strong>{user || 'root'}@{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort}</strong>
-              <span>经 SSH 连接 {connectionId.slice(0, 8)}</span>
+              <span>{tCurrent('auto.remoteMySQL.1x0slnx')}{connectionId.slice(0, 8)}</span>
             </div>
             <div className="mysql-topbar-actions">
-              <span className="mysql-active-db">当前库: {activeDb || '未选择'}</span>
-              <button type="button" className="mysql-disconnect-btn" onClick={() => void handleDisconnect()} title="断开连接">断开</button>
+              <span className="mysql-active-db">{tCurrent('auto.remoteMySQL.la969c')}{activeDb || tCurrent('auto.remoteMySQL.1mhzgbz')}</span>
+              <button type="button" className="mysql-disconnect-btn" onClick={() => void handleDisconnect()} title={tCurrent('auto.remoteMySQL.2kwd2d')}>{tCurrent('auto.remoteMySQL.a4u4dk')}</button>
             </div>
           </div>
 
           <section className="mysql-editor-area">
-            <div className="mysql-query-tabs" role="tablist" aria-label="SQL 查询标签">
+            <div className="mysql-query-tabs" role="tablist" aria-label={tCurrent('auto.remoteMySQL.1h2bmkv')}>
               {queryTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -986,7 +987,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   onClick={() => setActiveQueryId(tab.id)}
                 >
                   <span>{tab.title}</span>
-                  {tab.running ? <em>执行中</em> : null}
+                  {tab.running ? <em>{tCurrent('auto.remoteMySQL.6svkbt')}</em> : null}
                   {queryTabs.length > 1 ? (
                     <span
                       role="button"
@@ -1004,7 +1005,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   ) : null}
                 </button>
               ))}
-              <button type="button" className="mysql-add-tab-btn" onClick={() => handleAddQueryTab()} title="新建查询">+</button>
+              <button type="button" className="mysql-add-tab-btn" onClick={() => handleAddQueryTab()} title={tCurrent('auto.remoteMySQL.eplu7o')}>+</button>
             </div>
             <div className="mysql-editor-toolbar">
               <button
@@ -1013,16 +1014,16 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                 onClick={() => void handleExecuteSql()}
                 disabled={!canRunActiveQuery}
               >
-                {activeQueryTab?.running ? '执行中...' : '执行'}
+                {activeQueryTab?.running ? tCurrent('auto.remoteMySQL.e2byz1') : tCurrent('auto.remoteMySQL.6azgji')}
               </button>
-              <span className="mysql-editor-hint">Ctrl+Enter 执行</span>
+              <span className="mysql-editor-hint">{tCurrent('auto.remoteMySQL.cj2ebw')}</span>
               <select
                 className="mysql-db-select"
                 value={activeDb}
                 onChange={(event) => setActiveDb(event.target.value)}
-                title="选择查询默认库"
+                title={tCurrent('auto.remoteMySQL.1bytcvl')}
               >
-                <option value="">未选择库</option>
+                <option value="">{tCurrent('auto.remoteMySQL.1r2r2r8')}</option>
                 {databases.map((database) => (
                   <option key={database} value={database}>{database}</option>
                 ))}
@@ -1034,7 +1035,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
               value={activeQueryTab?.sql ?? ''}
               onChange={(event) => updateActiveQuerySql(event.target.value)}
               onKeyDown={handleSqlKeyDown}
-              placeholder="输入 SQL 语句..."
+              placeholder={tCurrent('auto.remoteMySQL.1bvo5bt')}
               spellCheck={false}
             />
           </section>
@@ -1051,7 +1052,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
             ) : null}
             <div className="mysql-result-tabs">
               {resultTabs.length === 0 ? (
-                <span className="mysql-result-tabs-empty">结果</span>
+                <span className="mysql-result-tabs-empty">{tCurrent('auto.remoteMySQL.q9h21m')}</span>
               ) : resultTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -1061,7 +1062,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   title={tab.sql}
                 >
                   <span>{tab.title}</span>
-                  <em>{tab.status === 'success' && tab.result ? describeResult(tab.result) : '错误'}</em>
+                  <em>{tab.status === 'success' && tab.result ? describeResult(tab.result) : tCurrent('auto.remoteMySQL.v9pftt')}</em>
                   <span
                     role="button"
                     tabIndex={0}
@@ -1081,12 +1082,12 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
             {!activeResultTab ? (
               <div className="mysql-result-placeholder">
-                <strong>选择表或执行 SQL</strong>
-                <span>表预览默认限制 {tablePreviewLimit} 行；手写 SQL 结果默认只读。</span>
+                <strong>{tCurrent('auto.remoteMySQL.15bfg2y')}</strong>
+                <span>{tCurrent('auto.remoteMySQL.1se6un5')}{tablePreviewLimit} {tCurrent('auto.remoteMySQL.1q9izoa')}</span>
               </div>
             ) : activeResultTab.status === 'error' ? (
               <div className="mysql-result-error-panel">
-                <strong>查询失败</strong>
+                <strong>{tCurrent('auto.remoteMySQL.qoguk0')}</strong>
                 <code>{formatSqlPreview(activeResultTab.sql, 120)}</code>
                 <p>{activeResultTab.error}</p>
                 <span>{activeResultTab.queryTime}ms · {formatTimestamp(activeResultTab.createdAt)}</span>
@@ -1099,8 +1100,8 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                   <span>{activeResultTab.subtitle}</span>
                   <span>
                     {isActiveResultEditable
-                      ? `可编辑 · 主键 ${activeResultPrimaryKeys.join(', ')}`
-                      : activeResultTab.table ? '只读 · 未识别主键' : '只读 · SQL 结果'}
+                      ? tCurrent('auto.remoteMySQL.zacxkg', { value0: activeResultPrimaryKeys.join(', ') })
+                      : activeResultTab.table ? tCurrent('auto.remoteMySQL.122vefz') : tCurrent('auto.remoteMySQL.g4u81i')}
                   </span>
                 </div>
                 {activeResult.columns.length > 0 ? (
@@ -1169,18 +1170,18 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
                     </div>
                     {totalPages > 1 ? (
                       <div className="mysql-pagination">
-                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>首页</button>
-                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>{tCurrent('auto.remoteMySQL.1ow5v10')}</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>{tCurrent('auto.remoteMySQL.mtyn6e')}</button>
                         <span>{page + 1} / {totalPages}</span>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>下一页</button>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>末页</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{tCurrent('auto.remoteMySQL.1yw313l')}</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>{tCurrent('auto.remoteMySQL.ixvu31')}</button>
                       </div>
                     ) : null}
                   </>
                 ) : (
                   <div className="mysql-result-empty">
-                    <strong>查询已执行</strong>
-                    <span>该语句没有返回表格数据。</span>
+                    <strong>{tCurrent('auto.remoteMySQL.8p0dx3')}</strong>
+                    <span>{tCurrent('auto.remoteMySQL.vpza2y')}</span>
                   </div>
                 )}
               </>
@@ -1193,32 +1194,32 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
         <div className="mysql-modal-backdrop" role="presentation">
           <div className="mysql-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="mysql-edit-title">
             <div className="mysql-edit-dialog-header">
-              <strong id="mysql-edit-title">确认更新单元格</strong>
+              <strong id="mysql-edit-title">{tCurrent('auto.remoteMySQL.5pj76l')}</strong>
               <span>{pendingEdit.table.database}.{pendingEdit.table.name}</span>
             </div>
             <div className="mysql-edit-summary">
               <div>
-                <span>字段</span>
+                <span>{tCurrent('auto.remoteMySQL.vomz89')}</span>
                 <strong>{pendingEdit.column}</strong>
               </div>
               <div>
-                <span>原值</span>
+                <span>{tCurrent('auto.remoteMySQL.12o2s46')}</span>
                 <code>{formatCellValue(pendingEdit.oldValue)}</code>
               </div>
               <div>
-                <span>新值</span>
+                <span>{tCurrent('auto.remoteMySQL.1wg5cdl')}</span>
                 <code>{formatCellValue(pendingEdit.newValue)}</code>
               </div>
               <div>
-                <span>目标行</span>
+                <span>{tCurrent('auto.remoteMySQL.bxakay')}</span>
                 <code>{pendingEdit.pkColumns.map((pkColumn, index) => `${pkColumn}=${formatCellValue(pendingEdit.pkValues[index])}`).join(' AND ')}</code>
               </div>
             </div>
-            <p className="mysql-edit-warning">更新会根据主键定位单行。请确认目标行和字段变化无误后再提交。</p>
+            <p className="mysql-edit-warning">{tCurrent('auto.remoteMySQL.p32txr')}</p>
             <div className="mysql-edit-actions">
-              <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>取消</button>
+              <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>{tCurrent('auto.remoteMySQL.1589w37')}</button>
               <button type="button" className="primary" onClick={() => void handleConfirmCellSave()} disabled={editSaving}>
-                {editSaving ? '提交中...' : '确认更新'}
+                {editSaving ? tCurrent('auto.remoteMySQL.xwkgei') : tCurrent('auto.remoteMySQL.1k3x0w3')}
               </button>
             </div>
           </div>

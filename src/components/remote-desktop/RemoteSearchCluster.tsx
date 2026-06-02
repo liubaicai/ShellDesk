@@ -13,6 +13,7 @@ import {
   type SearchClusterShard,
 } from './searchClusterUtils';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteSearchClusterProps {
   connectionId: string;
@@ -37,7 +38,7 @@ function runCmd(connectionId: string, command: string, stdin?: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteSearchCluster.g77vf3'));
   }
 
   return api.runCommand(connectionId, command, stdin);
@@ -115,7 +116,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
       setSelectedIndexName((current) => current && nextIndices.some((index) => index.index === current) ? current : nextIndices[0]?.index ?? '');
       setQueryIndex((current) => current || nextIndices[0]?.index || '');
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      setNotice(`集群已刷新：${nextIndices.length} 个索引，${nextShards.length} 个分片。`);
+      setNotice(tCurrent('auto.remoteSearchCluster.5mg5ut', { value0: nextIndices.length, value1: nextShards.length }));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -127,14 +128,14 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
     const indexName = queryIndex.trim() || selectedIndex?.index || '';
 
     if (!indexName) {
-      setError('请输入或选择索引。');
+      setError(tCurrent('auto.remoteSearchCluster.13slyer'));
       return;
     }
 
     try {
       JSON.parse(queryBody);
     } catch (error) {
-      setError(`查询 Body 不是有效 JSON：${getErrorMessage(error)}`);
+      setError(tCurrent('auto.remoteSearchCluster.1hg3jw2', { value0: getErrorMessage(error) }));
       return;
     }
 
@@ -156,7 +157,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
       setQueryResponse(stringifyJson(response));
       setRawResponse(result.stdout || result.stderr);
       setActiveTab('query');
-      setNotice(`查询完成，${durationMs} ms。`);
+      setNotice(tCurrent('auto.remoteSearchCluster.16hu75t', { value0: durationMs }));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -167,10 +168,10 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
   const formatQueryBody = () => {
     try {
       setQueryBody(stringifyJson(JSON.parse(queryBody)));
-      setNotice('JSON 已格式化。');
+      setNotice(tCurrent('auto.remoteSearchCluster.ed12q0'));
       setError('');
     } catch (error) {
-      setError(`JSON 格式化失败：${getErrorMessage(error)}`);
+      setError(tCurrent('auto.remoteSearchCluster.usdhbr', { value0: getErrorMessage(error) }));
     }
   };
 
@@ -181,7 +182,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
       shards: selectedIndexShards,
       queryResponse: queryResponse ? JSON.parse(queryResponse) : undefined,
     }));
-    setNotice('已复制诊断信息。');
+    setNotice(tCurrent('auto.remoteSearchCluster.1ywwjjz'));
   };
 
   return (
@@ -198,22 +199,22 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
         </label>
         <label>
           <span>User</span>
-          <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="可选" />
+          <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder={tCurrent('auto.remoteSearchCluster.zflkxh')} />
         </label>
         <label>
           <span>Password</span>
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="可选" />
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={tCurrent('auto.remoteSearchCluster.zflkxh2')} />
         </label>
         <label className="timeout">
           <span>Timeout</span>
           <input value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(event.target.value)} inputMode="numeric" />
         </label>
-        <label className="search-tls-option" title="连接 HTTPS 集群时跳过证书校验">
+        <label className="search-tls-option" title={tCurrent('auto.remoteSearchCluster.1qsbxe5')}>
           <input type="checkbox" checked={ignoreSslCertificate} onChange={(event) => setIgnoreSslCertificate(event.target.checked)} />
-          <span>忽略证书</span>
+          <span>{tCurrent('auto.remoteSearchCluster.1g5852k')}</span>
         </label>
         <button type="button" className="primary" onClick={refreshCluster} disabled={loading}>
-          {loading ? '刷新中' : '连接 / 刷新'}
+          {loading ? tCurrent('auto.remoteSearchCluster.1taxqz1') : tCurrent('auto.remoteSearchCluster.13cmkv8')}
         </button>
       </header>
 
@@ -224,12 +225,12 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
         <aside className="search-index-panel">
           <div className="search-panel-head">
             <div>
-              <strong>索引</strong>
-              <span>{indices.length} 个 · {lastRefreshedAt || '未刷新'}</span>
+              <strong>{tCurrent('auto.remoteSearchCluster.1lig4k0')}</strong>
+              <span>{indices.length} {tCurrent('auto.remoteSearchCluster.1ubrrxs')}{lastRefreshedAt || tCurrent('auto.remoteSearchCluster.1t0b1fu')}</span>
             </div>
-            <button type="button" onClick={copyDiagnostics} disabled={!health}>复制诊断</button>
+            <button type="button" onClick={copyDiagnostics} disabled={!health}>{tCurrent('auto.remoteSearchCluster.4zl8tz')}</button>
           </div>
-          <input value={indexSearch} onChange={(event) => setIndexSearch(event.target.value)} placeholder="搜索索引" />
+          <input value={indexSearch} onChange={(event) => setIndexSearch(event.target.value)} placeholder={tCurrent('auto.remoteSearchCluster.5n8wy2')} />
           <div className="search-index-list">
             {filteredIndices.map((index) => (
               <button
@@ -246,17 +247,17 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
                 <em>{index.health || 'unknown'} · {index.status || '-'}</em>
               </button>
             ))}
-            {!filteredIndices.length ? <div className="search-empty-state">暂无索引。</div> : null}
+            {!filteredIndices.length ? <div className="search-empty-state">{tCurrent('auto.remoteSearchCluster.yg87h8')}</div> : null}
           </div>
         </aside>
 
         <main className="search-main">
           <nav className="search-tabs">
             {[
-              ['overview', '概览'],
-              ['shards', '分片'],
-              ['query', '查询'],
-              ['raw', '原始响应'],
+              ['overview', tCurrent('auto.remoteSearchCluster.y4kz1z')],
+              ['shards', tCurrent('auto.remoteSearchCluster.1y6wwq')],
+              ['query', tCurrent('auto.remoteSearchCluster.16mfmhy')],
+              ['raw', tCurrent('auto.remoteSearchCluster.nkv7uu')],
             ].map(([key, label]) => (
               <button key={key} type="button" className={activeTab === key ? 'active' : ''} onClick={() => setActiveTab(key as SearchTab)}>{label}</button>
             ))}
@@ -265,14 +266,14 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
           {activeTab === 'overview' ? (
             <section className="search-overview">
               {[
-                ['节点', health?.number_of_nodes ?? '-'],
-                ['数据节点', health?.number_of_data_nodes ?? '-'],
-                ['索引', indices.length],
-                ['主分片', health?.active_primary_shards ?? '-'],
-                ['活跃分片', health?.active_shards ?? '-'],
-                ['迁移中', health?.relocating_shards ?? '-'],
-                ['初始化', health?.initializing_shards ?? '-'],
-                ['未分配', health?.unassigned_shards ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.1osfy9g'), health?.number_of_nodes ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.1qktaq6'), health?.number_of_data_nodes ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.1lig4k02'), indices.length],
+                [tCurrent('auto.remoteSearchCluster.ynqhux'), health?.active_primary_shards ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.esjvc0'), health?.active_shards ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.6ug088'), health?.relocating_shards ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.jllirh'), health?.initializing_shards ?? '-'],
+                [tCurrent('auto.remoteSearchCluster.1bgs62s'), health?.unassigned_shards ?? '-'],
               ].map(([label, value]) => (
                 <div key={label} className="search-metric">
                   <span>{label}</span>
@@ -280,8 +281,8 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
                 </div>
               ))}
               <div className="search-selected-index">
-                <strong>{selectedIndex?.index ?? '未选择索引'}</strong>
-                <span>{selectedIndex ? `${selectedIndex.docsCount.toLocaleString(getShellDeskLocale())} docs · ${selectedIndex.storeSize || '-'}` : '刷新后选择索引查看详情'}</span>
+                <strong>{selectedIndex?.index ?? tCurrent('auto.remoteSearchCluster.1o14bk6')}</strong>
+                <span>{selectedIndex ? `${selectedIndex.docsCount.toLocaleString(getShellDeskLocale())} docs · ${selectedIndex.storeSize || '-'}` : tCurrent('auto.remoteSearchCluster.11d842q')}</span>
               </div>
             </section>
           ) : null}
@@ -314,7 +315,7 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
                   ))}
                 </tbody>
               </table>
-              {!selectedIndexShards.length ? <div className="search-empty-state">暂无分片数据。</div> : null}
+              {!selectedIndexShards.length ? <div className="search-empty-state">{tCurrent('auto.remoteSearchCluster.j2lpcc')}</div> : null}
             </section>
           ) : null}
 
@@ -326,19 +327,19 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
                   <input value={queryIndex} onChange={(event) => setQueryIndex(event.target.value)} placeholder="logs-*" />
                 </label>
                 <div className="search-query-actions">
-                  <button type="button" onClick={formatQueryBody}>格式化 JSON</button>
-                  <button type="button" className="primary" onClick={runSearch} disabled={queryRunning}>{queryRunning ? '查询中' : '执行 _search'}</button>
+                  <button type="button" onClick={formatQueryBody}>{tCurrent('auto.remoteSearchCluster.1i126as')}</button>
+                  <button type="button" className="primary" onClick={runSearch} disabled={queryRunning}>{queryRunning ? tCurrent('auto.remoteSearchCluster.q3j9w1') : tCurrent('auto.remoteSearchCluster.1fd3gsv')}</button>
                 </div>
               </div>
               <div className="search-query-grid">
                 <textarea value={queryBody} onChange={(event) => setQueryBody(event.target.value)} spellCheck={false} />
-                <pre>{queryResponse || '查询响应会显示在这里。'}</pre>
+                <pre>{queryResponse || tCurrent('auto.remoteSearchCluster.11tbyaa')}</pre>
               </div>
             </section>
           ) : null}
 
           {activeTab === 'raw' ? (
-            <pre className="search-raw">{rawResponse || '刷新或查询后显示最后一次原始响应。'}</pre>
+            <pre className="search-raw">{rawResponse || tCurrent('auto.remoteSearchCluster.1d9lm8t')}</pre>
           ) : null}
         </main>
       </div>

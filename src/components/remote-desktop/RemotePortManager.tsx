@@ -5,6 +5,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemotePortManagerProps {
   connectionId: string;
@@ -41,7 +42,7 @@ function runCmd(connectionId: string, command: string | RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remotePortManager.g77vf3'));
   }
 
   if (typeof command === 'string') {
@@ -482,7 +483,7 @@ function createUnixPortCommand() {
     'run_maybe_sudo() { if can_sudo; then sudo -n "$@" 2>/dev/null || "$@" 2>/dev/null; else "$@" 2>/dev/null; fi; }',
     `if command -v ss >/dev/null 2>&1; then echo '${portToolMarker}\\tss'; run_maybe_sudo ss -H -tunap || ss -H -tunlp 2>/dev/null || ss -H -tuna 2>/dev/null;`,
     `elif command -v netstat >/dev/null 2>&1; then echo '${portToolMarker}\\tnetstat'; run_maybe_sudo netstat -tunap || netstat -tunlp 2>/dev/null || netstat -tuna 2>/dev/null;`,
-    `else echo '${portToolMarker}\\tnone'; echo '缺少 ss 或 netstat，无法读取完整端口列表。' >&2; fi`,
+    tCurrent('auto.remotePortManager.1x0vetp', { value0: portToolMarker }),
     `echo '${portToolMarker}\\tlsof'`,
     'if command -v lsof >/dev/null 2>&1; then run_maybe_sudo lsof -nP -iTCP -iUDP | head -n 1500; fi',
   ].join('\n');
@@ -643,12 +644,12 @@ function getStateFilter(entry: PortListenerEntry): StateFilter {
 function getStateLabel(state: string) {
   const normalizedState = state.toLowerCase();
 
-  if (normalizedState.includes('listen')) return '监听';
-  if (normalizedState.includes('estab')) return '已连接';
+  if (normalizedState.includes('listen')) return tCurrent('auto.remotePortManager.qgktf4');
+  if (normalizedState.includes('estab')) return tCurrent('auto.remotePortManager.r2jbz0');
   if (normalizedState.includes('time-wait')) return 'TIME_WAIT';
-  if (normalizedState.includes('close')) return '关闭中';
+  if (normalizedState.includes('close')) return tCurrent('auto.remotePortManager.t0w5v4');
   if (normalizedState.includes('unconn')) return 'UDP';
-  return state || '未知';
+  return state || tCurrent('auto.remotePortManager.1lpnuh4');
 }
 
 function getStateTone(entry: PortListenerEntry) {
@@ -667,11 +668,11 @@ function formatEndpoint(address: string, port: number | null) {
 function formatRowInfo(entry: PortListenerEntry) {
   return [
     `${entry.protocol.toUpperCase()} ${entry.state}`,
-    `本地 ${formatEndpoint(entry.localAddress, entry.localPort)}`,
-    `远端 ${formatEndpoint(entry.remoteAddress, entry.remotePort)}`,
+    tCurrent('auto.remotePortManager.rrhoqa', { value0: formatEndpoint(entry.localAddress, entry.localPort) }),
+    tCurrent('auto.remotePortManager.17crbht', { value0: formatEndpoint(entry.remoteAddress, entry.remotePort) }),
     entry.pid ? `PID ${entry.pid}` : 'PID -',
-    entry.processName ? `进程 ${entry.processName}` : '',
-    entry.command ? `命令 ${entry.command}` : '',
+    entry.processName ? tCurrent('auto.remotePortManager.1k9qjaw', { value0: entry.processName }) : '',
+    entry.command ? tCurrent('auto.remotePortManager.1atjc6x', { value0: entry.command }) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -768,7 +769,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       const result = await runCmd(connectionId, isWindowsHost ? createWindowsPortCommand() : createUnixPortCommand());
 
       if (result.code !== 0 && !result.stdout.trim()) {
-        throw new Error(result.stderr || '读取端口列表失败。');
+        throw new Error(result.stderr || tCurrent('auto.remotePortManager.5j197b'));
       }
 
       const nextEntries = isWindowsHost ? parseWindowsPorts(result.stdout) : parseUnixPorts(result.stdout);
@@ -778,7 +779,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       const noticeLines = [
         result.stderr.trim(),
         missingPidCount > 0
-          ? `${missingPidCount} 条监听记录未返回 PID/进程。已尝试 sudo -n ss/lsof；如果仍为空，通常是当前用户没有查看其他用户 socket 归属的权限。`
+          ? tCurrent('auto.remotePortManager.mbgyzj', { value0: missingPidCount })
           : '',
       ].filter(Boolean);
 
@@ -818,7 +819,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
         );
 
         if (!disposed) {
-          setProcessDetail(result.stdout || result.stderr || '未读取到进程详情。');
+          setProcessDetail(result.stdout || result.stderr || tCurrent('auto.remotePortManager.eb9lu3'));
         }
       } catch (error) {
         if (!disposed) {
@@ -844,7 +845,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
     }
 
     await navigator.clipboard.writeText(formatRowInfo(selectedEntry));
-    setNotice('已复制端口诊断信息。');
+    setNotice(tCurrent('auto.remotePortManager.11hswx'));
   };
 
   return (
@@ -852,34 +853,33 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       <header className="port-toolbar">
         <div className="port-toolbar-left">
           <button type="button" className="port-tool-button primary" onClick={refreshPorts} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+            {loading ? tCurrent('auto.remotePortManager.1taxqz1') : tCurrent('auto.remotePortManager.12qo56a')}
           </button>
           <input
             className="port-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索端口、PID、进程"
+            placeholder={tCurrent('auto.remotePortManager.864idq')}
           />
           <select className="port-select" value={protocolFilter} onChange={(event) => setProtocolFilter(event.target.value as ProtocolFilter)}>
-            <option value="all">全部协议</option>
+            <option value="all">{tCurrent('auto.remotePortManager.a13wl4')}</option>
             <option value="tcp">TCP</option>
             <option value="udp">UDP</option>
           </select>
           <select className="port-select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as StateFilter)}>
-            <option value="all">全部状态</option>
-            <option value="listen">监听</option>
-            <option value="established">已连接</option>
+            <option value="all">{tCurrent('auto.remotePortManager.igzce8')}</option>
+            <option value="listen">{tCurrent('auto.remotePortManager.qgktf42')}</option>
+            <option value="established">{tCurrent('auto.remotePortManager.r2jbz02')}</option>
             <option value="udp">UDP</option>
-            <option value="other">其他</option>
+            <option value="other">{tCurrent('auto.remotePortManager.dcd4ul')}</option>
           </select>
           <label className="port-toggle">
             <input type="checkbox" checked={listenOnly} onChange={(event) => setListenOnly(event.target.checked)} />
-            仅监听
-          </label>
+            {tCurrent('auto.remotePortManager.jiaghp')}</label>
         </div>
         <div className="port-toolbar-right">
           <span className="port-summary">
-            <strong>{filteredEntries.length}</strong> / {entries.length} 条 · 监听 {listeningCount}
+            <strong>{filteredEntries.length}</strong> / {entries.length} {tCurrent('auto.remotePortManager.1tt8iva')}{listeningCount}
             {refreshedAt ? ` · ${refreshedAt}` : ''}
           </span>
         </div>
@@ -894,13 +894,13 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
             <table className="port-table">
               <thead>
                 <tr>
-                  <th>协议</th>
-                  <th>状态</th>
-                  <th>本地地址</th>
-                  <th>端口</th>
-                  <th>远端</th>
+                  <th>{tCurrent('auto.remotePortManager.7j43ow')}</th>
+                  <th>{tCurrent('auto.remotePortManager.1ccx4t4')}</th>
+                  <th>{tCurrent('auto.remotePortManager.jftjcp')}</th>
+                  <th>{tCurrent('auto.remotePortManager.19ijc5j')}</th>
+                  <th>{tCurrent('auto.remotePortManager.11mkhng')}</th>
                   <th>PID</th>
-                  <th>进程</th>
+                  <th>{tCurrent('auto.remotePortManager.1rkqe5f')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -921,7 +921,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
                 ))}
                 {!loading && filteredEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="port-empty">没有符合条件的连接。</td>
+                    <td colSpan={7} className="port-empty">{tCurrent('auto.remotePortManager.pxf4or')}</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -934,7 +934,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
             <>
               <div className="port-detail-header">
                 <div>
-                  <span>当前连接</span>
+                  <span>{tCurrent('auto.remotePortManager.1sbnsc4')}</span>
                   <strong>{formatEndpoint(selectedEntry.localAddress, selectedEntry.localPort)}</strong>
                 </div>
                 <span className={`port-state ${getStateTone(selectedEntry)}`}>{getStateLabel(selectedEntry.state)}</span>
@@ -942,11 +942,11 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
 
               <dl className="port-detail-list">
                 <div>
-                  <dt>协议</dt>
+                  <dt>{tCurrent('auto.remotePortManager.7j43ow2')}</dt>
                   <dd>{selectedEntry.protocol.toUpperCase()}</dd>
                 </div>
                 <div>
-                  <dt>远端</dt>
+                  <dt>{tCurrent('auto.remotePortManager.11mkhng2')}</dt>
                   <dd>{formatEndpoint(selectedEntry.remoteAddress, selectedEntry.remotePort)}</dd>
                 </div>
                 <div>
@@ -954,29 +954,28 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
                   <dd>{selectedEntry.pid ?? '-'}</dd>
                 </div>
                 <div>
-                  <dt>进程</dt>
+                  <dt>{tCurrent('auto.remotePortManager.1rkqe5f2')}</dt>
                   <dd>{selectedEntry.processName || '-'}</dd>
                 </div>
               </dl>
 
               <div className="port-detail-actions">
-                <button type="button" onClick={copySelectedEntry}>复制信息</button>
+                <button type="button" onClick={copySelectedEntry}>{tCurrent('auto.remotePortManager.92bsyi')}</button>
                 <button
                   type="button"
                   disabled={!selectedEntry.pid || !onOpenProcessManager}
                   onClick={() => onOpenProcessManager?.({ pid: selectedEntry.pid, search: selectedEntry.processName || String(selectedEntry.pid), sortKey: 'pid', sortDir: 'asc' })}
                 >
-                  打开进程
-                </button>
+                  {tCurrent('auto.remotePortManager.tyke10')}</button>
               </div>
 
               <section className="port-diagnostic">
-                <h3>进程详情</h3>
-                <pre>{detailLoading ? '读取中...' : processDetail || selectedEntry.command || '该连接没有进程详情。'}</pre>
+                <h3>{tCurrent('auto.remotePortManager.bac9pq')}</h3>
+                <pre>{detailLoading ? tCurrent('auto.remotePortManager.1w8xcc7') : processDetail || selectedEntry.command || tCurrent('auto.remotePortManager.zp82kq')}</pre>
               </section>
 
               <section className="port-diagnostic">
-                <h3>建议命令</h3>
+                <h3>{tCurrent('auto.remotePortManager.1uv4njs')}</h3>
                 <pre>{selectedEntry.pid
                   ? isWindowsHost
                     ? `Get-NetTCPConnection -OwningProcess ${selectedEntry.pid}\nGet-Process -Id ${selectedEntry.pid}`
@@ -987,7 +986,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
               </section>
             </>
           ) : (
-            <div className="port-empty-panel">选择一条端口记录查看详情。</div>
+            <div className="port-empty-panel">{tCurrent('auto.remotePortManager.1tuf1oe')}</div>
           )}
         </aside>
       </div>

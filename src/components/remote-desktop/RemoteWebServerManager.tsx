@@ -16,6 +16,7 @@ import {
   type WebServerSnapshot,
   type WebSiteConfigSummary,
 } from './webServerParsers';
+import { tCurrent } from '../../i18n';
 
 interface RemoteWebServerManagerProps {
   connectionId: string;
@@ -37,7 +38,7 @@ function runCmd(connectionId: string, input: RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteWebServerManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, input.command, input.stdin);
@@ -107,8 +108,8 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
       ));
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(nextSnapshot.services.length
-        ? `检测到 ${nextSnapshot.services.length} 个 Web 服务，${nextSnapshot.sites.length} 个配置文件。`
-        : '未检测到 Nginx、Apache 或 Caddy。');
+        ? tCurrent('auto.remoteWebServerManager.7je1cb', { value0: nextSnapshot.services.length, value1: nextSnapshot.sites.length })
+        : tCurrent('auto.remoteWebServerManager.10cqsf6'));
     } catch (error) {
       setError(getErrorMessage(error));
       setSnapshot(null);
@@ -126,7 +127,7 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
 
     try {
       const labels: Record<WebServerAction, string> = {
-        test: '配置测试',
+        test: tCurrent('auto.remoteWebServerManager.bakl0a'),
         reload: 'Reload',
         restart: 'Restart',
       };
@@ -152,7 +153,7 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
 
     try {
       const result = await runCmd(connectionId, pendingAction.command);
-      const output = result.stdout || result.stderr || `${pendingAction.label} 已执行。`;
+      const output = result.stdout || result.stderr || tCurrent('auto.remoteWebServerManager.105ee9t', { value0: pendingAction.label });
 
       if (result.code !== 0) {
         throw new Error(output);
@@ -189,35 +190,35 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
       `error_log: ${selectedSite.errorLog ?? '-'}`,
       `certificates: ${firstValue(selectedSite.certificateFiles)}`,
     ].join('\n'));
-    setNotice('已复制站点摘要。');
+    setNotice(tCurrent('auto.remoteWebServerManager.1o5acy3'));
   };
 
   const copyConfig = async () => {
     if (!selectedSite) return;
 
     await navigator.clipboard.writeText(selectedSite.rawConfig);
-    setNotice('已复制配置内容。');
+    setNotice(tCurrent('auto.remoteWebServerManager.1owzfkn'));
   };
 
   const openConfigInNotepad = () => {
     if (!selectedSite) return;
 
     if (!onOpenConfigFile) {
-      setError('当前窗口无法打开记事本。');
+      setError(tCurrent('auto.remoteWebServerManager.11nlzak'));
       return;
     }
 
     onOpenConfigFile(selectedSite.filePath);
-    setNotice(`已在记事本打开：${selectedSite.filePath}`);
+    setNotice(tCurrent('auto.remoteWebServerManager.15g2q60', { value0: selectedSite.filePath }));
   };
 
   return (
     <section className="web-server-manager">
       <header className="web-toolbar">
         <div className={`web-service-card ${getStatusTone(activeService?.status)}`}>
-          <span>Web 服务</span>
-          <strong>{activeService ? getWebServerLabel(activeService.kind) : '未检测'}</strong>
-          <em>{activeService?.status ?? lastRefreshedAt ?? '等待刷新'}</em>
+          <span>{tCurrent('auto.remoteWebServerManager.f4yrqp')}</span>
+          <strong>{activeService ? getWebServerLabel(activeService.kind) : tCurrent('auto.remoteWebServerManager.1e2crtw')}</strong>
+          <em>{activeService?.status ?? lastRefreshedAt ?? tCurrent('auto.remoteWebServerManager.llewtw')}</em>
         </div>
         <div className="web-service-switch">
           {(['nginx', 'apache', 'caddy'] as WebServerKind[]).map((kind) => {
@@ -239,8 +240,8 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
           })}
         </div>
         <div className="web-toolbar-actions">
-          <button type="button" onClick={refresh} disabled={loading}>{loading ? '检测中' : '重新检测'}</button>
-          <button type="button" className="primary" onClick={() => prepareAction('test')} disabled={!activeService}>配置测试</button>
+          <button type="button" onClick={refresh} disabled={loading}>{loading ? tCurrent('auto.remoteWebServerManager.xr2jgj') : tCurrent('auto.remoteWebServerManager.1ot472x')}</button>
+          <button type="button" className="primary" onClick={() => prepareAction('test')} disabled={!activeService}>{tCurrent('auto.remoteWebServerManager.bakl0a2')}</button>
           <button type="button" onClick={() => prepareAction('reload')} disabled={!activeService}>Reload</button>
           <button type="button" className="danger" onClick={() => prepareAction('restart')} disabled={!activeService}>Restart</button>
         </div>
@@ -252,7 +253,7 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
       <div className="web-layout">
         <aside className="web-site-list">
           <div className="web-site-list-head">
-            <strong>站点配置</strong>
+            <strong>{tCurrent('auto.remoteWebServerManager.1ss3v5s')}</strong>
             <span>{visibleSites.length} files</span>
           </div>
           <div className="web-site-scroll">
@@ -272,26 +273,26 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
                 <em title={site.filePath}>{site.filePath}</em>
               </button>
             ))}
-            {!visibleSites.length ? <div className="web-empty-state">未找到该服务的配置文件。</div> : null}
+            {!visibleSites.length ? <div className="web-empty-state">{tCurrent('auto.remoteWebServerManager.yfq4qc')}</div> : null}
           </div>
         </aside>
 
         <main className="web-main">
           <nav className="web-tabs">
-            <button type="button" className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>摘要</button>
-            <button type="button" className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>配置</button>
-            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>命令输出</button>
-            <button type="button" className="primary" onClick={openConfigInNotepad} disabled={!selectedSite}>记事本打开</button>
-            <button type="button" onClick={copySiteSummary} disabled={!selectedSite}>复制摘要</button>
-            <button type="button" onClick={copyConfig} disabled={!selectedSite}>复制配置</button>
+            <button type="button" className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>{tCurrent('auto.remoteWebServerManager.10fwitu')}</button>
+            <button type="button" className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>{tCurrent('auto.remoteWebServerManager.1x99t4y')}</button>
+            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteWebServerManager.es77i5')}</button>
+            <button type="button" className="primary" onClick={openConfigInNotepad} disabled={!selectedSite}>{tCurrent('auto.remoteWebServerManager.yhp24r')}</button>
+            <button type="button" onClick={copySiteSummary} disabled={!selectedSite}>{tCurrent('auto.remoteWebServerManager.18nulp1')}</button>
+            <button type="button" onClick={copyConfig} disabled={!selectedSite}>{tCurrent('auto.remoteWebServerManager.1853829')}</button>
           </nav>
 
           {activeTab === 'summary' ? (
             <section className="web-summary">
               <div className="web-summary-hero">
                 <span>{selectedSite ? getWebServerLabel(selectedSite.kind) : 'Web Server'}</span>
-                <strong>{selectedSite ? getSiteTitle(selectedSite) : '尚未选择站点'}</strong>
-                <em>{selectedSite?.filePath ?? '刷新后选择站点配置。'}</em>
+                <strong>{selectedSite ? getSiteTitle(selectedSite) : tCurrent('auto.remoteWebServerManager.hm49zd')}</strong>
+                <em>{selectedSite?.filePath ?? tCurrent('auto.remoteWebServerManager.1r2xg0b')}</em>
               </div>
               <div className="web-metric-grid">
                 <div><span>Listen</span><strong>{firstValue(selectedSite?.listens ?? [])}</strong></div>
@@ -311,33 +312,32 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
           {activeTab === 'config' ? (
             <section className="web-config-panel">
               <div className="web-config-panel-head">
-                <span title={selectedSite?.filePath}>{selectedSite?.filePath ?? '选择站点后显示配置内容。'}</span>
-                <button type="button" onClick={openConfigInNotepad} disabled={!selectedSite}>记事本打开</button>
+                <span title={selectedSite?.filePath}>{selectedSite?.filePath ?? tCurrent('auto.remoteWebServerManager.113kvq6')}</span>
+                <button type="button" onClick={openConfigInNotepad} disabled={!selectedSite}>{tCurrent('auto.remoteWebServerManager.yhp24r2')}</button>
               </div>
-              <pre className="web-config-output">{selectedSite?.rawConfig || '选择站点后显示配置内容。'}</pre>
+              <pre className="web-config-output">{selectedSite?.rawConfig || tCurrent('auto.remoteWebServerManager.113kvq62')}</pre>
             </section>
           ) : null}
 
           {activeTab === 'raw' ? (
-            <pre className="web-config-output">{testOutput || snapshot?.rawOutput || '配置测试或检测输出会显示在这里。'}</pre>
+            <pre className="web-config-output">{testOutput || snapshot?.rawOutput || tCurrent('auto.remoteWebServerManager.zjujfr')}</pre>
           ) : null}
         </main>
 
         <aside className="web-service-detail">
           <div className="web-detail-head">
-            <strong>服务详情</strong>
+            <strong>{tCurrent('auto.remoteWebServerManager.y5zpae')}</strong>
             <span>{activeService?.version || '-'}</span>
           </div>
           <dl>
-            <div><dt>类型</dt><dd>{activeService ? getWebServerLabel(activeService.kind) : '-'}</dd></div>
-            <div><dt>命令</dt><dd>{activeService?.binary ?? '-'}</dd></div>
-            <div><dt>服务名</dt><dd>{activeService?.serviceName ?? '-'}</dd></div>
-            <div><dt>状态</dt><dd>{activeService?.status ?? '-'}</dd></div>
-            <div><dt>配置文件</dt><dd>{visibleSites.length}</dd></div>
+            <div><dt>{tCurrent('auto.remoteWebServerManager.anh4cj')}</dt><dd>{activeService ? getWebServerLabel(activeService.kind) : '-'}</dd></div>
+            <div><dt>{tCurrent('auto.remoteWebServerManager.emgxwk')}</dt><dd>{activeService?.binary ?? '-'}</dd></div>
+            <div><dt>{tCurrent('auto.remoteWebServerManager.j60ypu')}</dt><dd>{activeService?.serviceName ?? '-'}</dd></div>
+            <div><dt>{tCurrent('auto.remoteWebServerManager.1ccx4t4')}</dt><dd>{activeService?.status ?? '-'}</dd></div>
+            <div><dt>{tCurrent('auto.remoteWebServerManager.7kieyz')}</dt><dd>{visibleSites.length}</dd></div>
           </dl>
           <div className="web-detail-note">
-            支持 Nginx、Apache/httpd 和 Caddy。Reload 与 Restart 会通过非交互式 sudo / systemctl 执行，失败时会保留原始输出。
-          </div>
+            {tCurrent('auto.remoteWebServerManager.suz7ty')}</div>
         </aside>
       </div>
 
@@ -345,22 +345,22 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
         <div className="web-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className={`web-confirm-dialog ${pendingAction.danger ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="web-confirm-header">
-              <span>{pendingAction.danger ? '确认服务操作' : '确认命令'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remoteWebServerManager.1p8o5ho') : tCurrent('auto.remoteWebServerManager.17ojhw6')}</span>
               <strong>{getWebServerLabel(pendingAction.service.kind)} · {pendingAction.label}</strong>
             </div>
             <dl>
-              <div><dt>服务名</dt><dd>{pendingAction.service.serviceName}</dd></div>
-              <div><dt>当前状态</dt><dd>{pendingAction.service.status}</dd></div>
-              <div><dt>版本</dt><dd>{pendingAction.service.version || '-'}</dd></div>
+              <div><dt>{tCurrent('auto.remoteWebServerManager.j60ypu2')}</dt><dd>{pendingAction.service.serviceName}</dd></div>
+              <div><dt>{tCurrent('auto.remoteWebServerManager.c6rjk')}</dt><dd>{pendingAction.service.status}</dd></div>
+              <div><dt>{tCurrent('auto.remoteWebServerManager.va46gx')}</dt><dd>{pendingAction.service.version || '-'}</dd></div>
             </dl>
             {pendingAction.action === 'reload' && testOutput && /failed|error|invalid/i.test(testOutput) ? (
-              <p className="web-warning-text">最近一次配置测试输出包含错误字样，请确认后再继续。</p>
+              <p className="web-warning-text">{tCurrent('auto.remoteWebServerManager.1jfjwtf')}</p>
             ) : null}
             <pre>{pendingAction.command.command}</pre>
             <div className="web-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteWebServerManager.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '执行'}
+                {actionRunning ? tCurrent('auto.remoteWebServerManager.6svkbt') : tCurrent('auto.remoteWebServerManager.6azgji')}
               </button>
             </div>
           </div>

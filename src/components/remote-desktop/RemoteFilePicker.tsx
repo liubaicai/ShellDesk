@@ -17,6 +17,7 @@ import {
   getParentRemotePath,
   resolveRemoteHomeDirectory,
 } from './RemoteFileExplorer';
+import { tCurrent } from '../../i18n';
 
 interface RemoteFileEntry {
   name: string;
@@ -252,12 +253,12 @@ export default function RemoteFilePicker({
           }
         }
       } else if (remotePath === '/') {
-        parts.push({ label: '计算机', path: '/' });
+        parts.push({ label: tCurrent('auto.remoteFilePicker.46c51d'), path: '/' });
       } else {
         parts.push({ label: remotePath, path: remotePath });
       }
     } else {
-      parts.push({ label: '根目录', path: '/' });
+      parts.push({ label: tCurrent('auto.remoteFilePicker.fn3h29'), path: '/' });
       if (remotePath !== '/') {
         const segments = remotePath.split('/').filter(Boolean);
         let current = '';
@@ -286,11 +287,10 @@ export default function RemoteFilePicker({
               type="button"
               className="file-picker-nav-btn"
               onClick={handleNavigateUp}
-              title="向上一级"
+              title={tCurrent('auto.remoteFilePicker.1pnt85v')}
               disabled={loading}
             >
-              ↑ 向上
-            </button>
+              {tCurrent('auto.remoteFilePicker.13s1xzj')}</button>
             <div className="file-picker-breadcrumbs" title={remotePath}>
               {breadcrumbs.map((crumb, idx) => (
                 <span key={crumb.path}>
@@ -309,19 +309,19 @@ export default function RemoteFilePicker({
 
           <div className="file-picker-list">
             {loading ? (
-              <div className="file-picker-status">正在加载...</div>
+              <div className="file-picker-status">{tCurrent('auto.remoteFilePicker.o9gjzd')}</div>
             ) : error ? (
               <DismissibleAlert className="file-picker-error" onDismiss={() => setError('')} role="alert">
                 {error}
               </DismissibleAlert>
             ) : sortedEntries.length === 0 ? (
-              <div className="file-picker-status">此文件夹为空</div>
+              <div className="file-picker-status">{tCurrent('auto.remoteFilePicker.uczuhh')}</div>
             ) : (
               <div className="file-picker-table">
                 <div className="file-picker-table-header">
-                  <span className="file-picker-col-name">名称</span>
-                  <span className="file-picker-col-modified">修改日期</span>
-                  <span className="file-picker-col-size">大小</span>
+                  <span className="file-picker-col-name">{tCurrent('auto.remoteFilePicker.hzx914')}</span>
+                  <span className="file-picker-col-modified">{tCurrent('auto.remoteFilePicker.1mqbb0o')}</span>
+                  <span className="file-picker-col-size">{tCurrent('auto.remoteFilePicker.1i41a3v')}</span>
                 </div>
                 {sortedEntries.map((entry) => (
                   <button
@@ -349,14 +349,14 @@ export default function RemoteFilePicker({
 
           {mode === 'save' && (
             <div className="file-picker-filename-bar">
-              <label className="file-picker-filename-label">文件名：</label>
+              <label className="file-picker-filename-label">{tCurrent('auto.remoteFilePicker.1qfs8tj')}</label>
               <input
                 ref={fileNameInputRef}
                 type="text"
                 className="file-picker-filename-input"
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
-                placeholder="输入文件名..."
+                placeholder={tCurrent('auto.remoteFilePicker.1f4r2tf')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleConfirm();
                 }}
@@ -367,14 +367,14 @@ export default function RemoteFilePicker({
         </div>
 
         <div className="file-picker-footer">
-          <button type="button" className="file-picker-btn" onClick={onCancel}>取消</button>
+          <button type="button" className="file-picker-btn" onClick={onCancel}>{tCurrent('auto.remoteFilePicker.1589w37')}</button>
           <button
             type="button"
             className="file-picker-btn file-picker-btn-primary"
             onClick={handleConfirm}
             disabled={mode === 'open' ? !selectedName : mode === 'save' ? !fileName.trim() : loading}
           >
-            {confirmLabel || (mode === 'open' ? '打开' : mode === 'directory' ? '选择文件夹' : '保存')}
+            {confirmLabel || (mode === 'open' ? tCurrent('auto.remoteFilePicker.2lh37q') : mode === 'directory' ? tCurrent('auto.remoteFilePicker.1f0cn5d') : tCurrent('auto.remoteFilePicker.1c3mapc'))}
           </button>
         </div>
       </div>

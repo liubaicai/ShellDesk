@@ -1,4 +1,5 @@
 import { powershellSingleQuote, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type S3CliMode = 'aws' | 'mc';
 
@@ -37,7 +38,7 @@ function normalizeEndpoint(endpoint: string) {
   const trimmedValue = endpoint.trim();
 
   if (!/^https?:\/\/[^\s]+$/i.test(trimmedValue) || /[\r\n\u0000]/.test(trimmedValue)) {
-    throw new Error('Endpoint 必须以 http:// 或 https:// 开头。');
+    throw new Error(tCurrent('auto.s3CliParsers.15k0mm2'));
   }
 
   return trimmedValue.replace(/\/+$/, '');
@@ -47,11 +48,11 @@ function validateCredential(value: string, label: string) {
   const trimmedValue = value.trim();
 
   if (!trimmedValue) {
-    throw new Error(`请输入 ${label}。`);
+    throw new Error(tCurrent('auto.s3CliParsers.1uo8svj', { value0: label }));
   }
 
   if (trimmedValue.length > 300 || /[\r\n\u0000]/.test(trimmedValue)) {
-    throw new Error(`${label} 无效。`);
+    throw new Error(tCurrent('auto.s3CliParsers.1ainqu2', { value0: label }));
   }
 
   return trimmedValue;
@@ -61,7 +62,7 @@ function validateBucket(bucket: string) {
   const trimmedValue = bucket.trim();
 
   if (!trimmedValue || trimmedValue.length > 255 || /[\r\n\u0000/]/.test(trimmedValue)) {
-    throw new Error('Bucket 名称无效。');
+    throw new Error(tCurrent('auto.s3CliParsers.s02cfq'));
   }
 
   return trimmedValue;
@@ -71,7 +72,7 @@ function validatePrefix(prefix: string) {
   const trimmedValue = prefix.trim().replace(/^\/+/, '');
 
   if (trimmedValue.length > 900 || /[\r\n\u0000]/.test(trimmedValue)) {
-    throw new Error('Prefix 无效。');
+    throw new Error(tCurrent('auto.s3CliParsers.9l4pej'));
   }
 
   return trimmedValue;
@@ -81,7 +82,7 @@ function validateObjectKey(key: string) {
   const trimmedValue = key.trim().replace(/^\/+/, '');
 
   if (!trimmedValue || trimmedValue.length > 1000 || /[\r\n\u0000]/.test(trimmedValue)) {
-    throw new Error('对象 Key 无效。');
+    throw new Error(tCurrent('auto.s3CliParsers.12tp98i'));
   }
 
   return trimmedValue;
@@ -91,7 +92,7 @@ function validateRemoteDirectory(path: string) {
   const trimmedValue = path.trim();
 
   if (!trimmedValue || trimmedValue.length > 500 || /[\r\n\u0000]/.test(trimmedValue)) {
-    throw new Error('下载目录无效。');
+    throw new Error(tCurrent('auto.s3CliParsers.kyud8i'));
   }
 
   return trimmedValue;

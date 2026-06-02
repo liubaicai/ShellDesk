@@ -1,4 +1,5 @@
 import { powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type WebServerKind = 'nginx' | 'apache' | 'caddy';
 export type WebServerAction = 'test' | 'reload' | 'restart';
@@ -58,7 +59,7 @@ function sanitizeServiceName(serviceName: string, fallback: string) {
   const value = serviceName.trim() || fallback;
 
   if (!/^[a-zA-Z0-9_.@-]{1,80}$/.test(value)) {
-    throw new Error('服务名无效。');
+    throw new Error(tCurrent('auto.webServerParsers.173awd4'));
   }
 
   return value;

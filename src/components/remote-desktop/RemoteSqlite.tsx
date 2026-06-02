@@ -5,6 +5,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import RemoteFilePicker from './RemoteFilePicker';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteSqliteProps {
   connectionId: string;
@@ -76,7 +77,7 @@ function quoteSqliteIdentifier(identifier: string): string {
 
 function formatSqlPreview(sql: string, length = 56): string {
   const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return '空查询';
+  if (!compact) return tCurrent('auto.remoteSqlite.18ivnwu');
   return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
 }
 
@@ -121,9 +122,9 @@ function isSqliteWriteStatement(sql: string): boolean {
 
 function getObjectTypeLabel(type: string): string {
   switch (type) {
-    case 'table': return '表';
-    case 'view': return '视图';
-    case 'index': return '索引';
+    case 'table': return tCurrent('auto.remoteSqlite.1tjg76f');
+    case 'view': return tCurrent('auto.remoteSqlite.z4lltx');
+    case 'index': return tCurrent('auto.remoteSqlite.1lig4k0');
     default: return type;
   }
 }
@@ -255,7 +256,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     try {
       const nextObjects = await api.connections.sqliteObjects(connectionId, activeSqliteId);
       setObjects(nextObjects);
-      setMessage({ type: 'success', text: '对象列表已刷新。' });
+      setMessage({ type: 'success', text: tCurrent('auto.remoteSqlite.1cb3a9') });
     } catch (error) {
       setMessage({ type: 'error', text: getErrorMessage(error) });
     } finally {
@@ -415,7 +416,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       setActivePanel('data');
       setMessage({
         type: 'success',
-        text: writeStatement ? '写入语句已执行。' : `查询完成，返回 ${result.rows.length} 行。`,
+        text: writeStatement ? tCurrent('auto.remoteSqlite.w6wj8s') : tCurrent('auto.remoteSqlite.1bkgqz9', { value0: result.rows.length }),
       });
       addHistoryItem({
         sql: statement,
@@ -484,12 +485,12 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
 
   const handleCellEdit = useCallback((rowIndex: number, column: string, currentValue: unknown) => {
     if (!isResultEditable || !resultMeta?.object) {
-      setMessage({ type: 'info', text: '只有左侧表对象打开的结果集，且能识别主键或 rowid 时才支持编辑。' });
+      setMessage({ type: 'info', text: tCurrent('auto.remoteSqlite.1wmtlu9') });
       return;
     }
 
     if (primaryKeys.includes(column)) {
-      setMessage({ type: 'info', text: '主键列不允许直接编辑。' });
+      setMessage({ type: 'info', text: tCurrent('auto.remoteSqlite.133xgxb') });
       return;
     }
 
@@ -511,7 +512,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setEditingCell(null);
 
     if (!row || !target) {
-      setMessage({ type: 'error', text: '无法定位要更新的 SQLite 行。' });
+      setMessage({ type: 'error', text: tCurrent('auto.remoteSqlite.ae9ydc') });
       return;
     }
 
@@ -555,7 +556,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       );
 
       if (result.affectedRows <= 0) {
-        setMessage({ type: 'warning', text: '更新语句未影响任何行，可能目标行已变化。' });
+        setMessage({ type: 'warning', text: tCurrent('auto.remoteSqlite.1hypi28') });
       } else {
         setQueryResult((prev) => {
           if (!prev) return prev;
@@ -566,7 +567,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
           };
           return { ...prev, rows: nextRows };
         });
-        setMessage({ type: 'success', text: `已更新 ${pendingEdit.column}。` });
+        setMessage({ type: 'success', text: tCurrent('auto.remoteSqlite.1n0fqgo', { value0: pendingEdit.column }) });
       }
       setPendingEdit(null);
     } catch (error) {
@@ -615,8 +616,8 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
             <div className="sqlite-connect-heading">
               <span className="sqlite-connect-mark">SQL</span>
               <div>
-                <h3>{initialFilePath ? '打开 SQLite 数据库' : 'SQLite 数据库管理'}</h3>
-                <p className="sqlite-connect-hint">选择远程文件并进入表、视图、索引工作区</p>
+                <h3>{initialFilePath ? tCurrent('auto.remoteSqlite.1x733v9') : tCurrent('auto.remoteSqlite.ushqjl')}</h3>
+                <p className="sqlite-connect-hint">{tCurrent('auto.remoteSqlite.1mnccbf')}</p>
               </div>
             </div>
             {errorMessage ? (
@@ -625,7 +626,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               </DismissibleAlert>
             ) : null}
             <label className="sqlite-field">
-              <span>数据库文件路径</span>
+              <span>{tCurrent('auto.remoteSqlite.ctpleq')}</span>
               <div className="sqlite-path-input-row">
                 <input
                   type="text"
@@ -635,13 +636,12 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                   disabled={status === 'opening'}
                 />
                 <button type="button" className="sqlite-browse-btn" onClick={() => setFilePickerVisible(true)} disabled={status === 'opening'}>
-                  选择
-                </button>
+                  {tCurrent('auto.remoteSqlite.qlswjb')}</button>
               </div>
             </label>
             {recentFiles.length > 0 ? (
               <div className="sqlite-recent-files">
-                <span>最近文件</span>
+                <span>{tCurrent('auto.remoteSqlite.1vw8bwz')}</span>
                 {recentFiles.map((recentPath) => (
                   <button key={recentPath} type="button" onClick={() => setFilePath(recentPath)} title={recentPath}>
                     {getFileName(recentPath)}
@@ -650,7 +650,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               </div>
             ) : null}
             <button type="submit" className="sqlite-connect-btn" disabled={status === 'opening' || !filePath.trim()}>
-              {status === 'opening' ? '打开中...' : '打开数据库'}
+              {status === 'opening' ? tCurrent('auto.remoteSqlite.1kvliz9') : tCurrent('auto.remoteSqlite.29a8ad')}
             </button>
           </form>
         </div>
@@ -658,7 +658,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
           connectionId={connectionId}
           systemType={systemType}
           mode="open"
-          title="选择 SQLite 数据库文件"
+          title={tCurrent('auto.remoteSqlite.6gz0bb')}
           visible={filePickerVisible}
           onConfirm={(selectedPath) => {
             setFilePickerVisible(false);
@@ -676,10 +676,10 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         <aside className="sqlite-sidebar">
           <div className="sqlite-sidebar-header">
             <div>
-              <strong>对象浏览</strong>
-              <span>{objects.length} 个对象</span>
+              <strong>{tCurrent('auto.remoteSqlite.dzec2g')}</strong>
+              <span>{objects.length} {tCurrent('auto.remoteSqlite.13jip7b')}</span>
             </div>
-            <button type="button" onClick={() => void refreshObjects()} disabled={objectsLoading} title="刷新对象">
+            <button type="button" onClick={() => void refreshObjects()} disabled={objectsLoading} title={tCurrent('auto.remoteSqlite.oj1z9s')}>
               {objectsLoading ? '...' : '↻'}
             </button>
           </div>
@@ -688,10 +688,10 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               type="search"
               value={objectSearch}
               onChange={(event) => setObjectSearch(event.target.value)}
-              placeholder="搜索表、视图或索引"
+              placeholder={tCurrent('auto.remoteSqlite.46zdab')}
               spellCheck={false}
             />
-            {objectSearch ? <button type="button" onClick={() => setObjectSearch('')} title="清空搜索">×</button> : null}
+            {objectSearch ? <button type="button" onClick={() => setObjectSearch('')} title={tCurrent('auto.remoteSqlite.18bjen0')}>×</button> : null}
           </div>
           <div className="sqlite-tree">
             {filteredGroups.map((group) => (
@@ -713,18 +713,18 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                     {object.tableName && object.tableName !== object.name ? <em>{object.tableName}</em> : null}
                   </button>
                 ))}
-                {group.items.length === 0 ? <div className="sqlite-tree-empty">无对象</div> : null}
+                {group.items.length === 0 ? <div className="sqlite-tree-empty">{tCurrent('auto.remoteSqlite.a1k4p')}</div> : null}
               </div>
             ))}
           </div>
           <div className="sqlite-history">
             <div className="sqlite-history-title">
-              <strong>查询历史</strong>
+              <strong>{tCurrent('auto.remoteSqlite.air9hy')}</strong>
               <span>{history.length}</span>
             </div>
             <div className="sqlite-history-list">
               {history.length === 0 ? (
-                <div className="sqlite-history-empty">执行查询后会记录在这里</div>
+                <div className="sqlite-history-empty">{tCurrent('auto.remoteSqlite.mkpr6n')}</div>
               ) : history.map((item) => (
                 <button
                   key={item.id}
@@ -735,7 +735,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                 >
                   <span className="sqlite-history-sql">{formatSqlPreview(item.sql, 34)}</span>
                   <span className="sqlite-history-meta">
-                    {formatTimestamp(item.createdAt)} · {item.status === 'success' ? `${item.rowCount ?? 0} 行` : '错误'} · {item.queryTime}ms
+                    {formatTimestamp(item.createdAt)} · {item.status === 'success' ? tCurrent('auto.remoteSqlite.18tehe0', { value0: item.rowCount ?? 0 }) : tCurrent('auto.remoteSqlite.v9pftt')} · {item.queryTime}ms
                   </span>
                 </button>
               ))}
@@ -750,15 +750,15 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               <strong title={filePath}>{getFileName(filePath)}</strong>
               <span title={filePath}>{filePath}</span>
             </div>
-            <button type="button" className="sqlite-disconnect-btn" onClick={() => void handleClose()} title="关闭数据库">关闭</button>
+            <button type="button" className="sqlite-disconnect-btn" onClick={() => void handleClose()} title={tCurrent('auto.remoteSqlite.yzmgm0')}>{tCurrent('auto.remoteSqlite.g0fanx')}</button>
           </div>
 
           <section className="sqlite-editor-area">
             <div className="sqlite-editor-toolbar">
               <button type="button" className="sqlite-run-btn" onClick={handleExecuteSql} disabled={queryRunning || !sql.trim()}>
-                {queryRunning ? '执行中...' : '执行'}
+                {queryRunning ? tCurrent('auto.remoteSqlite.e2byz1') : tCurrent('auto.remoteSqlite.6azgji')}
               </button>
-              <span className="sqlite-editor-hint">Ctrl+Enter 执行</span>
+              <span className="sqlite-editor-hint">{tCurrent('auto.remoteSqlite.cj2ebw')}</span>
               {selectedObject ? (
                 <span className="sqlite-active-object">
                   {getObjectTypeLabel(selectedObject.type)}: {selectedObject.name}
@@ -771,14 +771,14 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               value={sql}
               onChange={(event) => setSql(event.target.value)}
               onKeyDown={handleSqlKeyDown}
-              placeholder="输入 SQL 语句..."
+              placeholder={tCurrent('auto.remoteSqlite.1bvo5bt')}
               spellCheck={false}
             />
           </section>
 
           <section className="sqlite-result-area">
-            <div className="sqlite-workspace-tabs" role="tablist" aria-label="SQLite 工作区">
-              <button type="button" className={activePanel === 'data' ? 'active' : ''} onClick={() => setActivePanel('data')}>数据</button>
+            <div className="sqlite-workspace-tabs" role="tablist" aria-label={tCurrent('auto.remoteSqlite.avpwck')}>
+              <button type="button" className={activePanel === 'data' ? 'active' : ''} onClick={() => setActivePanel('data')}>{tCurrent('auto.remoteSqlite.adup77')}</button>
               <button type="button" className={activePanel === 'schema' ? 'active' : ''} onClick={() => setActivePanel('schema')}>Schema</button>
             </div>
             {message ? (
@@ -811,25 +811,25 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                         ))}
                       </div>
                     ) : null}
-                    <pre className="sqlite-schema-sql">{schemaSql || '该对象没有 schema SQL。'}</pre>
+                    <pre className="sqlite-schema-sql">{schemaSql || tCurrent('auto.remoteSqlite.3nm0f')}</pre>
                   </>
                 ) : (
                   <div className="sqlite-result-placeholder">
-                    <strong>选择对象查看 Schema</strong>
-                    <span>左侧对象树包含表、视图和索引。</span>
+                    <strong>{tCurrent('auto.remoteSqlite.j6kkls')}</strong>
+                    <span>{tCurrent('auto.remoteSqlite.oodm6h')}</span>
                   </div>
                 )}
               </div>
             ) : queryResult ? (
               <>
                 <div className={`sqlite-result-info ${resultMeta?.writeStatement ? 'write' : ''}`}>
-                  <span>{resultMeta?.writeStatement ? '写入完成' : `${queryResult.rows.length} 行`}</span>
+                  <span>{resultMeta?.writeStatement ? tCurrent('auto.remoteSqlite.pnzml3') : tCurrent('auto.remoteSqlite.18tehe02', { value0: queryResult.rows.length })}</span>
                   <span>{resultMeta?.queryTime ?? 0}ms</span>
-                  <span>{resultMeta?.object ? `${getObjectTypeLabel(resultMeta.object.type)} ${resultMeta.object.name}` : 'SQL 结果'}</span>
+                  <span>{resultMeta?.object ? `${getObjectTypeLabel(resultMeta.object.type)} ${resultMeta.object.name}` : tCurrent('auto.remoteSqlite.sjr2ya')}</span>
                   <span>
                     {isResultEditable
-                      ? primaryKeys.length > 0 ? `可编辑 · 主键 ${primaryKeys.join(', ')}` : '可编辑 · rowid'
-                      : resultMeta?.source === 'object' ? '只读 · 未识别主键或 rowid' : '只读 · 手写 SQL'}
+                      ? primaryKeys.length > 0 ? tCurrent('auto.remoteSqlite.zacxkg', { value0: primaryKeys.join(', ') }) : tCurrent('auto.remoteSqlite.zfahz')
+                      : resultMeta?.source === 'object' ? tCurrent('auto.remoteSqlite.11g20o2') : tCurrent('auto.remoteSqlite.1g60mb5')}
                   </span>
                 </div>
                 {visibleColumns.length > 0 ? (
@@ -898,25 +898,25 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                     </div>
                     {totalPages > 1 ? (
                       <div className="sqlite-pagination">
-                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>首页</button>
-                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>{tCurrent('auto.remoteSqlite.1ow5v10')}</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>{tCurrent('auto.remoteSqlite.mtyn6e')}</button>
                         <span>{page + 1} / {totalPages}</span>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>下一页</button>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>末页</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{tCurrent('auto.remoteSqlite.1yw313l')}</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>{tCurrent('auto.remoteSqlite.ixvu31')}</button>
                       </div>
                     ) : null}
                   </>
                 ) : (
                   <div className="sqlite-result-empty">
-                    <strong>查询已执行</strong>
-                    <span>该语句没有返回表格数据。</span>
+                    <strong>{tCurrent('auto.remoteSqlite.8p0dx3')}</strong>
+                    <span>{tCurrent('auto.remoteSqlite.vpza2y')}</span>
                   </div>
                 )}
               </>
             ) : (
               <div className="sqlite-result-placeholder">
-                <strong>选择对象或执行 SQL</strong>
-                <span>表和视图预览默认限制 {tablePreviewLimit} 行。</span>
+                <strong>{tCurrent('auto.remoteSqlite.lcteg6')}</strong>
+                <span>{tCurrent('auto.remoteSqlite.1xowp13')}{tablePreviewLimit} {tCurrent('auto.remoteSqlite.1nb4i6j')}</span>
               </div>
             )}
           </section>
@@ -927,24 +927,24 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         <div className="sqlite-modal-backdrop" role="presentation">
           <div className="sqlite-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="sqlite-edit-title">
             <div className="sqlite-edit-dialog-header">
-              <strong id="sqlite-edit-title">确认更新单元格</strong>
+              <strong id="sqlite-edit-title">{tCurrent('auto.remoteSqlite.5pj76l')}</strong>
               <span>{pendingEdit.table}</span>
             </div>
             <div className="sqlite-edit-summary">
               <div>
-                <span>字段</span>
+                <span>{tCurrent('auto.remoteSqlite.vomz89')}</span>
                 <strong>{pendingEdit.column}</strong>
               </div>
               <div>
-                <span>原值</span>
+                <span>{tCurrent('auto.remoteSqlite.12o2s46')}</span>
                 <code>{formatCellValue(pendingEdit.oldValue)}</code>
               </div>
               <div>
-                <span>新值</span>
+                <span>{tCurrent('auto.remoteSqlite.1wg5cdl')}</span>
                 <code>{formatCellValue(pendingEdit.newValue)}</code>
               </div>
               <div>
-                <span>定位</span>
+                <span>{tCurrent('auto.remoteSqlite.10tg474')}</span>
                 <code>
                   {pendingEdit.target.pkColumns?.length
                     ? pendingEdit.target.pkColumns.map((column, index) => `${column}=${formatCellValue(pendingEdit.target.pkValues?.[index])}`).join(' AND ')
@@ -952,11 +952,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                 </code>
               </div>
             </div>
-            <p className="sqlite-edit-warning">该操作会直接修改远程 SQLite 文件。数据库被锁定时会保留当前查询上下文。</p>
+            <p className="sqlite-edit-warning">{tCurrent('auto.remoteSqlite.gyrwjf')}</p>
             <div className="sqlite-edit-actions">
-              <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>取消</button>
+              <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>{tCurrent('auto.remoteSqlite.1589w37')}</button>
               <button type="button" className="primary" onClick={() => void handleConfirmCellSave()} disabled={editSaving}>
-                {editSaving ? '提交中...' : '确认更新'}
+                {editSaving ? tCurrent('auto.remoteSqlite.xwkgei') : tCurrent('auto.remoteSqlite.1k3x0w3')}
               </button>
             </div>
           </div>
@@ -968,15 +968,15 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         <div className="sqlite-modal-backdrop" role="presentation">
           <div className="sqlite-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="sqlite-write-title">
             <div className="sqlite-edit-dialog-header">
-              <strong id="sqlite-write-title">确认执行写入 SQL</strong>
+              <strong id="sqlite-write-title">{tCurrent('auto.remoteSqlite.1nifixi')}</strong>
               <span>{getFileName(filePath)}</span>
             </div>
             <p className="sqlite-write-sql">{formatSqlPreview(pendingWrite.sql, 180)}</p>
-            <p className="sqlite-edit-warning">写入语句会修改远程数据库文件，请确认已了解该语句影响范围。</p>
+            <p className="sqlite-edit-warning">{tCurrent('auto.remoteSqlite.18e5rud')}</p>
             <div className="sqlite-edit-actions">
-              <button type="button" onClick={() => setPendingWrite(null)} disabled={queryRunning}>取消</button>
+              <button type="button" onClick={() => setPendingWrite(null)} disabled={queryRunning}>{tCurrent('auto.remoteSqlite.1589w372')}</button>
               <button type="button" className="primary" onClick={() => void handleConfirmWriteSql()} disabled={queryRunning}>
-                {queryRunning ? '执行中...' : '确认执行'}
+                {queryRunning ? tCurrent('auto.remoteSqlite.e2byz12') : tCurrent('auto.remoteSqlite.1lw0tr0')}
               </button>
             </div>
           </div>

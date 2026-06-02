@@ -13,6 +13,7 @@ import {
 import { getErrorMessage } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteScheduledTasksProps {
   connectionId: string;
@@ -44,7 +45,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteScheduledTasks.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -232,7 +233,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
       const nextTimers = parseSystemdTimers(result.stdout);
       setTimers(nextTimers);
       setSelectedTimerName(nextTimers[0]?.name ?? '');
-      if (!nextTimers.length) setNotice('未读取到 systemd timer，目标系统可能不使用 systemd。');
+      if (!nextTimers.length) setNotice(tCurrent('auto.remoteScheduledTasks.12a2yw8'));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -289,7 +290,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
     }
 
     setPendingAction({
-      title: '保存 crontab',
+      title: tCurrent('auto.remoteScheduledTasks.1v0h57v'),
       command: createWriteCrontabCommand(rawCronText),
       afterRun: loadCron,
     });
@@ -304,7 +305,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
 
     try {
       const result = await runCmd(connectionId, pendingAction.command);
-      setNotice(result.stdout || result.stderr || '操作已完成。');
+      setNotice(result.stdout || result.stderr || tCurrent('auto.remoteScheduledTasks.1m6h6ak'));
       const afterRun = pendingAction.afterRun;
       setPendingAction(null);
       await afterRun?.();
@@ -318,7 +319,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
   const copyPendingCommand = async () => {
     if (!pendingAction) return;
     await navigator.clipboard.writeText(pendingAction.command);
-    setNotice('已复制命令。');
+    setNotice(tCurrent('auto.remoteScheduledTasks.1ys75c3'));
   };
 
   return (
@@ -327,10 +328,10 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
         <div className="scheduled-tabs">
           <button type="button" className={activeTab === 'cron' ? 'active' : ''} onClick={() => setActiveTab('cron')}>Crontab</button>
           <button type="button" className={activeTab === 'systemd' ? 'active' : ''} onClick={() => setActiveTab('systemd')}>systemd Timer</button>
-          <button type="button" className={activeTab === 'windows' ? 'active' : ''} onClick={() => setActiveTab('windows')}>Windows 任务</button>
+          <button type="button" className={activeTab === 'windows' ? 'active' : ''} onClick={() => setActiveTab('windows')}>{tCurrent('auto.remoteScheduledTasks.1m5ch6i')}</button>
         </div>
         <button type="button" onClick={() => (activeTab === 'cron' ? loadCron() : activeTab === 'systemd' ? loadTimers() : loadWindowsTasks())} disabled={loading}>
-          {loading ? '刷新中' : '刷新'}
+          {loading ? tCurrent('auto.remoteScheduledTasks.1taxqz1') : tCurrent('auto.remoteScheduledTasks.12qo56a')}
         </button>
       </header>
 
@@ -342,42 +343,42 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
           <aside className="scheduled-list">
             <div className="scheduled-list-head">
               <strong>Crontab</strong>
-              <button type="button" onClick={addCronTask}>新增</button>
+              <button type="button" onClick={addCronTask}>{tCurrent('auto.remoteScheduledTasks.159s6ub')}</button>
             </div>
             {cronLines.filter((line) => line.kind === 'task').map((line) => (
               <button key={line.id} type="button" className={selectedCron?.id === line.id ? 'active' : ''} onClick={() => setSelectedCronId(line.id)}>
-                <strong>{line.command || '未命名任务'}</strong>
-                <span>{line.enabled ? '启用' : '禁用'} · {line.minute} {line.hour} {line.dayOfMonth} {line.month} {line.dayOfWeek}</span>
+                <strong>{line.command || tCurrent('auto.remoteScheduledTasks.g7befz')}</strong>
+                <span>{line.enabled ? tCurrent('auto.remoteScheduledTasks.5pm2ma') : tCurrent('auto.remoteScheduledTasks.1dcdrxo')} · {line.minute} {line.hour} {line.dayOfMonth} {line.month} {line.dayOfWeek}</span>
               </button>
             ))}
-            {cronLines.filter((line) => line.kind === 'task').length === 0 ? <div className="scheduled-empty">当前 crontab 没有任务。</div> : null}
+            {cronLines.filter((line) => line.kind === 'task').length === 0 ? <div className="scheduled-empty">{tCurrent('auto.remoteScheduledTasks.1bd18l6')}</div> : null}
           </aside>
 
           <main className="cron-editor">
             {selectedCron ? (
               <>
                 <div className="cron-grid">
-                  <label><span>分钟</span><input value={selectedCron.minute} onChange={(event) => updateSelectedCron({ minute: event.target.value })} /></label>
-                  <label><span>小时</span><input value={selectedCron.hour} onChange={(event) => updateSelectedCron({ hour: event.target.value })} /></label>
-                  <label><span>日期</span><input value={selectedCron.dayOfMonth} onChange={(event) => updateSelectedCron({ dayOfMonth: event.target.value })} /></label>
-                  <label><span>月份</span><input value={selectedCron.month} onChange={(event) => updateSelectedCron({ month: event.target.value })} /></label>
-                  <label><span>星期</span><input value={selectedCron.dayOfWeek} onChange={(event) => updateSelectedCron({ dayOfWeek: event.target.value })} /></label>
+                  <label><span>{tCurrent('auto.remoteScheduledTasks.1cm49zm')}</span><input value={selectedCron.minute} onChange={(event) => updateSelectedCron({ minute: event.target.value })} /></label>
+                  <label><span>{tCurrent('auto.remoteScheduledTasks.e8ttp4')}</span><input value={selectedCron.hour} onChange={(event) => updateSelectedCron({ hour: event.target.value })} /></label>
+                  <label><span>{tCurrent('auto.remoteScheduledTasks.14s86i5')}</span><input value={selectedCron.dayOfMonth} onChange={(event) => updateSelectedCron({ dayOfMonth: event.target.value })} /></label>
+                  <label><span>{tCurrent('auto.remoteScheduledTasks.1fsw60u')}</span><input value={selectedCron.month} onChange={(event) => updateSelectedCron({ month: event.target.value })} /></label>
+                  <label><span>{tCurrent('auto.remoteScheduledTasks.7id25f')}</span><input value={selectedCron.dayOfWeek} onChange={(event) => updateSelectedCron({ dayOfWeek: event.target.value })} /></label>
                 </div>
                 <label className="cron-command">
-                  <span>命令</span>
+                  <span>{tCurrent('auto.remoteScheduledTasks.emgxwk')}</span>
                   <input value={selectedCron.command} onChange={(event) => updateSelectedCron({ command: event.target.value })} />
                 </label>
                 <div className="cron-hint">{describeCronExpression(selectedCron)}</div>
                 <div className="cron-actions">
-                  <button type="button" className="primary" onClick={prepareCronSave}>保存 crontab</button>
-                  <button type="button" onClick={() => updateSelectedCron({ enabled: !selectedCron.enabled })}>{selectedCron.enabled ? '禁用' : '启用'}</button>
-                  <button type="button" className="danger" onClick={removeCronTask}>删除</button>
-                  <button type="button" onClick={() => setRawCronVisible((visible) => !visible)}>{rawCronVisible ? '隐藏原文' : '查看原文'}</button>
+                  <button type="button" className="primary" onClick={prepareCronSave}>{tCurrent('auto.remoteScheduledTasks.1v0h57v2')}</button>
+                  <button type="button" onClick={() => updateSelectedCron({ enabled: !selectedCron.enabled })}>{selectedCron.enabled ? tCurrent('auto.remoteScheduledTasks.1dcdrxo2') : tCurrent('auto.remoteScheduledTasks.5pm2ma2')}</button>
+                  <button type="button" className="danger" onClick={removeCronTask}>{tCurrent('auto.remoteScheduledTasks.1t2vi4h')}</button>
+                  <button type="button" onClick={() => setRawCronVisible((visible) => !visible)}>{rawCronVisible ? tCurrent('auto.remoteScheduledTasks.1vnw8am') : tCurrent('auto.remoteScheduledTasks.1n84b87')}</button>
                 </div>
-                {rawCronVisible ? <pre className="cron-raw">{rawCronText || '# 空 crontab'}</pre> : null}
+                {rawCronVisible ? <pre className="cron-raw">{rawCronText || tCurrent('auto.remoteScheduledTasks.dioqvr')}</pre> : null}
               </>
             ) : (
-              <div className="scheduled-empty detail">选择或新增一个任务。</div>
+              <div className="scheduled-empty detail">{tCurrent('auto.remoteScheduledTasks.dqufdr')}</div>
             )}
           </main>
         </div>
@@ -394,7 +395,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
               <col className="timer-col-unit" />
               <col className="timer-col-actions" />
             </colgroup>
-            <thead><tr><th>Timer</th><th>下次</th><th>剩余</th><th>上次</th><th>Unit</th><th>操作</th></tr></thead>
+            <thead><tr><th>Timer</th><th>{tCurrent('auto.remoteScheduledTasks.3t8cj5')}</th><th>{tCurrent('auto.remoteScheduledTasks.1cqxrfr')}</th><th>{tCurrent('auto.remoteScheduledTasks.dssrsk')}</th><th>Unit</th><th>{tCurrent('auto.remoteScheduledTasks.501w24')}</th></tr></thead>
             <tbody>
               {timers.map((timer) => (
                 <tr key={timer.name} className={selectedTimer?.name === timer.name ? 'selected' : ''} onClick={() => setSelectedTimerName(timer.name)}>
@@ -404,14 +405,14 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
                   <td>{timer.last || '-'}</td>
                   <td>{timer.unit || '-'}</td>
                   <td className="scheduled-actions-cell">
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启动 ${timer.name}`, command: createSystemdTimerActionCommand('start', timer), afterRun: loadTimers }); }}>启动</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `停止 ${timer.name}`, command: createSystemdTimerActionCommand('stop', timer), afterRun: loadTimers }); }}>停止</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启用 ${timer.name}`, command: createSystemdTimerActionCommand('enable', timer), afterRun: loadTimers }); }}>启用</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `禁用 ${timer.name}`, command: createSystemdTimerActionCommand('disable', timer), afterRun: loadTimers }); }}>禁用</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.30kjgb', { value0: timer.name }), command: createSystemdTimerActionCommand('start', timer), afterRun: loadTimers }); }}>{tCurrent('auto.remoteScheduledTasks.155xe0y')}</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.10geya8', { value0: timer.name }), command: createSystemdTimerActionCommand('stop', timer), afterRun: loadTimers }); }}>{tCurrent('auto.remoteScheduledTasks.1pnni9n')}</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.s67jej', { value0: timer.name }), command: createSystemdTimerActionCommand('enable', timer), afterRun: loadTimers }); }}>{tCurrent('auto.remoteScheduledTasks.5pm2ma3')}</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.1ewbgjl', { value0: timer.name }), command: createSystemdTimerActionCommand('disable', timer), afterRun: loadTimers }); }}>{tCurrent('auto.remoteScheduledTasks.1dcdrxo3')}</button>
                   </td>
                 </tr>
               ))}
-              {!timers.length ? <tr><td colSpan={6} className="scheduled-empty-cell">没有 timer 数据。</td></tr> : null}
+              {!timers.length ? <tr><td colSpan={6} className="scheduled-empty-cell">{tCurrent('auto.remoteScheduledTasks.7a0bp6')}</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -420,7 +421,7 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
       {activeTab === 'windows' ? (
         <div className="scheduled-table-panel windows-tasks">
           <table className="scheduled-table">
-            <thead><tr><th>任务</th><th>路径</th><th>状态</th><th>上次运行</th><th>下次运行</th><th>操作</th></tr></thead>
+            <thead><tr><th>{tCurrent('auto.remoteScheduledTasks.cm180x')}</th><th>{tCurrent('auto.remoteScheduledTasks.c8pdny')}</th><th>{tCurrent('auto.remoteScheduledTasks.1ccx4t4')}</th><th>{tCurrent('auto.remoteScheduledTasks.1h2g8kg')}</th><th>{tCurrent('auto.remoteScheduledTasks.1o2ffot')}</th><th>{tCurrent('auto.remoteScheduledTasks.501w242')}</th></tr></thead>
             <tbody>
               {windowsTasks.map((task) => (
                 <tr key={`${task.path}-${task.name}`} className={selectedWindowsTask?.name === task.name ? 'selected' : ''} onClick={() => setSelectedWindowsTaskName(task.name)}>
@@ -430,13 +431,13 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
                   <td>{task.lastRunTime || '-'}</td>
                   <td>{task.nextRunTime || '-'}</td>
                   <td className="scheduled-actions-cell">
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `运行 ${task.name}`, command: createWindowsTaskActionCommand('start', task), afterRun: loadWindowsTasks }); }}>运行</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `启用 ${task.name}`, command: createWindowsTaskActionCommand('enable', task), afterRun: loadWindowsTasks }); }}>启用</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: `禁用 ${task.name}`, command: createWindowsTaskActionCommand('disable', task), afterRun: loadWindowsTasks }); }}>禁用</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.hqi816', { value0: task.name }), command: createWindowsTaskActionCommand('start', task), afterRun: loadWindowsTasks }); }}>{tCurrent('auto.remoteScheduledTasks.1kn0p6h')}</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.s67jej2', { value0: task.name }), command: createWindowsTaskActionCommand('enable', task), afterRun: loadWindowsTasks }); }}>{tCurrent('auto.remoteScheduledTasks.5pm2ma4')}</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setPendingAction({ title: tCurrent('auto.remoteScheduledTasks.1ewbgjl2', { value0: task.name }), command: createWindowsTaskActionCommand('disable', task), afterRun: loadWindowsTasks }); }}>{tCurrent('auto.remoteScheduledTasks.1dcdrxo4')}</button>
                   </td>
                 </tr>
               ))}
-              {!windowsTasks.length ? <tr><td colSpan={6} className="scheduled-empty-cell">没有计划任务数据。</td></tr> : null}
+              {!windowsTasks.length ? <tr><td colSpan={6} className="scheduled-empty-cell">{tCurrent('auto.remoteScheduledTasks.1r3qxxs')}</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -446,14 +447,14 @@ function RemoteScheduledTasks({ connectionId, systemType }: RemoteScheduledTasks
         <div className="scheduled-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className="scheduled-confirm-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="scheduled-confirm-header">
-              <span>确认操作</span>
+              <span>{tCurrent('auto.remoteScheduledTasks.1gm39ou')}</span>
               <strong>{pendingAction.title}</strong>
             </div>
             <pre>{pendingAction.command}</pre>
             <div className="scheduled-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
-              <button type="button" onClick={copyPendingCommand}>复制命令</button>
-              <button type="button" className="primary" onClick={executePendingAction} disabled={actionRunning}>{actionRunning ? '执行中' : '执行'}</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteScheduledTasks.1589w37')}</button>
+              <button type="button" onClick={copyPendingCommand}>{tCurrent('auto.remoteScheduledTasks.qxd4qr')}</button>
+              <button type="button" className="primary" onClick={executePendingAction} disabled={actionRunning}>{actionRunning ? tCurrent('auto.remoteScheduledTasks.6svkbt') : tCurrent('auto.remoteScheduledTasks.6azgji')}</button>
             </div>
           </div>
         </div>,

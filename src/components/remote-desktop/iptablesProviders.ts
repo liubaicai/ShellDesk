@@ -1,3 +1,4 @@
+import { tCurrent } from '../../i18n';
 export type IptablesFamily = 'ipv4' | 'ipv6';
 export type IptablesTable = 'filter' | 'nat' | 'mangle' | 'raw' | 'security';
 export type IptablesProtocol = 'tcp' | 'udp' | 'icmp' | 'any' | string;
@@ -228,30 +229,7 @@ function parsePolicy(line: string, family: IptablesFamily, table: string): Iptab
 }
 
 export function createIptablesStatusCommand() {
-  return `
-if command -v iptables >/dev/null 2>&1; then
-  printf '${availabilityMarker}\\tavailable\\n'
-  printf '${versionMarker}\\t%s\\n' "$(iptables -V 2>&1)"
-  printf '${familyMarker}\\tipv4\\n'
-  if command -v iptables-save >/dev/null 2>&1; then
-    sudo -n iptables-save 2>&1 || iptables-save 2>&1 || true
-  else
-    sudo -n iptables -S 2>&1 || iptables -S 2>&1 || true
-  fi
-else
-  printf '${availabilityMarker}\\tmissing\\n'
-  printf '未检测到 iptables。\\n'
-fi
-if command -v ip6tables >/dev/null 2>&1; then
-  printf '${versionMarker}\\t%s\\n' "$(ip6tables -V 2>&1)"
-  printf '${familyMarker}\\tipv6\\n'
-  if command -v ip6tables-save >/dev/null 2>&1; then
-    sudo -n ip6tables-save 2>&1 || ip6tables-save 2>&1 || true
-  else
-    sudo -n ip6tables -S 2>&1 || ip6tables -S 2>&1 || true
-  fi
-fi
-`;
+  return tCurrent('auto.iptablesProviders.1s7q4tg', { value0: availabilityMarker, value1: versionMarker, value2: familyMarker, value3: availabilityMarker, value4: versionMarker, value5: familyMarker });
 }
 
 export function parseIptablesSnapshot(stdout: string, stderr: string): IptablesSnapshot {
@@ -303,19 +281,19 @@ export function parseIptablesSnapshot(stdout: string, stderr: string): IptablesS
     }
   }
 
-  const permissionDenied = /permission denied|you must be root|operation not permitted|sudo: a password is required|需要密码/i.test(rawOutput);
+  const permissionDenied = /permission denied|you must be root|operation not permitted|sudo: a password is required|\u9700\u8981\u5bc6\u7801/i.test(rawOutput);
   const nftCompatibility = versions.some((version) => /nf_tables/i.test(version));
   const notice = !available
-    ? '未检测到 iptables。'
+    ? tCurrent('auto.iptablesProviders.sc599e')
     : permissionDenied
-      ? 'iptables 已安装，但当前用户可能缺少读取或 sudo 免密权限。'
+      ? tCurrent('auto.iptablesProviders.lce5pb')
       : nftCompatibility
-        ? '当前 iptables 可能运行在 nftables 兼容层，修改前请确认没有与 nft/firewalld/ufw 规则冲突。'
+        ? tCurrent('auto.iptablesProviders.43e45i')
         : '';
   return {
     available,
     versions,
-    status: available ? `${rules.length} 条规则，${policies.length} 个默认策略` : '未安装',
+    status: available ? tCurrent('auto.iptablesProviders.16n2tfr', { value0: rules.length, value1: policies.length }) : tCurrent('auto.iptablesProviders.buf4kb'),
     notice,
     policies,
     rules,
@@ -331,39 +309,39 @@ export function validateIptablesDraft(draft: IptablesRuleDraft) {
   const comment = draft.comment.trim();
 
   if (!supportedTables.has(draft.table)) {
-    throw new Error('暂不支持该 iptables 表。');
+    throw new Error(tCurrent('auto.iptablesProviders.z5u25p'));
   }
 
   if (!/^[A-Za-z0-9_.:-]{1,40}$/.test(chain)) {
-    throw new Error('链名称只能包含字母、数字、点、下划线、冒号和短横线。');
+    throw new Error(tCurrent('auto.iptablesProviders.1ivozri'));
   }
 
   if (port) {
     const portMatch = port.match(/^(\d{1,5})(?:[:-](\d{1,5}))?$/);
 
     if (!portMatch) {
-      throw new Error('端口必须是 1-65535，或端口范围，例如 8000-8010。');
+      throw new Error(tCurrent('auto.iptablesProviders.f1rgcm'));
     }
 
     const startPort = Number.parseInt(portMatch[1], 10);
     const endPort = portMatch[2] ? Number.parseInt(portMatch[2], 10) : startPort;
 
     if (startPort < 1 || endPort > 65535 || startPort > endPort) {
-      throw new Error('端口范围必须位于 1-65535 内。');
+      throw new Error(tCurrent('auto.iptablesProviders.yk8200'));
     }
 
     if (draft.protocol === 'any') {
-      throw new Error('填写端口时必须选择 TCP 或 UDP。');
+      throw new Error(tCurrent('auto.iptablesProviders.1k5kesn'));
     }
   }
 
-  for (const [label, value] of [['来源地址', source], ['目标地址', destination], ['备注', comment]] as const) {
+  for (const [label, value] of [[tCurrent('auto.iptablesProviders.1kj77kw'), source], [tCurrent('auto.iptablesProviders.w4v742'), destination], [tCurrent('auto.iptablesProviders.b5m1l6'), comment]] as const) {
     if (value.length > 160) {
-      throw new Error(`${label}过长。`);
+      throw new Error(tCurrent('auto.iptablesProviders.k6ec14', { value0: label }));
     }
 
     if (unsafeShellPattern.test(value)) {
-      throw new Error(`${label}包含不安全字符。`);
+      throw new Error(tCurrent('auto.iptablesProviders.1xto81z', { value0: label }));
     }
   }
 }
@@ -416,7 +394,7 @@ export function createIptablesAddRuleCommand(draft: IptablesRuleDraft) {
 
 export function createIptablesDeleteRuleCommand(rule: IptablesRule) {
   if (!Number.isInteger(rule.index) || rule.index < 1) {
-    throw new Error('该规则没有可用序号，请刷新后重试。');
+    throw new Error(tCurrent('auto.iptablesProviders.qkj1w8'));
   }
 
   const binary = rule.family === 'ipv6' ? 'ip6tables' : 'iptables';
@@ -426,11 +404,11 @@ export function createIptablesDeleteRuleCommand(rule: IptablesRule) {
 export function getIptablesTargetLabel(target: string) {
   const normalized = target.toUpperCase();
 
-  if (normalized === 'ACCEPT') return '允许';
-  if (normalized === 'DROP') return '丢弃';
-  if (normalized === 'REJECT') return '拒收';
-  if (normalized === 'RETURN') return '返回';
-  return target || '未知';
+  if (normalized === 'ACCEPT') return tCurrent('auto.iptablesProviders.11bz44c');
+  if (normalized === 'DROP') return tCurrent('auto.iptablesProviders.19rnkgi');
+  if (normalized === 'REJECT') return tCurrent('auto.iptablesProviders.1y9ly2h');
+  if (normalized === 'RETURN') return tCurrent('auto.iptablesProviders.omytgn');
+  return target || tCurrent('auto.iptablesProviders.1lpnuh4');
 }
 
 export function getIptablesTargetTone(target: string) {
@@ -447,5 +425,5 @@ export function getIptablesDefaultPolicy(policies: IptablesPolicy[]) {
     .filter((policy) => policy.table === 'filter')
     .map((policy) => `${policy.family} ${policy.chain} ${policy.policy}`);
 
-  return filterPolicies.length ? filterPolicies.join(' · ') : '默认策略未知';
+  return filterPolicies.length ? filterPolicies.join(' · ') : tCurrent('auto.iptablesProviders.unhp5');
 }

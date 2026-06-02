@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { tCurrent } from '../../i18n';
 
 interface RemoteRedisProps {
   connectionId: string;
@@ -60,10 +61,10 @@ const mutableRedisCommands = new Set([
 ]);
 
 function formatTtl(ttl?: number): string {
-  if (ttl === undefined || Number.isNaN(ttl)) return '未知';
-  if (ttl === -1) return '永不过期';
-  if (ttl === -2) return '已过期';
-  if (ttl < 0) return '未知';
+  if (ttl === undefined || Number.isNaN(ttl)) return tCurrent('auto.remoteRedis.1lpnuh4');
+  if (ttl === -1) return tCurrent('auto.remoteRedis.4rvo30');
+  if (ttl === -2) return tCurrent('auto.remoteRedis.1g217or');
+  if (ttl < 0) return tCurrent('auto.remoteRedis.1lpnuh42');
   if (ttl < 60) return `${ttl}s`;
   if (ttl < 3600) return `${Math.floor(ttl / 60)}m`;
   if (ttl < 86400) return `${Math.floor(ttl / 3600)}h`;
@@ -78,7 +79,7 @@ function getKeyTypeLabel(type: string): string {
     case 'set': return 'Set';
     case 'zset': return 'ZSet';
     case 'stream': return 'Stream';
-    case 'none': return '不存在';
+    case 'none': return tCurrent('auto.remoteRedis.pwcxvc');
     default: return type || 'Unknown';
   }
 }
@@ -96,10 +97,10 @@ function getKeyTypeMark(type: string): string {
 }
 
 function formatSizeHint(type: string, size?: number): string {
-  if (size === undefined || Number.isNaN(size)) return '大小未知';
+  if (size === undefined || Number.isNaN(size)) return tCurrent('auto.remoteRedis.1ng00oy');
   if (type === 'string') return `${size} B`;
-  if (type === 'stream') return `${size} 条`;
-  return `${size} 项`;
+  if (type === 'stream') return tCurrent('auto.remoteRedis.1h15ve7', { value0: size });
+  return tCurrent('auto.remoteRedis.1eo5imv', { value0: size });
 }
 
 function formatTimestamp(value?: string): string {
@@ -199,19 +200,19 @@ function parseRedisCommandLine(input: string): string[] {
 
 function getRedisCommandWarning(command: string, args: string[]): string {
   if (command === 'FLUSHALL' || command === 'FLUSHDB') {
-    return `${command} 会清空当前 Redis 数据。`;
+    return tCurrent('auto.remoteRedis.115zf4i', { value0: command });
   }
 
   if (command === 'KEYS') {
-    return 'KEYS 会在大实例上阻塞 Redis，请优先使用左侧 SCAN 浏览。';
+    return tCurrent('auto.remoteRedis.190ecco');
   }
 
   if (command === 'SHUTDOWN' || command === 'CONFIG' || command === 'MONITOR') {
-    return `${command} 可能影响 Redis 服务可用性。`;
+    return tCurrent('auto.remoteRedis.wk8tnn', { value0: command });
   }
 
   if ((command === 'DEL' || command === 'UNLINK') && args.length > 5) {
-    return `${command} 将一次处理 ${args.length} 个 key。`;
+    return tCurrent('auto.remoteRedis.11vwroa', { value0: command, value1: args.length });
   }
 
   return '';
@@ -219,7 +220,7 @@ function getRedisCommandWarning(command: string, args: string[]): string {
 
 function formatCommandResult(result: unknown): string {
   if (result === null) return '(nil)';
-  if (result === undefined) return '(空)';
+  if (result === undefined) return tCurrent('auto.remoteRedis.1htdcm2');
   if (typeof result === 'string') return result;
   if (typeof result === 'number' || typeof result === 'boolean') return String(result);
   if (Array.isArray(result)) {
@@ -306,8 +307,8 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
       setMessage({
         type: 'success',
         text: result.complete
-          ? `SCAN 完成，本轮载入 ${result.keys.length} 个 key。`
-          : `已载入 ${result.keys.length} 个 key，可继续扫描。`,
+          ? tCurrent('auto.remoteRedis.11ex6ku', { value0: result.keys.length })
+          : tCurrent('auto.remoteRedis.tatd7g', { value0: result.keys.length }),
       });
     } catch (error) {
       setMessage({ type: 'error', text: getErrorMessage(error) });
@@ -399,13 +400,13 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
       try {
         parsedValue = JSON.parse(keyEditorValue);
       } catch {
-        setMessage({ type: 'error', text: 'JSON 格式无效，未保存。' });
+        setMessage({ type: 'error', text: tCurrent('auto.remoteRedis.q2kfzb') });
         return;
       }
     }
 
     await api.connections.redisSetValue(connectionId, redisId, selectedKey, parsedValue, keyValue.type);
-    setMessage({ type: 'success', text: `已保存 ${selectedKey}。` });
+    setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.18xg1s5', { value0: selectedKey }) });
     await handleSelectKey(selectedKey);
   }, [api, connectionId, handleSelectKey, keyEditorValue, keyValue, redisId, selectedKey, valueEditable]);
 
@@ -413,11 +414,11 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
     if (!selectedKey || !keyValue || !valueEditable) return;
 
     setPendingAction({
-      title: '保存 Redis 值',
+      title: tCurrent('auto.remoteRedis.tajv3b'),
       message: keyValue.type === 'string'
-        ? `将覆盖 ${selectedKey} 的字符串值。`
-        : `将用当前 JSON 覆盖 ${selectedKey} 的完整 ${getKeyTypeLabel(keyValue.type)} 值。`,
-      confirmText: '保存',
+        ? tCurrent('auto.remoteRedis.8vhb21', { value0: selectedKey })
+        : tCurrent('auto.remoteRedis.4eus9o', { value0: selectedKey, value1: getKeyTypeLabel(keyValue.type) }),
+      confirmText: tCurrent('auto.remoteRedis.1c3mapc'),
       onConfirm: executeSaveKeyValue,
     });
   }, [executeSaveKeyValue, keyValue, selectedKey, valueEditable]);
@@ -430,16 +431,16 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
     setSelectedKey('');
     setKeyValue(null);
     setKeyEditorValue('');
-    setMessage({ type: 'success', text: `已删除 ${selectedKey}。` });
+    setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.1rox8rk', { value0: selectedKey }) });
   }, [api, connectionId, redisId, selectedKey]);
 
   const requestDeleteKey = useCallback(() => {
     if (!selectedKey) return;
 
     setPendingAction({
-      title: '删除 Redis key',
-      message: `删除 ${selectedKey} 后无法从 ShellDesk 恢复。`,
-      confirmText: '删除',
+      title: tCurrent('auto.remoteRedis.4vxqix'),
+      message: tCurrent('auto.remoteRedis.1e19tg9', { value0: selectedKey }),
+      confirmText: tCurrent('auto.remoteRedis.1t2vi4h'),
       danger: true,
       onConfirm: executeDeleteKey,
     });
@@ -460,7 +461,7 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
     try {
       const result = await api.connections.redisCommand(connectionId, redisId, command, parts.slice(1));
       setCmdResult(formatCommandResult(result));
-      setMessage({ type: 'success', text: `${command} 执行完成。` });
+      setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.1tjuigr', { value0: command }) });
 
       if (mutableRedisCommands.has(command)) {
         await scanKeys({ reset: true });
@@ -482,9 +483,9 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
 
     if (warning) {
       setPendingAction({
-        title: '确认执行 Redis 命令',
+        title: tCurrent('auto.remoteRedis.16ir790'),
         message: warning,
-        confirmText: '执行',
+        confirmText: tCurrent('auto.remoteRedis.6azgji'),
         danger: true,
         onConfirm: () => executeCommand(cmdLine),
       });
@@ -505,9 +506,9 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
     try {
       const parsed = JSON.parse(keyEditorValue);
       setKeyEditorValue(stringifyJson(parsed));
-      setMessage({ type: 'success', text: 'JSON 已格式化。' });
+      setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.ed12q0') });
     } catch {
-      setMessage({ type: 'error', text: '当前内容不是有效 JSON。' });
+      setMessage({ type: 'error', text: tCurrent('auto.remoteRedis.wcfma') });
     }
   }, [keyEditorValue]);
 
@@ -554,8 +555,8 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
           <div className="redis-connect-heading">
             <span className="redis-connect-mark">R</span>
             <div>
-              <h3>连接 Redis 数据库</h3>
-              <p className="redis-connect-hint">通过 SSH 通道访问远程 Redis 实例</p>
+              <h3>{tCurrent('auto.remoteRedis.13ynazk')}</h3>
+              <p className="redis-connect-hint">{tCurrent('auto.remoteRedis.j7eddf')}</p>
             </div>
           </div>
           {errorMessage ? (
@@ -565,31 +566,31 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
           ) : null}
           <div className="redis-connect-grid">
             <label className="redis-field">
-              <span>主机</span>
+              <span>{tCurrent('auto.remoteRedis.5kj63k')}</span>
               <input type="text" value={host} onChange={(event) => setHost(event.target.value)} placeholder="127.0.0.1" disabled={status === 'connecting'} />
             </label>
             <label className="redis-field">
-              <span>端口</span>
+              <span>{tCurrent('auto.remoteRedis.19ijc5j')}</span>
               <input type="text" value={port} onChange={(event) => setPort(event.target.value)} placeholder="6379" disabled={status === 'connecting'} />
             </label>
           </div>
           <div className="redis-connect-grid">
             <label className="redis-field">
-              <span>密码</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="留空表示无密码" disabled={status === 'connecting'} />
+              <span>{tCurrent('auto.remoteRedis.1aph6eg')}</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={tCurrent('auto.remoteRedis.1g8lhz1')} disabled={status === 'connecting'} />
             </label>
             <label className="redis-field">
-              <span>数据库</span>
+              <span>{tCurrent('auto.remoteRedis.tnjvy8')}</span>
               <input type="text" value={dbNum} onChange={(event) => setDbNum(event.target.value)} placeholder="0" disabled={status === 'connecting'} />
             </label>
           </div>
           <div className="redis-tunnel-note">
-            <span>连接目标</span>
+            <span>{tCurrent('auto.remoteRedis.xlvjn7')}</span>
             <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort} · DB {parseInt(dbNum, 10) || 0}</strong>
-            <em>TLS 由远端 Redis 监听策略决定，转发失败时会自动尝试远程 TCP 代理。</em>
+            <em>{tCurrent('auto.remoteRedis.1urpodq')}</em>
           </div>
           <button type="submit" className="redis-connect-btn" disabled={status === 'connecting'}>
-            {status === 'connecting' ? '连接中...' : '连接 Redis'}
+            {status === 'connecting' ? tCurrent('auto.remoteRedis.1i0m8cf') : tCurrent('auto.remoteRedis.fuxatj')}
           </button>
         </form>
       </div>
@@ -602,10 +603,10 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
         <aside className="redis-sidebar">
           <div className="redis-sidebar-header">
             <div>
-              <strong>Key 浏览</strong>
-              <span>{keys.length} 个已载入</span>
+              <strong>{tCurrent('auto.remoteRedis.x2g1y3')}</strong>
+              <span>{keys.length} {tCurrent('auto.remoteRedis.1xs95r3')}</span>
             </div>
-            <button type="button" onClick={() => void scanKeys({ reset: true })} disabled={keysLoading} title="重新扫描">
+            <button type="button" onClick={() => void scanKeys({ reset: true })} disabled={keysLoading} title={tCurrent('auto.remoteRedis.x723pu')}>
               {keysLoading ? '...' : '↻'}
             </button>
           </div>
@@ -619,10 +620,10 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
                   void scanKeys({ reset: true });
                 }
               }}
-              placeholder="SCAN MATCH，如 user:*"
+              placeholder={tCurrent('auto.remoteRedis.8n6wdy')}
               spellCheck={false}
             />
-            <button type="button" onClick={handleSaveFavoritePattern} title="收藏 pattern">+</button>
+            <button type="button" onClick={handleSaveFavoritePattern} title={tCurrent('auto.remoteRedis.7jnqkk')}>+</button>
           </div>
           <div className="redis-pattern-chips">
             {favoritePatterns.map((pattern) => (
@@ -640,8 +641,8 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
             ))}
           </div>
           <div className="redis-key-list">
-            {keysLoading && keys.length === 0 ? <div className="redis-key-loading">扫描中...</div> : null}
-            {!keysLoading && keys.length === 0 ? <div className="redis-key-empty">没有匹配的 key</div> : null}
+            {keysLoading && keys.length === 0 ? <div className="redis-key-loading">{tCurrent('auto.remoteRedis.xabatw')}</div> : null}
+            {!keysLoading && keys.length === 0 ? <div className="redis-key-empty">{tCurrent('auto.remoteRedis.1srmayg')}</div> : null}
             {pagedKeys.map((entry) => (
               <button
                 key={entry.name}
@@ -661,17 +662,17 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
           </div>
           {totalKeyPages > 1 ? (
             <div className="redis-key-pagination">
-              <button type="button" disabled={keysPage === 0} onClick={() => setKeysPage(0)}>首页</button>
-              <button type="button" disabled={keysPage === 0} onClick={() => setKeysPage(keysPage - 1)}>上一页</button>
+              <button type="button" disabled={keysPage === 0} onClick={() => setKeysPage(0)}>{tCurrent('auto.remoteRedis.1ow5v10')}</button>
+              <button type="button" disabled={keysPage === 0} onClick={() => setKeysPage(keysPage - 1)}>{tCurrent('auto.remoteRedis.mtyn6e')}</button>
               <span>{keysPage + 1} / {totalKeyPages}</span>
-              <button type="button" disabled={keysPage >= totalKeyPages - 1} onClick={() => setKeysPage(keysPage + 1)}>下一页</button>
-              <button type="button" disabled={keysPage >= totalKeyPages - 1} onClick={() => setKeysPage(totalKeyPages - 1)}>末页</button>
+              <button type="button" disabled={keysPage >= totalKeyPages - 1} onClick={() => setKeysPage(keysPage + 1)}>{tCurrent('auto.remoteRedis.1yw313l')}</button>
+              <button type="button" disabled={keysPage >= totalKeyPages - 1} onClick={() => setKeysPage(totalKeyPages - 1)}>{tCurrent('auto.remoteRedis.ixvu31')}</button>
             </div>
           ) : null}
           <div className="redis-scan-footer">
-            <span title={`Pattern: ${lastScanPattern}`}>{scanComplete ? '扫描完成' : `Cursor ${scanCursor}`}</span>
+            <span title={`Pattern: ${lastScanPattern}`}>{scanComplete ? tCurrent('auto.remoteRedis.8d8zvf') : `Cursor ${scanCursor}`}</span>
             <button type="button" onClick={() => void scanKeys()} disabled={keysLoading || scanComplete}>
-              {keysLoading && keys.length > 0 ? '扫描中...' : '继续扫描'}
+              {keysLoading && keys.length > 0 ? tCurrent('auto.remoteRedis.xabatw2') : tCurrent('auto.remoteRedis.sictmb')}
             </button>
           </div>
         </aside>
@@ -683,17 +684,17 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
               <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort}</strong>
               <span>DB {parseInt(dbNum, 10) || 0} · MATCH {lastScanPattern}</span>
             </div>
-            <button type="button" className="redis-disconnect-btn" onClick={() => void handleDisconnect()} title="断开 Redis">断开</button>
+            <button type="button" className="redis-disconnect-btn" onClick={() => void handleDisconnect()} title={tCurrent('auto.remoteRedis.43dbsz')}>{tCurrent('auto.remoteRedis.a4u4dk')}</button>
           </div>
 
           <section className="redis-value-area">
             {!selectedKey ? (
               <div className="redis-value-placeholder">
-                <strong>选择一个 key</strong>
-                <span>左侧使用 SCAN 分批浏览，避免一次性拉取整个 key 空间。</span>
+                <strong>{tCurrent('auto.remoteRedis.8fbqzy')}</strong>
+                <span>{tCurrent('auto.remoteRedis.t43bn2')}</span>
               </div>
             ) : keyLoading ? (
-              <div className="redis-value-placeholder">正在读取 key...</div>
+              <div className="redis-value-placeholder">{tCurrent('auto.remoteRedis.euvdym')}</div>
             ) : keyValue ? (
               <>
                 <div className="redis-value-header">
@@ -704,20 +705,19 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
                   <div className="redis-value-meta">
                     <span>TTL {formatTtl(keyValue.ttl ?? selectedKeyEntry?.ttl)}</span>
                     <span>{formatSizeHint(keyValue.type, keyValue.size ?? selectedKeyEntry?.size)}</span>
-                    {selectedKeyEntry?.scannedAt ? <span>扫描 {formatTimestamp(selectedKeyEntry.scannedAt)}</span> : null}
+                    {selectedKeyEntry?.scannedAt ? <span>{tCurrent('auto.remoteRedis.1myljr3')}{formatTimestamp(selectedKeyEntry.scannedAt)}</span> : null}
                   </div>
                   <div className="redis-value-actions">
                     {keyValue.type === 'string' ? (
-                      <button type="button" onClick={handleFormatJson}>格式化 JSON</button>
+                      <button type="button" onClick={handleFormatJson}>{tCurrent('auto.remoteRedis.1i126as')}</button>
                     ) : null}
-                    <button type="button" className="redis-save-btn" onClick={requestSaveKeyValue} disabled={!valueEditable}>保存</button>
-                    <button type="button" className="redis-delete-key-btn" onClick={requestDeleteKey}>删除</button>
+                    <button type="button" className="redis-save-btn" onClick={requestSaveKeyValue} disabled={!valueEditable}>{tCurrent('auto.remoteRedis.1c3mapc2')}</button>
+                    <button type="button" className="redis-delete-key-btn" onClick={requestDeleteKey}>{tCurrent('auto.remoteRedis.1t2vi4h2')}</button>
                   </div>
                 </div>
                 {keyValue.truncated ? (
                   <div className="redis-warning-banner">
-                    当前只预览前 {keyValue.previewLimit ?? 200} 项。为避免误覆盖，已禁用保存。
-                  </div>
+                    {tCurrent('auto.remoteRedis.fqkypg')}{keyValue.previewLimit ?? 200} {tCurrent('auto.remoteRedis.1m53fin')}</div>
                 ) : null}
                 <textarea
                   className="redis-value-editor"
@@ -728,7 +728,7 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
                 />
               </>
             ) : (
-              <div className="redis-value-placeholder">无法读取 key 值</div>
+              <div className="redis-value-placeholder">{tCurrent('auto.remoteRedis.nnyi58')}</div>
             )}
           </section>
 
@@ -739,11 +739,11 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
                 value={cmdLine}
                 onChange={(event) => setCmdLine(event.target.value)}
                 onKeyDown={handleCommandKeyDown}
-                placeholder="输入 Redis 命令"
+                placeholder={tCurrent('auto.remoteRedis.18gvc8n')}
                 spellCheck={false}
               />
               <button type="button" className="redis-cmd-run-btn" onClick={handleRunCommand} disabled={cmdRunning || !cmdLine.trim()}>
-                {cmdRunning ? '执行中...' : '执行'}
+                {cmdRunning ? tCurrent('auto.remoteRedis.e2byz1') : tCurrent('auto.remoteRedis.6azgji2')}
               </button>
             </div>
             {message ? (
@@ -759,8 +759,8 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
               <pre className="redis-cmd-result">{cmdResult}</pre>
             ) : (
               <div className="redis-cmd-placeholder">
-                <strong>命令结果</strong>
-                <span>FLUSH、KEYS 和批量 DEL/UNLINK 会在执行前再次确认。</span>
+                <strong>{tCurrent('auto.remoteRedis.6uxg17')}</strong>
+                <span>{tCurrent('auto.remoteRedis.19g1i6h')}</span>
               </div>
             )}
           </section>
@@ -772,13 +772,13 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
           <div className="redis-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="redis-confirm-title">
             <div className="redis-confirm-header">
               <strong id="redis-confirm-title">{pendingAction.title}</strong>
-              <span>{pendingAction.danger ? '风险操作' : '确认操作'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remoteRedis.5n03rt') : tCurrent('auto.remoteRedis.1gm39ou')}</span>
             </div>
             <p>{pendingAction.message}</p>
             <div className="redis-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)} disabled={pendingRunning}>取消</button>
+              <button type="button" onClick={() => setPendingAction(null)} disabled={pendingRunning}>{tCurrent('auto.remoteRedis.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={() => void handleConfirmPendingAction()} disabled={pendingRunning}>
-                {pendingRunning ? '处理中...' : pendingAction.confirmText}
+                {pendingRunning ? tCurrent('auto.remoteRedis.1j4vco4') : pendingAction.confirmText}
               </button>
             </div>
           </div>

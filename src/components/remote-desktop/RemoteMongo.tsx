@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { tCurrent } from '../../i18n';
 
 interface RemoteMongoProps {
   connectionId: string;
@@ -47,7 +48,7 @@ function getDocumentId(document: Record<string, unknown>, index: number) {
     return formatCellValue(id);
   }
 
-  return `文档 ${index + 1}`;
+  return tCurrent('auto.remoteMongo.b4ahkk', { value0: index + 1 });
 }
 
 function getDocumentColumns(documents: Record<string, unknown>[]) {
@@ -169,7 +170,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
 
   const connect = async () => {
     if (!api) {
-      setError('ShellDesk IPC 未就绪。');
+      setError(tCurrent('auto.remoteMongo.g77vf3'));
       return;
     }
 
@@ -190,7 +191,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       setMongoId(result.mongoId);
       await loadDatabases(result.mongoId);
       setStatus('connected');
-      setNotice(result.alreadyConnected ? '已复用 MongoDB 连接。' : 'MongoDB 已连接。');
+      setNotice(result.alreadyConnected ? tCurrent('auto.remoteMongo.ghif5z') : tCurrent('auto.remoteMongo.1jlva9o'));
     } catch (error) {
       setStatus('error');
       setError(getErrorMessage(error));
@@ -207,7 +208,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
     setSelectedCollection(null);
     setQueryResult(null);
     setIndexes([]);
-    setNotice('MongoDB 已断开。');
+    setNotice(tCurrent('auto.remoteMongo.1axmc5g'));
   };
 
   const toggleDatabase = async (database: string) => {
@@ -249,7 +250,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
 
   const runQuery = async () => {
     if (!api || !mongoId || !selectedCollection) {
-      setError('请先选择集合。');
+      setError(tCurrent('auto.remoteMongo.1muzwis'));
       return;
     }
 
@@ -271,7 +272,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       setQueryResult(result);
       setSelectedDocumentIndex(0);
       setLastQueryAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      setNotice(`查询完成，返回 ${result.count} 个文档，${durationMs} ms。`);
+      setNotice(tCurrent('auto.remoteMongo.18h0ms1', { value0: result.count, value1: durationMs }));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -284,17 +285,17 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       if (field === 'filter') setFilter(tryFormatJsonDraft(filter));
       if (field === 'projection') setProjection(projection.trim() ? tryFormatJsonDraft(projection) : '');
       if (field === 'sort') setSort(sort.trim() ? tryFormatJsonDraft(sort) : '');
-      setNotice('JSON 已格式化。');
+      setNotice(tCurrent('auto.remoteMongo.ed12q0'));
       setError('');
     } catch (error) {
-      setError(`JSON 格式化失败：${getErrorMessage(error)}`);
+      setError(tCurrent('auto.remoteMongo.usdhbr', { value0: getErrorMessage(error) }));
     }
   };
 
   const copySelectedDocument = async () => {
     if (!selectedDocument) return;
     await navigator.clipboard.writeText(stringifyJson(selectedDocument));
-    setNotice('已复制文档 JSON。');
+    setNotice(tCurrent('auto.remoteMongo.1qqllr0'));
   };
 
   if (!isConnected) {
@@ -305,8 +306,8 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
             <div className="mongo-connect-heading">
               <span className="mongo-connect-mark">MDB</span>
               <div>
-                <h3>MongoDB 管理器</h3>
-                <p>通过当前 SSH 通道浏览数据库、集合、文档和索引。</p>
+                <h3>{tCurrent('auto.remoteMongo.1cjyvt4')}</h3>
+                <p>{tCurrent('auto.remoteMongo.157baqo')}</p>
               </div>
             </div>
 
@@ -321,11 +322,11 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
               </label>
               <label>
                 <span>Username</span>
-                <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="可选" />
+                <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder={tCurrent('auto.remoteMongo.zflkxh')} />
               </label>
               <label>
                 <span>Password</span>
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="可选" />
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={tCurrent('auto.remoteMongo.zflkxh2')} />
               </label>
               <label className="wide">
                 <span>Auth Source</span>
@@ -337,7 +338,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
             {notice ? <DismissibleAlert className="mongo-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
             <button type="button" className="mongo-connect-btn" onClick={connect} disabled={status === 'connecting'}>
-              {status === 'connecting' ? '连接中' : '连接 MongoDB'}
+              {status === 'connecting' ? tCurrent('auto.remoteMongo.h7vocz') : tCurrent('auto.remoteMongo.zs09au')}
             </button>
           </div>
         </div>
@@ -350,12 +351,12 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       <aside className="mongo-sidebar">
         <div className="mongo-sidebar-head">
           <div>
-            <strong>数据库</strong>
-            <span>{databases.length} 个库 · {host}:{port}</span>
+            <strong>{tCurrent('auto.remoteMongo.tnjvy8')}</strong>
+            <span>{databases.length} {tCurrent('auto.remoteMongo.1kqp6nf')}{host}:{port}</span>
           </div>
-          <button type="button" onClick={() => loadDatabases(mongoId)} disabled={loadingObjects}>刷新</button>
+          <button type="button" onClick={() => loadDatabases(mongoId)} disabled={loadingObjects}>{tCurrent('auto.remoteMongo.12qo56a')}</button>
         </div>
-        <input className="mongo-object-search" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder="搜索库或集合" />
+        <input className="mongo-object-search" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder={tCurrent('auto.remoteMongo.a0he90')} />
         <div className="mongo-object-tree">
           {filteredDatabases.map(({ database, collections }) => {
             const expanded = expandedDatabases.has(database.name);
@@ -384,7 +385,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
                         </button>
                       );
                     })}
-                    {!collections.length ? <span className="mongo-empty-line">暂无集合</span> : null}
+                    {!collections.length ? <span className="mongo-empty-line">{tCurrent('auto.remoteMongo.og4tjd')}</span> : null}
                   </div>
                 ) : null}
               </div>
@@ -396,10 +397,10 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       <main className="mongo-main">
         <header className="mongo-topbar">
           <div className="mongo-connection-summary">
-            <strong>{selectedCollection ? `${selectedCollection.database}.${selectedCollection.collection}` : '请选择集合'}</strong>
-            <span>{lastQueryAt ? `上次查询 ${lastQueryAt}` : 'Filter / projection / sort 支持 Extended JSON'}</span>
+            <strong>{selectedCollection ? `${selectedCollection.database}.${selectedCollection.collection}` : tCurrent('auto.remoteMongo.aionya')}</strong>
+            <span>{lastQueryAt ? tCurrent('auto.remoteMongo.1lkamiw', { value0: lastQueryAt }) : tCurrent('auto.remoteMongo.14ln1r7')}</span>
           </div>
-          <button type="button" onClick={handleDisconnect}>断开</button>
+          <button type="button" onClick={handleDisconnect}>{tCurrent('auto.remoteMongo.a4u4dk')}</button>
         </header>
 
         {error ? <DismissibleAlert className="mongo-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
@@ -409,17 +410,17 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
           <label className="mongo-editor wide">
             <span>Filter</span>
             <textarea value={filter} onChange={(event) => setFilter(event.target.value)} spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('filter')}>格式化</button>
+            <button type="button" onClick={() => formatDraft('filter')}>{tCurrent('auto.remoteMongo.1hlpjge')}</button>
           </label>
           <label className="mongo-editor">
             <span>Projection</span>
             <textarea value={projection} onChange={(event) => setProjection(event.target.value)} placeholder='{"name": 1}' spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('projection')}>格式化</button>
+            <button type="button" onClick={() => formatDraft('projection')}>{tCurrent('auto.remoteMongo.1hlpjge2')}</button>
           </label>
           <label className="mongo-editor">
             <span>Sort</span>
             <textarea value={sort} onChange={(event) => setSort(event.target.value)} placeholder='{"createdAt": -1}' spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('sort')}>格式化</button>
+            <button type="button" onClick={() => formatDraft('sort')}>{tCurrent('auto.remoteMongo.1hlpjge3')}</button>
           </label>
           <div className="mongo-query-actions">
             <label>
@@ -427,15 +428,15 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
               <input value={limit} onChange={(event) => setLimit(event.target.value)} inputMode="numeric" />
             </label>
             <button type="button" className="primary" onClick={runQuery} disabled={queryRunning || !selectedCollection}>
-              {queryRunning ? '查询中' : '执行查询'}
+              {queryRunning ? tCurrent('auto.remoteMongo.q3j9w1') : tCurrent('auto.remoteMongo.vlqe6x')}
             </button>
           </div>
         </section>
 
         <section className="mongo-result-panel">
           <div className="mongo-result-head">
-            <strong>文档</strong>
-            <span>{queryResult ? `${queryResult.count} / limit ${queryResult.limit}` : '尚未查询'}</span>
+            <strong>{tCurrent('auto.remoteMongo.8g95y7')}</strong>
+            <span>{queryResult ? `${queryResult.count} / limit ${queryResult.limit}` : tCurrent('auto.remoteMongo.snxhdy')}</span>
           </div>
           <div className="mongo-table-wrap">
             <table className="mongo-table">
@@ -452,7 +453,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
                 ))}
               </tbody>
             </table>
-            {!documents.length ? <div className="mongo-empty-state">暂无文档。选择集合后执行查询。</div> : null}
+            {!documents.length ? <div className="mongo-empty-state">{tCurrent('auto.remoteMongo.1bucekl')}</div> : null}
           </div>
         </section>
       </main>
@@ -460,16 +461,16 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
       <aside className="mongo-detail">
         <section className="mongo-detail-section">
           <div>
-            <strong>文档详情</strong>
-            <span>{selectedDocument ? getDocumentId(selectedDocument, selectedDocumentIndex) : '未选择'}</span>
+            <strong>{tCurrent('auto.remoteMongo.51a57e')}</strong>
+            <span>{selectedDocument ? getDocumentId(selectedDocument, selectedDocumentIndex) : tCurrent('auto.remoteMongo.1mhzgbz')}</span>
           </div>
-          <button type="button" onClick={copySelectedDocument} disabled={!selectedDocument}>复制</button>
+          <button type="button" onClick={copySelectedDocument} disabled={!selectedDocument}>{tCurrent('auto.remoteMongo.1xbipwq')}</button>
         </section>
-        <pre className="mongo-json-view">{selectedDocument ? stringifyJson(selectedDocument) : '选择一条文档查看 JSON。'}</pre>
+        <pre className="mongo-json-view">{selectedDocument ? stringifyJson(selectedDocument) : tCurrent('auto.remoteMongo.1el0ut6')}</pre>
         <section className="mongo-detail-section">
           <div>
-            <strong>索引</strong>
-            <span>{indexes.length} 个</span>
+            <strong>{tCurrent('auto.remoteMongo.1lig4k0')}</strong>
+            <span>{indexes.length} {tCurrent('auto.remoteMongo.d5a1x9')}</span>
           </div>
         </section>
         <div className="mongo-index-list">
@@ -484,7 +485,7 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
               </span>
             </div>
           ))}
-          {!indexes.length ? <div className="mongo-empty-state compact">暂无索引信息。</div> : null}
+          {!indexes.length ? <div className="mongo-empty-state compact">{tCurrent('auto.remoteMongo.1mioadg')}</div> : null}
         </div>
       </aside>
     </section>

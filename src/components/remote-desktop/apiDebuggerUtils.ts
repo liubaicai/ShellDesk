@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type ApiDebugMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
@@ -50,7 +51,7 @@ function validateUrl(value: string) {
   const trimmed = value.trim();
 
   if (!trimmed || /[\r\n]/.test(trimmed)) {
-    throw new Error('请输入有效 URL。');
+    throw new Error(tCurrent('auto.apiDebuggerUtils.nkx2v8'));
   }
 
   let parsedUrl: URL;
@@ -58,11 +59,11 @@ function validateUrl(value: string) {
   try {
     parsedUrl = new URL(trimmed);
   } catch {
-    throw new Error('URL 格式不正确。');
+    throw new Error(tCurrent('auto.apiDebuggerUtils.ulggqz'));
   }
 
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new Error('仅支持 http:// 或 https:// URL。');
+    throw new Error(tCurrent('auto.apiDebuggerUtils.136po5i'));
   }
 
   return trimmed;
@@ -82,11 +83,11 @@ export function validateApiRequest(request: ApiDebugRequest) {
 
   getEnabledHeaders(request).forEach((header) => {
     if (!header.key) {
-      throw new Error('Header 名称不能为空。');
+      throw new Error(tCurrent('auto.apiDebuggerUtils.tum8o7'));
     }
 
     if (!/^[A-Za-z0-9!#$%&'*+.^_|~-]+$/.test(header.key)) {
-      throw new Error(`Header 名称不安全：${header.key}`);
+      throw new Error(tCurrent('auto.apiDebuggerUtils.1oqjl34', { value0: header.key }));
     }
   });
 }
@@ -159,24 +160,7 @@ exit $curlCode
     ? `request_body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-body.XXXXXX"); cat > "$request_body_file" <<'${bodyMarkerText}'\n${request.body}\n${bodyMarkerText}\nbody_arg="--data-binary @$request_body_file"`
     : `request_body_file=""; body_arg=""`;
 
-  return `
-if ! command -v curl >/dev/null 2>&1; then
-  printf 'curl 未安装或当前 PATH 不可用。\\n' >&2
-  exit 127
-fi
-headers_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-headers.XXXXXX")
-body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-response.XXXXXX")
-${bodySetup}
-curl -sS -L --max-time ${timeout} -X ${request.method} -D "$headers_file" -o "$body_file" -w '\\n${metaMarker} http_code=%{http_code} time_total=%{time_total} remote_ip=%{remote_ip}\\n' ${headerArgs} $body_arg ${shellSingleQuote(url)}
-curl_code=$?
-printf '${headersMarker}\\n'
-cat "$headers_file" 2>/dev/null || true
-printf '\\n${bodyMarker}\\n'
-cat "$body_file" 2>/dev/null || true
-printf '\\n${exitMarker} %s\\n' "$curl_code"
-rm -f "$headers_file" "$body_file" ${sendBody ? '"$request_body_file"' : ''}
-exit "$curl_code"
-`;
+  return tCurrent('auto.apiDebuggerUtils.147yyqv', { value0: bodySetup, value1: timeout, value2: request.method, value3: metaMarker, value4: headerArgs, value5: shellSingleQuote(url), value6: headersMarker, value7: bodyMarker, value8: exitMarker, value9: sendBody ? '"$request_body_file"' : '' });
 }
 
 function textBetween(text: string, startMarker: string, endMarker: string) {

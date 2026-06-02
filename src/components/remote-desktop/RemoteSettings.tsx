@@ -5,6 +5,7 @@ import { getErrorMessage } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { getCurrentAppLanguage, t, translateStructuredText, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
 
 interface RemoteSettingsProps {
   connectionId: string;
@@ -15,13 +16,13 @@ type SettingsTab = 'systeminfo' | 'network' | 'mirrors' | 'update' | 'hosts' | '
 
 interface SettingsTabDef {
   key: SettingsTab;
-  label: string;
+  labelId: MessageId;
   icon: string;
-  description: string;
+  descriptionId: MessageId;
 }
 
 interface SettingsGroup {
-  label: string;
+  labelId: MessageId;
   tabs: SettingsTabDef[];
 }
 
@@ -53,7 +54,7 @@ interface SettingsHostStatus {
 }
 
 const SYSTEM_TYPE_LABELS: Record<RemoteSystemType, string> = {
-  unknown: '未知系统',
+  unknown: '',
   windows: 'Windows',
   macos: 'macOS',
   ubuntu: 'Ubuntu',
@@ -82,53 +83,53 @@ const SYSTEM_TYPE_LABELS: Record<RemoteSystemType, string> = {
 
 const SETTINGS_GROUPS: SettingsGroup[] = [
   {
-    label: '系统',
+    labelId: 'remoteSettings.group.system',
     tabs: [
-      { key: 'systeminfo', label: '系统信息', icon: '\u{1F4BB}', description: '硬件和软件系统概况' },
-      { key: 'update', label: '系统更新', icon: '\u{1F504}', description: '系统软件包更新与升级' },
+      { key: 'systeminfo', labelId: 'remoteSettings.tab.systemInfo.label', icon: '\u{1F4BB}', descriptionId: 'remoteSettings.tab.systemInfo.description' },
+      { key: 'update', labelId: 'remoteSettings.tab.update.label', icon: '\u{1F504}', descriptionId: 'remoteSettings.tab.update.description' },
     ],
   },
   {
-    label: '网络',
+    labelId: 'remoteSettings.group.network',
     tabs: [
-      { key: 'network', label: '网络和网卡', icon: '\u{1F310}', description: '网络接口、IP 地址、DNS 配置' },
-      { key: 'hosts', label: 'Hosts 管理', icon: '\u{1F4CB}', description: '管理 /etc/hosts 主机映射' },
-      { key: 'route', label: '路由管理', icon: '\u{1F6E3}\uFE0F', description: '查看和管理路由表' },
+      { key: 'network', labelId: 'remoteSettings.tab.network.label', icon: '\u{1F310}', descriptionId: 'remoteSettings.tab.network.description' },
+      { key: 'hosts', labelId: 'remoteSettings.tab.hosts.label', icon: '\u{1F4CB}', descriptionId: 'remoteSettings.tab.hosts.description' },
+      { key: 'route', labelId: 'remoteSettings.tab.route.label', icon: '\u{1F6E3}\uFE0F', descriptionId: 'remoteSettings.tab.route.description' },
     ],
   },
   {
-    label: '软件',
+    labelId: 'remoteSettings.group.software',
     tabs: [
-      { key: 'mirrors', label: '镜像源', icon: '\u{1F3EA}', description: 'APT / YUM 软件包镜像源配置' },
+      { key: 'mirrors', labelId: 'remoteSettings.tab.mirrors.label', icon: '\u{1F3EA}', descriptionId: 'remoteSettings.tab.mirrors.description' },
     ],
   },
   {
-    label: '存储',
+    labelId: 'remoteSettings.group.storage',
     tabs: [
-      { key: 'disk', label: '磁盘和挂载点', icon: '\u{1F4BD}', description: '磁盘分区、挂载点、使用情况' },
+      { key: 'disk', labelId: 'remoteSettings.tab.disk.label', icon: '\u{1F4BD}', descriptionId: 'remoteSettings.tab.disk.description' },
     ],
   },
 ];
 
 const WINDOWS_SETTINGS_GROUPS: SettingsGroup[] = [
   {
-    label: '系统',
+    labelId: 'remoteSettings.group.system',
     tabs: [
-      { key: 'systeminfo', label: '系统信息', icon: '\u{1F4BB}', description: 'Windows 主机概况' },
+      { key: 'systeminfo', labelId: 'remoteSettings.tab.systemInfo.label', icon: '\u{1F4BB}', descriptionId: 'remoteSettings.tab.systemInfo.windowsDescription' },
     ],
   },
   {
-    label: '网络',
+    labelId: 'remoteSettings.group.network',
     tabs: [
-      { key: 'network', label: '网络信息', icon: '\u{1F310}', description: 'IP、DNS 和适配器信息' },
-      { key: 'hosts', label: 'Hosts 管理', icon: '\u{1F4CB}', description: '管理 Windows hosts 文件' },
-      { key: 'route', label: '路由表', icon: '\u{1F6E3}\uFE0F', description: '查看 Windows 路由表' },
+      { key: 'network', labelId: 'remoteSettings.tab.network.windowsLabel', icon: '\u{1F310}', descriptionId: 'remoteSettings.tab.network.windowsDescription' },
+      { key: 'hosts', labelId: 'remoteSettings.tab.hosts.label', icon: '\u{1F4CB}', descriptionId: 'remoteSettings.tab.hosts.windowsDescription' },
+      { key: 'route', labelId: 'remoteSettings.tab.route.windowsLabel', icon: '\u{1F6E3}\uFE0F', descriptionId: 'remoteSettings.tab.route.windowsDescription' },
     ],
   },
   {
-    label: '存储',
+    labelId: 'remoteSettings.group.storage',
     tabs: [
-      { key: 'disk', label: '磁盘和卷', icon: '\u{1F4BD}', description: '查看本地磁盘、卷和空间' },
+      { key: 'disk', labelId: 'remoteSettings.tab.disk.windowsLabel', icon: '\u{1F4BD}', descriptionId: 'remoteSettings.tab.disk.windowsDescription' },
     ],
   },
 ];
@@ -141,14 +142,14 @@ interface CommandResult {
 
 async function runCmd(connectionId: string, command: string): Promise<CommandResult> {
   if (!window.guiSSH?.connections) {
-    throw new Error('当前运行环境不支持远程命令执行。');
+    throw new Error(t('remoteSettings.command.unsupported', getCurrentAppLanguage()));
   }
   return window.guiSSH.connections.runCommand(connectionId, command);
 }
 
 async function getSystemInfoItems(connectionId: string): Promise<SysInfoItem[]> {
   if (!window.guiSSH?.connections) {
-    throw new Error('当前运行环境不支持系统信息读取。');
+    throw new Error(t('remoteSettings.systemInfo.unsupported', getCurrentAppLanguage()));
   }
 
   const report = await window.guiSSH.connections.getSystemInfo(connectionId);
@@ -175,8 +176,8 @@ function isSafeNameserver(value: string) {
   return /^[0-9A-Fa-f:.]{2,45}$/.test(value);
 }
 
-function getSystemTypeLabel(systemType?: RemoteSystemType) {
-  return SYSTEM_TYPE_LABELS[systemType ?? 'unknown'] ?? '未知系统';
+function getSystemTypeLabel(systemType: RemoteSystemType | undefined, language: AppLanguage) {
+  return SYSTEM_TYPE_LABELS[systemType ?? 'unknown'] || t('remoteSettings.system.unknown', language);
 }
 
 function parseKeyValueOutput(stdout: string) {
@@ -212,9 +213,9 @@ function netmaskToPrefix(netmask: string) {
   return firstZeroIndex === -1 ? 32 : firstZeroIndex;
 }
 
-function createLineChangePreview(current: string, draft: string) {
+function createLineChangePreview(current: string, draft: string, language: AppLanguage = getCurrentAppLanguage()) {
   if (current === draft) {
-    return '无变更。';
+    return t('remoteSettings.common.noChanges', language);
   }
 
   const currentLines = current.split(/\r?\n/);
@@ -224,18 +225,18 @@ function createLineChangePreview(current: string, draft: string) {
   const removed = currentLines.filter((line) => line.trim() && !draftLineSet.has(line)).slice(0, 10);
   const added = draftLines.filter((line) => line.trim() && !currentLineSet.has(line)).slice(0, 10);
   const previewLines = [
-    `原始行数：${currentLines.length}`,
-    `草稿行数：${draftLines.length}`,
+    t('remoteSettings.common.originalLines', language, { count: String(currentLines.length) }),
+    t('remoteSettings.common.draftLines', language, { count: String(draftLines.length) }),
     '',
-    '新增：',
-    ...(added.length ? added.map((line) => `+ ${line}`) : ['(无)']),
+    t('remoteSettings.common.added', language),
+    ...(added.length ? added.map((line) => `+ ${line}`) : [t('remoteSettings.common.none', language)]),
     '',
-    '移除：',
-    ...(removed.length ? removed.map((line) => `- ${line}`) : ['(无)']),
+    t('remoteSettings.common.removed', language),
+    ...(removed.length ? removed.map((line) => `- ${line}`) : [t('remoteSettings.common.none', language)]),
   ];
 
   if (added.length >= 10 || removed.length >= 10) {
-    previewLines.push('', '仅显示前 10 条变更。');
+    previewLines.push('', t('remoteSettings.common.truncatedPreview', language));
   }
 
   return previewLines.join('\n');
@@ -258,6 +259,7 @@ function SettingsConfirmDialog({
   onClose: () => void;
 }) {
   const [isApplying, setIsApplying] = useState(false);
+  const language = useCurrentAppLanguage();
   const tone = config.tone ?? 'primary';
 
   const handleConfirm = async () => {
@@ -284,16 +286,16 @@ function SettingsConfirmDialog({
           <p>{config.message}</p>
           {config.detail ? <small>{config.detail}</small> : null}
         </div>
-        {config.preview ? <SettingsCommandPreview label="执行预览" content={config.preview} /> : null}
+        {config.preview ? <SettingsCommandPreview label={t('remoteSettings.common.preview', language)} content={config.preview} /> : null}
         <div className="settings-modal-actions">
-          <button type="button" className="settings-modal-btn" onClick={onClose} disabled={isApplying}>取消</button>
+          <button type="button" className="settings-modal-btn" onClick={onClose} disabled={isApplying}>{t('remoteSettings.common.cancel', language)}</button>
           <button
             type="button"
             className={`settings-modal-btn ${tone === 'danger' ? 'danger' : 'primary'}`}
             onClick={() => void handleConfirm()}
             disabled={isApplying}
           >
-            {isApplying ? '执行中...' : config.confirmLabel ?? '确认'}
+            {isApplying ? t('remoteSettings.common.applying', language) : config.confirmLabel ?? t('remoteSettings.common.confirm', language)}
           </button>
         </div>
       </div>
@@ -412,21 +414,24 @@ function buildResolvConfContent(originalContent: string, config: DnsConfig) {
   return [preservedLines, generatedLines.join('\n')].filter(Boolean).join('\n') + '\n';
 }
 
-function createDnsConfigPreview(current: DnsConfig, draft: DnsConfig) {
+function createDnsConfigPreview(current: DnsConfig, draft: DnsConfig, language: AppLanguage) {
+  const emptyValue = t('remoteSettings.network.noValue', language);
+
   return [
-    '当前 DNS：',
-    ...(current.servers.length ? current.servers.map((server) => `  ${server}`) : ['  (无)']),
-    current.search ? `当前搜索域：${current.search}` : '当前搜索域：(无)',
+    t('remoteSettings.network.currentDns', language),
+    ...(current.servers.length ? current.servers.map((server) => `  ${server}`) : [`  ${emptyValue}`]),
+    t('remoteSettings.network.currentSearch', language, { value: current.search || emptyValue }),
     '',
-    '草稿 DNS：',
-    ...(draft.servers.length ? draft.servers.map((server) => `  ${server}`) : ['  (无)']),
-    draft.search ? `草稿搜索域：${draft.search}` : '草稿搜索域：(无)',
+    t('remoteSettings.network.draftDns', language),
+    ...(draft.servers.length ? draft.servers.map((server) => `  ${server}`) : [`  ${emptyValue}`]),
+    t('remoteSettings.network.draftSearch', language, { value: draft.search || emptyValue }),
     '',
-    '将备份 /etc/resolv.conf 后写入草稿配置。',
+    t('remoteSettings.network.backupResolv', language),
   ].join('\n');
 }
 
 function NetworkPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [ifaces, setIfaces] = useState<NetIface[]>([]);
   const [dnsState, setDnsState] = useState<RemoteSettingsSectionState<DnsConfig>>({
     loaded: false,
@@ -484,8 +489,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     setSuccess('');
     try {
       const result = await runCmd(connectionId, withLinuxPrivilege(`ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'} 2>&1`));
-      if (result.code !== 0) throw new Error(result.stderr || '操作失败，可能需要 root 权限。');
-      setSuccess(`接口 ${ifaceName} 已${bringUp ? '启用' : '禁用'}。`);
+      if (result.code !== 0) throw new Error(result.stderr || t('remoteSettings.common.operationFailedRoot', language));
+      setSuccess(t('remoteSettings.network.ifacePowerSuccess', language, {
+        name: ifaceName,
+        state: t(bringUp ? 'remoteSettings.network.enabled' : 'remoteSettings.network.disabled', language),
+      }));
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -496,13 +504,13 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 
   const requestToggleIface = (ifaceName: string, bringUp: boolean) => {
     setConfirmDialog({
-      title: bringUp ? '启用网络接口' : '禁用网络接口',
+      title: t(bringUp ? 'remoteSettings.network.enableIfaceTitle' : 'remoteSettings.network.disableIfaceTitle', language),
       message: bringUp
-        ? `将启用 ${ifaceName}。如果该接口存在冲突配置，可能改变当前网络路径。`
-        : `将禁用 ${ifaceName}。如果 SSH 正通过该接口连接，远程会话可能立即断开。`,
-      detail: '建议在确认有带外访问或备用连接后执行网络接口变更。',
+        ? t('remoteSettings.network.enableIfaceMessage', language, { name: ifaceName })
+        : t('remoteSettings.network.disableIfaceMessage', language, { name: ifaceName }),
+      detail: t('remoteSettings.network.ifacePowerDetail', language),
       preview: `ip link set ${shellQuote(ifaceName)} ${bringUp ? 'up' : 'down'}`,
-      confirmLabel: bringUp ? '启用接口' : '禁用接口',
+      confirmLabel: t(bringUp ? 'remoteSettings.network.enableIfaceConfirm' : 'remoteSettings.network.disableIfaceConfirm', language),
       tone: bringUp ? 'warning' : 'danger',
       onConfirm: () => applyIfacePowerState(ifaceName, bringUp),
     });
@@ -526,27 +534,27 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 
     if (form.method === 'dhcp') {
       return {
-        command: `dhclient -r ${ifaceArg} 2>/dev/null; ip -4 addr flush dev ${ifaceArg} scope global 2>&1 && dhclient ${ifaceArg} 2>&1 || echo "dhclient 不可用，请确认已安装"`,
+        command: `dhclient -r ${ifaceArg} 2>/dev/null; ip -4 addr flush dev ${ifaceArg} scope global 2>&1 && dhclient ${ifaceArg} 2>&1 || echo ${shellQuote(t('remoteSettings.network.dhclientUnavailable', language))}`,
         preview: [`dhclient -r ${ifaceArg}`, `ip -4 addr flush dev ${ifaceArg} scope global`, `dhclient ${ifaceArg}`].join('\n'),
       };
     }
 
     if (!form.address.trim()) {
-      throw new Error('请输入 IP 地址。');
+      throw new Error(t('remoteSettings.network.ipRequired', language));
     }
 
     if (!isSafeNameserver(form.address.trim())) {
-      throw new Error('IP 地址格式无效。');
+      throw new Error(t('remoteSettings.network.ipInvalid', language));
     }
 
     if (form.gateway.trim() && !isSafeNameserver(form.gateway.trim())) {
-      throw new Error('默认网关格式无效。');
+      throw new Error(t('remoteSettings.network.gatewayInvalid', language));
     }
 
     const prefix = form.netmask.trim() ? netmaskToPrefix(form.netmask.trim()) : 24;
 
     if (prefix === null) {
-      throw new Error('子网掩码格式无效。');
+      throw new Error(t('remoteSettings.network.netmaskInvalid', language));
     }
 
     const cidr = `${form.address.trim()}/${prefix}`;
@@ -575,9 +583,9 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     try {
       const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0 && !result.stdout.includes('dhclient')) {
-        throw new Error(result.stderr || result.stdout || '配置失败，可能需要 root 权限。');
+        throw new Error(result.stderr || result.stdout || t('remoteSettings.common.configFailedRoot', language));
       }
-      setSuccess(`接口 ${ifaceName} 配置已应用。`);
+      setSuccess(t('remoteSettings.network.ifaceConfigSuccess', language, { name: ifaceName }));
       setEditingIface(null);
       await refresh();
     } catch (err) {
@@ -594,11 +602,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
       const plan = buildIfaceConfigPlan(editingIface, editForm);
 
       setConfirmDialog({
-        title: '应用网络接口配置',
-        message: `将修改接口 ${editingIface} 的地址配置。`,
-        detail: '这类变更可能导致 SSH 连接中断；执行前请确认网关、网段和当前连接路径。',
+        title: t('remoteSettings.network.applyIfaceTitle', language),
+        message: t('remoteSettings.network.applyIfaceMessage', language, { name: editingIface }),
+        detail: t('remoteSettings.network.applyIfaceDetail', language),
         preview: plan.preview,
-        confirmLabel: '应用配置',
+        confirmLabel: t('remoteSettings.common.applyConfig', language),
         tone: 'danger',
         onConfirm: () => applyIfaceConfig(editingIface, plan.command),
       });
@@ -616,11 +624,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
   const setHostnameCmd = async () => {
     const name = hostnameDraft.trim();
     if (!name) {
-      setError('请输入新的主机名。');
+      setError(t('remoteSettings.network.hostnameRequired', language));
       return;
     }
     if (!isSafeHostname(name)) {
-      setError('主机名只能包含字母、数字、点和短横线，且不能以点或短横线结尾。');
+      setError(t('remoteSettings.network.hostnameInvalid', language));
       return;
     }
     setIsHostnameDialogOpen(false);
@@ -630,8 +638,8 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     try {
       const quotedName = shellQuote(name);
       const result = await runCmd(connectionId, withLinuxPrivilege(`hostnamectl set-hostname ${quotedName} 2>&1 || hostname ${quotedName} 2>&1`));
-      if (result.code !== 0) throw new Error(result.stderr || '设置主机名失败。');
-      setSuccess(`主机名已设置为 ${name}。`);
+      if (result.code !== 0) throw new Error(result.stderr || t('remoteSettings.network.hostnameFailed', language));
+      setSuccess(t('remoteSettings.network.hostnameSuccess', language, { name }));
       setHostname(name);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -648,11 +656,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     const server = newDns.trim();
     if (!server) return;
     if (!isSafeNameserver(server)) {
-      setError('DNS 服务器必须是 IPv4 或 IPv6 地址。');
+      setError(t('remoteSettings.network.dnsInvalid', language));
       return;
     }
     if (dnsDraftConfig.servers.includes(server)) {
-      setSuccess(`${server} 已在 DNS 草稿中。`);
+      setSuccess(t('remoteSettings.network.dnsAlreadyInDraft', language, { server }));
       setNewDns('');
       return;
     }
@@ -664,7 +672,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
         ...(currentState.draft ?? EMPTY_DNS_CONFIG),
         servers: [...(currentState.draft?.servers ?? []), server],
       },
-      success: `已加入草稿：${server}`,
+      success: t('remoteSettings.network.dnsAddedDraft', language, { server }),
     }));
     setNewDns('');
   };
@@ -678,7 +686,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
         ...(currentState.draft ?? EMPTY_DNS_CONFIG),
         servers: (currentState.draft?.servers ?? []).filter((item) => item !== server),
       },
-      success: `已从草稿移除：${server}`,
+      success: t('remoteSettings.network.dnsRemovedDraft', language, { server }),
     }));
   };
 
@@ -689,15 +697,15 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     try {
       const result = await runCmd(connectionId, withLinuxPrivilege(`cp /etc/resolv.conf /etc/resolv.conf.bak.$(date +%s) 2>/dev/null; printf '%s' ${shellQuote(nextContent)} > /etc/resolv.conf`));
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '写入 DNS 配置失败，可能需要 root 权限。');
+        throw new Error(result.stderr || result.stdout || t('remoteSettings.network.dnsWriteFailed', language));
       }
       setDnsState((currentState) => ({
         ...currentState,
         current: { ...draft, raw: nextContent },
         draft: { ...draft, raw: nextContent },
-        success: 'DNS 配置已应用。',
+        success: t('remoteSettings.network.dnsApplied', language),
       }));
-      setSuccess('DNS 配置已应用。');
+      setSuccess(t('remoteSettings.network.dnsApplied', language));
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -711,11 +719,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 
     const nextContent = buildResolvConfContent(currentDnsConfig.raw, dnsDraftConfig);
     setConfirmDialog({
-      title: '应用 DNS 配置',
-      message: '将备份并重写 /etc/resolv.conf 中的 DNS 配置。',
-      detail: 'DNS 变更可能影响包管理、域名访问和远程服务解析。',
-      preview: createDnsConfigPreview(currentDnsConfig, dnsDraftConfig),
-      confirmLabel: '应用 DNS',
+      title: t('remoteSettings.network.applyDnsTitle', language),
+      message: t('remoteSettings.network.applyDnsMessage', language),
+      detail: t('remoteSettings.network.applyDnsDetail', language),
+      preview: createDnsConfigPreview(currentDnsConfig, dnsDraftConfig, language),
+      confirmLabel: t('remoteSettings.network.applyDnsConfirm', language),
       tone: 'warning',
       onConfirm: () => applyDnsDraft(nextContent, dnsDraftConfig),
     });
@@ -725,11 +733,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>网络和网卡</h3>
-          <p>查看和配置网络接口、IP 地址和 DNS</p>
+          <h3>{t('remoteSettings.network.title', language)}</h3>
+          <p>{t('remoteSettings.network.description', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -743,23 +751,23 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-warning-banner">
-        网络接口、默认路由和 DNS 变更可能让当前 SSH 会话失联。应用前请确认你有备用连接路径。
+        {t('remoteSettings.network.warning', language)}
       </div>
 
       {/* Hostname */}
       <div className="settings-info-card">
         <div className="settings-info-row">
-          <span className="settings-info-label">主机名</span>
+          <span className="settings-info-label">{t('remoteSettings.network.hostname', language)}</span>
           <strong className="settings-info-value">{hostname || '...'}</strong>
         </div>
         <button type="button" className="settings-action-btn" onClick={openHostnameDialog} disabled={actionLoading === 'hostname'}>
-          {actionLoading === 'hostname' ? '...' : '修改'}
+          {actionLoading === 'hostname' ? '...' : t('remoteSettings.network.change', language)}
         </button>
       </div>
 
       {/* Interface Cards */}
       <div className="settings-section">
-        <h4>网络接口 ({ifaces.length})</h4>
+        <h4>{t('remoteSettings.network.interfaces', language, { count: String(ifaces.length) })}</h4>
         <div className="net-iface-grid">
           {ifaces.map((iface) => {
             const ipv4 = iface.addresses.filter((a) => a.family === 'inet');
@@ -778,15 +786,15 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                   <div className="net-iface-actions">
                     {iface.state === 'UP' ? (
                       <button type="button" className="settings-action-btn danger" onClick={() => requestToggleIface(iface.name, false)} disabled={isBusy}>
-                        {isBusy ? '...' : '禁用'}
+                        {isBusy ? '...' : t('remoteSettings.network.disable', language)}
                       </button>
                     ) : (
                       <button type="button" className="settings-action-btn primary" onClick={() => requestToggleIface(iface.name, true)} disabled={isBusy}>
-                        {isBusy ? '...' : '启用'}
+                        {isBusy ? '...' : t('remoteSettings.network.enable', language)}
                       </button>
                     )}
                     <button type="button" className="settings-action-btn" onClick={() => startEditIface(iface)} disabled={isBusy}>
-                      编辑
+                      {t('remoteSettings.common.edit', language)}
                     </button>
                   </div>
                 </div>
@@ -806,7 +814,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                     </span>
                   ))}
                   {ipv4.length === 0 && ipv6.length === 0 ? (
-                    <span className="net-iface-meta no-addr">无 IP 地址</span>
+                    <span className="net-iface-meta no-addr">{t('remoteSettings.network.noAddress', language)}</span>
                   ) : null}
                 </div>
 
@@ -815,14 +823,14 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                   <div className="net-iface-edit">
                     <div className="net-edit-row">
                       <label>
-                        <span>配置方式</span>
+                        <span>{t('remoteSettings.network.configMethod', language)}</span>
                         <select
                           value={editForm.method}
                           onChange={(e) => setEditForm({ ...editForm, method: e.target.value as 'static' | 'dhcp' })}
                           className="settings-select"
                         >
-                          <option value="static">静态 IP</option>
-                          <option value="dhcp">DHCP 自动</option>
+                          <option value="static">{t('remoteSettings.network.staticIp', language)}</option>
+                          <option value="dhcp">{t('remoteSettings.network.dhcpAuto', language)}</option>
                         </select>
                       </label>
                     </div>
@@ -830,26 +838,26 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                       <>
                         <div className="net-edit-row">
                           <label>
-                            <span>IP 地址</span>
+                            <span>{t('remoteSettings.network.ipAddress', language)}</span>
                             <input type="text" className="settings-input" placeholder="192.168.1.100" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
                           </label>
                           <label>
-                            <span>子网掩码</span>
+                            <span>{t('remoteSettings.network.netmask', language)}</span>
                             <input type="text" className="settings-input" placeholder="255.255.255.0" value={editForm.netmask} onChange={(e) => setEditForm({ ...editForm, netmask: e.target.value })} />
                           </label>
                         </div>
                         <div className="net-edit-row">
                           <label>
-                            <span>默认网关 (可选)</span>
+                            <span>{t('remoteSettings.network.gatewayOptional', language)}</span>
                             <input type="text" className="settings-input" placeholder="192.168.1.1" value={editForm.gateway} onChange={(e) => setEditForm({ ...editForm, gateway: e.target.value })} />
                           </label>
                         </div>
                       </>
                     ) : null}
                     <div className="net-edit-footer">
-                      <button type="button" className="settings-action-btn" onClick={() => setEditingIface(null)}>取消</button>
+                      <button type="button" className="settings-action-btn" onClick={() => setEditingIface(null)}>{t('remoteSettings.common.cancel', language)}</button>
                       <button type="button" className="settings-action-btn primary" onClick={requestApplyIfaceConfig} disabled={isBusy}>
-                        {isBusy ? '应用中...' : '应用配置'}
+                        {isBusy ? t('remoteSettings.common.applyingConfig', language) : t('remoteSettings.common.applyConfig', language)}
                       </button>
                     </div>
                   </div>
@@ -857,28 +865,28 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
               </article>
             );
           })}
-          {ifaces.length === 0 ? <p className="settings-hint">{loading ? '正在加载接口信息...' : '未检测到网络接口。'}</p> : null}
+          {ifaces.length === 0 ? <p className="settings-hint">{loading ? t('remoteSettings.network.interfacesLoading', language) : t('remoteSettings.network.noInterfaces', language)}</p> : null}
         </div>
       </div>
 
       {/* DNS Configuration */}
       <div className="settings-section">
-        <h4>DNS 服务器</h4>
+        <h4>{t('remoteSettings.network.dnsServers', language)}</h4>
         <div className="dns-server-list">
           {dnsDraftConfig.servers.map((server) => (
             <div key={server} className="dns-server-item">
               <span className="dns-server-addr">{server}</span>
-              <button type="button" className="settings-action-btn danger" onClick={() => removeDnsServer(server)}>移除</button>
+              <button type="button" className="settings-action-btn danger" onClick={() => removeDnsServer(server)}>{t('remoteSettings.common.remove', language)}</button>
             </div>
           ))}
-          {dnsDraftConfig.servers.length === 0 ? <p className="settings-hint">{dnsState.loading ? '正在加载 DNS 配置...' : '无已配置的 DNS 服务器。'}</p> : null}
+          {dnsDraftConfig.servers.length === 0 ? <p className="settings-hint">{dnsState.loading ? t('remoteSettings.network.dnsLoading', language) : t('remoteSettings.network.dnsEmpty', language)}</p> : null}
         </div>
         <div className="settings-inline-form">
-          <input type="text" className="settings-input" placeholder="添加 DNS 服务器 (如 8.8.8.8)" value={newDns} onChange={(e) => setNewDns(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addDnsServer(); }} />
-          <button type="button" className="settings-action-btn primary" onClick={addDnsServer}>加入草稿</button>
+          <input type="text" className="settings-input" placeholder={t('remoteSettings.network.addDnsPlaceholder', language)} value={newDns} onChange={(e) => setNewDns(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addDnsServer(); }} />
+          <button type="button" className="settings-action-btn primary" onClick={addDnsServer}>{t('remoteSettings.network.addDraft', language)}</button>
         </div>
         <label className="settings-field">
-          <span>搜索域</span>
+          <span>{t('remoteSettings.network.searchDomain', language)}</span>
           <input
             type="text"
             className="settings-input"
@@ -898,13 +906,13 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
         </label>
         {isDnsDirty ? (
           <div className="settings-draft-footer">
-            <span>DNS 草稿尚未应用。</span>
+            <span>{t('remoteSettings.network.dnsDraftPending', language)}</span>
             <div className="settings-header-actions">
               <button type="button" className="settings-action-btn" onClick={() => setDnsState((currentState) => ({ ...currentState, draft: currentState.current }))}>
-                回滚草稿
+                {t('remoteSettings.network.rollbackDraft', language)}
               </button>
               <button type="button" className="settings-action-btn primary" onClick={requestApplyDnsDraft} disabled={actionLoading === 'dns'}>
-                {actionLoading === 'dns' ? '应用中...' : '预览并应用'}
+                {actionLoading === 'dns' ? t('remoteSettings.common.applyingConfig', language) : t('remoteSettings.network.previewApply', language)}
               </button>
             </div>
           </div>
@@ -920,7 +928,7 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
             aria-labelledby="hostname-dialog-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="hostname-dialog-title" className="notepad-modal-title">修改主机名</div>
+            <div id="hostname-dialog-title" className="notepad-modal-title">{t('remoteSettings.network.hostnameDialogTitle', language)}</div>
             <input
               className="notepad-modal-input"
               value={hostnameDraft}
@@ -936,11 +944,11 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
                 }
               }}
               autoFocus
-              placeholder="例如 server-01"
+              placeholder={t('remoteSettings.network.hostnamePlaceholder', language)}
             />
             {hostnameDraft.trim() ? (
               <SettingsCommandPreview
-                label="执行预览"
+                label={t('remoteSettings.common.preview', language)}
                 content={[
                   `hostnamectl set-hostname ${shellQuote(hostnameDraft.trim())}`,
                   `hostname ${shellQuote(hostnameDraft.trim())}`,
@@ -948,8 +956,8 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
               />
             ) : null}
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setIsHostnameDialogOpen(false)}>取消</button>
-              <button type="button" className="notepad-modal-btn primary" onClick={() => void setHostnameCmd()}>保存</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setIsHostnameDialogOpen(false)}>{t('remoteSettings.common.cancel', language)}</button>
+              <button type="button" className="notepad-modal-btn primary" onClick={() => void setHostnameCmd()}>{t('remoteSettings.common.save', language)}</button>
             </div>
           </div>
         </div>,
@@ -964,26 +972,26 @@ function NetworkPanel({ connectionId }: { connectionId: string }) {
 
 const MIRROR_PRESETS = {
   ubuntu: [
-    { label: '阿里云', url: 'mirrors.aliyun.com' },
-    { label: '清华 TUNA', url: 'mirrors.tuna.tsinghua.edu.cn' },
-    { label: '中科大 USTC', url: 'mirrors.ustc.edu.cn' },
-    { label: '华为云', url: 'mirrors.huaweicloud.com' },
-    { label: '官方源', url: 'archive.ubuntu.com' },
+    { labelId: 'remoteSettings.mirrors.aliyun', url: 'mirrors.aliyun.com' },
+    { labelId: 'remoteSettings.mirrors.tuna', url: 'mirrors.tuna.tsinghua.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.ustc', url: 'mirrors.ustc.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.huawei', url: 'mirrors.huaweicloud.com' },
+    { labelId: 'remoteSettings.mirrors.official', url: 'archive.ubuntu.com' },
   ],
   debian: [
-    { label: '阿里云', url: 'mirrors.aliyun.com' },
-    { label: '清华 TUNA', url: 'mirrors.tuna.tsinghua.edu.cn' },
-    { label: '中科大 USTC', url: 'mirrors.ustc.edu.cn' },
-    { label: '华为云', url: 'mirrors.huaweicloud.com' },
-    { label: '官方源', url: 'deb.debian.org' },
+    { labelId: 'remoteSettings.mirrors.aliyun', url: 'mirrors.aliyun.com' },
+    { labelId: 'remoteSettings.mirrors.tuna', url: 'mirrors.tuna.tsinghua.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.ustc', url: 'mirrors.ustc.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.huawei', url: 'mirrors.huaweicloud.com' },
+    { labelId: 'remoteSettings.mirrors.official', url: 'deb.debian.org' },
   ],
   redhat: [
-    { label: '阿里云', url: 'mirrors.aliyun.com' },
-    { label: '清华 TUNA', url: 'mirrors.tuna.tsinghua.edu.cn' },
-    { label: '中科大 USTC', url: 'mirrors.ustc.edu.cn' },
-    { label: '华为云', url: 'mirrors.huaweicloud.com' },
+    { labelId: 'remoteSettings.mirrors.aliyun', url: 'mirrors.aliyun.com' },
+    { labelId: 'remoteSettings.mirrors.tuna', url: 'mirrors.tuna.tsinghua.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.ustc', url: 'mirrors.ustc.edu.cn' },
+    { labelId: 'remoteSettings.mirrors.huawei', url: 'mirrors.huaweicloud.com' },
   ],
-};
+} as const satisfies Record<AptMirrorFlavor | 'redhat', ReadonlyArray<{ labelId: MessageId; url: string }>>;
 
 type MirrorDistroType = 'debian' | 'redhat' | 'rhel' | 'unknown';
 type AptSourceFormat = 'legacy' | 'deb822';
@@ -1059,7 +1067,7 @@ function getDefaultAptSourceTarget(flavor: AptMirrorFlavor): AptSourceTarget {
   return { path: LEGACY_APT_SOURCE_PATH, format: 'legacy', flavor };
 }
 
-function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor) {
+function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor, language: AppLanguage = getCurrentAppLanguage()) {
   const lines = stdout.split(/\r?\n/);
   const markerIndex = lines.findIndex((line) => line.trim() === APT_SOURCE_CONTENT_MARKER);
   const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : lines;
@@ -1071,10 +1079,10 @@ function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor) {
   const target: AptSourceTarget = { path, format, flavor };
   const content = contentLines.join('\n').trimEnd();
   const display = [
-    `配置文件：${path}`,
-    `格式：${format === 'deb822' ? 'deb822 (.sources)' : 'legacy sources.list'}`,
+    t('remoteSettings.mirrors.configFile', language, { path }),
+    t('remoteSettings.mirrors.format', language, { format: format === 'deb822' ? 'deb822 (.sources)' : 'legacy sources.list' }),
     '',
-    content || '无法读取，应用镜像源时将创建该文件。',
+    content || t('remoteSettings.mirrors.unreadableCreate', language),
   ].join('\n');
 
   return { target, display };
@@ -1098,12 +1106,12 @@ function createYumRepoInspectionCommand() {
     '  done',
     'fi',
     'if [ "$found" -eq 0 ]; then',
-    '  printf "未找到 %s/*.repo\\n" "$repo_dir"',
+    '  printf "No repo files found under %s\\n" "$repo_dir"',
     'fi',
   ].join('\n');
 }
 
-function parseYumRepoInspection(stdout: string) {
+function parseYumRepoInspection(stdout: string, language: AppLanguage = getCurrentAppLanguage()) {
   const lines = stdout.split(/\r?\n/);
   const markerIndex = lines.findIndex((line) => line.trim() === YUM_REPO_CONTENT_MARKER);
   const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : [];
@@ -1113,9 +1121,9 @@ function parseYumRepoInspection(stdout: string) {
   const content = contentLines.join('\n').trimEnd();
 
   return [
-    `配置目录：${repoDir}`,
+    t('remoteSettings.mirrors.configDir', language, { path: repoDir }),
     '',
-    content || `无法读取 ${repoDir}/*.repo，请确认 repo 文件存在且当前用户可读。`,
+    content || t('remoteSettings.mirrors.repoUnreadable', language, { path: repoDir }),
   ].join('\n');
 }
 
@@ -1225,6 +1233,7 @@ function buildAptSourcesContent(mirrorUrl: string, target: AptSourceTarget, code
 }
 
 function MirrorsPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [distroType, setDistroType] = useState<MirrorDistroType>('unknown');
   const [distroName, setDistroName] = useState('');
   const [aptSourceTarget, setAptSourceTarget] = useState<AptSourceTarget | null>(null);
@@ -1269,7 +1278,7 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         setDistroType('debian');
         const flavor = getAptFlavorFromDistroOutput(output);
         const mirrorResult = await runCmd(connectionId, createAptSourceInspectionCommand());
-        const sourceInspection = parseAptSourceInspection(mirrorResult.stdout, flavor);
+        const sourceInspection = parseAptSourceInspection(mirrorResult.stdout, flavor, language);
         setAptSourceTarget(sourceInspection.target);
         setCurrentMirror(sourceInspection.display);
       } else if (
@@ -1279,7 +1288,7 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
         setDistroType(isOfficialRhelDistro(distroValues) ? 'rhel' : 'redhat');
         setAptSourceTarget(null);
         const mirrorResult = await runCmd(connectionId, createYumRepoInspectionCommand());
-        setCurrentMirror(parseYumRepoInspection(mirrorResult.stdout || mirrorResult.stderr || ''));
+        setCurrentMirror(parseYumRepoInspection(mirrorResult.stdout || mirrorResult.stderr || '', language));
       } else {
         setDistroType('unknown');
         setAptSourceTarget(null);
@@ -1291,13 +1300,13 @@ function MirrorsPanel({ connectionId }: { connectionId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, language]);
 
   useEffect(() => { void detectDistro(); }, [detectDistro]);
 
   const getMirrorPlan = (mirrorUrl: string) => {
     if (!isSafeHostname(mirrorUrl)) {
-      throw new Error('镜像源域名无效。');
+      throw new Error(t('remoteSettings.mirrors.invalidDomain', language));
     }
 
     if (distroType === 'debian') {
@@ -1317,7 +1326,7 @@ MIRROR_EOF`;
         backupCommand,
         writeCommand,
         preview: `${backupCommand}\n${writeCommand}`,
-        successMessage: `已切换 ${target.path} 到 ${mirrorUrl}，请前往「系统更新」刷新软件包索引。`,
+        successMessage: t('remoteSettings.mirrors.switchAptSuccess', language, { path: target.path, mirror: mirrorUrl }),
       };
     }
 
@@ -1329,11 +1338,11 @@ MIRROR_EOF`;
         backupCommand,
         writeCommand,
         preview: `${backupCommand}\n${writeCommand}`,
-        successMessage: `已切换到 ${mirrorUrl}。`,
+        successMessage: t('remoteSettings.mirrors.switchYumSuccess', language, { mirror: mirrorUrl }),
       };
     }
 
-    throw new Error('无法识别的发行版类型，请手动修改镜像源配置。');
+    throw new Error(t('remoteSettings.mirrors.unknownDistro', language));
   };
 
   const applyMirror = async (mirrorUrl: string) => {
@@ -1346,9 +1355,9 @@ MIRROR_EOF`;
       const writeResult = await runCmd(connectionId, withLinuxPrivilege(plan.writeCommand));
 
       if (writeResult.code !== 0) {
-        throw new Error(writeResult.stderr || writeResult.stdout || '写入镜像源失败，可能需要 root 权限。');
+        throw new Error(writeResult.stderr || writeResult.stdout || t('remoteSettings.mirrors.writeFailed', language));
       }
-      setSuccess(backupResult.code === 0 ? plan.successMessage : `${plan.successMessage}（备份命令可能未执行成功，请确认权限。）`);
+      setSuccess(backupResult.code === 0 ? plan.successMessage : t('remoteSettings.mirrors.backupMaybeFailed', language, { message: plan.successMessage }));
       setMirrorDraft('');
       await detectDistro();
     } catch (err) {
@@ -1365,11 +1374,11 @@ MIRROR_EOF`;
       const plan = getMirrorPlan(mirrorDraft);
 
       setConfirmDialog({
-        title: '切换软件镜像源',
-        message: `将把软件源切换到 ${mirrorDraft}。`,
-        detail: '系统会先尝试创建备份，再写入新的源配置。失败时请查看回显并手动检查源文件。',
+        title: t('remoteSettings.mirrors.switchTitle', language),
+        message: t('remoteSettings.mirrors.switchMessage', language, { mirror: mirrorDraft }),
+        detail: t('remoteSettings.mirrors.switchDetail', language),
         preview: plan.preview,
-        confirmLabel: '切换镜像源',
+        confirmLabel: t('remoteSettings.mirrors.switchConfirm', language),
         tone: 'warning',
         onConfirm: () => applyMirror(mirrorDraft),
       });
@@ -1390,11 +1399,11 @@ MIRROR_EOF`;
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>镜像源配置</h3>
-          <p>管理 APT / YUM 软件包镜像源</p>
+          <h3>{t('remoteSettings.mirrors.title', language)}</h3>
+          <p>{t('remoteSettings.mirrors.description', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={detectDistro} disabled={loading}>
-          {loading ? '检测中...' : '重新检测'}
+          {loading ? t('remoteSettings.mirrors.detecting', language) : t('remoteSettings.mirrors.redetect', language)}
         </button>
       </div>
       {error ? (
@@ -1408,18 +1417,18 @@ MIRROR_EOF`;
         </DismissibleAlert>
       ) : null}
       <div className="settings-info-card">
-        <span className="settings-info-label">发行版</span>
-        <strong className="settings-info-value">{distroName.split('\n').filter(l => l.startsWith('NAME=')).map(l => l.replace('NAME=', '')).join('') || '检测中...'}</strong>
+        <span className="settings-info-label">{t('remoteSettings.mirrors.distro', language)}</span>
+        <strong className="settings-info-value">{distroName.split('\n').filter(l => l.startsWith('NAME=')).map(l => l.replace('NAME=', '')).join('') || t('remoteSettings.mirrors.detecting', language)}</strong>
       </div>
       {distroType !== 'unknown' ? (
         <>
           <div className="settings-section">
-            <h4>当前镜像源</h4>
-            <pre className="settings-output">{currentMirror || '加载中...'}</pre>
+            <h4>{t('remoteSettings.mirrors.current', language)}</h4>
+            <pre className="settings-output">{currentMirror || t('remoteSettings.common.loading', language)}</pre>
           </div>
           {canQuickSwitchMirror ? (
             <div className="settings-section">
-              <h4>快速切换</h4>
+              <h4>{t('remoteSettings.mirrors.quickSwitch', language)}</h4>
               <div className="settings-mirror-grid">
                 {presets.map((preset) => (
                   <button
@@ -1429,7 +1438,7 @@ MIRROR_EOF`;
                     onClick={() => { setMirrorDraft(preset.url); setSuccess(''); setError(''); }}
                     disabled={applying}
                   >
-                    <strong>{preset.label}</strong>
+                    <strong>{t(preset.labelId, language)}</strong>
                     <small>{preset.url}</small>
                   </button>
                 ))}
@@ -1437,14 +1446,14 @@ MIRROR_EOF`;
               {mirrorDraft ? (
                 <div className="settings-preview-card">
                   <div>
-                    <strong>待应用镜像源</strong>
+                    <strong>{t('remoteSettings.mirrors.pending', language)}</strong>
                     <span>{mirrorDraft}</span>
                   </div>
-                  <SettingsCommandPreview label="命令预览" content={getMirrorPlan(mirrorDraft).preview} />
+                  <SettingsCommandPreview label={t('remoteSettings.mirrors.commandPreview', language)} content={getMirrorPlan(mirrorDraft).preview} />
                   <div className="settings-preview-actions">
-                    <button type="button" className="settings-action-btn" onClick={() => setMirrorDraft('')} disabled={applying}>清除草稿</button>
+                    <button type="button" className="settings-action-btn" onClick={() => setMirrorDraft('')} disabled={applying}>{t('remoteSettings.mirrors.clearDraft', language)}</button>
                     <button type="button" className="settings-action-btn primary" onClick={requestApplyMirror} disabled={applying}>
-                      {applying ? '应用中...' : '预览并应用'}
+                      {applying ? t('remoteSettings.common.applyingConfig', language) : t('remoteSettings.network.previewApply', language)}
                     </button>
                   </div>
                 </div>
@@ -1452,16 +1461,16 @@ MIRROR_EOF`;
             </div>
           ) : (
             <div className="settings-section">
-              <h4>快速切换不可用</h4>
+              <h4>{t('remoteSettings.mirrors.quickUnavailable', language)}</h4>
               <p className="settings-hint">
-                RHEL 官方源通常依赖 Red Hat 订阅、CDN、metalink 和证书授权，不建议自动替换为公共镜像域名。请使用 subscription-manager、Red Hat Satellite 或公司内部镜像源维护 repo 配置。
+                {t('remoteSettings.mirrors.rhelHint', language)}
               </p>
             </div>
           )}
         </>
       ) : (
         <div className="settings-section">
-          <p className="settings-hint">无法自动识别发行版类型，请手动编辑镜像源配置文件。</p>
+          <p className="settings-hint">{t('remoteSettings.mirrors.unknownHint', language)}</p>
         </div>
       )}
       {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
@@ -1472,6 +1481,7 @@ MIRROR_EOF`;
 /* ─── System Update ───────────────────────────────────────────────────────── */
 
 function UpdatePanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [distroType, setDistroType] = useState<'debian' | 'redhat' | 'unknown'>('unknown');
   const [updateOutput, setUpdateOutput] = useState('');
   const [upgradable, setUpgradable] = useState('');
@@ -1500,20 +1510,20 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     setUpgradable('');
     try {
       if (distroType === 'debian') {
-        setUpdateOutput('正在更新软件包索引...\n');
+        setUpdateOutput(t('remoteSettings.update.updatingApt', language));
         const updateResult = await runCmd(connectionId, withLinuxPrivilege('apt-get update 2>&1'));
         setUpdateOutput((prev) => prev + updateResult.stdout + (updateResult.stderr ? '\n' + updateResult.stderr : ''));
         const listResult = await runCmd(connectionId, 'apt list --upgradable 2>/dev/null | head -50');
-        setUpgradable(listResult.stdout || '所有软件包已是最新版本。');
-        setSuccess('软件包索引更新完成。');
+        setUpgradable(listResult.stdout || t('remoteSettings.update.noUpdates', language));
+        setSuccess(t('remoteSettings.update.indexDone', language));
       } else if (distroType === 'redhat') {
-        setUpdateOutput('正在检查可用更新...\n');
+        setUpdateOutput(t('remoteSettings.update.checkingYum', language));
         const checkResult = await runCmd(connectionId, withLinuxPrivilege('yum check-update 2>&1 || true'));
         setUpdateOutput((prev) => prev + checkResult.stdout + (checkResult.stderr ? '\n' + checkResult.stderr : ''));
-        setUpgradable(checkResult.stdout || '所有软件包已是最新版本。');
-        setSuccess('更新检查完成。');
+        setUpgradable(checkResult.stdout || t('remoteSettings.update.noUpdates', language));
+        setSuccess(t('remoteSettings.update.checkDone', language));
       } else {
-        setError('无法识别的包管理器。');
+        setError(t('remoteSettings.update.unknownManager', language));
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1529,15 +1539,15 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     setUpdateOutput('');
     try {
       if (distroType === 'debian') {
-        setUpdateOutput('正在升级所有软件包（apt-get upgrade -y）...\n');
+        setUpdateOutput(t('remoteSettings.update.upgradingApt', language));
         const result = await runCmd(connectionId, withLinuxPrivilege('DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1'));
         setUpdateOutput((prev) => prev + result.stdout + (result.stderr ? '\n' + result.stderr : ''));
-        setSuccess(result.code === 0 ? '系统升级完成。' : '升级过程中可能存在警告，请查看输出。');
+        setSuccess(result.code === 0 ? t('remoteSettings.update.upgradeDone', language) : t('remoteSettings.update.upgradeWarning', language));
       } else if (distroType === 'redhat') {
-        setUpdateOutput('正在升级所有软件包（yum update -y）...\n');
+        setUpdateOutput(t('remoteSettings.update.upgradingYum', language));
         const result = await runCmd(connectionId, withLinuxPrivilege('yum update -y 2>&1'));
         setUpdateOutput((prev) => prev + result.stdout + (result.stderr ? '\n' + result.stderr : ''));
-        setSuccess(result.code === 0 ? '系统升级完成。' : '升级过程中可能存在警告，请查看输出。');
+        setSuccess(result.code === 0 ? t('remoteSettings.update.upgradeDone', language) : t('remoteSettings.update.upgradeWarning', language));
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1554,16 +1564,16 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
         : '';
 
     if (!preview) {
-      setError('无法识别的包管理器。');
+      setError(t('remoteSettings.update.unknownManager', language));
       return;
     }
 
     setConfirmDialog({
-      title: '升级系统软件包',
-      message: '将安装所有可用的软件包升级。',
-      detail: '系统升级可能重启服务、替换配置文件或短暂影响远程服务；建议先检查可升级列表。',
+      title: t('remoteSettings.update.confirmTitle', language),
+      message: t('remoteSettings.update.confirmMessage', language),
+      detail: t('remoteSettings.update.confirmDetail', language),
       preview,
-      confirmLabel: '开始升级',
+      confirmLabel: t('remoteSettings.update.confirmLabel', language),
       tone: 'danger',
       onConfirm: applyUpdates,
     });
@@ -1579,15 +1589,15 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>系统更新</h3>
-          <p>设置页只执行系统级更新；包安装、卸载和锁定建议交给包管理中心处理。</p>
+          <h3>{t('remoteSettings.update.title', language)}</h3>
+          <p>{t('remoteSettings.update.description', language)}</p>
         </div>
         <div className="settings-header-actions">
           <button type="button" className="settings-action-btn" onClick={checkUpdates} disabled={running}>
-            {running ? '执行中...' : '检查更新'}
+            {running ? t('remoteSettings.update.running', language) : t('remoteSettings.update.checkButton', language)}
           </button>
           <button type="button" className="settings-action-btn primary" onClick={requestApplyUpdates} disabled={running}>
-            {running ? '执行中...' : '一键升级'}
+            {running ? t('remoteSettings.update.running', language) : t('remoteSettings.update.upgradeButton', language)}
           </button>
         </div>
       </div>
@@ -1603,19 +1613,19 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
       ) : null}
       {upgradable ? (
         <div className="settings-section">
-          <h4>可升级软件包</h4>
+          <h4>{t('remoteSettings.update.upgradableTitle', language)}</h4>
           <pre className="settings-output">{upgradable}</pre>
         </div>
       ) : null}
       {updateOutput ? (
         <div className="settings-section">
-          <h4>执行输出</h4>
+          <h4>{t('remoteSettings.update.outputTitle', language)}</h4>
           <pre className="settings-output settings-output-scroll" ref={outputRef}>{updateOutput}</pre>
         </div>
       ) : null}
       {!updateOutput && !upgradable ? (
         <div className="settings-section">
-          <p className="settings-hint">点击「检查更新」查看可用更新，或点击「一键升级」立即升级所有软件包。</p>
+          <p className="settings-hint">{t('remoteSettings.update.emptyHint', language)}</p>
         </div>
       ) : null}
       {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
@@ -1626,6 +1636,7 @@ function UpdatePanel({ connectionId }: { connectionId: string }) {
 /* ─── Hosts ───────────────────────────────────────────────────────────────── */
 
 function HostsPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [hostsContent, setHostsContent] = useState('');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -1659,9 +1670,9 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     try {
       const result = await runCmd(connectionId, withLinuxPrivilege(`printf '%s' ${shellQuote(draft)} > /etc/hosts`));
       if (result.code !== 0) {
-        throw new Error(result.stderr || '写入失败，可能需要 root 权限。');
+        throw new Error(result.stderr || t('remoteSettings.hosts.writeFailed', language));
       }
-      setSuccess('hosts 文件已保存。');
+      setSuccess(t('remoteSettings.hosts.saved', language));
       setEditing(false);
       await refresh();
     } catch (err) {
@@ -1673,16 +1684,16 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
 
   const requestSaveHosts = () => {
     if (draft === hostsContent) {
-      setSuccess('hosts 草稿没有变更。');
+      setSuccess(t('remoteSettings.hosts.noDraftChanges', language));
       return;
     }
 
     setConfirmDialog({
-      title: '保存 hosts 文件',
-      message: '将重写 /etc/hosts。',
-      detail: '错误的 hosts 映射可能影响登录、包管理和服务发现。',
-      preview: createLineChangePreview(hostsContent, draft),
-      confirmLabel: '保存 hosts',
+      title: t('remoteSettings.hosts.saveTitle', language),
+      message: t('remoteSettings.hosts.saveMessage', language),
+      detail: t('remoteSettings.hosts.saveDetail', language),
+      preview: createLineChangePreview(hostsContent, draft, language),
+      confirmLabel: t('remoteSettings.hosts.saveConfirm', language),
       tone: 'warning',
       onConfirm: saveHosts,
     });
@@ -1690,11 +1701,11 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
 
   const addHostEntry = async () => {
     if (!addIp.trim() || !addHostname.trim()) {
-      setError('请输入 IP 地址和主机名。');
+      setError(t('remoteSettings.hosts.ipHostRequired', language));
       return;
     }
     if (!isSafeNameserver(addIp.trim()) || !isSafeHostname(addHostname.trim())) {
-      setError('请输入有效的 IP 地址和主机名。');
+      setError(t('remoteSettings.hosts.ipHostInvalid', language));
       return;
     }
     setError('');
@@ -1703,9 +1714,9 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
       const line = `${addIp.trim()} ${addHostname.trim()}`;
       const result = await runCmd(connectionId, withLinuxPrivilege(`printf '%s\n' ${shellQuote(line)} >> /etc/hosts`));
       if (result.code !== 0) {
-        throw new Error(result.stderr || '追加失败，可能需要 root 权限。');
+        throw new Error(result.stderr || t('remoteSettings.hosts.appendFailed', language));
       }
-      setSuccess(`已添加：${line}`);
+      setSuccess(t('remoteSettings.hosts.added', language, { line }));
       setAddIp('');
       setAddHostname('');
       await refresh();
@@ -1718,19 +1729,19 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>Hosts 管理</h3>
-          <p>管理 /etc/hosts 主机名映射</p>
+          <h3>{t('remoteSettings.hosts.title', language)}</h3>
+          <p>{t('remoteSettings.hosts.description', language)}</p>
         </div>
         <div className="settings-header-actions">
           {editing ? (
             <>
-              <button type="button" className="settings-action-btn" onClick={() => { setEditing(false); setError(''); }} disabled={saving}>取消</button>
-              <button type="button" className="settings-action-btn primary" onClick={requestSaveHosts} disabled={saving}>{saving ? '保存中...' : '预览并保存'}</button>
+              <button type="button" className="settings-action-btn" onClick={() => { setEditing(false); setError(''); }} disabled={saving}>{t('remoteSettings.common.cancel', language)}</button>
+              <button type="button" className="settings-action-btn primary" onClick={requestSaveHosts} disabled={saving}>{saving ? t('remoteSettings.hosts.saving', language) : t('remoteSettings.hosts.previewSave', language)}</button>
             </>
           ) : (
             <>
-              <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>{loading ? '加载中...' : '刷新'}</button>
-              <button type="button" className="settings-action-btn primary" onClick={() => { setDraft(hostsContent); setEditing(true); setSuccess(''); }}>编辑</button>
+              <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>{loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}</button>
+              <button type="button" className="settings-action-btn primary" onClick={() => { setDraft(hostsContent); setEditing(true); setSuccess(''); }}>{t('remoteSettings.common.edit', language)}</button>
             </>
           )}
         </div>
@@ -1748,33 +1759,33 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
       {!editing ? (
         <>
           <div className="settings-section">
-            <h4>快速添加</h4>
+            <h4>{t('remoteSettings.hosts.quickAdd', language)}</h4>
             <div className="settings-inline-form">
               <input
                 type="text"
                 className="settings-input"
-                placeholder="IP 地址"
+                placeholder={t('remoteSettings.hosts.ipPlaceholder', language)}
                 value={addIp}
                 onChange={(e) => setAddIp(e.target.value)}
               />
               <input
                 type="text"
                 className="settings-input"
-                placeholder="主机名"
+                placeholder={t('remoteSettings.hosts.hostnamePlaceholder', language)}
                 value={addHostname}
                 onChange={(e) => setAddHostname(e.target.value)}
               />
-              <button type="button" className="settings-action-btn primary" onClick={addHostEntry}>添加</button>
+              <button type="button" className="settings-action-btn primary" onClick={addHostEntry}>{t('remoteSettings.hosts.add', language)}</button>
             </div>
           </div>
           <div className="settings-section">
-            <h4>/etc/hosts 内容</h4>
-            <pre className="settings-output">{hostsContent || '加载中...'}</pre>
+            <h4>{t('remoteSettings.hosts.contentTitle', language)}</h4>
+            <pre className="settings-output">{hostsContent || t('remoteSettings.common.loading', language)}</pre>
           </div>
         </>
       ) : (
         <div className="settings-section">
-          <h4>编辑 /etc/hosts</h4>
+          <h4>{t('remoteSettings.hosts.editTitle', language)}</h4>
           <textarea
             className="settings-textarea"
             value={draft}
@@ -1782,7 +1793,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
             rows={16}
             spellCheck={false}
           />
-          <SettingsCommandPreview label="变更预览" content={createLineChangePreview(hostsContent, draft)} />
+          <SettingsCommandPreview label={t('remoteSettings.hosts.changePreview', language)} content={createLineChangePreview(hostsContent, draft, language)} />
         </div>
       )}
       {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
@@ -1793,6 +1804,7 @@ function HostsPanel({ connectionId }: { connectionId: string }) {
 /* ─── Route ───────────────────────────────────────────────────────────────── */
 
 function RoutePanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [routes, setRoutes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1807,14 +1819,14 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     setLoading(true);
     setError('');
     try {
-      const result = await runCmd(connectionId, 'ip route show 2>/dev/null || route -n 2>/dev/null || echo "不支持"');
-      setRoutes(result.stdout || result.stderr || '无法获取路由表');
+      const result = await runCmd(connectionId, `ip route show 2>/dev/null || route -n 2>/dev/null || echo ${shellQuote(t('remoteSettings.route.unsupported', language))}`);
+      setRoutes(result.stdout || result.stderr || t('remoteSettings.route.unavailable', language));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, language]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -1824,9 +1836,9 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
       setSuccess('');
       const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0) {
-        throw new Error(result.stderr || '添加路由失败，可能需要 root 权限。');
+        throw new Error(result.stderr || t('remoteSettings.route.addFailed', language));
       }
-      setSuccess(`已添加路由：${destination}`);
+      setSuccess(t('remoteSettings.route.added', language, { destination }));
       setAddDest('');
       setAddGateway('');
       setAddDev('');
@@ -1839,7 +1851,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
   const requestAddRoute = () => {
     const destination = addDest.trim();
     if (!destination) {
-      setError('请输入目标网段。');
+      setError(t('remoteSettings.route.destinationRequired', language));
       return;
     }
 
@@ -1848,11 +1860,11 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     if (addDev.trim()) command += ` dev ${shellQuote(addDev.trim())}`;
 
     setConfirmDialog({
-      title: '添加系统路由',
-      message: `将添加路由 ${destination}。`,
-      detail: '路由变更可能改变 SSH 返回路径；请确认目标网段和网关无误。',
+      title: t('remoteSettings.route.addTitle', language),
+      message: t('remoteSettings.route.addMessage', language, { destination }),
+      detail: t('remoteSettings.route.addDetail', language),
       preview: command,
-      confirmLabel: '添加路由',
+      confirmLabel: t('remoteSettings.route.addConfirm', language),
       tone: 'warning',
       onConfirm: () => applyAddRoute(command, destination),
     });
@@ -1864,9 +1876,9 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
       setSuccess('');
       const result = await runCmd(connectionId, withLinuxPrivilege(command));
       if (result.code !== 0) {
-        throw new Error(result.stderr || '删除路由失败，可能需要 root 权限。');
+        throw new Error(result.stderr || t('remoteSettings.route.deleteFailed', language));
       }
-      setSuccess(`已删除路由：${destination}`);
+      setSuccess(t('remoteSettings.route.deleted', language, { destination }));
       setDelDest('');
       await refresh();
     } catch (err) {
@@ -1877,17 +1889,17 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
   const requestDeleteRoute = () => {
     const destination = delDest.trim();
     if (!destination) {
-      setError('请输入要删除的目标网段。');
+      setError(t('remoteSettings.route.deleteDestinationRequired', language));
       return;
     }
 
     const command = `ip route del ${shellQuote(destination)} 2>&1`;
     setConfirmDialog({
-      title: '删除系统路由',
-      message: `将删除路由 ${destination}。`,
-      detail: '删除默认路由或当前连接路径上的路由会让远程会话失联。',
+      title: t('remoteSettings.route.deleteTitle', language),
+      message: t('remoteSettings.route.deleteMessage', language, { destination }),
+      detail: t('remoteSettings.route.deleteDetail', language),
       preview: command,
-      confirmLabel: '删除路由',
+      confirmLabel: t('remoteSettings.route.deleteConfirm', language),
       tone: 'danger',
       onConfirm: () => applyDeleteRoute(command, destination),
     });
@@ -1897,11 +1909,11 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>路由管理</h3>
-          <p>查看和管理系统路由表</p>
+          <h3>{t('remoteSettings.route.title', language)}</h3>
+          <p>{t('remoteSettings.route.description', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -1915,24 +1927,24 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-section">
-        <h4>添加路由</h4>
+        <h4>{t('remoteSettings.route.addSection', language)}</h4>
         <div className="settings-inline-form">
-          <input type="text" className="settings-input" placeholder="目标网段 (如 10.0.0.0/8)" value={addDest} onChange={(e) => setAddDest(e.target.value)} />
-          <input type="text" className="settings-input" placeholder="网关 (可选)" value={addGateway} onChange={(e) => setAddGateway(e.target.value)} />
-          <input type="text" className="settings-input" placeholder="接口 (可选)" value={addDev} onChange={(e) => setAddDev(e.target.value)} />
-          <button type="button" className="settings-action-btn primary" onClick={requestAddRoute}>预览添加</button>
+          <input type="text" className="settings-input" placeholder={t('remoteSettings.route.destinationPlaceholder', language)} value={addDest} onChange={(e) => setAddDest(e.target.value)} />
+          <input type="text" className="settings-input" placeholder={t('remoteSettings.route.gatewayPlaceholder', language)} value={addGateway} onChange={(e) => setAddGateway(e.target.value)} />
+          <input type="text" className="settings-input" placeholder={t('remoteSettings.route.interfacePlaceholder', language)} value={addDev} onChange={(e) => setAddDev(e.target.value)} />
+          <button type="button" className="settings-action-btn primary" onClick={requestAddRoute}>{t('remoteSettings.route.previewAdd', language)}</button>
         </div>
       </div>
       <div className="settings-section">
-        <h4>删除路由</h4>
+        <h4>{t('remoteSettings.route.deleteSection', language)}</h4>
         <div className="settings-inline-form">
-          <input type="text" className="settings-input" placeholder="目标网段 (如 10.0.0.0/8)" value={delDest} onChange={(e) => setDelDest(e.target.value)} />
-          <button type="button" className="settings-action-btn danger" onClick={requestDeleteRoute}>预览删除</button>
+          <input type="text" className="settings-input" placeholder={t('remoteSettings.route.destinationPlaceholder', language)} value={delDest} onChange={(e) => setDelDest(e.target.value)} />
+          <button type="button" className="settings-action-btn danger" onClick={requestDeleteRoute}>{t('remoteSettings.route.previewDelete', language)}</button>
         </div>
       </div>
       <div className="settings-section">
-        <h4>路由表</h4>
-        <pre className="settings-output">{routes || '加载中...'}</pre>
+        <h4>{t('remoteSettings.route.tableTitle', language)}</h4>
+        <pre className="settings-output">{routes || t('remoteSettings.common.loading', language)}</pre>
       </div>
       {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
@@ -1942,6 +1954,7 @@ function RoutePanel({ connectionId }: { connectionId: string }) {
 /* ─── Disk ────────────────────────────────────────────────────────────────── */
 
 function DiskPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [diskInfo, setDiskInfo] = useState('');
   const [mountInfo, setMountInfo] = useState('');
   const [blkInfo, setBlkInfo] = useState('');
@@ -1955,7 +1968,7 @@ function DiskPanel({ connectionId }: { connectionId: string }) {
       const [diskResult, mountResult, blkResult] = await Promise.all([
         runCmd(connectionId, 'df -hT 2>/dev/null || df -h'),
         runCmd(connectionId, 'mount | column -t 2>/dev/null || mount'),
-        runCmd(connectionId, 'lsblk -f 2>/dev/null || lsblk 2>/dev/null || echo "不支持"'),
+        runCmd(connectionId, `lsblk -f 2>/dev/null || lsblk 2>/dev/null || echo ${shellQuote(t('remoteSettings.disk.unsupported', language))}`),
       ]);
       setDiskInfo(diskResult.stdout || diskResult.stderr);
       setMountInfo(mountResult.stdout || mountResult.stderr);
@@ -1965,7 +1978,7 @@ function DiskPanel({ connectionId }: { connectionId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, language]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -1973,11 +1986,11 @@ function DiskPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>磁盘和挂载点</h3>
-          <p>查看磁盘分区、文件系统和挂载信息</p>
+          <h3>{t('remoteSettings.disk.title', language)}</h3>
+          <p>{t('remoteSettings.disk.description', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -1986,16 +1999,16 @@ function DiskPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-section">
-        <h4>磁盘使用情况</h4>
-        <pre className="settings-output">{diskInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.disk.usage', language)}</h4>
+        <pre className="settings-output">{diskInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
       <div className="settings-section">
-        <h4>块设备信息</h4>
-        <pre className="settings-output">{blkInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.disk.blockDevices', language)}</h4>
+        <pre className="settings-output">{blkInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
       <div className="settings-section">
-        <h4>挂载点</h4>
-        <pre className="settings-output">{mountInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.disk.mounts', language)}</h4>
+        <pre className="settings-output">{mountInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
     </div>
   );
@@ -2149,6 +2162,7 @@ function parseMemoryInfoSummary(raw: string): MemoryInfoSummary | null {
 }
 
 function SystemInfoPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [items, setItems] = useState<SysInfoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2175,7 +2189,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
     if (pretty) return pretty[1];
     const name = raw.match(/^NAME=(.+)/m)?.[1]?.replace(/"/g, '');
     const version = raw.match(/^VERSION=(.+)/m)?.[1]?.replace(/"/g, '');
-    return [name, version].filter(Boolean).join(' ') || raw.split('\n')[0] || '未知';
+    return [name, version].filter(Boolean).join(' ') || raw.split('\n')[0] || t('remoteSettings.systemInfo.unknown', language);
   };
 
   const renderStructuredSysInfoValue = (item: SysInfoItem) => {
@@ -2188,22 +2202,22 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
 
       return (
         <div className="sysinfo-feature-block">
-          <div className="sysinfo-feature-title">{summary.model || 'CPU 信息'}</div>
+          <div className="sysinfo-feature-title">{summary.model || t('remoteSettings.systemInfo.cpuInfo', language)}</div>
           <div className="sysinfo-metric-grid">
             <div className="sysinfo-metric">
-              <span>逻辑 CPU</span>
+              <span>{t('remoteSettings.systemInfo.logicalCpu', language)}</span>
               <strong>{summary.logicalCpus || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>物理核心</span>
+              <span>{t('remoteSettings.systemInfo.physicalCores', language)}</span>
               <strong>{summary.physicalCores || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>线程 / 核心</span>
+              <span>{t('remoteSettings.systemInfo.threadsPerCore', language)}</span>
               <strong>{summary.threadsPerCore || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>CPU 插槽</span>
+              <span>{t('remoteSettings.systemInfo.cpuSockets', language)}</span>
               <strong>{summary.sockets || '--'}</strong>
             </div>
           </div>
@@ -2225,7 +2239,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
             <span>/ {summary.total}</span>
           </div>
           <div className="sysinfo-memory-caption">
-            {summary.usagePercent !== null ? `已用 ${summary.usagePercent}%` : '内存用量'}
+            {summary.usagePercent !== null ? t('remoteSettings.systemInfo.usedPercent', language, { percent: String(summary.usagePercent) }) : t('remoteSettings.systemInfo.memoryUsage', language)}
           </div>
           {summary.usagePercent !== null ? (
             <div className="sysinfo-memory-bar" aria-hidden="true">
@@ -2234,19 +2248,19 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
           ) : null}
           <div className="sysinfo-metric-grid">
             <div className="sysinfo-metric">
-              <span>可用</span>
+              <span>{t('remoteSettings.systemInfo.available', language)}</span>
               <strong>{summary.available || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>空闲</span>
+              <span>{t('remoteSettings.systemInfo.free', language)}</span>
               <strong>{summary.free || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>缓存</span>
+              <span>{t('remoteSettings.systemInfo.cache', language)}</span>
               <strong>{summary.cache || '--'}</strong>
             </div>
             <div className="sysinfo-metric">
-              <span>共享</span>
+              <span>{t('remoteSettings.systemInfo.shared', language)}</span>
               <strong>{summary.shared || '--'}</strong>
             </div>
           </div>
@@ -2261,11 +2275,11 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>系统信息</h3>
-          <p>远程主机硬件和软件概览</p>
+          <h3>{t('remoteSettings.systemInfo.title', language)}</h3>
+          <p>{t('remoteSettings.systemInfo.description', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -2279,7 +2293,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
         <div className="sysinfo-hero">
           <div className="sysinfo-hero-icon">{'\u{1F4BB}'}</div>
           <div className="sysinfo-hero-text">
-            <strong>{hostnameItem?.value || '远程主机'}</strong>
+            <strong>{hostnameItem?.value || t('remoteSettings.systemInfo.remoteHost', language)}</strong>
             <span>{parseOsName(osItem.value)}</span>
           </div>
         </div>
@@ -2291,7 +2305,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
-              <span className="sysinfo-card-label">{item.label}</span>
+              <span className="sysinfo-card-label">{translateStructuredText(item.label, language)}</span>
             </div>
             {renderStructuredSysInfoValue(item)}
           </article>
@@ -2306,6 +2320,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
 const windowsHostsPath = 'C:/Windows/System32/drivers/etc/hosts';
 
 function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [items, setItems] = useState<SysInfoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2331,11 +2346,11 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>系统信息</h3>
-          <p>Windows 主机硬件和软件概览</p>
+          <h3>{t('remoteSettings.systemInfo.title', language)}</h3>
+          <p>{t('remoteSettings.windows.systemDescription', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -2347,7 +2362,7 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
         <div className="sysinfo-hero">
           <div className="sysinfo-hero-icon">{'\u{1F5A5}\uFE0F'}</div>
           <div className="sysinfo-hero-text">
-            <strong>{hostnameItem?.value || 'Windows 主机'}</strong>
+            <strong>{hostnameItem?.value || t('remoteSettings.windows.host', language)}</strong>
             <span>{osItem.value}</span>
           </div>
         </div>
@@ -2357,7 +2372,7 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
-              <span className="sysinfo-card-label">{item.label}</span>
+              <span className="sysinfo-card-label">{translateStructuredText(item.label, language)}</span>
             </div>
             <pre className="sysinfo-card-value">{item.value}</pre>
           </article>
@@ -2368,6 +2383,7 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
 }
 
 function WindowsNetworkPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [hostname, setHostname] = useState('');
   const [networkInfo, setNetworkInfo] = useState('');
   const [dnsInfo, setDnsInfo] = useState('');
@@ -2399,11 +2415,11 @@ function WindowsNetworkPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>网络信息</h3>
-          <p>查看 Windows 网络适配器、IP 和 DNS</p>
+          <h3>{t('remoteSettings.windows.networkTitle', language)}</h3>
+          <p>{t('remoteSettings.windows.networkDescription', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -2413,23 +2429,24 @@ function WindowsNetworkPanel({ connectionId }: { connectionId: string }) {
       ) : null}
       <div className="settings-info-card">
         <div className="settings-info-row">
-          <span className="settings-info-label">主机名</span>
+          <span className="settings-info-label">{t('remoteSettings.network.hostname', language)}</span>
           <strong className="settings-info-value">{hostname || '...'}</strong>
         </div>
       </div>
       <div className="settings-section">
-        <h4>网络适配器</h4>
-        <pre className="settings-output">{networkInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.windows.adapters', language)}</h4>
+        <pre className="settings-output">{networkInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
       <div className="settings-section">
-        <h4>DNS 配置</h4>
-        <pre className="settings-output">{dnsInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.windows.dnsConfig', language)}</h4>
+        <pre className="settings-output">{dnsInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
     </div>
   );
 }
 
 function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [content, setContent] = useState('');
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2463,7 +2480,7 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
     try {
       await window.guiSSH!.connections.writeFile(connectionId, windowsHostsPath, draft);
       setContent(draft);
-      setSuccess('Hosts 文件已保存。');
+      setSuccess(t('remoteSettings.windows.hostsSaved', language));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -2473,16 +2490,16 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
 
   const requestSaveHosts = () => {
     if (draft === content) {
-      setSuccess('Hosts 草稿没有变更。');
+      setSuccess(t('remoteSettings.windows.hostsNoDraftChanges', language));
       return;
     }
 
     setConfirmDialog({
-      title: '保存 Windows hosts',
-      message: `将重写 ${windowsHostsPath}。`,
-      detail: '需要管理员权限；错误映射可能影响远程服务解析。',
-      preview: createLineChangePreview(content, draft),
-      confirmLabel: '保存 hosts',
+      title: t('remoteSettings.windows.hostsSaveTitle', language),
+      message: t('remoteSettings.windows.hostsSaveMessage', language, { path: windowsHostsPath }),
+      detail: t('remoteSettings.windows.hostsSaveDetail', language),
+      preview: createLineChangePreview(content, draft, language),
+      confirmLabel: t('remoteSettings.hosts.saveConfirm', language),
       tone: 'warning',
       onConfirm: saveHosts,
     });
@@ -2492,11 +2509,11 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
     const ip = newIp.trim();
     const host = newHost.trim();
     if (!ip || !host) {
-      setError('请输入 IP 和主机名。');
+      setError(t('remoteSettings.windows.hostsIpHostRequired', language));
       return;
     }
     if (!isSafeNameserver(ip) || !isSafeHostname(host)) {
-      setError('IP 或主机名格式无效。');
+      setError(t('remoteSettings.windows.hostsIpHostInvalid', language));
       return;
     }
     const line = `${ip}\t${host}`;
@@ -2504,20 +2521,20 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
     setDraft(nextDraft);
     setNewIp('');
     setNewHost('');
-    setSuccess(`已添加 ${host}，点击保存后生效。`);
+    setSuccess(t('remoteSettings.windows.hostsAddedDraft', language, { host }));
   };
 
   return (
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>Hosts 管理</h3>
+          <h3>{t('remoteSettings.hosts.title', language)}</h3>
           <p>{windowsHostsPath}</p>
         </div>
         <div className="settings-header-actions">
-          <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>刷新</button>
+          <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>{loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}</button>
           <button type="button" className="settings-action-btn primary" onClick={requestSaveHosts} disabled={saving || draft === content}>
-            {saving ? '保存中...' : '预览并保存'}
+            {saving ? t('remoteSettings.hosts.saving', language) : t('remoteSettings.hosts.previewSave', language)}
           </button>
         </div>
       </div>
@@ -2532,15 +2549,15 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-section">
-        <h4>新增映射</h4>
+        <h4>{t('remoteSettings.windows.hostsAddSection', language)}</h4>
         <div className="settings-inline-form">
-          <input className="settings-input" placeholder="IP 地址" value={newIp} onChange={(e) => setNewIp(e.target.value)} />
-          <input className="settings-input" placeholder="主机名" value={newHost} onChange={(e) => setNewHost(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addEntry(); }} />
-          <button type="button" className="settings-action-btn primary" onClick={addEntry}>添加</button>
+          <input className="settings-input" placeholder={t('remoteSettings.hosts.ipPlaceholder', language)} value={newIp} onChange={(e) => setNewIp(e.target.value)} />
+          <input className="settings-input" placeholder={t('remoteSettings.hosts.hostnamePlaceholder', language)} value={newHost} onChange={(e) => setNewHost(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addEntry(); }} />
+          <button type="button" className="settings-action-btn primary" onClick={addEntry}>{t('remoteSettings.hosts.add', language)}</button>
         </div>
       </div>
       <div className="settings-section">
-        <h4>编辑 hosts</h4>
+        <h4>{t('remoteSettings.windows.hostsEditTitle', language)}</h4>
         <textarea
           className="settings-textarea"
           value={draft}
@@ -2548,7 +2565,7 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
           rows={18}
           spellCheck={false}
         />
-        <SettingsCommandPreview label="变更预览" content={createLineChangePreview(content, draft)} />
+        <SettingsCommandPreview label={t('remoteSettings.hosts.changePreview', language)} content={createLineChangePreview(content, draft, language)} />
       </div>
       {confirmDialog ? <SettingsConfirmDialog config={confirmDialog} onClose={() => setConfirmDialog(null)} /> : null}
     </div>
@@ -2556,6 +2573,7 @@ function WindowsHostsPanel({ connectionId }: { connectionId: string }) {
 }
 
 function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [routes, setRoutes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2565,13 +2583,13 @@ function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
     setError('');
     try {
       const result = await runCmd(connectionId, powershellCommand('Get-NetRoute | Sort-Object -Property DestinationPrefix, RouteMetric | Format-Table -AutoSize | Out-String -Width 260'));
-      setRoutes(result.stdout || result.stderr || '无法获取路由表');
+      setRoutes(result.stdout || result.stderr || t('remoteSettings.route.unavailable', language));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, language]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -2579,11 +2597,11 @@ function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>路由表</h3>
-          <p>查看 Windows IPv4 / IPv6 路由</p>
+          <h3>{t('remoteSettings.route.tableTitle', language)}</h3>
+          <p>{t('remoteSettings.windows.routeDescription', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -2592,14 +2610,15 @@ function WindowsRoutePanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-section">
-        <h4>路由表</h4>
-        <pre className="settings-output">{routes || '加载中...'}</pre>
+        <h4>{t('remoteSettings.route.tableTitle', language)}</h4>
+        <pre className="settings-output">{routes || t('remoteSettings.common.loading', language)}</pre>
       </div>
     </div>
   );
 }
 
 function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
+  const language = useCurrentAppLanguage();
   const [diskInfo, setDiskInfo] = useState('');
   const [volumeInfo, setVolumeInfo] = useState('');
   const [driveInfo, setDriveInfo] = useState('');
@@ -2631,11 +2650,11 @@ function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>磁盘和卷</h3>
-          <p>查看 Windows 本地磁盘、卷和文件系统空间</p>
+          <h3>{t('remoteSettings.windows.diskTitle', language)}</h3>
+          <p>{t('remoteSettings.windows.diskDescription', language)}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
-          {loading ? '加载中...' : '刷新'}
+          {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
         </button>
       </div>
       {error ? (
@@ -2644,92 +2663,94 @@ function WindowsDiskPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="settings-section">
-        <h4>本地磁盘</h4>
-        <pre className="settings-output">{diskInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.windows.localDisks', language)}</h4>
+        <pre className="settings-output">{diskInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
       <div className="settings-section">
-        <h4>卷信息</h4>
-        <pre className="settings-output">{volumeInfo || '加载中...'}</pre>
+        <h4>{t('remoteSettings.windows.volumes', language)}</h4>
+        <pre className="settings-output">{volumeInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
       <div className="settings-section">
         <h4>PSDrive</h4>
-        <pre className="settings-output">{driveInfo || '加载中...'}</pre>
+        <pre className="settings-output">{driveInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
     </div>
   );
 }
 
-function createInitialHostStatus(systemType?: RemoteSystemType): SettingsHostStatus {
+function createInitialHostStatus(systemType: RemoteSystemType | undefined, language: AppLanguage): SettingsHostStatus {
   return {
-    systemLabel: getSystemTypeLabel(systemType),
-    userLabel: '检测中',
-    privilegeLabel: '检测中',
+    systemLabel: getSystemTypeLabel(systemType, language),
+    userLabel: t('remoteSettings.status.detecting', language),
+    privilegeLabel: t('remoteSettings.status.detecting', language),
     privilegeTone: 'unknown',
-    hint: '正在读取远程权限状态',
+    hint: t('remoteSettings.status.loadingRemotePrivilege', language),
   };
 }
 
-function mapPrivilegeStatus(systemType: RemoteSystemType | undefined, values: Map<string, string>): SettingsHostStatus {
+function mapPrivilegeStatus(systemType: RemoteSystemType | undefined, values: Map<string, string>, language: AppLanguage): SettingsHostStatus {
   const privilege = values.get('PRIV') ?? 'unknown';
-  const user = values.get('USER') || '未知用户';
+  const user = values.get('USER') || t('remoteSettings.status.userUnknown', language);
   const isWindowsHost = isWindowsSystem(systemType);
 
   if (privilege === 'root') {
     return {
-      systemLabel: getSystemTypeLabel(systemType),
+      systemLabel: getSystemTypeLabel(systemType, language),
       userLabel: user,
-      privilegeLabel: 'root',
+      privilegeLabel: t('remoteSettings.status.root', language),
       privilegeTone: 'ready',
-      hint: '具备系统级写入权限',
+      hint: t('remoteSettings.status.rootHint', language),
     };
   }
 
   if (privilege === 'sudo') {
     return {
-      systemLabel: getSystemTypeLabel(systemType),
+      systemLabel: getSystemTypeLabel(systemType, language),
       userLabel: user,
-      privilegeLabel: 'sudo 可用',
+      privilegeLabel: t('remoteSettings.status.sudo', language),
       privilegeTone: 'ready',
-      hint: '可执行需要提权的配置命令',
+      hint: t('remoteSettings.status.sudoHint', language),
     };
   }
 
   if (privilege === 'admin') {
     return {
-      systemLabel: getSystemTypeLabel(systemType),
+      systemLabel: getSystemTypeLabel(systemType, language),
       userLabel: user,
-      privilegeLabel: '管理员',
+      privilegeLabel: t('remoteSettings.status.admin', language),
       privilegeTone: 'ready',
-      hint: '具备 Windows 管理员权限',
+      hint: t('remoteSettings.status.windowsAdminHint', language),
     };
   }
 
   return {
-    systemLabel: getSystemTypeLabel(systemType),
+    systemLabel: getSystemTypeLabel(systemType, language),
     userLabel: user,
-    privilegeLabel: isWindowsHost ? '普通用户' : '未检测到 root/sudo',
+    privilegeLabel: isWindowsHost ? t('remoteSettings.status.regularUser', language) : t('remoteSettings.status.noRootSudo', language),
     privilegeTone: 'warning',
-    hint: isWindowsHost ? '部分系统配置可能需要管理员权限' : '写入网络、镜像源、hosts 等配置可能失败',
+    hint: isWindowsHost ? t('remoteSettings.status.windowsUserHint', language) : t('remoteSettings.status.linuxUserHint', language),
   };
 }
 
 function SettingsStatusStrip({
   status,
   loading,
+  language,
   onRefresh,
 }: {
   status: SettingsHostStatus;
   loading: boolean;
+  language: AppLanguage;
   onRefresh: () => void;
 }) {
   return (
     <div className="settings-status-strip">
       <div className="settings-status-item">
-        <span>系统</span>
+        <span>{t('remoteSettings.status.system', language)}</span>
         <strong>{status.systemLabel}</strong>
       </div>
       <div className="settings-status-item">
-        <span>用户</span>
+        <span>{t('remoteSettings.status.user', language)}</span>
         <strong>{status.userLabel}</strong>
       </div>
       <div className={`settings-status-pill ${status.privilegeTone}`}>
@@ -2737,7 +2758,7 @@ function SettingsStatusStrip({
       </div>
       <div className="settings-status-hint">{status.hint}</div>
       <button type="button" className="settings-action-btn" onClick={onRefresh} disabled={loading}>
-        {loading ? '检测中...' : '检测权限'}
+        {loading ? t('remoteSettings.status.detecting', language) : t('remoteSettings.status.detectPrivilege', language)}
       </button>
     </div>
   );
@@ -2746,18 +2767,19 @@ function SettingsStatusStrip({
 /* ─── Main Component ──────────────────────────────────────────────────────── */
 
 function RemoteSettings({ connectionId, systemType }: RemoteSettingsProps) {
+  const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const settingsGroups = isWindowsHost ? WINDOWS_SETTINGS_GROUPS : SETTINGS_GROUPS;
   const [activeTab, setActiveTab] = useState<SettingsTab>('systeminfo');
-  const [hostStatus, setHostStatus] = useState<SettingsHostStatus>(() => createInitialHostStatus(systemType));
+  const [hostStatus, setHostStatus] = useState<SettingsHostStatus>(() => createInitialHostStatus(systemType, language));
   const [hostStatusLoading, setHostStatusLoading] = useState(false);
 
   const refreshHostStatus = useCallback(async () => {
     setHostStatusLoading(true);
     setHostStatus((currentStatus) => ({
       ...currentStatus,
-      systemLabel: getSystemTypeLabel(systemType),
-      hint: '正在读取远程权限状态',
+      systemLabel: getSystemTypeLabel(systemType, language),
+      hint: t('remoteSettings.status.loadingRemotePrivilege', language),
     }));
 
     try {
@@ -2772,19 +2794,19 @@ Write-Output ("PRIV=" + $privilege)
 `)
         : `user="$(id -un 2>/dev/null || whoami 2>/dev/null || printf unknown)"; uid="$(id -u 2>/dev/null || printf '')"; if [ "$uid" = "0" ]; then priv=root; elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then priv=sudo; else priv=user; fi; printf 'USER=%s\\nUID=%s\\nPRIV=%s\\n' "$user" "$uid" "$priv"`;
       const result = await runCmd(connectionId, command);
-      setHostStatus(mapPrivilegeStatus(systemType, parseKeyValueOutput(result.stdout || result.stderr || '')));
+      setHostStatus(mapPrivilegeStatus(systemType, parseKeyValueOutput(result.stdout || result.stderr || ''), language));
     } catch (err) {
       setHostStatus({
-        systemLabel: getSystemTypeLabel(systemType),
-        userLabel: '未知',
-        privilegeLabel: '检测失败',
+        systemLabel: getSystemTypeLabel(systemType, language),
+        userLabel: t('remoteSettings.status.userUnknown', language),
+        privilegeLabel: t('remoteSettings.status.detectFailed', language),
         privilegeTone: 'danger',
         hint: getErrorMessage(err),
       });
     } finally {
       setHostStatusLoading(false);
     }
-  }, [connectionId, isWindowsHost, systemType]);
+  }, [connectionId, isWindowsHost, language, systemType]);
 
   useEffect(() => {
     if (!settingsGroups.some((group) => group.tabs.some((tab) => tab.key === activeTab))) {
@@ -2820,10 +2842,10 @@ Write-Output ("PRIV=" + $privilege)
 
   return (
     <div className="settings-pane">
-      <nav className="settings-sidebar" aria-label="设置导航">
+      <nav className="settings-sidebar" aria-label={t('remoteSettings.nav.aria', language)}>
         {settingsGroups.map((group) => (
-          <div key={group.label}>
-            <div className="settings-sidebar-group-label">{group.label}</div>
+          <div key={group.labelId}>
+            <div className="settings-sidebar-group-label">{t(group.labelId, language)}</div>
             {group.tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -2833,8 +2855,8 @@ Write-Output ("PRIV=" + $privilege)
               >
                 <span className="settings-nav-icon">{tab.icon}</span>
                 <div className="settings-nav-text">
-                  <strong>{tab.label}</strong>
-                  <small>{tab.description}</small>
+                  <strong>{t(tab.labelId, language)}</strong>
+                  <small>{t(tab.descriptionId, language)}</small>
                 </div>
               </button>
             ))}
@@ -2842,7 +2864,7 @@ Write-Output ("PRIV=" + $privilege)
         ))}
       </nav>
       <div className="settings-main">
-        <SettingsStatusStrip status={hostStatus} loading={hostStatusLoading} onRefresh={() => void refreshHostStatus()} />
+        <SettingsStatusStrip status={hostStatus} loading={hostStatusLoading} language={language} onRefresh={() => void refreshHostStatus()} />
         <div className="settings-panel-shell">
           {renderPanel()}
         </div>

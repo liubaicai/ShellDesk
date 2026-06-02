@@ -4,6 +4,7 @@ import DismissibleAlert from './DismissibleAlert';
 import { getErrorMessage } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteDiskAnalyzerProps {
   connectionId: string;
@@ -38,7 +39,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteDiskAnalyzer.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -438,26 +439,26 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
   const copySelectedPath = async () => {
     if (!selectedEntry) return;
     await navigator.clipboard.writeText(selectedEntry.path);
-    setNotice('已复制路径。');
+    setNotice(tCurrent('auto.remoteDiskAnalyzer.dledl'));
   };
 
   const visibleEntries = activePanel === 'children' ? entries : largeFiles;
   const isResultLoading = scanLoading || largeLoading;
-  const resultLoadingTitle = scanLoading ? '正在扫描目录' : '正在搜索大文件';
+  const resultLoadingTitle = scanLoading ? tCurrent('auto.remoteDiskAnalyzer.v1yhzx') : tCurrent('auto.remoteDiskAnalyzer.q6fncc');
   const resultLoadingPath = scanLoading ? scanTargetPath || pathDraft || currentPath : largeTargetPath || currentPath;
 
   return (
     <section className="disk-analyzer">
       <header className="disk-toolbar">
         <div className="disk-path-bar">
-          <button type="button" onClick={() => scanPath(getParentPath(currentPath, isWindowsHost))} disabled={scanLoading}>上级</button>
+          <button type="button" onClick={() => scanPath(getParentPath(currentPath, isWindowsHost))} disabled={scanLoading}>{tCurrent('auto.remoteDiskAnalyzer.1cs0t8u')}</button>
           <input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void scanPath(pathDraft); }} />
-          <button type="button" className="primary" onClick={() => scanPath(pathDraft)} disabled={scanLoading}>{scanLoading ? '扫描中' : '扫描'}</button>
+          <button type="button" className="primary" onClick={() => scanPath(pathDraft)} disabled={scanLoading}>{scanLoading ? tCurrent('auto.remoteDiskAnalyzer.15wbj2u') : tCurrent('auto.remoteDiskAnalyzer.1myljr3')}</button>
         </div>
         <div className="disk-toolbar-actions">
-          <input className="disk-threshold" inputMode="numeric" value={minLargeFileMb} onChange={(event) => setMinLargeFileMb(event.target.value)} title="大文件阈值 MB" />
-          <button type="button" onClick={searchLargeFiles} disabled={largeLoading}>{largeLoading ? '搜索中' : '大文件'}</button>
-          <button type="button" onClick={refreshMounts} disabled={mountLoading}>{mountLoading ? '刷新中' : '刷新磁盘'}</button>
+          <input className="disk-threshold" inputMode="numeric" value={minLargeFileMb} onChange={(event) => setMinLargeFileMb(event.target.value)} title={tCurrent('auto.remoteDiskAnalyzer.1y5m4ea')} />
+          <button type="button" onClick={searchLargeFiles} disabled={largeLoading}>{largeLoading ? tCurrent('auto.remoteDiskAnalyzer.5wh38i') : tCurrent('auto.remoteDiskAnalyzer.bdfoan')}</button>
+          <button type="button" onClick={refreshMounts} disabled={mountLoading}>{mountLoading ? tCurrent('auto.remoteDiskAnalyzer.1taxqz1') : tCurrent('auto.remoteDiskAnalyzer.rnv4w3')}</button>
         </div>
       </header>
 
@@ -465,7 +466,7 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
       {notice ? <DismissibleAlert className="disk-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
       {mounts.length ? (
-        <div className="disk-mount-strip" aria-label="磁盘挂载点">
+        <div className="disk-mount-strip" aria-label={tCurrent('auto.remoteDiskAnalyzer.1yik7h0')}>
           {mounts.map((mount) => (
             <button
               key={`${mount.filesystem}-${mount.mountPoint}`}
@@ -485,10 +486,10 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
       <div className="disk-layout">
         <aside className="disk-side">
           <div className="disk-side-title">
-            <strong>路径</strong>
+            <strong>{tCurrent('auto.remoteDiskAnalyzer.c8pdny')}</strong>
             <span>{currentPath}</span>
           </div>
-          <button type="button" onClick={() => scanPath(isWindowsHost ? 'C:\\' : '/')}>根目录</button>
+          <button type="button" onClick={() => scanPath(isWindowsHost ? 'C:\\' : '/')}>{tCurrent('auto.remoteDiskAnalyzer.fn3h29')}</button>
           <button type="button" onClick={() => scanPath(isWindowsHost ? 'C:\\Users' : '/home')}>{isWindowsHost ? 'C:\\Users' : '/home'}</button>
           <button type="button" onClick={() => scanPath(isWindowsHost ? 'C:\\Windows\\Temp' : '/var')}>{isWindowsHost ? 'Temp' : '/var'}</button>
           <button type="button" onClick={() => scanPath(isWindowsHost ? 'C:\\Program Files' : '/tmp')}>{isWindowsHost ? 'Program Files' : '/tmp'}</button>
@@ -496,8 +497,8 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
 
         <main className="disk-main">
           <div className="disk-tabs">
-            <button type="button" className={activePanel === 'children' ? 'active' : ''} onClick={() => setActivePanel('children')}>目录扫描</button>
-            <button type="button" className={activePanel === 'large' ? 'active' : ''} onClick={() => setActivePanel('large')}>大文件</button>
+            <button type="button" className={activePanel === 'children' ? 'active' : ''} onClick={() => setActivePanel('children')}>{tCurrent('auto.remoteDiskAnalyzer.65vdry')}</button>
+            <button type="button" className={activePanel === 'large' ? 'active' : ''} onClick={() => setActivePanel('large')}>{tCurrent('auto.remoteDiskAnalyzer.bdfoan2')}</button>
           </div>
           <div className="disk-entry-list" aria-busy={isResultLoading}>
             {visibleEntries.map((entry) => (
@@ -526,7 +527,7 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
                 </div>
               </div>
             ) : null}
-            {!isResultLoading && visibleEntries.length === 0 ? <div className="disk-empty">没有扫描结果。</div> : null}
+            {!isResultLoading && visibleEntries.length === 0 ? <div className="disk-empty">{tCurrent('auto.remoteDiskAnalyzer.fgatcs')}</div> : null}
           </div>
         </main>
 
@@ -534,26 +535,26 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
           {selectedEntry ? (
             <>
               <div className="disk-detail-title">
-                <span>{selectedEntry.type === 'directory' ? '目录' : '文件'}</span>
+                <span>{selectedEntry.type === 'directory' ? tCurrent('auto.remoteDiskAnalyzer.b9mnzg') : tCurrent('auto.remoteDiskAnalyzer.1aybos0')}</span>
                 <strong title={selectedEntry.path}>{selectedEntry.name}</strong>
               </div>
               <dl>
-                <div><dt>大小</dt><dd>{selectedEntry.sizeText}</dd></div>
-                <div><dt>路径</dt><dd>{selectedEntry.path}</dd></div>
-                <div><dt>修改时间</dt><dd>{selectedEntry.modifiedAt || '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteDiskAnalyzer.1i41a3v')}</dt><dd>{selectedEntry.sizeText}</dd></div>
+                <div><dt>{tCurrent('auto.remoteDiskAnalyzer.c8pdny2')}</dt><dd>{selectedEntry.path}</dd></div>
+                <div><dt>{tCurrent('auto.remoteDiskAnalyzer.gdxblm')}</dt><dd>{selectedEntry.modifiedAt || '-'}</dd></div>
               </dl>
               <div className="disk-detail-actions">
-                <button type="button" onClick={copySelectedPath}>复制路径</button>
-                <button type="button" onClick={() => selectedEntry.type === 'directory' ? scanPath(selectedEntry.path) : scanPath(getParentPath(selectedEntry.path, isWindowsHost))}>定位</button>
-                <button type="button" disabled={!onOpenFileManager} onClick={() => onOpenFileManager?.(selectedEntry.type === 'directory' ? selectedEntry.path : getParentPath(selectedEntry.path, isWindowsHost))}>文件管理器</button>
+                <button type="button" onClick={copySelectedPath}>{tCurrent('auto.remoteDiskAnalyzer.cbzts1')}</button>
+                <button type="button" onClick={() => selectedEntry.type === 'directory' ? scanPath(selectedEntry.path) : scanPath(getParentPath(selectedEntry.path, isWindowsHost))}>{tCurrent('auto.remoteDiskAnalyzer.10tg474')}</button>
+                <button type="button" disabled={!onOpenFileManager} onClick={() => onOpenFileManager?.(selectedEntry.type === 'directory' ? selectedEntry.path : getParentPath(selectedEntry.path, isWindowsHost))}>{tCurrent('auto.remoteDiskAnalyzer.1c01v4l')}</button>
               </div>
               <div className="disk-suggestion">
-                <strong>清理建议</strong>
-                <p>首版只做定位和复制，不直接删除。请先在文件管理器或终端确认用途，再执行清理操作。</p>
+                <strong>{tCurrent('auto.remoteDiskAnalyzer.mvhjgi')}</strong>
+                <p>{tCurrent('auto.remoteDiskAnalyzer.iuxxnn')}</p>
               </div>
             </>
           ) : (
-            <div className="disk-empty detail">选择一项查看详情。</div>
+            <div className="disk-empty detail">{tCurrent('auto.remoteDiskAnalyzer.2mkybx')}</div>
           )}
         </aside>
       </div>

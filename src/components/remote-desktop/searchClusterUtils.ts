@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export interface SearchClusterConnectionConfig {
   url: string;
@@ -55,7 +56,7 @@ function normalizeBaseUrl(value: string) {
   const trimmed = value.trim().replace(/\/+$/, '');
 
   if (!trimmed || /[\r\n]/.test(trimmed)) {
-    throw new Error('请输入有效的集群 URL。');
+    throw new Error(tCurrent('auto.searchClusterUtils.15lrf4g'));
   }
 
   let parsedUrl: URL;
@@ -63,11 +64,11 @@ function normalizeBaseUrl(value: string) {
   try {
     parsedUrl = new URL(trimmed);
   } catch {
-    throw new Error('集群 URL 格式不正确。');
+    throw new Error(tCurrent('auto.searchClusterUtils.1xfokcr'));
   }
 
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new Error('仅支持 http:// 或 https:// 集群 URL。');
+    throw new Error(tCurrent('auto.searchClusterUtils.1atgbi'));
   }
 
   return trimmed;
@@ -113,7 +114,7 @@ function summarizeSearchError(value: unknown): string {
   try {
     return JSON.stringify(value);
   } catch {
-    return '未知错误';
+    return tCurrent('auto.searchClusterUtils.1m4f5ms');
   }
 }
 
@@ -158,36 +159,19 @@ exit $curlCode
 
   if (body) {
     return {
-      command: `
-if ! command -v curl >/dev/null 2>&1; then
-  printf 'curl 未安装或当前 PATH 不可用。\\n' >&2
-  exit 127
-fi
-body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-search-body.XXXXXX")
-cat > "$body_file"
-curl -sS --max-time ${timeout} -X ${method} ${insecureArgs} ${authArgs} -H 'Content-Type: application/json' --data-binary "@$body_file" ${shellSingleQuote(url)}
-curl_code=$?
-rm -f "$body_file"
-exit "$curl_code"
-`,
+      command: tCurrent('auto.searchClusterUtils.lzad6z', { value0: timeout, value1: method, value2: insecureArgs, value3: authArgs, value4: shellSingleQuote(url) }),
       stdin: body,
     };
   }
 
   return {
-    command: `
-if ! command -v curl >/dev/null 2>&1; then
-  printf 'curl 未安装或当前 PATH 不可用。\\n' >&2
-  exit 127
-fi
-curl -sS --max-time ${timeout} -X ${method} ${insecureArgs} ${authArgs} ${shellSingleQuote(url)}
-`,
+    command: tCurrent('auto.searchClusterUtils.18nh1h0', { value0: timeout, value1: method, value2: insecureArgs, value3: authArgs, value4: shellSingleQuote(url) }),
   };
 }
 
 export function parseJsonResponse<T>(stdout: string, stderr: string, code: number, label: string): T {
   if (code !== 0) {
-    throw new Error(stderr || stdout || `${label} 请求失败，退出码 ${code}`);
+    throw new Error(stderr || stdout || tCurrent('auto.searchClusterUtils.57s8f6', { value0: label, value1: code }));
   }
 
   let parsed: unknown;
@@ -195,12 +179,12 @@ export function parseJsonResponse<T>(stdout: string, stderr: string, code: numbe
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`${label} 返回不是有效 JSON。`);
+    throw new Error(tCurrent('auto.searchClusterUtils.1m1c877', { value0: label }));
   }
 
   if (isRecord(parsed) && parsed.error !== undefined) {
-    const status = parsed.status !== undefined ? `HTTP ${String(parsed.status)}` : '接口错误';
-    throw new Error(`${label} 请求失败：${status}，${summarizeSearchError(parsed.error)}`);
+    const status = parsed.status !== undefined ? `HTTP ${String(parsed.status)}` : tCurrent('auto.searchClusterUtils.1t4bmu5');
+    throw new Error(tCurrent('auto.searchClusterUtils.gxlawy', { value0: label, value1: status, value2: summarizeSearchError(parsed.error) }));
   }
 
   return parsed as T;
@@ -208,7 +192,7 @@ export function parseJsonResponse<T>(stdout: string, stderr: string, code: numbe
 
 function normalizeCatRows(rows: unknown, label: string): Array<Record<string, unknown>> {
   if (!Array.isArray(rows)) {
-    throw new Error(`${label} 返回格式无效：预期 JSON 数组。请确认账号有 cat API 权限，或查看“原始响应”。`);
+    throw new Error(tCurrent('auto.searchClusterUtils.1r2c3h2', { value0: label }));
   }
 
   return rows.filter(isRecord);

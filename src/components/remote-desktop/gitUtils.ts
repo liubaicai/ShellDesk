@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type GitFileStatusKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'typechange' | 'unknown';
 
@@ -64,11 +65,11 @@ function validateText(value: string, label: string, maxLength = 520) {
   const trimmedValue = value.trim();
 
   if (!trimmedValue) {
-    throw new Error(`请输入${label}。`);
+    throw new Error(tCurrent('auto.gitUtils.1c0dr7n', { value0: label }));
   }
 
   if (trimmedValue.length > maxLength || /[\u0000\r\n]/.test(trimmedValue)) {
-    throw new Error(`${label}无效。`);
+    throw new Error(tCurrent('auto.gitUtils.1kx67j6', { value0: label }));
   }
 
   return trimmedValue;
@@ -78,26 +79,26 @@ function validateGitCommitMessage(value: string) {
   const normalizedValue = value.replace(/\r\n?/g, '\n').trim();
 
   if (!normalizedValue) {
-    throw new Error('请输入提交信息。');
+    throw new Error(tCurrent('auto.gitUtils.18j25g8'));
   }
 
   if (normalizedValue.length > 2000 || normalizedValue.includes('\u0000')) {
-    throw new Error('提交信息无效。');
+    throw new Error(tCurrent('auto.gitUtils.omvsyl'));
   }
 
   return normalizedValue;
 }
 
 export function validateGitPath(value: string) {
-  return validateText(value, '仓库路径');
+  return validateText(value, tCurrent('auto.gitUtils.7axb6o'));
 }
 
 function validateGitFilePath(value: string) {
-  return validateText(value, '文件路径', 800);
+  return validateText(value, tCurrent('auto.gitUtils.1fcx4tn'), 800);
 }
 
 export function validateGitBranchName(value: string) {
-  const trimmedValue = validateText(value, '分支名', 220);
+  const trimmedValue = validateText(value, tCurrent('auto.gitUtils.16bro71'), 220);
 
   if (
     trimmedValue.startsWith('-')
@@ -111,7 +112,7 @@ export function validateGitBranchName(value: string) {
     || trimmedValue.includes('.lock')
     || /[\s~^:?*[\\\u0000]/.test(trimmedValue)
   ) {
-    throw new Error('分支名包含不安全字符。');
+    throw new Error(tCurrent('auto.gitUtils.1gb4o52'));
   }
 
   return trimmedValue;
@@ -149,88 +150,7 @@ git -C "$root" tag --sort=-creatordate -n 1 2>&1 | head -n 40 || true
 function createWindowsGitSnapshotCommand(path: string): RemoteCommandInput {
   const repoPath = validateGitPath(path);
 
-  const script = `
-$Repo = ${powershellSingleQuote(repoPath)}
-$LocalBranchFormat = ${powershellSingleQuote(gitLocalBranchFormat)}
-$RemoteBranchFormat = ${powershellSingleQuote(gitRemoteBranchFormat)}
-$env:GIT_OPTIONAL_LOCKS = "0"
-$env:GIT_PAGER = "cat"
-$env:GIT_TERMINAL_PROMPT = "0"
-$env:LC_ALL = "C.UTF-8"
-$env:LANG = "C.UTF-8"
-
-function Write-Section([string]$Name) {
-  [Console]::Out.WriteLine("")
-  [Console]::Out.WriteLine("__SHELLDESK_GIT_$($Name)__")
-}
-
-function Write-GitLines($Lines) {
-  if ($null -eq $Lines) {
-    return
-  }
-
-  foreach ($Line in @($Lines)) {
-    [Console]::Out.WriteLine([string]$Line)
-  }
-}
-
-function Invoke-GitSnapshotCommand([string[]]$Arguments, [switch]$AllowFailure) {
-  $Output = & git @Arguments 2>&1
-  $Code = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
-
-  if ($Code -ne 0 -and -not $AllowFailure) {
-    Write-Section "ERROR"
-    Write-GitLines $Output
-    exit $Code
-  }
-
-  Write-GitLines $Output
-}
-
-$GitCommand = Get-Command git -ErrorAction SilentlyContinue
-if (-not $GitCommand) {
-  Write-Section "ERROR"
-  [Console]::Out.WriteLine("远端 Windows 没有找到 git 命令，请确认 Git 已安装并加入 PATH。")
-  exit 127
-}
-
-$ProbeOutput = & git -C $Repo rev-parse --is-inside-work-tree 2>&1
-$ProbeCode = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
-if ($ProbeCode -ne 0) {
-  Write-Section "ERROR"
-  Write-GitLines $ProbeOutput
-  exit 2
-}
-
-$RootOutput = & git -C $Repo rev-parse --show-toplevel 2>&1
-$RootCode = if ($null -eq $LASTEXITCODE) { if ($?) { 0 } else { 1 } } else { $LASTEXITCODE }
-if ($RootCode -ne 0) {
-  Write-Section "ERROR"
-  Write-GitLines $RootOutput
-  exit $RootCode
-}
-
-$Root = [string]($RootOutput | Select-Object -First 1)
-if ([string]::IsNullOrWhiteSpace($Root)) {
-  Write-Section "ERROR"
-  [Console]::Out.WriteLine("Git 没有返回仓库根目录。")
-  exit 2
-}
-
-Write-Section "ROOT"
-[Console]::Out.WriteLine($Root)
-Write-Section "STATUS"
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "-c", "core.quotepath=false", "status", "--porcelain=v1", "-b")
-Write-Section "BRANCHES"
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "branch", "--format=$LocalBranchFormat")
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "branch", "-r", "--format=$RemoteBranchFormat") -AllowFailure
-Write-Section "LOG"
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "log", "--date=iso-strict", "--pretty=format:%H%x09%an%x09%ad%x09%s", "-n", "50") -AllowFailure
-Write-Section "REMOTES"
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "remote", "-v") -AllowFailure
-Write-Section "TAGS"
-Invoke-GitSnapshotCommand -Arguments @("-C", $Root, "tag", "--sort=-creatordate", "-n", "1") -AllowFailure
-`;
+  const script = tCurrent('auto.gitUtils.e0r5eg', { value0: powershellSingleQuote(repoPath), value1: powershellSingleQuote(gitLocalBranchFormat), value2: powershellSingleQuote(gitRemoteBranchFormat) });
 
   return { command: powershellCommand(script) };
 }
@@ -556,12 +476,12 @@ export function parseGitSnapshotOutput(inputPath: string, stdout: string, stderr
   const errorText = sections.error?.join('\n').trim();
 
   if (errorText) {
-    throw new Error(errorText || '当前路径不是 Git 仓库。');
+    throw new Error(errorText || tCurrent('auto.gitUtils.1oqfsti'));
   }
 
   if (!hasAnySection) {
     const rawText = rawOutput.trim();
-    throw new Error(rawText ? `未识别到 Git 仓库输出：\n${rawText.slice(0, 2000)}` : 'Git 快照命令没有返回任何输出。请确认远端 Windows 的 PowerShell 与 Git 命令可正常执行。');
+    throw new Error(rawText ? tCurrent('auto.gitUtils.6leemw', { value0: rawText.slice(0, 2000) }) : tCurrent('auto.gitUtils.7avxi7'));
   }
 
   const statusLines = sections.status ?? [];
@@ -593,15 +513,15 @@ export function parseGitSnapshotOutput(inputPath: string, stdout: string, stderr
 
 export function getGitStatusLabel(change: GitFileChange) {
   const labels: Record<GitFileStatusKind, string> = {
-    modified: '修改',
-    added: '新增',
-    deleted: '删除',
-    renamed: '重命名',
-    copied: '复制',
-    untracked: '未跟踪',
-    conflicted: '冲突',
-    typechange: '类型变更',
-    unknown: '变更',
+    modified: tCurrent('auto.gitUtils.13fr7ko'),
+    added: tCurrent('auto.gitUtils.159s6ub'),
+    deleted: tCurrent('auto.gitUtils.1t2vi4h'),
+    renamed: tCurrent('auto.gitUtils.1myiu7q'),
+    copied: tCurrent('auto.gitUtils.1xbipwq'),
+    untracked: tCurrent('auto.gitUtils.pfw1ac'),
+    conflicted: tCurrent('auto.gitUtils.v10se4'),
+    typechange: tCurrent('auto.gitUtils.ies7n3'),
+    unknown: tCurrent('auto.gitUtils.j1lqcp'),
   };
 
   return labels[change.kind];

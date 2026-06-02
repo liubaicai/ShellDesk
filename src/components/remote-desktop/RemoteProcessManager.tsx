@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
-import { translateStructuredText } from '../../i18n';
+import { getCurrentAppLanguage, t, translateStructuredText, type AppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
 import { isWindowsSystem, powershellCommand, powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
@@ -76,7 +76,7 @@ interface SignalDefinition {
   value: string;
   name: string;
   label: string;
-  description: string;
+  descriptionId: MessageId;
 }
 
 interface PendingSignal {
@@ -110,25 +110,25 @@ const SIGNALS: SignalDefinition[] = [
     value: '15',
     name: 'TERM',
     label: 'TERM',
-    description: '请求进程自行退出，适合优先尝试，通常会触发清理逻辑。',
+    descriptionId: 'process.signal.term.description',
   },
   {
     value: '9',
     name: 'KILL',
     label: 'KILL',
-    description: '由系统强制结束进程，进程没有机会保存状态或清理资源。',
+    descriptionId: 'process.signal.kill.description',
   },
   {
     value: '2',
     name: 'INT',
     label: 'INT',
-    description: '等同终端 Ctrl+C，适合前台任务或可中断脚本。',
+    descriptionId: 'process.signal.int.description',
   },
   {
     value: '1',
     name: 'HUP',
     label: 'HUP',
-    description: '通知进程挂断或重新加载配置，具体行为由进程自行决定。',
+    descriptionId: 'process.signal.hup.description',
   },
 ];
 
@@ -137,10 +137,6 @@ const DEFAULT_AUTO_REFRESH_MS = 5000;
 const DEFAULT_SIGNAL = SIGNALS[0];
 const PROCESS_AI_SNAPSHOT_CHAR_LIMIT = 100000;
 const PROCESS_AI_FIELD_CHAR_LIMIT = 260;
-const PROCESS_AI_REPORT_SYSTEM_PROMPT = `你是 ShellDesk 的 SD-Agent 进程安全分析助手。你只能基于用户提供的进程快照做静态研判，不要假装已经扫描文件、查杀病毒或访问外部情报。
-
-请用中文输出 Markdown 报告，重点判断是否存在病毒、木马、挖矿、横向移动、持久化后门、异常高资源占用、伪装系统进程、可疑路径或可疑命令行。对每个可疑项给出 PID、风险等级、依据、建议核验动作。没有明显风险时也要说明仍建议做哪些人工复核，但后续可疑进程、继续核验和建议处置部分要明显简略，不要为了凑结构输出冗长内容。`;
-const PROCESS_AI_INSIGHT_SYSTEM_PROMPT = '你是 ShellDesk 的 SD-Agent 进程解释助手。请用中文简短解释单个进程通常是做什么的，并结合本次快照指出是否有明显异常。不要给出确定性的恶意判定。';
 
 function getProcessContextMenuPosition(clientX: number, clientY: number) {
   const menuWidth = 184;
@@ -236,15 +232,15 @@ function compactAiField(value: string | number | undefined | null, maxLength = P
   return `${normalizedValue.slice(0, maxLength)}...`;
 }
 
-function getAiReadinessError(settings: ShellDeskAppSettings) {
+function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLanguage) {
   const aiControls = window.guiSSH?.ai;
 
   if (!aiControls?.chat && !aiControls?.chatStream) {
-    return '当前运行环境未提供 SD-Agent 对话接口。';
+    return t('process.error.noAiChat', language);
   }
 
   if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
-    return '请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。';
+    return t('process.error.aiConfigRequired', language);
   }
 
   return '';
@@ -286,7 +282,7 @@ function formatProcessAiLine(process: RemoteProcessEntry, isWindowsHost: boolean
   ].join('\t');
 }
 
-function createProcessAiSnapshot(processes: RemoteProcessEntry[], isWindowsHost: boolean): ProcessAiSnapshot {
+function createProcessAiSnapshot(processes: RemoteProcessEntry[], isWindowsHost: boolean, language: AppLanguage): ProcessAiSnapshot {
   const header = [
     `system=${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
     `processCount=${processes.length}`,
@@ -310,7 +306,7 @@ function createProcessAiSnapshot(processes: RemoteProcessEntry[], isWindowsHost:
   const omittedCount = Math.max(0, processes.length - includedCount);
 
   if (omittedCount > 0) {
-    text += `\n[注意] 由于 SD-Agent 单条消息长度限制，后续 ${omittedCount} 个进程未发送。请在报告里明确说明这个限制。\n`;
+    text += `\n${t('process.ai.snapshotOmitted', language, { count: omittedCount })}\n`;
   }
 
   return {
@@ -326,40 +322,45 @@ function formatProcessContextForAi(
   detail: ProcessDetail | null,
   parent: RemoteProcessEntry | null,
   children: RemoteProcessEntry[],
+  language: AppLanguage,
 ) {
   return [
-    `系统：${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
+    t('process.ai.context.system', language, { system: isWindowsHost ? 'Windows' : 'Linux/Unix' }),
     `PID：${process.pid}`,
     `PPID：${process.ppid ?? '-'}`,
-    `用户：${compactAiField(process.user)}`,
+    t('process.ai.context.user', language, { user: compactAiField(process.user) }),
     `CPU：${formatCpu(process, isWindowsHost)}`,
-    `内存：${formatMemory(process, isWindowsHost)}`,
-    `状态：${compactAiField(process.state)}`,
-    `启动：${compactAiField(process.startTime)}`,
-    `运行时间：${compactAiField(process.runtime || process.cpuTime)}`,
+    t('process.ai.context.memory', language, { memory: formatMemory(process, isWindowsHost) }),
+    t('process.ai.context.state', language, { state: compactAiField(process.state) }),
+    t('process.ai.context.start', language, { start: compactAiField(process.startTime) }),
+    t('process.ai.context.runtime', language, { runtime: compactAiField(process.runtime || process.cpuTime) }),
     `TTY：${compactAiField(process.tty)}`,
-    `可执行路径：${compactAiField(detail?.executablePath || process.executablePath, 500)}`,
-    `工作目录：${compactAiField(detail?.cwd, 500)}`,
-    `命令行：${compactAiField(process.command, 900)}`,
-    `父进程：${parent ? `${parent.pid} ${compactAiField(parent.command, 300)}` : '-'}`,
-    `子进程：${children.length ? children.slice(0, 8).map((child) => `${child.pid} ${compactAiField(child.command, 180)}`).join(' | ') : '-'}`,
-    `端口：${detail?.ports.length ? detail.ports.slice(0, 12).map((port) => compactAiField(port, 180)).join(' | ') : '-'}`,
+    t('process.ai.context.path', language, { path: compactAiField(detail?.executablePath || process.executablePath, 500) }),
+    t('process.ai.context.cwd', language, { cwd: compactAiField(detail?.cwd, 500) }),
+    t('process.ai.context.command', language, { command: compactAiField(process.command, 900) }),
+    t('process.ai.context.parent', language, { parent: parent ? `${parent.pid} ${compactAiField(parent.command, 300)}` : '-' }),
+    t('process.ai.context.children', language, {
+      children: children.length ? children.slice(0, 8).map((child) => `${child.pid} ${compactAiField(child.command, 180)}`).join(' | ') : '-',
+    }),
+    t('process.ai.context.ports', language, {
+      ports: detail?.ports.length ? detail.ports.slice(0, 12).map((port) => compactAiField(port, 180)).join(' | ') : '-',
+    }),
   ].join('\n');
 }
 
-function getAiReportPhaseLabel(phase: ProcessAiReportPhase) {
-  if (phase === 'preparing') return '正在整理进程快照...';
-  if (phase === 'requesting') return '正在请求 SD-Agent...';
-  if (phase === 'streaming') return '正在接收分析报告...';
-  if (phase === 'done') return '分析完成';
-  if (phase === 'error') return '分析失败';
-  return '等待开始';
+function getAiReportPhaseLabel(phase: ProcessAiReportPhase, language: AppLanguage) {
+  if (phase === 'preparing') return t('process.ai.phase.preparing', language);
+  if (phase === 'requesting') return t('process.ai.phase.requesting', language);
+  if (phase === 'streaming') return t('process.ai.phase.streaming', language);
+  if (phase === 'done') return t('process.ai.phase.done', language);
+  if (phase === 'error') return t('process.ai.phase.error', language);
+  return t('process.ai.phase.idle', language);
 }
 
-function createAiReportDocument(report: string, generatedAt: string, snapshotNote: string) {
+function createAiReportDocument(report: string, generatedAt: string, snapshotNote: string, language: AppLanguage) {
   return [
-    '# ShellDesk 进程 AI 风险分析报告',
-    generatedAt ? `生成时间：${generatedAt}` : '',
+    t('process.ai.report.documentTitle', language),
+    generatedAt ? t('process.ai.report.generatedAt', language, { time: generatedAt }) : '',
     snapshotNote,
     '',
     report.trim(),
@@ -432,7 +433,7 @@ fi
 `;
 }
 
-function parseLinuxProcessLine(line: string): RemoteProcessEntry | null {
+function parseLinuxProcessLine(line: string, language: AppLanguage): RemoteProcessEntry | null {
   const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/);
 
   if (!match) {
@@ -458,11 +459,11 @@ function parseLinuxProcessLine(line: string): RemoteProcessEntry | null {
     startTime: match[10],
     runtime: match[11],
     cpuTime: match[12],
-    command: match[13]?.trim() || '(无命令)',
+    command: match[13]?.trim() || t('process.placeholder.noCommand', language),
   };
 }
 
-function parsePsAuxLine(line: string): RemoteProcessEntry | null {
+function parsePsAuxLine(line: string, language: AppLanguage): RemoteProcessEntry | null {
   const parts = line.trim().split(/\s+/);
 
   if (parts.length < 11 || parts[0].toUpperCase() === 'USER') {
@@ -486,7 +487,7 @@ function parsePsAuxLine(line: string): RemoteProcessEntry | null {
     state: parts[7],
     startTime: parts[8],
     cpuTime: parts[9],
-    command: parts.slice(10).join(' ') || '(无命令)',
+    command: parts.slice(10).join(' ') || t('process.placeholder.noCommand', language),
   };
 }
 
@@ -497,7 +498,7 @@ function readProcFsStatusValue(statusText: string, key: string) {
   return value && value !== '-' ? value : '';
 }
 
-function parseProcFsLinuxProcessLine(line: string): RemoteProcessEntry | null {
+function parseProcFsLinuxProcessLine(line: string, language: AppLanguage): RemoteProcessEntry | null {
   const parts = line.split('\t');
 
   if (parts[0] !== 'PROCFS' || parts.length < 4) {
@@ -524,11 +525,11 @@ function parseProcFsLinuxProcessLine(line: string): RemoteProcessEntry | null {
     startTime: '-',
     runtime: '',
     cpuTime: '',
-    command: parts.slice(3).join('\t').trim() || '(无命令)',
+    command: parts.slice(3).join('\t').trim() || t('process.placeholder.noCommand', language),
   };
 }
 
-function parseDelimitedLinuxProcessLine(line: string): RemoteProcessEntry | null {
+function parseDelimitedLinuxProcessLine(line: string, language: AppLanguage): RemoteProcessEntry | null {
   const parts = line.split('\t');
 
   if (parts[0] !== 'PROC' || parts.length < 13) {
@@ -554,21 +555,26 @@ function parseDelimitedLinuxProcessLine(line: string): RemoteProcessEntry | null
     startTime: parts[10] || '-',
     runtime: parts[11] || '',
     cpuTime: parts[12] || '',
-    command: parts.slice(13).join('\t').trim() || '(无命令)',
+    command: parts.slice(13).join('\t').trim() || t('process.placeholder.noCommand', language),
   };
 }
 
-function parseLinuxProcessOutput(stdout: string): RemoteProcessEntry[] {
+function parseLinuxProcessOutput(stdout: string, language: AppLanguage): RemoteProcessEntry[] {
   return stdout
     .trim()
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
     .filter(Boolean)
-    .map((line) => parseProcFsLinuxProcessLine(line) ?? parseDelimitedLinuxProcessLine(line) ?? parseLinuxProcessLine(line) ?? parsePsAuxLine(line))
+    .map((line) => (
+      parseProcFsLinuxProcessLine(line, language)
+      ?? parseDelimitedLinuxProcessLine(line, language)
+      ?? parseLinuxProcessLine(line, language)
+      ?? parsePsAuxLine(line, language)
+    ))
     .filter((process): process is RemoteProcessEntry => Boolean(process));
 }
 
-function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] {
+function parseWindowsProcessOutput(stdout: string, language: AppLanguage): RemoteProcessEntry[] {
   const text = stdout.trim();
 
   if (!text) {
@@ -645,7 +651,10 @@ function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] {
   }
 }
 
-function getLinuxProcessListCommand() {
+function getLinuxProcessListCommand(language: AppLanguage) {
+  const noCommand = t('process.placeholder.noCommand', language);
+  const noDataMessage = t('process.error.noProcessData', language);
+
   return `
 format='pid=,ppid=,user=,pcpu=,pmem=,vsz=,rss=,tty=,stat=,start=,etime=,time=,args='
 output="$(ps -eo "$format" 2>/dev/null || true)"
@@ -710,7 +719,7 @@ if [ -d /proc ]; then
       comm="$(cat "$d/comm" 2>/dev/null | head -n 1)"
       [ -n "$comm" ] && command="[$comm]"
     fi
-    [ -n "$command" ] || command="(无命令)"
+    [ -n "$command" ] || command="${noCommand}"
 
     printf 'PROCFS\\t%s\\t%s\\t%s\\n' "$pid" "$status" "$command"
     count=$((count + 1))
@@ -719,12 +728,14 @@ if [ -d /proc ]; then
   [ "$count" -gt 0 ] && exit 0
 fi
 
-printf '%s\\n' '无法读取进程列表：ps 和 /proc 均未返回可用输出。' >&2
+printf '%s\\n' '${noDataMessage}' >&2
 exit 1
 `;
 }
 
-function getWindowsProcessListCommand() {
+function getWindowsProcessListCommand(language: AppLanguage) {
+  const readFailedMessage = t('process.error.listReadFailed', language);
+
   return powershellStdinCommand(`
 $tab = [char]9
 
@@ -858,7 +869,7 @@ foreach ($record in @($processRecords)) {
 }
 
 if ($rowCount -eq 0) {
-  [Console]::Error.WriteLine("未能读取 Windows 进程列表。请确认当前账号允许执行 Get-Process 或 WMI/CIM 查询。")
+  [Console]::Error.WriteLine("${readFailedMessage}")
   exit 1
 }
 `);
@@ -951,7 +962,7 @@ async function runCmd(connectionId: string, command: string | RemoteCommandInput
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(t('process.error.ipcNotReady', getCurrentAppLanguage()));
   }
 
   if (typeof command === 'string') {
@@ -1086,6 +1097,7 @@ function flattenProcessTree(
 }
 
 function ProcessManager({ connectionId, settings, systemType, launchOptions }: RemoteProcessManagerProps) {
+  const language = settings.language;
   const isWindowsHost = isWindowsSystem(systemType);
   const isMountedRef = useRef(true);
   const isRefreshingRef = useRef(false);
@@ -1138,12 +1150,12 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     try {
       const result = await runCmd(
         connectionId,
-        isWindowsHost ? getWindowsProcessListCommand() : getLinuxProcessListCommand(),
+        isWindowsHost ? getWindowsProcessListCommand(language) : getLinuxProcessListCommand(language),
       );
       const stdout = result.stdout || '';
       const nextProcesses = isWindowsHost
-        ? parseWindowsProcessOutput(stdout)
-        : parseLinuxProcessOutput(stdout);
+        ? parseWindowsProcessOutput(stdout, language)
+        : parseLinuxProcessOutput(stdout, language);
 
       if (!isMountedRef.current) {
         return;
@@ -1152,11 +1164,11 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       setProcesses(nextProcesses);
 
       if (result.code !== 0 && !nextProcesses.length) {
-        setError(result.stderr || '无法读取远程进程列表。');
+        setError(result.stderr || t('process.error.listReadFailed', language));
       } else if (!nextProcesses.length && stdout.trim()) {
-        setError(`远程进程命令已返回内容，但当前版本无法解析：${compactAiField(stdout, 200)}`);
+        setError(t('process.error.listUnparseable', language, { output: compactAiField(stdout, 200) }));
       } else if (!nextProcesses.length) {
-        setError(result.stderr || '远程进程命令没有返回进程数据，请确认 /proc 已挂载且当前账号有读取权限。');
+        setError(result.stderr || t('process.error.noProcessData', language));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -1169,7 +1181,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         setLoading(false);
       }
     }
-  }, [connectionId, isWindowsHost]);
+  }, [connectionId, isWindowsHost, language]);
 
   const loadProcessDetails = useCallback(async (pid: number) => {
     if (!Number.isInteger(pid) || pid <= 0) {
@@ -1186,7 +1198,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       const nextDetail = parseProcessDetailOutput(result.stdout || '', pid);
 
       if (result.code !== 0) {
-        nextDetail.error = result.stderr || '无法读取进程详情，可能权限不足。';
+        nextDetail.error = result.stderr || t('process.error.detailReadFailed', language);
       }
 
       if (isMountedRef.current) {
@@ -1206,7 +1218,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         setDetailLoading(false);
       }
     }
-  }, [connectionId, isWindowsHost]);
+  }, [connectionId, isWindowsHost, language]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1404,13 +1416,13 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
     if (selectedPid !== null && processes.length > 0 && !loading && missingPidNoticeRef.current !== selectedPid) {
       missingPidNoticeRef.current = selectedPid;
-      setNotice(`PID ${selectedPid} 当前不在列表中，可能已经退出或权限不可见。`);
+      setNotice(t('process.notice.pidMissing', language, { pid: selectedPid }));
     }
 
     if (selectedPid === null && processRows.length > 0) {
       setSelectedPid(processRows[0].process.pid);
     }
-  }, [loading, processRows, processes, selectedPid]);
+  }, [language, loading, processRows, processes, selectedPid]);
 
   const toggleSort = (key: RemoteProcessManagerSortKey) => {
     if (sortKey === key) {
@@ -1447,9 +1459,9 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
     try {
       await navigator.clipboard.writeText(value);
-      setSuccess(`已复制${label}。`);
+      setSuccess(t('process.message.copied', language, { label }));
     } catch (err) {
-      setError(`复制失败：${getErrorMessage(err)}`);
+      setError(t('process.error.copyFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -1461,8 +1473,8 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         ? {
             value: 'win-kill',
             name: 'Stop-Process',
-            label: '结束任务',
-            description: 'Windows 将强制结束该 PID，对未保存状态的程序不做清理保证。',
+            label: t('process.signal.windowsKill.label', language),
+            descriptionId: 'process.signal.windowsKill.description',
           }
         : selectedSignal,
     });
@@ -1470,7 +1482,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
   const sendSignal = async (pending: PendingSignal) => {
     if (!Number.isInteger(pending.pid) || pending.pid <= 0) {
-      setError('PID 无效。');
+      setError(t('process.error.invalidPid', language));
       return;
     }
 
@@ -1486,12 +1498,12 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       const result = await runCmd(connectionId, command);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '操作失败，PID 可能不存在或当前用户权限不足。');
+        throw new Error(result.stderr || result.stdout || t('process.error.operationFailed', language));
       }
 
       setSuccess(isWindowsHost
-        ? `已结束 PID ${pending.pid}。`
-        : `已向 PID ${pending.pid} 发送 ${pending.signal.name}。`);
+        ? t('process.success.ended', language, { pid: pending.pid })
+        : t('process.success.signalSent', language, { pid: pending.pid, signal: pending.signal.name }));
       await refresh();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1517,11 +1529,11 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
     if (!processes.length) {
       setAiReportPhase('error');
-      setAiReportError('当前没有可分析的进程快照，请先刷新列表。');
+      setAiReportError(t('process.ai.noSnapshot', language));
       return;
     }
 
-    const readinessError = getAiReadinessError(settings);
+    const readinessError = getAiReadinessError(settings, language);
 
     if (readinessError) {
       setAiReportPhase('error');
@@ -1530,25 +1542,19 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     }
 
     const aiControls = window.guiSSH?.ai;
-    const snapshot = createProcessAiSnapshot(processes, isWindowsHost);
+    const snapshot = createProcessAiSnapshot(processes, isWindowsHost, language);
     const snapshotNote = snapshot.omittedCount > 0
-      ? `已发送 ${snapshot.includedCount} / ${processes.length} 个进程；${snapshot.omittedCount} 个进程因单条消息长度限制未发送。`
-      : `已发送 ${snapshot.includedCount} 个进程。`;
+      ? t('process.ai.snapshotNotePartial', language, { included: snapshot.includedCount, total: processes.length, omitted: snapshot.omittedCount })
+      : t('process.ai.snapshotNoteAll', language, { included: snapshot.includedCount });
     const messages: ShellDeskAiChatMessage[] = [
       {
         role: 'system',
-        content: PROCESS_AI_REPORT_SYSTEM_PROMPT,
+        content: t('ai.process.report.systemPrompt', language),
       },
       {
         role: 'user',
         content: [
-          '请分析下面这份 ShellDesk 远程主机进程快照，判断是否存在病毒木马、异常后门、挖矿、伪装系统进程、异常路径、异常命令行、高风险网络服务或其他安全风险。',
-          '输出格式：',
-          '1. 总体结论：用 2-4 句话概括整体风险。',
-          '2. 高风险/可疑进程：用表格列出 PID、进程/命令、风险等级、可疑依据、建议动作。',
-          '3. 需要继续核验：列出无法仅凭进程快照确认但值得检查的项。',
-          '4. 建议处置：按优先级给出低破坏性的核验和处置步骤。',
-          '如果没有明确的威胁进程，请明确说明未发现明显恶意特征，并将第 2、3、4 部分压缩为简短要点；第 2 部分可以写“未发现明确威胁进程”。',
+          t('process.ai.report.userPrompt', language),
           '',
           snapshot.text,
         ].join('\n'),
@@ -1556,7 +1562,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     ];
     const request = createAiChatRequest(settings, messages, 0.1);
     let streamedContent = '';
-    const streamedTextUpdater = createStreamedTextUpdater(setAiReportText, '正在生成报告...');
+    const streamedTextUpdater = createStreamedTextUpdater(setAiReportText, t('process.ai.report.generating', language));
 
     setAiReportSnapshotNote(snapshotNote);
     setAiReportPhase(aiControls?.chatStream ? 'streaming' : 'requesting');
@@ -1590,21 +1596,21 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
         resultContent = result.content;
       }
 
-      setAiReportText(resultContent || 'SD-Agent 没有返回报告内容。');
+      setAiReportText(resultContent || t('process.ai.report.empty', language));
       setAiReportGeneratedAt(new Date().toLocaleString(getShellDeskLocale()));
       setAiReportPhase('done');
     } catch (err) {
       setAiReportPhase('error');
-      setAiReportError(`SD-Agent 请求失败：${getErrorMessage(err)}`);
+      setAiReportError(t('process.ai.requestFailed', language, { error: getErrorMessage(err) }));
     }
-  }, [isAiReportBusy, isWindowsHost, processes, settings]);
+  }, [isAiReportBusy, isWindowsHost, language, processes, settings]);
 
   const requestProcessInsight = useCallback(async () => {
     if (!selectedProcess || processInsightLoadingPid !== null) {
       return;
     }
 
-    const readinessError = getAiReadinessError(settings);
+    const readinessError = getAiReadinessError(settings, language);
 
     if (readinessError) {
       setProcessInsight({
@@ -1620,14 +1626,14 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     const messages: ShellDeskAiChatMessage[] = [
       {
         role: 'system',
-        content: PROCESS_AI_INSIGHT_SYSTEM_PROMPT,
+        content: t('ai.process.insight.systemPrompt', language),
       },
       {
         role: 'user',
         content: [
-          '请介绍这个进程通常是做什么的。本次回答只需要 2-4 句话，先说常见用途，再说当前快照中是否有明显异常和需要核验的点。',
+          t('process.ai.insight.userPrompt', language),
           '',
-          formatProcessContextForAi(selectedProcess, isWindowsHost, detail, selectedParent, selectedChildren),
+          formatProcessContextForAi(selectedProcess, isWindowsHost, detail, selectedParent, selectedChildren, language),
         ].join('\n'),
       },
     ];
@@ -1637,7 +1643,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     setProcessInsightLoadingPid(selectedProcess.pid);
     setProcessInsight({
       pid: selectedProcess.pid,
-      content: 'SD-Agent 正在分析这个进程...',
+      content: t('process.ai.insight.loading', language),
     });
 
     try {
@@ -1650,7 +1656,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
               streamedContent += chunk;
               setProcessInsight({
                 pid: selectedProcess.pid,
-                content: streamedContent || 'SD-Agent 正在分析这个进程...',
+                content: streamedContent || t('process.ai.insight.loading', language),
               });
             },
           });
@@ -1670,19 +1676,20 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
       setProcessInsight({
         pid: selectedProcess.pid,
-        content: resultContent || 'SD-Agent 没有返回进程简介。',
+        content: resultContent || t('process.ai.insight.empty', language),
       });
     } catch (err) {
       setProcessInsight({
         pid: selectedProcess.pid,
         content: '',
-        error: `SD-Agent 请求失败：${getErrorMessage(err)}`,
+        error: t('process.ai.requestFailed', language, { error: getErrorMessage(err) }),
       });
     } finally {
       setProcessInsightLoadingPid(null);
     }
   }, [
     isWindowsHost,
+    language,
     processDetail,
     processInsightLoadingPid,
     selectedChildren,
@@ -1700,10 +1707,10 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     setAiReportError('');
 
     try {
-      await navigator.clipboard.writeText(createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote));
-      setAiReportNotice('已复制 AI 报告。');
+      await navigator.clipboard.writeText(createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote, language));
+      setAiReportNotice(t('process.ai.report.copied', language));
     } catch (err) {
-      setAiReportError(`复制失败：${getErrorMessage(err)}`);
+      setAiReportError(t('process.error.copyFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -1715,7 +1722,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
     const saveTextFile = window.guiSSH?.files?.saveTextFile;
 
     if (!saveTextFile) {
-      setAiReportError('当前运行环境不支持导出报告。');
+      setAiReportError(t('process.ai.exportUnsupported', language));
       return;
     }
 
@@ -1724,16 +1731,16 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
     try {
       const filePath = await saveTextFile({
-        title: '导出 AI 进程分析报告',
+        title: t('process.ai.exportTitle', language),
         defaultFileName: createAiReportFileName(),
-        content: createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote),
+        content: createAiReportDocument(aiReportText, aiReportGeneratedAt, aiReportSnapshotNote, language),
       });
 
       if (filePath) {
-        setAiReportNotice(`已导出 AI 报告：${filePath}`);
+        setAiReportNotice(t('process.ai.exported', language, { path: filePath }));
       }
     } catch (err) {
-      setAiReportError(`导出失败：${getErrorMessage(err)}`);
+      setAiReportError(t('process.ai.exportFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -1795,25 +1802,25 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             onClick={() => void requestAiReport()}
             disabled={loading || (!processes.length && !isAiReportBusy)}
           >
-            {isAiReportBusy ? 'AI 分析中' : 'AI分析'}
+            {isAiReportBusy ? t('process.ui.aiAnalyzing', language) : t('process.ui.aiAnalyze', language)}
           </button>
 
           <button type="button" className="proc-tool-button primary" onClick={() => void refresh()} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+            {loading ? t('process.ui.refreshing', language) : t('process.ui.refresh', language)}
           </button>
 
-          <div className="proc-segmented" aria-label="列表模式">
+          <div className="proc-segmented" aria-label={t('process.ui.viewMode', language)}>
             <button type="button" className={viewMode === 'table' ? 'active' : ''} onClick={() => setViewMode('table')}>
-              表格
+              {t('process.ui.table', language)}
             </button>
             <button type="button" className={viewMode === 'tree' ? 'active' : ''} onClick={() => setViewMode('tree')}>
-              树
+              {t('process.ui.tree', language)}
             </button>
           </div>
 
           <label className="proc-check-label">
             <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
-            自动刷新
+            {t('process.ui.autoRefresh', language)}
           </label>
 
           <select
@@ -1821,7 +1828,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             value={autoRefreshMs}
             onChange={(event) => setAutoRefreshMs(Number(event.target.value) as (typeof AUTO_REFRESH_OPTIONS)[number])}
             disabled={!autoRefresh}
-            aria-label="自动刷新间隔"
+            aria-label={t('process.ui.autoRefreshInterval', language)}
           >
             {AUTO_REFRESH_OPTIONS.map((interval) => (
               <option key={interval} value={interval}>{interval / 1000}s</option>
@@ -1838,9 +1845,9 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             className="proc-select proc-user-filter"
             value={userFilter}
             onChange={(event) => setUserFilter(event.target.value)}
-            aria-label="按用户筛选"
+            aria-label={t('process.ui.filterByUser', language)}
           >
-            <option value="all">全部用户</option>
+            <option value="all">{t('process.ui.allUsers', language)}</option>
             {users.map((user) => (
               <option key={user} value={user}>{user}</option>
             ))}
@@ -1849,7 +1856,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
           <input
             type="search"
             className="proc-search"
-            placeholder="搜索 PID、用户、命令..."
+            placeholder={t('process.ui.searchPlaceholder', language)}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -1861,24 +1868,24 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       {success ? <DismissibleAlert className="proc-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="proc-content">
-        <section className="proc-table-panel" aria-label="进程列表">
+        <section className="proc-table-panel" aria-label={t('process.ui.listAria', language)}>
           <div className="proc-table-wrap">
             <table className="proc-table">
               <thead>
                 <tr>
                   {renderSortHeader('pid', 'PID', 'proc-col-pid')}
                   {renderSortHeader('ppid', 'PPID', 'proc-col-ppid')}
-                  {renderSortHeader('user', '用户', 'proc-col-user')}
+                  {renderSortHeader('user', t('process.ui.user', language), 'proc-col-user')}
                   {renderSortHeader('cpu', isWindowsHost ? 'CPU(s)' : 'CPU%', 'proc-col-cpu')}
-                  {renderSortHeader('memory', isWindowsHost ? '内存 MB' : 'MEM%', 'proc-col-mem')}
-                  {renderSortHeader('command', '命令', 'proc-col-command')}
+                  {renderSortHeader('memory', isWindowsHost ? t('process.ui.memoryMb', language) : 'MEM%', 'proc-col-mem')}
+                  {renderSortHeader('command', t('process.ui.command', language), 'proc-col-command')}
                 </tr>
               </thead>
               <tbody>
                 {processRows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="proc-empty">
-                      {loading ? '正在加载进程列表...' : '暂无匹配的进程。'}
+                      {loading ? t('process.ui.loadingList', language) : t('process.ui.noMatches', language)}
                     </td>
                   </tr>
                 ) : (
@@ -1889,7 +1896,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
           </div>
         </section>
 
-        <aside className="proc-detail-panel" aria-label="进程详情">
+        <aside className="proc-detail-panel" aria-label={t('process.ui.detailAria', language)}>
           {selectedProcess ? (
             <>
               <header className="proc-detail-header">
@@ -1900,23 +1907,23 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                     type="button"
                     onClick={() => void requestProcessInsight()}
                     disabled={processInsightLoadingPid !== null}
-                    title="AI 简介"
+                    title={t('process.ui.aiIntro', language)}
                   >
-                    {processInsightLoadingPid === selectedProcess.pid ? '分析中' : 'AI'}
+                    {processInsightLoadingPid === selectedProcess.pid ? t('process.ui.analyzing', language) : 'AI'}
                   </button>
                   <button type="button" onClick={() => void copyToClipboard(String(selectedProcess.pid), ' PID')}>
-                    复制
+                    {t('process.ui.copy', language)}
                   </button>
                 </div>
               </header>
 
               <div className="proc-detail-metrics">
                 <div>
-                  <span>{isWindowsHost ? 'CPU 累计' : 'CPU'}</span>
+                  <span>{isWindowsHost ? t('process.ui.cpuAccumulated', language) : 'CPU'}</span>
                   <strong>{formatCpu(selectedProcess, isWindowsHost)}</strong>
                 </div>
                 <div>
-                  <span>{isWindowsHost ? '工作集' : '内存'}</span>
+                  <span>{isWindowsHost ? t('process.ui.workingSet', language) : t('process.ui.memory', language)}</span>
                   <strong>{formatMemory(selectedProcess, isWindowsHost)}</strong>
                 </div>
               </div>
@@ -1927,19 +1934,19 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                   <dd>{selectedProcess.ppid ?? '-'}</dd>
                 </div>
                 <div>
-                  <dt>用户</dt>
+                  <dt>{t('process.ui.user', language)}</dt>
                   <dd title={selectedProcess.user}>{selectedProcess.user || '-'}</dd>
                 </div>
                 <div>
-                  <dt>状态</dt>
+                  <dt>{t('process.ui.status', language)}</dt>
                   <dd><span className={`proc-stat-tag ${getStateTone(selectedProcess.state)}`}>{selectedProcess.state || '-'}</span></dd>
                 </div>
                 <div>
-                  <dt>启动</dt>
+                  <dt>{t('process.ui.start', language)}</dt>
                   <dd>{selectedProcess.startTime || '-'}</dd>
                 </div>
                 <div>
-                  <dt>{isWindowsHost ? 'CPU 时间' : '运行时间'}</dt>
+                  <dt>{isWindowsHost ? t('process.ui.cpuTime', language) : t('process.ui.runtime', language)}</dt>
                   <dd>{selectedProcess.runtime || selectedProcess.cpuTime || '-'}</dd>
                 </div>
                 <div>
@@ -1949,8 +1956,8 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
               </dl>
 
               {processInsight?.pid === selectedProcess.pid ? (
-                <section className={`proc-ai-insight ${processInsight.error ? 'danger' : ''}`} aria-label="AI 进程简介">
-                  <strong>AI 简介</strong>
+                <section className={`proc-ai-insight ${processInsight.error ? 'danger' : ''}`} aria-label={t('process.ui.aiIntro', language)}>
+                  <strong>{t('process.ui.aiIntro', language)}</strong>
                   {processInsight.error ? (
                     <span>{processInsight.error}</span>
                   ) : (
@@ -1961,9 +1968,9 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
               <section className="proc-detail-section">
                 <div className="proc-section-title">
-                  <strong>命令行</strong>
-                  <button type="button" onClick={() => void copyToClipboard(selectedProcess.command, '命令行')}>
-                    复制
+                  <strong>{t('process.ui.commandLine', language)}</strong>
+                  <button type="button" onClick={() => void copyToClipboard(selectedProcess.command, t('process.ui.commandLine', language))}>
+                    {t('process.ui.copy', language)}
                   </button>
                 </div>
                 <pre className="proc-command-box">{selectedProcess.command}</pre>
@@ -1981,53 +1988,53 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
               <section className="proc-detail-section">
                 <div className="proc-section-title">
-                  <strong>父子关系</strong>
-                  <span>{selectedChildren.length} 个子进程</span>
+                  <strong>{t('process.ui.parentChild', language)}</strong>
+                  <span>{t('process.ui.childCount', language, { count: selectedChildren.length })}</span>
                 </div>
                 <div className="proc-relation-list">
                   {selectedParent ? (
                     <button type="button" onClick={() => setSelectedPid(selectedParent.pid)}>
-                      <span>父进程</span>
+                      <span>{t('process.ui.parentProcess', language)}</span>
                       <strong>{selectedParent.pid}</strong>
                       <em>{selectedParent.command}</em>
                     </button>
                   ) : (
-                    <div className="proc-relation-empty">未在当前快照中找到父进程。</div>
+                    <div className="proc-relation-empty">{t('process.ui.noParent', language)}</div>
                   )}
                   {selectedChildren.slice(0, 8).map((child) => (
                     <button key={child.pid} type="button" onClick={() => setSelectedPid(child.pid)}>
-                      <span>子进程</span>
+                      <span>{t('process.ui.childProcess', language)}</span>
                       <strong>{child.pid}</strong>
                       <em>{child.command}</em>
                     </button>
                   ))}
                   {selectedChildren.length > 8 ? (
-                    <div className="proc-relation-empty">还有 {selectedChildren.length - 8} 个子进程。</div>
+                    <div className="proc-relation-empty">{t('process.ui.moreChildren', language, { count: selectedChildren.length - 8 })}</div>
                   ) : null}
                 </div>
               </section>
 
               <section className="proc-detail-section">
                 <div className="proc-section-title">
-                  <strong>端口归属</strong>
+                  <strong>{t('process.ui.portOwnership', language)}</strong>
                   <button type="button" onClick={() => void loadProcessDetails(selectedProcess.pid)} disabled={detailLoading}>
-                    {detailLoading ? '读取中' : '重读'}
+                    {detailLoading ? t('process.ui.reading', language) : t('process.ui.reread', language)}
                   </button>
                 </div>
                 {processDetail?.error ? <div className="proc-detail-warning">{processDetail.error}</div> : null}
                 {processDetail?.ports.length ? (
                   <div className="proc-port-list">
                     {processDetail.ports.slice(0, 6).map((port) => <code key={port}>{port}</code>)}
-                    {processDetail.ports.length > 6 ? <span>还有 {processDetail.ports.length - 6} 条端口记录。</span> : null}
+                    {processDetail.ports.length > 6 ? <span>{t('process.ui.morePorts', language, { count: processDetail.ports.length - 6 })}</span> : null}
                   </div>
                 ) : (
-                  <div className="proc-relation-empty">{detailLoading ? '正在读取端口...' : '未发现该进程打开的端口。'}</div>
+                  <div className="proc-relation-empty">{detailLoading ? t('process.ui.readingPorts', language) : t('process.ui.noPorts', language)}</div>
                 )}
               </section>
 
               <section className="proc-detail-section danger-zone">
                 <div className="proc-section-title">
-                  <strong>{isWindowsHost ? '结束任务' : '发送信号'}</strong>
+                  <strong>{isWindowsHost ? t('process.ui.endTask', language) : t('process.ui.sendSignal', language)}</strong>
                 </div>
                 {!isWindowsHost ? (
                   <>
@@ -2036,10 +2043,10 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                         <option key={signal.value} value={signal.value}>{signal.label}</option>
                       ))}
                     </select>
-                    <p>{selectedSignal.description}</p>
+                    <p>{t(selectedSignal.descriptionId, language)}</p>
                   </>
                 ) : (
-                  <p>Windows 将使用 Stop-Process -Force 结束该 PID。</p>
+                  <p>{t('process.ui.stopProcessHint', language)}</p>
                 )}
                 <button
                   type="button"
@@ -2047,14 +2054,18 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                   disabled={signalingPid === selectedProcess.pid}
                   onClick={() => requestSignal(selectedProcess)}
                 >
-                  {signalingPid === selectedProcess.pid ? '处理中' : isWindowsHost ? '结束进程' : `发送 ${selectedSignal.name}`}
+                  {signalingPid === selectedProcess.pid
+                    ? t('process.ui.processing', language)
+                    : isWindowsHost
+                      ? t('process.ui.endProcess', language)
+                      : t('process.ui.sendSignalButton', language, { signal: selectedSignal.name })}
                 </button>
               </section>
             </>
           ) : (
             <div className="proc-detail-empty">
-              <strong>{selectedPid === null ? '未选中进程' : `PID ${selectedPid} 不在当前快照中`}</strong>
-              <span>{selectedPid === null ? '从左侧列表选择一个 PID 查看详情。' : '该进程可能已经退出，或当前用户没有查看权限。'}</span>
+              <strong>{selectedPid === null ? t('process.ui.noSelected', language) : t('process.ui.pidMissingTitle', language, { pid: selectedPid })}</strong>
+              <span>{selectedPid === null ? t('process.ui.selectPid', language) : t('process.ui.pidUnavailable', language)}</span>
             </div>
           )}
         </aside>
@@ -2091,7 +2102,11 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                 requestSignal(targetProcess);
               }}
             >
-              {signalingPid === contextMenu.process.pid ? '处理中' : isWindowsHost ? '结束进程' : `结束进程 (${selectedSignal.name})`}
+              {signalingPid === contextMenu.process.pid
+                ? t('process.ui.processing', language)
+                : isWindowsHost
+                  ? t('process.ui.endProcess', language)
+                  : t('process.ui.terminateWithSignal', language, { signal: selectedSignal.name })}
             </button>
             <div className="proc-context-menu-sep" />
             <button
@@ -2103,7 +2118,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                 void copyToClipboard(String(targetPid), ' PID');
               }}
             >
-              复制 PID
+              {t('process.ui.copyPid', language)}
             </button>
             <button
               type="button"
@@ -2111,10 +2126,10 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
               onClick={() => {
                 const targetCommand = contextMenu.process.command;
                 closeContextMenu();
-                void copyToClipboard(targetCommand, '命令行');
+                void copyToClipboard(targetCommand, t('process.ui.commandLine', language));
               }}
             >
-              复制命令行
+              {t('process.ui.copyCommandLine', language)}
             </button>
           </div>
         </>,
@@ -2133,17 +2148,17 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             <div className="proc-ai-modal-header">
               <div>
                 <span>SD-Agent</span>
-                <strong id="proc-ai-report-title">进程风险分析</strong>
+                <strong id="proc-ai-report-title">{t('process.ai.report.title', language)}</strong>
               </div>
-              <button type="button" className="proc-ai-close" onClick={() => setAiReportOpen(false)} aria-label="关闭 AI 分析弹窗">×</button>
+              <button type="button" className="proc-ai-close" onClick={() => setAiReportOpen(false)} aria-label={t('process.ai.report.closeAria', language)}>×</button>
             </div>
 
             <div className={`proc-ai-progress ${aiReportPhase}`}>
               <div className="proc-ai-progress-bar" aria-hidden="true">
                 <span />
               </div>
-              <strong>{getAiReportPhaseLabel(aiReportPhase)}</strong>
-              <em>{aiReportSnapshotNote || '将当前进程快照发送给 SD-Agent 进行静态研判。'}</em>
+              <strong>{getAiReportPhaseLabel(aiReportPhase, language)}</strong>
+              <em>{aiReportSnapshotNote || t('process.ai.report.snapshotIntro', language)}</em>
             </div>
 
             {aiReportError ? <DismissibleAlert className="proc-alert danger" onDismiss={() => setAiReportError('')} role="alert">{aiReportError}</DismissibleAlert> : null}
@@ -2152,18 +2167,18 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             <MarkdownReport
               className="proc-ai-report"
               content={aiReportText}
-              placeholder={isAiReportBusy ? '报告生成中...' : '点击 AI分析 后会在这里显示报告。'}
+              placeholder={isAiReportBusy ? t('process.ai.report.placeholderGenerating', language) : t('process.ai.report.placeholderEmpty', language)}
               renderMarkdown={!isAiReportBusy}
               stickToBottom={isAiReportBusy}
             />
 
             <div className="proc-modal-actions proc-ai-modal-actions">
-              <button type="button" className="proc-modal-btn" onClick={() => setAiReportOpen(false)}>关闭</button>
+              <button type="button" className="proc-modal-btn" onClick={() => setAiReportOpen(false)}>{t('common.close', language)}</button>
               <button type="button" className="proc-modal-btn" onClick={() => void copyAiReport()} disabled={!aiReportText.trim()}>
-                复制报告
+                {t('process.ai.report.copy', language)}
               </button>
               <button type="button" className="proc-modal-btn primary" onClick={() => void exportAiReport()} disabled={!aiReportText.trim()}>
-                导出报告
+                {t('process.ai.report.export', language)}
               </button>
             </div>
           </div>
@@ -2181,17 +2196,17 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
             onClick={(event) => event.stopPropagation()}
           >
             <div id="proc-signal-confirm-title" className="proc-modal-title">
-              {isWindowsHost ? '结束进程' : `发送 ${pendingSignal.signal.name}`}
+              {isWindowsHost ? t('process.ui.endProcess', language) : t('process.ui.sendSignalButton', language, { signal: pendingSignal.signal.name })}
             </div>
             <div className="proc-modal-message">
-              <p>目标 PID：<strong>{pendingSignal.pid}</strong></p>
-              <p>{pendingSignal.signal.description}</p>
+              <p>{t('process.modal.targetPid', language)}<strong>{pendingSignal.pid}</strong></p>
+              <p>{t(pendingSignal.signal.descriptionId, language)}</p>
               <code>{pendingSignal.command}</code>
             </div>
             <div className="proc-modal-actions">
-              <button type="button" className="proc-modal-btn" onClick={() => setPendingSignal(null)}>取消</button>
+              <button type="button" className="proc-modal-btn" onClick={() => setPendingSignal(null)}>{t('common.cancel', language)}</button>
               <button type="button" className="proc-modal-btn danger" onClick={() => void sendSignal(pendingSignal)}>
-                确认执行
+                {t('process.modal.confirmExecute', language)}
               </button>
             </div>
           </div>

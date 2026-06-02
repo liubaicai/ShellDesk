@@ -2,6 +2,7 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { tCurrent } from '../../i18n';
 
 interface RemotePostgresProps {
   connectionId: string;
@@ -134,7 +135,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
 
   const connect = async () => {
     if (!api) {
-      setError('ShellDesk IPC 未就绪。');
+      setError(tCurrent('auto.remotePostgres.g77vf3'));
       return;
     }
 
@@ -154,7 +155,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
       setPostgresId(result.postgresId);
       await loadSchemas(result.postgresId);
       setStatus('connected');
-      setNotice(result.alreadyConnected ? '已复用 PostgreSQL 连接。' : 'PostgreSQL 已连接。');
+      setNotice(result.alreadyConnected ? tCurrent('auto.remotePostgres.yxz4ef') : tCurrent('auto.remotePostgres.1mpv5ri'));
     } catch (error) {
       setStatus('error');
       setError(getErrorMessage(error));
@@ -171,7 +172,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
     setSelectedTable(null);
     setColumns([]);
     setQueryResult(null);
-    setNotice('PostgreSQL 已断开。');
+    setNotice(tCurrent('auto.remotePostgres.tn34oa'));
   };
 
   const toggleSchema = async (schema: string) => {
@@ -198,7 +199,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
     if (!api || !postgresId) return;
     const statement = nextSql.trim();
     if (!statement) {
-      setError('请输入 SQL。');
+      setError(tCurrent('auto.remotePostgres.18it23g'));
       return;
     }
 
@@ -224,7 +225,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
       setQueryResult(result);
       setQueryColumns(nextColumns);
       setHistory((items) => [historyItem, ...items].slice(0, maxHistoryItems));
-      setNotice(`查询完成，${result.rowCount ?? result.rows.length} 行，${durationMs} ms。`);
+      setNotice(tCurrent('auto.remotePostgres.12l7rw3', { value0: result.rowCount ?? result.rows.length, value1: durationMs }));
     } catch (error) {
       const durationMs = Math.round(performance.now() - startedAt);
       const message = getErrorMessage(error);
@@ -268,7 +269,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
   };
 
   if (!api) {
-    return <section className="postgres-manager"><div className="postgres-placeholder">ShellDesk IPC 未就绪。</div></section>;
+    return <section className="postgres-manager"><div className="postgres-placeholder">{tCurrent('auto.remotePostgres.g77vf32')}</div></section>;
   }
 
   if (!isConnected) {
@@ -279,8 +280,8 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
             <div className="postgres-connect-heading">
               <span className="postgres-connect-mark">PG</span>
               <div>
-                <h3>连接 PostgreSQL</h3>
-                <p>通过当前 SSH 通道访问远程 PostgreSQL，默认连接 127.0.0.1:5432。</p>
+                <h3>{tCurrent('auto.remotePostgres.1vq1xxi')}</h3>
+                <p>{tCurrent('auto.remotePostgres.11xsnap')}</p>
               </div>
             </div>
             {error ? (
@@ -289,14 +290,14 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
               </DismissibleAlert>
             ) : null}
             <div className="postgres-connect-grid">
-              <label><span>主机</span><input value={host} onChange={(event) => setHost(event.target.value)} /></label>
-              <label><span>端口</span><input value={port} inputMode="numeric" onChange={(event) => setPort(event.target.value)} /></label>
-              <label><span>用户</span><input value={user} onChange={(event) => setUser(event.target.value)} /></label>
-              <label><span>数据库</span><input value={database} onChange={(event) => setDatabase(event.target.value)} /></label>
-              <label className="wide"><span>密码</span><input value={password} type="password" onChange={(event) => setPassword(event.target.value)} /></label>
+              <label><span>{tCurrent('auto.remotePostgres.5kj63k')}</span><input value={host} onChange={(event) => setHost(event.target.value)} /></label>
+              <label><span>{tCurrent('auto.remotePostgres.19ijc5j')}</span><input value={port} inputMode="numeric" onChange={(event) => setPort(event.target.value)} /></label>
+              <label><span>{tCurrent('auto.remotePostgres.1in002o')}</span><input value={user} onChange={(event) => setUser(event.target.value)} /></label>
+              <label><span>{tCurrent('auto.remotePostgres.tnjvy8')}</span><input value={database} onChange={(event) => setDatabase(event.target.value)} /></label>
+              <label className="wide"><span>{tCurrent('auto.remotePostgres.1aph6eg')}</span><input value={password} type="password" onChange={(event) => setPassword(event.target.value)} /></label>
             </div>
             <button type="button" className="postgres-connect-btn" onClick={connect} disabled={status === 'connecting'}>
-              {status === 'connecting' ? '连接中' : '连接'}
+              {status === 'connecting' ? tCurrent('auto.remotePostgres.h7vocz') : tCurrent('auto.remotePostgres.8l8re4')}
             </button>
           </div>
         </div>
@@ -309,12 +310,12 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
       <aside className="postgres-sidebar">
         <div className="postgres-sidebar-head">
           <div>
-            <strong>对象树</strong>
+            <strong>{tCurrent('auto.remotePostgres.1r1l7i2')}</strong>
             <span>{database} · {databases.length} DB</span>
           </div>
-          <button type="button" onClick={() => loadSchemas(postgresId)}>刷新</button>
+          <button type="button" onClick={() => loadSchemas(postgresId)}>{tCurrent('auto.remotePostgres.12qo56a')}</button>
         </div>
-        <input className="postgres-object-search" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder="搜索 schema / table" />
+        <input className="postgres-object-search" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder={tCurrent('auto.remotePostgres.1ymokwb')} />
         <div className="postgres-object-tree">
           {filteredSchemas.map(({ schema, tables }) => (
             <div key={schema} className="postgres-schema-group">
@@ -350,7 +351,7 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
             <strong>{user}@{host}:{port}</strong>
             <span>{database}</span>
           </div>
-          <button type="button" className="postgres-disconnect-btn" onClick={handleDisconnect}>断开</button>
+          <button type="button" className="postgres-disconnect-btn" onClick={handleDisconnect}>{tCurrent('auto.remotePostgres.a4u4dk')}</button>
         </header>
 
         {error ? (
@@ -366,16 +367,16 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
 
         <section className="postgres-editor">
           <div className="postgres-editor-toolbar">
-            <span>Ctrl+Enter 执行</span>
-            <button type="button" onClick={() => runQuery()} disabled={queryRunning}>{queryRunning ? '执行中' : '执行 SQL'}</button>
+            <span>{tCurrent('auto.remotePostgres.cj2ebw')}</span>
+            <button type="button" onClick={() => runQuery()} disabled={queryRunning}>{queryRunning ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.6x8ukm')}</button>
           </div>
           <textarea ref={sqlRef} value={sql} onChange={(event) => setSql(event.target.value)} onKeyDown={handleSqlKeyDown} spellCheck={false} />
         </section>
 
         <section className="postgres-result">
           <div className="postgres-result-head">
-            <strong>结果</strong>
-            <span>{queryResult ? `${queryResult.rows.length} 行` : '尚无结果'}</span>
+            <strong>{tCurrent('auto.remotePostgres.q9h21m')}</strong>
+            <span>{queryResult ? tCurrent('auto.remotePostgres.18tehe0', { value0: queryResult.rows.length }) : tCurrent('auto.remotePostgres.t9y5o0')}</span>
           </div>
           {queryResult ? (
             <div className="postgres-table-wrap">
@@ -402,15 +403,15 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
               </table>
             </div>
           ) : (
-            <div className="postgres-placeholder">执行 SQL 或选择表后显示结果。</div>
+            <div className="postgres-placeholder">{tCurrent('auto.remotePostgres.3ifoef')}</div>
           )}
         </section>
       </main>
 
       <aside className="postgres-detail">
         <div className="postgres-detail-section">
-          <strong>表结构</strong>
-          {selectedTable ? <span>{selectedTable.schema}.{selectedTable.name}</span> : <span>未选择表</span>}
+          <strong>{tCurrent('auto.remotePostgres.19ma7vc')}</strong>
+          {selectedTable ? <span>{selectedTable.schema}.{selectedTable.name}</span> : <span>{tCurrent('auto.remotePostgres.1u9unt1')}</span>}
         </div>
         <div className="postgres-column-list">
           {columns.map((column) => (
@@ -419,17 +420,17 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
               <span>{column.dataType}{column.nullable ? '' : ' · NOT NULL'}{column.isPrimaryKey ? ' · PK' : ''}</span>
             </div>
           ))}
-          {!columns.length ? <div className="postgres-placeholder small">暂无列信息。</div> : null}
+          {!columns.length ? <div className="postgres-placeholder small">{tCurrent('auto.remotePostgres.4k9mre')}</div> : null}
         </div>
         <div className="postgres-detail-section">
-          <strong>查询历史</strong>
-          <span>{history.length} 条</span>
+          <strong>{tCurrent('auto.remotePostgres.air9hy')}</strong>
+          <span>{history.length} {tCurrent('auto.remotePostgres.1rfm5gs')}</span>
         </div>
         <div className="postgres-history-list">
           {history.map((item) => (
             <button key={item.id} type="button" className={item.status} onClick={() => setSql(item.sql)}>
               <strong>{item.sql.replace(/\s+/g, ' ').slice(0, 80)}</strong>
-              <span>{item.createdAt} · {item.durationMs} ms{item.rowCount !== undefined ? ` · ${item.rowCount} 行` : ''}</span>
+              <span>{item.createdAt} · {item.durationMs} ms{item.rowCount !== undefined ? tCurrent('auto.remotePostgres.b3e9gx', { value0: item.rowCount }) : ''}</span>
             </button>
           ))}
         </div>

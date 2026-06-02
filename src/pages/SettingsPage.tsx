@@ -12,17 +12,17 @@ import {
   getDesktopWallpaperPreset,
 } from '../assets/desktopWallpapers';
 import appIconUrl from '../assets/images/icon.png';
-import { getCurrentAppLocale, translateText } from '../i18n';
+import { getCurrentAppLocale, t, type MessageId } from '../i18n';
 
 const settingsSections = [
-  { key: 'general', label: '常规', summary: '语言、字体、视图' },
-  { key: 'appearance', label: '外观', summary: '主题、强调色、壁纸' },
-  { key: 'terminal', label: '终端', summary: '主题、字体、滚动' },
-  { key: 'ai', label: 'AI', summary: '提供商、密钥、模型' },
-  { key: 'security', label: '安全与存储', summary: '凭据与本地仓库' },
-  { key: 'backup', label: '备份与导入', summary: '配置迁移' },
-  { key: 'about', label: '关于', summary: '版本、更新、联系' },
-] as const;
+  { key: 'general', labelId: 'settings.section.general.label', summaryId: 'settings.section.general.summary' },
+  { key: 'appearance', labelId: 'settings.section.appearance.label', summaryId: 'settings.section.appearance.summary' },
+  { key: 'terminal', labelId: 'settings.section.terminal.label', summaryId: 'settings.section.terminal.summary' },
+  { key: 'ai', labelId: 'settings.section.ai.label', summaryId: 'settings.section.ai.summary' },
+  { key: 'security', labelId: 'settings.section.security.label', summaryId: 'settings.section.security.summary' },
+  { key: 'backup', labelId: 'settings.section.backup.label', summaryId: 'settings.section.backup.summary' },
+  { key: 'about', labelId: 'settings.section.about.label', summaryId: 'settings.section.about.summary' },
+] as const satisfies ReadonlyArray<{ key: string; labelId: MessageId; summaryId: MessageId }>;
 
 const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
 const terminalLineHeightChoices = [1, 1.1, 1.2, 1.3, 1.4];
@@ -79,49 +79,48 @@ const acceptedWallpaperTypes = new Set(['image/png', 'image/jpeg', 'image/jpg', 
 const wallpaperExtensionPattern = /\.(png|jpe?g|webp|gif)$/i;
 const wallpaperDataUrlPattern = /^data:image\/(?:png|jpe?g|webp|gif);base64,/i;
 const terminalContrastChoices = [
-  { value: 1, label: '关闭' },
-  { value: 4.5, label: 'AA 4.5' },
-  { value: 7, label: 'AAA 7' },
-];
+  { value: 1, labelId: 'settings.terminal.minimumContrast.off' },
+  { value: 4.5, labelId: 'settings.terminal.minimumContrast.aa45' },
+  { value: 7, labelId: 'settings.terminal.minimumContrast.aaa7' },
+] as const satisfies ReadonlyArray<{ value: number; labelId: MessageId }>;
 const aiProviderChoices: Array<{
   value: ShellDeskAiProvider;
-  label: string;
-  summary: string;
+  labelId: MessageId;
+  summaryId: MessageId;
   apiFormat: ShellDeskAiApiFormat;
   defaultApiBaseUrl: string;
 }> = [
   {
     value: 'openai',
-    label: 'OpenAI',
-    summary: '官方 OpenAI API，使用 /v1/models 获取模型',
+    labelId: 'settings.ai.provider.openai.label',
+    summaryId: 'settings.ai.provider.openai.summary',
     apiFormat: 'openai',
     defaultApiBaseUrl: 'https://api.openai.com/v1',
   },
   {
     value: 'anthropic',
-    label: 'Claude / Anthropic',
-    summary: 'Anthropic Messages API，使用 /v1/models 获取 Claude 模型',
+    labelId: 'settings.ai.provider.anthropic.label',
+    summaryId: 'settings.ai.provider.anthropic.summary',
     apiFormat: 'anthropic',
     defaultApiBaseUrl: 'https://api.anthropic.com',
   },
   {
     value: 'openai-compatible',
-    label: 'OpenAI 兼容',
-    summary: 'DeepSeek、OpenRouter、Ollama 等兼容 OpenAI 的服务',
+    labelId: 'settings.ai.provider.openaiCompatible.label',
+    summaryId: 'settings.ai.provider.openaiCompatible.summary',
     apiFormat: 'openai',
     defaultApiBaseUrl: '',
   },
   {
     value: 'custom',
-    label: '自定义提供商',
-    summary: '手动选择 API 格式并填写模型列表地址',
+    labelId: 'settings.ai.provider.custom.label',
+    summaryId: 'settings.ai.provider.custom.summary',
     apiFormat: 'openai',
     defaultApiBaseUrl: '',
   },
 ];
 const shellDeskRepositoryUrl = 'https://github.com/liubaicai/ShellDesk';
 const shellDeskContactEmail = 'liushuai.baicai@hotmail.com';
-const shellDeskIntro = 'ShellDesk 是一个面向日常运维的虚拟远程桌面与图形化服务器管理工具，集成主机管理、远程终端、SFTP 文件管理、数据库工具、系统监控和运维诊断能力。';
 const defaultSyncRemotePath = '/ShellDesk/shelldesk-sync.json';
 const syncIntervalChoices = [5, 15, 30, 60, 120, 360];
 
@@ -202,7 +201,7 @@ function getSettingsSectionNavClass(sectionKey: (typeof settingsSections)[number
   ].filter(Boolean).join(' ');
 }
 
-function readFileAsDataUrl(file: File) {
+function readFileAsDataUrl(file: File, language: ShellDeskAppSettings['language']) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
 
@@ -212,10 +211,10 @@ function readFileAsDataUrl(file: File) {
         return;
       }
 
-      reject(new Error('图片读取失败。'));
+      reject(new Error(t('settings.error.imageReadFailed', language)));
     };
 
-    reader.onerror = () => reject(new Error('图片读取失败。'));
+    reader.onerror = () => reject(new Error(t('settings.error.imageReadFailed', language)));
     reader.readAsDataURL(file);
   });
 }
@@ -259,15 +258,15 @@ function createFontOptions(systemFonts: readonly string[], selectedFont: string,
   ]);
 }
 
-function getFontListErrorMessage(error: unknown) {
+function getFontListErrorMessage(error: unknown, language: ShellDeskAppSettings['language']) {
   if (error instanceof Error && error.message) {
     return error.message;
   }
 
-  return '读取系统字体失败。';
+  return t('settings.error.fontListFailed', language);
 }
 
-function getUpdateCheckErrorMessage(error: unknown) {
+function getUpdateCheckErrorMessage(error: unknown, language: ShellDeskAppSettings['language']) {
   if (error instanceof Error && error.message) {
     return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
   }
@@ -276,10 +275,10 @@ function getUpdateCheckErrorMessage(error: unknown) {
     return error.trim();
   }
 
-  return '检查更新失败。';
+  return t('settings.error.updateCheckFailed', language);
 }
 
-function getSettingsErrorMessage(error: unknown) {
+function getSettingsErrorMessage(error: unknown, language: ShellDeskAppSettings['language']) {
   if (error instanceof Error && error.message) {
     return error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
   }
@@ -288,7 +287,7 @@ function getSettingsErrorMessage(error: unknown) {
     return error.trim();
   }
 
-  return '操作失败。';
+  return t('settings.error.operationFailed', language);
 }
 
 function getSyncStatusClassName(status: ShellDeskSyncStatus | undefined, hasError: boolean) {
@@ -374,7 +373,9 @@ function SettingsPage({
     : [{ id: settings.aiModel, name: settings.aiModel }, ...aiModelOptions];
   const selectedAiModelOption = visibleAiModelOptions.find((model) => model.id === settings.aiModel) ?? null;
   const aiModelStatus = aiModelsError || aiModelsMessage || (
-    aiModelOptions.length ? `已获取 ${aiModelOptions.length} 个模型` : '获取模型列表后可从下拉框选择'
+    aiModelOptions.length
+      ? t('settings.ai.model.loaded', settings.language, { count: String(aiModelOptions.length) })
+      : t('settings.ai.model.fetchHint', settings.language)
   );
   const interfaceFontOptions = useMemo(
     () => createFontOptions(systemFonts, settings.interfaceFont, interfacePreferredFontChoices),
@@ -385,34 +386,34 @@ function SettingsPage({
     [settings.terminalFontFamily, systemFonts],
   );
   const fontListStatus = systemFontsError
-    ? `使用备用字体列表：${systemFontsError}`
+    ? t('settings.fonts.status.fallback', settings.language, { error: systemFontsError })
     : isSystemFontsLoading
-      ? '正在读取系统字体列表'
-      : `已读取 ${systemFonts.length} 个系统字体`;
+      ? t('settings.fonts.status.loading', settings.language)
+      : t('settings.fonts.status.loaded', settings.language, { count: String(systemFonts.length) });
   const hasCustomWallpaper = settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
   const selectedWallpaperPreset = getDesktopWallpaperPreset(settings.desktopWallpaperPresetId);
-  const selectedWallpaperPresetLabel = translateText(selectedWallpaperPreset.label, settings.language);
+  const selectedWallpaperPresetLabel = t(selectedWallpaperPreset.labelId, settings.language);
   const wallpaperPreviewUrl = hasCustomWallpaper ? settings.desktopWallpaperDataUrl : selectedWallpaperPreset.url;
-  const wallpaperPreviewLabel = hasCustomWallpaper ? translateText('自定义壁纸', settings.language) : selectedWallpaperPresetLabel;
+  const wallpaperPreviewLabel = hasCustomWallpaper ? t('settings.wallpaper.custom', settings.language) : selectedWallpaperPresetLabel;
   const isDefaultWallpaperPreset = !hasCustomWallpaper && selectedWallpaperPreset.id === defaultDesktopWallpaperPresetId;
   const wallpaperPreviewAriaLabel = hasCustomWallpaper
-    ? translateText('自定义壁纸预览', settings.language)
-    : `${selectedWallpaperPresetLabel} ${translateText('预览', settings.language)}`;
+    ? t('settings.wallpaper.customPreview', settings.language)
+    : `${selectedWallpaperPresetLabel} ${t('settings.wallpaper.preview', settings.language)}`;
   const wallpaperPreviewStyle: CSSProperties = {
     backgroundImage: `linear-gradient(180deg, rgba(8, 13, 20, 0.16), rgba(8, 13, 20, 0.34)), url(${JSON.stringify(wallpaperPreviewUrl)})`,
   };
   const appDisplayName = appInfo?.productName || window.guiSSH?.appName || 'ShellDesk';
   const appVersion = appInfo?.version || '0.0.1';
-  const appPlatform = appInfo ? `${appInfo.platform} ${appInfo.arch}` : '当前运行环境';
+  const appPlatform = appInfo ? `${appInfo.platform} ${appInfo.arch}` : t('settings.about.runtime.current', settings.language);
   const updateStatusText = updateCheckError
     ? updateCheckError
     : isCheckingForUpdates
-      ? '正在读取 GitHub 最新 Release 的 latest.yml'
+      ? t('settings.update.status.checking', settings.language)
       : updateCheckResult
         ? updateCheckResult.updateAvailable
-          ? `发现新版本 ${updateCheckResult.latestVersion}`
-          : '当前已是最新版本'
-        : '尚未检查更新';
+          ? t('settings.update.status.available', settings.language, { version: updateCheckResult.latestVersion })
+          : t('settings.update.status.upToDate', settings.language)
+        : t('settings.update.status.notChecked', settings.language);
   const updateStatusClassName = updateCheckError
     ? 'error'
     : updateCheckResult?.updateAvailable
@@ -424,8 +425,8 @@ function SettingsPage({
   const hasSavedSyncPassphrase = Boolean(syncConfig?.hasSyncPassphrase);
   const isSyncBusy = Boolean(syncPendingAction);
   const syncStatusClassName = getSyncStatusClassName(syncConfig?.lastSyncStatus, Boolean(syncError));
-  const syncStatusText = syncError || syncMessage || syncConfig?.lastSyncMessage || translateText('尚未配置自动同步', settings.language);
-  const syncLastSyncText = syncConfig?.lastSyncAt ? formatDateTime(syncConfig.lastSyncAt) : translateText('尚未同步', settings.language);
+  const syncStatusText = syncError || syncMessage || syncConfig?.lastSyncMessage || t('settings.sync.status.notConfigured', settings.language);
+  const syncLastSyncText = syncConfig?.lastSyncAt ? formatDateTime(syncConfig.lastSyncAt) : t('settings.sync.lastSync.notSynced', settings.language);
 
   const selectDesktopWallpaperPreset = (presetId: string) => {
     setWallpaperError('');
@@ -452,7 +453,7 @@ function SettingsPage({
     onSettingsChange({
       ...settings,
       aiProvider: providerChoice.value,
-      aiProviderName: providerChoice.label,
+      aiProviderName: t(providerChoice.labelId, settings.language),
       aiApiFormat: providerChoice.apiFormat,
       aiApiBaseUrl: providerChoice.defaultApiBaseUrl,
       aiModel: '',
@@ -463,19 +464,19 @@ function SettingsPage({
     const listModels = window.guiSSH?.ai?.listModels;
 
     if (!listModels) {
-      setAiModelsError('当前运行环境未提供 AI 模型列表接口。');
+      setAiModelsError(t('settings.ai.model.error.noApi', settings.language));
       setAiModelsMessage('');
       return;
     }
 
     if (!settings.aiApiBaseUrl.trim()) {
-      setAiModelsError('请先填写 API 地址。');
+      setAiModelsError(t('settings.ai.model.error.apiBaseUrlRequired', settings.language));
       setAiModelsMessage('');
       return;
     }
 
     if (!settings.aiApiKey.trim()) {
-      setAiModelsError('请先填写 API 密钥。');
+      setAiModelsError(t('settings.ai.model.error.apiKeyRequired', settings.language));
       setAiModelsMessage('');
       return;
     }
@@ -494,12 +495,12 @@ function SettingsPage({
       const models = result.models;
 
       setAiModelOptions(models);
-      setAiModelsMessage(`已获取 ${models.length} 个模型`);
+      setAiModelsMessage(t('settings.ai.model.loaded', settings.language, { count: String(models.length) }));
       setIsAiModelListOpen(models.length > 0);
     } catch (error) {
       setAiModelOptions([]);
       setIsAiModelListOpen(false);
-      setAiModelsError(error instanceof Error ? error.message : '获取模型列表失败。');
+      setAiModelsError(error instanceof Error ? error.message : t('settings.ai.model.error.fetchFailed', settings.language));
     } finally {
       setIsAiModelsLoading(false);
     }
@@ -528,7 +529,7 @@ function SettingsPage({
     const checkUpdates = window.guiSSH?.app?.checkForUpdates;
 
     if (!checkUpdates) {
-      setUpdateCheckError('当前运行环境未提供更新检查接口。');
+      setUpdateCheckError(t('settings.update.error.noApi', settings.language));
       return;
     }
 
@@ -540,7 +541,7 @@ function SettingsPage({
       setUpdateCheckResult(result);
     } catch (error) {
       setUpdateCheckResult(null);
-      setUpdateCheckError(getUpdateCheckErrorMessage(error));
+      setUpdateCheckError(getUpdateCheckErrorMessage(error, settings.language));
     } finally {
       setIsCheckingForUpdates(false);
     }
@@ -562,7 +563,7 @@ function SettingsPage({
     const syncControls = window.guiSSH?.sync;
 
     if (!syncControls) {
-      setSyncError('当前运行环境未提供自动同步接口。');
+      setSyncError(t('settings.sync.error.noApi', settings.language));
       return;
     }
 
@@ -573,10 +574,10 @@ function SettingsPage({
     try {
       const config = await syncControls.saveConfig(syncForm);
       applySyncConfig(config);
-      setSyncMessage('自动同步设置已保存。');
+      setSyncMessage(t('settings.sync.message.saved', settings.language));
       setSyncConflicts([]);
     } catch (error) {
-      setSyncError(getSettingsErrorMessage(error));
+      setSyncError(getSettingsErrorMessage(error, settings.language));
     } finally {
       setSyncPendingAction('');
     }
@@ -586,7 +587,7 @@ function SettingsPage({
     const syncControls = window.guiSSH?.sync;
 
     if (!syncControls) {
-      setSyncError('当前运行环境未提供自动同步接口。');
+      setSyncError(t('settings.sync.error.noApi', settings.language));
       return;
     }
 
@@ -599,7 +600,7 @@ function SettingsPage({
       setSyncMessage(result.message);
       setSyncConflicts([]);
     } catch (error) {
-      setSyncError(getSettingsErrorMessage(error));
+      setSyncError(getSettingsErrorMessage(error, settings.language));
     } finally {
       setSyncPendingAction('');
     }
@@ -609,7 +610,7 @@ function SettingsPage({
     const syncControls = window.guiSSH?.sync;
 
     if (!syncControls) {
-      setSyncError('当前运行环境未提供自动同步接口。');
+      setSyncError(t('settings.sync.error.noApi', settings.language));
       return;
     }
 
@@ -622,10 +623,14 @@ function SettingsPage({
       applySyncConfig(result.config);
       setSyncConflicts(result.conflicts);
       setSyncMessage(result.conflictCount
-        ? `同步完成，发现 ${result.conflictCount} 个冲突，已避免静默覆盖。`
-        : `同步完成：上传 ${result.uploaded} 项，下载 ${result.downloaded} 项，删除 ${result.deleted} 项。`);
+        ? t('settings.sync.message.conflicts', settings.language, { count: result.conflictCount })
+        : t('settings.sync.message.summary', settings.language, {
+          uploaded: result.uploaded,
+          downloaded: result.downloaded,
+          deleted: result.deleted,
+        }));
     } catch (error) {
-      setSyncError(getSettingsErrorMessage(error));
+      setSyncError(getSettingsErrorMessage(error, settings.language));
     } finally {
       setSyncPendingAction('');
     }
@@ -657,7 +662,7 @@ function SettingsPage({
     const getSyncConfig = window.guiSSH?.sync?.getConfig;
 
     if (!getSyncConfig) {
-      setSyncError('当前运行环境未提供自动同步接口。');
+      setSyncError(t('settings.sync.error.noApi', settings.language));
       return;
     }
 
@@ -673,7 +678,7 @@ function SettingsPage({
       })
       .catch((error: unknown) => {
         if (!disposed) {
-          setSyncError(getSettingsErrorMessage(error));
+          setSyncError(getSettingsErrorMessage(error, settings.language));
         }
       })
       .finally(() => {
@@ -692,7 +697,7 @@ function SettingsPage({
 
     if (!listFonts) {
       setSystemFonts(fallbackSystemFontChoices);
-      setSystemFontsError('当前运行环境未提供系统字体接口。');
+      setSystemFontsError(t('settings.fonts.error.noApi', settings.language));
       return;
     }
 
@@ -708,7 +713,7 @@ function SettingsPage({
 
         const nextSystemFonts = normalizeFontChoices(fontFamilies);
         setSystemFonts(nextSystemFonts.length ? nextSystemFonts : fallbackSystemFontChoices);
-        setSystemFontsError(nextSystemFonts.length ? '' : '系统未返回可用字体。');
+        setSystemFontsError(nextSystemFonts.length ? '' : t('settings.fonts.error.empty', settings.language));
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -716,7 +721,7 @@ function SettingsPage({
         }
 
         setSystemFonts(fallbackSystemFontChoices);
-        setSystemFontsError(getFontListErrorMessage(error));
+        setSystemFontsError(getFontListErrorMessage(error, settings.language));
       })
       .finally(() => {
         if (!disposed) {
@@ -738,7 +743,7 @@ function SettingsPage({
     }
 
     if (file.size > maxWallpaperImageBytes) {
-      setWallpaperError('图片不能超过 5 MB。');
+      setWallpaperError(t('settings.wallpaper.error.tooLarge', settings.language));
       return;
     }
 
@@ -746,15 +751,15 @@ function SettingsPage({
       (file.type && !acceptedWallpaperTypes.has(file.type)) ||
       (!file.type && !wallpaperExtensionPattern.test(file.name))
     ) {
-      setWallpaperError('请选择 PNG、JPG、WebP 或 GIF 图片。');
+      setWallpaperError(t('settings.wallpaper.error.unsupported', settings.language));
       return;
     }
 
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await readFileAsDataUrl(file, settings.language);
 
       if (!wallpaperDataUrlPattern.test(dataUrl)) {
-        setWallpaperError('请选择 PNG、JPG、WebP 或 GIF 图片。');
+        setWallpaperError(t('settings.wallpaper.error.unsupported', settings.language));
         return;
       }
 
@@ -767,21 +772,21 @@ function SettingsPage({
         desktopWallpaperName: file.name,
       });
     } catch (error) {
-      setWallpaperError(error instanceof Error ? error.message : '图片读取失败。');
+      setWallpaperError(error instanceof Error ? error.message : t('settings.error.imageReadFailed', settings.language));
     }
   };
 
   return (
     <>
       <div className="command-bar no-drag simple-command-bar settings-command-bar">
-        <strong>设置</strong>
+        <strong>{t('settings.title', settings.language)}</strong>
       </div>
 
       <section className="settings-page no-drag">
-        <aside className="settings-section-nav" aria-label="设置分类">
+        <aside className="settings-section-nav" aria-label={t('settings.nav.aria', settings.language)}>
           <div className="settings-section-nav-header">
-            <span>设置分类</span>
-            <small>{settingsSections.length} 项</small>
+            <span>{t('settings.nav.title', settings.language)}</span>
+            <small>{t('settings.nav.count', settings.language, { count: String(settingsSections.length) })}</small>
           </div>
 
           {settingsSections.map((section, index) => (
@@ -794,8 +799,8 @@ function SettingsPage({
             >
               <span className="settings-section-nav-index">{String(index + 1).padStart(2, '0')}</span>
               <span className="settings-section-nav-copy">
-                <strong>{section.label}</strong>
-                <small>{section.summary}</small>
+                <strong>{t(section.labelId, settings.language)}</strong>
+                <small>{t(section.summaryId, settings.language)}</small>
               </span>
             </button>
           ))}
@@ -805,22 +810,22 @@ function SettingsPage({
           {activeSection === 'general' ? (
             <>
               <section className="settings-section">
-                <h2>应用行为</h2>
+                <h2>{t('settings.general.behavior.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>语言</strong>
-                      <small>选择应用界面语言</small>
+                      <strong>{t('settings.general.language.label', settings.language)}</strong>
+                      <small>{t('settings.general.language.summary', settings.language)}</small>
                     </span>
                     <select value={settings.language} onChange={(event) => updateSetting('language', event.target.value as ShellDeskAppSettings['language'])}>
-                      <option value="zh-CN">简体中文</option>
-                      <option value="en-US">English</option>
+                      <option value="zh-CN">{t('settings.general.language.zh', settings.language)}</option>
+                      <option value="en-US">{t('settings.general.language.en', settings.language)}</option>
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>界面字体</strong>
+                      <strong>{t('settings.general.interfaceFont.label', settings.language)}</strong>
                       <small>{fontListStatus}</small>
                     </span>
                     <select
@@ -837,26 +842,26 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>本地库概览</h2>
+                <h2>{t('settings.general.library.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>主机连接</strong>
-                      <small>当前已保存的 SSH 主机数量</small>
+                      <strong>{t('settings.general.hosts.label', settings.language)}</strong>
+                      <small>{t('settings.general.hosts.summary', settings.language)}</small>
                     </span>
                     <strong>{hostCount}</strong>
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>SSH 密钥</strong>
-                      <small>已导入或生成的密钥对数量</small>
+                      <strong>{t('settings.general.keys.label', settings.language)}</strong>
+                      <small>{t('settings.general.keys.summary', settings.language)}</small>
                     </span>
                     <strong>{keyCount}</strong>
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>浏览器书签</strong>
-                      <small>所有远程浏览器作用域下的书签总数</small>
+                      <strong>{t('settings.general.bookmarks.label', settings.language)}</strong>
+                      <small>{t('settings.general.bookmarks.summary', settings.language)}</small>
                     </span>
                     <strong>{bookmarkCount}</strong>
                   </div>
@@ -868,31 +873,31 @@ function SettingsPage({
           {activeSection === 'appearance' ? (
             <>
               <section className="settings-section">
-                <h2>界面主题</h2>
+                <h2>{t('settings.appearance.theme.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>主题</strong>
-                      <small>选择浅色、深色或跟随系统主题</small>
+                      <strong>{t('settings.appearance.theme.label', settings.language)}</strong>
+                      <small>{t('settings.appearance.theme.summary', settings.language)}</small>
                     </span>
-                    <div className="theme-switch" role="group" aria-label="主题">
-                      <button type="button" className={settings.theme === 'light' ? 'active' : ''} onClick={() => updateSetting('theme', 'light')}>☼ 浅色</button>
-                      <button type="button" className={settings.theme === 'system' ? 'active' : ''} onClick={() => updateSetting('theme', 'system')}>▣ 系统</button>
-                      <button type="button" className={settings.theme === 'dark' ? 'active' : ''} onClick={() => updateSetting('theme', 'dark')}>☾ 深色</button>
+                    <div className="theme-switch" role="group" aria-label={t('settings.appearance.theme.label', settings.language)}>
+                      <button type="button" className={settings.theme === 'light' ? 'active' : ''} onClick={() => updateSetting('theme', 'light')}>{t('settings.appearance.theme.light', settings.language)}</button>
+                      <button type="button" className={settings.theme === 'system' ? 'active' : ''} onClick={() => updateSetting('theme', 'system')}>{t('settings.appearance.theme.system', settings.language)}</button>
+                      <button type="button" className={settings.theme === 'dark' ? 'active' : ''} onClick={() => updateSetting('theme', 'dark')}>{t('settings.appearance.theme.dark', settings.language)}</button>
                     </div>
                   </div>
                 </div>
               </section>
 
               <section className="settings-section">
-                <h2>强调色</h2>
+                <h2>{t('settings.appearance.accent.title', settings.language)}</h2>
                 <div className="settings-card color-card">
                   <div className="settings-row">
                     <span>
-                      <strong>主强调色</strong>
-                      <small>用于按钮、选中态、焦点边框和终端高亮</small>
+                      <strong>{t('settings.appearance.accent.label', settings.language)}</strong>
+                      <small>{t('settings.appearance.accent.summary', settings.language)}</small>
                     </span>
-                    <div className="color-picker-row" aria-label="强调色">
+                    <div className="color-picker-row" aria-label={t('settings.appearance.accent.aria', settings.language)}>
                       {accentColorChoices.map((color) => (
                         <button
                           key={color}
@@ -900,7 +905,7 @@ function SettingsPage({
                           className={settings.accentColor === color ? 'selected' : ''}
                           style={{ background: color }}
                           onClick={() => updateSetting('accentColor', color)}
-                          aria-label={`选择颜色 ${color}`}
+                          aria-label={t('settings.appearance.accent.choose', settings.language, { color })}
                         />
                       ))}
                     </div>
@@ -909,12 +914,12 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>虚拟桌面壁纸</h2>
+                <h2>{t('settings.wallpaper.title', settings.language)}</h2>
                 <div className="settings-card desktop-wallpaper-card">
                   <div className="settings-row desktop-wallpaper-row">
                     <span>
-                      <strong>连接桌面背景</strong>
-                      <small>作为连接服务器后的虚拟桌面壁纸；不设置时使用默认背景</small>
+                      <strong>{t('settings.wallpaper.background.label', settings.language)}</strong>
+                      <small>{t('settings.wallpaper.background.summary', settings.language)}</small>
                     </span>
                     <div className="desktop-wallpaper-control">
                       <div
@@ -924,10 +929,10 @@ function SettingsPage({
                       >
                         <span>{wallpaperPreviewLabel}</span>
                       </div>
-                      <div className="desktop-wallpaper-presets" aria-label="预置壁纸">
+                      <div className="desktop-wallpaper-presets" aria-label={t('settings.wallpaper.presets.aria', settings.language)}>
                         {desktopWallpaperPresets.map((preset) => {
                           const isSelectedPreset = !hasCustomWallpaper && selectedWallpaperPreset.id === preset.id;
-                          const presetLabel = translateText(preset.label, settings.language);
+                          const presetLabel = t(preset.labelId, settings.language);
 
                           return (
                             <button
@@ -939,7 +944,7 @@ function SettingsPage({
                               }}
                               onClick={() => selectDesktopWallpaperPreset(preset.id)}
                               aria-pressed={isSelectedPreset}
-                              aria-label={`${translateText('选择预置壁纸', settings.language)} ${presetLabel}`}
+                              aria-label={`${t('settings.wallpaper.choosePreset', settings.language)} ${presetLabel}`}
                               title={presetLabel}
                             >
                               <span>{presetLabel}</span>
@@ -949,7 +954,7 @@ function SettingsPage({
                       </div>
                       <div className="desktop-wallpaper-actions">
                         <label className="command-button desktop-wallpaper-upload">
-                          上传图片
+                          {t('settings.wallpaper.upload', settings.language)}
                           <input
                             type="file"
                             accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
@@ -957,13 +962,13 @@ function SettingsPage({
                           />
                         </label>
                         <button type="button" className="command-button muted" onClick={resetDesktopWallpaper} disabled={isDefaultWallpaperPreset}>
-                          使用默认
+                          {t('settings.wallpaper.useDefault', settings.language)}
                         </button>
                       </div>
                       <small className="desktop-wallpaper-meta">
                         {hasCustomWallpaper
-                          ? settings.desktopWallpaperName || translateText('自定义图片', settings.language)
-                          : `${translateText('当前使用', settings.language)} ${selectedWallpaperPresetLabel}`}
+                          ? settings.desktopWallpaperName || t('settings.wallpaper.customImage', settings.language)
+                          : `${t('settings.wallpaper.current', settings.language)} ${selectedWallpaperPresetLabel}`}
                       </small>
                       {wallpaperError ? <small className="desktop-wallpaper-error">{wallpaperError}</small> : null}
                     </div>
@@ -976,29 +981,29 @@ function SettingsPage({
           {activeSection === 'terminal' ? (
             <>
               <section className="settings-section">
-                <h2>终端主题</h2>
+                <h2>{t('settings.terminal.theme.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row terminal-theme-row">
                     <span>
-                      <strong>颜色主题</strong>
-                      <small>{translateText(selectedTerminalTheme.summary, settings.language)}</small>
+                      <strong>{t('settings.terminal.theme.label', settings.language)}</strong>
+                      <small>{t(selectedTerminalTheme.summaryId, settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalTheme}
                       onChange={(event) => updateSetting('terminalTheme', event.target.value as ShellDeskAppSettings['terminalTheme'])}
                     >
                       {terminalThemeChoices.map((themeChoice) => (
-                        <option key={themeChoice.key} value={themeChoice.key}>{translateText(themeChoice.label, settings.language)}</option>
+                        <option key={themeChoice.key} value={themeChoice.key}>{t(themeChoice.labelId, settings.language)}</option>
                       ))}
                     </select>
                   </label>
 
                   <div className="terminal-theme-preview" style={{ background: selectedTerminalTheme.theme.background, color: selectedTerminalTheme.theme.foreground }}>
                     <div>
-                      <strong>{selectedTerminalTheme.label}</strong>
+                      <strong>{t(selectedTerminalTheme.labelId, settings.language)}</strong>
                       <small>$ ssh user@host</small>
                     </div>
-                    <div className="terminal-theme-swatches" aria-label="终端颜色预览">
+                    <div className="terminal-theme-swatches" aria-label={t('settings.terminal.theme.previewAria', settings.language)}>
                       {[
                         selectedTerminalTheme.theme.red,
                         selectedTerminalTheme.theme.green,
@@ -1015,11 +1020,11 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>字体与排版</h2>
+                <h2>{t('settings.terminal.typography.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>字体族</strong>
+                      <strong>{t('settings.terminal.fontFamily.label', settings.language)}</strong>
                       <small>{fontListStatus}</small>
                     </span>
                     <select
@@ -1034,8 +1039,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>终端字号</strong>
-                      <small>影响 SSH Shell 中的字符大小</small>
+                      <strong>{t('settings.terminal.fontSize.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.fontSize.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalFontSize}
@@ -1049,8 +1054,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>行高</strong>
-                      <small>行距越大，日志和长命令越容易扫读</small>
+                      <strong>{t('settings.terminal.lineHeight.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.lineHeight.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalLineHeight}
@@ -1064,38 +1069,38 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>常规字重</strong>
-                      <small>控制普通输出的粗细</small>
+                      <strong>{t('settings.terminal.regularWeight.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.regularWeight.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalFontWeight}
                       onChange={(event) => updateSetting('terminalFontWeight', Number(event.target.value))}
                     >
                       {terminalFontWeightChoices.map((choice) => (
-                        <option key={choice.value} value={choice.value}>{translateText(choice.label, settings.language)}</option>
+                        <option key={choice.value} value={choice.value}>{t(choice.labelId, settings.language)}</option>
                       ))}
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>粗体字重</strong>
-                      <small>控制 sudo 提示、强调文本和 ANSI 粗体</small>
+                      <strong>{t('settings.terminal.boldWeight.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.boldWeight.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalFontWeightBold}
                       onChange={(event) => updateSetting('terminalFontWeightBold', Number(event.target.value))}
                     >
                       {terminalBoldWeightChoices.map((choice) => (
-                        <option key={choice.value} value={choice.value}>{translateText(choice.label, settings.language)}</option>
+                        <option key={choice.value} value={choice.value}>{t(choice.labelId, settings.language)}</option>
                       ))}
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>字体连字</strong>
-                      <small>对 Fira Code、JetBrains Mono 等字体启用编程连字</small>
+                      <strong>{t('settings.terminal.ligatures.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.ligatures.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1108,44 +1113,44 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>光标与滚动</h2>
+                <h2>{t('settings.terminal.cursor.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>光标样式</strong>
-                      <small>控制终端中的输入光标形态</small>
+                      <strong>{t('settings.terminal.cursorStyle.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.cursorStyle.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalCursorStyle}
                       onChange={(event) => updateSetting('terminalCursorStyle', event.target.value as ShellDeskAppSettings['terminalCursorStyle'])}
                     >
-                      <option value="block">块状</option>
-                      <option value="bar">竖线</option>
-                      <option value="underline">下划线</option>
+                      <option value="block">{t('settings.terminal.cursorStyle.block', settings.language)}</option>
+                      <option value="bar">{t('settings.terminal.cursorStyle.bar', settings.language)}</option>
+                      <option value="underline">{t('settings.terminal.cursorStyle.underline', settings.language)}</option>
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>失焦光标</strong>
-                      <small>窗口失去焦点时的光标显示方式</small>
+                      <strong>{t('settings.terminal.cursorInactive.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.cursorInactive.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalCursorInactiveStyle}
                       onChange={(event) => updateSetting('terminalCursorInactiveStyle', event.target.value as ShellDeskAppSettings['terminalCursorInactiveStyle'])}
                     >
-                      <option value="outline">描边</option>
-                      <option value="block">块状</option>
-                      <option value="bar">竖线</option>
-                      <option value="underline">下划线</option>
-                      <option value="none">隐藏</option>
+                      <option value="outline">{t('settings.terminal.cursorInactive.outline', settings.language)}</option>
+                      <option value="block">{t('settings.terminal.cursorStyle.block', settings.language)}</option>
+                      <option value="bar">{t('settings.terminal.cursorStyle.bar', settings.language)}</option>
+                      <option value="underline">{t('settings.terminal.cursorStyle.underline', settings.language)}</option>
+                      <option value="none">{t('settings.terminal.cursorInactive.none', settings.language)}</option>
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>光标闪烁</strong>
-                      <small>关闭后光标保持静止，减少视觉干扰</small>
+                      <strong>{t('settings.terminal.cursorBlink.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.cursorBlink.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1157,23 +1162,23 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>滚动缓冲区</strong>
-                      <small>保留更多历史输出会占用更多内存</small>
+                      <strong>{t('settings.terminal.scrollback.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.scrollback.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalScrollback}
                       onChange={(event) => updateSetting('terminalScrollback', Number(event.target.value))}
                     >
                       {[1000, 3000, 5000, 10000, 20000, 50000].map((value) => (
-                        <option key={value} value={value}>{value.toLocaleString(getCurrentAppLocale())} 行</option>
+                        <option key={value} value={value}>{t('settings.terminal.scrollback.lines', settings.language, { count: value.toLocaleString(getCurrentAppLocale()) })}</option>
                       ))}
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>滚轮速度</strong>
-                      <small>控制普通滚动的速度倍率</small>
+                      <strong>{t('settings.terminal.wheelSpeed.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.wheelSpeed.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalScrollSensitivity}
@@ -1187,8 +1192,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>快速滚动速度</strong>
-                      <small>按住 Alt 滚轮时使用的速度倍率</small>
+                      <strong>{t('settings.terminal.fastWheelSpeed.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.fastWheelSpeed.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalFastScrollSensitivity}
@@ -1202,8 +1207,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>输入时滚到底部</strong>
-                      <small>在查看历史输出时输入命令会自动回到最新位置</small>
+                      <strong>{t('settings.terminal.scrollOnInput.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.scrollOnInput.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1215,8 +1220,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>清屏保留历史</strong>
-                      <small>让 clear 等清屏动作把旧内容推入滚动历史</small>
+                      <strong>{t('settings.terminal.clearScrollback.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.clearScrollback.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1229,12 +1234,12 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>输入与辅助</h2>
+                <h2>{t('settings.terminal.input.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>选中即复制</strong>
-                      <small>右键仍然保留粘贴 / 复制行为</small>
+                      <strong>{t('settings.terminal.copyOnSelect.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.copyOnSelect.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1246,8 +1251,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>右键粘贴</strong>
-                      <small>没有选中文本时，右键直接粘贴剪贴板内容</small>
+                      <strong>{t('settings.terminal.rightClickPaste.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.rightClickPaste.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1259,8 +1264,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>Alt 单击移动光标</strong>
-                      <small>在支持的 Shell 编辑模式中快速定位输入光标</small>
+                      <strong>{t('settings.terminal.altClick.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.altClick.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1272,8 +1277,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>括号粘贴保护</strong>
-                      <small>让支持的 Shell 能识别一次性粘贴内容，降低误执行风险</small>
+                      <strong>{t('settings.terminal.bracketedPaste.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.bracketedPaste.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1285,23 +1290,23 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>最小对比度</strong>
-                      <small>自动增强低对比输出文本</small>
+                      <strong>{t('settings.terminal.minimumContrast.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.minimumContrast.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalMinimumContrastRatio}
                       onChange={(event) => updateSetting('terminalMinimumContrastRatio', Number(event.target.value))}
                     >
                       {terminalContrastChoices.map((choice) => (
-                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                        <option key={choice.value} value={choice.value}>{t(choice.labelId, settings.language)}</option>
                       ))}
                     </select>
                   </label>
 
                   <label className="settings-row">
                     <span>
-                      <strong>屏幕阅读器支持</strong>
-                      <small>启用后会增加辅助 DOM，可能略微影响高频输出性能</small>
+                      <strong>{t('settings.terminal.screenReader.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.screenReader.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1318,19 +1323,19 @@ function SettingsPage({
           {activeSection === 'ai' ? (
             <>
               <section className="settings-section">
-                <h2>提供商</h2>
+                <h2>{t('settings.ai.provider.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>提供商</strong>
-                      <small>{translateText(selectedAiProvider.summary, settings.language)}</small>
+                      <strong>{t('settings.ai.provider.label', settings.language)}</strong>
+                      <small>{t(selectedAiProvider.summaryId, settings.language)}</small>
                     </span>
                     <select
                       value={settings.aiProvider}
                       onChange={(event) => updateAiProvider(event.target.value as ShellDeskAiProvider)}
                     >
                       {aiProviderChoices.map((providerChoice) => (
-                        <option key={providerChoice.value} value={providerChoice.value}>{providerChoice.label}</option>
+                        <option key={providerChoice.value} value={providerChoice.value}>{t(providerChoice.labelId, settings.language)}</option>
                       ))}
                     </select>
                   </label>
@@ -1338,23 +1343,23 @@ function SettingsPage({
                   {settings.aiProvider === 'custom' ? (
                     <label className="settings-row">
                       <span>
-                        <strong>提供商名称</strong>
-                        <small>用于后续组件展示当前 AI 来源</small>
+                        <strong>{t('settings.ai.providerName.label', settings.language)}</strong>
+                        <small>{t('settings.ai.providerName.summary', settings.language)}</small>
                       </span>
                       <input
                         className="settings-text-input"
                         value={settings.aiProviderName}
                         maxLength={80}
                         onChange={(event) => updateSetting('aiProviderName', event.target.value)}
-                        placeholder="例如：公司内网网关"
+                        placeholder={t('settings.ai.providerName.placeholder', settings.language)}
                       />
                     </label>
                   ) : null}
 
                   <label className="settings-row">
                     <span>
-                      <strong>API 格式</strong>
-                      <small>OpenAI 兼容格式使用 Authorization；Claude 格式使用 x-api-key</small>
+                      <strong>{t('settings.ai.apiFormat.label', settings.language)}</strong>
+                      <small>{t('settings.ai.apiFormat.summary', settings.language)}</small>
                     </span>
                     <select
                       value={settings.aiApiFormat}
@@ -1374,8 +1379,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>API 地址</strong>
-                      <small>填写基础地址即可；模型列表会自动拼接对应路径</small>
+                      <strong>{t('settings.ai.apiBaseUrl.label', settings.language)}</strong>
+                      <small>{t('settings.ai.apiBaseUrl.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-url-input"
@@ -1395,8 +1400,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>API 密钥</strong>
-                      <small>密钥写入敏感 vault；普通 config.json 只保留非敏感配置</small>
+                      <strong>{t('settings.ai.apiKey.label', settings.language)}</strong>
+                      <small>{t('settings.ai.apiKey.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-secret-input"
@@ -1407,15 +1412,15 @@ function SettingsPage({
                     />
                   </label>
                 </div>
-                <p className="settings-caption">OpenAI 兼容格式适合 OpenAI、DeepSeek、OpenRouter、Ollama 网关等；Claude 格式适合 Anthropic 官方或兼容网关。</p>
+                <p className="settings-caption">{t('settings.ai.provider.caption', settings.language)}</p>
               </section>
 
               <section className="settings-section">
-                <h2>模型</h2>
+                <h2>{t('settings.ai.model.title', settings.language)}</h2>
                 <div className="settings-card ai-model-card">
                   <div className="settings-row ai-model-row">
                     <span>
-                      <strong>默认模型</strong>
+                      <strong>{t('settings.ai.model.default.label', settings.language)}</strong>
                       <small className={aiModelsError ? 'settings-error-text' : undefined}>{aiModelStatus}</small>
                     </span>
                     <div className="ai-model-control">
@@ -1440,7 +1445,7 @@ function SettingsPage({
                               setIsAiModelListOpen(true);
                             }
                           }}
-                          placeholder="先获取模型列表，或手动输入模型 ID"
+                          placeholder={t('settings.ai.model.placeholder', settings.language)}
                           role="combobox"
                           aria-controls="ai-model-options"
                           aria-expanded={isAiModelListOpen}
@@ -1479,12 +1484,12 @@ function SettingsPage({
                         onClick={fetchAiModels}
                         disabled={isAiModelsLoading || !settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim()}
                       >
-                        {isAiModelsLoading ? '获取中...' : '获取模型'}
+                        {isAiModelsLoading ? t('settings.ai.model.fetching', settings.language) : t('settings.ai.model.fetch', settings.language)}
                       </button>
                     </div>
                   </div>
                 </div>
-                <p className="settings-caption">AI 使用全局配置和模型发现，后续终端、文件、数据库等组件可以复用这套能力；它支持基础对话，也可以在用户确认后通过 SSH 隧道执行命令等操作。</p>
+                <p className="settings-caption">{t('settings.ai.intro', settings.language)}</p>
               </section>
             </>
           ) : null}
@@ -1492,12 +1497,12 @@ function SettingsPage({
           {activeSection === 'security' ? (
             <>
               <section className="settings-section">
-                <h2>敏感信息</h2>
+                <h2>{t('settings.security.sensitive.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">
                     <span>
-                      <strong>默认记住 SSH 密码</strong>
-                      <small>影响连接弹窗里“连接成功后保存到此主机配置”的默认勾选</small>
+                      <strong>{t('settings.security.rememberPasswords.label', settings.language)}</strong>
+                      <small>{t('settings.security.rememberPasswords.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1509,8 +1514,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>默认记住密钥口令</strong>
-                      <small>影响密钥登录弹窗的默认保存行为</small>
+                      <strong>{t('settings.security.rememberPassphrases.label', settings.language)}</strong>
+                      <small>{t('settings.security.rememberPassphrases.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1523,38 +1528,38 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>存储状态</h2>
+                <h2>{t('settings.storage.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>本地保护方式</strong>
-                      <small>{storageInfo?.protectionLabel ?? '正在读取...'}</small>
+                      <strong>{t('settings.storage.protection.label', settings.language)}</strong>
+                      <small>{storageInfo?.protectionLabel ?? t('settings.storage.loading', settings.language)}</small>
                     </span>
-                    <strong>{storageInfo?.protected ? '受保护' : '文件权限保护'}</strong>
+                    <strong>{storageInfo?.protected ? t('settings.storage.protected', settings.language) : t('settings.storage.filePermission', settings.language)}</strong>
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>数据目录</strong>
-                      <small>普通配置与敏感 vault 统一放在同一目录，便于后续同步</small>
+                      <strong>{t('settings.storage.dataDir.label', settings.language)}</strong>
+                      <small>{t('settings.storage.dataDir.summary', settings.language)}</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.path ?? translateText('未就绪', settings.language)}</code>
+                    <code className="settings-inline-code">{storageInfo?.path ?? t('settings.storage.notReady', settings.language)}</code>
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>普通配置文件</strong>
-                      <small>主机元数据、设置和书签</small>
+                      <strong>{t('settings.storage.configFile.label', settings.language)}</strong>
+                      <small>{t('settings.storage.configFile.summary', settings.language)}</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.configPath ?? translateText('未就绪', settings.language)}</code>
+                    <code className="settings-inline-code">{storageInfo?.configPath ?? t('settings.storage.notReady', settings.language)}</code>
                   </div>
                   <div className="settings-row">
                     <span>
-                      <strong>敏感 vault 文件</strong>
-                      <small>SSH 密码、密钥口令、私钥内容和 AI API 密钥</small>
+                      <strong>{t('settings.storage.vaultFile.label', settings.language)}</strong>
+                      <small>{t('settings.storage.vaultFile.summary', settings.language)}</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.vaultPath ?? translateText('未就绪', settings.language)}</code>
+                    <code className="settings-inline-code">{storageInfo?.vaultPath ?? t('settings.storage.notReady', settings.language)}</code>
                   </div>
                 </div>
-                <p className="settings-caption">私钥、密码、口令和 AI API 密钥只写入敏感 vault；普通配置文件不包含这些字段，后续可单独作为云同步配置源。</p>
+                <p className="settings-caption">{t('settings.storage.caption', settings.language)}</p>
               </section>
             </>
           ) : null}
@@ -1562,12 +1567,12 @@ function SettingsPage({
           {activeSection === 'backup' ? (
             <>
               <section className="settings-section">
-                <h2>配置备份</h2>
+                <h2>{t('settings.backup.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>完整导出</strong>
-                      <small>导出主机、密钥、设置和浏览器书签，包含密码、私钥内容、密钥口令和 AI API 密钥。</small>
+                      <strong>{t('settings.backup.export.label', settings.language)}</strong>
+                      <small>{t('settings.backup.export.summary', settings.language)}</small>
                     </span>
                     <button
                       type="button"
@@ -1575,14 +1580,14 @@ function SettingsPage({
                       onClick={onExportConfig}
                       disabled={isConfigTransferPending}
                     >
-                      {isConfigTransferPending ? '处理中...' : '导出配置'}
+                      {isConfigTransferPending ? t('settings.backup.processing', settings.language) : t('settings.backup.export.button', settings.language)}
                     </button>
                   </div>
 
                   <div className="settings-row">
                     <span>
-                      <strong>导入配置</strong>
-                      <small>从完整备份恢复本地仓库，当前主机、密钥和书签会被导入内容替换。</small>
+                      <strong>{t('settings.backup.import.label', settings.language)}</strong>
+                      <small>{t('settings.backup.import.summary', settings.language)}</small>
                     </span>
                     <button
                       type="button"
@@ -1590,20 +1595,20 @@ function SettingsPage({
                       onClick={onImportConfig}
                       disabled={isConfigTransferPending}
                     >
-                      {isConfigTransferPending ? '处理中...' : '导入配置'}
+                      {isConfigTransferPending ? t('settings.backup.processing', settings.language) : t('settings.backup.import.button', settings.language)}
                     </button>
                   </div>
                 </div>
-                <p className="settings-caption">导出的 JSON 属于明文高敏备份，只适合放在你完全信任的位置；日常使用请依赖应用自身的本地加密仓库。</p>
+                <p className="settings-caption">{t('settings.backup.caption', settings.language)}</p>
               </section>
 
               <section className="settings-section">
-                <h2>自动同步</h2>
+                <h2>{t('settings.sync.title', settings.language)}</h2>
                 <div className="settings-card settings-sync-card">
                   <label className="settings-row">
                     <span>
-                      <strong>启用 WebDAV 同步</strong>
-                      <small>启动后按间隔自动同步，也可以手动立即同步。</small>
+                      <strong>{t('settings.sync.enabled.label', settings.language)}</strong>
+                      <small>{t('settings.sync.enabled.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1616,8 +1621,8 @@ function SettingsPage({
 
                   <label className="settings-row settings-sync-input-row">
                     <span>
-                      <strong>WebDAV 地址</strong>
-                      <small>例如坚果云、Nextcloud 或 NAS 的 WebDAV 根地址。</small>
+                      <strong>{t('settings.sync.webdavUrl.label', settings.language)}</strong>
+                      <small>{t('settings.sync.webdavUrl.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-url-input"
@@ -1632,8 +1637,8 @@ function SettingsPage({
 
                   <label className="settings-row settings-sync-input-row">
                     <span>
-                      <strong>WebDAV 用户名</strong>
-                      <small>部分服务需要使用邮箱或专用应用用户名。</small>
+                      <strong>{t('settings.sync.username.label', settings.language)}</strong>
+                      <small>{t('settings.sync.username.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input"
@@ -1646,23 +1651,23 @@ function SettingsPage({
 
                   <label className="settings-row settings-sync-input-row">
                     <span>
-                      <strong>WebDAV 密码</strong>
-                      <small>{hasSavedWebDavPassword ? '已保存，留空表示不修改。' : '建议使用服务商提供的应用密码。'}</small>
+                      <strong>{t('settings.sync.password.label', settings.language)}</strong>
+                      <small>{hasSavedWebDavPassword ? t('settings.sync.password.savedSummary', settings.language) : t('settings.sync.password.defaultSummary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-secret-input"
                       type="password"
                       value={syncForm.webdavPassword}
                       onChange={(event) => updateSyncForm('webdavPassword', event.target.value)}
-                      placeholder={hasSavedWebDavPassword ? '已保存，留空不改' : '应用密码'}
+                      placeholder={hasSavedWebDavPassword ? t('settings.sync.password.savedPlaceholder', settings.language) : t('settings.sync.password.placeholder', settings.language)}
                       disabled={syncPendingAction === 'load'}
                     />
                   </label>
 
                   <label className="settings-row settings-sync-input-row">
                     <span>
-                      <strong>远程文件路径</strong>
-                      <small>ShellDesk 会自动创建中间目录，最终文件只保存加密同步包。</small>
+                      <strong>{t('settings.sync.remotePath.label', settings.language)}</strong>
+                      <small>{t('settings.sync.remotePath.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-url-input"
@@ -1675,8 +1680,8 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>忽略证书错误</strong>
-                      <small>仅用于内网或自签名 WebDAV；开启后将不验证该 WebDAV 服务的 TLS 证书。</small>
+                      <strong>{t('settings.sync.ignoreCertificate.label', settings.language)}</strong>
+                      <small>{t('settings.sync.ignoreCertificate.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1689,23 +1694,23 @@ function SettingsPage({
 
                   <label className="settings-row settings-sync-input-row">
                     <span>
-                      <strong>同步密码</strong>
-                      <small>{hasSavedSyncPassphrase ? '已保存，留空表示不修改；其他设备必须输入同一个密码。' : '用于加密远端同步文件，忘记后无法恢复。'}</small>
+                      <strong>{t('settings.sync.passphrase.label', settings.language)}</strong>
+                      <small>{hasSavedSyncPassphrase ? t('settings.sync.passphrase.savedSummary', settings.language) : t('settings.sync.passphrase.defaultSummary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-secret-input"
                       type="password"
                       value={syncForm.syncPassphrase}
                       onChange={(event) => updateSyncForm('syncPassphrase', event.target.value)}
-                      placeholder={hasSavedSyncPassphrase ? '已保存，留空不改' : '至少 8 个字符'}
+                      placeholder={hasSavedSyncPassphrase ? t('settings.sync.passphrase.savedPlaceholder', settings.language) : t('settings.sync.passphrase.placeholder', settings.language)}
                       disabled={syncPendingAction === 'load'}
                     />
                   </label>
 
                   <div className="settings-row">
                     <span>
-                      <strong>同步频率</strong>
-                      <small>定时同步只在应用运行时生效。</small>
+                      <strong>{t('settings.sync.interval.label', settings.language)}</strong>
+                      <small>{t('settings.sync.interval.summary', settings.language)}</small>
                     </span>
                     <select
                       value={syncForm.intervalMinutes}
@@ -1713,15 +1718,15 @@ function SettingsPage({
                       disabled={syncPendingAction === 'load'}
                     >
                       {syncIntervalChoices.map((minutes) => (
-                        <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} 分钟` : `${minutes / 60} 小时`}</option>
+                        <option key={minutes} value={minutes}>{minutes < 60 ? t('settings.sync.interval.minutes', settings.language, { count: String(minutes) }) : t('settings.sync.interval.hours', settings.language, { count: String(minutes / 60) })}</option>
                       ))}
                     </select>
                   </div>
 
                   <label className="settings-row">
                     <span>
-                      <strong>启动时同步</strong>
-                      <small>应用启动后自动拉取远端更新，再写回合并后的同步文件。</small>
+                      <strong>{t('settings.sync.startup.label', settings.language)}</strong>
+                      <small>{t('settings.sync.startup.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-toggle"
@@ -1734,7 +1739,7 @@ function SettingsPage({
 
                   <div className="settings-row">
                     <span>
-                      <strong>同步状态</strong>
+                      <strong>{t('settings.sync.status.label', settings.language)}</strong>
                       <small className={syncStatusClassName ? `settings-sync-status ${syncStatusClassName}` : 'settings-sync-status'}>
                         {syncStatusText}
                       </small>
@@ -1744,8 +1749,8 @@ function SettingsPage({
 
                   <div className="settings-row settings-sync-actions-row">
                     <span>
-                      <strong>同步操作</strong>
-                      <small>测试会写入一个临时文件；立即同步会合并本机和远端数据。</small>
+                      <strong>{t('settings.sync.actions.label', settings.language)}</strong>
+                      <small>{t('settings.sync.actions.summary', settings.language)}</small>
                     </span>
                     <div className="settings-sync-actions">
                       <button
@@ -1754,7 +1759,7 @@ function SettingsPage({
                         onClick={saveAutoSyncConfig}
                         disabled={isSyncBusy}
                       >
-                        {syncPendingAction === 'save' ? '保存中...' : '保存设置'}
+                        {syncPendingAction === 'save' ? t('settings.sync.action.save.loading', settings.language) : t('settings.sync.action.save', settings.language)}
                       </button>
                       <button
                         type="button"
@@ -1762,7 +1767,7 @@ function SettingsPage({
                         onClick={testAutoSyncConnection}
                         disabled={isSyncBusy}
                       >
-                        {syncPendingAction === 'test' ? '测试中...' : '测试连接'}
+                        {syncPendingAction === 'test' ? t('settings.sync.action.test.loading', settings.language) : t('settings.sync.action.test', settings.language)}
                       </button>
                       <button
                         type="button"
@@ -1770,23 +1775,23 @@ function SettingsPage({
                         onClick={runAutoSyncNow}
                         disabled={isSyncBusy}
                       >
-                        {syncPendingAction === 'run' ? '同步中...' : '立即同步'}
+                        {syncPendingAction === 'run' ? t('settings.sync.action.run.loading', settings.language) : t('settings.sync.action.run', settings.language)}
                       </button>
                     </div>
                   </div>
                 </div>
-                <p className="settings-caption">第一版同步主机配置、应用设置、桌面布局和浏览器书签；不会上传 SSH 密码、私钥内容、密钥口令、AI API Key 或本地日志。主机和书签冲突会保留副本，设置冲突会保留本机版本并提示。</p>
+                <p className="settings-caption">{t('settings.sync.caption', settings.language)}</p>
 
                 {syncConflicts.length ? (
                   <div className="settings-sync-conflicts">
-                    <strong>同步冲突</strong>
+                    <strong>{t('settings.sync.conflicts.title', settings.language)}</strong>
                     {syncConflicts.slice(0, 6).map((conflict) => (
                       <div key={`${conflict.type}:${conflict.id}`}>
                         <span>{conflict.name}</span>
                         <small>{conflict.reason}</small>
                       </div>
                     ))}
-                    {syncConflicts.length > 6 ? <small>另有 {syncConflicts.length - 6} 个冲突未显示。</small> : null}
+                    {syncConflicts.length > 6 ? <small>{t('settings.sync.conflicts.more', settings.language, { count: String(syncConflicts.length - 6) })}</small> : null}
                   </div>
                 ) : null}
               </section>
@@ -1800,17 +1805,17 @@ function SettingsPage({
                   <img src={appIconUrl} alt="" draggable={false} />
                   <span>
                     <strong>{appDisplayName}</strong>
-                    <small>{shellDeskIntro}</small>
+                    <small>{t('settings.about.intro', settings.language)}</small>
                   </span>
                 </div>
               </section>
 
               <section className="settings-section">
-                <h2>应用信息</h2>
+                <h2>{t('settings.about.appInfo.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>版本</strong>
+                      <strong>{t('settings.about.version.label', settings.language)}</strong>
                       <small>{appPlatform}</small>
                     </span>
                     <code className="settings-inline-code">v{appVersion}</code>
@@ -1818,8 +1823,8 @@ function SettingsPage({
 
                   <div className="settings-row">
                     <span>
-                      <strong>联系方式</strong>
-                      <small>问题反馈、建议和协作沟通</small>
+                      <strong>{t('settings.about.contact.label', settings.language)}</strong>
+                      <small>{t('settings.about.contact.summary', settings.language)}</small>
                     </span>
                     <button
                       type="button"
@@ -1833,7 +1838,7 @@ function SettingsPage({
                   <div className="settings-row">
                     <span>
                       <strong>GitHub</strong>
-                      <small>源码、Release 与问题追踪</small>
+                      <small>{t('settings.about.repository.summary', settings.language)}</small>
                     </span>
                     <button
                       type="button"
@@ -1847,11 +1852,11 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>软件更新</h2>
+                <h2>{t('settings.update.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
                     <span>
-                      <strong>更新状态</strong>
+                      <strong>{t('settings.update.status.label', settings.language)}</strong>
                       <small className={updateStatusClassName ? `settings-update-status ${updateStatusClassName}` : 'settings-update-status'}>
                         {updateStatusText}
                       </small>
@@ -1862,34 +1867,34 @@ function SettingsPage({
                       onClick={checkForUpdates}
                       disabled={isCheckingForUpdates}
                     >
-                      {isCheckingForUpdates ? '检查中...' : '检查更新'}
+                      {isCheckingForUpdates ? t('settings.update.checkingButton', settings.language) : t('settings.update.checkButton', settings.language)}
                     </button>
                   </div>
 
                   <div className="settings-row">
                     <span>
-                      <strong>最新版本</strong>
+                      <strong>{t('settings.update.latest.label', settings.language)}</strong>
                       <small>
                         {updateCheckResult
                           ? [updateCheckResult.releaseName, formatDateTime(updateCheckResult.releaseDate)].filter(Boolean).join(' · ')
-                          : '点击检查更新后读取 latest.yml'}
+                          : t('settings.update.latest.clickToCheck', settings.language)}
                       </small>
                     </span>
-                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? translateText('未检查', settings.language)}</code>
+                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? t('settings.update.latest.notChecked', settings.language)}</code>
                   </div>
 
                   {updateCheckResult?.updateAvailable ? (
                     <div className="settings-row">
                       <span>
-                        <strong>下载更新</strong>
-                        <small>{[updateCheckResult.downloadName || 'Release 产物', formatFileSize(updateCheckResult.downloadSize)].filter(Boolean).join(' · ')}</small>
+                        <strong>{t('settings.update.download.title', settings.language)}</strong>
+                        <small>{[updateCheckResult.downloadName || t('settings.update.download.defaultName', settings.language), formatFileSize(updateCheckResult.downloadSize)].filter(Boolean).join(' · ')}</small>
                       </span>
                       <button
                         type="button"
                         className="command-button"
                         onClick={() => openExternalLink(updateCheckResult.downloadUrl ?? updateCheckResult.releaseUrl)}
                       >
-                        打开下载
+                        {t('settings.update.download.open', settings.language)}
                       </button>
                     </div>
                   ) : null}

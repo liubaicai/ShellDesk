@@ -24,6 +24,7 @@ import {
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
 import RemoteFilePicker from './RemoteFilePicker';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteGitManagerProps {
   connectionId: string;
@@ -49,7 +50,7 @@ function runCmd(connectionId: string, input: RemoteCommandInput) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteGitManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, input.command, input.stdin);
@@ -88,8 +89,8 @@ function groupBranches(branches: GitBranchSummary[]) {
   const groups = new Map<string, GitBranchSummary[]>();
 
   branches.forEach((branch) => {
-    const [groupName = '其他'] = branch.name.split('/');
-    const key = branch.name.includes('/') ? groupName : '本地';
+    const [groupName = tCurrent('auto.remoteGitManager.dcd4ul')] = branch.name.split('/');
+    const key = branch.name.includes('/') ? groupName : tCurrent('auto.remoteGitManager.zgeech');
     groups.set(key, [...(groups.get(key) ?? []), branch]);
   });
 
@@ -215,7 +216,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
       ));
       setCommandOutput(nextSnapshot.rawOutput);
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
-      setNotice(nextSnapshot.clean ? '工作区干净。' : `读取到 ${nextSnapshot.files.length} 个变更文件。`);
+      setNotice(nextSnapshot.clean ? tCurrent('auto.remoteGitManager.1i65qku') : tCurrent('auto.remoteGitManager.1bm0lc', { value0: nextSnapshot.files.length }));
     } catch (error) {
       setSnapshot(null);
       setSelectedFilePath('');
@@ -249,7 +250,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
   const loadDiff = async (file = selectedFile, mode = diffMode) => {
     if (!snapshot || !file) {
-      setDiffText('请选择变更文件。');
+      setDiffText(tCurrent('auto.remoteGitManager.10snm6x'));
       setActiveTab('diff');
       return;
     }
@@ -261,7 +262,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
     try {
       const command = createGitDiffCommand(snapshot.rootPath, file.path, mode === 'staged', isWindowsHost);
       const result = await runCmd(connectionId, command);
-      setDiffText(result.stdout || result.stderr || '该文件在当前 diff 模式下没有差异。');
+      setDiffText(result.stdout || result.stderr || tCurrent('auto.remoteGitManager.1oy3sst'));
       setActiveTab('diff');
     } catch (error) {
       setError(getErrorMessage(error));
@@ -277,7 +278,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
     try {
       const result = await runCmd(connectionId, command);
-      const output = result.stdout || result.stderr || `${label} 已执行。`;
+      const output = result.stdout || result.stderr || tCurrent('auto.remoteGitManager.105ee9t', { value0: label });
 
       if (result.code !== 0) {
         throw new Error(output);
@@ -301,10 +302,10 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
         ? createGitStageCommand(snapshot.rootPath, file.path, mode, isWindowsHost)
         : createGitStageAllCommand(snapshot.rootPath, mode, isWindowsHost);
       const label = file
-        ? `${mode === 'stage' ? '暂存' : '取消暂存'} ${file.path}`
+        ? `${mode === 'stage' ? tCurrent('auto.remoteGitManager.87712f') : tCurrent('auto.remoteGitManager.x30y3l')} ${file.path}`
         : mode === 'stage'
-          ? '暂存全部变更'
-          : '取消全部暂存';
+          ? tCurrent('auto.remoteGitManager.1fbifn7')
+          : tCurrent('auto.remoteGitManager.19osu15');
 
       await executeGitCommand(label, command);
     } catch (error) {
@@ -359,9 +360,9 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
     try {
       const labels: Record<GitBranchAction, string> = {
-        create: '新建分支',
-        delete: '删除分支',
-        checkoutRemote: '跟踪远程分支',
+        create: tCurrent('auto.remoteGitManager.fn0jnw'),
+        delete: tCurrent('auto.remoteGitManager.16695em'),
+        checkoutRemote: tCurrent('auto.remoteGitManager.zdcnzy'),
       };
       const pendingActions: Record<GitBranchAction, PendingGitActionKind> = {
         create: 'branchCreate',
@@ -395,12 +396,12 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
     setNotice('');
 
     if (conflictedCount > 0) {
-      setError('当前存在冲突文件，请先解决冲突后再提交。');
+      setError(tCurrent('auto.remoteGitManager.1juhj20'));
       return;
     }
 
     if (stagedCount === 0) {
-      setError('请先暂存至少一个文件。');
+      setError(tCurrent('auto.remoteGitManager.jd6ihz'));
       return;
     }
 
@@ -429,7 +430,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
     try {
       const result = await runCmd(connectionId, pendingAction.command);
-      const output = result.stdout || result.stderr || `${pendingAction.label} 已执行。`;
+      const output = result.stdout || result.stderr || tCurrent('auto.remoteGitManager.105ee9t2', { value0: pendingAction.label });
 
       if (result.code !== 0) {
         throw new Error(output);
@@ -454,7 +455,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
   const copyCommandOutput = async () => {
     await navigator.clipboard.writeText(commandOutput || snapshot?.rawOutput || '');
-    setNotice('已复制输出。');
+    setNotice(tCurrent('auto.remoteGitManager.178s1g3'));
   };
 
   const copyRepositorySummary = async () => {
@@ -470,7 +471,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
       '',
       snapshot.rawStatus,
     ].join('\n'));
-    setNotice('已复制仓库摘要。');
+    setNotice(tCurrent('auto.remoteGitManager.1t743o3'));
   };
 
   const handlePickRepository = (path: string) => {
@@ -482,24 +483,24 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
   return (
     <section className="git-manager">
       <header className="git-sourcetree-toolbar">
-        <div className="git-toolbar-actions-main" aria-label="Git 常用操作">
+        <div className="git-toolbar-actions-main" aria-label={tCurrent('auto.remoteGitManager.18eq20w')}>
           <button type="button" onClick={prepareCommit} disabled={!snapshot || loading || actionRunning || stagedCount === 0 || conflictedCount > 0}>
-            <strong>提交</strong>
+            <strong>{tCurrent('auto.remoteGitManager.ybr38x')}</strong>
           </button>
           <button type="button" onClick={() => prepareAction('pull')} disabled={!snapshot || loading || actionRunning}>
-            <strong>拉取</strong>
+            <strong>{tCurrent('auto.remoteGitManager.1ohpwom')}</strong>
           </button>
           <button type="button" onClick={() => prepareAction('push')} disabled={!snapshot || loading || actionRunning}>
-            <strong>推送</strong>
+            <strong>{tCurrent('auto.remoteGitManager.1uechsy')}</strong>
           </button>
           <button type="button" onClick={() => prepareAction('fetch')} disabled={!snapshot || loading || actionRunning}>
-            <strong>获取</strong>
+            <strong>{tCurrent('auto.remoteGitManager.1c6hn8g')}</strong>
           </button>
           <button type="button" onClick={() => branchNameInputRef.current?.focus()} disabled={!snapshot || loading || actionRunning}>
-            <strong>分支</strong>
+            <strong>{tCurrent('auto.remoteGitManager.8krd2a')}</strong>
           </button>
           <button type="button" onClick={() => prepareAction('checkout')} disabled={!snapshot || loading || actionRunning || !selectedBranch || selectedBranch === snapshot.branch}>
-            <strong>切换</strong>
+            <strong>{tCurrent('auto.remoteGitManager.1fl58wc')}</strong>
           </button>
         </div>
         <form
@@ -512,12 +513,12 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           <input
             value={repoPath}
             onChange={(event) => setRepoPath(event.target.value)}
-            placeholder={isWindowsHost ? 'D:\\Code\\project 或 D:/Code/project' : '/home/user/project'}
+            placeholder={isWindowsHost ? tCurrent('auto.remoteGitManager.1ln4d9j') : '/home/user/project'}
             disabled={loading || actionRunning}
           />
-          <button type="submit" disabled={loading || actionRunning || !repoPath.trim()}>{loading ? '读取中' : '读取'}</button>
-          <button type="button" onClick={() => setFilePickerVisible(true)} disabled={loading || actionRunning}>浏览</button>
-          <button type="button" onClick={() => loadRepository(snapshot?.rootPath ?? repoPath)} disabled={loading || actionRunning || !repoPath}>刷新</button>
+          <button type="submit" disabled={loading || actionRunning || !repoPath.trim()}>{loading ? tCurrent('auto.remoteGitManager.10y5j8r') : tCurrent('auto.remoteGitManager.tfk7tw')}</button>
+          <button type="button" onClick={() => setFilePickerVisible(true)} disabled={loading || actionRunning}>{tCurrent('auto.remoteGitManager.1mr11z6')}</button>
+          <button type="button" onClick={() => loadRepository(snapshot?.rootPath ?? repoPath)} disabled={loading || actionRunning || !repoPath}>{tCurrent('auto.remoteGitManager.12qo56a')}</button>
         </form>
       </header>
 
@@ -533,23 +534,23 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
           <section className="git-sidebar-section workspace">
             <div className="git-section-title"><span>▱</span><strong>WORKSPACE</strong></div>
             <button type="button" className={activeTab === 'changes' ? 'active' : ''} onClick={() => setActiveTab('changes')}>
-              <span>文件状态</span><em>{changedCount}</em>
+              <span>{tCurrent('auto.remoteGitManager.r16361')}</span><em>{changedCount}</em>
             </button>
             <button type="button" className={activeTab === 'commits' ? 'active' : ''} onClick={() => setActiveTab('commits')}>
               <span>History</span><em>{snapshot?.commits.length ?? 0}</em>
             </button>
             <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>
-              <span>命令输出</span>
+              <span>{tCurrent('auto.remoteGitManager.es77i5')}</span>
             </button>
           </section>
 
           <label className="git-sidebar-search">
-            <span>搜索</span>
-            <input value={commitSearch} onChange={(event) => { setCommitSearch(event.target.value); setActiveTab('commits'); }} placeholder="提交、作者、hash" />
+            <span>{tCurrent('auto.remoteGitManager.367f3v')}</span>
+            <input value={commitSearch} onChange={(event) => { setCommitSearch(event.target.value); setActiveTab('commits'); }} placeholder={tCurrent('auto.remoteGitManager.mhzk6y')} />
           </label>
 
           <section className="git-sidebar-section branch-tree">
-            <div className="git-section-title"><span>⑂</span><strong>分支</strong><em>{localBranches.length}</em></div>
+            <div className="git-section-title"><span>⑂</span><strong>{tCurrent('auto.remoteGitManager.8krd2a2')}</strong><em>{localBranches.length}</em></div>
             {localBranchGroups.map((group) => (
               <details key={group.name} open>
                 <summary>{group.name}</summary>
@@ -570,7 +571,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
                 ))}
               </details>
             ))}
-            {!localBranches.length ? <div className="git-empty-compact">暂无本地分支</div> : null}
+            {!localBranches.length ? <div className="git-empty-compact">{tCurrent('auto.remoteGitManager.1klleg')}</div> : null}
           </section>
 
           <section className="git-branch-control">
@@ -578,18 +579,18 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
               ref={branchNameInputRef}
               value={newBranchName}
               onChange={(event) => setNewBranchName(event.target.value)}
-              placeholder="新分支名，如 feat/login"
+              placeholder={tCurrent('auto.remoteGitManager.1s89mxx')}
               disabled={!snapshot || actionRunning}
             />
             <div>
-              <button type="button" onClick={prepareCreateBranch} disabled={!snapshot || actionRunning || !newBranchName.trim()}>新建</button>
-              <button type="button" onClick={() => selectedLocalBranch && prepareCheckoutBranch(selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>切换</button>
-              <button type="button" className="danger" onClick={() => selectedLocalBranch && prepareBranchAction('delete', selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>删除</button>
+              <button type="button" onClick={prepareCreateBranch} disabled={!snapshot || actionRunning || !newBranchName.trim()}>{tCurrent('auto.remoteGitManager.1f9r5fz')}</button>
+              <button type="button" onClick={() => selectedLocalBranch && prepareCheckoutBranch(selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>{tCurrent('auto.remoteGitManager.1fl58wc2')}</button>
+              <button type="button" className="danger" onClick={() => selectedLocalBranch && prepareBranchAction('delete', selectedLocalBranch.name)} disabled={!snapshot || actionRunning || !selectedLocalBranch || selectedLocalBranch.current}>{tCurrent('auto.remoteGitManager.1t2vi4h')}</button>
             </div>
           </section>
 
           <section className="git-sidebar-section branch-tree">
-            <div className="git-section-title"><span>☁</span><strong>远程</strong><em>{remoteBranches.length}</em></div>
+            <div className="git-section-title"><span>☁</span><strong>{tCurrent('auto.remoteGitManager.9vo8a8')}</strong><em>{remoteBranches.length}</em></div>
             {remoteBranchGroups.map((group) => (
               <details key={group.name} open>
                 <summary>{group.name}</summary>
@@ -609,14 +610,13 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
                 ))}
               </details>
             ))}
-            {!remoteBranches.length ? <div className="git-empty-compact">暂无远程分支</div> : null}
+            {!remoteBranches.length ? <div className="git-empty-compact">{tCurrent('auto.remoteGitManager.xdp87h')}</div> : null}
             <button type="button" className="git-track-remote-btn" onClick={() => prepareBranchAction('checkoutRemote', selectedRemoteBranch)} disabled={!snapshot || actionRunning || !selectedRemoteBranchItem}>
-              跟踪并切换
-            </button>
+              {tCurrent('auto.remoteGitManager.r5xduz')}</button>
           </section>
 
           <details className="git-sidebar-section tags" open={false}>
-            <summary><span>◇</span><strong>标签</strong><em>{snapshot?.tags.length ?? 0}</em></summary>
+            <summary><span>◇</span><strong>{tCurrent('auto.remoteGitManager.bydnm0')}</strong><em>{snapshot?.tags.length ?? 0}</em></summary>
             {(snapshot?.tags ?? []).slice(0, 12).map((tag) => (
               <div key={tag.name} className="git-tag-row"><span>{tag.name}</span><em>{tag.subject}</em></div>
             ))}
@@ -625,11 +625,11 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
 
         <main className="git-sourcetree-main">
           <div className="git-history-filterbar">
-            <strong>{activeTab === 'changes' ? '文件状态' : activeTab === 'raw' ? '命令输出' : 'History'}</strong>
+            <strong>{activeTab === 'changes' ? tCurrent('auto.remoteGitManager.r163612') : activeTab === 'raw' ? tCurrent('auto.remoteGitManager.es77i52') : 'History'}</strong>
             <span>{filteredCommits.length} commits · {localBranches.length} local branches · {remoteBranches.length} remote branches</span>
             <div className={`git-branch-card ${snapshot?.clean ? 'clean' : 'dirty'}`}>
-              <strong>{snapshot?.branch ?? '未加载'}</strong>
-              <span>{snapshot?.upstream ? `${snapshot.upstream} · +${snapshot.ahead} / -${snapshot.behind}` : lastRefreshedAt || '请选择仓库目录'}</span>
+              <strong>{snapshot?.branch ?? tCurrent('auto.remoteGitManager.18vm84u')}</strong>
+              <span>{snapshot?.upstream ? `${snapshot.upstream} · +${snapshot.ahead} / -${snapshot.behind}` : lastRefreshedAt || tCurrent('auto.remoteGitManager.exgzv')}</span>
             </div>
           </div>
 
@@ -637,41 +637,41 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
             <section className="git-workspace-panel">
               <div className="git-commit-box">
                 <div className="git-commit-box-head">
-                  <strong>提交暂存区</strong>
+                  <strong>{tCurrent('auto.remoteGitManager.1xw6tmj')}</strong>
                   <span>{stagedCount} staged · {unstagedCount} unstaged</span>
                 </div>
                 <textarea
                   ref={commitMessageRef}
                   value={commitMessage}
-                  placeholder="提交信息"
+                  placeholder={tCurrent('auto.remoteGitManager.1j66bbh')}
                   rows={3}
                   disabled={!snapshot || actionRunning}
                   onChange={(event) => setCommitMessage(event.target.value)}
                 />
                 <div className="git-commit-actions">
-                  <button type="button" onClick={() => void executeStageAction('stage')} disabled={!snapshot || actionRunning || unstagedCount === 0}>全部暂存</button>
-                  <button type="button" onClick={() => void executeStageAction('unstage')} disabled={!snapshot || actionRunning || stagedCount === 0}>取消暂存</button>
-                  <button type="button" className="primary" onClick={prepareCommit} disabled={!snapshot || actionRunning || stagedCount === 0 || conflictedCount > 0}>提交</button>
+                  <button type="button" onClick={() => void executeStageAction('stage')} disabled={!snapshot || actionRunning || unstagedCount === 0}>{tCurrent('auto.remoteGitManager.5wd4fz')}</button>
+                  <button type="button" onClick={() => void executeStageAction('unstage')} disabled={!snapshot || actionRunning || stagedCount === 0}>{tCurrent('auto.remoteGitManager.x30y3l2')}</button>
+                  <button type="button" className="primary" onClick={prepareCommit} disabled={!snapshot || actionRunning || stagedCount === 0 || conflictedCount > 0}>{tCurrent('auto.remoteGitManager.ybr38x2')}</button>
                 </div>
               </div>
               <div className="git-workspace-metrics">
-                <div><span>变更</span><strong>{changedCount}</strong></div>
-                <div><span>已暂存</span><strong>{stagedCount}</strong></div>
-                <div><span>未暂存</span><strong>{unstagedCount}</strong></div>
-                <div><span>冲突</span><strong>{conflictedCount}</strong></div>
+                <div><span>{tCurrent('auto.remoteGitManager.j1lqcp')}</span><strong>{changedCount}</strong></div>
+                <div><span>{tCurrent('auto.remoteGitManager.mxd2tz')}</span><strong>{stagedCount}</strong></div>
+                <div><span>{tCurrent('auto.remoteGitManager.1q1wtkf')}</span><strong>{unstagedCount}</strong></div>
+                <div><span>{tCurrent('auto.remoteGitManager.v10se4')}</span><strong>{conflictedCount}</strong></div>
               </div>
-              <pre className="git-raw-status">{snapshot?.rawStatus || '点击“打开”选择远程 Git 仓库目录。'}</pre>
+              <pre className="git-raw-status">{snapshot?.rawStatus || tCurrent('auto.remoteGitManager.o2l703')}</pre>
             </section>
           ) : null}
 
           {activeTab === 'commits' ? (
             <section className="git-history-table">
               <div className="git-history-head">
-                <span>图谱</span>
-                <span>描述</span>
-                <span>日期</span>
-                <span>作者</span>
-                <span>提交</span>
+                <span>{tCurrent('auto.remoteGitManager.1vrv0c0')}</span>
+                <span>{tCurrent('auto.remoteGitManager.1kxyax6')}</span>
+                <span>{tCurrent('auto.remoteGitManager.14s86i5')}</span>
+                <span>{tCurrent('auto.remoteGitManager.41rk3e')}</span>
+                <span>{tCurrent('auto.remoteGitManager.ybr38x3')}</span>
               </div>
               <div className="git-history-body">
                 {filteredCommits.map((commit, index) => (
@@ -692,7 +692,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
                     <code>{commit.shortHash}</code>
                   </button>
                 ))}
-                {!filteredCommits.length ? <div className="git-empty-state">暂无提交记录。</div> : null}
+                {!filteredCommits.length ? <div className="git-empty-state">{tCurrent('auto.remoteGitManager.2ogdey')}</div> : null}
               </div>
             </section>
           ) : null}
@@ -702,43 +702,43 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
               <div className="git-diff-toolbar">
                 <div>
                   <span>Diff</span>
-                  <strong>{selectedFile?.path ?? '未选择文件'}</strong>
+                  <strong>{selectedFile?.path ?? tCurrent('auto.remoteGitManager.16wk7re')}</strong>
                 </div>
                 <div className="git-diff-actions">
                   <button type="button" className={diffMode === 'worktree' ? 'active' : ''} onClick={() => { setDiffMode('worktree'); void loadDiff(selectedFile, 'worktree'); }}>Unstaged</button>
                   <button type="button" className={diffMode === 'staged' ? 'active' : ''} onClick={() => { setDiffMode('staged'); void loadDiff(selectedFile, 'staged'); }}>Staged</button>
                 </div>
               </div>
-              <pre className="git-diff-output">{diffLoading ? '读取 diff 中...' : diffText || '选择文件后显示 diff。'}</pre>
+              <pre className="git-diff-output">{diffLoading ? tCurrent('auto.remoteGitManager.9ddmii') : diffText || tCurrent('auto.remoteGitManager.1fc4ohf')}</pre>
             </section>
           ) : null}
 
-          {activeTab === 'raw' ? <pre className="git-command-output">{commandOutput || snapshot?.rawOutput || '暂无输出。'}</pre> : null}
+          {activeTab === 'raw' ? <pre className="git-command-output">{commandOutput || snapshot?.rawOutput || tCurrent('auto.remoteGitManager.1c58myw')}</pre> : null}
 
           <section className="git-bottom-panes">
             <div className="git-commit-detail">
               <div className="git-pane-head">
-                <strong>{selectedCommit ? selectedCommit.subject : '未选择提交'}</strong>
-                <button type="button" onClick={copyRepositorySummary} disabled={!snapshot}>复制摘要</button>
+                <strong>{selectedCommit ? selectedCommit.subject : tCurrent('auto.remoteGitManager.lyfuaz')}</strong>
+                <button type="button" onClick={copyRepositorySummary} disabled={!snapshot}>{tCurrent('auto.remoteGitManager.18nulp1')}</button>
               </div>
               <dl>
-                <div><dt>提交</dt><dd>{selectedCommit?.hash ?? '-'}</dd></div>
-                <div><dt>父级</dt><dd>{snapshot?.commits[1]?.shortHash ?? '-'}</dd></div>
-                <div><dt>作者</dt><dd>{selectedCommit?.author ?? '-'}</dd></div>
-                <div><dt>日期</dt><dd>{selectedCommit ? formatDate(selectedCommit.date) : '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteGitManager.ybr38x4')}</dt><dd>{selectedCommit?.hash ?? '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteGitManager.nwsuwa')}</dt><dd>{snapshot?.commits[1]?.shortHash ?? '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteGitManager.41rk3e2')}</dt><dd>{selectedCommit?.author ?? '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteGitManager.14s86i52')}</dt><dd>{selectedCommit ? formatDate(selectedCommit.date) : '-'}</dd></div>
               </dl>
-              <p>{selectedCommit?.subject ?? (snapshot ? '选择历史记录查看详情。' : '请选择仓库目录。')}</p>
+              <p>{selectedCommit?.subject ?? (snapshot ? tCurrent('auto.remoteGitManager.nasjul') : tCurrent('auto.remoteGitManager.19ao44r'))}</p>
             </div>
             <div className="git-changed-files-panel">
               <div className="git-pane-head">
-                <strong>变更文件</strong>
+                <strong>{tCurrent('auto.remoteGitManager.bxcyok')}</strong>
                 <span>{snapshot?.clean ? 'clean' : `${changedCount} files`}</span>
-                <button type="button" onClick={copyCommandOutput} disabled={!commandOutput && !snapshot?.rawOutput}>复制输出</button>
+                <button type="button" onClick={copyCommandOutput} disabled={!commandOutput && !snapshot?.rawOutput}>{tCurrent('auto.remoteGitManager.tinpzn')}</button>
               </div>
               <div className="git-selected-actions">
-                <button type="button" onClick={() => void executeStageAction('stage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanStage}>暂存选中</button>
-                <button type="button" onClick={() => void executeStageAction('unstage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanUnstage}>取消暂存</button>
-                <button type="button" onClick={() => loadDiff()} disabled={!selectedFile || diffLoading}>查看 Diff</button>
+                <button type="button" onClick={() => void executeStageAction('stage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanStage}>{tCurrent('auto.remoteGitManager.h9ma4l')}</button>
+                <button type="button" onClick={() => void executeStageAction('unstage', selectedFile)} disabled={!snapshot || actionRunning || !selectedFileCanUnstage}>{tCurrent('auto.remoteGitManager.x30y3l3')}</button>
+                <button type="button" onClick={() => loadDiff()} disabled={!selectedFile || diffLoading}>{tCurrent('auto.remoteGitManager.1yzzm3k')}</button>
               </div>
               <div className="git-file-list">
                 {(snapshot?.files ?? []).map((file) => (
@@ -756,7 +756,7 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
                     <em>{file.indexStatus.trim() || '-'} / {file.worktreeStatus.trim() || '-'}</em>
                   </button>
                 ))}
-                {!snapshot || snapshot.files.length === 0 ? <div className="git-empty-state">没有变更文件。</div> : null}
+                {!snapshot || snapshot.files.length === 0 ? <div className="git-empty-state">{tCurrent('auto.remoteGitManager.533d9g')}</div> : null}
               </div>
             </div>
           </section>
@@ -767,20 +767,20 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
         <div className="git-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className={`git-confirm-dialog ${pendingAction.danger ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="git-confirm-header">
-              <span>{pendingAction.action === 'commit' ? '确认提交' : pendingAction.danger ? '确认仓库操作' : '确认命令'}</span>
+              <span>{pendingAction.action === 'commit' ? tCurrent('auto.remoteGitManager.1n9goln') : pendingAction.danger ? tCurrent('auto.remoteGitManager.103m2z0') : tCurrent('auto.remoteGitManager.17ojhw6')}</span>
               <strong>{pendingAction.label}{pendingAction.branch ? ` ${pendingAction.branch}` : ''}</strong>
             </div>
             <dl>
-              <div><dt>仓库</dt><dd>{snapshot?.rootPath ?? repoPath}</dd></div>
-              <div><dt>当前分支</dt><dd>{snapshot?.branch ?? '-'}</dd></div>
-              {pendingAction.branch ? <div><dt>目标分支</dt><dd>{pendingAction.branch}</dd></div> : null}
-              {pendingAction.message ? <div><dt>提交信息</dt><dd>{pendingAction.message}</dd></div> : null}
+              <div><dt>{tCurrent('auto.remoteGitManager.bq2r6r')}</dt><dd>{snapshot?.rootPath ?? repoPath}</dd></div>
+              <div><dt>{tCurrent('auto.remoteGitManager.qteeve')}</dt><dd>{snapshot?.branch ?? '-'}</dd></div>
+              {pendingAction.branch ? <div><dt>{tCurrent('auto.remoteGitManager.tllx09')}</dt><dd>{pendingAction.branch}</dd></div> : null}
+              {pendingAction.message ? <div><dt>{tCurrent('auto.remoteGitManager.1j66bbh2')}</dt><dd>{pendingAction.message}</dd></div> : null}
             </dl>
             <pre>{pendingAction.command.command}</pre>
             <div className="git-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteGitManager.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : pendingAction.action === 'commit' ? '提交' : '执行'}
+                {actionRunning ? tCurrent('auto.remoteGitManager.6svkbt') : pendingAction.action === 'commit' ? tCurrent('auto.remoteGitManager.ybr38x5') : tCurrent('auto.remoteGitManager.6azgji')}
               </button>
             </div>
           </div>
@@ -792,10 +792,10 @@ function RemoteGitManager({ connectionId, systemType }: RemoteGitManagerProps) {
         connectionId={connectionId}
         systemType={systemType}
         mode="directory"
-        title="选择 Git 仓库目录"
+        title={tCurrent('auto.remoteGitManager.1u85yo2')}
         visible={filePickerVisible}
         initialPath={repoPath || undefined}
-        confirmLabel="选择文件夹"
+        confirmLabel={tCurrent('auto.remoteGitManager.1f0cn5d')}
         onConfirm={handlePickRepository}
         onCancel={() => setFilePickerVisible(false)}
       />

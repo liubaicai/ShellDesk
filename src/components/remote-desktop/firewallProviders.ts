@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type FirewallBackend = 'ufw' | 'firewalld' | 'windows' | 'unknown';
 export type FirewallAction = 'allow' | 'deny' | 'reject' | 'limit' | 'unknown';
@@ -66,10 +67,10 @@ function normalizeAction(value: string): FirewallAction {
   const normalized = value.trim().toLowerCase();
 
   if (/\b(?:accept|allow|allowed)\b/.test(normalized)) return 'allow';
-  if (normalized === '允许') return 'allow';
-  if (normalized === 'deny' || normalized === 'block' || normalized === 'blocked' || normalized.includes('拒绝') || normalized.includes('阻止')) return 'deny';
-  if (normalized === 'reject' || normalized.includes('拒收')) return 'reject';
-  if (normalized === 'limit' || normalized === 'limited' || normalized.includes('限制') || normalized.includes('限速')) return 'limit';
+  if (normalized === tCurrent('auto.firewallProviders.11bz44c')) return 'allow';
+  if (normalized === 'deny' || normalized === 'block' || normalized === 'blocked' || normalized.includes(tCurrent('auto.firewallProviders.1qrntx4')) || normalized.includes(tCurrent('auto.firewallProviders.1xtyf8o'))) return 'deny';
+  if (normalized === 'reject' || normalized.includes(tCurrent('auto.firewallProviders.1y9ly2h'))) return 'reject';
+  if (normalized === 'limit' || normalized === 'limited' || normalized.includes(tCurrent('auto.firewallProviders.1d8panv')) || normalized.includes(tCurrent('auto.firewallProviders.11z7j5c'))) return 'limit';
   return 'unknown';
 }
 
@@ -100,7 +101,7 @@ function parseUfwStatusRuleLine(line: string, index: number): FirewallRule | nul
     !line
     || line.startsWith(backendMarker)
     || line.startsWith(ufwAddedMarker)
-    || /^(?:Status|状态):|^(?:Default|默认):|^(?:Logging|日志):|^(?:New profiles|新配置文件):|^(?:To\s+Action\s+From|至\s+动作\s+来自)|^-+\s+-+\s+-+/i.test(line)
+    || /^(?:Status|\u72b6\u6001):|^(?:Default|\u9ed8\u8ba4):|^(?:Logging|\u65e5\u5fd7):|^(?:New profiles|\u65b0\u914d\u7f6e\u6587\u4ef6):|^(?:To\s+Action\s+From|\u81f3\s+\u52a8\u4f5c\s+\u6765\u81ea)|^-+\s+-+\s+-+/i.test(line)
     || /^ERROR:|^sudo:|^WARN/i.test(line)
   ) {
     return null;
@@ -278,10 +279,10 @@ function parseWindowsSnapshot(stdout: string, stderr: string): FirewallSnapshot 
   const enabledProfiles = profiles.filter((profile) => /true/i.test(readString(profile, 'Enabled')));
   const profileLabel = profiles.map((profile) => {
     const name = readString(profile, 'Name') || 'Profile';
-    const enabled = /true/i.test(readString(profile, 'Enabled')) ? '启用' : '关闭';
+    const enabled = /true/i.test(readString(profile, 'Enabled')) ? tCurrent('auto.firewallProviders.5pm2ma') : tCurrent('auto.firewallProviders.g0fanx');
     const inbound = readString(profile, 'DefaultInboundAction') || '-';
     const outbound = readString(profile, 'DefaultOutboundAction') || '-';
-    return `${name}: ${enabled}, 入站 ${inbound}, 出站 ${outbound}`;
+    return tCurrent('auto.firewallProviders.tqupfg', { value0: name, value1: enabled, value2: inbound, value3: outbound });
   }).join('\n');
   const rules = toRecords(parsed.rules).map<FirewallRule>((record, index) => {
     const name = readString(record, 'Name') || `rule-${index}`;
@@ -306,8 +307,8 @@ function parseWindowsSnapshot(stdout: string, stderr: string): FirewallSnapshot 
 
   return {
     backend: 'windows',
-    status: enabledProfiles.length ? `已启用 ${enabledProfiles.length}/${profiles.length} 个配置文件` : '未启用',
-    defaultPolicy: profileLabel || '未读取到配置文件策略',
+    status: enabledProfiles.length ? tCurrent('auto.firewallProviders.187exb8', { value0: enabledProfiles.length, value1: profiles.length }) : tCurrent('auto.firewallProviders.1tylsuy'),
+    defaultPolicy: profileLabel || tCurrent('auto.firewallProviders.1b8epgj'),
     rules,
     rawOutput: [stdout, stderr].filter(Boolean).join('\n'),
   };
@@ -334,40 +335,7 @@ $rules = Get-NetFirewallRule -PolicyStore ActiveStore -Enabled True -ErrorAction
 `);
   }
 
-  return `
-if command -v ufw >/dev/null 2>&1; then
-  printf '${backendMarker}\\tufw\\n'
-  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    sudo -n ufw status numbered verbose 2>/dev/null || sudo -n ufw status numbered 2>/dev/null || sudo -n ufw status verbose 2>/dev/null || sudo -n ufw status 2>/dev/null
-  else
-    ufw status numbered verbose 2>/dev/null || ufw status numbered 2>/dev/null || ufw status verbose 2>/dev/null || ufw status 2>/dev/null
-  fi
-  printf '${ufwAddedMarker}\\n'
-  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    sudo -n ufw show added 2>/dev/null || true
-  else
-    ufw show added 2>/dev/null || true
-  fi
-  exit 0
-fi
-if command -v firewall-cmd >/dev/null 2>&1; then
-  printf '${backendMarker}\\tfirewalld\\n'
-  printf '${stateMarker}\\n'
-  state=$(sudo -n firewall-cmd --state 2>/dev/null || firewall-cmd --state 2>&1 || printf unknown)
-  printf '%s\\n' "$state"
-  zone=$(sudo -n firewall-cmd --get-default-zone 2>/dev/null || firewall-cmd --get-default-zone 2>/dev/null || sudo -n firewall-cmd --permanent --get-default-zone 2>/dev/null || firewall-cmd --permanent --get-default-zone 2>/dev/null || printf public)
-  printf '${zoneMarker}\\t%s\\n' "$zone"
-  printf '${listMarker}\\n'
-  if printf '%s' "$state" | grep -qi '^running$'; then
-    sudo -n firewall-cmd --list-all --zone="$zone" 2>&1 || firewall-cmd --list-all --zone="$zone" 2>&1 || sudo -n firewall-cmd --permanent --list-all --zone="$zone" 2>&1 || firewall-cmd --permanent --list-all --zone="$zone" 2>&1
-  else
-    sudo -n firewall-cmd --permanent --list-all --zone="$zone" 2>&1 || firewall-cmd --permanent --list-all --zone="$zone" 2>&1 || sudo -n firewall-cmd --list-all --zone="$zone" 2>&1 || firewall-cmd --list-all --zone="$zone" 2>&1
-  fi
-  exit 0
-fi
-printf '${backendMarker}\\tunknown\\n'
-printf '未检测到 ufw 或 firewalld。\\n'
-`;
+  return tCurrent('auto.firewallProviders.15x6sol', { value0: backendMarker, value1: ufwAddedMarker, value2: backendMarker, value3: stateMarker, value4: zoneMarker, value5: listMarker, value6: backendMarker });
 }
 
 export function parseFirewallSnapshot(stdout: string, stderr: string, isWindowsHost: boolean): FirewallSnapshot {
@@ -380,8 +348,8 @@ export function parseFirewallSnapshot(stdout: string, stderr: string, isWindowsH
   const rawOutput = [stdout, stderr].filter(Boolean).join('\n');
 
   if (backend === 'ufw') {
-    const status = stdout.match(/^(?:Status|状态):\s*(.+)$/im)?.[1]?.trim() ?? '未知';
-    const defaultPolicy = stdout.match(/^(?:Default|默认):\s*(.+)$/im)?.[1]?.trim() ?? '未读取到默认策略';
+    const status = stdout.match(/^(?:Status|\u72b6\u6001):\s*(.+)$/im)?.[1]?.trim() ?? tCurrent('auto.firewallProviders.1lpnuh4');
+    const defaultPolicy = stdout.match(/^(?:Default|\u9ed8\u8ba4):\s*(.+)$/im)?.[1]?.trim() ?? tCurrent('auto.firewallProviders.18nunr9');
 
     return {
       backend,
@@ -395,7 +363,7 @@ export function parseFirewallSnapshot(stdout: string, stderr: string, isWindowsH
   if (backend === 'firewalld') {
     const zone = stdout.match(new RegExp(`^${zoneMarker}\\t(.+)$`, 'm'))?.[1]?.trim() || 'public';
     const stateMatch = stdout.match(new RegExp(`${stateMarker}\\r?\\n([^\\r\\n]+)`, 'm'));
-    const status = stateMatch?.[1]?.trim() || '未知';
+    const status = stateMatch?.[1]?.trim() || tCurrent('auto.firewallProviders.1lpnuh42');
     const target = stdout.match(/^\s*target:\s*(.+)$/im)?.[1]?.trim();
 
     return {
@@ -410,8 +378,8 @@ export function parseFirewallSnapshot(stdout: string, stderr: string, isWindowsH
 
   return {
     backend: 'unknown',
-    status: '未检测到支持的防火墙工具',
-    defaultPolicy: '可安装 ufw 或 firewalld 后刷新',
+    status: tCurrent('auto.firewallProviders.1lahc0a'),
+    defaultPolicy: tCurrent('auto.firewallProviders.1fud4zn'),
     rules: [],
     rawOutput,
   };
@@ -423,26 +391,26 @@ export function validateFirewallDraft(draft: FirewallRuleDraft, backend: Firewal
   const portMatch = port.match(/^(\d{1,5})(?:[:-](\d{1,5}))?$/);
 
   if (!portMatch) {
-    throw new Error('端口必须是 1-65535，或端口范围，例如 8000-8010。');
+    throw new Error(tCurrent('auto.firewallProviders.f1rgcm'));
   }
 
   const startPort = Number.parseInt(portMatch[1], 10);
   const endPort = portMatch[2] ? Number.parseInt(portMatch[2], 10) : startPort;
 
   if (startPort < 1 || endPort > 65535 || startPort > endPort) {
-    throw new Error('端口范围必须位于 1-65535 内。');
+    throw new Error(tCurrent('auto.firewallProviders.yk8200'));
   }
 
   if (source && source.length > 120) {
-    throw new Error('来源地址过长。');
+    throw new Error(tCurrent('auto.firewallProviders.1t92on8'));
   }
 
   if (source && /[\r\n;&|`$<>]/.test(source)) {
-    throw new Error('来源地址包含不安全字符。');
+    throw new Error(tCurrent('auto.firewallProviders.10qam7f'));
   }
 
   if (backend === 'firewalld' && draft.action !== 'allow') {
-    throw new Error('firewalld 首版仅支持新增允许端口。');
+    throw new Error(tCurrent('auto.firewallProviders.1g52l0r'));
   }
 }
 
@@ -506,7 +474,7 @@ function defaultPolicyAllowsInbound(snapshot: FirewallSnapshot) {
   const policy = snapshot.defaultPolicy.toLowerCase();
 
   if (snapshot.backend === 'ufw') {
-    return /allow\s*\([^)]*incoming|incoming[^,;]*allow|允许[^,;]*(?:入站|进入)|(?:入站|进入)[^,;]*允许/i.test(snapshot.defaultPolicy);
+    return /allow\s*\([^)]*incoming|incoming[^,;]*allow|\u5141\u8bb8[^,;]*(?:\u5165\u7ad9|\u8fdb\u5165)|(?:\u5165\u7ad9|\u8fdb\u5165)[^,;]*\u5141\u8bb8/i.test(snapshot.defaultPolicy);
   }
 
   if (snapshot.backend === 'firewalld') {
@@ -520,19 +488,19 @@ export function isFirewallEnabled(snapshot: FirewallSnapshot) {
   const status = snapshot.status.trim().toLowerCase();
 
   if (snapshot.backend === 'ufw') {
-    if (/^(?:inactive|disabled|not\s+active|not\s+enabled)\b/.test(status) || /不活动|未启用|停用|关闭/.test(status)) {
+    if (/^(?:inactive|disabled|not\s+active|not\s+enabled)\b/.test(status) || /\u4e0d\u6d3b\u52a8|\u672a\u542f\u7528|\u505c\u7528|\u5173\u95ed/.test(status)) {
       return false;
     }
 
-    return /^(?:active|enabled)\b/.test(status) || /\b(?:active|enabled)\b/.test(status) || /活动|已启用|启用中/.test(status);
+    return /^(?:active|enabled)\b/.test(status) || /\b(?:active|enabled)\b/.test(status) || /\u6d3b\u52a8|\u5df2\u542f\u7528|\u542f\u7528\u4e2d/.test(status);
   }
 
   if (snapshot.backend === 'firewalld') {
-    if (/\bnot\s+running\b|inactive|dead|stopped|未运行|停止|停用|关闭/.test(status)) {
+    if (/\bnot\s+running\b|inactive|dead|stopped|\u672a\u8fd0\u884c|\u505c\u6b62|\u505c\u7528|\u5173\u95ed/.test(status)) {
       return false;
     }
 
-    return /^running\b/.test(status) || /\brunning\b/.test(status) || /运行中|已运行/.test(status);
+    return /^running\b/.test(status) || /\brunning\b/.test(status) || /\u8fd0\u884c\u4e2d|\u5df2\u8fd0\u884c/.test(status);
   }
 
   return false;
@@ -590,7 +558,7 @@ New-NetFirewallRule -DisplayName ${powershellSingleQuote(`ShellDesk ${draft.acti
 `);
   }
 
-  throw new Error('未检测到可操作的防火墙后端。');
+  throw new Error(tCurrent('auto.firewallProviders.1rn2uot'));
 }
 
 function normalizeUfwAddress(value?: string) {
@@ -607,7 +575,7 @@ function getUfwActionToken(action: FirewallAction) {
     return action;
   }
 
-  throw new Error('该 ufw 规则动作无法识别，不能安全删除。');
+  throw new Error(tCurrent('auto.firewallProviders.9xeh6g'));
 }
 
 function isUfwPortTarget(target: string, port?: string, protocol?: FirewallProtocol) {
@@ -661,7 +629,7 @@ function createUfwRuleDeleteSpec(rule: FirewallRule) {
     return parts.join(' ');
   }
 
-  throw new Error('该 ufw 规则缺少可删除的端口或目标。');
+  throw new Error(tCurrent('auto.firewallProviders.1mb7mx6'));
 }
 
 export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: FirewallRule, zone?: string) {
@@ -675,7 +643,7 @@ export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: 
 
   if (backend === 'firewalld') {
     if (!rule.port || !rule.protocol || rule.protocol === 'any') {
-      throw new Error('首版仅支持删除 firewalld 端口规则。');
+      throw new Error(tCurrent('auto.firewallProviders.9rw9yr'));
     }
 
     const targetZone = zone || 'public';
@@ -687,14 +655,14 @@ export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: 
     return powershellCommand(`Remove-NetFirewallRule -Name ${powershellSingleQuote(name)}`);
   }
 
-  throw new Error('未检测到可操作的防火墙后端。');
+  throw new Error(tCurrent('auto.firewallProviders.1rn2uot2'));
 }
 
 export function createFirewallReloadCommand(backend: FirewallBackend) {
   if (backend === 'ufw') return 'sudo -n ufw reload';
   if (backend === 'firewalld') return 'sudo -n firewall-cmd --reload';
   if (backend === 'windows') return powershellCommand('Get-NetFirewallProfile | Format-Table -AutoSize | Out-String');
-  throw new Error('未检测到可重载的防火墙后端。');
+  throw new Error(tCurrent('auto.firewallProviders.vl06p0'));
 }
 
 export function createFirewallSetEnabledCommand(backend: FirewallBackend, enabled: boolean) {
@@ -704,30 +672,16 @@ export function createFirewallSetEnabledCommand(backend: FirewallBackend, enable
 
   if (backend === 'firewalld') {
     return enabled
-      ? `if command -v systemctl >/dev/null 2>&1; then
-  sudo -n systemctl enable --now firewalld
-elif command -v service >/dev/null 2>&1; then
-  sudo -n service firewalld start
-else
-  printf '未检测到 systemctl 或 service，无法启用 firewalld。\\n' >&2
-  exit 1
-fi`
-      : `if command -v systemctl >/dev/null 2>&1; then
-  sudo -n systemctl disable --now firewalld
-elif command -v service >/dev/null 2>&1; then
-  sudo -n service firewalld stop
-else
-  printf '未检测到 systemctl 或 service，无法停用 firewalld。\\n' >&2
-  exit 1
-fi`;
+      ? tCurrent('auto.firewallProviders.rizhvl')
+      : tCurrent('auto.firewallProviders.zbzxdl');
   }
 
-  throw new Error('启用/停用仅支持 ufw 或 firewalld 后端。');
+  throw new Error(tCurrent('auto.firewallProviders.1w7t573'));
 }
 
 export function getFirewallBackendLabel(backend: FirewallBackend) {
   if (backend === 'ufw') return 'ufw';
   if (backend === 'firewalld') return 'firewalld';
   if (backend === 'windows') return 'Windows Firewall';
-  return '未识别';
+  return tCurrent('auto.firewallProviders.1oczu7y');
 }

@@ -1,17 +1,18 @@
 import type { FontWeight, ITheme } from '@xterm/xterm';
 
 import { buildFontStack } from '../../fontUtils';
+import type { MessageId } from '../../i18nCatalog';
 
 export const terminalThemeChoices: ReadonlyArray<{
   key: ShellDeskAppSettings['terminalTheme'];
-  label: string;
-  summary: string;
+  labelId: MessageId;
+  summaryId: MessageId;
   theme: ITheme;
 }> = [
   {
     key: 'shelldesk-dark',
-    label: 'ShellDesk 暗色',
-    summary: '高对比青绿，适合长时间 SSH 会话',
+    labelId: 'settings.terminal.theme.shelldeskDark.label',
+    summaryId: 'settings.terminal.theme.shelldeskDark.summary',
     theme: {
       background: '#181a24',
       foreground: '#d7fbe8',
@@ -42,8 +43,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'netcatty-dark',
-    label: 'Netcatty 暗色',
-    summary: 'GitHub 风格暗色，蓝色强调与柔和前景',
+    labelId: 'settings.terminal.theme.netcattyDark.label',
+    summaryId: 'settings.terminal.theme.netcattyDark.summary',
     theme: {
       background: '#0d1117',
       foreground: '#c9d1d9',
@@ -74,8 +75,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'tokyo-night',
-    label: 'Tokyo Night',
-    summary: '冷静蓝紫底色，语法色区分清晰',
+    labelId: 'settings.terminal.theme.tokyoNight.label',
+    summaryId: 'settings.terminal.theme.tokyoNight.summary',
     theme: {
       background: '#1a1b26',
       foreground: '#c0caf5',
@@ -106,8 +107,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'dracula',
-    label: 'Dracula',
-    summary: '经典紫灰底色，高饱和 ANSI 配色',
+    labelId: 'settings.terminal.theme.dracula.label',
+    summaryId: 'settings.terminal.theme.dracula.summary',
     theme: {
       background: '#282a36',
       foreground: '#f8f8f2',
@@ -138,8 +139,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'monokai',
-    label: 'Monokai',
-    summary: '深灰底与明亮语法色，适合日志巡检',
+    labelId: 'settings.terminal.theme.monokai.label',
+    summaryId: 'settings.terminal.theme.monokai.summary',
     theme: {
       background: '#272822',
       foreground: '#f8f8f2',
@@ -170,8 +171,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'solarized-light',
-    label: 'Solarized 浅色',
-    summary: '低眩光浅色终端，适合白天环境',
+    labelId: 'settings.terminal.theme.solarizedLight.label',
+    summaryId: 'settings.terminal.theme.solarizedLight.summary',
     theme: {
       background: '#fdf6e3',
       foreground: '#657b83',
@@ -202,8 +203,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'netcatty-light',
-    label: 'Netcatty 浅色',
-    summary: '清爽文档感，适合亮色工作台',
+    labelId: 'settings.terminal.theme.netcattyLight.label',
+    summaryId: 'settings.terminal.theme.netcattyLight.summary',
     theme: {
       background: '#f6f8fa',
       foreground: '#24292f',
@@ -234,8 +235,8 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
   {
     key: 'hacker-green',
-    label: 'Classic Green',
-    summary: '复古绿色 phosphor，适合专注单色输出',
+    labelId: 'settings.terminal.theme.classicGreen.label',
+    summaryId: 'settings.terminal.theme.classicGreen.summary',
     theme: {
       background: '#07130d',
       foreground: '#9fffb8',
@@ -266,17 +267,17 @@ export const terminalThemeChoices: ReadonlyArray<{
   },
 ];
 
-export const terminalFontWeightChoices: ReadonlyArray<{ value: number; label: string }> = [
-  { value: 300, label: '300 细' },
-  { value: 400, label: '400 常规' },
-  { value: 500, label: '500 中等' },
-  { value: 600, label: '600 半粗' },
+export const terminalFontWeightChoices: ReadonlyArray<{ value: number; labelId: MessageId }> = [
+  { value: 300, labelId: 'settings.terminal.fontWeight.300' },
+  { value: 400, labelId: 'settings.terminal.fontWeight.400' },
+  { value: 500, labelId: 'settings.terminal.fontWeight.500' },
+  { value: 600, labelId: 'settings.terminal.fontWeight.600' },
 ];
 
-export const terminalBoldWeightChoices: ReadonlyArray<{ value: number; label: string }> = [
-  { value: 600, label: '600 半粗' },
-  { value: 700, label: '700 粗体' },
-  { value: 800, label: '800 特粗' },
+export const terminalBoldWeightChoices: ReadonlyArray<{ value: number; labelId: MessageId }> = [
+  { value: 600, labelId: 'settings.terminal.fontWeight.600' },
+  { value: 700, labelId: 'settings.terminal.fontWeight.700' },
+  { value: 800, labelId: 'settings.terminal.fontWeight.800' },
 ];
 
 export function getTerminalTheme(themeKey: ShellDeskAppSettings['terminalTheme']): ITheme {

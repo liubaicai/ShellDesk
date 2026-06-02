@@ -2,10 +2,11 @@ import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboard
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import { tCurrent } from '../../i18n';
 
 const defaultBrowserUrl = 'http://127.0.0.1/';
 const browserBlankUrl = 'about:blank';
-const browserStartPageTitle = '起始页';
+const browserStartPageTitle = tCurrent('auto.remoteBrowser.z0eh12');
 const recentVisitLimit = 8;
 const browserStartPageCardLimit = 6;
 const browserRecentPreferencePrefix = 'browser.recent.';
@@ -30,11 +31,11 @@ const browserDefaultPageColorCss = `
 `;
 
 const loopbackServiceTargets = [
-  { label: '开发服务', port: 3000 },
+  { label: tCurrent('auto.remoteBrowser.d4d2lo'), port: 3000 },
   { label: 'Vite', port: 5173 },
-  { label: '本地服务', port: 8000 },
-  { label: '管理后台', port: 8080 },
-  { label: '面板', port: 9000 },
+  { label: tCurrent('auto.remoteBrowser.gkha7'), port: 8000 },
+  { label: tCurrent('auto.remoteBrowser.cit5ds'), port: 8080 },
+  { label: tCurrent('auto.remoteBrowser.1rq6sfi'), port: 9000 },
 ] as const;
 
 interface RemoteBrowserContext {
@@ -241,14 +242,14 @@ function getBrowserTitle(url: string, title = '') {
   }
 
   if (url === 'about:blank') {
-    return '空白页';
+    return tCurrent('auto.remoteBrowser.1qhgtsv');
   }
 
   try {
     const parsedUrl = new URL(url);
     return parsedUrl.hostname || parsedUrl.href;
   } catch {
-    return url || '远程浏览器';
+    return url || tCurrent('auto.remoteBrowser.claw1h');
   }
 }
 
@@ -387,13 +388,13 @@ function getBrowserQuickTargets(context: RemoteBrowserContext) {
     {
       id: 'loopback',
       label: '127.0.0.1',
-      hint: '远程回环地址',
+      hint: tCurrent('auto.remoteBrowser.wsgx3b'),
       url: getBrowserHostUrl('127.0.0.1'),
     },
     {
       id: 'remote-host',
       label: context.address,
-      hint: '远程主机地址',
+      hint: tCurrent('auto.remoteBrowser.10tjf3d'),
       url: getBrowserHostUrl(context.address),
     },
     ...loopbackServiceTargets.map((target) => ({
@@ -555,17 +556,17 @@ function getBrowserProtocolLabel(url: string) {
     return 'HTTP';
   }
 
-  return '空白页';
+  return tCurrent('auto.remoteBrowser.1qhgtsv2');
 }
 
 function getBrowserErrorDiagnosis(error: BrowserLoadErrorState) {
   if (error.kind === 'protocol') {
     return {
-      title: '地址协议已拦截',
-      summary: '远程浏览器只允许打开 HTTP、HTTPS 和空白页。',
+      title: tCurrent('auto.remoteBrowser.ofpb6e'),
+      summary: tCurrent('auto.remoteBrowser.1uevwwr'),
       checks: [
-        '把裸域名、短主机名或 localhost 地址直接输入地址栏即可自动补全。',
-        '需要打开本地文件或应用协议时，请回到对应 ShellDesk 工具处理。',
+        tCurrent('auto.remoteBrowser.13gh3cf'),
+        tCurrent('auto.remoteBrowser.17oz1qm'),
       ],
     };
   }
@@ -574,54 +575,54 @@ function getBrowserErrorDiagnosis(error: BrowserLoadErrorState) {
 
   if (error.kind === 'certificate' || /CERT|TLS|SSL|-20\d/.test(signature)) {
     return {
-      title: 'TLS 校验失败',
-      summary: '目标 HTTPS 证书没有通过校验。',
+      title: tCurrent('auto.remoteBrowser.jw3yrd'),
+      summary: tCurrent('auto.remoteBrowser.1r6zh40'),
       checks: [
-        '确认目标服务证书、域名和系统时间是否匹配。',
-        '如果确认这是可信的内网或自签服务，可以选择继续访问。',
+        tCurrent('auto.remoteBrowser.qq5fwr'),
+        tCurrent('auto.remoteBrowser.kl9k0o'),
       ],
     };
   }
 
   if (/NAME_NOT_RESOLVED|DNS|-105/.test(signature)) {
     return {
-      title: 'DNS 无法解析',
-      summary: '远程网络路径没有解析出这个主机名。',
+      title: tCurrent('auto.remoteBrowser.nvg62g'),
+      summary: tCurrent('auto.remoteBrowser.k7fs4q'),
       checks: [
-        '先尝试远程主机地址或 127.0.0.1 快捷入口。',
-        '确认远端 DNS、hosts 或内网域名是否在当前 SSH 网络里可用。',
+        tCurrent('auto.remoteBrowser.pzfcp0'),
+        tCurrent('auto.remoteBrowser.121kr7a'),
       ],
     };
   }
 
   if (/CONNECTION_REFUSED|-102/.test(signature)) {
     return {
-      title: '连接被拒绝',
-      summary: '目标地址可达，但端口上没有接受连接的服务。',
+      title: tCurrent('auto.remoteBrowser.47kn08'),
+      summary: tCurrent('auto.remoteBrowser.27vgqw'),
       checks: [
-        '确认服务已在远端启动，并监听了目标端口。',
-        'localhost 服务请优先使用 127.0.0.1 与常用端口快捷入口。',
+        tCurrent('auto.remoteBrowser.5ds2z1'),
+        tCurrent('auto.remoteBrowser.1hpemmt'),
       ],
     };
   }
 
   if (/PROXY|SOCKS|TUNNEL|SOCKET_NOT_CONNECTED|-130|-111|-15/.test(signature)) {
     return {
-      title: '代理路径异常',
-      summary: '浏览器没有通过当前 SSH 代理完成访问。',
+      title: tCurrent('auto.remoteBrowser.9i6mad'),
+      summary: tCurrent('auto.remoteBrowser.1jz0kpf'),
       checks: [
-        '确认远程连接仍在线，代理端口没有被关闭。',
-        '再试一个远程 localhost 页面，用来区分代理和目标服务故障。',
+        tCurrent('auto.remoteBrowser.hsfk2p'),
+        tCurrent('auto.remoteBrowser.1xwz4ng'),
       ],
     };
   }
 
   return {
-    title: '页面加载失败',
-    summary: 'ShellDesk 没有拿到可渲染的远程页面。',
+    title: tCurrent('auto.remoteBrowser.dte5kz'),
+    summary: tCurrent('auto.remoteBrowser.13bp659'),
     checks: [
-      '检查 URL、端口和远端服务状态。',
-      '如果是内网地址，确认它能从当前远程主机所在网络访问。',
+      tCurrent('auto.remoteBrowser.12ri9mw'),
+      tCurrent('auto.remoteBrowser.1ittmnw'),
     ],
   };
 }
@@ -1084,7 +1085,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
         setLoadError({
           kind: isCertificateLoadError(browserEvent.errorDescription, browserEvent.errorCode) ? 'certificate' : 'load',
           url: failedUrl,
-          detail: browserEvent.errorDescription || '页面加载失败。',
+          detail: browserEvent.errorDescription || tCurrent('auto.remoteBrowser.a4eeab'),
           code: browserEvent.errorCode,
         });
       } else {
@@ -1143,7 +1144,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
 
     const payload = {
       title: showStartPage ? '' : pageTitle || getBrowserTitle(currentUrl || browserAddress || defaultBrowserUrl),
-      status: loadError ? '加载失败' : showStartPage ? '起始页' : isLoading ? '远程加载中' : 'SSH 代理',
+      status: loadError ? tCurrent('auto.remoteBrowser.kvpltc') : showStartPage ? tCurrent('auto.remoteBrowser.z0eh122') : isLoading ? tCurrent('auto.remoteBrowser.1hlxe0e') : tCurrent('auto.remoteBrowser.1vu0k2a'),
       tone: loadError ? 'error' : isLoading ? 'loading' : 'idle',
     } as const;
     const payloadKey = `${payload.tone}\n${payload.status}\n${payload.title}`;
@@ -1260,7 +1261,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       setLoadError({
         kind: 'protocol',
         url: value.trim(),
-        detail: '地址没有使用允许的 Web 协议。',
+        detail: tCurrent('auto.remoteBrowser.1lrjovw'),
       });
       setIsLoading(false);
       return;
@@ -1323,7 +1324,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       setLoadError({
         kind: 'certificate',
         url,
-        detail: '只能为 HTTPS 地址添加临时证书例外。',
+        detail: tCurrent('auto.remoteBrowser.1nq1h7k'),
       });
       return;
     }
@@ -1334,7 +1335,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       setLoadError({
         kind: 'certificate',
         url: nextUrl,
-        detail: '当前运行环境不支持证书例外。',
+        detail: tCurrent('auto.remoteBrowser.ebwnne'),
       });
       return;
     }
@@ -1469,7 +1470,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       setLoadError({
         kind: 'protocol',
         url: bookmarkDraft.url.trim(),
-        detail: '书签地址没有使用允许的 Web 协议。',
+        detail: tCurrent('auto.remoteBrowser.9ipm58'),
       });
       return;
     }
@@ -1532,32 +1533,32 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
     <div className="remote-browser-pane">
       <div className="browser-chrome">
         <form className="browser-toolbar" onSubmit={submitBrowserAddress}>
-          <button type="button" onClick={() => navigateWebview('back')} disabled={!canGoBack} aria-label="后退" title="后退">
+          <button type="button" onClick={() => navigateWebview('back')} disabled={!canGoBack} aria-label={tCurrent('auto.remoteBrowser.r5m4oz')} title={tCurrent('auto.remoteBrowser.r5m4oz2')}>
             <BrowserIcon name="arrow-left" />
           </button>
-          <button type="button" onClick={() => navigateWebview('forward')} disabled={!canGoForward} aria-label="前进" title="前进">
+          <button type="button" onClick={() => navigateWebview('forward')} disabled={!canGoForward} aria-label={tCurrent('auto.remoteBrowser.be2j21')} title={tCurrent('auto.remoteBrowser.be2j212')}>
             <BrowserIcon name="arrow-right" />
           </button>
           <button
             type="button"
             onClick={() => navigateWebview('reload')}
-            aria-label={isLoading ? '停止加载' : '刷新页面'}
-            title={isLoading ? '停止加载' : '刷新页面'}
+            aria-label={isLoading ? tCurrent('auto.remoteBrowser.3vav5g') : tCurrent('auto.remoteBrowser.1a17ftx')}
+            title={isLoading ? tCurrent('auto.remoteBrowser.3vav5g2') : tCurrent('auto.remoteBrowser.1a17ftx2')}
           >
             <BrowserIcon name={isLoading ? 'stop' : 'reload'} />
           </button>
-          <button type="button" onClick={() => navigateWebview('home')} aria-label="打开主页" title="主页">
+          <button type="button" onClick={() => navigateWebview('home')} aria-label={tCurrent('auto.remoteBrowser.1uimc52')} title={tCurrent('auto.remoteBrowser.1qogcjh')}>
             <BrowserIcon name="home" />
           </button>
           <div className="browser-address-shell">
-            <span className="browser-security-icon" aria-label={`地址协议 ${addressProtocolLabel}`}>
+            <span className="browser-security-icon" aria-label={tCurrent('auto.remoteBrowser.1w6pnal', { value0: addressProtocolLabel })}>
               <BrowserIcon name="shield" />
               <em>{addressProtocolLabel}</em>
             </span>
             <input
               value={browserAddress}
               onChange={(event) => setBrowserAddress(event.target.value)}
-              placeholder="输入域名、localhost 或内网地址"
+              placeholder={tCurrent('auto.remoteBrowser.1isrg1t')}
               autoCapitalize="off"
               spellCheck={false}
             />
@@ -1568,33 +1569,33 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
                 type="button"
                 className={`browser-bookmark-trigger ${currentBookmark ? 'active' : ''}`}
                 onClick={() => openBookmarkDraft(currentBookmark)}
-                aria-label={currentBookmark ? '编辑当前页书签' : '收藏当前页'}
-                title={currentBookmark ? '编辑当前页书签' : '收藏当前页'}
+                aria-label={currentBookmark ? tCurrent('auto.remoteBrowser.u0djar') : tCurrent('auto.remoteBrowser.mzw4n1')}
+                title={currentBookmark ? tCurrent('auto.remoteBrowser.u0djar2') : tCurrent('auto.remoteBrowser.mzw4n12')}
               >
                 <BrowserIcon name="star" filled={Boolean(currentBookmark)} />
               </button>
 
               {bookmarkDraft ? (
-                <div ref={bookmarkPopoverRef} className="browser-bookmark-popover" role="dialog" aria-label="书签编辑器">
+                <div ref={bookmarkPopoverRef} className="browser-bookmark-popover" role="dialog" aria-label={tCurrent('auto.remoteBrowser.1y73au8')}>
                   <div className="browser-bookmark-popover-header">
-                    <strong>{bookmarkDraft.id ? '编辑书签' : '添加书签'}</strong>
-                    <button type="button" aria-label="关闭书签编辑器" onClick={closeBookmarkDraft}>
+                    <strong>{bookmarkDraft.id ? tCurrent('auto.remoteBrowser.1tj2124') : tCurrent('auto.remoteBrowser.u0jxf6')}</strong>
+                    <button type="button" aria-label={tCurrent('auto.remoteBrowser.14ipoko')} onClick={closeBookmarkDraft}>
                       ×
                     </button>
                   </div>
 
                   <label className="browser-bookmark-field">
-                    <span>名称</span>
+                    <span>{tCurrent('auto.remoteBrowser.hzx914')}</span>
                     <input
                       value={bookmarkDraft.title}
                       onChange={(event) => updateBookmarkDraftField('title', event.target.value)}
                       onKeyDown={handleBookmarkDraftKeyDown}
-                      placeholder="书签名称"
+                      placeholder={tCurrent('auto.remoteBrowser.tef9js')}
                     />
                   </label>
 
                   <label className="browser-bookmark-field">
-                    <span>地址</span>
+                    <span>{tCurrent('auto.remoteBrowser.1qeky7x')}</span>
                     <input
                       value={bookmarkDraft.url}
                       onChange={(event) => updateBookmarkDraftField('url', event.target.value)}
@@ -1605,31 +1606,28 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
 
                   <div className="browser-bookmark-popover-actions">
                     <button type="button" className="primary" onClick={commitBookmarkDraft}>
-                      保存
-                    </button>
+                      {tCurrent('auto.remoteBrowser.1c3mapc')}</button>
                     <button type="button" onClick={closeBookmarkDraft}>
-                      取消
-                    </button>
+                      {tCurrent('auto.remoteBrowser.1589w37')}</button>
                     {bookmarkDraft.id ? (
                       <button type="button" className="danger-text" onClick={() => deleteBookmark(bookmarkDraft.id!)}>
-                        删除
-                      </button>
+                        {tCurrent('auto.remoteBrowser.1t2vi4h')}</button>
                     ) : null}
                   </div>
                 </div>
               ) : null}
             </div>
 
-            <button type="submit" className="browser-go-button" aria-label="打开地址" title="打开地址">
+            <button type="submit" className="browser-go-button" aria-label={tCurrent('auto.remoteBrowser.1kqwl0m')} title={tCurrent('auto.remoteBrowser.1kqwl0m2')}>
               <BrowserIcon name="go" />
             </button>
             <button
               ref={toolbarMenuTriggerRef}
               type="button"
               className={`browser-overflow-button ${toolbarMenu ? 'active' : ''}`}
-              aria-label="浏览器菜单"
+              aria-label={tCurrent('auto.remoteBrowser.13djrd')}
               aria-expanded={Boolean(toolbarMenu)}
-              title="菜单"
+              title={tCurrent('auto.remoteBrowser.1yyx3wq')}
               onClick={(event) => toggleToolbarMenu(event.currentTarget)}
             >
               <BrowserIcon name="more" />
@@ -1638,9 +1636,9 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
         </form>
 
         {isQuickPanelOpen ? (
-          <section className="browser-shortcut-panel" aria-label="快捷访问和最近访问">
+          <section className="browser-shortcut-panel" aria-label={tCurrent('auto.remoteBrowser.18vr6a0')}>
             <div className="browser-target-column">
-              <strong>快捷地址</strong>
+              <strong>{tCurrent('auto.remoteBrowser.1m5og4v')}</strong>
               <div className="browser-target-grid">
                 {quickTargets.map((target) => (
                   <button
@@ -1659,8 +1657,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
             <div className="browser-recent-column">
               <strong>
                 <BrowserIcon name="clock" />
-                最近访问
-              </strong>
+                {tCurrent('auto.remoteBrowser.177rjv7')}</strong>
               {recentVisits.length ? (
                 <div className="browser-recent-list">
                   {recentVisits.map((visit) => (
@@ -1671,7 +1668,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
                   ))}
                 </div>
               ) : (
-                <p>访问远程页面后，这里会保留本连接最近打开的地址。</p>
+                <p>{tCurrent('auto.remoteBrowser.ija02q')}</p>
               )}
             </div>
           </section>
@@ -1680,7 +1677,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
         {isBookmarkBarOpen ? (
           <div className="browser-bookmark-bar">
             {bookmarks.length ? (
-              <div className="browser-bookmark-list" aria-label="连接级书签栏">
+              <div className="browser-bookmark-list" aria-label={tCurrent('auto.remoteBrowser.1nxadi2')}>
                 {bookmarks.map((bookmark) => {
                   const bookmarkStyle = {
                     '--bookmark-accent': getBookmarkAccent(bookmark.url),
@@ -1708,8 +1705,8 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
                         }}
                         type="button"
                         className={`browser-bookmark-menu-button ${bookmarkMenu?.bookmarkId === bookmark.id ? 'active' : ''}`}
-                        aria-label="书签操作"
-                        title="书签操作"
+                        aria-label={tCurrent('auto.remoteBrowser.cojylo')}
+                        title={tCurrent('auto.remoteBrowser.cojylo2')}
                         onClick={(event) => {
                           event.stopPropagation();
                           toggleBookmarkMenu(bookmark, event.currentTarget);
@@ -1723,10 +1720,9 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
               </div>
             ) : (
               <div className="browser-bookmark-empty">
-                <span>此连接还没有书签。</span>
+                <span>{tCurrent('auto.remoteBrowser.118m1ju')}</span>
                 <button type="button" onClick={() => openBookmarkDraft()}>
-                  收藏当前页
-                </button>
+                  {tCurrent('auto.remoteBrowser.mzw4n13')}</button>
               </div>
             )}
           </div>
@@ -1739,7 +1735,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
           className="browser-bookmark-menu-panel browser-bookmark-menu-panel-floating"
           style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
           role="menu"
-          aria-label="书签操作菜单"
+          aria-label={tCurrent('auto.remoteBrowser.5u66fz')}
         >
           <button
             type="button"
@@ -1749,16 +1745,14 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
               setBookmarkMenu(null);
             }}
           >
-            编辑
-          </button>
+            {tCurrent('auto.remoteBrowser.qreyeg')}</button>
           <button
             type="button"
             role="menuitem"
             className="danger-text"
             onClick={() => deleteBookmark(activeBookmarkMenuBookmark.id)}
           >
-            删除
-          </button>
+            {tCurrent('auto.remoteBrowser.1t2vi4h2')}</button>
         </div>,
         document.body,
       ) : null}
@@ -1769,7 +1763,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
           className="browser-toolbar-menu-panel"
           style={{ left: toolbarMenu.x, top: toolbarMenu.y }}
           role="menu"
-          aria-label="浏览器菜单"
+          aria-label={tCurrent('auto.remoteBrowser.13djrd2')}
         >
           <button
             type="button"
@@ -1780,8 +1774,8 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
               setToolbarMenu(null);
             }}
           >
-            <span>快捷与最近</span>
-            <em>{isQuickPanelOpen ? '收起' : '展开'}</em>
+            <span>{tCurrent('auto.remoteBrowser.16gvmo0')}</span>
+            <em>{isQuickPanelOpen ? tCurrent('auto.remoteBrowser.gk08uy') : tCurrent('auto.remoteBrowser.12zbdao')}</em>
           </button>
           <button
             type="button"
@@ -1792,8 +1786,8 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
               setToolbarMenu(null);
             }}
           >
-            <span>书签栏</span>
-            <em>{isBookmarkBarOpen ? '隐藏' : '显示'}</em>
+            <span>{tCurrent('auto.remoteBrowser.16oyw0u')}</span>
+            <em>{isBookmarkBarOpen ? tCurrent('auto.remoteBrowser.f6y3nk') : tCurrent('auto.remoteBrowser.1x51kzl')}</em>
           </button>
         </div>,
         document.body,
@@ -1802,7 +1796,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       <div className={`browser-viewport ${isLoading ? 'loading' : ''} ${showStartPage ? 'start' : ''}`}>
         <div className={`browser-progress ${isLoading ? 'visible' : ''}`} aria-hidden="true" />
         {showStartPage ? (
-          <section className="browser-start-page" aria-label="浏览器起始页">
+          <section className="browser-start-page" aria-label={tCurrent('auto.remoteBrowser.sy7nhr')}>
             <div className="browser-start-grid">
               {startPageCards.map((card) => {
                 const probePort = getBrowserStartCardProbePort(card.url);
@@ -1859,13 +1853,12 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
                     disabled={isTrustingCertificate}
                     onClick={() => void continueWithInvalidCertificate(loadError.url)}
                   >
-                    {isTrustingCertificate ? '正在继续' : '继续访问'}
+                    {isTrustingCertificate ? tCurrent('auto.remoteBrowser.avwp1u') : tCurrent('auto.remoteBrowser.qmibsc')}
                   </button>
                 ) : null}
                 {loadError.kind === 'load' ? (
                   <button type="button" onClick={() => loadBrowserUrl(loadError.url)}>
-                    重新加载
-                  </button>
+                    {tCurrent('auto.remoteBrowser.1ghz5wv')}</button>
                 ) : null}
                 <button
                   type="button"
@@ -1874,8 +1867,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
                     setIsQuickPanelOpen(true);
                   }}
                 >
-                  查看快捷地址
-                </button>
+                  {tCurrent('auto.remoteBrowser.1pb3g2r')}</button>
               </footer>
             </div>
           </section>

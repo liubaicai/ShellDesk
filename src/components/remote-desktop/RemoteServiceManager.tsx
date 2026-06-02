@@ -5,6 +5,7 @@ import DismissibleAlert from './DismissibleAlert';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 export type RemoteServiceActiveState = 'active' | 'inactive' | 'failed' | 'activating' | 'deactivating' | 'unknown';
 export type RemoteServiceEnabledState = 'enabled' | 'disabled' | 'static' | 'masked' | 'unknown';
@@ -59,21 +60,21 @@ const SERVICE_DETAIL_LOGS_MARKER = '__SHELLDESK_SERVICE_LOGS__';
 const SERVICE_DETAIL_UNIT_MARKER = '__SHELLDESK_SERVICE_UNIT__';
 
 const serviceFilters: Array<{ key: ServiceFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'active', label: '运行中' },
-  { key: 'failed', label: '失败' },
-  { key: 'inactive', label: '已停止' },
-  { key: 'enabled', label: '已启用' },
-  { key: 'disabled', label: '已禁用' },
+  { key: 'all', label: tCurrent('auto.remoteServiceManager.q6w6ul') },
+  { key: 'active', label: tCurrent('auto.remoteServiceManager.1bywqik') },
+  { key: 'failed', label: tCurrent('auto.remoteServiceManager.12db3qz') },
+  { key: 'inactive', label: tCurrent('auto.remoteServiceManager.1gqawiz') },
+  { key: 'enabled', label: tCurrent('auto.remoteServiceManager.1w2s4cy') },
+  { key: 'disabled', label: tCurrent('auto.remoteServiceManager.z0vsqk') },
 ];
 
 const actionDefinitions: Record<ServiceAction, { label: string; success: string; danger?: boolean; confirm?: boolean; primary?: boolean }> = {
-  start: { label: '启动', success: '已启动', primary: true },
-  stop: { label: '停止', success: '已停止', danger: true, confirm: true },
-  restart: { label: '重启', success: '已重启', danger: true, confirm: true },
-  reload: { label: 'Reload', success: '已重新加载' },
-  enable: { label: '启用自启', success: '已启用开机自启' },
-  disable: { label: '禁用自启', success: '已禁用开机自启' },
+  start: { label: tCurrent('auto.remoteServiceManager.155xe0y'), success: tCurrent('auto.remoteServiceManager.whsqz6'), primary: true },
+  stop: { label: tCurrent('auto.remoteServiceManager.1pnni9n'), success: tCurrent('auto.remoteServiceManager.1gqawiz2'), danger: true, confirm: true },
+  restart: { label: tCurrent('auto.remoteServiceManager.1fa8wet'), success: tCurrent('auto.remoteServiceManager.18bkm3p'), danger: true, confirm: true },
+  reload: { label: 'Reload', success: tCurrent('auto.remoteServiceManager.jqtxq7') },
+  enable: { label: tCurrent('auto.remoteServiceManager.15qofhx'), success: tCurrent('auto.remoteServiceManager.1hpotpb') },
+  disable: { label: tCurrent('auto.remoteServiceManager.1o6i0tj'), success: tCurrent('auto.remoteServiceManager.1hxu1y5') },
 };
 
 const activeStateOrder: Record<RemoteServiceActiveState, number> = {
@@ -89,7 +90,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteServiceManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -189,20 +190,20 @@ function normalizeEnabledState(value: unknown): RemoteServiceEnabledState {
 }
 
 function getActiveStateLabel(state?: RemoteServiceActiveState) {
-  if (state === 'active') return '运行中';
-  if (state === 'failed') return '失败';
-  if (state === 'inactive') return '已停止';
-  if (state === 'activating') return '启动中';
-  if (state === 'deactivating') return '停止中';
-  return '未知';
+  if (state === 'active') return tCurrent('auto.remoteServiceManager.1bywqik2');
+  if (state === 'failed') return tCurrent('auto.remoteServiceManager.12db3qz2');
+  if (state === 'inactive') return tCurrent('auto.remoteServiceManager.1gqawiz3');
+  if (state === 'activating') return tCurrent('auto.remoteServiceManager.1y1d41p');
+  if (state === 'deactivating') return tCurrent('auto.remoteServiceManager.1rzrzxe');
+  return tCurrent('auto.remoteServiceManager.1lpnuh4');
 }
 
 function getEnabledStateLabel(state?: RemoteServiceEnabledState) {
-  if (state === 'enabled') return '已启用';
-  if (state === 'disabled') return '已禁用';
-  if (state === 'static') return '手动/静态';
-  if (state === 'masked') return '已屏蔽';
-  return '未知';
+  if (state === 'enabled') return tCurrent('auto.remoteServiceManager.1w2s4cy2');
+  if (state === 'disabled') return tCurrent('auto.remoteServiceManager.z0vsqk2');
+  if (state === 'static') return tCurrent('auto.remoteServiceManager.sb4a45');
+  if (state === 'masked') return tCurrent('auto.remoteServiceManager.15rk3jd');
+  return tCurrent('auto.remoteServiceManager.1lpnuh42');
 }
 
 function getActiveStateTone(state?: RemoteServiceActiveState) {
@@ -491,56 +492,18 @@ function parseWindowsServiceDetailOutput(stdout: string, serviceName: string, fa
 }
 
 function getLinuxServiceListCommand() {
-  return `
-if ! command -v systemctl >/dev/null 2>&1; then
-  printf '${SERVICE_LIST_ERROR_PREFIX}systemctl 未安装或当前 PATH 不可用。\\n'
-  exit 0
-fi
-printf '${SERVICE_LIST_UNITS_MARKER}\\n'
-systemctl list-units --type=service --all --no-pager --plain --no-legend 2>/dev/null | awk 'BEGIN{OFS="\\t"} NF >= 4 { unit=$1; load=$2; active=$3; sub=$4; desc=""; for (i=5; i<=NF; i++) desc=desc (i>5?" ":"") $i; print unit, load, active, sub, desc }'
-printf '${SERVICE_LIST_UNIT_FILES_MARKER}\\n'
-systemctl list-unit-files --type=service --no-pager --plain --no-legend 2>/dev/null | awk 'BEGIN{OFS="\\t"} NF >= 2 { print $1, $2 }'
-`;
+  return tCurrent('auto.remoteServiceManager.ftv1bn', { value0: SERVICE_LIST_ERROR_PREFIX, value1: SERVICE_LIST_UNITS_MARKER, value2: SERVICE_LIST_UNIT_FILES_MARKER });
 }
 
 function getLinuxServiceDetailCommand(serviceName: string) {
   const unit = shellSingleQuote(serviceName);
 
-  return `
-if ! command -v systemctl >/dev/null 2>&1; then
-  printf '${SERVICE_LIST_ERROR_PREFIX}systemctl 未安装或当前 PATH 不可用。\\n'
-  exit 127
-fi
-printf '${SERVICE_DETAIL_PROPS_MARKER}\\n'
-systemctl show ${unit} --no-pager -p Id -p Description -p LoadState -p ActiveState -p SubState -p UnitFileState -p MainPID -p MemoryCurrent -p FragmentPath -p ActiveEnterTimestamp -p ExecMainStartTimestamp 2>&1 || true
-printf '${SERVICE_DETAIL_STATUS_MARKER}\\n'
-systemctl status ${unit} --no-pager --lines=80 2>&1 || true
-printf '${SERVICE_DETAIL_LOGS_MARKER}\\n'
-if command -v journalctl >/dev/null 2>&1; then
-  journalctl -u ${unit} -n 100 --no-pager --output=short-iso 2>&1 || true
-else
-  printf 'journalctl 不可用。\\n'
-fi
-printf '${SERVICE_DETAIL_UNIT_MARKER}\\n'
-systemctl cat ${unit} --no-pager 2>&1 || true
-`;
+  return tCurrent('auto.remoteServiceManager.tz62dt', { value0: SERVICE_LIST_ERROR_PREFIX, value1: SERVICE_DETAIL_PROPS_MARKER, value2: unit, value3: SERVICE_DETAIL_STATUS_MARKER, value4: unit, value5: SERVICE_DETAIL_LOGS_MARKER, value6: unit, value7: SERVICE_DETAIL_UNIT_MARKER, value8: unit });
 }
 
 function getLinuxServiceActionCommand(action: ServiceAction, serviceName: string) {
   const unit = shellSingleQuote(serviceName);
-  return `
-if ! command -v systemctl >/dev/null 2>&1; then
-  printf 'systemctl 未安装或当前 PATH 不可用。\\n'
-  exit 127
-fi
-if [ "$(id -u 2>/dev/null)" = "0" ]; then
-  systemctl ${action} ${unit} 2>&1
-elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-  sudo -n systemctl ${action} ${unit} 2>&1
-else
-  systemctl ${action} ${unit} 2>&1
-fi
-`;
+  return tCurrent('auto.remoteServiceManager.1jxcuyv', { value0: action, value1: unit, value2: action, value3: unit, value4: action, value5: unit });
 }
 
 function getWindowsServiceListCommand() {
@@ -562,52 +525,7 @@ $services | ConvertTo-Json -Compress -Depth 4
 function getWindowsServiceDetailCommand(serviceName: string) {
   const nameLiteral = powershellSingleQuote(serviceName);
 
-  return powershellCommand(`
-$serviceName = ${nameLiteral}
-$service = Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { $_.Name -eq $serviceName } | Select-Object -First 1
-if (-not $service) { throw "服务不存在：$serviceName" }
-$detail = [pscustomobject]@{
-  name = [string]$service.Name
-  displayName = [string]$service.DisplayName
-  description = [string]$service.Description
-  status = [string]$service.State
-  startType = [string]$service.StartMode
-  pid = if ($null -ne $service.ProcessId -and [int]$service.ProcessId -gt 0) { [int]$service.ProcessId } else { $null }
-  pathName = [string]$service.PathName
-  serviceType = [string]$service.ServiceType
-  startName = [string]$service.StartName
-  exitCode = [string]$service.ExitCode
-  serviceSpecificExitCode = [string]$service.ServiceSpecificExitCode
-}
-"${SERVICE_DETAIL_PROPS_MARKER}"
-$detail | ConvertTo-Json -Compress -Depth 4
-"${SERVICE_DETAIL_STATUS_MARKER}"
-$detail | Format-List | Out-String
-"${SERVICE_DETAIL_LOGS_MARKER}"
-try {
-  $displayName = [string]$service.DisplayName
-  $events = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = (Get-Date).AddDays(-14) } -MaxEvents 240 -ErrorAction SilentlyContinue |
-    Where-Object { $_.Message -like "*$serviceName*" -or (-not [string]::IsNullOrWhiteSpace($displayName) -and $_.Message -like "*$displayName*") } |
-    Select-Object -First 100
-  if ($events) {
-    $events | ForEach-Object {
-      $message = ($_.Message -replace "\\s+", " ").Trim()
-      "{0:u} [{1}] {2}" -f $_.TimeCreated, $_.LevelDisplayName, $message
-    }
-  } else {
-    "未找到最近服务控制事件。"
-  }
-} catch {
-  "无法读取系统事件日志：$($_.Exception.Message)"
-}
-"${SERVICE_DETAIL_UNIT_MARKER}"
-"Name: $($service.Name)"
-"DisplayName: $($service.DisplayName)"
-"StartMode: $($service.StartMode)"
-"StartName: $($service.StartName)"
-"PathName: $($service.PathName)"
-"ServiceType: $($service.ServiceType)"
-`);
+  return powershellCommand(tCurrent('auto.remoteServiceManager.1lwtgdd', { value0: nameLiteral, value1: SERVICE_DETAIL_PROPS_MARKER, value2: SERVICE_DETAIL_STATUS_MARKER, value3: SERVICE_DETAIL_LOGS_MARKER, value4: SERVICE_DETAIL_UNIT_MARKER }));
 }
 
 function getWindowsServiceActionCommand(action: ServiceAction, serviceName: string) {
@@ -625,7 +543,7 @@ function getWindowsServiceActionCommand(action: ServiceAction, serviceName: stri
   } else if (action === 'disable') {
     command = 'Set-Service -Name $serviceName -StartupType Disabled -ErrorAction Stop';
   } else {
-    throw new Error('Windows Services 不支持 reload 操作。');
+    throw new Error(tCurrent('auto.remoteServiceManager.i10mpj'));
   }
 
   return powershellCommand(`
@@ -664,20 +582,20 @@ function matchesFilter(service: RemoteServiceSummary, filter: ServiceFilter) {
 
 function buildDiagnostics(detail: RemoteServiceDetail) {
   return [
-    `服务：${detail.name}`,
-    `描述：${detail.description || '-'}`,
-    `运行状态：${getActiveStateLabel(detail.activeState)} / ${detail.subState || '-'}`,
-    `启用状态：${getEnabledStateLabel(detail.enabledState)}`,
+    tCurrent('auto.remoteServiceManager.xu4exe', { value0: detail.name }),
+    tCurrent('auto.remoteServiceManager.19zuh6d', { value0: detail.description || '-' }),
+    tCurrent('auto.remoteServiceManager.63g5ui', { value0: getActiveStateLabel(detail.activeState), value1: detail.subState || '-' }),
+    tCurrent('auto.remoteServiceManager.gmr5v2', { value0: getEnabledStateLabel(detail.enabledState) }),
     `PID：${detail.pid ?? '-'}`,
-    `内存：${detail.memory || '-'}`,
-    `启动时间：${detail.startedAt || '-'}`,
-    `单元/路径：${detail.unitFilePath || '-'}`,
+    tCurrent('auto.remoteServiceManager.1kz76i3', { value0: detail.memory || '-' }),
+    tCurrent('auto.remoteServiceManager.1funla3', { value0: detail.startedAt || '-' }),
+    tCurrent('auto.remoteServiceManager.1yhlo60', { value0: detail.unitFilePath || '-' }),
     '',
     '--- status ---',
-    detail.statusText || '无状态输出',
+    detail.statusText || tCurrent('auto.remoteServiceManager.plwf7b'),
     '',
     '--- logs ---',
-    detail.recentLogs || '无最近日志',
+    detail.recentLogs || tCurrent('auto.remoteServiceManager.1trc75o'),
   ].join('\n');
 }
 
@@ -740,7 +658,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
       }
 
       if (result.code !== 0 && nextServices.length === 0) {
-        setError(result.stderr || result.stdout || '无法读取远程服务列表。');
+        setError(result.stderr || result.stdout || tCurrent('auto.remoteServiceManager.9ku5cr'));
       }
 
       const preferredServiceName = options?.preferredServiceName || selectedServiceNameRef.current;
@@ -788,7 +706,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
         : parseLinuxServiceDetailOutput(result.stdout || '', serviceName, fallback);
 
       if (result.code !== 0 && !nextDetail.statusText) {
-        throw new Error(result.stderr || result.stdout || '无法读取服务详情。');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteServiceManager.50a08u'));
       }
 
       if (isMountedRef.current && requestId === detailRequestIdRef.current) {
@@ -850,9 +768,9 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
 
     try {
       await navigator.clipboard.writeText(value);
-      setSuccess(`已复制${label}。`);
+      setSuccess(tCurrent('auto.remoteServiceManager.1wvs77j', { value0: label }));
     } catch (err) {
-      setError(`复制失败：${getErrorMessage(err)}`);
+      setError(tCurrent('auto.remoteServiceManager.cd1xgf', { value0: getErrorMessage(err) }));
     }
   };
 
@@ -869,7 +787,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
       const result = await runCmd(connectionId, command);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '服务操作失败，可能需要更高权限。');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteServiceManager.pbnt82'));
       }
 
       setSuccess(`${actionDefinitions[action].success}：${service.name}`);
@@ -949,10 +867,10 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
         type="button"
         className={className}
         disabled={disabled}
-        title={isWindowsHost && action === 'reload' ? 'Windows Services 不支持 reload' : definition.label}
+        title={isWindowsHost && action === 'reload' ? tCurrent('auto.remoteServiceManager.bl36ui') : definition.label}
         onClick={() => requestServiceAction(action)}
       >
-        {actingAction === action ? '处理中' : definition.label}
+        {actingAction === action ? tCurrent('auto.remoteServiceManager.1h3kna') : definition.label}
       </button>
     );
   };
@@ -984,10 +902,10 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
       <div className="service-toolbar">
         <div className="service-toolbar-left">
           <button type="button" className="service-tool-button primary" onClick={() => void refreshServices()} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+            {loading ? tCurrent('auto.remoteServiceManager.1taxqz1') : tCurrent('auto.remoteServiceManager.12qo56a')}
           </button>
           <button type="button" className="service-tool-button" onClick={() => void refreshCurrentService()} disabled={!selectedService || detailLoading}>
-            {detailLoading ? '读取中' : '刷新当前'}
+            {detailLoading ? tCurrent('auto.remoteServiceManager.10y5j8r') : tCurrent('auto.remoteServiceManager.146hdy2')}
           </button>
           <span className="service-system-pill">{isWindowsHost ? 'Windows Services' : 'systemd'}</span>
           <span className="service-summary">
@@ -1000,7 +918,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
             className="service-select"
             value={filter}
             onChange={(event) => setFilter(event.target.value as ServiceFilter)}
-            aria-label="按服务状态筛选"
+            aria-label={tCurrent('auto.remoteServiceManager.jw61qj')}
           >
             {serviceFilters.map((item) => (
               <option key={item.key} value={item.key}>{item.label}</option>
@@ -1009,7 +927,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
           <input
             type="search"
             className="service-search"
-            placeholder="搜索服务名、描述..."
+            placeholder={tCurrent('auto.remoteServiceManager.11xkl8e')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -1021,29 +939,29 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
       {success ? <DismissibleAlert className="service-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="service-content">
-        <aside className="service-list-panel" aria-label="服务列表">
+        <aside className="service-list-panel" aria-label={tCurrent('auto.remoteServiceManager.yphmo4')}>
           <div className="service-stats">
-            <span><strong>{serviceStats.active}</strong> 运行</span>
-            <span><strong>{serviceStats.failed}</strong> 失败</span>
-            <span><strong>{serviceStats.inactive}</strong> 停止</span>
-            <span><strong>{serviceStats.enabled}</strong> 自启</span>
-            <span><strong>{serviceStats.disabled}</strong> 禁用</span>
+            <span><strong>{serviceStats.active}</strong> {tCurrent('auto.remoteServiceManager.1kn0p6h')}</span>
+            <span><strong>{serviceStats.failed}</strong> {tCurrent('auto.remoteServiceManager.12db3qz3')}</span>
+            <span><strong>{serviceStats.inactive}</strong> {tCurrent('auto.remoteServiceManager.1pnni9n2')}</span>
+            <span><strong>{serviceStats.enabled}</strong> {tCurrent('auto.remoteServiceManager.qv0fiu')}</span>
+            <span><strong>{serviceStats.disabled}</strong> {tCurrent('auto.remoteServiceManager.1dcdrxo')}</span>
           </div>
 
           <div className="service-list">
             {visibleServices.length === 0 ? (
-              <div className="service-empty">{loading ? '正在加载服务列表...' : '暂无匹配的服务。'}</div>
+              <div className="service-empty">{loading ? tCurrent('auto.remoteServiceManager.xfi9sa') : tCurrent('auto.remoteServiceManager.1eh7d0x')}</div>
             ) : (
               visibleServices.map(renderServiceListItem)
             )}
           </div>
         </aside>
 
-        <section className="service-detail-panel" aria-label="服务详情">
+        <section className="service-detail-panel" aria-label={tCurrent('auto.remoteServiceManager.y5zpae')}>
           {selectedDetail ? (
             <>
               <header className="service-detail-header">
-                <span className="service-detail-header-label">服务</span>
+                <span className="service-detail-header-label">{tCurrent('auto.remoteServiceManager.2yn6uz')}</span>
                 <strong title={selectedDetail.name}>{selectedDetail.displayName || selectedDetail.name}</strong>
                 {selectedDetail.displayName && selectedDetail.displayName !== selectedDetail.name ? (
                   <code title={selectedDetail.name}>{selectedDetail.name}</code>
@@ -1053,61 +971,60 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
                   type="button"
                   className="service-copy-btn"
                   disabled={!currentDetail}
-                  onClick={() => currentDetail ? void copyToClipboard(buildDiagnostics(currentDetail), '诊断信息') : undefined}
+                  onClick={() => currentDetail ? void copyToClipboard(buildDiagnostics(currentDetail), tCurrent('auto.remoteServiceManager.i62n38')) : undefined}
                 >
-                  复制诊断
-                </button>
+                  {tCurrent('auto.remoteServiceManager.4zl8tz')}</button>
               </header>
 
               <div className="service-overview">
                 <div>
-                  <span>运行状态</span>
+                  <span>{tCurrent('auto.remoteServiceManager.1ihgm6s')}</span>
                   <strong className={`service-state-tag ${getActiveStateTone(selectedDetail.activeState)}`}>
                     {getActiveStateLabel(selectedDetail.activeState)}
                   </strong>
                   <small>{selectedDetail.subState || '-'}</small>
                 </div>
                 <div>
-                  <span>自启状态</span>
+                  <span>{tCurrent('auto.remoteServiceManager.cp1ltf')}</span>
                   <strong className={`service-enabled-tag ${getEnabledStateTone(selectedDetail.enabledState)}`}>
                     {getEnabledStateLabel(selectedDetail.enabledState)}
                   </strong>
                   <small>{selectedDetail.loadState || '-'}</small>
                 </div>
                 <div>
-                  <span>主 PID</span>
+                  <span>{tCurrent('auto.remoteServiceManager.1yaznnb')}</span>
                   <strong>{selectedDetail.pid ?? '-'}</strong>
-                  <small>{currentDetail?.memory || '内存未知'}</small>
+                  <small>{currentDetail?.memory || tCurrent('auto.remoteServiceManager.1h7wyah')}</small>
                 </div>
                 <div>
-                  <span>启动时间</span>
+                  <span>{tCurrent('auto.remoteServiceManager.vosj20')}</span>
                   <strong title={currentDetail?.startedAt}>{currentDetail?.startedAt || '-'}</strong>
                   <small title={currentDetail?.unitFilePath}>{currentDetail?.unitFilePath || '-'}</small>
                 </div>
               </div>
 
-              <div className="service-action-bar" aria-label="服务操作">
+              <div className="service-action-bar" aria-label={tCurrent('auto.remoteServiceManager.1s14vay')}>
                 {(['start', 'stop', 'restart', 'reload', 'enable', 'disable'] as ServiceAction[]).map(renderActionButton)}
               </div>
 
-              <div className="service-tabs" role="tablist" aria-label="服务详情标签">
-                <button type="button" role="tab" className={tab === 'status' ? 'active' : ''} onClick={() => setTab('status')}>状态</button>
-                <button type="button" role="tab" className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>日志</button>
-                <button type="button" role="tab" className={tab === 'unit' ? 'active' : ''} onClick={() => setTab('unit')}>{isWindowsHost ? '配置' : '单元文件'}</button>
+              <div className="service-tabs" role="tablist" aria-label={tCurrent('auto.remoteServiceManager.ldcehj')}>
+                <button type="button" role="tab" className={tab === 'status' ? 'active' : ''} onClick={() => setTab('status')}>{tCurrent('auto.remoteServiceManager.1ccx4t4')}</button>
+                <button type="button" role="tab" className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}>{tCurrent('auto.remoteServiceManager.1k863h1')}</button>
+                <button type="button" role="tab" className={tab === 'unit' ? 'active' : ''} onClick={() => setTab('unit')}>{isWindowsHost ? tCurrent('auto.remoteServiceManager.1x99t4y') : tCurrent('auto.remoteServiceManager.1v8qcac')}</button>
               </div>
 
               <div className="service-tab-panel">
-                {detailLoading && !currentDetail ? <div className="service-empty">正在读取服务详情...</div> : null}
+                {detailLoading && !currentDetail ? <div className="service-empty">{tCurrent('auto.remoteServiceManager.1u5wcce')}</div> : null}
                 {!detailLoading || currentDetail ? (
                   <>
                     {tab === 'status' ? (
-                      <pre>{currentDetail?.statusText || '暂无状态输出。'}</pre>
+                      <pre>{currentDetail?.statusText || tCurrent('auto.remoteServiceManager.1om6ffz')}</pre>
                     ) : null}
                     {tab === 'logs' ? (
-                      <pre>{currentDetail?.recentLogs || '暂无最近日志。'}</pre>
+                      <pre>{currentDetail?.recentLogs || tCurrent('auto.remoteServiceManager.m9goey')}</pre>
                     ) : null}
                     {tab === 'unit' ? (
-                      <pre>{currentDetail?.unitFileText || '暂无配置内容。'}</pre>
+                      <pre>{currentDetail?.unitFileText || tCurrent('auto.remoteServiceManager.1tjd2jc')}</pre>
                     ) : null}
                   </>
                 ) : null}
@@ -1115,8 +1032,8 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
             </>
           ) : (
             <div className="service-detail-empty">
-              <strong>{loading ? '正在加载服务' : '未选中服务'}</strong>
-              <span>{loading ? '等待远程服务列表返回。' : '暂无服务详情。'}</span>
+              <strong>{loading ? tCurrent('auto.remoteServiceManager.10xzg2z') : tCurrent('auto.remoteServiceManager.1wyr1zl')}</strong>
+              <span>{loading ? tCurrent('auto.remoteServiceManager.1apozs9') : tCurrent('auto.remoteServiceManager.7yu0aa')}</span>
             </div>
           )}
         </section>
@@ -1132,18 +1049,16 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
             onClick={(event) => event.stopPropagation()}
           >
             <div id="service-action-confirm-title" className="service-modal-title">
-              {actionDefinitions[pendingAction.action].label}服务
-            </div>
+              {actionDefinitions[pendingAction.action].label}{tCurrent('auto.remoteServiceManager.2yn6uz2')}</div>
             <div className="service-modal-message">
-              <p>目标服务：<strong>{pendingAction.service.name}</strong></p>
-              <p>该操作可能影响远程连接、业务请求或正在执行的后台任务。</p>
+              <p>{tCurrent('auto.remoteServiceManager.g66cve')}<strong>{pendingAction.service.name}</strong></p>
+              <p>{tCurrent('auto.remoteServiceManager.1b1spgs')}</p>
               <code>{pendingAction.service.description || pendingAction.service.displayName}</code>
             </div>
             <div className="service-modal-actions">
-              <button type="button" className="service-modal-btn" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" className="service-modal-btn" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteServiceManager.1589w37')}</button>
               <button type="button" className="service-modal-btn danger" onClick={() => void executeServiceAction(pendingAction.action, pendingAction.service)}>
-                确认执行
-              </button>
+                {tCurrent('auto.remoteServiceManager.1lw0tr0')}</button>
             </div>
           </div>
         </div>,

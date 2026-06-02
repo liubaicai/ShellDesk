@@ -20,6 +20,7 @@ import {
 } from './firewallProviders';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteFirewallManagerProps {
   connectionId: string;
@@ -48,18 +49,18 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteFirewallManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
 }
 
 function getActionLabel(action: FirewallRule['action']) {
-  if (action === 'allow') return '允许';
-  if (action === 'deny') return '拒绝';
-  if (action === 'reject') return '拒收';
-  if (action === 'limit') return '限速';
-  return '未知';
+  if (action === 'allow') return tCurrent('auto.remoteFirewallManager.11bz44c');
+  if (action === 'deny') return tCurrent('auto.remoteFirewallManager.1qrntx4');
+  if (action === 'reject') return tCurrent('auto.remoteFirewallManager.1y9ly2h');
+  if (action === 'limit') return tCurrent('auto.remoteFirewallManager.11z7j5c');
+  return tCurrent('auto.remoteFirewallManager.1lpnuh4');
 }
 
 function getProtocolLabel(protocol?: FirewallRule['protocol']) {
@@ -71,19 +72,19 @@ function getProtocolLabel(protocol?: FirewallRule['protocol']) {
 
 function formatRule(rule: FirewallRule) {
   return [
-    `动作：${getActionLabel(rule.action)}`,
-    `协议：${getProtocolLabel(rule.protocol)}`,
-    `端口：${rule.port || '-'}`,
-    `来源：${rule.source || '-'}`,
-    `方向：${rule.direction || '-'}`,
-    `目标：${rule.target || '-'}`,
+    tCurrent('auto.remoteFirewallManager.e9yzls', { value0: getActionLabel(rule.action) }),
+    tCurrent('auto.remoteFirewallManager.snmvc3', { value0: getProtocolLabel(rule.protocol) }),
+    tCurrent('auto.remoteFirewallManager.1nxunke', { value0: rule.port || '-' }),
+    tCurrent('auto.remoteFirewallManager.9537r7', { value0: rule.source || '-' }),
+    tCurrent('auto.remoteFirewallManager.q05xva', { value0: rule.direction || '-' }),
+    tCurrent('auto.remoteFirewallManager.f6igbh', { value0: rule.target || '-' }),
     '',
     rule.raw,
   ].join('\n');
 }
 
 function isInactiveUfwSnapshot(snapshot: FirewallSnapshot) {
-  return snapshot.backend === 'ufw' && /inactive|不活动|未启用|停用/i.test(snapshot.status);
+  return snapshot.backend === 'ufw' && /inactive|\u4e0d\u6d3b\u52a8|\u672a\u542f\u7528|\u505c\u7528/i.test(snapshot.status);
 }
 
 function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFirewallManagerProps) {
@@ -120,11 +121,11 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
       setRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
 
       if (result.code !== 0 && nextSnapshot.backend === 'unknown') {
-        setNotice(result.stderr || result.stdout || '未检测到可用防火墙工具。');
+        setNotice(result.stderr || result.stdout || tCurrent('auto.remoteFirewallManager.44dttz'));
       } else if (isInactiveUfwSnapshot(nextSnapshot)) {
-        setNotice('UFW 当前未启用，列表中的规则只存在于配置中，不会拦截端口。确认 SSH 规则后，可点击“启用”。');
+        setNotice(tCurrent('auto.remoteFirewallManager.1nwvtug'));
       } else if (nextSnapshot.backend === 'firewalld' && !isFirewallEnabled(nextSnapshot)) {
-        setNotice('firewalld 当前未运行。启用前请确认当前 SSH 端口已在默认 zone 中放行。');
+        setNotice(tCurrent('auto.remoteFirewallManager.1p7xlqd'));
       } else if (result.stderr.trim()) {
         setNotice(result.stderr.trim());
       }
@@ -168,7 +169,7 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
 
     try {
       setPendingAction({
-        title: `删除规则 ${rule.target || rule.port || rule.id}`,
+        title: tCurrent('auto.remoteFirewallManager.mgaey3', { value0: rule.target || rule.port || rule.id }),
         command: createFirewallDeleteRuleCommand(snapshot.backend, rule, snapshot.zone),
         danger: true,
         afterRun: refreshFirewall,
@@ -185,7 +186,7 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
 
     try {
       setPendingAction({
-        title: '重新加载防火墙',
+        title: tCurrent('auto.remoteFirewallManager.1y6e5fr'),
         command: createFirewallReloadCommand(snapshot.backend),
         afterRun: refreshFirewall,
       });
@@ -203,15 +204,15 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
       const command = createFirewallSetEnabledCommand(snapshot.backend, enabled);
       const sshPortAllowed = isFirewallSshPortAllowed(snapshot, sshPort);
       const missingSshRuleWarning = enabled && !sshPortAllowed
-        ? `未检测到放行当前 SSH 连接端口 ${sshPort}/tcp 的规则。启用防火墙可能立即中断当前会话，请先添加允许规则，或确认目标主机已通过其它策略放行该端口。`
+        ? tCurrent('auto.remoteFirewallManager.14ddiq3', { value0: sshPort })
         : '';
 
       setPendingAction({
-        title: enabled ? '启用防火墙' : '停用防火墙',
+        title: enabled ? tCurrent('auto.remoteFirewallManager.19kpgmg') : tCurrent('auto.remoteFirewallManager.1yno50l'),
         command,
         description: missingSshRuleWarning || (enabled
-          ? '将启用防火墙服务，并在支持的后端中设置开机自启。'
-          : '将停用防火墙服务，并在支持的后端中关闭开机自启。'),
+          ? tCurrent('auto.remoteFirewallManager.nk3yh3')
+          : tCurrent('auto.remoteFirewallManager.yrtpie')),
         danger: !enabled || Boolean(missingSshRuleWarning),
         afterRun: refreshFirewall,
       });
@@ -233,10 +234,10 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
       const result = await runCmd(connectionId, pendingAction.command);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '防火墙命令执行失败。');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteFirewallManager.kzqb0h'));
       }
 
-      setNotice(result.stdout || result.stderr || '操作已完成。');
+      setNotice(result.stdout || result.stderr || tCurrent('auto.remoteFirewallManager.1m6h6ak'));
       const afterRun = pendingAction.afterRun;
       setPendingAction(null);
       await afterRun?.();
@@ -253,36 +254,34 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
     }
 
     await navigator.clipboard.writeText(pendingAction.command);
-    setNotice('已复制命令。');
+    setNotice(tCurrent('auto.remoteFirewallManager.1ys75c3'));
   };
 
   const copyRule = async (rule: FirewallRule) => {
     await navigator.clipboard.writeText(formatRule(rule));
-    setNotice('已复制规则信息。');
+    setNotice(tCurrent('auto.remoteFirewallManager.1bovukl'));
   };
 
   return (
     <section className="firewall-manager">
       <header className="firewall-toolbar">
         <div className="firewall-status-block">
-          <span>防火墙</span>
-          <strong>{snapshot ? getFirewallBackendLabel(snapshot.backend) : '检测中'}</strong>
-          <em>{snapshot?.status || (loading ? '读取中' : '未加载')}</em>
+          <span>{tCurrent('auto.remoteFirewallManager.1209dfd')}</span>
+          <strong>{snapshot ? getFirewallBackendLabel(snapshot.backend) : tCurrent('auto.remoteFirewallManager.xr2jgj')}</strong>
+          <em>{snapshot?.status || (loading ? tCurrent('auto.remoteFirewallManager.10y5j8r') : tCurrent('auto.remoteFirewallManager.18vm84u'))}</em>
         </div>
         <div className="firewall-toolbar-actions">
           <button type="button" className="primary" onClick={refreshFirewall} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+            {loading ? tCurrent('auto.remoteFirewallManager.1taxqz1') : tCurrent('auto.remoteFirewallManager.12qo56a')}
           </button>
           <button type="button" className="primary" onClick={() => prepareSetFirewallEnabled(true)} disabled={!canToggleFirewall || firewallEnabled || actionRunning}>
-            启用
-          </button>
+            {tCurrent('auto.remoteFirewallManager.5pm2ma')}</button>
           <button type="button" className="danger" onClick={() => prepareSetFirewallEnabled(false)} disabled={!canToggleFirewall || !firewallEnabled || actionRunning}>
-            停用
-          </button>
+            {tCurrent('auto.remoteFirewallManager.6q9o5l')}</button>
           <button type="button" onClick={prepareReload} disabled={!snapshot || snapshot.backend === 'unknown'}>
             Reload
           </button>
-          <span>{snapshot?.defaultPolicy || '默认策略未知'}{refreshedAt ? ` · ${refreshedAt}` : ''}</span>
+          <span>{snapshot?.defaultPolicy || tCurrent('auto.remoteFirewallManager.unhp5')}{refreshedAt ? ` · ${refreshedAt}` : ''}</span>
         </div>
       </header>
 
@@ -292,19 +291,19 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
       <div className="firewall-content">
         <aside className="firewall-form-panel">
           <div className="firewall-form-title">
-            <span>新增规则</span>
-            <strong>开放或拒绝端口</strong>
+            <span>{tCurrent('auto.remoteFirewallManager.66ztdg')}</span>
+            <strong>{tCurrent('auto.remoteFirewallManager.w5xi8w')}</strong>
           </div>
           <label>
-            <span>动作</span>
+            <span>{tCurrent('auto.remoteFirewallManager.1d335ap')}</span>
             <select value={draft.action} onChange={(event) => updateDraft('action', event.target.value as FirewallRuleDraft['action'])}>
-              <option value="allow">允许</option>
-              <option value="deny">拒绝</option>
-              <option value="reject">拒收</option>
+              <option value="allow">{tCurrent('auto.remoteFirewallManager.11bz44c2')}</option>
+              <option value="deny">{tCurrent('auto.remoteFirewallManager.1qrntx42')}</option>
+              <option value="reject">{tCurrent('auto.remoteFirewallManager.1y9ly2h2')}</option>
             </select>
           </label>
           <label>
-            <span>协议</span>
+            <span>{tCurrent('auto.remoteFirewallManager.7j43ow')}</span>
             <select value={draft.protocol} onChange={(event) => updateDraft('protocol', event.target.value as FirewallRuleDraft['protocol'])}>
               <option value="tcp">TCP</option>
               <option value="udp">UDP</option>
@@ -312,49 +311,47 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
             </select>
           </label>
           <label>
-            <span>端口</span>
-            <input value={draft.port} onChange={(event) => updateDraft('port', event.target.value)} placeholder="80 或 8000-8010" />
+            <span>{tCurrent('auto.remoteFirewallManager.19ijc5j')}</span>
+            <input value={draft.port} onChange={(event) => updateDraft('port', event.target.value)} placeholder={tCurrent('auto.remoteFirewallManager.18tmk8t')} />
           </label>
           <label>
-            <span>来源</span>
-            <input value={draft.source} onChange={(event) => updateDraft('source', event.target.value)} placeholder="留空表示任意来源" />
+            <span>{tCurrent('auto.remoteFirewallManager.2tds9c')}</span>
+            <input value={draft.source} onChange={(event) => updateDraft('source', event.target.value)} placeholder={tCurrent('auto.remoteFirewallManager.m2z9iz')} />
           </label>
           {riskHint ? (
             <div className="firewall-risk-note">
-              该规则可能对任意来源开放，或涉及常见敏感端口，请确认来源地址和服务暴露范围。
-            </div>
+              {tCurrent('auto.remoteFirewallManager.18z0ik0')}</div>
           ) : null}
           <button type="button" className="firewall-add-button" onClick={prepareAddRule} disabled={!snapshot || snapshot.backend === 'unknown'}>
-            生成并确认命令
-          </button>
+            {tCurrent('auto.remoteFirewallManager.1i8qzb')}</button>
 
           <div className="firewall-detail">
-            <span>选中规则</span>
+            <span>{tCurrent('auto.remoteFirewallManager.byif8s')}</span>
             {selectedRule ? (
               <>
                 <strong>{selectedRule.target || selectedRule.port || selectedRule.id}</strong>
                 <dl>
-                  <div><dt>动作</dt><dd>{getActionLabel(selectedRule.action)}</dd></div>
-                  <div><dt>协议</dt><dd>{getProtocolLabel(selectedRule.protocol)}</dd></div>
-                  <div><dt>来源</dt><dd>{selectedRule.source || '-'}</dd></div>
-                  <div><dt>方向</dt><dd>{selectedRule.direction || '-'}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteFirewallManager.1d335ap2')}</dt><dd>{getActionLabel(selectedRule.action)}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteFirewallManager.7j43ow2')}</dt><dd>{getProtocolLabel(selectedRule.protocol)}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteFirewallManager.2tds9c2')}</dt><dd>{selectedRule.source || '-'}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteFirewallManager.3tp9vj')}</dt><dd>{selectedRule.direction || '-'}</dd></div>
                 </dl>
                 <div className="firewall-detail-actions">
-                  <button type="button" onClick={() => copyRule(selectedRule)}>复制</button>
-                  <button type="button" className="danger" onClick={() => prepareDeleteRule(selectedRule)}>删除</button>
+                  <button type="button" onClick={() => copyRule(selectedRule)}>{tCurrent('auto.remoteFirewallManager.1xbipwq')}</button>
+                  <button type="button" className="danger" onClick={() => prepareDeleteRule(selectedRule)}>{tCurrent('auto.remoteFirewallManager.1t2vi4h')}</button>
                 </div>
               </>
             ) : (
-              <p>选择规则后查看详情。</p>
+              <p>{tCurrent('auto.remoteFirewallManager.qke2u3')}</p>
             )}
           </div>
         </aside>
 
         <main className="firewall-main-panel">
           <div className="firewall-tabs">
-            <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>规则</button>
-            <button type="button" className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>原始输出</button>
-            <span>{snapshot?.zone ? `Zone ${snapshot.zone} · ` : ''}{snapshot?.rules.length ?? 0} 条</span>
+            <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>{tCurrent('auto.remoteFirewallManager.16w14qm')}</button>
+            <button type="button" className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>{tCurrent('auto.remoteFirewallManager.1sxtwbe')}</button>
+            <span>{snapshot?.zone ? `Zone ${snapshot.zone} · ` : ''}{snapshot?.rules.length ?? 0} {tCurrent('auto.remoteFirewallManager.1rfm5gs')}</span>
           </div>
 
           {tab === 'rules' ? (
@@ -362,13 +359,13 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
               <table className="firewall-table">
                 <thead>
                   <tr>
-                    <th>动作</th>
-                    <th>协议</th>
-                    <th>端口/服务</th>
-                    <th>来源</th>
-                    <th>方向</th>
-                    <th>原始规则</th>
-                    <th>操作</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.1d335ap3')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.7j43ow3')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.1cjvky2')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.2tds9c3')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.3tp9vj2')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.1d31yso')}</th>
+                    <th>{tCurrent('auto.remoteFirewallManager.501w24')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -382,20 +379,20 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
                       <td title={rule.raw}>{rule.raw}</td>
                       <td className="firewall-table-actions">
                         <div>
-                          <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>复制</button>
-                          <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>删除</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>{tCurrent('auto.remoteFirewallManager.1xbipwq2')}</button>
+                          <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>{tCurrent('auto.remoteFirewallManager.1t2vi4h2')}</button>
                         </div>
                       </td>
                     </tr>
                   ))}
                   {!loading && (!snapshot || snapshot.rules.length === 0) ? (
-                    <tr><td colSpan={7} className="firewall-empty">没有可展示的防火墙规则。</td></tr>
+                    <tr><td colSpan={7} className="firewall-empty">{tCurrent('auto.remoteFirewallManager.rtesm4')}</td></tr>
                   ) : null}
                 </tbody>
               </table>
             </div>
           ) : (
-            <pre className="firewall-raw">{snapshot?.rawOutput || '尚未读取。'}</pre>
+            <pre className="firewall-raw">{snapshot?.rawOutput || tCurrent('auto.remoteFirewallManager.xo22k2')}</pre>
           )}
         </main>
       </div>
@@ -404,16 +401,16 @@ function RemoteFirewallManager({ connectionId, sshPort, systemType }: RemoteFire
         <div className="firewall-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className={`firewall-confirm-dialog ${pendingAction.danger ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="firewall-confirm-header">
-              <span>{pendingAction.danger ? '高风险操作确认' : '确认命令'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remoteFirewallManager.jeo5v1') : tCurrent('auto.remoteFirewallManager.17ojhw6')}</span>
               <strong>{pendingAction.title}</strong>
             </div>
             {pendingAction.description ? <p>{pendingAction.description}</p> : null}
             <pre>{pendingAction.command}</pre>
             <div className="firewall-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
-              <button type="button" onClick={copyPendingCommand}>复制命令</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteFirewallManager.1589w37')}</button>
+              <button type="button" onClick={copyPendingCommand}>{tCurrent('auto.remoteFirewallManager.qxd4qr')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '执行'}
+                {actionRunning ? tCurrent('auto.remoteFirewallManager.6svkbt') : tCurrent('auto.remoteFirewallManager.6azgji')}
               </button>
             </div>
           </div>

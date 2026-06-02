@@ -1,4 +1,5 @@
 import { getShellDeskLocale } from './desktopUtils';
+import { t, type AppLanguage } from '../../i18n';
 import { powershellCommand } from './remoteSystem';
 
 export type SecuritySeverity = 'high' | 'medium' | 'low' | 'info';
@@ -97,52 +98,54 @@ function getSshConfigValue(output: string, key: string) {
   return match?.[1]?.trim().toLowerCase();
 }
 
-function evaluateSshConfig(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateSshConfig(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const output = raw(result);
 
   if (!output) {
     return createResult(
       'ssh-config',
-      'SSH 配置',
+      t('securityCheck.definition.ssh.title', language),
       'info',
       'unknown',
-      '未读取到 SSH 配置。',
-      ['目标主机可能未安装 OpenSSH Server，或当前用户没有读取权限。'],
-      ['在远程终端执行 sshd -T 或检查 /etc/ssh/sshd_config。'],
+      t('securityCheck.ssh.noConfig.summary', language),
+      [t('securityCheck.ssh.noConfig.detail', language)],
+      [t('securityCheck.ssh.noConfig.suggestion', language)],
       result,
     );
   }
 
-  const permitRootLogin = getSshConfigValue(output, 'permitrootlogin') ?? '未知';
-  const passwordAuthentication = getSshConfigValue(output, 'passwordauthentication') ?? '未知';
-  const pubkeyAuthentication = getSshConfigValue(output, 'pubkeyauthentication') ?? '未知';
-  const permitEmptyPasswords = getSshConfigValue(output, 'permitemptypasswords') ?? '未知';
-  const maxAuthTries = getSshConfigValue(output, 'maxauthtries') ?? '未知';
-  const allowTcpForwarding = getSshConfigValue(output, 'allowtcpforwarding') ?? '未知';
-  const x11Forwarding = getSshConfigValue(output, 'x11forwarding') ?? '未知';
-  const allowUsers = getSshConfigValue(output, 'allowusers') ?? '未限制';
-  const allowGroups = getSshConfigValue(output, 'allowgroups') ?? '未限制';
-  const port = getSshConfigValue(output, 'port') ?? '未知';
+  const unknown = t('securityCheck.common.unknown', language);
+  const unrestricted = t('securityCheck.common.unrestricted', language);
+  const permitRootLogin = getSshConfigValue(output, 'permitrootlogin') ?? unknown;
+  const passwordAuthentication = getSshConfigValue(output, 'passwordauthentication') ?? unknown;
+  const pubkeyAuthentication = getSshConfigValue(output, 'pubkeyauthentication') ?? unknown;
+  const permitEmptyPasswords = getSshConfigValue(output, 'permitemptypasswords') ?? unknown;
+  const maxAuthTries = getSshConfigValue(output, 'maxauthtries') ?? unknown;
+  const allowTcpForwarding = getSshConfigValue(output, 'allowtcpforwarding') ?? unknown;
+  const x11Forwarding = getSshConfigValue(output, 'x11forwarding') ?? unknown;
+  const allowUsers = getSshConfigValue(output, 'allowusers') ?? unrestricted;
+  const allowGroups = getSshConfigValue(output, 'allowgroups') ?? unrestricted;
+  const port = getSshConfigValue(output, 'port') ?? unknown;
   const risks: string[] = [];
   const maxAuthTriesValue = Number.parseInt(maxAuthTries, 10);
 
-  if (permitRootLogin === 'yes') risks.push('允许 root 直接登录');
-  if (passwordAuthentication === 'yes') risks.push('允许密码登录');
-  if (pubkeyAuthentication === 'no') risks.push('未启用公钥登录');
-  if (permitEmptyPasswords === 'yes') risks.push('允许空密码登录');
-  if (Number.isFinite(maxAuthTriesValue) && maxAuthTriesValue > 6) risks.push(`认证重试次数偏高：${maxAuthTriesValue}`);
-  if (allowTcpForwarding === 'yes') risks.push('允许 TCP 转发');
-  if (x11Forwarding === 'yes') risks.push('允许 X11 转发');
+  if (permitRootLogin === 'yes') risks.push(t('securityCheck.ssh.risk.rootLogin', language));
+  if (passwordAuthentication === 'yes') risks.push(t('securityCheck.ssh.risk.passwordLogin', language));
+  if (pubkeyAuthentication === 'no') risks.push(t('securityCheck.ssh.risk.noPubkey', language));
+  if (permitEmptyPasswords === 'yes') risks.push(t('securityCheck.ssh.risk.emptyPasswords', language));
+  if (Number.isFinite(maxAuthTriesValue) && maxAuthTriesValue > 6) risks.push(t('securityCheck.ssh.risk.maxAuthTries', language, { count: maxAuthTriesValue }));
+  if (allowTcpForwarding === 'yes') risks.push(t('securityCheck.ssh.risk.tcpForwarding', language));
+  if (x11Forwarding === 'yes') risks.push(t('securityCheck.ssh.risk.x11Forwarding', language));
 
-  const severity: SecuritySeverity = risks.some((risk) => risk.includes('root') || risk.includes('空密码')) ? 'high' : risks.length ? 'medium' : 'info';
+  const severity: SecuritySeverity = permitRootLogin === 'yes' || permitEmptyPasswords === 'yes' ? 'high' : risks.length ? 'medium' : 'info';
   const status: SecurityStatus = risks.length ? 'warning' : 'passed';
 
   return createResult(
     'ssh-config',
-    'SSH 配置',
+    t('securityCheck.definition.ssh.title', language),
     severity,
     status,
-    risks.length ? risks.join('，') : '未发现常见 SSH 登录配置风险。',
+    risks.length ? risks.join(language === 'zh-CN' ? '，' : ', ') : t('securityCheck.ssh.summary.ok', language),
     [
       `PermitRootLogin: ${permitRootLogin}`,
       `PasswordAuthentication: ${passwordAuthentication}`,
@@ -156,13 +159,17 @@ function evaluateSshConfig(result: SecurityCommandResult): SecurityCheckResult {
       `Port: ${port}`,
     ],
     risks.length
-      ? ['优先禁用 root 直接登录和空密码，逐步关闭密码登录，并确认公钥登录可用。', '按需关闭 TCP/X11 转发，限制 AllowUsers/AllowGroups。', '修改 sshd_config 后先使用 sshd -t 校验配置，再 reload sshd。']
-      : ['保持最小登录面，并定期复查 sshd -T 输出。'],
+      ? [
+          t('securityCheck.ssh.suggestion.risky1', language),
+          t('securityCheck.ssh.suggestion.risky2', language),
+          t('securityCheck.ssh.suggestion.risky3', language),
+        ]
+      : [t('securityCheck.ssh.suggestion.ok', language)],
     result,
   );
 }
 
-function evaluatePrivilegedUsers(result: SecurityCommandResult): SecurityCheckResult {
+function evaluatePrivilegedUsers(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const output = raw(result);
   const uidZeroUsers = lines(output).filter((line) => line.startsWith('UID0:')).map((line) => line.slice(5));
   const sudoLine = lines(output).find((line) => line.startsWith('SUDO:'))?.slice(5) ?? '';
@@ -176,24 +183,24 @@ function evaluatePrivilegedUsers(result: SecurityCommandResult): SecurityCheckRe
 
   return createResult(
     'privileged-users',
-    '高权限账号',
+    t('securityCheck.definition.privilegedUsers.title', language),
     severity,
     status,
     extraRootUsers.length
-      ? `发现 ${extraRootUsers.length} 个非 root UID 0 账号。`
+      ? t('securityCheck.privileged.summary.extraRoot', language, { count: extraRootUsers.length })
       : hasBroadGroup
-        ? '存在 sudo/wheel/admin 成员，请确认名单符合预期。'
-        : '未发现额外 UID 0 账号。',
+        ? t('securityCheck.privileged.summary.broadGroup', language)
+        : t('securityCheck.privileged.summary.ok', language),
     [
-      uidZeroUsers.length ? `UID 0: ${uidZeroUsers.join(' | ')}` : '未读取到 UID 0 异常。',
-      adminText ? `高权限组: ${adminText}` : '未读取到 sudo/wheel/admin 成员。',
+      uidZeroUsers.length ? `UID 0: ${uidZeroUsers.join(' | ')}` : t('securityCheck.privileged.detail.uid0None', language),
+      adminText ? t('securityCheck.privileged.detail.group', language, { group: adminText }) : t('securityCheck.privileged.detail.groupNone', language),
     ],
-    ['核对 sudoers、sudo/wheel/admin 组成员和离职账号。', '避免为普通服务账号授予 UID 0 或长期管理员权限。'],
+    [t('securityCheck.privileged.suggestion.review', language), t('securityCheck.privileged.suggestion.limit', language)],
     result,
   );
 }
 
-function evaluateAccountPosture(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateAccountPosture(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const loginUsers = outputLines.filter((line) => line.startsWith('LOGIN_USER:')).map((line) => line.slice('LOGIN_USER:'.length));
   const localUsers = outputLines.filter((line) => line.startsWith('LOCAL_USER:')).map((line) => line.slice('LOCAL_USER:'.length));
@@ -224,29 +231,39 @@ function evaluateAccountPosture(result: SecurityCommandResult): SecurityCheckRes
 
   return createResult(
     'account-keys',
-    '账号与密钥',
+    t('securityCheck.definition.accountKeys.title', language),
     severity,
     status,
     highRisk
-      ? `发现 ${highRisk} 个账号或授权密钥高风险。`
+      ? t('securityCheck.account.summary.high', language, { count: highRisk })
       : mediumRisk || lowRisk
-        ? `发现 ${mediumRisk + lowRisk} 个账号/密钥加固项。`
-        : '未发现明显账号与授权密钥风险。',
+        ? t('securityCheck.account.summary.hardening', language, { count: mediumRisk + lowRisk })
+        : t('securityCheck.account.summary.ok', language),
     [
-      emptyPasswordUsers.length ? `空密码账号: ${emptyPasswordUsers.join('、')}` : shadowReadable ? '未发现空密码账号。' : '当前用户无法读取 shadow，空密码检查受限。',
-      passwordOptionalUsers.length ? `Windows 账号未强制密码: ${passwordOptionalUsers.slice(0, 8).join(' | ')}` : localUsers.length ? 'Windows 本地账号均要求密码。' : `可登录 Shell 账号: ${loginUsers.length || 0} 个。`,
-      authorizedKeyLines.length ? `authorized_keys: ${authorizedKeyLines.slice(0, 8).join(' | ')}` : '未发现当前可读取的 authorized_keys 文件。',
-      nopasswdLines.length ? `NOPASSWD sudo: ${nopasswdLines.slice(0, 6).join(' | ')}` : '未发现 NOPASSWD sudo 规则。',
-      interactiveSystemUsers.length ? `可登录系统账号: ${interactiveSystemUsers.slice(0, 6).join(' | ')}` : '未发现可登录的低 UID 服务账号。',
+      emptyPasswordUsers.length
+        ? t('securityCheck.account.detail.emptyPassword', language, { users: emptyPasswordUsers.join(language === 'zh-CN' ? '、' : ', ') })
+        : shadowReadable ? t('securityCheck.account.detail.emptyPasswordNone', language) : t('securityCheck.account.detail.shadowLimited', language),
+      passwordOptionalUsers.length
+        ? t('securityCheck.account.detail.passwordOptional', language, { users: passwordOptionalUsers.slice(0, 8).join(' | ') })
+        : localUsers.length ? t('securityCheck.account.detail.passwordRequired', language) : t('securityCheck.account.detail.loginUsers', language, { count: loginUsers.length || 0 }),
+      authorizedKeyLines.length
+        ? t('securityCheck.account.detail.authorizedKeys', language, { files: authorizedKeyLines.slice(0, 8).join(' | ') })
+        : t('securityCheck.account.detail.authorizedKeysNone', language),
+      nopasswdLines.length
+        ? t('securityCheck.account.detail.nopasswd', language, { rules: nopasswdLines.slice(0, 6).join(' | ') })
+        : t('securityCheck.account.detail.nopasswdNone', language),
+      interactiveSystemUsers.length
+        ? t('securityCheck.account.detail.interactiveSystemUsers', language, { users: interactiveSystemUsers.slice(0, 6).join(' | ') })
+        : t('securityCheck.account.detail.interactiveSystemUsersNone', language),
     ],
     highRisk
-      ? ['立即处理空密码账号和过宽的 authorized_keys 权限。', '授权密钥文件建议使用 600，.ssh 目录建议使用 700。']
-      : ['定期清理离职人员密钥、过期账号和不再使用的 sudo 免密规则。'],
+      ? [t('securityCheck.account.suggestion.high1', language), t('securityCheck.account.suggestion.high2', language)]
+      : [t('securityCheck.account.suggestion.normal', language)],
     result,
   );
 }
 
-function evaluateFailedLogins(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateFailedLogins(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result)).filter((line) => !/^(btmp|wtmp)\s+begins/i.test(line));
   const failedLines = outputLines.filter((line) => /(failed|invalid|authentication failure|ssh|pts|tty|notty|\d+\.\d+\.\d+\.\d+)/i.test(line));
   const count = failedLines.length;
@@ -256,17 +273,19 @@ function evaluateFailedLogins(result: SecurityCommandResult): SecurityCheckResul
 
   return createResult(
     'failed-logins',
-    '失败登录',
+    t('securityCheck.definition.failedLogins.title', language),
     severity,
     status,
-    count ? `最近记录中有 ${count} 条失败登录，来源约 ${uniqueSources || '-'} 个。` : '未发现最近失败登录记录。',
+    count
+      ? t('securityCheck.failedLogins.summary.count', language, { count, sources: uniqueSources || '-' })
+      : t('securityCheck.failedLogins.summary.none', language),
     failedLines.slice(0, 8),
-    count ? ['结合登录会话查看器确认来源 IP，必要时收紧 SSH 登录来源或启用 fail2ban。'] : ['继续保留失败登录审计日志。'],
+    count ? [t('securityCheck.failedLogins.suggestion.review', language)] : [t('securityCheck.failedLogins.suggestion.keepLogs', language)],
     result,
   );
 }
 
-function evaluateOpenPorts(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateOpenPorts(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const riskyLines = getPublicHighRiskPortLines(outputLines);
   const listenCount = outputLines.filter((line) => /LISTEN|LocalPort=|UDP/i.test(line)).length;
@@ -275,14 +294,16 @@ function evaluateOpenPorts(result: SecurityCommandResult): SecurityCheckResult {
 
   return createResult(
     'open-ports',
-    '监听端口',
+    t('securityCheck.definition.openPorts.title', language),
     severity,
     status,
-    riskyLines.length ? `发现 ${riskyLines.length} 条公网监听的高敏感端口记录。` : `读取到 ${listenCount} 条监听/端口记录。`,
+    riskyLines.length
+      ? t('securityCheck.openPorts.summary.risky', language, { count: riskyLines.length })
+      : t('securityCheck.openPorts.summary.count', language, { count: listenCount }),
     riskyLines.length ? riskyLines.slice(0, 8) : outputLines.slice(0, 8),
     riskyLines.length
-      ? ['确认数据库、缓存、管理端口是否只绑定内网或 localhost。', '使用防火墙管理器限制来源地址。']
-      : ['继续保持最小暴露端口，新增服务后复查监听地址。'],
+      ? [t('securityCheck.openPorts.suggestion.risky1', language), t('securityCheck.openPorts.suggestion.risky2', language)]
+      : [t('securityCheck.openPorts.suggestion.ok', language)],
     result,
   );
 }
@@ -309,7 +330,7 @@ function isSuspiciousProcessLine(line: string) {
   return /(xmrig|kinsing|kdevtmpfsi|cryptonight|masscan|\/tmp\/|\/var\/tmp\/|\/dev\/shm\/|\/run\/user\/\d+\/|\\appdata\\local\\temp\\|\\windows\\temp\\|\\users\\public\\|encodedcommand|\s-enc\s|downloadstring|invoke-webrequest|certutil\s+.*-decode|bitsadmin|mshta|regsvr32|rundll32|nc\s+-e|socat\s+.*exec|bash\s+-i|\/dev\/tcp|python\s+-c|perl\s+-e|php\s+-r)/i.test(line);
 }
 
-function evaluateProcessAnalysis(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateProcessAnalysis(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const processLines = outputLines
     .filter((line) => line.startsWith('PROC:'))
@@ -335,29 +356,29 @@ function evaluateProcessAnalysis(result: SecurityCommandResult): SecurityCheckRe
 
   return createResult(
     'process-analysis',
-    '进程分析',
+    t('securityCheck.definition.processAnalysis.title', language),
     severity,
     status,
     suspiciousLines.length
-      ? `发现 ${suspiciousLines.length} 条可疑进程特征。`
+      ? t('securityCheck.process.summary.suspicious', language, { count: suspiciousLines.length })
       : highCpuLines.length || highMemoryLines.length || riskyPortLines.length
-        ? `发现 ${highCpuLines.length + highMemoryLines.length + riskyPortLines.length} 条需要复核的进程/端口线索。`
-        : `采样 ${processLines.length} 个进程，未发现明显异常进程特征。`,
+        ? t('securityCheck.process.summary.clues', language, { count: highCpuLines.length + highMemoryLines.length + riskyPortLines.length })
+        : t('securityCheck.process.summary.ok', language, { count: processLines.length }),
     [
-      processLines.length ? `进程采样: ${processLines.length} 条。` : '未读取到进程采样。',
-      suspiciousLines.length ? `可疑进程: ${suspiciousLines.slice(0, 8).join(' | ')}` : '未命中常见挖矿、临时目录执行、反弹 Shell 或高风险脚本特征。',
-      highCpuLines.length ? `高 CPU: ${highCpuLines.slice(0, 6).join(' | ')}` : '未发现单进程 CPU 采样超过 80%。',
-      highMemoryLines.length ? `高内存: ${highMemoryLines.slice(0, 6).join(' | ')}` : '未发现明显高内存进程采样。',
-      riskyPortLines.length ? `公网高敏感端口进程: ${riskyPortLines.slice(0, 6).join(' | ')}` : '未发现公网高敏感端口与进程采样联动异常。',
+      processLines.length ? t('securityCheck.process.detail.sample', language, { count: processLines.length }) : t('securityCheck.process.detail.noSample', language),
+      suspiciousLines.length ? t('securityCheck.process.detail.suspicious', language, { lines: suspiciousLines.slice(0, 8).join(' | ') }) : t('securityCheck.process.detail.noSuspicious', language),
+      highCpuLines.length ? t('securityCheck.process.detail.highCpu', language, { lines: highCpuLines.slice(0, 6).join(' | ') }) : t('securityCheck.process.detail.noHighCpu', language),
+      highMemoryLines.length ? t('securityCheck.process.detail.highMemory', language, { lines: highMemoryLines.slice(0, 6).join(' | ') }) : t('securityCheck.process.detail.noHighMemory', language),
+      riskyPortLines.length ? t('securityCheck.process.detail.riskyPortProcess', language, { lines: riskyPortLines.slice(0, 6).join(' | ') }) : t('securityCheck.process.detail.noRiskyPortProcess', language),
     ],
     status === 'passed'
-      ? ['保持基线进程清单，服务变更后复查进程路径、启动参数和监听端口。']
-      : ['优先核验可疑进程的可执行路径、父进程、启动时间和文件签名/包来源。', '不要直接结束业务进程；先确认服务归属、保留现场输出，并结合进程管理器查看端口和命令行。'],
+      ? [t('securityCheck.process.suggestion.ok', language)]
+      : [t('securityCheck.process.suggestion.risky1', language), t('securityCheck.process.suggestion.risky2', language)],
     result,
   );
 }
 
-function evaluateFirewallExposure(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateFirewallExposure(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const provider = outputLines.find((line) => line.startsWith('FIREWALL_PROVIDER:'))?.slice('FIREWALL_PROVIDER:'.length) ?? 'unknown';
   const firewallLines = outputLines
@@ -375,30 +396,30 @@ function evaluateFirewallExposure(result: SecurityCommandResult): SecurityCheckR
 
   return createResult(
     'firewall-exposure',
-    '防火墙暴露',
+    t('securityCheck.definition.firewallExposure.title', language),
     severity,
     status,
     riskyFirewall && riskyPortLines.length
-      ? `防火墙未完全收敛，且发现 ${riskyPortLines.length} 条公网高敏感端口。`
+      ? t('securityCheck.firewall.summary.both', language, { count: riskyPortLines.length })
       : riskyFirewall
-        ? '防火墙状态可能未启用或入站策略过宽。'
+        ? t('securityCheck.firewall.summary.riskyFirewall', language)
         : riskyPortLines.length
-          ? `发现 ${riskyPortLines.length} 条公网高敏感端口，请确认防火墙来源限制。`
-          : '防火墙状态和公网高敏感端口未见明显异常。',
+          ? t('securityCheck.firewall.summary.riskyPorts', language, { count: riskyPortLines.length })
+          : t('securityCheck.firewall.summary.ok', language),
     [
-      `防火墙: ${provider}`,
-      disabledFirewallLines.length ? `异常策略: ${disabledFirewallLines.slice(0, 6).join(' | ')}` : '未发现明显禁用或放行所有入站的防火墙策略。',
-      riskyPortLines.length ? `公网高敏感端口: ${riskyPortLines.slice(0, 8).join(' | ')}` : '未发现公网监听的高敏感端口。',
-      portLines.length ? `监听采样: ${portLines.slice(0, 5).join(' | ')}` : '未读取到监听端口采样。',
+      t('securityCheck.firewall.detail.provider', language, { provider }),
+      disabledFirewallLines.length ? t('securityCheck.firewall.detail.disabled', language, { lines: disabledFirewallLines.slice(0, 6).join(' | ') }) : t('securityCheck.firewall.detail.disabledNone', language),
+      riskyPortLines.length ? t('securityCheck.firewall.detail.riskyPorts', language, { lines: riskyPortLines.slice(0, 8).join(' | ') }) : t('securityCheck.firewall.detail.riskyPortsNone', language),
+      portLines.length ? t('securityCheck.firewall.detail.portSample', language, { lines: portLines.slice(0, 5).join(' | ') }) : t('securityCheck.firewall.detail.portSampleNone', language),
     ],
     status === 'passed'
-      ? ['继续保持默认拒绝入站，新增服务后复查来源限制。']
-      : ['优先确认数据库、缓存、管理端口是否仅允许内网或堡垒机来源。', '在 ShellDesk 防火墙组件中收敛入站规则，并保留当前 SSH 管理来源。'],
+      ? [t('securityCheck.firewall.suggestion.ok', language)]
+      : [t('securityCheck.firewall.suggestion.risky1', language), t('securityCheck.firewall.suggestion.risky2', language)],
     result,
   );
 }
 
-function evaluateSensitivePermissions(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateSensitivePermissions(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const riskyLines = outputLines.filter((line) => {
     const modeMatch = line.match(/^(\d{3,4})\s+/);
@@ -414,19 +435,19 @@ function evaluateSensitivePermissions(result: SecurityCommandResult): SecurityCh
 
   return createResult(
     'file-permissions',
-    '敏感文件权限',
+    t('securityCheck.definition.filePermissions.title', language),
     severity,
     status,
-    riskyLines.length ? `发现 ${riskyLines.length} 条敏感文件权限风险。` : '常见敏感文件权限未见明显风险。',
+    riskyLines.length ? t('securityCheck.permissions.summary.risky', language, { count: riskyLines.length }) : t('securityCheck.permissions.summary.ok', language),
     riskyLines.length ? riskyLines : outputLines,
     riskyLines.length
-      ? ['修正 /etc/shadow、authorized_keys 等敏感文件权限，避免组/其他用户写入。']
-      : ['保持 /etc/shadow 和 SSH 授权文件的严格权限。'],
+      ? [t('securityCheck.permissions.suggestion.risky', language)]
+      : [t('securityCheck.permissions.suggestion.ok', language)],
     result,
   );
 }
 
-function evaluatePrivilegeSurface(result: SecurityCommandResult): SecurityCheckResult {
+function evaluatePrivilegeSurface(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
   const suidLines = outputLines.filter((line) => line.startsWith('SUID:')).map((line) => line.slice('SUID:'.length));
   const worldWritableLines = outputLines.filter((line) => line.startsWith('WORLD_WRITABLE:')).map((line) => line.slice('WORLD_WRITABLE:'.length));
@@ -436,29 +457,29 @@ function evaluatePrivilegeSurface(result: SecurityCommandResult): SecurityCheckR
 
   return createResult(
     'privilege-surface',
-    '提权面',
+    t('securityCheck.definition.privilegeSurface.title', language),
     severity,
     status,
     worldWritableLines.length
-      ? `发现 ${worldWritableLines.length} 条全局可写敏感路径。`
+      ? t('securityCheck.privilege.summary.worldWritable', language, { count: worldWritableLines.length })
       : unquotedServices.length
-        ? `发现 ${unquotedServices.length} 个未引号包裹的 Windows 服务路径。`
+        ? t('securityCheck.privilege.summary.unquoted', language, { count: unquotedServices.length })
         : suidLines.length > 40
-          ? `SUID/SGID 文件数量偏多：${suidLines.length} 个。`
-          : '未发现明显本地提权面异常。',
+          ? t('securityCheck.privilege.summary.suid', language, { count: suidLines.length })
+          : t('securityCheck.privilege.summary.ok', language),
     [
-      worldWritableLines.length ? `全局可写: ${worldWritableLines.slice(0, 8).join(' | ')}` : '未发现全局可写敏感路径。',
-      unquotedServices.length ? `未引号服务路径: ${unquotedServices.slice(0, 8).join(' | ')}` : '未发现未引号包裹的服务路径。',
-      suidLines.length ? `SUID/SGID 采样: ${suidLines.slice(0, 10).join(' | ')}` : '未读取到 SUID/SGID 采样。',
+      worldWritableLines.length ? t('securityCheck.privilege.detail.worldWritable', language, { lines: worldWritableLines.slice(0, 8).join(' | ') }) : t('securityCheck.privilege.detail.worldWritableNone', language),
+      unquotedServices.length ? t('securityCheck.privilege.detail.unquoted', language, { lines: unquotedServices.slice(0, 8).join(' | ') }) : t('securityCheck.privilege.detail.unquotedNone', language),
+      suidLines.length ? t('securityCheck.privilege.detail.suid', language, { lines: suidLines.slice(0, 10).join(' | ') }) : t('securityCheck.privilege.detail.suidNone', language),
     ],
     status === 'passed'
-      ? ['保留最小 SUID 集合，并定期复查服务安装变更。']
-      : ['修正全局可写敏感文件，删除不必要的 SUID/SGID 位。', 'Windows 服务路径包含空格时应使用引号包裹可执行文件路径。'],
+      ? [t('securityCheck.privilege.suggestion.ok', language)]
+      : [t('securityCheck.privilege.suggestion.risky1', language), t('securityCheck.privilege.suggestion.risky2', language)],
     result,
   );
 }
 
-function evaluateUpdates(result: SecurityCommandResult): SecurityCheckResult {
+function evaluateUpdates(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const output = raw(result);
   const countMatch = output.match(/UPDATES:\s*(\d+)/i);
   const count = countMatch ? Number.parseInt(countMatch[1], 10) : 0;
@@ -468,24 +489,28 @@ function evaluateUpdates(result: SecurityCommandResult): SecurityCheckResult {
 
   return createResult(
     'updates',
-    '系统更新',
+    t('securityCheck.definition.updates.title', language),
     severity,
     status,
-    unknown ? '未能判断系统更新状态。' : count ? `可能有 ${count} 个可更新包。` : '未检测到明显待更新包。',
+    unknown
+      ? t('securityCheck.updates.summary.unknown', language)
+      : count ? t('securityCheck.updates.summary.count', language, { count }) : t('securityCheck.updates.summary.none', language),
     lines(output).slice(0, 12),
-    count ? ['安排维护窗口更新安全补丁，并在更新前确认服务回滚方案。'] : ['定期刷新包管理器元数据并复查更新。'],
+    count ? [t('securityCheck.updates.suggestion.update', language)] : [t('securityCheck.updates.suggestion.review', language)],
     result,
   );
 }
 
-function linuxSshCommand() {
+function linuxSshCommand(language: AppLanguage) {
+  const notFound = t('securityCheck.command.sshConfigNotFound', language);
+
   return `
 if command -v sshd >/dev/null 2>&1; then
   sshd -T 2>/dev/null | grep -Ei '^(permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|allowtcpforwarding|x11forwarding|allowusers|allowgroups|port)\\s+' || true
 elif [ -f /etc/ssh/sshd_config ]; then
   grep -Ei '^\\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|AllowTcpForwarding|X11Forwarding|AllowUsers|AllowGroups|Port)\\s+' /etc/ssh/sshd_config | sed 's/^\\s*//'
 else
-  printf 'OpenSSH Server 配置未找到。\\n'
+  printf '${notFound}\\n'
 fi
 `;
 }
@@ -523,26 +548,30 @@ grep -Rhs 'NOPASSWD' /etc/sudoers /etc/sudoers.d 2>/dev/null | head -20 | sed 's
 `;
 }
 
-function linuxFailedLoginsCommand() {
+function linuxFailedLoginsCommand(language: AppLanguage) {
+  const missingTools = t('securityCheck.command.missingLoginLogTools', language);
+
   return `
 if command -v lastb >/dev/null 2>&1; then
   lastb -n 30 2>&1 || true
 elif command -v journalctl >/dev/null 2>&1; then
   journalctl -u ssh -u sshd -n 300 --no-pager 2>/dev/null | grep -Ei 'Failed password|Invalid user|authentication failure' | tail -n 30 || true
 else
-  printf '缺少 lastb 或 journalctl。\\n'
+  printf '${missingTools}\\n'
 fi
 `;
 }
 
-function linuxPortsCommand() {
+function linuxPortsCommand(language: AppLanguage) {
+  const missingTools = t('securityCheck.command.missingPortTools', language);
+
   return `
 if command -v ss >/dev/null 2>&1; then
   ss -H -tunlp 2>/dev/null || ss -H -tunl 2>/dev/null || true
 elif command -v netstat >/dev/null 2>&1; then
   netstat -tunlp 2>/dev/null || netstat -tunl 2>/dev/null || true
 else
-  printf '缺少 ss 或 netstat。\\n'
+  printf '${missingTools}\\n'
 fi
 `;
 }
@@ -608,7 +637,9 @@ fi
 `;
 }
 
-function linuxUpdatesCommand() {
+function linuxUpdatesCommand(language: AppLanguage) {
+  const unsupported = t('securityCheck.command.unknownPackageManager', language);
+
   return `
 if command -v apt >/dev/null 2>&1; then
   count=$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
@@ -623,19 +654,21 @@ elif command -v pacman >/dev/null 2>&1; then
   count=$(pacman -Qu 2>/dev/null | wc -l | tr -d ' ')
   printf 'UPDATES:%s\\n' "$count"
 else
-  printf '未识别支持的包管理器。\\n'
+  printf '${unsupported}\\n'
 fi
 `;
 }
 
-function windowsSshCommand() {
+function windowsSshCommand(language: AppLanguage) {
+  const notFound = t('securityCheck.command.sshConfigNotFound', language);
+
   return powershellCommand(`
 $paths = @("$env:ProgramData\\ssh\\sshd_config", "$env:WINDIR\\System32\\OpenSSH\\sshd_config")
 $path = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($path) {
   Get-Content $path | Where-Object { $_ -match '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|AllowTcpForwarding|X11Forwarding|AllowUsers|AllowGroups|Port)\\s+' }
 } else {
-  "OpenSSH Server 配置未找到。"
+  "${notFound}"
 }
 `);
 }
@@ -733,84 +766,87 @@ Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
 `);
 }
 
-function windowsUpdatesCommand() {
+function windowsUpdatesCommand(language: AppLanguage) {
+  const hint1 = t('securityCheck.command.windowsUpdateHint1', language);
+  const hint2 = t('securityCheck.command.windowsUpdateHint2', language);
+
   return powershellCommand(`
-"Windows Update 详细检查首版仅提示人工复查。"
-"可在远程主机运行 Get-WindowsUpdateLog 或使用系统更新设置。"
+"${hint1}"
+"${hint2}"
 `);
 }
 
-export function createSecurityCheckDefinitions(isWindowsHost: boolean): SecurityCheckDefinition[] {
+export function createSecurityCheckDefinitions(isWindowsHost: boolean, language: AppLanguage): SecurityCheckDefinition[] {
   return [
     {
       id: 'ssh-config',
-      title: 'SSH 配置',
-      description: '登录方式、空密码、转发、重试和端口。',
-      createCommand: isWindowsHost ? windowsSshCommand : linuxSshCommand,
-      evaluate: evaluateSshConfig,
+      title: t('securityCheck.definition.ssh.title', language),
+      description: t('securityCheck.definition.ssh.description', language),
+      createCommand: () => (isWindowsHost ? windowsSshCommand(language) : linuxSshCommand(language)),
+      evaluate: (result) => evaluateSshConfig(result, language),
     },
     {
       id: 'privileged-users',
-      title: '高权限账号',
-      description: 'sudo、wheel、Administrators 和 UID 0 账号。',
+      title: t('securityCheck.definition.privilegedUsers.title', language),
+      description: t('securityCheck.definition.privilegedUsers.description', language),
       createCommand: isWindowsHost ? windowsAdminsCommand : linuxPrivilegedUsersCommand,
-      evaluate: evaluatePrivilegedUsers,
+      evaluate: (result) => evaluatePrivilegedUsers(result, language),
     },
     {
       id: 'account-keys',
-      title: '账号与密钥',
-      description: '空密码、authorized_keys、sudo 免密和可登录账号。',
+      title: t('securityCheck.definition.accountKeys.title', language),
+      description: t('securityCheck.definition.accountKeys.description', language),
       createCommand: isWindowsHost ? windowsAccountPostureCommand : linuxAccountPostureCommand,
-      evaluate: evaluateAccountPosture,
+      evaluate: (result) => evaluateAccountPosture(result, language),
     },
     {
       id: 'failed-logins',
-      title: '失败登录',
-      description: '最近失败认证记录和来源数量。',
-      createCommand: isWindowsHost ? windowsFailedLoginsCommand : linuxFailedLoginsCommand,
-      evaluate: evaluateFailedLogins,
+      title: t('securityCheck.definition.failedLogins.title', language),
+      description: t('securityCheck.definition.failedLogins.description', language),
+      createCommand: () => (isWindowsHost ? windowsFailedLoginsCommand() : linuxFailedLoginsCommand(language)),
+      evaluate: (result) => evaluateFailedLogins(result, language),
     },
     {
       id: 'open-ports',
-      title: '监听端口',
-      description: '公网监听与高敏感端口摘要。',
-      createCommand: isWindowsHost ? windowsPortsCommand : linuxPortsCommand,
-      evaluate: evaluateOpenPorts,
+      title: t('securityCheck.definition.openPorts.title', language),
+      description: t('securityCheck.definition.openPorts.description', language),
+      createCommand: () => (isWindowsHost ? windowsPortsCommand() : linuxPortsCommand(language)),
+      evaluate: (result) => evaluateOpenPorts(result, language),
     },
     {
       id: 'process-analysis',
-      title: '进程分析',
-      description: '进程路径、命令行、资源占用和监听归属。',
+      title: t('securityCheck.definition.processAnalysis.title', language),
+      description: t('securityCheck.definition.processAnalysis.description', language),
       createCommand: isWindowsHost ? windowsProcessAnalysisCommand : linuxProcessAnalysisCommand,
-      evaluate: evaluateProcessAnalysis,
+      evaluate: (result) => evaluateProcessAnalysis(result, language),
     },
     {
       id: 'firewall-exposure',
-      title: '防火墙暴露',
-      description: '防火墙状态与公网高敏感端口联动。',
+      title: t('securityCheck.definition.firewallExposure.title', language),
+      description: t('securityCheck.definition.firewallExposure.description', language),
       createCommand: isWindowsHost ? windowsFirewallExposureCommand : linuxFirewallExposureCommand,
-      evaluate: evaluateFirewallExposure,
+      evaluate: (result) => evaluateFirewallExposure(result, language),
     },
     {
       id: 'file-permissions',
-      title: '敏感文件权限',
-      description: 'SSH 授权文件、passwd、shadow 等权限。',
+      title: t('securityCheck.definition.filePermissions.title', language),
+      description: t('securityCheck.definition.filePermissions.description', language),
       createCommand: isWindowsHost ? windowsPermissionsCommand : linuxPermissionsCommand,
-      evaluate: evaluateSensitivePermissions,
+      evaluate: (result) => evaluateSensitivePermissions(result, language),
     },
     {
       id: 'privilege-surface',
-      title: '提权面',
-      description: 'SUID/SGID、全局可写路径和服务路径风险。',
+      title: t('securityCheck.definition.privilegeSurface.title', language),
+      description: t('securityCheck.definition.privilegeSurface.description', language),
       createCommand: isWindowsHost ? windowsPrivilegeSurfaceCommand : linuxPrivilegeSurfaceCommand,
-      evaluate: evaluatePrivilegeSurface,
+      evaluate: (result) => evaluatePrivilegeSurface(result, language),
     },
     {
       id: 'updates',
-      title: '系统更新',
-      description: '包管理器或系统更新提示。',
-      createCommand: isWindowsHost ? windowsUpdatesCommand : linuxUpdatesCommand,
-      evaluate: evaluateUpdates,
+      title: t('securityCheck.definition.updates.title', language),
+      description: t('securityCheck.definition.updates.description', language),
+      createCommand: () => (isWindowsHost ? windowsUpdatesCommand(language) : linuxUpdatesCommand(language)),
+      evaluate: (result) => evaluateUpdates(result, language),
     },
   ];
 }
@@ -835,11 +871,11 @@ function getScorePenalty(result: SecurityCheckResult) {
   return 3;
 }
 
-export function calculateSecurityScore(results: SecurityCheckResult[]): SecurityScoreSummary {
+export function calculateSecurityScore(results: SecurityCheckResult[], language: AppLanguage): SecurityScoreSummary {
   if (!results.length) {
     return {
       score: null,
-      label: '未评分',
+      label: t('securityCheck.score.unscored', language),
       tone: 'idle',
       deductions: [],
     };
@@ -850,7 +886,13 @@ export function calculateSecurityScore(results: SecurityCheckResult[]): Security
     .filter((item) => item.penalty > 0);
   const score = Math.max(0, 100 - deductions.reduce((total, item) => total + item.penalty, 0));
   const tone: SecurityScoreSummary['tone'] = score >= 90 ? 'good' : score >= 75 ? 'watch' : score >= 60 ? 'risk' : 'critical';
-  const label = score >= 90 ? '良好' : score >= 75 ? '需关注' : score >= 60 ? '需加固' : '高风险';
+  const label = score >= 90
+    ? t('securityCheck.score.good', language)
+    : score >= 75
+      ? t('securityCheck.score.watch', language)
+      : score >= 60
+        ? t('securityCheck.score.risk', language)
+        : t('securityCheck.score.critical', language);
 
   return {
     score,
@@ -860,30 +902,32 @@ export function calculateSecurityScore(results: SecurityCheckResult[]): Security
   };
 }
 
-export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: string, scannedAt: string) {
+export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: string, scannedAt: string, language: AppLanguage) {
   const counts = {
     high: results.filter((result) => result.severity === 'high').length,
     medium: results.filter((result) => result.severity === 'medium').length,
     low: results.filter((result) => result.severity === 'low').length,
     info: results.filter((result) => result.severity === 'info').length,
   };
-  const score = calculateSecurityScore(results);
+  const score = calculateSecurityScore(results, language);
 
   return [
-    `# ShellDesk 安全巡检报告`,
+    t('securityCheck.report.title', language),
     '',
-    `- 主机：${hostLabel || '当前连接'}`,
-    `- 时间：${scannedAt || new Date().toLocaleString(getShellDeskLocale())}`,
-    `- 安全评分：${score.score ?? '--'}（${score.label}）`,
-    `- 风险：高 ${counts.high} / 中 ${counts.medium} / 低 ${counts.low} / 信息 ${counts.info}`,
-    score.deductions.length ? `- 扣分项：${score.deductions.slice(0, 6).join('；')}` : '- 扣分项：无明显扣分项',
+    t('securityCheck.report.host', language, { host: hostLabel || t('securityCheck.report.currentConnection', language) }),
+    t('securityCheck.report.time', language, { time: scannedAt || new Date().toLocaleString(getShellDeskLocale()) }),
+    t('securityCheck.report.score', language, { score: score.score ?? '--', label: score.label }),
+    t('securityCheck.report.risks', language, counts),
+    score.deductions.length
+      ? t('securityCheck.report.deductions', language, { items: score.deductions.slice(0, 6).join(language === 'zh-CN' ? '；' : '; ') })
+      : t('securityCheck.report.noDeductions', language),
     '',
     ...results.flatMap((result) => [
       `## ${result.title}`,
       '',
-      `- 等级：${result.severity}`,
-      `- 状态：${result.status}`,
-      `- 摘要：${result.summary}`,
+      t('securityCheck.report.severity', language, { severity: getSeverityLabel(result.severity, language) }),
+      t('securityCheck.report.status', language, { status: getStatusLabel(result.status, language) }),
+      t('securityCheck.report.summary', language, { summary: result.summary }),
       '',
       ...result.details.map((detail) => `- ${detail}`),
       '',
@@ -893,18 +937,18 @@ export function formatSecurityReport(results: SecurityCheckResult[], hostLabel: 
   ].join('\n');
 }
 
-export function getSeverityLabel(severity: SecuritySeverity) {
-  if (severity === 'high') return '高';
-  if (severity === 'medium') return '中';
-  if (severity === 'low') return '低';
-  return '信息';
+export function getSeverityLabel(severity: SecuritySeverity, language: AppLanguage) {
+  if (severity === 'high') return t('securityCheck.severity.high', language);
+  if (severity === 'medium') return t('securityCheck.severity.medium', language);
+  if (severity === 'low') return t('securityCheck.severity.low', language);
+  return t('securityCheck.severity.info', language);
 }
 
-export function getStatusLabel(status: SecurityStatus) {
-  if (status === 'passed') return '通过';
-  if (status === 'warning') return '注意';
-  if (status === 'failed') return '风险';
-  return '未知';
+export function getStatusLabel(status: SecurityStatus, language: AppLanguage) {
+  if (status === 'passed') return t('securityCheck.status.passed', language);
+  if (status === 'warning') return t('securityCheck.status.warning', language);
+  if (status === 'failed') return t('securityCheck.status.failed', language);
+  return t('securityCheck.status.unknown', language);
 }
 
 export function safeGrepPattern(value: string) {

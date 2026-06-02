@@ -13,7 +13,7 @@ import type {
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import { getDesktopWallpaperPreset } from './assets/desktopWallpapers';
-import { getAppLocale, translateText } from './i18n';
+import { getAppLocale, t, type MessageId } from './i18n';
 
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
 const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
@@ -48,43 +48,44 @@ const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVnc
 const RemoteWebServerManager = lazy(() => import('./components/remote-desktop/RemoteWebServerManager'));
 
 const desktopApps = [
-  { key: 'files', label: '文件管理', description: 'Windows 风格 SFTP 资源管理器' },
-  { key: 'terminal', label: '终端', description: '交互式 SSH Shell' },
-  { key: 'notepad', label: '记事本', description: '远程文件编辑器' },
-  { key: 'browser', label: '浏览器', description: '远程源请求' },
-  { key: 'vnc', label: 'VNC Viewer', description: '连接本机或内网 VNC 桌面' },
-  { key: 'log-viewer', label: '日志查看', description: 'journalctl / /var/log / Event Log' },
-  { key: 'monitor', label: '系统监视器', description: '服务器状态' },
-  { key: 'mysql', label: 'MySQL', description: 'MySQL 数据库管理' },
-  { key: 'redis', label: 'Redis', description: 'Redis 数据库管理' },
-  { key: 'service-manager', label: '服务管理', description: 'systemd / Windows Services' },
-  { key: 'container-manager', label: '容器管理', description: 'Docker / Podman 容器与镜像' },
-  { key: 'port-manager', label: '端口监听', description: '端口占用与连接状态' },
-  { key: 'firewall-manager', label: '防火墙', description: 'ufw / firewalld / Windows Firewall' },
-  { key: 'iptables-manager', label: 'iptables 管理', description: 'Linux iptables 规则链管理' },
-  { key: 'network-diagnostics', label: '网络诊断', description: 'Ping / DNS / HTTP / TCP' },
-  { key: 'disk-analyzer', label: '磁盘分析', description: '空间占用与大文件定位' },
-  { key: 'package-manager', label: '包管理器', description: '系统软件包查询与更新' },
-  { key: 'git-manager', label: 'Git 仓库', description: '分支、变更、Diff 与同步操作' },
-  { key: 'web-server-manager', label: 'Web 服务', description: 'Nginx / Apache / Caddy 配置与 reload' },
-  { key: 'scheduled-tasks', label: '计划任务', description: 'Cron / systemd timer / Task Scheduler' },
-  { key: 'postgres', label: 'PostgreSQL', description: 'PostgreSQL 数据库管理' },
-  { key: 'mongo', label: 'MongoDB', description: 'MongoDB 数据库、集合与文档' },
-  { key: 'search-cluster', label: '搜索集群', description: 'Elasticsearch / OpenSearch 巡检' },
-  { key: 'message-queue', label: '消息队列', description: 'RabbitMQ / Kafka 状态观察' },
-  { key: 's3-browser', label: 'MinIO / S3', description: 'Bucket、Prefix 与对象浏览' },
-  { key: 'security-audit', label: '安全巡检', description: 'SSH、端口、登录与权限检查' },
-  { key: 'login-sessions', label: '登录会话', description: '在线用户、成功与失败登录' },
-  { key: 'api-debugger', label: 'API 调试', description: '从远程主机发起 HTTP 请求' },
-  { key: 'procmanager', label: '进程管理', description: '进程查看、搜索和终止' },
-  { key: 'settings', label: '系统设置', description: '网络、镜像源、更新、Hosts、路由、磁盘' },
-  { key: 'sqlite', label: 'SQLite', description: 'SQLite 数据库查看与编辑' },
-] as const;
+  { key: 'files', labelId: 'desktop.app.files.label', descriptionId: 'desktop.app.files.description' },
+  { key: 'terminal', labelId: 'desktop.app.terminal.label', descriptionId: 'desktop.app.terminal.description' },
+  { key: 'notepad', labelId: 'desktop.app.notepad.label', descriptionId: 'desktop.app.notepad.description' },
+  { key: 'browser', labelId: 'desktop.app.browser.label', descriptionId: 'desktop.app.browser.description' },
+  { key: 'vnc', labelId: 'desktop.app.vnc.label', descriptionId: 'desktop.app.vnc.description' },
+  { key: 'log-viewer', labelId: 'desktop.app.logViewer.label', descriptionId: 'desktop.app.logViewer.description' },
+  { key: 'monitor', labelId: 'desktop.app.monitor.label', descriptionId: 'desktop.app.monitor.description' },
+  { key: 'mysql', labelId: 'desktop.app.mysql.label', descriptionId: 'desktop.app.mysql.description' },
+  { key: 'redis', labelId: 'desktop.app.redis.label', descriptionId: 'desktop.app.redis.description' },
+  { key: 'service-manager', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
+  { key: 'container-manager', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
+  { key: 'port-manager', labelId: 'desktop.app.portManager.label', descriptionId: 'desktop.app.portManager.description' },
+  { key: 'firewall-manager', labelId: 'desktop.app.firewallManager.label', descriptionId: 'desktop.app.firewallManager.description' },
+  { key: 'iptables-manager', labelId: 'desktop.app.iptablesManager.label', descriptionId: 'desktop.app.iptablesManager.description' },
+  { key: 'network-diagnostics', labelId: 'desktop.app.networkDiagnostics.label', descriptionId: 'desktop.app.networkDiagnostics.description' },
+  { key: 'disk-analyzer', labelId: 'desktop.app.diskAnalyzer.label', descriptionId: 'desktop.app.diskAnalyzer.description' },
+  { key: 'package-manager', labelId: 'desktop.app.packageManager.label', descriptionId: 'desktop.app.packageManager.description' },
+  { key: 'git-manager', labelId: 'desktop.app.gitManager.label', descriptionId: 'desktop.app.gitManager.description' },
+  { key: 'web-server-manager', labelId: 'desktop.app.webServerManager.label', descriptionId: 'desktop.app.webServerManager.description' },
+  { key: 'scheduled-tasks', labelId: 'desktop.app.scheduledTasks.label', descriptionId: 'desktop.app.scheduledTasks.description' },
+  { key: 'postgres', labelId: 'desktop.app.postgres.label', descriptionId: 'desktop.app.postgres.description' },
+  { key: 'mongo', labelId: 'desktop.app.mongo.label', descriptionId: 'desktop.app.mongo.description' },
+  { key: 'search-cluster', labelId: 'desktop.app.searchCluster.label', descriptionId: 'desktop.app.searchCluster.description' },
+  { key: 'message-queue', labelId: 'desktop.app.messageQueue.label', descriptionId: 'desktop.app.messageQueue.description' },
+  { key: 's3-browser', labelId: 'desktop.app.s3Browser.label', descriptionId: 'desktop.app.s3Browser.description' },
+  { key: 'security-audit', labelId: 'desktop.app.securityAudit.label', descriptionId: 'desktop.app.securityAudit.description' },
+  { key: 'login-sessions', labelId: 'desktop.app.loginSessions.label', descriptionId: 'desktop.app.loginSessions.description' },
+  { key: 'api-debugger', labelId: 'desktop.app.apiDebugger.label', descriptionId: 'desktop.app.apiDebugger.description' },
+  { key: 'procmanager', labelId: 'desktop.app.processManager.label', descriptionId: 'desktop.app.processManager.description' },
+  { key: 'settings', labelId: 'desktop.app.settings.label', descriptionId: 'desktop.app.settings.description' },
+  { key: 'sqlite', labelId: 'desktop.app.sqlite.label', descriptionId: 'desktop.app.sqlite.description' },
+] as const satisfies ReadonlyArray<{ key: string; labelId: MessageId; descriptionId: MessageId }>;
 
-/** 始终固定在 Dock 栏的应用，其他应用仅在桌面显示，打开时才会动态出现在 Dock */
+/** Apps always pinned in the Dock. Other apps stay on the desktop and appear in the Dock only while open. */
 const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
 
-type DesktopAppKey = (typeof desktopApps)[number]['key'];
+type DesktopAppInfo = (typeof desktopApps)[number];
+type DesktopAppKey = DesktopAppInfo['key'];
 
 const desktopAppIconSources: Record<DesktopAppKey, string> = {
   files: new URL('./assets/desktop-icons/files.png', import.meta.url).href,
@@ -136,10 +137,10 @@ const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
   .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));
 const desktopAppKeySet = new Set<DesktopAppKey>(desktopApps.map((app) => app.key));
-const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; label: string }> = [
-  { value: 'custom', label: '自定义' },
-  { value: 'name-asc', label: '名称 A-Z' },
-  { value: 'name-desc', label: '名称 Z-A' },
+const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; labelId: MessageId }> = [
+  { value: 'custom', labelId: 'desktop.sort.custom' },
+  { value: 'name-asc', labelId: 'desktop.sort.nameAsc' },
+  { value: 'name-desc', labelId: 'desktop.sort.nameDesc' },
 ];
 
 type DesktopLayoutItem = ShellDeskDesktopLayoutItem;
@@ -329,7 +330,7 @@ function getMaximizedWindowFrame(surfaceWidth: number, surfaceHeight: number) {
   );
 }
 
-function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: number): DesktopWindowState {
+function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: number, language: ShellDeskAppSettings['language']): DesktopWindowState {
   const baseFrame = defaultWindowFrames[appKey];
   const offset = ((sequence - 1) % 7) * 28;
   const isBrowserWindow = appKey === 'browser';
@@ -349,13 +350,21 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
     terminalStatus: appKey === 'terminal' ? 'idle' : undefined,
     terminalHasForegroundTask: appKey === 'terminal' ? false : undefined,
     chromeTitle: isBrowserWindow ? '127.0.0.1' : undefined,
-    chromeStatus: isBrowserWindow ? '已就绪' : undefined,
+    chromeStatus: isBrowserWindow ? t('desktop.browser.status.ready', language) : undefined,
     chromeTone: isBrowserWindow ? 'idle' : undefined,
   };
 }
 
 function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
+}
+
+function getAppLabel(app: DesktopAppInfo, language: ShellDeskAppSettings['language']) {
+  return t(app.labelId, language);
+}
+
+function getAppDescription(app: DesktopAppInfo, language: ShellDeskAppSettings['language']) {
+  return t(app.descriptionId, language);
 }
 
 function isDesktopAppKey(value: unknown): value is DesktopAppKey {
@@ -376,7 +385,7 @@ function createDefaultRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
 
 function normalizeFolderName(value: unknown) {
   const name = typeof value === 'string' ? value.trim().slice(0, 40) : '';
-  return name || '文件夹';
+  return name || t('desktop.folder.defaultName', 'zh-CN');
 }
 
 function getLayoutAppKeys(items: DesktopLayoutItem[]) {
@@ -481,7 +490,7 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
 }
 
 function getLayoutItemLabel(item: DesktopLayoutItem, language: ShellDeskAppSettings['language']) {
-  return item.type === 'app' ? translateText(getAppInfo(item.appKey).label, language) : item.name;
+  return item.type === 'app' ? getAppLabel(getAppInfo(item.appKey), language) : item.name;
 }
 
 function compareLayoutItemsByName(
@@ -598,13 +607,13 @@ function moveTopLevelItem(layout: ShellDeskRemoteDesktopLayout, itemId: string, 
   };
 }
 
-function createUniqueFolderName(items: DesktopLayoutItem[]) {
+function createUniqueFolderName(items: DesktopLayoutItem[], baseName: string) {
   const existingNames = new Set(items.filter((item) => item.type === 'folder').map((item) => item.name));
-  let name = '文件夹';
+  let name = baseName;
   let index = 2;
 
   while (existingNames.has(name)) {
-    name = `文件夹 ${index}`;
+    name = `${baseName} ${index}`;
     index += 1;
   }
 
@@ -1009,7 +1018,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
   const appLocale = getAppLocale(settings.language);
   const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => (
-    translateText(firstApp.label, settings.language).localeCompare(translateText(secondApp.label, settings.language), appLocale)
+    getAppLabel(firstApp, settings.language).localeCompare(getAppLabel(secondApp, settings.language), appLocale)
   ));
 
   useEffect(() => {
@@ -1136,7 +1145,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   };
 
   const createFolder = () => {
-    const folderName = createUniqueFolderName(desktopLayout.items);
+    const folderName = createUniqueFolderName(desktopLayout.items, t('desktop.folder.defaultName', settings.language));
     const folderId = `folder:${Date.now().toString(36)}`;
 
     commitDesktopLayout({
@@ -1335,7 +1344,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   ) => {
     windowSequenceRef.current += 1;
     zIndexRef.current += 1;
-    const nextWindow = createDesktopWindow(appKey, windowSequenceRef.current, zIndexRef.current);
+    const nextWindow = createDesktopWindow(appKey, windowSequenceRef.current, zIndexRef.current, settings.language);
     const surface = desktopSurfaceRef.current;
 
     configureWindow?.(nextWindow);
@@ -1898,7 +1907,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onDragOver={handleDragOver}
           onDrop={(event) => handleDesktopDrop(event)}
         >
-          <div className="desktop-icons" aria-label="桌面应用">
+          <div className="desktop-icons" aria-label={t('desktop.icons.aria', settings.language)}>
             {visibleDesktopItems.map((item) => {
               if (item.type === 'folder') {
                 return (
@@ -1934,7 +1943,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               }
 
               const app = getAppInfo(item.appKey);
-              const appLabel = translateText(app.label, settings.language);
+              const appLabel = getAppLabel(app, settings.language);
 
               return (
                 <button
@@ -1965,7 +1974,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
-          const appLabel = translateText(appInfo.label, settings.language);
+          const appLabel = getAppLabel(appInfo, settings.language);
           const livePointerFrame = windowPointerStateRef.current?.windowId === desktopWindow.id
             ? windowPointerStateRef.current.latestFrame
             : null;
@@ -2015,15 +2024,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                     <strong>{appLabel}</strong>
                   )}
                 </div>
-                <div className="win-titlebar-controls" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
+                <div className="win-titlebar-controls" aria-label={t('desktop.window.controls', settings.language)} onPointerDown={(event) => event.stopPropagation()}>
                   {desktopWindow.appKey === 'terminal' ? (
                     <button
                       type="button"
                       className={`win-btn terminal-tools ${terminalTitlebarMenu?.windowId === desktopWindow.id ? 'active' : ''}`}
-                      aria-label="终端工具"
+                      aria-label={t('terminal.titlebar.tools', settings.language)}
                       aria-haspopup="menu"
                       aria-expanded={terminalTitlebarMenu?.windowId === desktopWindow.id}
-                      title="终端工具"
+                      title={t('terminal.titlebar.tools', settings.language)}
                       onClick={(event) => {
                         if (terminalTitlebarMenu?.windowId === desktopWindow.id) {
                           setTerminalTitlebarMenu(null);
@@ -2047,14 +2056,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                       </svg>
                     </button>
                   ) : null}
-                  <button type="button" className="win-btn minimize" aria-label="最小化窗口" title="最小化" onClick={() => minimizeDesktopWindow(desktopWindow.id)}>
+                  <button type="button" className="win-btn minimize" aria-label={t('desktop.window.minimize', settings.language)} title={t('desktop.window.minimizeTitle', settings.language)} onClick={() => minimizeDesktopWindow(desktopWindow.id)}>
                     <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
                   </button>
                   <button
                     type="button"
                     className="win-btn maximize"
-                    aria-label={desktopWindow.isMaximized ? '还原窗口' : '最大化窗口'}
-                    title={desktopWindow.isMaximized ? '还原' : '最大化'}
+                    aria-label={desktopWindow.isMaximized ? t('desktop.window.restoreWindow', settings.language) : t('desktop.window.maximizeWindow', settings.language)}
+                    title={desktopWindow.isMaximized ? t('desktop.window.restoreTitle', settings.language) : t('desktop.window.maximizeTitle', settings.language)}
                     onClick={() => toggleWindowMaximize(desktopWindow.id)}
                   >
                     {desktopWindow.isMaximized ? (
@@ -2068,7 +2077,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                       </svg>
                     )}
                   </button>
-                  <button type="button" className="win-btn close" aria-label="关闭窗口" title="关闭" onClick={() => closeDesktopWindow(desktopWindow.id)}>
+                  <button type="button" className="win-btn close" aria-label={t('desktop.window.close', settings.language)} title={t('desktop.window.closeTitle', settings.language)} onClick={() => closeDesktopWindow(desktopWindow.id)}>
                     <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
                       <line x1="1" y1="1" x2="9" y2="9" />
                       <line x1="9" y1="1" x2="1" y2="9" />
@@ -2077,7 +2086,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 </div>
               </header>
               <div className="desktop-window-body">
-                <Suspense fallback={<div className="desktop-window-loading">加载中...</div>}>
+                <Suspense fallback={<div className="desktop-window-loading">{t('desktop.window.loading', settings.language)}</div>}>
                   {renderWindowContent(desktopWindow)}
                 </Suspense>
               </div>
@@ -2095,13 +2104,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           );
         })}
 
-        <nav className="mac-dock" aria-label="远程桌面 Dock">
+        <nav className="mac-dock" aria-label={t('desktop.dock.aria', settings.language)}>
           <button
             type="button"
             className={`dock-launchpad-button ${isLaunchpadOpen ? 'active' : ''}`}
             onClick={toggleLaunchpad}
-            aria-label="全部应用"
-            title="全部应用"
+            aria-label={t('desktop.launchpad.allApps', settings.language)}
+            title={t('desktop.launchpad.allApps', settings.language)}
           >
             <span className="dock-app-icon dock-all-apps">
               <AllAppsIcon />
@@ -2116,7 +2125,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             ];
 
             return dockApps.map((app) => {
-              const appLabel = translateText(app.label, settings.language);
+              const appLabel = getAppLabel(app, settings.language);
               const appWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === app.key);
               const hasOpenWindows = appWindows.length > 0;
               const hasVisibleWindows = appWindows.some((desktopWindow) => !desktopWindow.isMinimized);
@@ -2127,10 +2136,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 isMinimizedOnly ? 'minimized' : '',
               ].filter(Boolean).join(' ');
               const dockButtonLabel = isMinimizedOnly
-                ? `还原${appLabel}`
+                ? t('desktop.dock.restoreApp', settings.language, { app: appLabel })
                 : hasOpenWindows
-                  ? `切换到${appLabel}`
-                  : `打开${appLabel}`;
+                  ? t('desktop.dock.switchToApp', settings.language, { app: appLabel })
+                  : t('desktop.dock.openApp', settings.language, { app: appLabel });
 
               return (
                 <button
@@ -2154,13 +2163,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     {isLaunchpadRendered ? createPortal(
       <div className={`launchpad-overlay ${isLaunchpadOpen ? 'open' : 'closing'}`} role="presentation" onClick={closeLaunchpad}>
-        <section className="launchpad-panel" aria-label="全部应用" onClick={(event) => event.stopPropagation()}>
+        <section className="launchpad-panel" aria-label={t('desktop.launchpad.allApps', settings.language)} onClick={(event) => event.stopPropagation()}>
           <header className="launchpad-header">
             <div>
-              <span>全部应用</span>
-              <strong>{launchpadApps.length} 个组件</strong>
+              <span>{t('desktop.launchpad.allApps', settings.language)}</span>
+              <strong>{t('desktop.launchpad.componentCount', settings.language, { count: launchpadApps.length })}</strong>
             </div>
-            <button type="button" className="launchpad-close" aria-label="关闭全部应用" onClick={closeLaunchpad}>
+            <button type="button" className="launchpad-close" aria-label={t('desktop.launchpad.close', settings.language)} onClick={closeLaunchpad}>
               <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
                 <line x1="2" y1="2" x2="10" y2="10" />
                 <line x1="10" y1="2" x2="2" y2="10" />
@@ -2169,8 +2178,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           </header>
           <div className="launchpad-grid">
             {launchpadApps.map((app) => {
-              const appLabel = translateText(app.label, settings.language);
-              const appDescription = translateText(app.description, settings.language);
+              const appLabel = getAppLabel(app, settings.language);
+              const appDescription = getAppDescription(app, settings.language);
 
               return (
                 <button
@@ -2233,11 +2242,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               type="button"
               className="desktop-folder-title"
               onClick={() => setRenameFolderDialog({ folderId: openFolder.id, name: openFolder.name })}
-              title="重命名文件夹"
+              title={t('desktop.folder.rename', settings.language)}
             >
               {openFolder.name}
             </button>
-            <button type="button" className="launchpad-close" aria-label="关闭文件夹" onClick={closeDesktopFolder}>
+            <button type="button" className="launchpad-close" aria-label={t('desktop.folder.close', settings.language)} onClick={closeDesktopFolder}>
               <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
                 <line x1="2" y1="2" x2="10" y2="10" />
                 <line x1="10" y1="2" x2="2" y2="10" />
@@ -2247,14 +2256,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <div className={`desktop-folder-grid ${openFolder.appKeys.length ? '' : 'empty'}`}>
             {openFolder.appKeys.length ? openFolder.appKeys.map((appKey) => {
               const app = getAppInfo(appKey);
-              const appLabel = translateText(app.label, settings.language);
+              const appLabel = getAppLabel(app, settings.language);
 
               return (
                 <button
                   key={appKey}
                   type="button"
                   className="desktop-icon-button desktop-folder-app-button"
-                  title="双击打开"
+                  title={t('desktop.folder.openHint', settings.language)}
                   draggable
                   onDragStart={(event) => handleDragStart(event, { source: 'folder', folderId: openFolder.id, appKey })}
                   onDragEnd={handleDragEnd}
@@ -2278,7 +2287,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 </button>
               );
             }) : (
-              <div className="desktop-folder-empty">将组件拖到这里</div>
+              <div className="desktop-folder-empty">{t('desktop.folder.empty', settings.language)}</div>
             )}
           </div>
         </section>
@@ -2313,7 +2322,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               openDesktopWindow(appKey);
             }}
           >
-            打开
+            {t('desktop.menu.open', settings.language)}
           </button>
           {appContextMenu.source === 'launchpad' ? (
             <button
@@ -2326,7 +2335,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 sendAppToDesktop(appKey);
               }}
             >
-              发送到桌面
+              {t('desktop.menu.sendToDesktop', settings.language)}
             </button>
           ) : appContextMenu.source === 'folder' ? (
             <>
@@ -2339,7 +2348,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   moveFolderAppToDesktop(appKey);
                 }}
               >
-                移动到桌面
+                {t('desktop.menu.moveToDesktop', settings.language)}
               </button>
               <button
                 type="button"
@@ -2351,7 +2360,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   deleteAppFromDesktop(appKey);
                 }}
               >
-                删除
+                {t('desktop.menu.delete', settings.language)}
               </button>
             </>
           ) : (
@@ -2365,7 +2374,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 deleteAppFromDesktop(appKey);
               }}
             >
-              删除
+              {t('desktop.menu.delete', settings.language)}
             </button>
           )}
         </div>
@@ -2393,18 +2402,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               setFolderContextMenu(null);
             }}
           >
-            打开
+            {t('desktop.menu.open', settings.language)}
           </button>
           <button
             type="button"
             role="menuitem"
             onClick={() => {
               const folder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === folderContextMenu.folderId);
-              setRenameFolderDialog({ folderId: folderContextMenu.folderId, name: folder?.name ?? '文件夹' });
+              setRenameFolderDialog({ folderId: folderContextMenu.folderId, name: folder?.name ?? t('desktop.folder.defaultName', settings.language) });
               setFolderContextMenu(null);
             }}
           >
-            重命名
+            {t('desktop.menu.rename', settings.language)}
           </button>
           <button
             type="button"
@@ -2416,7 +2425,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               deleteFolder(folderId);
             }}
           >
-            删除文件夹
+            {t('desktop.menu.deleteFolder', settings.language)}
           </button>
         </div>
       </>,
@@ -2443,13 +2452,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               createFolder();
             }}
           >
-            新建文件夹
+            {t('desktop.menu.newFolder', settings.language)}
           </button>
           <div className="context-menu-item-has-submenu">
             <button type="button" role="menuitem" aria-haspopup="menu">
-              排序
+              {t('desktop.menu.sort', settings.language)}
             </button>
-            <div className="context-submenu" role="menu" aria-label="桌面排序方式">
+            <div className="context-submenu" role="menu" aria-label={t('desktop.menu.sortMode', settings.language)}>
               {desktopSortOptions.map((option) => (
                 <button
                   key={option.value}
@@ -2462,7 +2471,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                     handleSortModeChange(option.value);
                   }}
                 >
-                  {option.label}
+                  {t(option.labelId, settings.language)}
                 </button>
               ))}
             </div>
@@ -2482,7 +2491,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onClick={(event) => event.stopPropagation()}
           onSubmit={submitFolderRename}
         >
-          <div id="desktop-folder-rename-title" className="notepad-modal-title">重命名文件夹</div>
+          <div id="desktop-folder-rename-title" className="notepad-modal-title">{t('desktop.folder.rename', settings.language)}</div>
           <input
             className="notepad-modal-input"
             value={renameFolderDialog.name}
@@ -2491,8 +2500,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             onChange={(event) => setRenameFolderDialog({ ...renameFolderDialog, name: event.target.value })}
           />
           <div className="notepad-modal-actions">
-            <button type="button" className="notepad-modal-btn" onClick={() => setRenameFolderDialog(null)}>取消</button>
-            <button type="submit" className="notepad-modal-btn primary">保存</button>
+            <button type="button" className="notepad-modal-btn" onClick={() => setRenameFolderDialog(null)}>{t('common.cancel', settings.language)}</button>
+            <button type="submit" className="notepad-modal-btn primary">{t('common.save', settings.language)}</button>
           </div>
         </form>
       </div>,
@@ -2513,34 +2522,34 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           className="context-menu terminal-titlebar-menu"
           style={{ left: terminalTitlebarMenu.x, top: terminalTitlebarMenu.y }}
           role="menu"
-          aria-label="终端工具"
+          aria-label={t('terminal.titlebar.tools', settings.language)}
         >
           <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal')}>
-            新建终端窗口
+            {t('terminal.titlebar.newWindow', settings.language)}
           </button>
           <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'search')}>
-            搜索输出
+            {t('terminal.titlebar.searchOutput', settings.language)}
           </button>
           <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'clear')}>
-            清屏
+            {t('terminal.titlebar.clear', settings.language)}
           </button>
           <div className="context-menu-sep" />
           <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'toggle-follow')}>
-            切换自动跟随
+            {t('terminal.titlebar.toggleFollow', settings.language)}
           </button>
           <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'scroll-bottom')}>
-            滚动到底部
+            {t('terminal.titlebar.scrollBottom', settings.language)}
           </button>
           {terminalTitlebarMenuWindow.terminalStatus === 'exited' ? (
             <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'restart')}>
-              重新创建会话
+              {t('terminal.titlebar.restartSession', settings.language)}
             </button>
           ) : null}
           {onSettingsChange ? (
             <>
               <div className="context-menu-sep" />
               <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'settings')}>
-                终端设置
+                {t('terminal.titlebar.settings', settings.language)}
               </button>
             </>
           ) : null}
@@ -2558,18 +2567,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           aria-labelledby="terminal-close-confirm-title"
           onClick={(event) => event.stopPropagation()}
         >
-          <div id="terminal-close-confirm-title" className="notepad-modal-title">关闭终端窗口</div>
+          <div id="terminal-close-confirm-title" className="notepad-modal-title">{t('terminal.closeConfirm.title', settings.language)}</div>
           <div className="notepad-modal-message">
-            检测到该终端可能仍有前台程序在运行，关闭窗口会结束当前终端会话。
+            {t('terminal.closeConfirm.message', settings.language)}
           </div>
           <div className="notepad-modal-actions">
-            <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseWindowId('')}>取消</button>
+            <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseWindowId('')}>{t('common.cancel', settings.language)}</button>
             <button type="button" className="notepad-modal-btn danger" onClick={() => {
               const windowId = pendingCloseWindow.id;
               setPendingCloseWindowId('');
               removeDesktopWindow(windowId);
             }}>
-              关闭
+              {t('common.close', settings.language)}
             </button>
           </div>
         </div>

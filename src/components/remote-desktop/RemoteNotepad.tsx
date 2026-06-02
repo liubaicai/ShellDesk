@@ -34,7 +34,7 @@ import dockerfile from 'highlight.js/lib/languages/dockerfile';
 import diff from 'highlight.js/lib/languages/diff';
 import plaintext from 'highlight.js/lib/languages/plaintext';
 
-import { translateStructuredText } from '../../i18n';
+import { t, translateStructuredText, type AppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
 import RemoteFilePicker from './RemoteFilePicker';
 import type { RemoteSystemType } from './types';
@@ -152,29 +152,29 @@ interface EditorSelectionSnapshot {
   text: string;
 }
 
-/** 二进制文件扩展名黑名单，其他文件均允许用记事本打开 */
+/** Binary file extension denylist; other files are allowed to open in Notepad. */
 const BINARY_EXTENSIONS = new Set([
-  // 图片
+  // Images
   'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'avif', 'tiff', 'tif',
   'psd', 'ai', 'eps', 'raw', 'cr2', 'nef', 'arw', 'dng', 'heic', 'heif',
-  // 音频
+  // Audio
   'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'aiff', 'opus', 'mid', 'midi',
-  // 视频
+  // Video
   'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp',
-  // 压缩/归档
+  // Archives
   'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst', 'lz4', 'tgz', 'tbz2',
   'cab', 'iso', 'dmg', 'img', 'wim', 'swm', 'esd',
-  // 可执行/编译
+  // Executables and compiled artifacts
   'exe', 'dll', 'so', 'dylib', 'bin', 'msi', 'app', 'deb', 'rpm', 'snap', 'flatpak',
   'apk', 'ipa', 'war', 'jar', 'ear', 'class', 'pyc', 'pyo', 'whl',
   'o', 'obj', 'a', 'lib', 'pdb',
-  // 数据库/二进制数据
+  // Databases and binary data
   'db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb', 'mdb', 'accdb',
-  // 文档（二进制格式）
+  // Binary document formats
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
-  // 字体（二进制格式）
+  // Binary font formats
   'woff', 'woff2', 'eot', 'ttc',
-  // 其他二进制
+  // Other binary formats
   'dat', 'bin', 'sav', 'pickle', 'pkl', 'npy', 'npz', 'parquet', 'feather', 'arrow',
   'pb', 'onnx', 'tflite', 'h5', 'hdf5', 'caffemodel',
   'torrent', 'wasm',
@@ -226,8 +226,8 @@ const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   properties: 'properties',
 };
 
-const LANGUAGE_OPTIONS = [
-  { value: 'plaintext', label: '纯文本' },
+const LANGUAGE_OPTIONS: Array<{ value: string; label?: string; labelId?: MessageId }> = [
+  { value: 'plaintext', labelId: 'notepad.language.plaintext' },
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },
   { value: 'html', label: 'HTML' },
@@ -269,27 +269,6 @@ const MAX_AI_SELECTION_CHARACTERS = 6000;
 const MAX_AI_ENVIRONMENT_CHARACTERS = 12000;
 const MAX_AI_COMMAND_OUTPUT_CHARACTERS = 12000;
 const MAX_AI_HISTORY_MESSAGES = 14;
-const NOTEPAD_AI_SYSTEM_PROMPT = `你是 ShellDesk 的全局 SD-Agent。SD-Agent 具备基础对话能力，也可以在用户确认后通过 SSH 隧道执行命令等操作。当前你嵌入在远程记事本中，帮助用户理解、生成和修改当前远程文件内容。
-
-要求：
-- 用中文回答，除非用户明确要求其他语言。
-- 优先结合当前文件路径、语言、选区、远端环境探测结果来生成内容。
-- 如果要修改当前文本，先简短说明，然后附加一个 shelldesk-action 代码块。
-- 如果需要探测服务器，可以请求执行只读命令，同样使用 shelldesk-action 代码块。命令会经 SSH 隧道在当前连接上执行，但必须等用户确认。
-
-可用动作 JSON：
-{"type":"replace_content","content":"完整新内容","summary":"替换全文"}
-{"type":"replace_selection","content":"替换选区的文本","summary":"替换选区"}
-{"type":"insert_at_cursor","content":"要插入的文本","summary":"插入文本"}
-{"type":"append_content","content":"追加到文件末尾的文本","summary":"追加文本"}
-{"type":"run_command","command":"只读探测命令","reason":"为什么需要执行"}
-
-动作块格式必须是：
-\`\`\`shelldesk-action
-{"type":"replace_content","content":"..."}
-\`\`\`
-
-除非用户明确要求，避免生成会删除数据、重启服务、安装软件或修改系统状态的命令。`;
 
 function getFileExtension(name: string): string {
   const dotIndex = name.lastIndexOf('.');
@@ -426,11 +405,11 @@ function getRevisionHint(content: string): string {
   return `${content.length}:${(hash >>> 0).toString(16)}`;
 }
 
-function getLineEndingLabel(content: string): string {
+function getLineEndingLabel(content: string, language: AppLanguage): string {
   if (content.includes('\r\n')) return 'CRLF';
   if (content.includes('\n')) return 'LF';
   if (content.includes('\r')) return 'CR';
-  return '无换行';
+  return t('notepad.lineEnding.none', language);
 }
 
 function isLikelyBinaryContent(content: string): boolean {
@@ -508,7 +487,7 @@ function normalizeDiffLines(content: string): string[] {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
 
-function buildDiffPreview(beforeContent: string, afterContent: string): DiffPreview {
+function buildDiffPreview(beforeContent: string, afterContent: string, language: AppLanguage): DiffPreview {
   const beforeLines = normalizeDiffLines(beforeContent);
   const afterLines = normalizeDiffLines(afterContent);
   const beforeSample = beforeLines.slice(0, MAX_DIFF_INPUT_LINES);
@@ -564,11 +543,11 @@ function buildDiffPreview(beforeContent: string, afterContent: string): DiffPrev
   );
 
   if (truncated) {
-    lines.push({ kind: 'meta', text: '差异预览已截断，保存仍会写入完整文件。' });
+    lines.push({ kind: 'meta', text: t('notepad.diff.preview.truncated', language) });
   }
 
   if (lines.length === 0) {
-    lines.push({ kind: 'meta', text: '当前内容没有行级差异。' });
+    lines.push({ kind: 'meta', text: t('notepad.diff.preview.noChanges', language) });
   }
 
   return { lines, truncated };
@@ -585,17 +564,23 @@ function createNotepadAiMessageId() {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function truncateMiddle(content: string, maxLength: number) {
+function truncateMiddle(content: string, maxLength: number, language: AppLanguage) {
   if (content.length <= maxLength) {
     return content;
   }
 
   const headLength = Math.floor(maxLength * 0.58);
   const tailLength = Math.max(0, maxLength - headLength - 80);
-  return `${content.slice(0, headLength)}\n\n... 已截断 ${content.length - headLength - tailLength} 个字符 ...\n\n${content.slice(-tailLength)}`;
+  return [
+    content.slice(0, headLength),
+    '',
+    t('notepad.truncate.characters', language, { count: content.length - headLength - tailLength }),
+    '',
+    content.slice(-tailLength),
+  ].join('\n');
 }
 
-function limitAiFileContext(content: string) {
+function limitAiFileContext(content: string, language: AppLanguage) {
   if (content.length <= MAX_AI_FILE_CONTEXT_CHARACTERS) {
     return {
       content,
@@ -612,7 +597,7 @@ function limitAiFileContext(content: string) {
     content: [
       content.slice(0, headLength),
       '',
-      `... 文件超过 SD-Agent 单次上下文上限，已省略中间 ${omittedCharacters} 个字符。需要完整分析时，请缩小选区或分段询问。 ...`,
+      t('notepad.ai.context.limitNotice', language, { count: omittedCharacters }),
       '',
       content.slice(-tailLength),
     ].join('\n'),
@@ -695,11 +680,19 @@ function parseAiAction(content: string): NotepadAiAction | undefined {
   return undefined;
 }
 
-function formatCommandResult(command: string, result: { stdout: string; stderr: string; code: number }) {
-  const stdout = result.stdout ? truncateMiddle(result.stdout, MAX_AI_COMMAND_OUTPUT_CHARACTERS) : '(无标准输出)';
-  const stderr = result.stderr ? `\n\nstderr:\n${truncateMiddle(result.stderr, 4000)}` : '';
+function formatCommandResult(
+  command: string,
+  result: { stdout: string; stderr: string; code: number },
+  language: AppLanguage,
+) {
+  const stdout = result.stdout
+    ? truncateMiddle(result.stdout, MAX_AI_COMMAND_OUTPUT_CHARACTERS, language)
+    : t('notepad.command.stdout.empty', language);
+  const stderr = result.stderr
+    ? `\n\n${t('notepad.command.stderr.label', language)}\n${truncateMiddle(result.stderr, 4000, language)}`
+    : '';
 
-  return `远端命令执行完成。\n\n命令:\n${command}\n\n退出码: ${result.code}\n\nstdout:\n${stdout}${stderr}`;
+  return t('notepad.command.result', language, { command, code: result.code, stdout, stderr });
 }
 
 function getEnvironmentProbeCommand(systemType?: RemoteSystemType) {
@@ -722,9 +715,9 @@ function getEnvironmentProbeCommand(systemType?: RemoteSystemType) {
 
 let tabSequence = 0;
 
-function createNewTab(initialTitle?: string, initialContent = ''): NotepadTab {
+function createNewTab(language: AppLanguage, initialTitle?: string, initialContent = ''): NotepadTab {
   tabSequence += 1;
-  const title = initialTitle?.trim() || `未命名-${tabSequence}`;
+  const title = initialTitle?.trim() || t('notepad.tab.untitled', language, { index: tabSequence });
   return {
     id: `new-${tabSequence}`,
     title,
@@ -740,9 +733,9 @@ function createNewTab(initialTitle?: string, initialContent = ''): NotepadTab {
   };
 }
 
-function NotepadDiffPreview({ preview }: { preview: DiffPreview }) {
+function NotepadDiffPreview({ preview, language }: { preview: DiffPreview; language: AppLanguage }) {
   return (
-    <div className="notepad-diff-preview" aria-label="差异预览">
+    <div className="notepad-diff-preview" aria-label={t('notepad.diff.preview.aria', language)}>
       {preview.lines.map((line, index) => (
         <div key={`${line.kind}-${index}`} className={`notepad-diff-line ${line.kind}`}>
           <span className="notepad-diff-prefix">{getDiffPrefix(line.kind)}</span>
@@ -754,7 +747,8 @@ function NotepadDiffPreview({ preview }: { preview: DiffPreview }) {
 }
 
 function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent, initialTitle, systemType }: RemoteNotepadProps) {
-  const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab(initialTitle, initialContent)]);
+  const language = settings.language;
+  const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab(language, initialTitle, initialContent)]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
   const [showGoToLine, setShowGoToLine] = useState(false);
   const [goToLineValue, setGoToLineValue] = useState('');
@@ -824,7 +818,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
     const remainingTabs = currentTabs.filter((tab) => tab.id !== tabId);
     if (remainingTabs.length === 0) {
-      const freshTab = createNewTab();
+      const freshTab = createNewTab(language);
       tabsRef.current = [freshTab];
       setTabs([freshTab]);
       setActiveTabId(freshTab.id);
@@ -837,7 +831,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       if (currentActiveTabId !== tabId) return currentActiveTabId;
       return remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)].id;
     });
-  }, []);
+  }, [language]);
 
   const openFile = useCallback(async (filePath: string) => {
     const nextFilePath = filePath.trim();
@@ -847,7 +841,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     if (!isTextFile(nextTitle)) {
       updateTab(activeTabId, (tab) => ({
         ...tab,
-        error: `"${nextTitle}" 属于二进制文件类型，记事本未打开它。`,
+        error: t('notepad.error.binaryType', language, { title: nextTitle }),
       }));
       return;
     }
@@ -885,7 +879,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
           originalContent: '',
           readOnly: true,
           isLoading: false,
-          error: '文件包含二进制内容，记事本已停止加载。',
+          error: t('notepad.error.binaryContent', language),
         }));
         return;
       }
@@ -907,7 +901,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         error: getErrorMessage(error),
       }));
     }
-  }, [activeTabId, connectionId, updateTab]);
+  }, [activeTabId, connectionId, language, updateTab]);
 
   useEffect(() => {
     if (initialFilePath && !initialFileHandledRef.current) {
@@ -920,12 +914,12 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const lineCount = useMemo(() => countLogicalLines(activeContent), [activeContent]);
   const isLightweightEditor = activeContent.length > MAX_HIGHLIGHT_CHARACTERS || lineCount > MAX_RENDERED_LINE_NUMBERS;
   const lightweightModeLabel = activeContent.length > MAX_HIGHLIGHT_CHARACTERS
-    ? `轻量模式：文件超过 ${Math.round(MAX_HIGHLIGHT_CHARACTERS / 1000)}k 字符，已关闭语法高亮和全量行号。`
+    ? t('notepad.lightweight.characters', language, { count: Math.round(MAX_HIGHLIGHT_CHARACTERS / 1000) })
     : lineCount > MAX_RENDERED_LINE_NUMBERS
-      ? `轻量模式：文件超过 ${MAX_RENDERED_LINE_NUMBERS.toLocaleString()} 行，已关闭语法高亮和全量行号。`
+      ? t('notepad.lightweight.lines', language, { count: MAX_RENDERED_LINE_NUMBERS.toLocaleString() })
       : '';
   const effectiveWrapEnabled = wrapEnabled && !isLightweightEditor;
-  const lineEndingLabel = useMemo(() => getLineEndingLabel(activeContent), [activeContent]);
+  const lineEndingLabel = useMemo(() => getLineEndingLabel(activeContent, language), [activeContent, language]);
   const highlightedHtml = useMemo(() => {
     if (!activeContent) return '';
     if (isLightweightEditor) {
@@ -1038,7 +1032,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     if (!tabToSave || !nextFilePath) return false;
 
     if (tabToSave.readOnly) {
-      updateTab(tabId, (tab) => ({ ...tab, error: '当前标签为只读模式，未执行保存。' }));
+      updateTab(tabId, (tab) => ({ ...tab, error: t('notepad.error.readOnlySave', language) }));
       return false;
     }
 
@@ -1101,7 +1095,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
           ? tab.language
           : getLanguage(nextTitle, contentToSave),
         isSaving: false,
-        error: receivedMoreEdits ? '保存完成，保存过程中产生的新编辑仍未写入。' : '',
+        error: receivedMoreEdits ? t('notepad.error.saveNewEdits', language) : '',
       }));
       if (options.closeAfterSave && !receivedMoreEdits) {
         closeTabNow(tabId);
@@ -1111,11 +1105,11 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       updateTab(tabId, (tab) => ({
         ...tab,
         isSaving: false,
-        error: `保存失败：${getErrorMessage(error)}`,
+        error: t('notepad.error.saveFailed', language, { error: getErrorMessage(error) }),
       }));
       return false;
     }
-  }, [closeTabNow, connectionId, updateTab]);
+  }, [closeTabNow, connectionId, language, updateTab]);
 
   const openSavePicker = useCallback((tabId: string, title: string, closeAfterSave = false) => {
     setFilePickerMode('save');
@@ -1131,27 +1125,27 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     if (!tabToSave) return false;
 
     if (!tabToSave.filePath) {
-      openSavePicker(tabId, '保存文件', Boolean(options.closeAfterSave));
+      openSavePicker(tabId, t('notepad.picker.saveFile', language), Boolean(options.closeAfterSave));
       return false;
     }
 
     return await saveTabToPath(tabId, tabToSave.filePath, options);
-  }, [openSavePicker, saveTabToPath]);
+  }, [language, openSavePicker, saveTabToPath]);
 
   const openFilePicker = useCallback(() => {
     setFilePickerMode('open');
-    setFilePickerTitle('打开文件');
+    setFilePickerTitle(t('notepad.picker.openFile', language));
     setFilePickerOnConfirm(() => (filePath: string) => {
       if (filePath) void openFile(filePath);
     });
     setFilePickerVisible(true);
-  }, [openFile]);
+  }, [language, openFile]);
 
   const handleNewFile = useCallback(() => {
-    const newTab = createNewTab();
+    const newTab = createNewTab(language);
     setTabs((currentTabs) => [...currentTabs, newTab]);
     setActiveTabId(newTab.id);
-  }, []);
+  }, [language]);
 
   const handleCloseTab = useCallback((tabId: string) => {
     const tabToClose = tabsRef.current.find((tab) => tab.id === tabId);
@@ -1234,69 +1228,79 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     selection: EditorSelectionSnapshot,
     options?: { environmentOverride?: string },
   ) => {
-    const filePath = activeTab.filePath || '(尚未保存的新文件)';
+    const filePath = activeTab.filePath || t('notepad.ai.context.unsavedFile', language);
     const selectedText = selection.text
-      ? truncateMiddle(selection.text, MAX_AI_SELECTION_CHARACTERS)
-      : '(无选区)';
+      ? truncateMiddle(selection.text, MAX_AI_SELECTION_CHARACTERS, language)
+      : t('notepad.ai.context.noSelection', language);
     const environmentSource = options?.environmentOverride ?? remoteEnvironment;
     const environmentContext = environmentSource
-      ? truncateMiddle(environmentSource, MAX_AI_ENVIRONMENT_CHARACTERS)
-      : '(尚未探测；发送消息时会自动探测，也可以请求 run_command 动作补充上下文)';
-    let fileContextState = '用户已取消带入当前文件内容上下文；请仅依据文件元数据、选区、对话和工具结果回答。';
+      ? truncateMiddle(environmentSource, MAX_AI_ENVIRONMENT_CHARACTERS, language)
+      : t('notepad.ai.context.notProbed', language);
+    let fileContextState = t('notepad.ai.context.fileContextCancelled', language);
 
     if (includeAiFileContext) {
-      const fileContext = limitAiFileContext(activeTab.content);
+      const fileContext = limitAiFileContext(activeTab.content, language);
       const chunkCount = splitAiFileContext(fileContext.content).length;
       fileContextState = fileContext.truncated
-        ? `当前文件内容超过 ${MAX_AI_FILE_CONTEXT_CHARACTERS} 字符，会在后续 ${chunkCount} 条上下文消息中按顺序提供头尾内容；已省略中间 ${fileContext.omittedCharacters} 个字符。`
-        : `当前文件内容未截断，会在后续 ${chunkCount} 条上下文消息中按顺序完整提供。`;
+        ? t('notepad.ai.context.fileContextTruncated', language, {
+            limit: MAX_AI_FILE_CONTEXT_CHARACTERS,
+            chunks: chunkCount,
+            omitted: fileContext.omittedCharacters,
+          })
+        : t('notepad.ai.context.fileContextComplete', language, { chunks: chunkCount });
     }
 
     return [
-      '当前 ShellDesk 记事本上下文：',
-      `文件标题：${activeTab.title}`,
-      `远程路径：${filePath}`,
-      `语言模式：${activeTab.language}`,
-      `文件字符数：${activeTab.content.length}`,
-      `只读状态：${activeTab.readOnly ? '只读' : '可编辑'}`,
-      `光标：第 ${cursorLine} 行，第 ${cursorCol} 列`,
-      `选区范围：${selection.start}-${selection.end}`,
+      t('notepad.ai.context.header', language),
+      t('notepad.ai.context.fileTitle', language, { title: activeTab.title }),
+      t('notepad.ai.context.remotePath', language, { path: filePath }),
+      t('notepad.ai.context.languageMode', language, { language: activeTab.language }),
+      t('notepad.ai.context.fileCharacters', language, { count: activeTab.content.length }),
+      t('notepad.ai.context.readOnlyStatus', language, {
+        status: activeTab.readOnly
+          ? t('notepad.ai.context.readOnly', language)
+          : t('notepad.ai.context.editable', language),
+      }),
+      t('notepad.ai.context.cursor', language, { line: cursorLine, column: cursorCol }),
+      t('notepad.ai.context.selectionRange', language, { start: selection.start, end: selection.end }),
       '',
-      '当前选中文本：',
+      t('notepad.ai.context.selectedTextHeader', language),
       selectedText,
       '',
-      '远端环境探测：',
+      t('notepad.ai.context.environmentHeader', language),
       environmentContext,
       '',
-      '当前文件内容上下文：',
+      t('notepad.ai.context.fileContextHeader', language),
       fileContextState,
     ].join('\n');
-  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.readOnly, activeTab.title, cursorCol, cursorLine, includeAiFileContext, remoteEnvironment]);
+  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.readOnly, activeTab.title, cursorCol, cursorLine, includeAiFileContext, language, remoteEnvironment]);
 
   const buildAiFileContextMessages = useCallback((): ShellDeskAiChatMessage[] => {
     if (!includeAiFileContext) {
       return [];
     }
 
-    const { content, truncated, omittedCharacters } = limitAiFileContext(activeTab.content);
+    const { content, truncated, omittedCharacters } = limitAiFileContext(activeTab.content, language);
     const chunks = splitAiFileContext(content);
-    const filePath = activeTab.filePath || '(尚未保存的新文件)';
+    const filePath = activeTab.filePath || t('notepad.ai.context.unsavedFile', language);
 
     return chunks.map((chunk, index) => ({
       role: 'user',
       content: [
-        `当前文件内容上下文（第 ${index + 1}/${chunks.length} 段）：`,
-        `文件标题：${activeTab.title}`,
-        `远程路径：${filePath}`,
-        `语言模式：${activeTab.language}`,
-        `完整字符数：${activeTab.content.length}`,
-        truncated ? `截断说明：文件超过 ${MAX_AI_FILE_CONTEXT_CHARACTERS} 字符，已省略中间 ${omittedCharacters} 个字符。` : '截断说明：未截断，当前文件内容已完整带入。',
+        t('notepad.ai.context.chunkHeader', language, { index: index + 1, total: chunks.length }),
+        t('notepad.ai.context.fileTitle', language, { title: activeTab.title }),
+        t('notepad.ai.context.remotePath', language, { path: filePath }),
+        t('notepad.ai.context.languageMode', language, { language: activeTab.language }),
+        t('notepad.ai.context.fullCharacters', language, { count: activeTab.content.length }),
+        truncated
+          ? t('notepad.ai.context.truncationTruncated', language, { limit: MAX_AI_FILE_CONTEXT_CHARACTERS, omitted: omittedCharacters })
+          : t('notepad.ai.context.truncationNone', language),
         '```',
         chunk,
         '```',
       ].join('\n'),
     }));
-  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.title, includeAiFileContext]);
+  }, [activeTab.content, activeTab.filePath, activeTab.language, activeTab.title, includeAiFileContext, language]);
 
   const createAiChatMessages = useCallback((
     nextMessages: NotepadAiMessage[],
@@ -1306,7 +1310,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const recentMessages = nextMessages.slice(-MAX_AI_HISTORY_MESSAGES).map<ShellDeskAiChatMessage>((message) => ({
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content: message.role === 'tool'
-        ? `${translateStructuredText('工具结果：', settings.language)}\n${message.content}`
+        ? `${t('ai.tool.resultPrefix', language)}\n${message.content}`
         : message.content,
     }));
     const fileContextMessages = buildAiFileContextMessages().map((message) => ({
@@ -1315,18 +1319,18 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }));
 
     return [
-      { role: 'system', content: translateStructuredText(NOTEPAD_AI_SYSTEM_PROMPT, settings.language) },
-      { role: 'user', content: translateStructuredText(buildAiContextMessage(selection, options), settings.language) },
+      { role: 'system', content: t('ai.notepad.systemPrompt', language) },
+      { role: 'user', content: translateStructuredText(buildAiContextMessage(selection, options), language) },
       ...fileContextMessages,
       ...recentMessages,
     ];
-  }, [buildAiContextMessage, buildAiFileContextMessages, settings.language]);
+  }, [buildAiContextMessage, buildAiFileContextMessages, language]);
 
   const runRemoteEnvironmentProbe = useCallback(async () => {
     const command = getEnvironmentProbeCommand(systemType);
     const result = await window.guiSSH!.connections.runCommand(connectionId, command);
-    return formatCommandResult(command, result);
-  }, [connectionId, systemType]);
+    return formatCommandResult(command, result, language);
+  }, [connectionId, language, systemType]);
 
   const requestAiAssistant = useCallback(async (
     nextMessages: NotepadAiMessage[],
@@ -1338,12 +1342,12 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const chatStream = aiControls?.chatStream;
 
     if (!chat && !chatStream) {
-      setAiError('当前运行环境未提供 SD-Agent 对话接口。');
+      setAiError(t('notepad.error.noAiChat', language));
       return;
     }
 
     if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
-      setAiError('请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。');
+      setAiError(t('notepad.error.aiConfigRequired', language));
       return;
     }
 
@@ -1370,7 +1374,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
           const result = await chatStream(chatRequest, {
             onChunk: (chunk) => {
               streamedContent += chunk;
-              const partialContent = stripAiActionBlocks(streamedContent) || '正在生成回复...';
+              const partialContent = stripAiActionBlocks(streamedContent) || t('notepad.ai.generating', language);
               const partialMessage: NotepadAiMessage = {
                 id: assistantMessageId,
                 role: 'assistant',
@@ -1407,7 +1411,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       }
 
       const action = parseAiAction(resultContent);
-      const displayContent = stripAiActionBlocks(resultContent) || (action ? '我准备好了一个可执行动作。' : resultContent);
+      const displayContent = stripAiActionBlocks(resultContent) || (action ? t('notepad.ai.actionReady', language) : resultContent);
       const assistantMessage: NotepadAiMessage = {
         id: assistantMessageId,
         role: 'assistant',
@@ -1418,13 +1422,14 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
       setAiMessages([...nextMessages, assistantMessage]);
     } catch (error) {
-      setAiError(`SD-Agent 请求失败：${getErrorMessage(error)}`);
+      setAiError(t('notepad.error.aiRequestFailed', language, { error: getErrorMessage(error) }));
       setAiMessages(nextMessages);
     } finally {
       setIsAiBusy(false);
     }
   }, [
     createAiChatMessages,
+    language,
     settings.aiApiBaseUrl,
     settings.aiApiFormat,
     settings.aiApiKey,
@@ -1441,7 +1446,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }
 
     if (!isAiConfigured) {
-      setAiError('请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。');
+      setAiError(t('notepad.error.aiConfigRequired', language));
       return;
     }
 
@@ -1468,7 +1473,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         const toolMessage: NotepadAiMessage = {
           id: createNotepadAiMessageId(),
           role: 'tool',
-          content: `已自动探测环境，后续对话会带上这份上下文。\n\n${toolContent}`,
+          content: t('notepad.ai.probe.success', language, { content: toolContent }),
           createdAt: new Date().toISOString(),
         };
 
@@ -1477,7 +1482,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         setRemoteEnvironment(toolContent);
         setAiMessages(nextMessages);
       } catch (error) {
-        const errorMessage = `自动探测环境失败：${getErrorMessage(error)}`;
+        const errorMessage = t('notepad.ai.probe.failed', language, { error: getErrorMessage(error) });
         const toolMessage: NotepadAiMessage = {
           id: createNotepadAiMessageId(),
           role: 'tool',
@@ -1502,6 +1507,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     isAiBusy,
     isAiConfigured,
     isAiProbing,
+    language,
     remoteEnvironment,
     requestAiAssistant,
     runRemoteEnvironmentProbe,
@@ -1521,7 +1527,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     }
 
     if (activeTab.readOnly) {
-      setAiError('当前标签是只读状态，无法应用 SD-Agent 修改。');
+      setAiError(t('notepad.error.aiReadOnlyApply', language));
       return;
     }
 
@@ -1546,7 +1552,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
     replaceActiveContent(nextContent, nextPosition, nextPosition);
     markAiActionApplied(message.id);
-  }, [activeTab.content, activeTab.readOnly, getCurrentEditorSelection, lastAiSelection, markAiActionApplied, replaceActiveContent]);
+  }, [activeTab.content, activeTab.readOnly, getCurrentEditorSelection, language, lastAiSelection, markAiActionApplied, replaceActiveContent]);
 
   const runAiCommandAction = useCallback(async (message: NotepadAiMessage) => {
     const action = message.action;
@@ -1560,7 +1566,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
     try {
       const result = await window.guiSSH!.connections.runCommand(connectionId, action.command);
-      const toolContent = formatCommandResult(action.command, result);
+      const toolContent = formatCommandResult(action.command, result, language);
       const toolMessage: NotepadAiMessage = {
         id: createNotepadAiMessageId(),
         role: 'tool',
@@ -1580,11 +1586,11 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       setAiMessages(continuedMessages);
       await requestAiAssistant(continuedMessages, selection);
     } catch (error) {
-      setAiError(`命令执行失败：${getErrorMessage(error)}`);
+      setAiError(t('notepad.error.commandFailed', language, { error: getErrorMessage(error) }));
     } finally {
       setIsAiBusy(false);
     }
-  }, [aiMessages, connectionId, getCurrentEditorSelection, isAiBusy, requestAiAssistant]);
+  }, [aiMessages, connectionId, getCurrentEditorSelection, isAiBusy, language, requestAiAssistant]);
 
   const handleTextareaScroll = useCallback(() => {
     const textarea = textareaRef.current;
@@ -1634,13 +1640,13 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const matchIndex = nextIndex >= 0 ? nextIndex : wrappedIndex;
 
     if (matchIndex < 0) {
-      setFindFeedback('未找到匹配内容');
+      setFindFeedback(t('notepad.find.noMatch', language));
       return;
     }
 
     selectEditorRange(matchIndex, matchIndex + findText.length);
-    setFindFeedback(nextIndex >= 0 ? '' : '已从文件边界继续查找');
-  }, [findText, selectEditorRange]);
+    setFindFeedback(nextIndex >= 0 ? '' : t('notepad.find.wrapped', language));
+  }, [findText, language, selectEditorRange]);
 
   const handleReplaceCurrent = useCallback(() => {
     const textarea = textareaRef.current;
@@ -1655,22 +1661,22 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     const nextContent = `${textarea.value.slice(0, textarea.selectionStart)}${replaceText}${textarea.value.slice(textarea.selectionEnd)}`;
     const nextPosition = textarea.selectionStart + replaceText.length;
     replaceActiveContent(nextContent, nextPosition, nextPosition);
-    setFindFeedback('已替换 1 处');
-  }, [activeTab.readOnly, findText, handleFindNext, replaceActiveContent, replaceText]);
+    setFindFeedback(t('notepad.find.replacedOne', language));
+  }, [activeTab.readOnly, findText, handleFindNext, language, replaceActiveContent, replaceText]);
 
   const handleReplaceAll = useCallback(() => {
     if (!findText || activeTab.readOnly) return;
 
     const matchCount = countOccurrences(activeTab.content, findText);
     if (matchCount === 0) {
-      setFindFeedback('未找到可替换内容');
+      setFindFeedback(t('notepad.find.noReplace', language));
       return;
     }
 
     const nextContent = activeTab.content.split(findText).join(replaceText);
     replaceActiveContent(nextContent, 0, 0);
-    setFindFeedback(`已替换 ${matchCount} 处`);
-  }, [activeTab.content, activeTab.readOnly, findText, replaceActiveContent, replaceText]);
+    setFindFeedback(t('notepad.find.replacedMany', language, { count: matchCount }));
+  }, [activeTab.content, activeTab.readOnly, findText, language, replaceActiveContent, replaceText]);
 
   const handleKeyDown = useCallback((event: ReactKeyboardEvent) => {
     const isMod = event.ctrlKey || event.metaKey;
@@ -1678,7 +1684,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     if (isMod && event.key === 's') {
       event.preventDefault();
       if (event.shiftKey) {
-        openSavePicker(activeTabId, '另存为');
+        openSavePicker(activeTabId, t('notepad.picker.saveAs', language));
       } else {
         void saveTab(activeTabId);
       }
@@ -1729,6 +1735,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     activeTab.readOnly,
     activeTabId,
     handleNewFile,
+    language,
     openFilePicker,
     openFindBar,
     openSavePicker,
@@ -1737,30 +1744,30 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   ]);
 
   const diffPreview = useMemo(() => diffDialog
-    ? buildDiffPreview(diffDialog.beforeContent, diffDialog.afterContent)
-    : null, [diffDialog]);
+    ? buildDiffPreview(diffDialog.beforeContent, diffDialog.afterContent, language)
+    : null, [diffDialog, language]);
 
   const conflictPreview = useMemo(() => {
     if (!conflictDialog || conflictDialog.remoteContent === undefined) return null;
 
     const conflictingTab = tabs.find((tab) => tab.id === conflictDialog.tabId);
     if (!conflictingTab) return null;
-    return buildDiffPreview(conflictDialog.remoteContent, conflictingTab.content);
-  }, [conflictDialog, tabs]);
+    return buildDiffPreview(conflictDialog.remoteContent, conflictingTab.content, language);
+  }, [conflictDialog, language, tabs]);
 
   const activeSaveState = activeTab.isSaving
-    ? '保存中'
+    ? t('notepad.status.saving', language)
     : activeTab.readOnly
-      ? '只读'
+      ? t('notepad.status.readOnly', language)
       : activeTab.dirty
-        ? '未保存'
+        ? t('notepad.status.unsaved', language)
         : activeTab.filePath
-          ? '已保存'
-          : '新文件';
+          ? t('notepad.status.saved', language)
+          : t('notepad.status.newFile', language);
 
   const activeRevisionHint = activeTab.revisionHint
-    ? `版本 ${activeTab.revisionHint.slice(-8)}`
-    : '尚未保存';
+    ? t('notepad.status.revision', language, { revision: activeTab.revisionHint.slice(-8) })
+    : t('notepad.status.noRevision', language);
 
   return (
     <div className="notepad-root" onKeyDown={handleKeyDown}>
@@ -1776,14 +1783,14 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
               >
                 <span className={`notepad-tab-dirty ${tab.dirty ? 'visible' : ''}`} aria-hidden="true" />
                 <span className="notepad-tab-name">{tab.title}</span>
-                {tab.readOnly ? <span className="notepad-tab-readonly">只读</span> : null}
+                {tab.readOnly ? <span className="notepad-tab-readonly">{t('notepad.tab.readOnly', language)}</span> : null}
               </button>
               <button
                 type="button"
                 className="notepad-tab-close"
                 onClick={() => handleCloseTab(tab.id)}
-                aria-label={`关闭 ${tab.title}`}
-                title="关闭标签"
+                aria-label={t('notepad.tab.closeAria', language, { title: tab.title })}
+                title={t('notepad.tab.closeTitle', language)}
               >
                 ×
               </button>
@@ -1793,8 +1800,8 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             type="button"
             className="notepad-tab-add"
             onClick={handleNewFile}
-            title="新建文件"
-            aria-label="新建文件"
+            title={t('notepad.tab.newTitle', language)}
+            aria-label={t('notepad.tab.newTitle', language)}
           >
             +
           </button>
@@ -1806,25 +1813,25 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
       <div className="notepad-toolbar">
         <div className="notepad-toolbar-group">
-          <button type="button" className="notepad-tool-btn" onClick={handleNewFile} title="新建 (Ctrl+N)">新建</button>
-          <button type="button" className="notepad-tool-btn" onClick={openFilePicker} title="打开 (Ctrl+O)">打开</button>
+          <button type="button" className="notepad-tool-btn" onClick={handleNewFile} title={t('notepad.toolbar.newTitle', language)}>{t('notepad.toolbar.new', language)}</button>
+          <button type="button" className="notepad-tool-btn" onClick={openFilePicker} title={t('notepad.toolbar.openTitle', language)}>{t('notepad.toolbar.open', language)}</button>
           <button
             type="button"
             className="notepad-tool-btn"
             onClick={() => void saveTab(activeTabId)}
-            title="保存 (Ctrl+S)"
+            title={t('notepad.toolbar.saveTitle', language)}
             disabled={activeTab.readOnly || activeTab.isLoading || activeTab.isSaving || (!activeTab.dirty && Boolean(activeTab.filePath))}
           >
-            保存
+            {t('notepad.toolbar.save', language)}
           </button>
           <button
             type="button"
             className="notepad-tool-btn"
-            onClick={() => openSavePicker(activeTabId, '另存为')}
-            title="另存为 (Ctrl+Shift+S)"
+            onClick={() => openSavePicker(activeTabId, t('notepad.picker.saveAs', language))}
+            title={t('notepad.toolbar.saveAsTitle', language)}
             disabled={activeTab.readOnly || activeTab.isLoading || activeTab.isSaving}
           >
-            另存为
+            {t('notepad.toolbar.saveAs', language)}
           </button>
           <button
             type="button"
@@ -1832,19 +1839,19 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             onClick={() => setDiffDialog({
               tabId: activeTab.id,
               title: activeTab.title,
-              beforeLabel: activeTab.filePath ? '打开时版本' : '空白文件',
+              beforeLabel: activeTab.filePath ? t('notepad.diff.before.opened', language) : t('notepad.diff.before.blank', language),
               beforeContent: activeTab.originalContent,
-              afterLabel: '当前编辑',
+              afterLabel: t('notepad.diff.after.current', language),
               afterContent: activeTab.content,
             })}
             disabled={!activeTab.dirty || activeTab.isLoading}
           >
-            保存前差异
+            {t('notepad.toolbar.beforeSaveDiff', language)}
           </button>
         </div>
 
         <div className="notepad-toolbar-group">
-          <button type="button" className="notepad-tool-btn" onClick={openFindBar} title="查找与替换 (Ctrl+F)">查找替换</button>
+          <button type="button" className="notepad-tool-btn" onClick={openFindBar} title={t('notepad.toolbar.findReplaceTitle', language)}>{t('notepad.toolbar.findReplace', language)}</button>
           <button
             type="button"
             className="notepad-tool-btn"
@@ -1852,9 +1859,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
               setShowGoToLine(true);
               setTimeout(() => goToLineInputRef.current?.focus(), 0);
             }}
-            title="跳转 (Ctrl+G)"
+            title={t('notepad.toolbar.goToTitle', language)}
           >
-            跳转
+            {t('notepad.toolbar.goTo', language)}
           </button>
         </div>
 
@@ -1867,9 +1874,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             onClick={() => setWrapEnabled((currentWrapEnabled) => !currentWrapEnabled)}
             aria-pressed={effectiveWrapEnabled}
             disabled={isLightweightEditor}
-            title={isLightweightEditor ? '大文件轻量模式下暂不启用自动换行' : '切换自动换行'}
+            title={isLightweightEditor ? t('notepad.toolbar.wrapDisabledTitle', language) : t('notepad.toolbar.wrapTitle', language)}
           >
-            自动换行
+            {t('notepad.status.wrap', language)}
           </button>
           <button
             type="button"
@@ -1877,10 +1884,10 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             onClick={() => updateTab(activeTabId, (tab) => ({ ...tab, readOnly: !tab.readOnly }))}
             aria-pressed={activeTab.readOnly}
           >
-            只读
+            {t('notepad.status.readOnly', language)}
           </button>
           <label className="notepad-toolbar-field">
-            <span>语法</span>
+            <span>{t('notepad.toolbar.syntax', language)}</span>
             <select
               className="notepad-toolbar-select"
               value={hljs.getLanguage(activeTab.language) ? activeTab.language : 'plaintext'}
@@ -1890,8 +1897,10 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                 languageManuallySet: true,
               }))}
             >
-              {LANGUAGE_OPTIONS.map((language) => (
-                <option key={language.value} value={language.value}>{language.label}</option>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.labelId ? t(option.labelId, language) : option.label}
+                </option>
               ))}
             </select>
           </label>
@@ -1919,7 +1928,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             ref={findInputRef}
             type="text"
             className="notepad-find-input"
-            placeholder="查找"
+            placeholder={t('notepad.find.placeholder', language)}
             value={findText}
             onChange={(event) => {
               setFindText(event.target.value);
@@ -1933,7 +1942,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
           <input
             type="text"
             className="notepad-find-input"
-            placeholder="替换为"
+            placeholder={t('notepad.find.replacePlaceholder', language)}
             value={replaceText}
             onChange={(event) => setReplaceText(event.target.value)}
             onKeyDown={(event) => {
@@ -1942,18 +1951,18 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             }}
             disabled={activeTab.readOnly}
           />
-          <button type="button" className="notepad-tool-btn" onClick={() => handleFindNext(true)}>上一个</button>
-          <button type="button" className="notepad-tool-btn" onClick={() => handleFindNext()}>下一个</button>
-          <button type="button" className="notepad-tool-btn" onClick={handleReplaceCurrent} disabled={activeTab.readOnly}>替换</button>
-          <button type="button" className="notepad-tool-btn" onClick={handleReplaceAll} disabled={activeTab.readOnly}>全部替换</button>
+          <button type="button" className="notepad-tool-btn" onClick={() => handleFindNext(true)}>{t('notepad.find.previous', language)}</button>
+          <button type="button" className="notepad-tool-btn" onClick={() => handleFindNext()}>{t('notepad.find.next', language)}</button>
+          <button type="button" className="notepad-tool-btn" onClick={handleReplaceCurrent} disabled={activeTab.readOnly}>{t('notepad.find.replace', language)}</button>
+          <button type="button" className="notepad-tool-btn" onClick={handleReplaceAll} disabled={activeTab.readOnly}>{t('notepad.find.replaceAll', language)}</button>
           {findFeedback ? <span className="notepad-find-hint">{findFeedback}</span> : null}
-          <button type="button" className="notepad-tool-btn" onClick={() => setShowFind(false)}>关闭</button>
+          <button type="button" className="notepad-tool-btn" onClick={() => setShowFind(false)}>{t('common.close', language)}</button>
         </div>
       ) : null}
 
       {showGoToLine ? (
         <div className="notepad-find-bar">
-          <span className="notepad-find-label">跳转到行：</span>
+          <span className="notepad-find-label">{t('notepad.goTo.label', language)}</span>
           <input
             ref={goToLineInputRef}
             type="number"
@@ -1968,8 +1977,8 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             }}
           />
           <span className="notepad-find-hint">/ {lineCount}</span>
-          <button type="button" className="notepad-tool-btn" onClick={handleGoToLine}>跳转</button>
-          <button type="button" className="notepad-tool-btn" onClick={() => setShowGoToLine(false)}>关闭</button>
+          <button type="button" className="notepad-tool-btn" onClick={handleGoToLine}>{t('notepad.toolbar.goTo', language)}</button>
+          <button type="button" className="notepad-tool-btn" onClick={() => setShowGoToLine(false)}>{t('common.close', language)}</button>
         </div>
       ) : null}
 
@@ -1979,7 +1988,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
       <div className={`notepad-workspace ${isAiSidebarOpen ? 'with-ai' : ''}`}>
         {activeTab.isLoading ? (
-          <div className="notepad-loading">正在加载文件...</div>
+          <div className="notepad-loading">{t('notepad.loading', language)}</div>
         ) : (
           <div className={`notepad-editor-wrap ${effectiveWrapEnabled ? 'wrapped' : ''} ${isLightweightEditor ? 'lightweight' : ''}`}>
             <div ref={lineNumbersRef} className={`notepad-line-numbers ${isLightweightEditor ? 'compact' : ''}`} aria-hidden="true">
@@ -2016,24 +2025,24 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                 autoCapitalize="off"
                 wrap={wrapEnabled ? 'soft' : 'off'}
                 readOnly={activeTab.readOnly}
-                aria-label={`${activeTab.title} 编辑区`}
+                aria-label={t('notepad.editor.aria', language, { title: activeTab.title })}
               />
             </div>
           </div>
         )}
 
         {isAiSidebarOpen ? (
-          <aside className="notepad-ai-sidebar" aria-label="SD-Agent 侧边栏">
+          <aside className="notepad-ai-sidebar" aria-label={t('notepad.ai.sidebar.aria', language)}>
             <div className="notepad-ai-header">
               <span>
                 <strong>SD-Agent</strong>
               </span>
-              <button type="button" className="notepad-ai-close" onClick={() => setIsAiSidebarOpen(false)} aria-label="关闭 SD-Agent 侧边栏">×</button>
+              <button type="button" className="notepad-ai-close" onClick={() => setIsAiSidebarOpen(false)} aria-label={t('notepad.ai.sidebar.closeAria', language)}>×</button>
             </div>
 
             {!isAiConfigured ? (
               <div className="notepad-ai-warning">
-                请先在设置里配置 SD-Agent 提供商、API 密钥和默认模型。
+                {t('notepad.ai.configWarning', language)}
               </div>
             ) : null}
 
@@ -2042,22 +2051,22 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             <div className="notepad-ai-messages">
               {aiMessages.length === 0 ? (
                 <div className="notepad-ai-empty">
-                  <strong>可以让 SD-Agent 生成、重构或解释当前文件。</strong>
-                  <span>发送时会自动探测环境；当前文件内容默认会带入上下文，可在发送前取消。</span>
+                  <strong>{t('notepad.ai.empty.title', language)}</strong>
+                  <span>{t('notepad.ai.empty.summary', language)}</span>
                 </div>
               ) : null}
 
               {aiMessages.map((message) => (
                 <div key={message.id} className={`notepad-ai-message ${message.role}`}>
                   <div className="notepad-ai-message-role">
-                    {message.role === 'assistant' ? 'SD-Agent' : message.role === 'tool' ? '工具' : '你'}
+                    {message.role === 'assistant' ? 'SD-Agent' : message.role === 'tool' ? t('notepad.ai.role.tool', language) : t('notepad.ai.role.user', language)}
                   </div>
                   <div className="notepad-ai-message-content">{message.content}</div>
                   {message.action ? (
                     <div className="notepad-ai-action">
                       {message.action.type === 'run_command' ? (
                         <>
-                          <strong>请求执行命令</strong>
+                          <strong>{t('notepad.ai.requestCommand', language)}</strong>
                           {message.action.reason ? <span>{message.action.reason}</span> : null}
                           <code>{message.action.command}</code>
                           <button
@@ -2066,20 +2075,28 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                             onClick={() => void runAiCommandAction(message)}
                             disabled={message.actionApplied || isAiBusy}
                           >
-                            {message.actionApplied ? '已执行' : '确认执行'}
+                            {message.actionApplied ? t('notepad.ai.executed', language) : t('notepad.ai.confirmExecute', language)}
                           </button>
                         </>
                       ) : (
                         <>
-                          <strong>{message.action.summary || '可应用到当前文本'}</strong>
-                          <span>{message.action.type === 'replace_content' ? '替换全文' : message.action.type === 'replace_selection' ? '替换选区' : message.action.type === 'append_content' ? '追加内容' : '插入到光标'}</span>
+                          <strong>{message.action.summary || t('notepad.ai.applyFallback', language)}</strong>
+                          <span>
+                            {message.action.type === 'replace_content'
+                              ? t('notepad.ai.action.replaceContent', language)
+                              : message.action.type === 'replace_selection'
+                                ? t('notepad.ai.action.replaceSelection', language)
+                                : message.action.type === 'append_content'
+                                  ? t('notepad.ai.action.appendContent', language)
+                                  : t('notepad.ai.action.insertAtCursor', language)}
+                          </span>
                           <button
                             type="button"
                             className="notepad-modal-btn primary"
                             onClick={() => applyAiTextAction(message)}
                             disabled={message.actionApplied || activeTab.readOnly}
                           >
-                            {message.actionApplied ? '已应用' : '应用修改'}
+                            {message.actionApplied ? t('notepad.ai.applied', language) : t('notepad.ai.applyChange', language)}
                           </button>
                         </>
                       )}
@@ -2087,8 +2104,8 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                   ) : null}
                 </div>
               ))}
-              {isAiProbing ? <div className="notepad-ai-thinking">正在自动探测环境...</div> : null}
-              {!isAiProbing && isAiBusy ? <div className="notepad-ai-thinking">SD-Agent 正在思考...</div> : null}
+              {isAiProbing ? <div className="notepad-ai-thinking">{t('notepad.ai.probing', language)}</div> : null}
+              {!isAiProbing && isAiBusy ? <div className="notepad-ai-thinking">{t('notepad.ai.thinking', language)}</div> : null}
               <div ref={aiMessagesEndRef} />
             </div>
 
@@ -2097,7 +2114,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                 ref={aiInputRef}
                 value={aiInput}
                 onChange={(event) => setAiInput(event.target.value)}
-                placeholder="询问、生成内容，或要求修改当前文本..."
+                placeholder={t('notepad.ai.placeholder', language)}
                 rows={4}
                 disabled={isAiBusy || isAiProbing}
                 onKeyDown={(event) => {
@@ -2113,10 +2130,10 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                     checked={includeAiFileContext}
                     onChange={(event) => setIncludeAiFileContext(event.target.checked)}
                   />
-                  <span>带入当前文件内容</span>
+                  <span>{t('notepad.ai.includeFileContext', language)}</span>
                 </label>
                 <button type="submit" className="notepad-modal-btn primary" disabled={!aiInput.trim() || isAiBusy || isAiProbing || !isAiConfigured}>
-                  发送
+                  {t('notepad.ai.send', language)}
                 </button>
               </div>
             </form>
@@ -2125,16 +2142,16 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       </div>
 
       <div className="notepad-statusbar">
-        <span>行 {cursorLine}, 列 {cursorCol}</span>
-        <span>{lineCount} 行</span>
+        <span>{t('notepad.status.lineColumn', language, { line: cursorLine, column: cursorCol })}</span>
+        <span>{t('notepad.status.lines', language, { count: lineCount })}</span>
         <span>{activeTab.language}</span>
         <span>UTF-8</span>
         <span>{lineEndingLabel}</span>
-        <span>缩进 2 空格</span>
-        <span>{effectiveWrapEnabled ? '自动换行' : '不换行'}</span>
-        {isLightweightEditor ? <span title={lightweightModeLabel}>轻量模式</span> : null}
+        <span>{t('notepad.status.indentSpaces', language)}</span>
+        <span>{effectiveWrapEnabled ? t('notepad.status.wrap', language) : t('notepad.status.noWrap', language)}</span>
+        {isLightweightEditor ? <span title={lightweightModeLabel}>{t('notepad.status.lightweight', language)}</span> : null}
         <span>{activeRevisionHint}</span>
-        <span>{activeTab.readOnly ? '只读' : activeTab.dirty ? '已修改' : '已同步'}</span>
+        <span>{activeTab.readOnly ? t('notepad.status.readOnly', language) : activeTab.dirty ? t('notepad.status.modified', language) : t('notepad.status.synced', language)}</span>
         {activeTab.filePath ? <span className="notepad-statusbar-path" title={activeTab.filePath}>{activeTab.filePath}</span> : null}
       </div>
 
@@ -2147,19 +2164,19 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             aria-labelledby="notepad-close-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="notepad-close-title" className="notepad-modal-title">关闭未保存标签</div>
-            <div className="notepad-modal-message">"{pendingCloseTab.title}" 还有未保存的更改。</div>
+            <div id="notepad-close-title" className="notepad-modal-title">{t('notepad.modal.unsavedTitle', language)}</div>
+            <div className="notepad-modal-message">{t('notepad.modal.unsavedMessage', language, { title: pendingCloseTab.title })}</div>
             <div className="notepad-modal-actions">
               <button type="button" className="notepad-modal-btn" onClick={() => {
                 closeTabNow(pendingCloseTab.id);
                 setPendingCloseTab(null);
-              }}>不保存并关闭</button>
-              <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseTab(null)}>取消</button>
+              }}>{t('notepad.modal.discardClose', language)}</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseTab(null)}>{t('common.cancel', language)}</button>
               <button type="button" className="notepad-modal-btn primary" onClick={() => {
                 const tabId = pendingCloseTab.id;
                 setPendingCloseTab(null);
                 void saveTab(tabId, { closeAfterSave: true });
-              }}>保存后关闭</button>
+              }}>{t('notepad.modal.saveClose', language)}</button>
             </div>
           </div>
         </div>,
@@ -2175,19 +2192,19 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             aria-labelledby="notepad-diff-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="notepad-diff-title" className="notepad-modal-title">保存前差异 - {diffDialog.title}</div>
+            <div id="notepad-diff-title" className="notepad-modal-title">{t('notepad.modal.diffTitle', language, { title: diffDialog.title })}</div>
             <div className="notepad-diff-legend">
               <span>{diffDialog.beforeLabel}</span>
               <span>{diffDialog.afterLabel}</span>
             </div>
-            <NotepadDiffPreview preview={diffPreview} />
+            <NotepadDiffPreview preview={diffPreview} language={language} />
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setDiffDialog(null)}>关闭</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setDiffDialog(null)}>{t('common.close', language)}</button>
               <button type="button" className="notepad-modal-btn primary" onClick={() => {
                 const tabId = diffDialog.tabId;
                 setDiffDialog(null);
                 void saveTab(tabId);
-              }}>保存</button>
+              }}>{t('common.save', language)}</button>
             </div>
           </div>
         </div>,
@@ -2203,15 +2220,15 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
             aria-labelledby="notepad-conflict-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="notepad-conflict-title" className="notepad-modal-title">远程文件已变化</div>
+            <div id="notepad-conflict-title" className="notepad-modal-title">{t('notepad.modal.remoteChangedTitle', language)}</div>
             <div className="notepad-modal-message">
               {conflictDialog.readError
-                ? `保存前无法读取 "${conflictDialog.filePath}"：${conflictDialog.readError}`
-                : `"${conflictDialog.title}" 的远程版本在打开后发生变化。请先选择如何处理本地编辑。`}
+                ? t('notepad.modal.conflictReadFailed', language, { path: conflictDialog.filePath, error: conflictDialog.readError })
+                : t('notepad.modal.conflictMessage', language, { title: conflictDialog.title })}
             </div>
-            {conflictPreview ? <NotepadDiffPreview preview={conflictPreview} /> : null}
+            {conflictPreview ? <NotepadDiffPreview preview={conflictPreview} language={language} /> : null}
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setConflictDialog(null)}>取消</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setConflictDialog(null)}>{t('common.cancel', language)}</button>
               <button
                 type="button"
                 className="notepad-modal-btn"
@@ -2232,17 +2249,17 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
                   setConflictDialog(null);
                 }}
               >
-                重新加载
+                {t('notepad.modal.reload', language)}
               </button>
               <button type="button" className="notepad-modal-btn" onClick={() => {
-                openSavePicker(conflictDialog.tabId, '冲突内容另存为', conflictDialog.closeAfterSave);
+                openSavePicker(conflictDialog.tabId, t('notepad.picker.saveConflictAs', language), conflictDialog.closeAfterSave);
                 setConflictDialog(null);
-              }}>另存为</button>
+              }}>{t('notepad.toolbar.saveAs', language)}</button>
               <button type="button" className="notepad-modal-btn danger" onClick={() => {
                 const { tabId, filePath, closeAfterSave } = conflictDialog;
                 setConflictDialog(null);
                 void saveTabToPath(tabId, filePath, { force: true, closeAfterSave });
-              }}>覆盖远端</button>
+              }}>{t('notepad.modal.overwriteRemote', language)}</button>
             </div>
           </div>
         </div>,

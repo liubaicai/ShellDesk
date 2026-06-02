@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
+import { t, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
@@ -67,18 +68,18 @@ type PermissionActionKey = 'read' | 'write' | 'execute';
 
 const PERMISSION_GROUPS: Array<{
   key: PermissionGroupKey;
-  label: string;
+  labelId: MessageId;
   bits: Record<PermissionActionKey, number>;
 }> = [
-  { key: 'owner', label: '所有者', bits: { read: 0o400, write: 0o200, execute: 0o100 } },
-  { key: 'group', label: '用户组', bits: { read: 0o040, write: 0o020, execute: 0o010 } },
-  { key: 'others', label: '其他人', bits: { read: 0o004, write: 0o002, execute: 0o001 } },
+  { key: 'owner', labelId: 'fileExplorer.permission.owner', bits: { read: 0o400, write: 0o200, execute: 0o100 } },
+  { key: 'group', labelId: 'fileExplorer.permission.group', bits: { read: 0o040, write: 0o020, execute: 0o010 } },
+  { key: 'others', labelId: 'fileExplorer.permission.others', bits: { read: 0o004, write: 0o002, execute: 0o001 } },
 ];
 
-const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; label: string }> = [
-  { key: 'read', label: '读' },
-  { key: 'write', label: '写' },
-  { key: 'execute', label: '执行' },
+const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; labelId: MessageId }> = [
+  { key: 'read', labelId: 'fileExplorer.permission.read' },
+  { key: 'write', labelId: 'fileExplorer.permission.write' },
+  { key: 'execute', labelId: 'fileExplorer.permission.execute' },
 ];
 
 const EXPLORER_HEADER_HEIGHT = 44;
@@ -345,24 +346,24 @@ function isSqliteFile(name: string): boolean {
   return SQLITE_EXTENSIONS.has(getFileExtension(name));
 }
 
-function getDeleteEntryTypeLabel(entry: RemoteFileEntry) {
+function getDeleteEntryTypeLabel(entry: RemoteFileEntry, language: AppLanguage) {
   if (entry.type === 'directory') {
-    return '目录';
+    return t('fileExplorer.type.directory', language);
   }
 
   if (entry.type === 'symlink') {
-    return '快捷方式';
+    return t('fileExplorer.type.symlink', language);
   }
 
-  return '文件';
+  return t('fileExplorer.type.file', language);
 }
 
-function getDeleteEntriesLabel(entries: RemoteFileEntry[]) {
-  const names = entries.map((entry) => entry.name).join('\u3001');
+function getDeleteEntriesLabel(entries: RemoteFileEntry[], language: AppLanguage) {
+  const names = entries.map((entry) => entry.name).join(language === 'zh-CN' ? '\u3001' : ', ');
 
   return entries.length === 1
-    ? `${getDeleteEntryTypeLabel(entries[0])}\u300C${names}\u300D`
-    : `${entries.length} 个项目（${names}）`;
+    ? t('fileExplorer.delete.single', language, { type: getDeleteEntryTypeLabel(entries[0], language), name: names })
+    : t('fileExplorer.delete.multiple', language, { count: entries.length, names });
 }
 
 function getEffectiveEntryType(entry: RemoteFileEntry): RemoteFileEntryType {
@@ -420,46 +421,46 @@ function getFileIcon(entry: RemoteFileEntry) {
   return iconMap[ext] ?? '\u{1F4C4}';
 }
 
-function getFileTypeLabel(entry: RemoteFileEntry) {
+function getFileTypeLabel(entry: RemoteFileEntry, language: AppLanguage) {
   if (entry.type === 'symlink') {
     if (entry.targetType === 'directory') {
-      return '快捷方式（目录）';
+      return t('fileExplorer.type.symlinkDirectory', language);
     }
 
     if (entry.targetType === 'file') {
-      return '快捷方式（文件）';
+      return t('fileExplorer.type.symlinkFile', language);
     }
 
-    return '快捷方式';
+    return t('fileExplorer.type.symlink', language);
   }
 
   if (entry.type === 'directory') {
-    return '文件夹';
+    return t('fileExplorer.type.folder', language);
   }
 
   const ext = getFileExtension(entry.name);
-  return ext ? `.${ext} 文件` : '文件';
+  return ext ? t('fileExplorer.type.extFile', language, { ext }) : t('fileExplorer.type.file', language);
 }
 
 function isHiddenEntry(entry: RemoteFileEntry) {
   return entry.name.startsWith('.') && entry.name !== '.' && entry.name !== '..';
 }
 
-function getOpenActionLabel(entry: RemoteFileEntry) {
+function getOpenActionLabel(entry: RemoteFileEntry, language: AppLanguage) {
   if (isDirectoryEntry(entry)) {
-    return '打开目录';
+    return t('fileExplorer.open.directory', language);
   }
 
   if (isFileEntry(entry) && isSqliteFile(entry.name)) {
-    return '用 SQLite 打开';
+    return t('fileExplorer.open.sqlite', language);
   }
 
   if (isFileEntry(entry) && isTextFile(entry.name)) {
-    return '用记事本打开';
+    return t('fileExplorer.open.notepad', language);
   }
 
   if (entry.type === 'symlink') {
-    return '打开快捷方式';
+    return t('fileExplorer.open.symlink', language);
   }
 
   return '';
@@ -523,6 +524,7 @@ function getTrackedTableScrollTop(scrollTop: number) {
 }
 
 function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
+  const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const initialRemotePath = getExplicitInitialPath(initialPath, isWindowsHost) || DEFAULT_REMOTE_PATH;
   const [remotePath, setRemotePath] = useState(initialRemotePath);
@@ -656,7 +658,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
   useEffect(() => {
     if (!window.guiSSH?.connections) {
-      setFilesError('当前运行环境不支持 SFTP 文件浏览。');
+      setFilesError(t('fileExplorer.error.sftpUnsupported', language));
       return;
     }
 
@@ -718,7 +720,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     return () => {
       cancelled = true;
     };
-  }, [connectionId, filesRefreshToken, historyIndex, isResolvingDefaultPath, remotePath]);
+  }, [connectionId, filesRefreshToken, historyIndex, isResolvingDefaultPath, language, remotePath]);
 
   useEffect(() => {
     if (renamingName && renameInputRef.current) {
@@ -847,7 +849,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
       if (query) {
         const nameMatches = entry.name.toLowerCase().includes(query);
-        const typeMatches = !nameMatches && getFileTypeLabel(entry).toLowerCase().includes(query);
+        const typeMatches = !nameMatches && getFileTypeLabel(entry, language).toLowerCase().includes(query);
 
         if (!nameMatches && !typeMatches) {
           continue;
@@ -858,7 +860,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
 
     return entries;
-  }, [fileSearchQuery, showHiddenEntries, sortedEntries]);
+  }, [fileSearchQuery, language, showHiddenEntries, sortedEntries]);
 
   const virtualEntryWindow = useMemo(() => {
     const viewportHeight = Math.max(tableViewport.height - EXPLORER_HEADER_HEIGHT, EXPLORER_ROW_HEIGHT);
@@ -948,7 +950,10 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   }, [transferProgress]);
 
   const transferItemLabel = transferProgress
-    ? `${transferProgress.completedItems ?? 0}${transferProgress.totalItems ? ` / ${transferProgress.totalItems}` : ''} 项`
+    ? t('fileExplorer.transfer.items', language, {
+        completed: transferProgress.completedItems ?? 0,
+        total: transferProgress.totalItems ? t('fileExplorer.transfer.totalSuffix', language, { total: transferProgress.totalItems }) : '',
+      })
     : '';
 
   useEffect(() => {
@@ -1232,14 +1237,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       }
 
       if (errors.length) {
-        setFilesError(`删除部分项目失败：\n${errors.join('\n')}`);
+        setFilesError(t('fileExplorer.error.deletePartial', language, { errors: errors.join('\n') }));
       }
 
       refreshFiles();
     } catch (error) {
       setFilesError(getErrorMessage(error));
     }
-  }, [connectionId, deleteConfirmationEntries, isWindowsHost, remotePath, refreshFiles]);
+  }, [connectionId, deleteConfirmationEntries, isWindowsHost, language, remotePath, refreshFiles]);
 
   const startRename = useCallback((entry: RemoteFileEntry) => {
     closeContextMenu();
@@ -1258,7 +1263,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
 
     if (!isValidFileName(trimmed, isWindowsHost)) {
-      setFilesError('文件名无效。');
+      setFilesError(t('fileExplorer.error.invalidFileName', language));
       setRenamingName(null);
       return;
     }
@@ -1274,7 +1279,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       setFilesError(getErrorMessage(error));
       setRenamingName(null);
     }
-  }, [connectionId, isWindowsHost, remotePath, renamingName, renameDraft, refreshFiles]);
+  }, [connectionId, isWindowsHost, language, remotePath, renamingName, renameDraft, refreshFiles]);
 
   const cancelRename = useCallback(() => {
     setRenamingName(null);
@@ -1283,8 +1288,8 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const startNewItem = useCallback((type: 'file' | 'folder') => {
     closeContextMenu();
     setIsCreatingNew(type);
-    setNewItemDraft(type === 'file' ? '新建文件.txt' : '新建文件夹');
-  }, [closeContextMenu]);
+    setNewItemDraft(type === 'file' ? t('fileExplorer.new.fileName', language) : t('fileExplorer.new.folderName', language));
+  }, [closeContextMenu, language]);
 
   const commitNewItem = useCallback(async () => {
     if (!isCreatingNew) return;
@@ -1297,7 +1302,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
 
     if (!isValidFileName(trimmed, isWindowsHost)) {
-      setFilesError('名称无效。');
+      setFilesError(t('fileExplorer.error.invalidName', language));
       setIsCreatingNew(null);
       return;
     }
@@ -1315,7 +1320,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       setFilesError(getErrorMessage(error));
       setIsCreatingNew(null);
     }
-  }, [connectionId, isWindowsHost, remotePath, isCreatingNew, newItemDraft, refreshFiles]);
+  }, [connectionId, isWindowsHost, language, remotePath, isCreatingNew, newItemDraft, refreshFiles]);
 
   const cancelNewItem = useCallback(() => {
     setIsCreatingNew(null);
@@ -1360,7 +1365,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     const nextMode = parseOctalModeDraft(permissionDraft);
 
     if (nextMode === null) {
-      setPropertiesError('权限值需为 3 位八进制数字。');
+      setPropertiesError(t('fileExplorer.error.permissionMode', language));
       return;
     }
 
@@ -1392,6 +1397,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     propertiesSaving,
     refreshFiles,
     remotePath,
+    language,
   ]);
 
   const downloadFile = useCallback(async (entry: RemoteFileEntry) => {
@@ -1545,7 +1551,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const quickAccessPaths = useMemo(() => isWindowsHost
     ? [
         { label: 'Home', path: homeQuickPath, icon: 'home' as const },
-        { label: '根目录', path: '/', icon: 'root' as const },
+        { label: t('fileExplorer.quick.root', language), path: '/', icon: 'root' as const },
         { label: 'C:/', path: 'C:/', icon: 'drive' as const },
         { label: 'C:/Users', path: 'C:/Users', icon: 'folder' as const },
         { label: 'C:/Program Files', path: 'C:/Program Files', icon: 'folder' as const },
@@ -1554,18 +1560,18 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       ]
     : [
         { label: 'Home', path: homeQuickPath, icon: 'home' as const },
-        { label: '根目录', path: '/', icon: 'root' as const },
+        { label: t('fileExplorer.quick.root', language), path: '/', icon: 'root' as const },
         { label: '/home', path: '/home', icon: 'folder' as const },
         { label: '/tmp', path: '/tmp', icon: 'folder' as const },
         { label: '/var/log', path: '/var/log', icon: 'folder' as const },
         { label: '/etc', path: '/etc', icon: 'folder' as const },
         { label: '/opt', path: '/opt', icon: 'folder' as const },
         { label: '/usr/local', path: '/usr/local', icon: 'folder' as const },
-      ], [homeQuickPath, isWindowsHost]);
+      ], [homeQuickPath, isWindowsHost, language]);
 
   const isFavoritePath = favoritePaths.includes(remotePath);
   const selectedOpenActionLabel = selectedEntries.length === 1 && primarySelectedEntry
-    ? getOpenActionLabel(primarySelectedEntry)
+    ? getOpenActionLabel(primarySelectedEntry, language)
     : '';
   const selectedArchiveCanDecompress = selectedEntries.length === 1 &&
     primarySelectedEntry !== null &&
@@ -1593,17 +1599,17 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   return (
     <div className="file-pane explorer-pane" onKeyDown={handleKeydown} tabIndex={-1}>
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
-        <div className="explorer-nav-buttons" aria-label="目录导航">
-          <button type="button" onClick={navigateBack} disabled={historyIndex <= 0} aria-label="后退" title="后退">
+        <div className="explorer-nav-buttons" aria-label={t('fileExplorer.nav.aria', language)}>
+          <button type="button" onClick={navigateBack} disabled={historyIndex <= 0} aria-label={t('fileExplorer.nav.back', language)} title={t('fileExplorer.nav.back', language)}>
             <ExplorerNavIcon icon="back" />
           </button>
-          <button type="button" onClick={navigateForward} disabled={historyIndex >= navigationHistory.length - 1} aria-label="前进" title="前进">
+          <button type="button" onClick={navigateForward} disabled={historyIndex >= navigationHistory.length - 1} aria-label={t('fileExplorer.nav.forward', language)} title={t('fileExplorer.nav.forward', language)}>
             <ExplorerNavIcon icon="forward" />
           </button>
-          <button type="button" onClick={navigateToParent} aria-label="返回上级目录" title="返回上级目录">
+          <button type="button" onClick={navigateToParent} aria-label={t('fileExplorer.nav.up', language)} title={t('fileExplorer.nav.up', language)}>
             <ExplorerNavIcon icon="up" />
           </button>
-          <button type="button" onClick={() => navigateToPath(homeQuickPath)} aria-label="打开 Home" title="Home">
+          <button type="button" onClick={() => navigateToPath(homeQuickPath)} aria-label={t('fileExplorer.nav.home', language)} title="Home">
             <ExplorerNavIcon icon="home" />
           </button>
         </div>
@@ -1626,9 +1632,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             value={pathDraft}
             onChange={(event) => setPathDraft(event.target.value)}
             spellCheck={false}
-            placeholder={isWindowsHost ? '输入路径，如 C:/Users 后按回车...' : '输入路径后按回车...'}
+            placeholder={isWindowsHost ? t('fileExplorer.path.placeholder.windows', language) : t('fileExplorer.path.placeholder.default', language)}
           />
-          <button type="submit" className="addressbar-go-button" aria-label="进入路径" title="进入路径">
+          <button type="submit" className="addressbar-go-button" aria-label={t('fileExplorer.path.go', language)} title={t('fileExplorer.path.go', language)}>
             <ExplorerNavIcon icon="forward" />
           </button>
         </div>
@@ -1637,88 +1643,88 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           <input
             value={fileSearchQuery}
             onChange={(event) => setFileSearchQuery(event.target.value)}
-            placeholder="搜索"
+            placeholder={t('fileExplorer.search.placeholder', language)}
             spellCheck={false}
           />
         </label>
       </form>
 
-      <div className="explorer-commandbar" aria-label="文件工具栏">
+      <div className="explorer-commandbar" aria-label={t('fileExplorer.toolbar.aria', language)}>
         <div className="explorer-command-group">
-          <button type="button" onClick={refreshFiles} disabled={isFilesLoading} title="刷新当前目录">
-            刷新
+          <button type="button" onClick={refreshFiles} disabled={isFilesLoading} title={t('fileExplorer.toolbar.refreshTitle', language)}>
+            {t('fileExplorer.toolbar.refresh', language)}
           </button>
           <button type="button" onClick={() => startNewItem('file')}>
-            新建文件
+            {t('fileExplorer.toolbar.newFile', language)}
           </button>
           <button type="button" onClick={() => startNewItem('folder')}>
-            新建目录
+            {t('fileExplorer.toolbar.newFolder', language)}
           </button>
           <button type="button" onClick={() => void uploadItems()}>
-            上传
+            {t('fileExplorer.toolbar.upload', language)}
           </button>
           <button type="button" onClick={() => void downloadEntries(selectedEntries)} disabled={!selectedEntries.length}>
-            下载
+            {t('fileExplorer.toolbar.download', language)}
           </button>
         </div>
         <div className="explorer-command-group explorer-command-group-end">
-          {copiedPath ? <span className="ribbon-toast">已复制 {copiedPath} 路径</span> : null}
+          {copiedPath ? <span className="ribbon-toast">{t('fileExplorer.toolbar.copiedPath', language, { path: copiedPath })}</span> : null}
           {onOpenTerminal ? (
-            <button type="button" onClick={() => onOpenTerminal(remotePath)} title="在终端中打开当前目录">
-              终端
+            <button type="button" onClick={() => onOpenTerminal(remotePath)} title={t('fileExplorer.toolbar.openTerminalTitle', language)}>
+              {t('fileExplorer.toolbar.terminal', language)}
             </button>
           ) : null}
           <button type="button" className={showHiddenEntries ? 'active' : ''} aria-pressed={showHiddenEntries} onClick={() => setShowHiddenEntries((visible) => !visible)}>
-            隐藏项
+            {t('fileExplorer.toolbar.hiddenItems', language)}
           </button>
           <button type="button" className={isFavoritePath ? 'active' : ''} aria-pressed={isFavoritePath} onClick={toggleFavoritePath}>
-            {isFavoritePath ? '取消收藏' : '收藏'}
+            {isFavoritePath ? t('fileExplorer.toolbar.unfavorite', language) : t('fileExplorer.toolbar.favorite', language)}
           </button>
           <button type="button" className={isDetailsOpen ? 'active' : ''} aria-pressed={isDetailsOpen} onClick={() => setIsDetailsOpen((open) => !open)}>
-            详情
+            {t('fileExplorer.toolbar.details', language)}
           </button>
         </div>
       </div>
 
       <div className={`explorer-layout ${isDetailsOpen ? 'with-details' : ''}`}>
-        <aside className="explorer-sidebar" aria-label="快速访问">
-          <div className="sidebar-section-title">快速访问</div>
+        <aside className="explorer-sidebar" aria-label={t('fileExplorer.sidebar.aria', language)}>
+          <div className="sidebar-section-title">{t('fileExplorer.sidebar.quickAccess', language)}</div>
           {quickAccessPaths.slice(0, 2).map((item) => (
             <button key={`${item.label}-${item.path}`} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
               <ExplorerSidebarIcon icon={item.icon} />
               <span className="sidebar-path-label">{item.label}</span>
             </button>
           ))}
-          <div className="sidebar-section-title">常用目录</div>
+          <div className="sidebar-section-title">{t('fileExplorer.sidebar.commonDirs', language)}</div>
           {quickAccessPaths.slice(2).map((item) => (
             <button key={`${item.label}-${item.path}`} type="button" className={remotePath === item.path ? 'active' : ''} onClick={() => navigateToPath(item.path)}>
               <ExplorerSidebarIcon icon={item.icon} />
               <span className="sidebar-path-label">{item.label}</span>
             </button>
           ))}
-          <div className="sidebar-section-title">收藏路径</div>
+          <div className="sidebar-section-title">{t('fileExplorer.sidebar.favorites', language)}</div>
           {favoritePaths.length ? favoritePaths.map((path) => (
             <button key={path} type="button" className={remotePath === path ? 'active' : ''} onClick={() => navigateToPath(path)} title={path}>
               <ExplorerSidebarIcon icon="favorite" />
               <span className="sidebar-path-label">{path}</span>
             </button>
           )) : (
-            <div className="explorer-sidebar-note">暂无收藏路径</div>
+            <div className="explorer-sidebar-note">{t('fileExplorer.sidebar.noFavorites', language)}</div>
           )}
-          <div className="sidebar-section-title">传输</div>
+          <div className="sidebar-section-title">{t('fileExplorer.sidebar.transfer', language)}</div>
           <div className={`explorer-transfer-card ${transferProgress ? 'running' : ''}`}>
-            <strong>{transferProgress ? '正在传输' : '无活动传输'}</strong>
+            <strong>{transferProgress ? t('fileExplorer.transfer.running', language) : t('fileExplorer.transfer.idle', language)}</strong>
             <span>
               {transferProgress
-                ? `${transferProgress.type === 'download' ? '下载' : '上传'} ${transferItemLabel} · ${transferProgress.fileName}`
-                : '暂无上传或下载任务'}
+                ? `${transferProgress.type === 'download' ? t('fileExplorer.transfer.download', language) : t('fileExplorer.transfer.upload', language)} ${transferItemLabel} · ${transferProgress.fileName}`
+                : t('fileExplorer.transfer.empty', language)}
             </span>
           </div>
         </aside>
 
         <section
           className="explorer-main"
-          aria-label="远程文件列表"
+          aria-label={t('fileExplorer.list.aria', language)}
           onContextMenu={handleBackgroundContextMenu}
           onClick={(e) => {
             if (!(e.target as HTMLElement).closest('.explorer-row')) {
@@ -1761,16 +1767,16 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           <div className="explorer-table" role="table" aria-busy={isFilesLoading} ref={tableRef} onScroll={handleTableScroll}>
             <div className="explorer-row explorer-header" role="row">
               <button type="button" className="sort-header" onClick={() => handleSort('name')}>
-                名称{sortIndicator('name')}
+                {t('fileExplorer.table.name', language)}{sortIndicator('name')}
               </button>
               <button type="button" className="sort-header" onClick={() => handleSort('modifiedAt')}>
-                修改日期{sortIndicator('modifiedAt')}
+                {t('fileExplorer.table.modifiedAt', language)}{sortIndicator('modifiedAt')}
               </button>
               <button type="button" className="sort-header" onClick={() => handleSort('type')}>
-                类型{sortIndicator('type')}
+                {t('fileExplorer.table.type', language)}{sortIndicator('type')}
               </button>
               <button type="button" className="sort-header" onClick={() => handleSort('size')}>
-                大小{sortIndicator('size')}
+                {t('fileExplorer.table.size', language)}{sortIndicator('size')}
               </button>
             </div>
             <div className="explorer-virtual-body" style={{ height: virtualEntryWindow.totalHeight }}>
@@ -1814,7 +1820,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                         </span>
                       )}
                       <span>{formatDateTime(entry.modifiedAt)}</span>
-                      <span>{getFileTypeLabel(entry)}</span>
+                      <span>{getFileTypeLabel(entry, language)}</span>
                       <span>{isDirectoryEntry(entry) ? '' : formatBytes(entry.size)}</span>
                     </div>
                   );
@@ -1827,22 +1833,22 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             <div className="explorer-table-loading" role="status" aria-live="polite">
               <div className="explorer-loading-card">
                 <span className="explorer-loading-spinner" aria-hidden="true" />
-                <strong>正在读取目录</strong>
+                <strong>{t('fileExplorer.loading.directory', language)}</strong>
                 <span title={remotePath}>{remotePath}</span>
               </div>
             </div>
           ) : null}
 
           {!isFilesLoading && !filesError && !displayedEntries.length ? (
-            <div className="empty-inline">{fileEntries.length ? '没有匹配的文件。' : '该目录为空。'}</div>
+            <div className="empty-inline">{fileEntries.length ? t('fileExplorer.empty.noMatches', language) : t('fileExplorer.empty.directory', language)}</div>
           ) : null}
         </section>
 
         {isDetailsOpen ? (
-          <aside className="explorer-details" aria-label="文件详情">
+          <aside className="explorer-details" aria-label={t('fileExplorer.details.aria', language)}>
             <div className="explorer-details-header">
-              <strong>详情</strong>
-              <button type="button" onClick={() => setIsDetailsOpen(false)} aria-label="关闭详情面板" title="关闭详情">
+              <strong>{t('fileExplorer.details.title', language)}</strong>
+              <button type="button" onClick={() => setIsDetailsOpen(false)} aria-label={t('fileExplorer.details.closeAria', language)} title={t('fileExplorer.details.closeTitle', language)}>
                 ×
               </button>
             </div>
@@ -1853,42 +1859,42 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                   <b className={`file-kind-icon ${getFileIconClass(primarySelectedEntry)}`}>{getFileIcon(primarySelectedEntry)}</b>
                   <div>
                     <strong>{primarySelectedEntry.name}</strong>
-                    <span>{getFileTypeLabel(primarySelectedEntry)}</span>
+                    <span>{getFileTypeLabel(primarySelectedEntry, language)}</span>
                   </div>
                 </div>
                 <dl className="explorer-details-list">
                   <div>
-                    <dt>路径</dt>
+                    <dt>{t('fileExplorer.details.path', language)}</dt>
                     <dd title={joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost)}>
                       {joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost)}
                     </dd>
                   </div>
                   <div>
-                    <dt>大小</dt>
+                    <dt>{t('fileExplorer.details.size', language)}</dt>
                     <dd>{isDirectoryEntry(primarySelectedEntry) ? '-' : formatBytes(primarySelectedEntry.size)}</dd>
                   </div>
                   <div>
-                    <dt>修改时间</dt>
+                    <dt>{t('fileExplorer.details.modifiedAt', language)}</dt>
                     <dd>{formatDateTime(primarySelectedEntry.modifiedAt)}</dd>
                   </div>
                   {propertiesLoading ? (
                     <div>
-                      <dt>属性</dt>
-                      <dd>正在读取...</dd>
+                      <dt>{t('fileExplorer.details.properties', language)}</dt>
+                      <dd>{t('fileExplorer.details.reading', language)}</dd>
                     </div>
                   ) : null}
                   {propertiesData ? (
                     <>
                       <div>
-                        <dt>权限</dt>
+                        <dt>{t('fileExplorer.details.permissions', language)}</dt>
                         <dd><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></dd>
                       </div>
                       <div>
-                        <dt>所有者</dt>
+                        <dt>{t('fileExplorer.details.owner', language)}</dt>
                         <dd>UID {propertiesData.owner} / GID {propertiesData.group}</dd>
                       </div>
                       <div>
-                        <dt>访问时间</dt>
+                        <dt>{t('fileExplorer.details.accessedAt', language)}</dt>
                         <dd>{formatDateTime(propertiesData.accessedAt)}</dd>
                       </div>
                     </>
@@ -1901,36 +1907,40 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     </button>
                   ) : null}
                   <button type="button" onClick={() => void downloadEntries([primarySelectedEntry])}>
-                    下载
+                    {t('fileExplorer.toolbar.download', language)}
                   </button>
                   {selectedArchiveCanDecompress ? (
                     <button type="button" onClick={() => void decompressEntry(primarySelectedEntry)}>
-                      解压缩
+                      {t('fileExplorer.details.decompress', language)}
                     </button>
                   ) : null}
                   {isDirectoryEntry(primarySelectedEntry) && onOpenTerminal ? (
                     <button type="button" onClick={() => onOpenTerminal(joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost))}>
-                      在终端中打开
+                      {t('fileExplorer.details.openInTerminal', language)}
                     </button>
                   ) : null}
                 </div>
               </>
             ) : selectedEntries.length > 1 ? (
               <div className="explorer-details-empty">
-                <strong>{selectedEntries.length} 个项目已选</strong>
+                <strong>{t('fileExplorer.details.selectedCount', language, { count: selectedEntries.length })}</strong>
                 <span>
                   {selectedFileEntries.length
-                    ? `其中 ${selectedFileEntries.length} 个文件${selectedDirectoryCount ? `、${selectedDirectoryCount} 个文件夹` : ''}，文件合计 ${formatBytes(selectedFilesSize)}`
+                    ? t('fileExplorer.details.selectionFilesFolders', language, {
+                        files: selectedFileEntries.length,
+                        foldersText: selectedDirectoryCount ? t('fileExplorer.details.selectionFoldersSuffix', language, { count: selectedDirectoryCount }) : '',
+                        size: formatBytes(selectedFilesSize),
+                      })
                     : selectedDirectoryCount
-                      ? `其中 ${selectedDirectoryCount} 个文件夹`
-                      : '当前选择不含普通文件。'}
+                      ? t('fileExplorer.details.selectionFoldersOnly', language, { count: selectedDirectoryCount })
+                      : t('fileExplorer.details.selectionNoFiles', language)}
                 </span>
               </div>
             ) : (
               <div className="explorer-details-empty">
-                <strong>当前目录</strong>
+                <strong>{t('fileExplorer.details.currentDirectory', language)}</strong>
                 <span title={remotePath}>{remotePath}</span>
-                <small>{showHiddenEntries ? '隐藏项已显示' : '隐藏项已过滤'}</small>
+                <small>{showHiddenEntries ? t('fileExplorer.details.hiddenShown', language) : t('fileExplorer.details.hiddenFiltered', language)}</small>
               </div>
             )}
           </aside>
@@ -1938,11 +1948,16 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       </div>
 
       <div className="explorer-statusbar">
-        <span>{fileSearchQuery ? `${displayedEntries.length} / ${fileEntries.length} 个项目` : `${fileEntries.length} 个项目`}</span>
+        <span>{fileSearchQuery ? t('fileExplorer.itemCountFiltered', language, { visible: displayedEntries.length, total: fileEntries.length }) : t('fileExplorer.itemCount', language, { count: fileEntries.length })}</span>
         <span>
           {selectedNames.size > 0
-            ? `已选择 ${selectedNames.size} 个项目${selectedNames.size === 1 ? ` \u2014 ${sortedEntries.find((e) => selectedNames.has(e.name))?.name ?? ''}` : ''}`
-            : '未选择项目'}
+            ? t('fileExplorer.status.selected', language, {
+                count: selectedNames.size,
+                name: selectedNames.size === 1
+                  ? t('fileExplorer.status.selectedName', language, { name: sortedEntries.find((e) => selectedNames.has(e.name))?.name ?? '' })
+                  : '',
+              })
+            : t('fileExplorer.status.noneSelected', language)}
         </span>
       </div>
 
@@ -1950,9 +1965,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         <div className="transfer-progress">
           <div className="transfer-progress-info">
             <span className="transfer-progress-label">
-              <button type="button" className="transfer-cancel-btn" onClick={() => void cancelTransfer()} title="取消传输">&times;</button>
+              <button type="button" className="transfer-cancel-btn" onClick={() => void cancelTransfer()} title={t('fileExplorer.transfer.cancel', language)}>&times;</button>
               <span className="transfer-progress-name">
-                {transferProgress.type === 'download' ? '下载' : '上传'} {transferProgress.fileName}
+                {transferProgress.type === 'download' ? t('fileExplorer.transfer.download', language) : t('fileExplorer.transfer.upload', language)} {transferProgress.fileName}
               </span>
             </span>
             <span className="transfer-progress-meta">
@@ -1984,7 +1999,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               <>
                 {(isDirectoryEntry(contextMenu.targetEntry) || (contextMenu.targetEntry.type === 'symlink' && !isFileEntry(contextMenu.targetEntry))) && (
                   <button type="button" role="menuitem" onClick={() => { closeContextMenu(); void openFileEntry(contextMenu.targetEntry!); }}>
-                    打开
+                    {t('fileExplorer.context.open', language)}
                   </button>
                 )}
                 {isDirectoryEntry(contextMenu.targetEntry) && onOpenTerminal ? (
@@ -1992,7 +2007,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     closeContextMenu();
                     onOpenTerminal(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
-                    在终端中打开
+                    {t('fileExplorer.details.openInTerminal', language)}
                   </button>
                 ) : null}
                 {isFileEntry(contextMenu.targetEntry) && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
@@ -2000,7 +2015,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     closeContextMenu();
                     onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
-                    用记事本打开
+                    {t('fileExplorer.open.notepad', language)}
                   </button>
                 )}
                 {isFileEntry(contextMenu.targetEntry) && isSqliteFile(contextMenu.targetEntry.name) && onOpenSqliteFile && (
@@ -2008,14 +2023,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     closeContextMenu();
                     onOpenSqliteFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
-                    用 SQLite 打开
+                    {t('fileExplorer.open.sqlite', language)}
                   </button>
                 )}
                 <button type="button" role="menuitem" onClick={() => startRename(contextMenu.targetEntry!)}>
-                  重命名
+                  {t('fileExplorer.context.rename', language)}
                 </button>
                 <button type="button" role="menuitem" onClick={() => copyEntryPath(contextMenu.targetEntry!)}>
-                  复制路径
+                  {t('fileExplorer.context.copyPath', language)}
                 </button>
                 <button
                   type="button"
@@ -2027,16 +2042,16 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     void downloadEntries(targets);
                   }}
                 >
-                  下载
+                  {t('fileExplorer.toolbar.download', language)}
                 </button>
                 {isArchiveFile(contextMenu.targetEntry.name) && isFileEntry(contextMenu.targetEntry) && (!isWindowsHost || contextMenu.targetEntry.name.toLowerCase().endsWith('.zip')) && (
                   <button type="button" role="menuitem" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
-                    解压缩
+                    {t('fileExplorer.details.decompress', language)}
                   </button>
                 )}
                 <div className="context-menu-item-has-submenu">
                   <button type="button" role="menuitem" aria-haspopup="menu">
-                    压缩为
+                    {t('fileExplorer.context.compressAs', language)}
                   </button>
                   <div className="context-submenu">
                     {(() => {
@@ -2060,32 +2075,32 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                 </div>
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" className="danger-text" onClick={() => void deleteSelectedEntries(contextMenu.targetEntry ? [contextMenu.targetEntry] : undefined)}>
-                  删除
+                  {t('fileExplorer.context.delete', language)}
                 </button>
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" onClick={() => void showProperties(contextMenu.targetEntry!)}>
-                  属性
+                  {t('fileExplorer.context.properties', language)}
                 </button>
               </>
             ) : (
               <>
                 <button type="button" role="menuitem" onClick={refreshFiles}>
-                  刷新
+                  {t('fileExplorer.toolbar.refresh', language)}
                 </button>
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" onClick={() => startNewItem('file')}>
-                  新建文件
+                  {t('fileExplorer.toolbar.newFile', language)}
                 </button>
                 <button type="button" role="menuitem" onClick={() => startNewItem('folder')}>
-                  新建文件夹
+                  {t('fileExplorer.context.newFolder', language)}
                 </button>
                 <div className="context-menu-sep" />
                 <button type="button" role="menuitem" onClick={() => void uploadItems()}>
-                  上传文件或文件夹
+                  {t('fileExplorer.context.uploadItems', language)}
                 </button>
                 {onOpenTerminal ? (
                   <button type="button" role="menuitem" onClick={() => { closeContextMenu(); onOpenTerminal(remotePath); }}>
-                    在终端中打开
+                    {t('fileExplorer.details.openInTerminal', language)}
                   </button>
                 ) : null}
               </>
@@ -2104,13 +2119,13 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             aria-labelledby="explorer-delete-confirm-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="explorer-delete-confirm-title" className="notepad-modal-title">确认删除</div>
+            <div id="explorer-delete-confirm-title" className="notepad-modal-title">{t('fileExplorer.delete.title', language)}</div>
             <div className="notepad-modal-message">
-              确认删除远程{getDeleteEntriesLabel(deleteConfirmationEntries)}？此操作不可撤销。
+              {t('fileExplorer.delete.message', language, { target: getDeleteEntriesLabel(deleteConfirmationEntries, language) })}
             </div>
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmationEntries(null)}>取消</button>
-              <button type="button" className="notepad-modal-btn danger" onClick={() => void confirmDeleteSelectedEntries()}>删除</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmationEntries(null)}>{t('common.cancel', language)}</button>
+              <button type="button" className="notepad-modal-btn danger" onClick={() => void confirmDeleteSelectedEntries()}>{t('fileExplorer.context.delete', language)}</button>
             </div>
           </div>
         </div>,
@@ -2133,20 +2148,20 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             </div>
             <div className="properties-body">
               {propertiesLoading ? (
-                <div className="properties-loading">正在读取属性...</div>
+                <div className="properties-loading">{t('fileExplorer.properties.loading', language)}</div>
               ) : (
                 <>
                   <table className="properties-table">
                     <tbody>
-                      <tr><td>名称</td><td>{propertiesEntry.name}</td></tr>
-                      <tr><td>类型</td><td>{getFileTypeLabel(propertiesEntry)}</td></tr>
-                      <tr><td>大小</td><td>{isDirectoryEntry(propertiesEntry) ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
-                      <tr><td>修改时间</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
+                      <tr><td>{t('fileExplorer.properties.name', language)}</td><td>{propertiesEntry.name}</td></tr>
+                      <tr><td>{t('fileExplorer.table.type', language)}</td><td>{getFileTypeLabel(propertiesEntry, language)}</td></tr>
+                      <tr><td>{t('fileExplorer.table.size', language)}</td><td>{isDirectoryEntry(propertiesEntry) ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
+                      <tr><td>{t('fileExplorer.details.modifiedAt', language)}</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
                       {propertiesData ? (
                         <>
-                          <tr><td>权限</td><td><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></td></tr>
-                          <tr><td>所有者</td><td>UID {propertiesData.owner} / GID {propertiesData.group}</td></tr>
-                          <tr><td>访问时间</td><td>{formatDateTime(propertiesData.accessedAt)}</td></tr>
+                          <tr><td>{t('fileExplorer.details.permissions', language)}</td><td><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></td></tr>
+                          <tr><td>{t('fileExplorer.details.owner', language)}</td><td>UID {propertiesData.owner} / GID {propertiesData.group}</td></tr>
+                          <tr><td>{t('fileExplorer.details.accessedAt', language)}</td><td>{formatDateTime(propertiesData.accessedAt)}</td></tr>
                         </>
                       ) : null}
                     </tbody>
@@ -2154,9 +2169,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
                   {propertiesData ? (
                     <div className="properties-permission-editor">
-                      <div className="properties-section-title">权限</div>
+                      <div className="properties-section-title">{t('fileExplorer.details.permissions', language)}</div>
                       <label className="permission-mode-field">
-                        <span>八进制</span>
+                        <span>{t('fileExplorer.properties.octal', language)}</span>
                         <input
                           value={permissionDraft}
                           maxLength={3}
@@ -2168,14 +2183,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                         />
                         <code>{permissionDraftMode !== null ? formatMode(permissionDraftMode) : '---------'}</code>
                       </label>
-                      <div className="permission-grid" role="group" aria-label="权限位">
+                      <div className="permission-grid" role="group" aria-label={t('fileExplorer.properties.bitsAria', language)}>
                         <span />
                         {PERMISSION_ACTIONS.map((action) => (
-                          <span key={action.key}>{action.label}</span>
+                          <span key={action.key}>{t(action.labelId, language)}</span>
                         ))}
                         {PERMISSION_GROUPS.map((group) => (
                           <div className="permission-grid-row" key={group.key}>
-                            <strong>{group.label}</strong>
+                            <strong>{t(group.labelId, language)}</strong>
                             {PERMISSION_ACTIONS.map((action) => {
                               const bit = group.bits[action.key];
                               const checked = permissionDraftMode !== null
@@ -2183,7 +2198,12 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                                 : Boolean(propertiesData.mode & bit);
 
                               return (
-                                <label key={action.key} className="permission-checkbox" aria-label={`${group.label}${action.label}`} title={`${group.label}${action.label}`}>
+                                <label
+                                  key={action.key}
+                                  className="permission-checkbox"
+                                  aria-label={`${t(group.labelId, language)} ${t(action.labelId, language)}`}
+                                  title={`${t(group.labelId, language)} ${t(action.labelId, language)}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={checked}
@@ -2203,7 +2223,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                           onChange={(event) => toggleExecutableDraft(event.target.checked)}
                           disabled={propertiesSaving}
                         />
-                        <span>可执行</span>
+                        <span>{t('fileExplorer.properties.executable', language)}</span>
                       </label>
                       {propertiesEntry.type === 'directory' ? (
                         <label className="properties-toggle-row">
@@ -2213,7 +2233,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                             onChange={(event) => setPermissionRecursive(event.target.checked)}
                             disabled={propertiesSaving}
                           />
-                          <span>递归应用到子文件和子文件夹</span>
+                          <span>{t('fileExplorer.properties.recursive', language)}</span>
                         </label>
                       ) : null}
                     </div>
@@ -2223,9 +2243,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               )}
             </div>
             <div className="properties-footer">
-              <button type="button" className="properties-close-btn" onClick={closePropertiesDialog} disabled={propertiesSaving}>取消</button>
+              <button type="button" className="properties-close-btn" onClick={closePropertiesDialog} disabled={propertiesSaving}>{t('common.cancel', language)}</button>
               <button type="submit" className="properties-save-btn" disabled={!canSaveProperties}>
-                {propertiesSaving ? '保存中...' : '保存权限'}
+                {propertiesSaving ? t('fileExplorer.properties.saving', language) : t('fileExplorer.properties.savePermissions', language)}
               </button>
             </div>
           </form>

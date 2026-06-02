@@ -1,5 +1,6 @@
 import { getShellDeskLocale } from './desktopUtils';
 import { powershellCommand } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type LoginSessionTab = 'current' | 'history' | 'failed';
 
@@ -81,15 +82,7 @@ Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625; StartTime=(Get-Date
 `);
   }
 
-  return `
-if command -v lastb >/dev/null 2>&1; then
-  lastb -n 100 -F 2>&1 || true
-elif command -v journalctl >/dev/null 2>&1; then
-  journalctl -u ssh -u sshd -n 500 --no-pager 2>/dev/null | grep -Ei 'Failed password|Invalid user|authentication failure' | tail -n 100 || true
-else
-  printf '缺少 lastb 或 journalctl。\\n'
-fi
-`;
+  return tCurrent('auto.loginSessionParsers.1e3k5i4');
 }
 
 export function parseCurrentSessions(stdout: string, isWindowsHost: boolean): LoginSessionEntry[] {
@@ -158,7 +151,7 @@ function parseLastLine(line: string, index: number, success: boolean): LoginHist
     user,
     source,
     startedAt: startedParts.join(' ') || undefined,
-    endedAt: /still logged in/i.test(line) ? '仍在线' : endedAt,
+    endedAt: /still logged in/i.test(line) ? tCurrent('auto.loginSessionParsers.9lprwd') : endedAt,
     duration: durationMatch?.[1],
     success,
     raw: tty ? line : line,
@@ -170,7 +163,7 @@ function parseWindowsEventLine(line: string, index: number, success: boolean): L
     ?? line.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/)?.[0];
   const user = line.match(/Account Name:\s*([^\s]+)/i)?.[1]
     ?? line.match(/TargetUserName=([^\s]+)/i)?.[1]
-    ?? '事件记录';
+    ?? tCurrent('auto.loginSessionParsers.1b4v7ob');
   const timestamp = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/)?.[1];
 
   return {
@@ -206,24 +199,24 @@ export function aggregateLoginSources(entries: LoginHistoryEntry[]): LoginSource
 export function formatLoginRecord(entry: LoginSessionEntry | LoginHistoryEntry) {
   if ('success' in entry) {
     return [
-      `用户：${entry.user}`,
-      `来源：${entry.source || '-'}`,
-      `开始：${entry.startedAt || '-'}`,
-      `结束：${entry.endedAt || '-'}`,
-      `持续：${entry.duration || '-'}`,
-      `结果：${entry.success ? '成功' : '失败'}`,
+      tCurrent('auto.loginSessionParsers.kp57oz', { value0: entry.user }),
+      tCurrent('auto.loginSessionParsers.9537r7', { value0: entry.source || '-' }),
+      tCurrent('auto.loginSessionParsers.18s4yj3', { value0: entry.startedAt || '-' }),
+      tCurrent('auto.loginSessionParsers.27o3y', { value0: entry.endedAt || '-' }),
+      tCurrent('auto.loginSessionParsers.u2c1ru', { value0: entry.duration || '-' }),
+      tCurrent('auto.loginSessionParsers.1lc86g5', { value0: entry.success ? tCurrent('login.status.success') : tCurrent('login.status.failure') }),
       '',
       entry.raw,
     ].join('\n');
   }
 
   return [
-    `用户：${entry.user}`,
-    `TTY：${entry.tty || '-'}`,
-    `来源：${entry.source || '-'}`,
-    `登录：${entry.loginAt || '-'}`,
-    `空闲：${entry.idle || '-'}`,
-    `命令：${entry.command || '-'}`,
+    tCurrent('auto.loginSessionParsers.kp57oz2', { value0: entry.user }),
+    `TTY: ${entry.tty || '-'}`,
+    tCurrent('auto.loginSessionParsers.9537r72', { value0: entry.source || '-' }),
+    tCurrent('auto.loginSessionParsers.aq5gsc', { value0: entry.loginAt || '-' }),
+    tCurrent('auto.loginSessionParsers.u7gojw', { value0: entry.idle || '-' }),
+    tCurrent('auto.loginSessionParsers.o40tnr', { value0: entry.command || '-' }),
     '',
     entry.raw,
   ].join('\n');

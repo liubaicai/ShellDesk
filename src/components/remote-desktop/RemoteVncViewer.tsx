@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { tCurrent } from '../../i18n';
 
 interface RemoteVncViewerProps {
   connectionId: string;
@@ -62,26 +63,26 @@ const defaultVncStoredTarget: VncStoredTarget = {
   shared: true,
 };
 const vncPerformancePresets: Record<VncPerformanceMode, { label: string; compressionLevel: number; qualityLevel: number }> = {
-  smooth: { label: '流畅', compressionLevel: 1, qualityLevel: 2 },
-  balanced: { label: '均衡', compressionLevel: 4, qualityLevel: 4 },
-  quality: { label: '清晰', compressionLevel: 6, qualityLevel: 7 },
+  smooth: { label: tCurrent('auto.remoteVncViewer.1w91dwr'), compressionLevel: 1, qualityLevel: 2 },
+  balanced: { label: tCurrent('auto.remoteVncViewer.1cezww5'), compressionLevel: 4, qualityLevel: 4 },
+  quality: { label: tCurrent('auto.remoteVncViewer.6uopsg'), compressionLevel: 6, qualityLevel: 7 },
 };
 const vncViewModes: Record<VncViewMode, { label: string; description: string; scaleViewport: boolean; resizeSession: boolean }> = {
   fit: {
-    label: '适配',
-    description: '按窗口缩放远端画面',
+    label: tCurrent('auto.remoteVncViewer.1ftcrko'),
+    description: tCurrent('auto.remoteVncViewer.1gwh5e9'),
     scaleViewport: true,
     resizeSession: false,
   },
   native: {
-    label: '原始',
-    description: '保留远端实际像素',
+    label: tCurrent('auto.remoteVncViewer.q7054v'),
+    description: tCurrent('auto.remoteVncViewer.51yl20'),
     scaleViewport: false,
     resizeSession: false,
   },
   scale: {
-    label: '同步',
-    description: '请求远端跟随窗口分辨率',
+    label: tCurrent('auto.remoteVncViewer.1fjkikq'),
+    description: tCurrent('auto.remoteVncViewer.j8jp3w'),
     scaleViewport: true,
     resizeSession: true,
   },
@@ -150,24 +151,24 @@ async function writeVncInspectorOpen(isOpen: boolean) {
 function getVncStatusLabel(status: VncStatus) {
   switch (status) {
     case 'probing':
-      return '检测中';
+      return tCurrent('auto.remoteVncViewer.xr2jgj');
     case 'starting':
-      return '准备连接';
+      return tCurrent('auto.remoteVncViewer.19oz4az');
     case 'connecting':
-      return '握手中';
+      return tCurrent('auto.remoteVncViewer.1e234t4');
     case 'connected':
-      return '已连接';
+      return tCurrent('auto.remoteVncViewer.r2jbz0');
     case 'disconnected':
-      return '已断开';
+      return tCurrent('auto.remoteVncViewer.2dtce0');
     case 'error':
-      return '连接失败';
+      return tCurrent('auto.remoteVncViewer.13c4qw6');
     default:
-      return '未连接';
+      return tCurrent('auto.remoteVncViewer.1x8ir3o');
   }
 }
 
 function formatVncProbeResult(probe: ShellDeskVncProbeResult) {
-  const securityTypes = probe.securityTypes.map((type) => `${type.name}(${type.code})`).join('、') || '未知';
+  const securityTypes = probe.securityTypes.map((type) => `${type.name}(${type.code})`).join('、') || tCurrent('auto.remoteVncViewer.1lpnuh4');
   return `${probe.banner} · ${securityTypes}`;
 }
 
@@ -183,33 +184,33 @@ function getFailureCopy(failureKind: VncFailureKind, errorMessage: string) {
   switch (failureKind) {
     case 'auth':
       return {
-        title: '认证失败',
-        detail: errorMessage || 'VNC 服务拒绝了当前凭据或安全协商。',
+        title: tCurrent('auto.remoteVncViewer.pa8mu8'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.1wuhto6'),
       };
     case 'target':
       return {
-        title: '目标不可达',
-        detail: errorMessage || 'SSH 已连接，但当前 VNC 地址或端口无法探测。',
+        title: tCurrent('auto.remoteVncViewer.1fuxuu0'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.1kj5m0h'),
       };
     case 'proxy':
       return {
-        title: '代理未就绪',
-        detail: errorMessage || '本地 WebSocket 桥或 noVNC 客户端未能启动。',
+        title: tCurrent('auto.remoteVncViewer.6kdbjt'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.1b1gab'),
       };
     case 'timeout':
       return {
-        title: '握手超时',
-        detail: errorMessage || '隧道已经建立，但 RFB 握手没有完成。',
+        title: tCurrent('auto.remoteVncViewer.1nhbfm'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.g3899r'),
       };
     case 'disconnect':
       return {
-        title: '连接中断',
-        detail: errorMessage || '远端关闭了 VNC 会话。',
+        title: tCurrent('auto.remoteVncViewer.uusy6y'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.1nbfypu'),
       };
     case 'ssh':
       return {
-        title: 'SSH 已断开',
-        detail: errorMessage || '承载 VNC 的 SSH 连接已结束。',
+        title: tCurrent('auto.remoteVncViewer.x2ryv2'),
+        detail: errorMessage || tCurrent('auto.remoteVncViewer.wjd59p'),
       };
     default:
       return {
@@ -248,7 +249,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   const [diagnostics, setDiagnostics] = useState<VncDiagnosticEntry[]>([]);
   const [showInspector, setShowInspector] = useState(true);
   const [clipboardText, setClipboardText] = useState('');
-  const [clipboardNotice, setClipboardNotice] = useState('剪贴板仅在你点击发送或复制时同步。');
+  const [clipboardNotice, setClipboardNotice] = useState(tCurrent('auto.remoteVncViewer.1ue13zr'));
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
 
   const viewOnlyRef = useRef(viewOnly);
@@ -395,7 +396,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     setStatus(currentVncId ? 'disconnected' : 'idle');
 
     if (currentVncId) {
-      appendDiagnostic('session', '用户已断开 VNC 会话。', 'warning');
+      appendDiagnostic('session', tCurrent('auto.remoteVncViewer.1kyri4v'), 'warning');
     }
   }, [appendDiagnostic, stopProxy]);
 
@@ -403,7 +404,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     if (!api?.connections || !screenRef.current) {
       setStatus('error');
       setFailureKind('proxy');
-      setErrorMessage('ShellDesk IPC 未就绪，无法启动 VNC。');
+      setErrorMessage(tCurrent('auto.remoteVncViewer.xh1cuy'));
       return;
     }
 
@@ -430,7 +431,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     setConnectedAt('');
     setLatencyLabel('');
     setDiagnostics([]);
-    appendDiagnostic('session', `准备连接 SSH 可达目标 ${targetHost}:${targetPort}。`);
+    appendDiagnostic('session', tCurrent('auto.remoteVncViewer.1fk2932', { value0: targetHost, value1: targetPort }));
 
     try {
       const proxy = await api.connections.vncStart(connectionId, {
@@ -445,7 +446,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       }
 
       setStatus('connecting');
-      appendDiagnostic('proxy', `本地 WebSocket 桥已启动，等待 RFB 握手。`, 'success');
+      appendDiagnostic('proxy', tCurrent('auto.remoteVncViewer.1t0f05w'), 'success');
       handshakeTimerRef.current = window.setTimeout(() => {
         if (vncIdRef.current !== nextVncId) {
           return;
@@ -457,8 +458,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         clearScreen();
         setStatus('error');
         setFailureKind('timeout');
-        setErrorMessage('SSH 通道已打开，但 noVNC 没有完成 RFB 握手。请确认 VNC 密码、安全类型和目标服务状态。');
-        appendDiagnostic('rfb', 'RFB 握手等待超过 25 秒。', 'error');
+        setErrorMessage(tCurrent('auto.remoteVncViewer.z04e0a'));
+        appendDiagnostic('rfb', tCurrent('auto.remoteVncViewer.1s81832'), 'error');
         void stopProxy(nextVncId);
       }, 25000);
 
@@ -487,9 +488,9 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       rfb.focusOnClick = true;
       rfb.qualityLevel = performancePreset.qualityLevel;
       rfb.showDotCursor = true;
-      // clipViewport 设为 true（在 scaleViewport=false 时会正确设置 _viewportLoc）
-      // scaleViewport 先不设（默认 false），等首帧 framebuffer 到达后再设为 true，
-      // 否则构造时 _viewportLoc 为 {w:0,h:0}，autoscale 算出 Infinity 导致画面不可见。
+      // Keep clipViewport enabled so noVNC maintains _viewportLoc when scaleViewport is false.
+      // Defer scaleViewport until the first framebuffer arrives; otherwise _viewportLoc starts
+      // at {w:0,h:0}, autoscale computes Infinity, and the display can disappear.
       rfb.clipViewport = true;
       rfb.viewOnly = viewOnly;
       rfb.resizeSession = initialViewMode.resizeSession;
@@ -502,8 +503,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         clearHandshakeTimer();
         setStatus('connected');
         setConnectedAt(new Date().toISOString());
-        setLatencyLabel(`握手 ${formatDuration(performance.now() - connectStartedAtRef.current)}`);
-        appendDiagnostic('rfb', 'RFB 已连接，等待首帧画面。', 'success');
+        setLatencyLabel(tCurrent('auto.remoteVncViewer.nl7mmu', { value0: formatDuration(performance.now() - connectStartedAtRef.current) }));
+        appendDiagnostic('rfb', tCurrent('auto.remoteVncViewer.53f91k'), 'success');
       });
 
       rfb.addEventListener('desktopname', (event) => {
@@ -521,8 +522,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
         const text = getEventDetail<VncClipboardDetail>(event).text ?? '';
         setClipboardText(text);
-        setClipboardNotice(`已收到远端剪贴板 ${text.length} 个字符。`);
-        appendDiagnostic('clipboard', `收到远端剪贴板 ${text.length} 个字符。`, 'success');
+        setClipboardNotice(tCurrent('auto.remoteVncViewer.mqxyx5', { value0: text.length }));
+        appendDiagnostic('clipboard', tCurrent('auto.remoteVncViewer.1xgy9l', { value0: text.length }), 'success');
       });
 
       rfb.addEventListener('credentialsrequired', (event) => {
@@ -555,8 +556,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           void stopProxy(nextVncId);
           setStatus('error');
           setFailureKind('auth');
-          setErrorMessage(`VNC 服务需要 ${requestedTypes.join('、')} 凭据。`);
-          appendDiagnostic('auth', `服务请求 ${requestedTypes.join('、')} 凭据。`, 'error');
+          setErrorMessage(tCurrent('auto.remoteVncViewer.12etlmr', { value0: requestedTypes.join('、') }));
+          appendDiagnostic('auth', tCurrent('auto.remoteVncViewer.1n7tpno', { value0: requestedTypes.join('、') }), 'error');
           rfb.disconnect();
           return;
         }
@@ -580,8 +581,8 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         clearScreen();
         setStatus('error');
         setFailureKind('auth');
-        setErrorMessage(detail.reason || `VNC 安全协商失败${detail.status ? ` (${detail.status})` : ''}。`);
-        appendDiagnostic('auth', detail.status ? `安全协商失败，状态 ${detail.status}。` : '安全协商失败。', 'error');
+        setErrorMessage(detail.reason || tCurrent('auto.remoteVncViewer.3ztbo9', { value0: detail.status ? ` (${detail.status})` : '' }));
+        appendDiagnostic('auth', detail.status ? tCurrent('auto.remoteVncViewer.n55eod', { value0: detail.status }) : tCurrent('auto.remoteVncViewer.3w5si3'), 'error');
         void stopProxy(nextVncId);
         rfb.disconnect();
       });
@@ -603,14 +604,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
         if (wasManual || detail.clean) {
           setStatus('disconnected');
-          appendDiagnostic('session', 'VNC 会话已正常结束。', 'warning');
+          appendDiagnostic('session', tCurrent('auto.remoteVncViewer.1ue8ccg'), 'warning');
           return;
         }
 
         setStatus('error');
         setFailureKind('disconnect');
-        setErrorMessage('VNC 连接已意外断开，请检查地址、端口、防火墙或服务状态。');
-        appendDiagnostic('session', '远端 VNC 连接意外断开。', 'error');
+        setErrorMessage(tCurrent('auto.remoteVncViewer.15l8vv8'));
+        appendDiagnostic('session', tCurrent('auto.remoteVncViewer.hf3tw8'), 'error');
       });
     } catch (error) {
       clearHandshakeTimer();
@@ -653,7 +654,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     setErrorMessage('');
     setFailureKind(null);
     setLatencyLabel('');
-    appendDiagnostic('probe', `检测 SSH 可达目标 ${targetHost}:${targetPort}。`);
+    appendDiagnostic('probe', tCurrent('auto.remoteVncViewer.92ouu9', { value0: targetHost, value1: targetPort }));
 
     try {
       const probe = await api.connections.vncProbe(connectionId, {
@@ -661,14 +662,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         port: targetPort,
       });
       const duration = formatDuration(performance.now() - probeStartedAt);
-      setLatencyLabel(`探测 ${duration}`);
+      setLatencyLabel(tCurrent('auto.remoteVncViewer.j1d6f7', { value0: duration }));
       setStatus('idle');
-      appendDiagnostic('probe', `通道检测成功：${formatVncProbeResult(probe)}，耗时 ${duration}。`, 'success');
+      appendDiagnostic('probe', tCurrent('auto.remoteVncViewer.rfrtus', { value0: formatVncProbeResult(probe), value1: duration }), 'success');
     } catch (error) {
       setStatus('error');
       setFailureKind('target');
-      setErrorMessage(`VNC 通道检测失败：${getErrorMessage(error)}`);
-      appendDiagnostic('probe', `通道检测失败：${getErrorMessage(error)}`, 'error');
+      setErrorMessage(tCurrent('auto.remoteVncViewer.lnwsoh', { value0: getErrorMessage(error) }));
+      appendDiagnostic('probe', tCurrent('auto.remoteVncViewer.1xmbnr0', { value0: getErrorMessage(error) }), 'error');
     }
   }, [api, appendDiagnostic, connectionId, host, isTargetLocked, port]);
 
@@ -679,16 +680,16 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
   const readLocalClipboard = useCallback(async () => {
     if (!navigator.clipboard?.readText) {
-      setClipboardNotice('当前环境无法读取本机剪贴板。');
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.1lf2z9w'));
       return;
     }
 
     try {
       const text = await navigator.clipboard.readText();
       setClipboardText(text);
-      setClipboardNotice(`已读取本机剪贴板 ${text.length} 个字符。`);
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.jjd669', { value0: text.length }));
     } catch (error) {
-      setClipboardNotice(`读取本机剪贴板失败：${getErrorMessage(error)}`);
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.tkpkre', { value0: getErrorMessage(error) }));
     }
   }, []);
 
@@ -696,26 +697,26 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     const rfb = rfbRef.current;
 
     if (!rfb || !isConnected) {
-      setClipboardNotice('连接 VNC 后才能发送剪贴板。');
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.1p4vjno'));
       return;
     }
 
     rfb.clipboardPasteFrom(clipboardText);
-    setClipboardNotice(`已发送 ${clipboardText.length} 个字符到远端。`);
-    appendDiagnostic('clipboard', `发送剪贴板 ${clipboardText.length} 个字符到远端。`, 'success');
+    setClipboardNotice(tCurrent('auto.remoteVncViewer.pvg4ae', { value0: clipboardText.length }));
+    appendDiagnostic('clipboard', tCurrent('auto.remoteVncViewer.149mt91', { value0: clipboardText.length }), 'success');
   }, [appendDiagnostic, clipboardText, isConnected]);
 
   const writeLocalClipboard = useCallback(async () => {
     if (!navigator.clipboard?.writeText) {
-      setClipboardNotice('当前环境无法写入本机剪贴板。');
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.oup7lf'));
       return;
     }
 
     try {
       await navigator.clipboard.writeText(clipboardText);
-      setClipboardNotice(`已复制 ${clipboardText.length} 个字符到本机剪贴板。`);
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.xvvxyd', { value0: clipboardText.length }));
     } catch (error) {
-      setClipboardNotice(`写入本机剪贴板失败：${getErrorMessage(error)}`);
+      setClipboardNotice(tCurrent('auto.remoteVncViewer.b59pk1', { value0: getErrorMessage(error) }));
     }
   }, [clipboardText]);
 
@@ -734,7 +735,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
       await stage.requestFullscreen();
     } catch (error) {
-      setErrorMessage(`无法切换沉浸模式：${getErrorMessage(error)}`);
+      setErrorMessage(tCurrent('auto.remoteVncViewer.19sa1t1', { value0: getErrorMessage(error) }));
     }
   }, []);
 
@@ -752,7 +753,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     });
   }, [api, appendDiagnostic, connectionId]);
 
-  // 监听 SSH 连接断开，记录原因到状态栏
+  // Track SSH disconnects and surface the reason in the status bar.
   useEffect(() => {
     if (!api?.events.onConnectionClosed) {
       return undefined;
@@ -782,16 +783,16 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       clearScreen();
       setStatus('error');
       setFailureKind('ssh');
-      setErrorMessage(`SSH 已断开${payload.reason ? `：${payload.reason}` : ''} (${time})`);
+      setErrorMessage(tCurrent('auto.remoteVncViewer.1gy2uhu', { value0: payload.reason ? `：${payload.reason}` : '', value1: time }));
       setDesktopName('');
       setConnectedAt('');
       setLatencyLabel('');
-      appendDiagnostic('ssh', `承载 VNC 的 SSH 连接已断开${payload.reason ? `：${payload.reason}` : ''}。`, 'error');
+      appendDiagnostic('ssh', tCurrent('auto.remoteVncViewer.14q669f', { value0: payload.reason ? `：${payload.reason}` : '' }), 'error');
       void stopProxy(currentVncId);
     });
   }, [api, appendDiagnostic, connectionId, stopProxy]);
 
-  // 在 connect 事件后，等待 noVNC 收到首帧 framebuffer 再应用视口设置
+  // After connect, wait for noVNC to receive the first framebuffer before applying viewport settings.
   useEffect(() => {
     if (status !== 'connected' || !screenRef.current) {
       return;
@@ -809,17 +810,17 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     const maxRetries = 120; // ~2s at 60fps
 
     const applySettings = () => {
-      // 首帧到达后 _viewportLoc 已有正确尺寸（由 _resize → _updateClip 设置），
-      // 此时将 scaleViewport 从默认 false 改为目标值，autoscale 会拿到正确参数。
+      // Once the first frame arrives, _viewportLoc has valid dimensions from _resize -> _updateClip.
+      // Setting scaleViewport here gives autoscale real inputs.
       const nextViewMode = vncViewModes[viewModeRef.current];
       rfb.scaleViewport = nextViewMode.scaleViewport;
       rfb.viewOnly = viewOnlyRef.current;
       rfb.resizeSession = nextViewMode.resizeSession;
-      appendDiagnostic('viewport', `${nextViewMode.label}模式已应用。`, 'success');
+      appendDiagnostic('viewport', tCurrent('auto.remoteVncViewer.e45oxs', { value0: nextViewMode.label }), 'success');
     };
 
-    // noVNC 构造函数中已创建 canvas，但首帧 framebuffer 到达后 canvas 才会有尺寸。
-    // 首帧渲染发生在 noVNC 自己的 rAF 回调中，所以需要在此之后执行。
+    // noVNC creates the canvas in the constructor, but it gets dimensions only after the first framebuffer.
+    // The first render runs in noVNC's own rAF callback, so apply settings afterward.
     const tryApply = () => {
       if (disposed) {
         return;
@@ -827,7 +828,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
 
       const canvas = screen.querySelector('canvas');
 
-      // canvas 存在且有非零尺寸 → 首帧已渲染，可以安全应用设置
+      // A non-zero canvas means the first frame rendered and settings can be applied safely.
       if (canvas && canvas.width > 0 && canvas.height > 0) {
         applySettings();
         return;
@@ -836,7 +837,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       retries += 1;
 
       if (retries >= maxRetries) {
-        // 超时后强制应用（canvas 0x0 时 scaleViewport setter 是 no-op，但至少兜底）
+        // Force apply after timeout; scaleViewport is a no-op on a 0x0 canvas, but this is a fallback.
         applySettings();
         return;
       }
@@ -844,7 +845,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       requestAnimationFrame(tryApply);
     };
 
-    // 先给一帧让 noVNC 处理 connect 后可能立即到达的 framebuffer
+    // Give noVNC one frame to process a framebuffer that may arrive right after connect.
     requestAnimationFrame(tryApply);
 
     return () => {
@@ -876,7 +877,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     const performancePreset = vncPerformancePresets[performanceMode];
     rfb.compressionLevel = performancePreset.compressionLevel;
     rfb.qualityLevel = performancePreset.qualityLevel;
-    appendDiagnostic('performance', `切换为${performancePreset.label}模式。`);
+    appendDiagnostic('performance', tCurrent('auto.remoteVncViewer.1jojrg7', { value0: performancePreset.label }));
   }, [appendDiagnostic, performanceMode]);
 
   useEffect(() => {
@@ -932,14 +933,14 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       <form className={`vnc-toolbar ${isConnected ? 'compact' : ''}`} onSubmit={handleSubmit}>
         {isConnected ? (
           <div className="vnc-connected-target">
-            <span>SSH 通道</span>
+            <span>{tCurrent('auto.remoteVncViewer.18eis48')}</span>
             <strong title={desktopName || targetLabel}>{desktopName || targetLabel}</strong>
             <em>{targetLabel}</em>
           </div>
         ) : (
           <div className="vnc-target-fields">
             <label className="vnc-field host">
-              <span>主机</span>
+              <span>{tCurrent('auto.remoteVncViewer.5kj63k')}</span>
               <input
                 type="text"
                 value={host}
@@ -950,7 +951,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
               />
             </label>
             <label className="vnc-field port">
-              <span>端口</span>
+              <span>{tCurrent('auto.remoteVncViewer.19ijc5j')}</span>
               <input
                 type="text"
                 value={port}
@@ -961,23 +962,23 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
               />
             </label>
             <label className="vnc-field username">
-              <span>用户</span>
+              <span>{tCurrent('auto.remoteVncViewer.1in002o')}</span>
               <input
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="可选"
+                placeholder={tCurrent('auto.remoteVncViewer.zflkxh')}
                 disabled={isTargetLocked}
                 spellCheck={false}
               />
             </label>
             <label className="vnc-field password">
-              <span>密码</span>
+              <span>{tCurrent('auto.remoteVncViewer.1aph6eg')}</span>
               <input
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="可留空"
+                placeholder={tCurrent('auto.remoteVncViewer.y7iiel')}
                 disabled={isTargetLocked}
               />
             </label>
@@ -991,7 +992,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           ) : null}
           {isConnected ? (
             <button type="button" className="vnc-control-btn" onClick={() => void toggleStageFullscreen()}>
-              {isStageFullscreen ? '退出沉浸' : '沉浸'}
+              {isStageFullscreen ? tCurrent('auto.remoteVncViewer.1dol172') : tCurrent('auto.remoteVncViewer.9i1w7o')}
             </button>
           ) : null}
           <button
@@ -1000,20 +1001,19 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
             onClick={() => setShowInspector((currentShowInspector) => !currentShowInspector)}
             aria-pressed={showInspector}
           >
-            {showInspector ? '收起面板' : '诊断面板'}
+            {showInspector ? tCurrent('auto.remoteVncViewer.1u09do5') : tCurrent('auto.remoteVncViewer.rlpt4b')}
           </button>
           {!isConnected ? (
             <button type="button" className="vnc-control-btn" onClick={() => void probeVnc()} disabled={isBusy}>
-              {status === 'probing' ? '检测中' : '检测'}
+              {status === 'probing' ? tCurrent('auto.remoteVncViewer.xr2jgj2') : tCurrent('auto.remoteVncViewer.8kqmt8')}
             </button>
           ) : null}
           {isConnected || status === 'starting' || status === 'connecting' ? (
             <button type="button" className="vnc-control-btn danger" onClick={() => void disconnectVnc()}>
-              断开
-            </button>
+              {tCurrent('auto.remoteVncViewer.a4u4dk')}</button>
           ) : (
             <button type="submit" className="vnc-control-btn primary" disabled={isBusy}>
-              {status === 'disconnected' || status === 'error' ? '重连' : '连接'}
+              {status === 'disconnected' || status === 'error' ? tCurrent('auto.remoteVncViewer.jv7zn6') : tCurrent('auto.remoteVncViewer.8l8re4')}
             </button>
           )}
         </div>
@@ -1030,22 +1030,20 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           <div ref={screenRef} className="vnc-screen" />
           {isStageFullscreen ? (
             <button type="button" className="vnc-fullscreen-exit vnc-control-btn" onClick={() => void toggleStageFullscreen()}>
-              退出沉浸
-            </button>
+              {tCurrent('auto.remoteVncViewer.1dol1722')}</button>
           ) : null}
           {!isConnected ? (
             <div className="vnc-stage-overlay">
               <strong>{status === 'error' ? failureCopy.title : getVncStatusLabel(status)}</strong>
               {status === 'error' && failureCopy.detail ? <span>{failureCopy.detail}</span> : null}
-              <small>SSH 通道 · {targetLabel}</small>
+              <small>{tCurrent('auto.remoteVncViewer.18ky425')}{targetLabel}</small>
               {!isBusy ? (
                 <div className="vnc-overlay-actions">
                   <button type="button" className="vnc-control-btn primary" onClick={() => void connectVnc()}>
-                    {status === 'disconnected' || status === 'error' ? '重连' : '连接'}
+                    {status === 'disconnected' || status === 'error' ? tCurrent('auto.remoteVncViewer.jv7zn62') : tCurrent('auto.remoteVncViewer.8l8re42')}
                   </button>
                   <button type="button" className="vnc-control-btn" onClick={() => void probeVnc()}>
-                    检测
-                  </button>
+                    {tCurrent('auto.remoteVncViewer.8kqmt82')}</button>
                 </div>
               ) : null}
             </div>
@@ -1053,7 +1051,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           <footer className="vnc-statusbar">
             <span className={`vnc-status-dot ${isConnected ? 'online' : ''}`} aria-hidden="true" />
             <strong>{getVncStatusLabel(status)}</strong>
-            <span>{desktopName || `SSH 通道 · ${targetLabel}`}</span>
+            <span>{desktopName || tCurrent('auto.remoteVncViewer.niu2zi', { value0: targetLabel })}</span>
             {latencyLabel ? <em className="latency">{latencyLabel}</em> : null}
             {latestDiagnostic ? <em title={latestDiagnostic.detail}>{latestDiagnostic.stage}: {latestDiagnostic.detail}</em> : null}
             {connectedAt ? <time dateTime={connectedAt}>{new Date(connectedAt).toLocaleTimeString(getShellDeskLocale())}</time> : null}
@@ -1064,10 +1062,10 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
           <aside className="vnc-inspector">
             <section className="vnc-inspector-section">
               <header className="vnc-section-head">
-                <strong>查看与性能</strong>
+                <strong>{tCurrent('auto.remoteVncViewer.1l5q37d')}</strong>
                 <span>{vncViewModes[viewMode].description}</span>
               </header>
-              <div className="vnc-view-mode-picker" role="group" aria-label="VNC 查看模式">
+              <div className="vnc-view-mode-picker" role="group" aria-label={tCurrent('auto.remoteVncViewer.1hkbwym')}>
                 {(Object.keys(vncViewModes) as VncViewMode[]).map((mode) => (
                   <button
                     key={mode}
@@ -1081,60 +1079,56 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
                 ))}
               </div>
               <label className="vnc-field performance">
-                <span>性能模式</span>
+                <span>{tCurrent('auto.remoteVncViewer.16dw9y5')}</span>
                 <select value={performanceMode} onChange={(event) => setPerformanceMode(event.target.value as VncPerformanceMode)}>
-                  <option value="smooth">流畅</option>
-                  <option value="balanced">均衡</option>
-                  <option value="quality">清晰</option>
+                  <option value="smooth">{tCurrent('auto.remoteVncViewer.1w91dwr2')}</option>
+                  <option value="balanced">{tCurrent('auto.remoteVncViewer.1cezww52')}</option>
+                  <option value="quality">{tCurrent('auto.remoteVncViewer.6uopsg2')}</option>
                 </select>
               </label>
               <div className="vnc-toggle-row">
                 <label className="vnc-toggle">
                   <input type="checkbox" checked={shared} onChange={(event) => setShared(event.target.checked)} disabled={isTargetLocked} />
-                  <span>共享会话</span>
+                  <span>{tCurrent('auto.remoteVncViewer.1qaaj9c')}</span>
                 </label>
                 <label className="vnc-toggle">
                   <input type="checkbox" checked={viewOnly} onChange={(event) => setViewOnly(event.target.checked)} />
-                  <span>只读输入</span>
+                  <span>{tCurrent('auto.remoteVncViewer.1hpsjfm')}</span>
                 </label>
               </div>
             </section>
 
             <section className="vnc-inspector-section">
               <header className="vnc-section-head">
-                <strong>剪贴板</strong>
-                <span>{isConnected ? '显式同步，避免误发内容' : '连接后发送到远端'}</span>
+                <strong>{tCurrent('auto.remoteVncViewer.1itxse4')}</strong>
+                <span>{isConnected ? tCurrent('auto.remoteVncViewer.1he1l9x') : tCurrent('auto.remoteVncViewer.1a871b9')}</span>
               </header>
               <textarea
                 className="vnc-clipboard-editor"
                 value={clipboardText}
                 onChange={(event) => setClipboardText(event.target.value)}
-                placeholder="从本机读取、粘贴文本，或等待远端剪贴板到达"
+                placeholder={tCurrent('auto.remoteVncViewer.28mw90')}
                 spellCheck={false}
               />
               <div className="vnc-inline-actions">
                 <button type="button" className="vnc-control-btn" onClick={() => void readLocalClipboard()}>
-                  读取本机
-                </button>
+                  {tCurrent('auto.remoteVncViewer.1kaj7uu')}</button>
                 <button type="button" className="vnc-control-btn primary" onClick={sendClipboardToRemote} disabled={!isConnected}>
-                  发送远端
-                </button>
+                  {tCurrent('auto.remoteVncViewer.ox3xgq')}</button>
                 <button type="button" className="vnc-control-btn" onClick={() => void writeLocalClipboard()} disabled={!clipboardText}>
-                  复制本机
-                </button>
+                  {tCurrent('auto.remoteVncViewer.1sos7h4')}</button>
               </div>
               <p className="vnc-clipboard-note">{clipboardNotice}</p>
             </section>
 
             <section className="vnc-inspector-section diagnostics">
               <header className="vnc-section-head">
-                <strong>诊断时间线</strong>
+                <strong>{tCurrent('auto.remoteVncViewer.1bddxhz')}</strong>
                 <button type="button" onClick={() => setDiagnostics([])} disabled={diagnostics.length === 0}>
-                  清空
-                </button>
+                  {tCurrent('auto.remoteVncViewer.9mbwb2')}</button>
               </header>
               {diagnostics.length === 0 ? (
-                <p className="vnc-diagnostic-empty">探测或连接后显示代理、SSH 流和 RFB 阶段。</p>
+                <p className="vnc-diagnostic-empty">{tCurrent('auto.remoteVncViewer.yhuqo7')}</p>
               ) : (
                 <ol className="vnc-diagnostic-list">
                   {diagnostics.map((diagnostic) => (

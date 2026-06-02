@@ -4,6 +4,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteMonitorProps {
   connectionId: string;
@@ -175,7 +176,7 @@ function getSystemLabel(systemType?: RemoteSystemType) {
   }
 
   if (systemType === 'unknown') {
-    return '未知系统';
+    return tCurrent('auto.remoteMonitor.1tfi1cy');
   }
 
   return 'Linux / Unix';
@@ -277,7 +278,7 @@ function drawChart(
     ctx.font = `12px ${fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(numericPoints.length === 1 ? '继续采样中' : '暂无可用指标', width / 2, padding.top + plotHeight / 2);
+    ctx.fillText(numericPoints.length === 1 ? tCurrent('auto.remoteMonitor.yf2cti') : tCurrent('auto.remoteMonitor.tx52m'), width / 2, padding.top + plotHeight / 2);
 
     if (numericPoints.length === 1) {
       const point = numericPoints[0];
@@ -378,7 +379,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
 
   const latestPoint = getLatestPoint(series.data);
   const latestLabel = latestPoint?.value === null || latestPoint?.value === undefined
-    ? '暂无数据'
+    ? tCurrent('auto.remoteMonitor.6tzr61')
     : series.valueFormatter(latestPoint.value);
   const hasData = getNumericValues(series.data).length > 0;
   const hoveredPoint = hoverState ? series.data[hoverState.index] : null;
@@ -459,7 +460,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
         <canvas
           ref={canvasRef}
           className="monitor-chart-canvas"
-          aria-label={`${series.label}趋势图`}
+          aria-label={tCurrent('auto.remoteMonitor.19etan4', { value0: series.label })}
           onPointerLeave={() => setHoverState(null)}
           onPointerMove={handlePointerMove}
         />
@@ -467,7 +468,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
           <div className="monitor-chart-tooltip" style={tooltipStyle}>
             <span>{formatTimeLabel(hoveredPoint.time)}</span>
             <strong>
-              {hoveredPoint.value === null ? '无数据' : series.valueFormatter(hoveredPoint.value)}
+              {hoveredPoint.value === null ? tCurrent('auto.remoteMonitor.13dbhhl') : series.valueFormatter(hoveredPoint.value)}
             </strong>
           </div>
         )}
@@ -510,7 +511,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         netTxBytesPerSec: null,
       }));
       setLastSampleAt(sampleTime);
-      setMetricsError('ShellDesk IPC 未就绪');
+      setMetricsError(tCurrent('auto.remoteMonitor.1bx8guv'));
       return;
     }
 
@@ -658,7 +659,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
     return [
       {
         key: 'cpu',
-        label: 'CPU 使用率',
+        label: tCurrent('auto.remoteMonitor.rvar35'),
         data: cpuData,
         color: '#67b7ff',
         fillColor: 'rgba(103, 183, 255, 0.2)',
@@ -669,7 +670,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
       },
       {
         key: 'memory',
-        label: '内存使用率',
+        label: tCurrent('auto.remoteMonitor.ryd6gw'),
         data: memoryData,
         color: '#f08cc8',
         fillColor: 'rgba(240, 140, 200, 0.18)',
@@ -680,7 +681,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
       },
       {
         key: 'net-tx',
-        label: '网络上传',
+        label: tCurrent('auto.remoteMonitor.1jwv6je'),
         data: txData,
         color: '#ffcf5a',
         fillColor: 'rgba(255, 207, 90, 0.16)',
@@ -691,7 +692,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
       },
       {
         key: 'net-rx',
-        label: '网络下载',
+        label: tCurrent('auto.remoteMonitor.tnorfo'),
         data: rxData,
         color: '#6ee7a8',
         fillColor: 'rgba(110, 231, 168, 0.16)',
@@ -709,7 +710,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         <div className="monitor-control-bar">
           <div className="monitor-sampling-state">
             <span className={`monitor-sampling-dot ${metricsError ? 'error' : isWindowActive ? 'active' : 'idle'}`} />
-            <strong>{metricsError ? '采样异常' : isWindowActive ? '实时采样' : '低频采样'}</strong>
+            <strong>{metricsError ? tCurrent('auto.remoteMonitor.1x0ix9t') : isWindowActive ? tCurrent('auto.remoteMonitor.5dpl6b') : tCurrent('auto.remoteMonitor.9a9ara')}</strong>
             <small>{lastSampleAt ? formatTimeLabel(lastSampleAt) : getSystemLabel(systemType)}</small>
           </div>
 
@@ -721,19 +722,17 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
                   className="monitor-proc-button"
                   onClick={() => onOpenProcessManager({ sortKey: 'cpu', sortDir: 'desc', viewMode: 'table' })}
                 >
-                  CPU 进程
-                </button>
+                  {tCurrent('auto.remoteMonitor.7cjarl')}</button>
                 <button
                   type="button"
                   className="monitor-proc-button"
                   onClick={() => onOpenProcessManager({ sortKey: 'memory', sortDir: 'desc', viewMode: 'table' })}
                 >
-                  内存进程
-                </button>
+                  {tCurrent('auto.remoteMonitor.1ph5hdy')}</button>
               </>
             ) : null}
 
-            <div className="monitor-interval-control" aria-label="采样间隔">
+            <div className="monitor-interval-control" aria-label={tCurrent('auto.remoteMonitor.qnrx5f')}>
               {POLL_INTERVAL_OPTIONS.map((interval) => (
                 <button
                   key={interval}
@@ -750,7 +749,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
 
         {metricsError && <div className="monitor-error-strip">{metricsError}</div>}
 
-        <section className="monitor-charts-grid" aria-label="系统指标趋势">
+        <section className="monitor-charts-grid" aria-label={tCurrent('auto.remoteMonitor.1svf0iv')}>
           {chartSeries.map((series) => (
             <MetricLineChart key={series.key} series={series} />
           ))}

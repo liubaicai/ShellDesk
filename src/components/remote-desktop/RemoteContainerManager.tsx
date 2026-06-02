@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
+import { t, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
@@ -82,32 +83,32 @@ const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
 const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
 const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
 
-const managerTabs: Array<{ key: ManagerTab; label: string }> = [
-  { key: 'containers', label: '容器' },
-  { key: 'images', label: '镜像' },
+const managerTabs: Array<{ key: ManagerTab; labelId: MessageId }> = [
+  { key: 'containers', labelId: 'container.tab.containers' },
+  { key: 'images', labelId: 'container.tab.images' },
 ];
 
-const containerFilters: Array<{ key: ContainerFilter; label: string }> = [
-  { key: 'all', label: '全部状态' },
-  { key: 'running', label: '运行中' },
-  { key: 'exited', label: '已停止' },
-  { key: 'paused', label: '已暂停' },
-  { key: 'created', label: '已创建' },
-  { key: 'unknown', label: '未知' },
+const containerFilters: Array<{ key: ContainerFilter; labelId: MessageId }> = [
+  { key: 'all', labelId: 'container.filter.all' },
+  { key: 'running', labelId: 'container.state.running' },
+  { key: 'exited', labelId: 'container.state.exited' },
+  { key: 'paused', labelId: 'container.state.paused' },
+  { key: 'created', labelId: 'container.state.created' },
+  { key: 'unknown', labelId: 'container.state.unknown' },
 ];
 
-const containerActionLabels: Record<ContainerAction, { label: string; success: string; danger?: boolean; primary?: boolean }> = {
-  start: { label: '启动', success: '已启动', primary: true },
-  stop: { label: '停止', success: '已停止', danger: true },
-  restart: { label: '重启', success: '已重启' },
-  remove: { label: '删除', success: '已删除', danger: true },
+const containerActionLabels: Record<ContainerAction, { labelId: MessageId; successId: MessageId; danger?: boolean; primary?: boolean }> = {
+  start: { labelId: 'container.action.start', successId: 'container.action.success.start', primary: true },
+  stop: { labelId: 'container.action.stop', successId: 'container.action.success.stop', danger: true },
+  restart: { labelId: 'container.action.restart', successId: 'container.action.success.restart' },
+  remove: { labelId: 'container.action.remove', successId: 'container.action.success.remove', danger: true },
 };
 
-function runCmd(connectionId: string, command: string) {
+function runCmd(connectionId: string, command: string, language: AppLanguage) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(t('container.error.ipcNotReady', language));
   }
 
   return api.runCommand(connectionId, command);
@@ -229,18 +230,18 @@ function normalizeContainerState(value: string): ContainerState {
   return 'unknown';
 }
 
-function getStateLabel(state: ContainerState) {
-  if (state === 'running') return '运行中';
-  if (state === 'exited') return '已停止';
-  if (state === 'paused') return '已暂停';
-  if (state === 'created') return '已创建';
-  return '未知';
+function getStateLabel(state: ContainerState, language: AppLanguage) {
+  if (state === 'running') return t('container.state.running', language);
+  if (state === 'exited') return t('container.state.exited', language);
+  if (state === 'paused') return t('container.state.paused', language);
+  if (state === 'created') return t('container.state.created', language);
+  return t('container.state.unknown', language);
 }
 
-function getRuntimeLabel(runtime: ContainerRuntime | null) {
+function getRuntimeLabel(runtime: ContainerRuntime | null, language: AppLanguage) {
   if (runtime === 'docker') return 'Docker';
   if (runtime === 'podman') return 'Podman';
-  return '未检测';
+  return t('container.runtime.notDetected', language);
 }
 
 function formatShortId(id: string) {
@@ -343,7 +344,7 @@ function splitContainerDetailSections(stdout: string) {
   };
 }
 
-function extractPorts(inspectRecord: Record<string, unknown> | undefined, fallbackPorts: string) {
+function extractPorts(inspectRecord: Record<string, unknown> | undefined, fallbackPorts: string, language: AppLanguage) {
   const networkSettings = toRecord(inspectRecord?.NetworkSettings);
   const portsRecord = toRecord(networkSettings?.Ports);
 
@@ -363,7 +364,7 @@ function extractPorts(inspectRecord: Record<string, unknown> | undefined, fallba
         .filter(Boolean);
     }
 
-    return [`${containerPort} -> 未发布`];
+    return [`${containerPort} -> ${t('container.port.unpublished', language)}`];
   });
 
   return ports.filter(Boolean);
@@ -433,7 +434,7 @@ function parseContainerStats(statsText: string): ContainerStats | undefined {
   };
 }
 
-function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary): ContainerDetail {
+function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary, language: AppLanguage): ContainerDetail {
   const sections = splitContainerDetailSections(stdout);
   let inspectRecord: Record<string, unknown> | undefined;
   let inspectError = '';
@@ -458,7 +459,7 @@ function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary):
     status,
     state,
     createdAt: readString(inspectRecord, 'Created') || fallback.createdAt,
-    ports: extractPorts(inspectRecord, fallback.ports),
+    ports: extractPorts(inspectRecord, fallback.ports, language),
     mounts: extractMounts(inspectRecord),
     env: extractEnv(inspectRecord),
     logs: sections.logs,
@@ -469,14 +470,16 @@ function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary):
   };
 }
 
-function getDetectRuntimeCommand(isWindowsHost: boolean) {
+function getDetectRuntimeCommand(isWindowsHost: boolean, language: AppLanguage) {
+  const noRuntime = t('container.error.noRuntime', language);
+
   if (isWindowsHost) {
     return powershellCommand(`
 $docker = Get-Command docker -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($docker) { "docker"; exit 0 }
 $podman = Get-Command podman -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($podman) { "podman"; exit 0 }
-Write-Error "未检测到 Docker 或 Podman CLI。"
+Write-Error "${noRuntime}"
 exit 127
 `);
   }
@@ -490,7 +493,7 @@ if command -v podman >/dev/null 2>&1; then
   printf 'podman\\n'
   exit 0
 fi
-printf '未检测到 Docker 或 Podman CLI。\\n' >&2
+printf '${noRuntime}\\n' >&2
 exit 127
 `;
 }
@@ -637,32 +640,32 @@ function matchesImageQuery(image: ImageSummary, query: string) {
     .includes(normalizedQuery);
 }
 
-function buildContainerDiagnostics(detail: ContainerDetail) {
+function buildContainerDiagnostics(detail: ContainerDetail, language: AppLanguage) {
   return [
-    `容器：${detail.name}`,
+    t('container.diagnostics.container', language, { name: detail.name }),
     `ID：${detail.id}`,
-    `镜像：${detail.image}`,
-    `状态：${getStateLabel(detail.state)} / ${detail.status || '-'}`,
-    `创建：${detail.createdAt || '-'}`,
+    t('container.diagnostics.image', language, { image: detail.image }),
+    t('container.diagnostics.status', language, { state: getStateLabel(detail.state, language), status: detail.status || '-' }),
+    t('container.diagnostics.created', language, { created: detail.createdAt || '-' }),
     `CPU：${detail.stats?.cpu || '-'}`,
-    `内存：${detail.stats?.memory || '-'} (${detail.stats?.memoryPercent || '-'})`,
+    t('container.diagnostics.memory', language, { memory: detail.stats?.memory || '-', percent: detail.stats?.memoryPercent || '-' }),
     '',
     '--- ports ---',
-    detail.ports.join('\n') || '无端口映射',
+    detail.ports.join('\n') || t('container.diagnostics.noPorts', language),
     '',
     '--- mounts ---',
-    detail.mounts.join('\n') || '无挂载',
+    detail.mounts.join('\n') || t('container.diagnostics.noMounts', language),
     '',
     '--- logs ---',
-    detail.logs || '无最近日志',
+    detail.logs || t('container.diagnostics.noLogs', language),
   ].join('\n');
 }
 
-function buildDockerRestartCommand(containerId: string) {
+function buildDockerRestartCommand(containerId: string, language: AppLanguage) {
   const target = shellSingleQuote(containerId);
 
   return [
-    '# 会重启 Docker daemon，请先确认这台主机上的运行中容器可短暂中断。',
+    t('container.restart.warning', language),
     'set -e',
     'if command -v systemctl >/dev/null 2>&1; then',
     '  if [ "$(id -u)" -eq 0 ]; then',
@@ -686,6 +689,7 @@ function createContainerTroubleshooting(
   runtime: ContainerRuntime,
   action: ContainerAction,
   container: ContainerSummary,
+  language: AppLanguage,
 ): ContainerTroubleshooting | null {
   if (
     runtime !== 'docker' ||
@@ -698,18 +702,15 @@ function createContainerTroubleshooting(
   }
 
   return {
-    title: 'Docker NAT 规则链缺失',
-    message: [
-      'Docker 在发布端口时找不到 iptables nat 表里的 DOCKER 链。',
-      '这通常发生在 firewalld、iptables 或 nftables 规则被 reload/flush 后，Docker daemon 还没重建自己的链。',
-      '一般处理方式是重启 Docker daemon，然后重新启动该容器。',
-    ].join(' '),
-    commands: buildDockerRestartCommand(container.id),
+    title: t('container.troubleshooting.title', language),
+    message: t('container.troubleshooting.message', language),
+    commands: buildDockerRestartCommand(container.id, language),
     rawOutput: output,
   };
 }
 
 function RemoteContainerManager({ connectionId, systemType }: RemoteContainerManagerProps) {
+  const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const runtimeRef = useRef<ContainerRuntime | null>(null);
   const isMountedRef = useRef(true);
@@ -761,11 +762,11 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setTroubleshooting(null);
 
     try {
-      const result = await runCmd(connectionId, getDetectRuntimeCommand(isWindowsHost));
+      const result = await runCmd(connectionId, getDetectRuntimeCommand(isWindowsHost, language), language);
       const detectedRuntime = (result.stdout || '').split(/\r?\n/).map((line) => line.trim()).find((line) => line === 'docker' || line === 'podman') as ContainerRuntime | undefined;
 
       if (!detectedRuntime) {
-        throw new Error(result.stderr || result.stdout || '未检测到 Docker 或 Podman CLI。');
+        throw new Error(result.stderr || result.stdout || t('container.error.noRuntime', language));
       }
 
       if (isMountedRef.current) {
@@ -785,7 +786,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         setRuntimeLoading(false);
       }
     }
-  }, [connectionId, isWindowsHost, setRuntimeValue]);
+  }, [connectionId, isWindowsHost, language, setRuntimeValue]);
 
   const refreshContainers = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean; preferredContainerId?: string }) => {
     if (!options?.silent) {
@@ -798,7 +799,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
-      const result = await runCmd(connectionId, getContainerListCommand(activeRuntime, isWindowsHost));
+      const result = await runCmd(connectionId, getContainerListCommand(activeRuntime, isWindowsHost), language);
       const nextContainers = parseJsonLines(result.stdout || '')
         .map(parseContainerSummary)
         .filter((container): container is ContainerSummary => Boolean(container))
@@ -814,7 +815,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         });
 
       if (result.code !== 0 && nextContainers.length === 0) {
-        throw new Error(result.stderr || result.stdout || '无法读取容器列表，可能 Docker daemon 未运行或当前用户权限不足。');
+        throw new Error(result.stderr || result.stdout || t('container.error.listContainers', language));
       }
 
       if (!isMountedRef.current) {
@@ -824,7 +825,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       setContainers(nextContainers);
 
       if (result.code !== 0) {
-        setNotice(result.stderr || '命令返回非零状态，但仍解析到了容器列表。');
+        setNotice(result.stderr || t('container.notice.partialContainers', language));
       }
 
       const preferredContainerId = options?.preferredContainerId ?? selectedContainerIdRef.current;
@@ -845,7 +846,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         setContainersLoading(false);
       }
     }
-  }, [connectionId, detectRuntime, isWindowsHost]);
+  }, [connectionId, detectRuntime, isWindowsHost, language]);
 
   const refreshImages = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean }) => {
     if (!options?.silent) {
@@ -858,14 +859,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
-      const result = await runCmd(connectionId, getImageListCommand(activeRuntime, isWindowsHost));
+      const result = await runCmd(connectionId, getImageListCommand(activeRuntime, isWindowsHost), language);
       const nextImages = parseJsonLines(result.stdout || '')
         .map(parseImageSummary)
         .filter((image): image is ImageSummary => Boolean(image))
         .sort((first, second) => getImageReference(first).localeCompare(getImageReference(second), getShellDeskLocale()));
 
       if (result.code !== 0 && nextImages.length === 0) {
-        throw new Error(result.stderr || result.stdout || '无法读取镜像列表。');
+        throw new Error(result.stderr || result.stdout || t('container.error.listImages', language));
       }
 
       if (!isMountedRef.current) {
@@ -875,7 +876,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       setImages(nextImages);
 
       if (result.code !== 0) {
-        setNotice(result.stderr || '命令返回非零状态，但仍解析到了镜像列表。');
+        setNotice(result.stderr || t('container.notice.partialImages', language));
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -886,7 +887,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         setImagesLoading(false);
       }
     }
-  }, [connectionId, detectRuntime, isWindowsHost]);
+  }, [connectionId, detectRuntime, isWindowsHost, language]);
 
   const loadContainerDetail = useCallback(async (containerId: string) => {
     const fallback = containers.find((container) => container.id === containerId);
@@ -904,11 +905,11 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = await detectRuntime();
-      const result = await runCmd(connectionId, getContainerDetailCommand(activeRuntime, containerId, isWindowsHost));
-      const nextDetail = parseContainerDetailOutput(result.stdout || '', fallback);
+      const result = await runCmd(connectionId, getContainerDetailCommand(activeRuntime, containerId, isWindowsHost), language);
+      const nextDetail = parseContainerDetailOutput(result.stdout || '', fallback, language);
 
       if (result.code !== 0 && !nextDetail.inspectText) {
-        throw new Error(result.stderr || result.stdout || '无法读取容器详情。');
+        throw new Error(result.stderr || result.stdout || t('container.error.detail', language));
       }
 
       if (isMountedRef.current && requestId === detailRequestIdRef.current) {
@@ -923,7 +924,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         setDetailLoading(false);
       }
     }
-  }, [connectionId, containers, detectRuntime, isWindowsHost]);
+  }, [connectionId, containers, detectRuntime, isWindowsHost, language]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -989,9 +990,9 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       await navigator.clipboard.writeText(value);
-      setSuccess(`已复制${label}。`);
+      setSuccess(t('container.message.copied', language, { label }));
     } catch (err) {
-      setError(`复制失败：${getErrorMessage(err)}`);
+      setError(t('container.error.copyFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -1004,21 +1005,21 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = await detectRuntime();
-      const result = await runCmd(connectionId, getContainerActionCommand(activeRuntime, action, container.id, isWindowsHost));
+      const result = await runCmd(connectionId, getContainerActionCommand(activeRuntime, action, container.id, isWindowsHost), language);
 
       if (result.code !== 0) {
         const output = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
-        const nextTroubleshooting = createContainerTroubleshooting(output, activeRuntime, action, container);
+        const nextTroubleshooting = createContainerTroubleshooting(output, activeRuntime, action, container, language);
 
         if (nextTroubleshooting) {
           setTroubleshooting(nextTroubleshooting);
-          throw new Error('容器启动失败：Docker 网络规则异常，已生成诊断与修复命令。');
+          throw new Error(t('container.error.dockerNetworkTrouble', language));
         }
 
-        throw new Error(output || '容器操作失败，可能需要更高权限。');
+        throw new Error(output || t('container.error.operationFailed', language));
       }
 
-      setSuccess(`${containerActionLabels[action].success}：${container.name}`);
+      setSuccess(`${t(containerActionLabels[action].successId, language)}: ${container.name}`);
       const nextSelectedContainerId = await refreshContainers({
         runtimeOverride: activeRuntime,
         silent: true,
@@ -1042,7 +1043,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     const imageName = pullImageName.trim();
 
     if (!imageName) {
-      setError('请输入镜像名，例如 nginx:latest。');
+      setError(t('container.error.imageRequired', language));
       return;
     }
 
@@ -1054,13 +1055,13 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = await detectRuntime();
-      const result = await runCmd(connectionId, getImagePullCommand(activeRuntime, imageName, isWindowsHost));
+      const result = await runCmd(connectionId, getImagePullCommand(activeRuntime, imageName, isWindowsHost), language);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '拉取镜像失败。');
+        throw new Error(result.stderr || result.stdout || t('container.error.pullFailed', language));
       }
 
-      setSuccess(`已拉取镜像：${imageName}`);
+      setSuccess(t('container.success.imagePulled', language, { image: imageName }));
       setPullImageName('');
       await refreshImages({ runtimeOverride: activeRuntime, silent: true });
     } catch (err) {
@@ -1082,13 +1083,13 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = await detectRuntime();
-      const result = await runCmd(connectionId, getImageRemoveCommand(activeRuntime, imageRef, isWindowsHost));
+      const result = await runCmd(connectionId, getImageRemoveCommand(activeRuntime, imageRef, isWindowsHost), language);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '删除镜像失败，可能仍有容器引用该镜像。');
+        throw new Error(result.stderr || result.stdout || t('container.error.removeImageFailed', language));
       }
 
-      setSuccess(`已删除镜像：${imageRef}`);
+      setSuccess(t('container.success.imageRemoved', language, { image: imageRef }));
       await refreshImages({ runtimeOverride: activeRuntime, silent: true });
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1104,7 +1105,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     const command = execCommand.trim();
 
     if (!selectedContainer || !command) {
-      setError(selectedContainer ? '请输入要执行的命令。' : '请先选择一个容器。');
+      setError(selectedContainer ? t('container.error.execRequired', language) : t('container.error.selectContainer', language));
       return;
     }
 
@@ -1117,15 +1118,15 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
     try {
       const activeRuntime = await detectRuntime();
-      const result = await runCmd(connectionId, getContainerExecCommand(activeRuntime, selectedContainer.id, command, isWindowsHost));
+      const result = await runCmd(connectionId, getContainerExecCommand(activeRuntime, selectedContainer.id, command, isWindowsHost), language);
       const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
 
-      setExecOutput(output || `命令已结束，退出码 ${result.code}。`);
+      setExecOutput(output || t('container.exec.exit', language, { code: result.code }));
 
       if (result.code !== 0) {
-        setNotice(`命令返回退出码 ${result.code}。`);
+        setNotice(t('container.exec.noticeExit', language, { code: result.code }));
       } else {
-        setSuccess(`命令执行完成：${selectedContainer.name}`);
+        setSuccess(t('container.exec.success', language, { name: selectedContainer.name }));
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1191,7 +1192,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         disabled={disabled}
         onClick={() => requestContainerAction(action)}
       >
-        {actingKey === key ? '处理中' : definition.label}
+        {actingKey === key ? t('container.ui.processing', language) : t(definition.labelId, language)}
       </button>
     );
   };
@@ -1215,7 +1216,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           <strong title={container.name}>{container.name}</strong>
           <small title={container.image}>{container.image}</small>
         </span>
-        <span className={`container-state-tag ${container.state}`}>{getStateLabel(container.state)}</span>
+        <span className={`container-state-tag ${container.state}`}>{getStateLabel(container.state, language)}</span>
       </button>
     );
   };
@@ -1227,7 +1228,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           <input
             type="search"
             className="container-search"
-            placeholder="搜索镜像..."
+            placeholder={t('container.ui.searchImages', language)}
             value={imageSearch}
             onChange={(event) => setImageSearch(event.target.value)}
           />
@@ -1242,10 +1243,10 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                 void executeImagePull();
               }
             }}
-            aria-label="拉取镜像名"
+            aria-label={t('container.ui.pullImageAria', language)}
           />
           <button type="button" className="container-tool-button primary" onClick={() => void executeImagePull()} disabled={pulling}>
-            {pulling ? '拉取中' : 'Pull'}
+            {pulling ? t('container.ui.pulling', language) : 'Pull'}
           </button>
         </>
       );
@@ -1257,16 +1258,16 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           className="container-select"
           value={containerFilter}
           onChange={(event) => setContainerFilter(event.target.value as ContainerFilter)}
-          aria-label="按容器状态筛选"
+          aria-label={t('container.ui.filterAria', language)}
         >
           {containerFilters.map((item) => (
-            <option key={item.key} value={item.key}>{item.label}</option>
+            <option key={item.key} value={item.key}>{t(item.labelId, language)}</option>
           ))}
         </select>
         <input
           type="search"
           className="container-search"
-          placeholder="搜索容器、镜像、端口..."
+          placeholder={t('container.ui.searchContainers', language)}
           value={containerSearch}
           onChange={(event) => setContainerSearch(event.target.value)}
         />
@@ -1280,15 +1281,15 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         <div>
           <span>CPU</span>
           <strong>{selectedDetail?.stats?.cpu || '-'}</strong>
-          <small>{selectedDetail?.stats?.error ? 'stats 不可用' : 'no-stream'}</small>
+          <small>{selectedDetail?.stats?.error ? t('container.ui.statsUnavailable', language) : 'no-stream'}</small>
         </div>
         <div>
-          <span>内存</span>
+          <span>{t('container.ui.memory', language)}</span>
           <strong>{selectedDetail?.stats?.memory || '-'}</strong>
           <small>{selectedDetail?.stats?.memoryPercent || '-'}</small>
         </div>
         <div>
-          <span>网络 IO</span>
+          <span>{t('container.ui.networkIo', language)}</span>
           <strong>{selectedDetail?.stats?.netIO || '-'}</strong>
           <small>Block {selectedDetail?.stats?.blockIO || '-'}</small>
         </div>
@@ -1305,30 +1306,30 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       <div className="container-summary-sections">
         <section>
           <header>
-            <strong>端口映射</strong>
+            <strong>{t('container.ui.ports', language)}</strong>
             <span>{selectedDetail?.ports.length ?? 0}</span>
           </header>
           <div className="container-chip-list">
-            {selectedDetail?.ports.length ? selectedDetail.ports.map((port) => <code key={port}>{port}</code>) : <span>无端口映射</span>}
+            {selectedDetail?.ports.length ? selectedDetail.ports.map((port) => <code key={port}>{port}</code>) : <span>{t('container.diagnostics.noPorts', language)}</span>}
           </div>
         </section>
         <section>
           <header>
-            <strong>挂载</strong>
+            <strong>{t('container.ui.mounts', language)}</strong>
             <span>{selectedDetail?.mounts.length ?? 0}</span>
           </header>
           <div className="container-chip-list">
-            {selectedDetail?.mounts.length ? selectedDetail.mounts.map((mount) => <code key={mount}>{mount}</code>) : <span>无挂载</span>}
+            {selectedDetail?.mounts.length ? selectedDetail.mounts.map((mount) => <code key={mount}>{mount}</code>) : <span>{t('container.diagnostics.noMounts', language)}</span>}
           </div>
         </section>
         <section>
           <header>
-            <strong>环境变量</strong>
+            <strong>{t('container.ui.env', language)}</strong>
             <span>{selectedDetail?.env.length ?? 0}</span>
           </header>
           <div className="container-chip-list">
-            {selectedDetail?.env.length ? selectedDetail.env.slice(0, 24).map((item) => <code key={item}>{item}</code>) : <span>无环境变量</span>}
-            {selectedDetail && selectedDetail.env.length > 24 ? <span>还有 {selectedDetail.env.length - 24} 项。</span> : null}
+            {selectedDetail?.env.length ? selectedDetail.env.slice(0, 24).map((item) => <code key={item}>{item}</code>) : <span>{t('container.ui.noEnv', language)}</span>}
+            {selectedDetail && selectedDetail.env.length > 24 ? <span>{t('container.ui.moreItems', language, { count: selectedDetail.env.length - 24 })}</span> : null}
           </div>
         </section>
       </div>
@@ -1345,28 +1346,28 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
             onClick={() => activeTab === 'images' ? void refreshImages() : void refreshContainers()}
             disabled={runtimeLoading || containersLoading || imagesLoading}
           >
-            {runtimeLoading || containersLoading || imagesLoading ? '刷新中' : '刷新'}
+            {runtimeLoading || containersLoading || imagesLoading ? t('container.ui.refreshing', language) : t('container.ui.refresh', language)}
           </button>
           <button type="button" className="container-tool-button" onClick={() => void refreshCurrentContainer()} disabled={!selectedContainer || detailLoading}>
-            {detailLoading ? '读取中' : '刷新当前'}
+            {detailLoading ? t('container.ui.reading', language) : t('container.ui.refreshCurrent', language)}
           </button>
-          <span className="container-runtime-pill">{getRuntimeLabel(runtime)}</span>
+          <span className="container-runtime-pill">{getRuntimeLabel(runtime, language)}</span>
           <span className="container-summary">
             <strong>{activeTab === 'images' ? visibleImages.length : visibleContainers.length}</strong> / {activeTab === 'images' ? images.length : containers.length}
           </span>
         </div>
 
-        <div className="container-tabs" role="tablist" aria-label="容器管理标签">
+        <div className="container-tabs" role="tablist" aria-label={t('container.ui.tabsAria', language)}>
           {managerTabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               role="tab"
               className={activeTab === tab.key ? 'active' : ''}
-              title={tab.label}
+              title={t(tab.labelId, language)}
               onClick={() => setActiveTab(tab.key)}
             >
-              {tab.label}
+              {t(tab.labelId, language)}
             </button>
           ))}
         </div>
@@ -1380,17 +1381,17 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       {notice ? <DismissibleAlert className="container-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
       {success ? <DismissibleAlert className="container-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
       {troubleshooting ? (
-        <section className="container-troubleshooting" aria-label="容器故障诊断">
+        <section className="container-troubleshooting" aria-label={t('container.ui.troubleshootingAria', language)}>
           <div>
             <strong>{troubleshooting.title}</strong>
             <p>{troubleshooting.message}</p>
           </div>
           <div className="container-troubleshooting-actions">
-            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.commands, '修复命令')}>
-              复制修复命令
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.commands, t('container.ui.copyFixCommandLabel', language))}>
+              {t('container.ui.copyFixCommand', language)}
             </button>
-            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.rawOutput, '原始错误')}>
-              复制原始错误
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(troubleshooting.rawOutput, t('container.ui.copyRawErrorLabel', language))}>
+              {t('container.ui.copyRawError', language)}
             </button>
           </div>
           <pre>{troubleshooting.commands}</pre>
@@ -1399,29 +1400,29 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
       {activeTab === 'containers' ? (
         <div className="container-content">
-          <aside className="container-list-panel" aria-label="容器列表">
+          <aside className="container-list-panel" aria-label={t('container.ui.containerListAria', language)}>
             <div className="container-stats">
-              <span><strong>{containerStats.running}</strong> 运行</span>
-              <span><strong>{containerStats.exited}</strong> 停止</span>
-              <span><strong>{containerStats.paused}</strong> 暂停</span>
-              <span><strong>{containerStats.created}</strong> 创建</span>
+              <span><strong>{containerStats.running}</strong> {t('container.ui.runningCount', language)}</span>
+              <span><strong>{containerStats.exited}</strong> {t('container.ui.exitedCount', language)}</span>
+              <span><strong>{containerStats.paused}</strong> {t('container.ui.pausedCount', language)}</span>
+              <span><strong>{containerStats.created}</strong> {t('container.ui.createdCount', language)}</span>
             </div>
 
             <div className="container-list">
               {visibleContainers.length === 0 ? (
-                <div className="container-empty">{containersLoading ? '正在加载容器列表...' : '暂无匹配的容器。'}</div>
+                <div className="container-empty">{containersLoading ? t('container.ui.loadingContainers', language) : t('container.ui.noContainers', language)}</div>
               ) : (
                 visibleContainers.map(renderContainerListItem)
               )}
             </div>
           </aside>
 
-          <section className="container-detail-panel" aria-label="容器详情">
+          <section className="container-detail-panel" aria-label={t('container.ui.detailAria', language)}>
             {selectedContainer ? (
               <>
                 <header className="container-detail-header">
                   <div>
-                    <span>容器</span>
+                    <span>{t('container.ui.container', language)}</span>
                     <strong title={selectedContainer.name}>{selectedDetail?.name || selectedContainer.name}</strong>
                     <code title={selectedContainer.id}>{formatShortId(selectedContainer.id)}</code>
                     <p title={selectedDetail?.image || selectedContainer.image}>{selectedDetail?.image || selectedContainer.image}</p>
@@ -1430,47 +1431,47 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                     type="button"
                     className="container-copy-btn"
                     disabled={!selectedDetail}
-                    onClick={() => selectedDetail ? void copyToClipboard(buildContainerDiagnostics(selectedDetail), '容器诊断') : undefined}
+                    onClick={() => selectedDetail ? void copyToClipboard(buildContainerDiagnostics(selectedDetail, language), t('container.ui.diagnosticsLabel', language)) : undefined}
                   >
-                    复制诊断
+                    {t('container.ui.copyDiagnostics', language)}
                   </button>
                 </header>
 
                 <div className="container-status-row">
                   <span className={`container-state-tag ${selectedDetail?.state || selectedContainer.state}`}>
-                    {getStateLabel(selectedDetail?.state || selectedContainer.state)}
+                    {getStateLabel(selectedDetail?.state || selectedContainer.state, language)}
                   </span>
                   <strong title={selectedDetail?.status || selectedContainer.status}>{selectedDetail?.status || selectedContainer.status}</strong>
                   <small title={selectedContainer.ports}>{selectedContainer.ports}</small>
                 </div>
 
-                <div className="container-action-bar" aria-label="容器操作">
+                <div className="container-action-bar" aria-label={t('container.ui.actionsAria', language)}>
                   {(['start', 'stop', 'restart', 'remove'] as ContainerAction[]).map(renderContainerActionButton)}
                   <button type="button" className="container-action-btn" onClick={() => { setDetailTab('logs'); void loadContainerDetail(selectedContainer.id); }}>
-                    查看日志
+                    {t('container.ui.viewLogs', language)}
                   </button>
                   <button type="button" className="container-action-btn" onClick={() => setDetailTab('exec')}>
                     Exec
                   </button>
                 </div>
 
-                <div className="container-detail-tabs" role="tablist" aria-label="容器详情标签">
-                  <button type="button" role="tab" className={detailTab === 'summary' ? 'active' : ''} onClick={() => setDetailTab('summary')}>摘要</button>
-                  <button type="button" role="tab" className={detailTab === 'logs' ? 'active' : ''} onClick={() => setDetailTab('logs')}>日志</button>
+                <div className="container-detail-tabs" role="tablist" aria-label={t('container.ui.detailTabsAria', language)}>
+                  <button type="button" role="tab" className={detailTab === 'summary' ? 'active' : ''} onClick={() => setDetailTab('summary')}>{t('container.ui.summary', language)}</button>
+                  <button type="button" role="tab" className={detailTab === 'logs' ? 'active' : ''} onClick={() => setDetailTab('logs')}>{t('container.ui.logs', language)}</button>
                   <button type="button" role="tab" className={detailTab === 'inspect' ? 'active' : ''} onClick={() => setDetailTab('inspect')}>Inspect</button>
                   <button type="button" role="tab" className={detailTab === 'exec' ? 'active' : ''} onClick={() => setDetailTab('exec')}>Exec</button>
                 </div>
 
                 <div className="container-detail-body">
-                  {detailLoading && !selectedDetail ? <div className="container-empty">正在读取容器详情...</div> : null}
+                  {detailLoading && !selectedDetail ? <div className="container-empty">{t('container.ui.loadingDetail', language)}</div> : null}
                   {selectedDetail || !detailLoading ? (
                     <>
                       {detailTab === 'summary' ? renderDetailSummary() : null}
                       {detailTab === 'logs' ? (
-                        <pre>{selectedDetail?.logs || '暂无最近日志。'}</pre>
+                        <pre>{selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre>
                       ) : null}
                       {detailTab === 'inspect' ? (
-                        <pre>{selectedDetail?.inspectText || '暂无 inspect 输出。'}</pre>
+                        <pre>{selectedDetail?.inspectText || t('container.ui.noInspect', language)}</pre>
                       ) : null}
                       {detailTab === 'exec' ? (
                         <div className="container-exec-panel">
@@ -1484,14 +1485,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                               type="text"
                               value={execCommand}
                               onChange={(event) => setExecCommand(event.target.value)}
-                              placeholder="sh -lc 中执行的命令"
-                              aria-label="容器 exec 命令"
+                              placeholder={t('container.ui.execPlaceholder', language)}
+                              aria-label={t('container.ui.execAria', language)}
                             />
                             <button type="submit" className="container-action-btn primary" disabled={execRunning || selectedContainer.state !== 'running'}>
-                              {execRunning ? '执行中' : '运行'}
+                              {execRunning ? t('container.ui.execRunning', language) : t('container.ui.run', language)}
                             </button>
                           </form>
-                          <pre>{execOutput || (selectedContainer.state !== 'running' ? '容器未运行，无法执行 exec。' : '输入命令后运行。')}</pre>
+                          <pre>{execOutput || (selectedContainer.state !== 'running' ? t('container.ui.execNotRunning', language) : t('container.ui.execPrompt', language))}</pre>
                         </div>
                       ) : null}
                     </>
@@ -1500,8 +1501,8 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
               </>
             ) : (
               <div className="container-detail-empty">
-                <strong>{containersLoading ? '正在加载容器' : '未选中容器'}</strong>
-                <span>{containersLoading ? '等待远程运行时返回列表。' : '暂无容器详情。'}</span>
+                <strong>{containersLoading ? t('container.ui.loadingContainer', language) : t('container.ui.noContainerSelected', language)}</strong>
+                <span>{containersLoading ? t('container.ui.waitRuntime', language) : t('container.ui.noDetail', language)}</span>
               </div>
             )}
           </section>
@@ -1509,24 +1510,24 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       ) : null}
 
       {activeTab === 'images' ? (
-        <div className="container-images-panel" aria-label="镜像列表">
+        <div className="container-images-panel" aria-label={t('container.ui.imageListAria', language)}>
           <div className="container-image-table-wrap">
             <table className="container-image-table">
               <thead>
                 <tr>
-                  <th className="container-image-repo">仓库</th>
-                  <th className="container-image-tag">标签</th>
+                  <th className="container-image-repo">{t('container.ui.repository', language)}</th>
+                  <th className="container-image-tag">{t('container.ui.tag', language)}</th>
                   <th className="container-image-id">ID</th>
-                  <th className="container-image-size">大小</th>
-                  <th className="container-image-created">创建时间</th>
-                  <th className="container-image-actions">操作</th>
+                  <th className="container-image-size">{t('container.ui.size', language)}</th>
+                  <th className="container-image-created">{t('container.ui.createdAt', language)}</th>
+                  <th className="container-image-actions">{t('container.ui.operations', language)}</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleImages.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="container-table-empty">
-                      {imagesLoading ? '正在加载镜像列表...' : '暂无匹配的镜像。'}
+                      {imagesLoading ? t('container.ui.loadingImages', language) : t('container.ui.noImages', language)}
                     </td>
                   </tr>
                 ) : (
@@ -1544,7 +1545,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                           disabled={Boolean(actingKey)}
                           onClick={() => setPendingAction({ kind: 'image', action: 'remove', image })}
                         >
-                          {actingKey === `image-remove:${image.id}` ? '删除中' : '删除'}
+                          {actingKey === `image-remove:${image.id}` ? t('container.ui.removing', language) : t('container.action.remove', language)}
                         </button>
                       </td>
                     </tr>
@@ -1566,25 +1567,25 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
             onClick={(event) => event.stopPropagation()}
           >
             <div id="container-action-confirm-title" className="container-modal-title">
-              {pendingAction.kind === 'container' ? '删除容器' : '删除镜像'}
+              {pendingAction.kind === 'container' ? t('container.modal.removeContainer', language) : t('container.modal.removeImage', language)}
             </div>
             <div className="container-modal-message">
               {pendingAction.kind === 'container' ? (
                 <>
-                  <p>目标容器：<strong>{pendingAction.container.name}</strong></p>
-                  <p>删除后容器文件系统和运行状态会从远程运行时移除。</p>
+                  <p>{t('container.modal.targetContainer', language)}<strong>{pendingAction.container.name}</strong></p>
+                  <p>{t('container.modal.containerDeleteWarning', language)}</p>
                   <code>{pendingAction.container.id}</code>
                 </>
               ) : (
                 <>
-                  <p>目标镜像：<strong>{getImageReference(pendingAction.image)}</strong></p>
-                  <p>如果仍有容器引用该镜像，远程运行时会拒绝删除。</p>
+                  <p>{t('container.modal.targetImage', language)}<strong>{getImageReference(pendingAction.image)}</strong></p>
+                  <p>{t('container.modal.imageDeleteWarning', language)}</p>
                   <code>{pendingAction.image.id}</code>
                 </>
               )}
             </div>
             <div className="container-modal-actions">
-              <button type="button" className="container-modal-btn" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" className="container-modal-btn" onClick={() => setPendingAction(null)}>{t('common.cancel', language)}</button>
               <button
                 type="button"
                 className="container-modal-btn danger"
@@ -1597,7 +1598,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                   void executeImageRemove(pendingAction.image);
                 }}
               >
-                确认删除
+                {t('container.modal.confirmRemove', language)}
               </button>
             </div>
           </div>

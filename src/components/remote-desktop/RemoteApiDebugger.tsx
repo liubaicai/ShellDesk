@@ -16,6 +16,7 @@ import {
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteApiDebuggerProps {
   connectionId: string;
@@ -39,7 +40,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteApiDebugger.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -145,7 +146,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
       setResponseTab('body');
 
       if (result.code !== 0 || response.stderr) {
-        setNotice(response.stderr || `curl 退出码 ${response.exitCode}`);
+        setNotice(response.stderr || tCurrent('auto.remoteApiDebugger.b94fvr', { value0: response.exitCode }));
       }
     } catch (error) {
       setError(getErrorMessage(error));
@@ -164,7 +165,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
   const copyCurl = async () => {
     const text = createCurlPreview(request);
     await navigator.clipboard.writeText(text);
-    setNotice('已复制 curl 命令。');
+    setNotice(tCurrent('auto.remoteApiDebugger.1e5k4ep'));
   };
 
   const copyResponse = async () => {
@@ -173,7 +174,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
     }
 
     await navigator.clipboard.writeText(activeRun.response.body || activeRun.response.headersText || activeRun.response.raw);
-    setNotice('已复制响应内容。');
+    setNotice(tCurrent('auto.remoteApiDebugger.wnngk9'));
   };
 
   const formatJsonResponse = () => {
@@ -188,9 +189,9 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
         response: { ...activeRun.response, body: formattedBody },
       };
       setHistory((currentHistory) => currentHistory.map((run) => (run.id === activeRun.id ? nextRun : run)));
-      setNotice('JSON 已格式化。');
+      setNotice(tCurrent('auto.remoteApiDebugger.ed12q0'));
     } catch (error) {
-      setError(`JSON 格式化失败：${getErrorMessage(error)}`);
+      setError(tCurrent('auto.remoteApiDebugger.usdhbr', { value0: getErrorMessage(error) }));
     }
   };
 
@@ -198,8 +199,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
     <section className="api-debugger">
       <aside className="api-history">
         <div className="api-history-head">
-          <strong>请求历史</strong>
-          <span>最近 {maxHistory} 次</span>
+          <strong>{tCurrent('auto.remoteApiDebugger.1nw1cic')}</strong>
+          <span>{tCurrent('auto.remoteApiDebugger.1a41w7e')}{maxHistory} {tCurrent('auto.remoteApiDebugger.a5jtgs')}</span>
         </div>
         <div className="api-history-list">
           {history.map((run) => (
@@ -214,13 +215,13 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
               <em>{run.startedAt} · {run.response.durationMs} ms</em>
             </button>
           ))}
-          {!history.length ? <div className="api-history-empty">暂无请求历史。</div> : null}
+          {!history.length ? <div className="api-history-empty">{tCurrent('auto.remoteApiDebugger.q4qf1w')}</div> : null}
         </div>
       </aside>
 
       <main className="api-main">
         <header className="api-request-line">
-          <select value={request.method} onChange={(event) => updateRequest('method', event.target.value as ApiDebugMethod)} aria-label="HTTP 方法">
+          <select value={request.method} onChange={(event) => updateRequest('method', event.target.value as ApiDebugMethod)} aria-label={tCurrent('auto.remoteApiDebugger.jv69fp')}>
             {methods.map((method) => <option key={method} value={method}>{method}</option>)}
           </select>
           <input value={request.url} onChange={(event) => updateRequest('url', event.target.value)} placeholder="http://127.0.0.1:8080/health" />
@@ -231,9 +232,9 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
             max={120}
             value={request.timeoutSeconds}
             onChange={(event) => updateRequest('timeoutSeconds', Number(event.target.value))}
-            aria-label="超时秒数"
+            aria-label={tCurrent('auto.remoteApiDebugger.tabbi8')}
           />
-          <button type="button" className="primary" onClick={sendRequest} disabled={loading}>{loading ? '发送中' : '发送'}</button>
+          <button type="button" className="primary" onClick={sendRequest} disabled={loading}>{loading ? tCurrent('auto.remoteApiDebugger.19ewkta') : tCurrent('auto.remoteApiDebugger.j5vidj')}</button>
         </header>
 
         {error ? <DismissibleAlert className="api-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
@@ -243,7 +244,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
           <div className="api-tabs">
             <button type="button" className={requestTab === 'headers' ? 'active' : ''} onClick={() => setRequestTab('headers')}>Headers</button>
             <button type="button" className={requestTab === 'body' ? 'active' : ''} onClick={() => setRequestTab('body')}>Body</button>
-            <button type="button" onClick={copyCurl} disabled={!curlPreview}>复制 curl</button>
+            <button type="button" onClick={copyCurl} disabled={!curlPreview}>{tCurrent('auto.remoteApiDebugger.up9ow0')}</button>
           </div>
 
           {requestTab === 'headers' ? (
@@ -255,17 +256,17 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
                   </label>
                   <input value={header.key} onChange={(event) => updateHeader(header.id, { key: event.target.value })} placeholder="Header" />
                   <input value={header.value} onChange={(event) => updateHeader(header.id, { value: event.target.value })} placeholder="Value" />
-                  <button type="button" onClick={() => removeHeader(header.id)}>删除</button>
+                  <button type="button" onClick={() => removeHeader(header.id)}>{tCurrent('auto.remoteApiDebugger.1t2vi4h')}</button>
                 </div>
               ))}
-              <button type="button" className="api-add-header" onClick={addHeader}>新增 Header</button>
+              <button type="button" className="api-add-header" onClick={addHeader}>{tCurrent('auto.remoteApiDebugger.151vjqk')}</button>
             </div>
           ) : (
             <textarea
               className="api-body-editor"
               value={request.body}
               onChange={(event) => updateRequest('body', event.target.value)}
-              placeholder={request.method === 'GET' || request.method === 'HEAD' ? 'GET/HEAD 不发送 body' : '{"hello":"world"}'}
+              placeholder={request.method === 'GET' || request.method === 'HEAD' ? tCurrent('auto.remoteApiDebugger.1fcxvg1') : '{"hello":"world"}'}
             />
           )}
         </section>
@@ -273,15 +274,15 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
         <section className="api-response-panel">
           <div className="api-response-head">
             <div>
-              <span>响应</span>
+              <span>{tCurrent('auto.remoteApiDebugger.1qrcixw')}</span>
               <strong className={getStatusTone(activeRun?.response)}>
-                {activeRun?.response.status ? `HTTP ${activeRun.response.status}` : activeRun ? `退出码 ${activeRun.response.exitCode}` : '尚未发送'}
+                {activeRun?.response.status ? `HTTP ${activeRun.response.status}` : activeRun ? tCurrent('auto.remoteApiDebugger.ewqer7', { value0: activeRun.response.exitCode }) : tCurrent('auto.remoteApiDebugger.8s70iv')}
               </strong>
               {activeRun ? <em>{activeRun.response.durationMs} ms</em> : null}
             </div>
             <div className="api-response-actions">
-              <button type="button" onClick={formatJsonResponse} disabled={!activeRun?.response.body}>格式化 JSON</button>
-              <button type="button" onClick={copyResponse} disabled={!activeRun}>复制响应</button>
+              <button type="button" onClick={formatJsonResponse} disabled={!activeRun?.response.body}>{tCurrent('auto.remoteApiDebugger.1i126as')}</button>
+              <button type="button" onClick={copyResponse} disabled={!activeRun}>{tCurrent('auto.remoteApiDebugger.d29aqr')}</button>
             </div>
           </div>
 
@@ -294,11 +295,11 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
           <pre className="api-response-output">
             {activeRun
               ? responseTab === 'body'
-                ? activeRun.response.body || '响应体为空。'
+                ? activeRun.response.body || tCurrent('auto.remoteApiDebugger.35uav9')
                 : responseTab === 'headers'
-                  ? activeRun.response.headersText || '响应头为空。'
-                  : activeRun.response.raw || '没有原始输出。'
-              : '配置请求后点击发送。'}
+                  ? activeRun.response.headersText || tCurrent('auto.remoteApiDebugger.tsbvt6')
+                  : activeRun.response.raw || tCurrent('auto.remoteApiDebugger.1dwwbpe')
+              : tCurrent('auto.remoteApiDebugger.1j708x')}
           </pre>
         </section>
       </main>

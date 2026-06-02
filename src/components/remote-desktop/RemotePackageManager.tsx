@@ -19,6 +19,7 @@ import {
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteTerminalLaunchOptions } from './RemoteTerminal';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemotePackageManagerProps {
   connectionId: string;
@@ -37,8 +38,8 @@ interface PendingPackageAction {
 type PackageActionOutputState = 'idle' | 'running' | 'success' | 'error';
 
 const packageViews: Array<{ key: Exclude<PackageView, 'search'>; label: string }> = [
-  { key: 'upgradable', label: '可升级' },
-  { key: 'installed', label: '已安装' },
+  { key: 'upgradable', label: tCurrent('auto.remotePackageManager.13p2xv8') },
+  { key: 'installed', label: tCurrent('auto.remotePackageManager.hdlzwj') },
 ];
 
 const maxPackageActionOutputLength = 30000;
@@ -47,7 +48,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remotePackageManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -61,7 +62,7 @@ function runCmdStream(
   const api = window.guiSSH?.connections;
 
   if (!api?.runCommandStream) {
-    throw new Error('ShellDesk 流式命令 IPC 未就绪。');
+    throw new Error(tCurrent('auto.remotePackageManager.1307y3o'));
   }
 
   return api.runCommandStream(connectionId, command, undefined, callbacks);
@@ -78,7 +79,7 @@ function appendBoundedOutput(current: string, chunk: string) {
     return next;
   }
 
-  return `...已截断前面的输出...\n${next.slice(-maxPackageActionOutputLength)}`;
+  return tCurrent('auto.remotePackageManager.1lc7uz5', { value0: next.slice(-maxPackageActionOutputLength) });
 }
 
 function getPackageVersion(pkg: RemotePackageInfo) {
@@ -118,14 +119,14 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
     }
 
     if (selectedPackage.upgradable) {
-      return { label: '升级', action: 'upgrade' as PackageAction, disabled: false };
+      return { label: tCurrent('auto.remotePackageManager.1vmp8k3'), action: 'upgrade' as PackageAction, disabled: false };
     }
 
     if (selectedPackage.installed) {
-      return { label: '已安装', action: null, disabled: true };
+      return { label: tCurrent('auto.remotePackageManager.hdlzwj2'), action: null, disabled: true };
     }
 
-    return { label: '安装', action: 'install' as PackageAction, disabled: false };
+    return { label: tCurrent('auto.remotePackageManager.h3munn'), action: 'install' as PackageAction, disabled: false };
   }, [selectedPackage]);
 
   const detectManager = useCallback(async () => {
@@ -151,7 +152,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
 
     if (kind === 'unknown') {
       setPackages([]);
-      setError('未检测到支持的包管理器。');
+      setError(tCurrent('auto.remotePackageManager.2itani'));
       return;
     }
 
@@ -234,11 +235,11 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
       const packageName = pkg?.name;
       const command = createPackageActionCommand(managerKind, action, packageName);
       const labels: Record<PackageAction, string> = {
-        install: '安装',
-        remove: '卸载',
-        upgrade: '升级',
-        'upgrade-all': '升级全部',
-        refresh: '刷新元数据',
+        install: tCurrent('auto.remotePackageManager.h3munn2'),
+        remove: tCurrent('auto.remotePackageManager.1lca2z2'),
+        upgrade: tCurrent('auto.remotePackageManager.1vmp8k32'),
+        'upgrade-all': tCurrent('auto.remotePackageManager.1cq3xbf'),
+        refresh: tCurrent('auto.remotePackageManager.110bnp'),
       };
 
       setPendingAction({
@@ -257,7 +258,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
   const copyPendingCommand = async () => {
     if (!pendingAction) return;
     await navigator.clipboard.writeText(pendingAction.command);
-    setNotice('已复制命令。');
+    setNotice(tCurrent('auto.remotePackageManager.1ys75c3'));
   };
 
   const runPendingInTerminal = () => {
@@ -294,17 +295,17 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
         }
       }
 
-      setActionOutput((current) => appendBoundedOutput(current, `\n[退出码 ${result.code}] ${pendingAction.label}命令已结束。\n`));
+      setActionOutput((current) => appendBoundedOutput(current, tCurrent('auto.remotePackageManager.1tbpxd4', { value0: result.code, value1: pendingAction.label })));
       setActionOutputState(result.code === 0 ? 'success' : 'error');
 
       if (result.code === 0) {
         await loadPackages(activeView, managerKind, activeView === 'search' ? lastSearchQuery : '');
-        setNotice(`${pendingAction.label}命令已完成。`);
+        setNotice(tCurrent('auto.remotePackageManager.nkcjw9', { value0: pendingAction.label }));
       } else {
-        setError(`${pendingAction.label}命令退出码 ${result.code}，请查看执行输出。`);
+        setError(tCurrent('auto.remotePackageManager.1fdgco1', { value0: pendingAction.label, value1: result.code }));
       }
     } catch (error) {
-      setActionOutput((current) => appendBoundedOutput(current, `\n[错误] ${getErrorMessage(error)}\n`));
+      setActionOutput((current) => appendBoundedOutput(current, tCurrent('auto.remotePackageManager.127m15g', { value0: getErrorMessage(error) })));
       setActionOutputState('error');
       setError(getErrorMessage(error));
     } finally {
@@ -316,14 +317,14 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
     <section className="package-manager">
       <header className="package-toolbar">
         <div className="package-status">
-          <span>包管理器</span>
+          <span>{tCurrent('auto.remotePackageManager.1sgu85')}</span>
           <strong>{getPackageManagerLabel(managerKind)}</strong>
           {lastRefreshedAt ? <em>{lastRefreshedAt}</em> : null}
         </div>
         <div className="package-toolbar-actions">
-          <button type="button" onClick={detectManager} disabled={loading}>重新检测</button>
-          <button type="button" onClick={() => prepareAction('refresh')} disabled={managerKind === 'unknown'}>刷新元数据</button>
-          <button type="button" className="primary" onClick={() => prepareAction('upgrade-all')} disabled={managerKind === 'unknown'}>升级全部</button>
+          <button type="button" onClick={detectManager} disabled={loading}>{tCurrent('auto.remotePackageManager.1ot472x')}</button>
+          <button type="button" onClick={() => prepareAction('refresh')} disabled={managerKind === 'unknown'}>{tCurrent('auto.remotePackageManager.110bnp2')}</button>
+          <button type="button" className="primary" onClick={() => prepareAction('upgrade-all')} disabled={managerKind === 'unknown'}>{tCurrent('auto.remotePackageManager.1cq3xbf2')}</button>
         </div>
       </header>
 
@@ -333,7 +334,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
       <div className="package-layout">
         <aside className="package-sidebar">
           <div className="package-nav-group">
-            <span className="package-sidebar-label">列表视图</span>
+            <span className="package-sidebar-label">{tCurrent('auto.remotePackageManager.1tdu8gu')}</span>
             <div className="package-tabs">
               {packageViews.map((view) => (
                 <button
@@ -349,7 +350,7 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
             </div>
           </div>
           <div className="package-search-box">
-            <span className="package-sidebar-label">仓库查询</span>
+            <span className="package-sidebar-label">{tCurrent('auto.remotePackageManager.1rou4mo')}</span>
             <input
               type="search"
               value={searchQuery}
@@ -357,22 +358,21 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void loadPackages('search', managerKind, searchQuery);
               }}
-              placeholder="包名，例如 htop"
-              aria-label="查询仓库包名"
+              placeholder={tCurrent('auto.remotePackageManager.wl26vz')}
+              aria-label={tCurrent('auto.remotePackageManager.njixii')}
             />
             <button type="button" onClick={() => loadPackages('search', managerKind, searchQuery)} disabled={loading || managerKind === 'unknown'}>
-              查询包名
-            </button>
+              {tCurrent('auto.remotePackageManager.rarta4')}</button>
           </div>
           {activeView === 'search' ? (
             <div className="package-search-state">
-              <span>当前结果</span>
+              <span>{tCurrent('auto.remotePackageManager.a5ncle')}</span>
               <strong>{lastSearchQuery || '-'}</strong>
             </div>
           ) : null}
           <div className="package-summary">
             <strong>{packages.length}</strong>
-            <span>{activeView === 'upgradable' ? '个可升级包' : activeView === 'installed' ? '个已安装包' : '条查询结果'}</span>
+            <span>{activeView === 'upgradable' ? tCurrent('auto.remotePackageManager.1dsteob') : activeView === 'installed' ? tCurrent('auto.remotePackageManager.6prvmi') : tCurrent('auto.remotePackageManager.tiekd8')}</span>
           </div>
         </aside>
 
@@ -381,10 +381,10 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
             <table className="package-table">
               <thead>
                 <tr>
-                  <th>包名</th>
-                  <th>版本</th>
-                  <th>说明</th>
-                  <th>状态</th>
+                  <th>{tCurrent('auto.remotePackageManager.1obbrxz')}</th>
+                  <th>{tCurrent('auto.remotePackageManager.va46gx')}</th>
+                  <th>{tCurrent('auto.remotePackageManager.1mi4vdj')}</th>
+                  <th>{tCurrent('auto.remotePackageManager.1ccx4t4')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -393,12 +393,12 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
                     <td><strong>{pkg.name}</strong></td>
                     <td>{getPackageVersion(pkg)}</td>
                     <td title={pkg.description || pkg.source || ''}>{pkg.description || pkg.source || '-'}</td>
-                    <td>{pkg.upgradable ? <span className="package-pill warning">可升级</span> : pkg.installed ? <span className="package-pill success">已安装</span> : <span className="package-pill">可安装</span>}</td>
+                    <td>{pkg.upgradable ? <span className="package-pill warning">{tCurrent('auto.remotePackageManager.13p2xv82')}</span> : pkg.installed ? <span className="package-pill success">{tCurrent('auto.remotePackageManager.hdlzwj3')}</span> : <span className="package-pill">{tCurrent('auto.remotePackageManager.1k3oaj4')}</span>}</td>
                   </tr>
                 ))}
                 {!loading && packages.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="package-empty">没有包数据。</td>
+                    <td colSpan={4} className="package-empty">{tCurrent('auto.remotePackageManager.13e22uy')}</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -410,13 +410,13 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
           {selectedPackage ? (
             <>
               <div className="package-detail-title">
-                <span>包详情</span>
+                <span>{tCurrent('auto.remotePackageManager.1msktrp')}</span>
                 <strong>{selectedPackage.name}</strong>
               </div>
               <dl>
-                <div><dt>当前版本</dt><dd>{selectedPackage.version || '-'}</dd></div>
-                <div><dt>最新版本</dt><dd>{selectedPackage.latestVersion || '-'}</dd></div>
-                <div><dt>说明</dt><dd>{selectedPackage.description || selectedPackage.source || '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remotePackageManager.15awyex')}</dt><dd>{selectedPackage.version || '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remotePackageManager.t50ebd')}</dt><dd>{selectedPackage.latestVersion || '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remotePackageManager.1mi4vdj2')}</dt><dd>{selectedPackage.description || selectedPackage.source || '-'}</dd></div>
               </dl>
               <div className="package-detail-actions">
                 <button
@@ -429,17 +429,16 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
                   }}
                   disabled={selectedPrimaryAction?.disabled}
                 >
-                  {selectedPrimaryAction?.label ?? '安装'}
+                  {selectedPrimaryAction?.label ?? tCurrent('auto.remotePackageManager.h3munn3')}
                 </button>
-                <button type="button" className="danger" onClick={() => prepareAction('remove', selectedPackage)} disabled={!selectedPackage.installed}>卸载</button>
-                <button type="button" onClick={() => navigator.clipboard.writeText(selectedPackage.name).then(() => setNotice('已复制包名。'))}>复制包名</button>
+                <button type="button" className="danger" onClick={() => prepareAction('remove', selectedPackage)} disabled={!selectedPackage.installed}>{tCurrent('auto.remotePackageManager.1lca2z22')}</button>
+                <button type="button" onClick={() => navigator.clipboard.writeText(selectedPackage.name).then(() => setNotice(tCurrent('auto.remotePackageManager.1o8al5y')))}>{tCurrent('auto.remotePackageManager.ggdahc')}</button>
               </div>
               <div className="package-note">
-                安装、卸载和升级会先展示命令。需要交互式 sudo 时，建议在终端中运行。
-              </div>
+                {tCurrent('auto.remotePackageManager.igwc6')}</div>
             </>
           ) : (
-            <div className="package-empty detail">选择一个包查看详情。</div>
+            <div className="package-empty detail">{tCurrent('auto.remotePackageManager.1c81e3l')}</div>
           )}
         </aside>
       </div>
@@ -448,27 +447,27 @@ function RemotePackageManager({ connectionId, systemType, onOpenTerminal }: Remo
         <div className="package-modal-backdrop" role="presentation" onClick={closePendingAction}>
           <div className="package-confirm-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="package-confirm-header">
-              <span>{pendingAction.danger ? '需要确认' : '确认命令'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remotePackageManager.ahn1l4') : tCurrent('auto.remotePackageManager.17ojhw6')}</span>
               <strong>{pendingAction.label}{pendingAction.packageName ? ` ${pendingAction.packageName}` : ''}</strong>
             </div>
             <pre>{pendingAction.command}</pre>
             {actionOutputState !== 'idle' || actionOutput ? (
               <div className="package-command-output">
                 <div className="package-command-output-header">
-                  <strong>执行输出</strong>
+                  <strong>{tCurrent('auto.remotePackageManager.1mh8d93')}</strong>
                   <span className={`package-output-state ${actionOutputState}`}>
-                    {actionOutputState === 'running' ? '执行中' : actionOutputState === 'success' ? '已完成' : actionOutputState === 'error' ? '执行异常' : '等待执行'}
+                    {actionOutputState === 'running' ? tCurrent('auto.remotePackageManager.6svkbt') : actionOutputState === 'success' ? tCurrent('auto.remotePackageManager.19j4h') : actionOutputState === 'error' ? tCurrent('auto.remotePackageManager.omysx0') : tCurrent('auto.remotePackageManager.1oherf4')}
                   </span>
                 </div>
-                <pre ref={actionOutputRef} aria-live="polite">{actionOutput || '等待远程命令输出...'}</pre>
+                <pre ref={actionOutputRef} aria-live="polite">{actionOutput || tCurrent('auto.remotePackageManager.k2xa6s')}</pre>
               </div>
             ) : null}
             <div className="package-confirm-actions">
-              <button type="button" onClick={closePendingAction} disabled={actionRunning}>{actionOutputState === 'idle' ? '取消' : '关闭'}</button>
-              <button type="button" onClick={copyPendingCommand}>复制命令</button>
-              <button type="button" onClick={runPendingInTerminal} disabled={!onOpenTerminal || actionRunning}>终端运行</button>
+              <button type="button" onClick={closePendingAction} disabled={actionRunning}>{actionOutputState === 'idle' ? tCurrent('auto.remotePackageManager.1589w37') : tCurrent('auto.remotePackageManager.g0fanx')}</button>
+              <button type="button" onClick={copyPendingCommand}>{tCurrent('auto.remotePackageManager.qxd4qr')}</button>
+              <button type="button" onClick={runPendingInTerminal} disabled={!onOpenTerminal || actionRunning}>{tCurrent('auto.remotePackageManager.la3v4c')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '直接执行'}
+                {actionRunning ? tCurrent('auto.remotePackageManager.6svkbt2') : tCurrent('auto.remotePackageManager.th962h')}
               </button>
             </div>
           </div>

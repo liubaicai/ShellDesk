@@ -1,3 +1,4 @@
+import { tCurrent } from '../../i18n';
 export type CronLineKind = 'task' | 'comment' | 'blank';
 
 export interface CronLine {
@@ -86,17 +87,17 @@ export function serializeCronLines(lines: CronLine[]) {
 }
 
 export function describeCronExpression(line: CronLine) {
-  if (line.kind !== 'task') return '非任务行';
+  if (line.kind !== 'task') return tCurrent('auto.cronUtils.1cvk78j');
 
   const parts: string[] = [];
-  if (line.minute === '*' && line.hour === '*') parts.push('每分钟');
-  else if (line.minute !== '*' && line.hour === '*') parts.push(`每小时第 ${line.minute} 分钟`);
-  else if (line.minute !== '*' && line.hour !== '*') parts.push(`每天 ${line.hour}:${line.minute.padStart(2, '0')}`);
-  else parts.push('自定义时间');
+  if (line.minute === '*' && line.hour === '*') parts.push(tCurrent('auto.cronUtils.wjj7o5'));
+  else if (line.minute !== '*' && line.hour === '*') parts.push(tCurrent('auto.cronUtils.1lrwk1h', { value0: line.minute }));
+  else if (line.minute !== '*' && line.hour !== '*') parts.push(tCurrent('auto.cronUtils.9shvto', { value0: line.hour, value1: line.minute.padStart(2, '0') }));
+  else parts.push(tCurrent('auto.cronUtils.wizom'));
 
-  if (line.dayOfWeek !== '*') parts.push(`星期 ${line.dayOfWeek}`);
-  if (line.dayOfMonth !== '*') parts.push(`每月 ${line.dayOfMonth} 日`);
-  if (line.month !== '*') parts.push(`${line.month} 月`);
+  if (line.dayOfWeek !== '*') parts.push(tCurrent('auto.cronUtils.10wpsmw', { value0: line.dayOfWeek }));
+  if (line.dayOfMonth !== '*') parts.push(tCurrent('auto.cronUtils.14l2nsc', { value0: line.dayOfMonth }));
+  if (line.month !== '*') parts.push(tCurrent('auto.cronUtils.sc58no', { value0: line.month }));
 
   return parts.join('，');
 }
@@ -106,11 +107,11 @@ export function validateCronTask(line: CronLine) {
 
   const fields = [line.minute, line.hour, line.dayOfMonth, line.month, line.dayOfWeek];
   if (fields.some((field) => !field.trim() || /[\r\n]/.test(field))) {
-    return 'Cron 时间字段无效。';
+    return tCurrent('auto.cronUtils.14jtkj1');
   }
 
   if (!line.command.trim()) {
-    return '请输入任务命令。';
+    return tCurrent('auto.cronUtils.11d9nmb');
   }
 
   return '';

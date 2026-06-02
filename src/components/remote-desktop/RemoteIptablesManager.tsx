@@ -19,6 +19,7 @@ import {
 } from './iptablesProviders';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteIptablesManagerProps {
   connectionId: string;
@@ -53,7 +54,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteIptablesManager.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -81,12 +82,12 @@ function formatEndpoint(value?: string) {
 function formatRule(rule: IptablesRule) {
   return [
     `${getFamilyLabel(rule.family)} ${rule.table}/${rule.chain} #${rule.index}`,
-    `动作：${getIptablesTargetLabel(rule.target)}`,
-    `协议：${getProtocolLabel(rule.protocol)}`,
-    `端口：${rule.destinationPort || '-'}`,
-    `来源：${formatEndpoint(rule.source)}`,
-    `目标：${formatEndpoint(rule.destination)}`,
-    `备注：${rule.comment || '-'}`,
+    tCurrent('auto.remoteIptablesManager.e9yzls', { value0: getIptablesTargetLabel(rule.target) }),
+    tCurrent('auto.remoteIptablesManager.snmvc3', { value0: getProtocolLabel(rule.protocol) }),
+    tCurrent('auto.remoteIptablesManager.1nxunke', { value0: rule.destinationPort || '-' }),
+    tCurrent('auto.remoteIptablesManager.9537r7', { value0: formatEndpoint(rule.source) }),
+    tCurrent('auto.remoteIptablesManager.f6igbh', { value0: formatEndpoint(rule.destination) }),
+    tCurrent('auto.remoteIptablesManager.1ol3kmt', { value0: rule.comment || '-' }),
     '',
     rule.raw,
   ].join('\n');
@@ -138,7 +139,7 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
 
     if (isWindowsHost) {
       setSnapshot(null);
-      setError('iptables 管理器仅支持 Linux / Unix 主机。');
+      setError(tCurrent('auto.remoteIptablesManager.14dazbv'));
       return;
     }
 
@@ -185,7 +186,7 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
         title: `${draft.target} ${draft.chain}${draft.port.trim() ? ` ${draft.protocol}/${draft.port.trim()}` : ''}`,
         command,
         danger: riskHint,
-        note: 'iptables 直接修改运行时规则，重启后可能丢失；如需持久化，请在目标系统使用既有的 iptables-save 或 netfilter-persistent 流程。',
+        note: tCurrent('auto.remoteIptablesManager.1h9qazr'),
         afterRun: refreshIptables,
       });
     } catch (error) {
@@ -196,10 +197,10 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
   const prepareDeleteRule = (rule: IptablesRule) => {
     try {
       setPendingAction({
-        title: `删除 ${getFamilyLabel(rule.family)} ${rule.table}/${rule.chain} #${rule.index}`,
+        title: tCurrent('auto.remoteIptablesManager.13tdd7z', { value0: getFamilyLabel(rule.family), value1: rule.table, value2: rule.chain, value3: rule.index }),
         command: createIptablesDeleteRuleCommand(rule),
         danger: true,
-        note: '删除命令使用当前刷新结果里的链内序号。若远程主机规则刚被其他会话修改，请先刷新后再执行。',
+        note: tCurrent('auto.remoteIptablesManager.1l9hppx'),
         afterRun: refreshIptables,
       });
     } catch (error) {
@@ -220,10 +221,10 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
       const result = await runCmd(connectionId, pendingAction.command);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || 'iptables 命令执行失败。');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteIptablesManager.1bjgsa7'));
       }
 
-      setNotice(result.stdout || result.stderr || '操作已完成。');
+      setNotice(result.stdout || result.stderr || tCurrent('auto.remoteIptablesManager.1m6h6ak'));
       const afterRun = pendingAction.afterRun;
       setPendingAction(null);
       await afterRun?.();
@@ -240,12 +241,12 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
     }
 
     await navigator.clipboard.writeText(pendingAction.command);
-    setNotice('已复制命令。');
+    setNotice(tCurrent('auto.remoteIptablesManager.1ys75c3'));
   };
 
   const copyRule = async (rule: IptablesRule) => {
     await navigator.clipboard.writeText(formatRule(rule));
-    setNotice('已复制规则信息。');
+    setNotice(tCurrent('auto.remoteIptablesManager.1bovukl'));
   };
 
   return (
@@ -253,12 +254,12 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
       <header className="iptables-toolbar">
         <div className="iptables-status-block">
           <span>iptables</span>
-          <strong>{snapshot?.available ? '规则链管理' : loading ? '检测中' : '未就绪'}</strong>
-          <em>{snapshot?.status || (loading ? '读取中' : '未加载')}</em>
+          <strong>{snapshot?.available ? tCurrent('auto.remoteIptablesManager.10v1p4f') : loading ? tCurrent('auto.remoteIptablesManager.xr2jgj') : tCurrent('auto.remoteIptablesManager.8p4owa')}</strong>
+          <em>{snapshot?.status || (loading ? tCurrent('auto.remoteIptablesManager.10y5j8r') : tCurrent('auto.remoteIptablesManager.18vm84u'))}</em>
         </div>
         <div className="iptables-toolbar-actions">
           <button type="button" className="primary" onClick={refreshIptables} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+            {loading ? tCurrent('auto.remoteIptablesManager.1taxqz1') : tCurrent('auto.remoteIptablesManager.12qo56a')}
           </button>
         </div>
       </header>
@@ -269,18 +270,18 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
       <div className="iptables-content">
         <aside className="iptables-form-panel">
           <div className="iptables-form-title">
-            <span>新增规则</span>
-            <strong>filter 链运行时规则</strong>
+            <span>{tCurrent('auto.remoteIptablesManager.66ztdg')}</span>
+            <strong>{tCurrent('auto.remoteIptablesManager.rvg2du')}</strong>
           </div>
           <label>
-            <span>地址族</span>
+            <span>{tCurrent('auto.remoteIptablesManager.99o8m')}</span>
             <select value={draft.family} onChange={(event) => updateDraft('family', event.target.value as IptablesFamily)}>
               <option value="ipv4">IPv4</option>
               <option value="ipv6">IPv6</option>
             </select>
           </label>
           <label>
-            <span>表</span>
+            <span>{tCurrent('auto.remoteIptablesManager.1tjg76f')}</span>
             <select value={draft.table} onChange={(event) => updateDraft('table', event.target.value as IptablesRuleDraft['table'])}>
               <option value="filter">filter</option>
               <option value="nat">nat</option>
@@ -290,11 +291,11 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
             </select>
           </label>
           <label>
-            <span>链</span>
+            <span>{tCurrent('auto.remoteIptablesManager.xvyyu9')}</span>
             <input value={draft.chain} onChange={(event) => updateDraft('chain', event.target.value)} placeholder="INPUT / FORWARD / OUTPUT" />
           </label>
           <label>
-            <span>动作</span>
+            <span>{tCurrent('auto.remoteIptablesManager.1d335ap')}</span>
             <select value={draft.target} onChange={(event) => updateDraft('target', event.target.value as IptablesRuleDraft['target'])}>
               <option value="ACCEPT">ACCEPT</option>
               <option value="DROP">DROP</option>
@@ -302,7 +303,7 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
             </select>
           </label>
           <label>
-            <span>协议</span>
+            <span>{tCurrent('auto.remoteIptablesManager.7j43ow')}</span>
             <select value={draft.protocol} onChange={(event) => updateDraft('protocol', event.target.value as IptablesRuleDraft['protocol'])}>
               <option value="tcp">TCP</option>
               <option value="udp">UDP</option>
@@ -310,55 +311,53 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
             </select>
           </label>
           <label>
-            <span>目标端口</span>
-            <input value={draft.port} onChange={(event) => updateDraft('port', event.target.value)} placeholder="80 或 8000-8010；留空表示不限端口" />
+            <span>{tCurrent('auto.remoteIptablesManager.12fgbrw')}</span>
+            <input value={draft.port} onChange={(event) => updateDraft('port', event.target.value)} placeholder={tCurrent('auto.remoteIptablesManager.14nvkrk')} />
           </label>
           <label>
-            <span>来源</span>
-            <input value={draft.source} onChange={(event) => updateDraft('source', event.target.value)} placeholder="留空表示任意来源" />
+            <span>{tCurrent('auto.remoteIptablesManager.2tds9c')}</span>
+            <input value={draft.source} onChange={(event) => updateDraft('source', event.target.value)} placeholder={tCurrent('auto.remoteIptablesManager.m2z9iz')} />
           </label>
           <label>
-            <span>目标地址</span>
-            <input value={draft.destination} onChange={(event) => updateDraft('destination', event.target.value)} placeholder="留空表示任意目标" />
+            <span>{tCurrent('auto.remoteIptablesManager.w4v742')}</span>
+            <input value={draft.destination} onChange={(event) => updateDraft('destination', event.target.value)} placeholder={tCurrent('auto.remoteIptablesManager.1c4we71')} />
           </label>
           <label>
-            <span>位置</span>
+            <span>{tCurrent('auto.remoteIptablesManager.1r64x4y')}</span>
             <select value={draft.position} onChange={(event) => updateDraft('position', event.target.value as IptablesRuleDraft['position'])}>
-              <option value="top">插入链首</option>
-              <option value="append">追加链尾</option>
+              <option value="top">{tCurrent('auto.remoteIptablesManager.1bsb0r8')}</option>
+              <option value="append">{tCurrent('auto.remoteIptablesManager.197zqro')}</option>
             </select>
           </label>
           <label>
-            <span>备注</span>
-            <input value={draft.comment} onChange={(event) => updateDraft('comment', event.target.value)} placeholder="默认写入 ShellDesk 标记" />
+            <span>{tCurrent('auto.remoteIptablesManager.b5m1l6')}</span>
+            <input value={draft.comment} onChange={(event) => updateDraft('comment', event.target.value)} placeholder={tCurrent('auto.remoteIptablesManager.153ze6z')} />
           </label>
           {riskHint ? (
             <div className="iptables-risk-note">
-              该规则可能影响任意来源、整条链或常见敏感端口。请确认规则顺序和远程访问不会被锁死。
-            </div>
+              {tCurrent('auto.remoteIptablesManager.a4x7au')}</div>
           ) : null}
           <button type="button" className="iptables-add-button" onClick={prepareAddRule} disabled={!snapshot?.available || isWindowsHost}>
-            生成并确认命令
-          </button>
+            {tCurrent('auto.remoteIptablesManager.1i8qzb')}</button>
 
           <div className="iptables-detail">
-            <span>选中规则</span>
+            <span>{tCurrent('auto.remoteIptablesManager.byif8s')}</span>
             {selectedRule ? (
               <>
                 <strong>{`${getFamilyLabel(selectedRule.family)} ${selectedRule.table}/${selectedRule.chain} #${selectedRule.index}`}</strong>
                 <dl>
-                  <div><dt>动作</dt><dd>{getIptablesTargetLabel(selectedRule.target)}</dd></div>
-                  <div><dt>协议</dt><dd>{getProtocolLabel(selectedRule.protocol)}</dd></div>
-                  <div><dt>端口</dt><dd>{selectedRule.destinationPort || '-'}</dd></div>
-                  <div><dt>备注</dt><dd>{selectedRule.comment || '-'}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteIptablesManager.1d335ap2')}</dt><dd>{getIptablesTargetLabel(selectedRule.target)}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteIptablesManager.7j43ow2')}</dt><dd>{getProtocolLabel(selectedRule.protocol)}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteIptablesManager.19ijc5j')}</dt><dd>{selectedRule.destinationPort || '-'}</dd></div>
+                  <div><dt>{tCurrent('auto.remoteIptablesManager.b5m1l62')}</dt><dd>{selectedRule.comment || '-'}</dd></div>
                 </dl>
                 <div className="iptables-detail-actions">
-                  <button type="button" onClick={() => copyRule(selectedRule)}>复制</button>
-                  <button type="button" className="danger" onClick={() => prepareDeleteRule(selectedRule)}>删除</button>
+                  <button type="button" onClick={() => copyRule(selectedRule)}>{tCurrent('auto.remoteIptablesManager.1xbipwq')}</button>
+                  <button type="button" className="danger" onClick={() => prepareDeleteRule(selectedRule)}>{tCurrent('auto.remoteIptablesManager.1t2vi4h')}</button>
                 </div>
               </>
             ) : (
-              <p>选择规则后查看详情。</p>
+              <p>{tCurrent('auto.remoteIptablesManager.qke2u3')}</p>
             )}
           </div>
         </aside>
@@ -366,32 +365,32 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
         <main className="iptables-main-panel">
           <div className="iptables-tabs">
             <div className="iptables-tab-buttons">
-              <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>规则</button>
-              <button type="button" className={tab === 'policies' ? 'active' : ''} onClick={() => setTab('policies')}>默认策略</button>
-              <button type="button" className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>原始输出</button>
+              <button type="button" className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>{tCurrent('auto.remoteIptablesManager.16w14qm')}</button>
+              <button type="button" className={tab === 'policies' ? 'active' : ''} onClick={() => setTab('policies')}>{tCurrent('auto.remoteIptablesManager.10xmwzs')}</button>
+              <button type="button" className={tab === 'raw' ? 'active' : ''} onClick={() => setTab('raw')}>{tCurrent('auto.remoteIptablesManager.1sxtwbe')}</button>
             </div>
-            <span>{filteredRules.length} / {snapshot?.rules.length ?? 0} 条</span>
+            <span>{filteredRules.length} / {snapshot?.rules.length ?? 0} {tCurrent('auto.remoteIptablesManager.1rfm5gs')}</span>
           </div>
 
           <div className="iptables-filters">
             <label>
-              <span>地址族</span>
+              <span>{tCurrent('auto.remoteIptablesManager.99o8m2')}</span>
               <select value={filterFamily} onChange={(event) => setFilterFamily(event.target.value)}>
-                <option value="all">全部</option>
+                <option value="all">{tCurrent('auto.remoteIptablesManager.q6w6ul')}</option>
                 {familyOptions.map((family) => <option key={family} value={family}>{getFamilyLabel(family)}</option>)}
               </select>
             </label>
             <label>
-              <span>表</span>
+              <span>{tCurrent('auto.remoteIptablesManager.1tjg76f2')}</span>
               <select value={filterTable} onChange={(event) => setFilterTable(event.target.value)}>
-                <option value="all">全部</option>
+                <option value="all">{tCurrent('auto.remoteIptablesManager.q6w6ul2')}</option>
                 {tableOptions.map((table) => <option key={table} value={table}>{table}</option>)}
               </select>
             </label>
             <label>
-              <span>链</span>
+              <span>{tCurrent('auto.remoteIptablesManager.xvyyu92')}</span>
               <select value={filterChain} onChange={(event) => setFilterChain(event.target.value)}>
-                <option value="all">全部</option>
+                <option value="all">{tCurrent('auto.remoteIptablesManager.q6w6ul3')}</option>
                 {chainOptions.map((chain) => <option key={chain} value={chain}>{chain}</option>)}
               </select>
             </label>
@@ -402,16 +401,16 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
               <table className="iptables-table">
                 <thead>
                   <tr>
-                    <th>族</th>
-                    <th>表/链</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.kp6xfi')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.1ss090i')}</th>
                     <th>#</th>
-                    <th>动作</th>
-                    <th>协议</th>
-                    <th>端口</th>
-                    <th>来源</th>
-                    <th>目标</th>
-                    <th>原始规则</th>
-                    <th>操作</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.1d335ap3')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.7j43ow3')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.19ijc5j2')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.2tds9c2')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.1xibtz6')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.1d31yso')}</th>
+                    <th>{tCurrent('auto.remoteIptablesManager.501w24')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -427,13 +426,13 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
                       <td title={rule.destination}>{formatEndpoint(rule.destination)}</td>
                       <td title={rule.raw}>{rule.raw}</td>
                       <td>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>复制</button>
-                        <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>删除</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); void copyRule(rule); }}>{tCurrent('auto.remoteIptablesManager.1xbipwq2')}</button>
+                        <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); prepareDeleteRule(rule); }}>{tCurrent('auto.remoteIptablesManager.1t2vi4h2')}</button>
                       </td>
                     </tr>
                   ))}
                   {!loading && filteredRules.length === 0 ? (
-                    <tr><td colSpan={10} className="iptables-empty">没有可展示的 iptables 规则。</td></tr>
+                    <tr><td colSpan={10} className="iptables-empty">{tCurrent('auto.remoteIptablesManager.fqotxw')}</td></tr>
                   ) : null}
                 </tbody>
               </table>
@@ -443,15 +442,15 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
               {(snapshot?.policies ?? []).map((policy) => (
                 <div key={`${policy.family}:${policy.table}:${policy.chain}`} className="iptables-policy-row">
                   <strong>{formatPolicy(policy)}</strong>
-                  <span>{policy.counters || '无计数器'}</span>
+                  <span>{policy.counters || tCurrent('auto.remoteIptablesManager.a3cmci')}</span>
                 </div>
               ))}
               {!loading && (!snapshot || snapshot.policies.length === 0) ? (
-                <div className="iptables-empty">没有读取到默认策略。</div>
+                <div className="iptables-empty">{tCurrent('auto.remoteIptablesManager.109ibg7')}</div>
               ) : null}
             </div>
           ) : (
-            <pre className="iptables-raw">{snapshot?.rawOutput || '尚未读取。'}</pre>
+            <pre className="iptables-raw">{snapshot?.rawOutput || tCurrent('auto.remoteIptablesManager.xo22k2')}</pre>
           )}
         </main>
       </div>
@@ -460,16 +459,16 @@ function RemoteIptablesManager({ connectionId, systemType }: RemoteIptablesManag
         <div className="iptables-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
           <div className={`iptables-confirm-dialog ${pendingAction.danger ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="iptables-confirm-header">
-              <span>{pendingAction.danger ? '高风险命令确认' : '确认命令'}</span>
+              <span>{pendingAction.danger ? tCurrent('auto.remoteIptablesManager.kbpg3p') : tCurrent('auto.remoteIptablesManager.17ojhw6')}</span>
               <strong>{pendingAction.title}</strong>
             </div>
             {pendingAction.note ? <p>{pendingAction.note}</p> : null}
             <pre>{pendingAction.command}</pre>
             <div className="iptables-confirm-actions">
-              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
-              <button type="button" onClick={copyPendingCommand}>复制命令</button>
+              <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteIptablesManager.1589w37')}</button>
+              <button type="button" onClick={copyPendingCommand}>{tCurrent('auto.remoteIptablesManager.qxd4qr')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '执行'}
+                {actionRunning ? tCurrent('auto.remoteIptablesManager.6svkbt') : tCurrent('auto.remoteIptablesManager.6azgji')}
               </button>
             </div>
           </div>

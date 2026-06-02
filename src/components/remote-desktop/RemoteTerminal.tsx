@@ -23,6 +23,7 @@ import {
   toTerminalFontWeight,
 } from './terminalPresets';
 import type { RemoteSystemType } from './types';
+import { t } from '../../i18n';
 
 export type RemoteTerminalSessionStatus = 'idle' | 'running' | 'exited' | 'disconnected';
 
@@ -182,20 +183,20 @@ function getTerminalSessionTitle(terminalId: string, options?: RemoteTerminalLau
   return terminalId;
 }
 
-function getTerminalStatusLabel(status: RemoteTerminalSessionStatus, hasError: boolean) {
+function getTerminalStatusLabel(status: RemoteTerminalSessionStatus, hasError: boolean, language: ShellDeskAppSettings['language']) {
   if (status === 'running') {
-    return '运行中';
+    return t('terminal.status.running', language);
   }
 
   if (status === 'disconnected') {
-    return '已断开';
+    return t('terminal.status.disconnected', language);
   }
 
   if (status === 'exited') {
-    return hasError ? '启动失败' : '已结束';
+    return hasError ? t('terminal.status.startFailed', language) : t('terminal.status.exited', language);
   }
 
-  return '启动中';
+  return t('terminal.status.starting', language);
 }
 
 function getTerminalChromeTone(status: RemoteTerminalSessionStatus, hasError: boolean): RemoteTerminalChromePayload['tone'] {
@@ -396,9 +397,9 @@ function RemoteTerminal({
     }
 
     navigator.clipboard.writeText(text).catch((error: unknown) => {
-      terminalRef.current?.writeln(`\r\n复制失败：${getErrorMessage(error)}`);
+      terminalRef.current?.writeln(`\r\n${t('terminal.error.copyFailed', settings.language, { error: getErrorMessage(error) })}`);
     });
-  }, []);
+  }, [settings.language]);
 
   const focusTerminal = useCallback(() => {
     terminalRef.current?.focus();
@@ -547,7 +548,7 @@ function RemoteTerminal({
   }, [showSearch]);
 
   useEffect(() => {
-    const status = getTerminalStatusLabel(sessionStatus, Boolean(sessionError));
+    const status = getTerminalStatusLabel(sessionStatus, Boolean(sessionError), settings.language);
     const payload = {
       title: sessionTitle,
       status,
@@ -561,14 +562,14 @@ function RemoteTerminal({
       lastExitCode,
       hasForegroundTask,
     });
-  }, [hasForegroundTask, lastExitCode, sessionError, sessionStatus, sessionTitle]);
+  }, [hasForegroundTask, lastExitCode, sessionError, sessionStatus, sessionTitle, settings.language]);
 
   useEffect(() => {
     const host = terminalHostRef.current;
     const api = window.guiSSH;
 
     if (!host || !api?.connections || !api.events) {
-      setSessionError('当前运行环境不支持终端。');
+      setSessionError(t('terminal.error.unsupported', settings.language));
       setSessionStatus('exited');
       setHasForegroundTask(false);
       foregroundTaskSourceRef.current = null;
@@ -642,7 +643,7 @@ function RemoteTerminal({
           terminal.paste(text);
         })
         .catch((error: unknown) => {
-          terminal.writeln(`\r\n粘贴失败：${getErrorMessage(error)}`);
+          terminal.writeln(`\r\n${t('terminal.error.pasteFailed', settings.language, { error: getErrorMessage(error) })}`);
         });
     };
 
@@ -720,7 +721,7 @@ function RemoteTerminal({
           ) => Promise<boolean>)(connectionId, data);
 
       writePromise.catch((error: unknown) => {
-        terminal.writeln(`\r\n发送失败：${getErrorMessage(error)}`);
+        terminal.writeln(`\r\n${t('terminal.error.sendFailed', settings.language, { error: getErrorMessage(error) })}`);
       });
     };
 
@@ -737,7 +738,7 @@ function RemoteTerminal({
       lastSizeRef.current = { columns, rows };
       startWarningTimer = window.setTimeout(() => {
         if (!disposed && !isTerminalReadyRef.current) {
-          terminal.writeln('\r\n终端仍在启动：远程服务器尚未返回 Shell，请检查服务器是否允许交互式登录。');
+          terminal.writeln(`\r\n${t('terminal.message.startWarning', settings.language)}`);
         }
       }, 12000);
 
@@ -753,7 +754,7 @@ function RemoteTerminal({
         useLegacyTerminalIpcRef.current = !capabilities.terminalSessions;
 
         if (useLegacyTerminalIpcRef.current) {
-          terminal.writeln('检测到旧版 Electron 主进程，使用单终端兼容模式。');
+          terminal.writeln(t('terminal.message.legacyMode', settings.language));
         }
 
         if (supportsTerminalIpcOptions) {
@@ -785,7 +786,7 @@ function RemoteTerminal({
         const message = getErrorMessage(error);
         setSessionError(message);
         setSessionStatus('exited');
-        terminal.writeln(`\r\n终端启动失败：${message}`);
+        terminal.writeln(`\r\n${t('terminal.message.startFailed', settings.language, { error: message })}`);
       }
     };
 
@@ -796,7 +797,7 @@ function RemoteTerminal({
         return;
       }
 
-      terminal.writeln('\r\n正在重新创建终端会话...\r\n');
+      terminal.writeln(`\r\n${t('terminal.message.restarting', settings.language)}\r\n`);
       void startTerminalSession();
     };
 
@@ -845,7 +846,7 @@ function RemoteTerminal({
       foregroundTaskSourceRef.current = null;
       setLastExitCode(Number.isInteger(payload.code) ? payload.code ?? null : null);
       setSessionStatus('exited');
-      terminal.writeln('\r\n终端会话已结束。');
+      terminal.writeln(`\r\n${t('terminal.message.sessionEnded', settings.language)}`);
     });
     const removeConnectionClosed = api.events.onConnectionClosed((payload) => {
       if (payload.connectionId !== connectionId) {
@@ -858,14 +859,14 @@ function RemoteTerminal({
       foregroundTaskSourceRef.current = null;
       setSessionError(payload.reason ?? '');
       setSessionStatus('disconnected');
-      terminal.writeln(`\r\nSSH 连接已断开${payload.reason ? `：${payload.reason}` : '。'}`);
+      terminal.writeln(`\r\n${payload.reason ? t('terminal.message.connectionClosedWithReason', settings.language, { reason: payload.reason }) : t('terminal.message.connectionClosed', settings.language)}`);
     });
     const removeConnectionRestored = api.events.onConnectionRestored((payload) => {
       if (payload.connectionId !== connectionId || disposed) {
         return;
       }
 
-      terminal.writeln('\r\nSSH 已自动重连，正在重新创建终端会话...\r\n');
+      terminal.writeln(`\r\n${t('terminal.message.connectionRestored', settings.language)}\r\n`);
       void startTerminalSession();
     });
     const inputDisposable = terminal.onData((data) => {
@@ -1021,13 +1022,13 @@ function RemoteTerminal({
               searchTerminal('next', event.target.value);
             }}
             onKeyDown={handleSearchKeyDown}
-            placeholder="搜索输出"
+            placeholder={t('terminal.search.placeholder', settings.language)}
             spellCheck={false}
           />
           <span>{searchResults.count ? `${Math.max(searchResults.index + 1, 0)} / ${searchResults.count}` : '0 / 0'}</span>
-          <button type="button" onClick={() => searchTerminal('previous')} aria-label="上一个匹配" title="上一个匹配">↑</button>
-          <button type="button" onClick={() => searchTerminal('next')} aria-label="下一个匹配" title="下一个匹配">↓</button>
-          <button type="button" onClick={closeSearch} aria-label="关闭搜索" title="关闭搜索">×</button>
+          <button type="button" onClick={() => searchTerminal('previous')} aria-label={t('terminal.search.previous', settings.language)} title={t('terminal.search.previous', settings.language)}>↑</button>
+          <button type="button" onClick={() => searchTerminal('next')} aria-label={t('terminal.search.next', settings.language)} title={t('terminal.search.next', settings.language)}>↓</button>
+          <button type="button" onClick={closeSearch} aria-label={t('terminal.search.close', settings.language)} title={t('terminal.search.close', settings.language)}>×</button>
         </div>
       ) : null}
 
@@ -1038,20 +1039,20 @@ function RemoteTerminal({
           <div className="context-menu-overlay" onClick={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }} />
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} role="menu">
             <button type="button" role="menuitem" onClick={() => { writeClipboardText(contextMenu.selection); setContextMenu(null); }}>
-              复制
+              {t('terminal.context.copy', settings.language)}
             </button>
             <button type="button" role="menuitem" onClick={() => { writeClipboardText(formatTroubleshootingSnippet(contextMenu.selection)); setContextMenu(null); }}>
-              复制为排障片段
+              {t('terminal.context.copyTroubleshooting', settings.language)}
             </button>
             {onOpenNote ? (
               <button type="button" role="menuitem" onClick={() => {
                 onOpenNote({
-                  title: `终端片段 ${new Date().toLocaleTimeString(getShellDeskLocale())}`,
+                  title: t('terminal.context.snippetTitle', settings.language, { time: new Date().toLocaleTimeString(getShellDeskLocale()) }),
                   content: contextMenu.selection,
                 });
                 setContextMenu(null);
               }}>
-                发送到记事本
+                {t('terminal.context.sendToNotepad', settings.language)}
               </button>
             ) : null}
           </div>
@@ -1066,9 +1067,9 @@ function RemoteTerminal({
             onSubmit={submitLaunchDialog}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="notepad-modal-title">新建终端窗口</div>
+            <div className="notepad-modal-title">{t('terminal.launch.title', settings.language)}</div>
             <label>
-              <span>标题</span>
+              <span>{t('terminal.launch.fieldTitle', settings.language)}</span>
               <input
                 className="notepad-modal-input"
                 value={launchDraft.title}
@@ -1085,13 +1086,13 @@ function RemoteTerminal({
               >
                 {shellChoices.map((shellChoice) => (
                   <option key={shellChoice || 'default'} value={shellChoice}>
-                    {shellChoice || '默认'}
+                    {shellChoice || t('terminal.launch.defaultShell', settings.language)}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span>工作目录</span>
+              <span>{t('terminal.launch.workingDirectory', settings.language)}</span>
               <input
                 className="notepad-modal-input"
                 value={launchDraft.workingDirectory}
@@ -1100,7 +1101,7 @@ function RemoteTerminal({
               />
             </label>
             <label>
-              <span>初始命令</span>
+              <span>{t('terminal.launch.initialCommand', settings.language)}</span>
               <textarea
                 value={launchDraft.initialCommand}
                 onChange={(event) => setLaunchDraft((currentDraft) => ({ ...currentDraft, initialCommand: event.target.value }))}
@@ -1108,8 +1109,8 @@ function RemoteTerminal({
               />
             </label>
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setIsLaunchDialogOpen(false)}>取消</button>
-              <button type="submit" className="notepad-modal-btn primary">打开</button>
+              <button type="button" className="notepad-modal-btn" onClick={() => setIsLaunchDialogOpen(false)}>{t('common.cancel', settings.language)}</button>
+              <button type="submit" className="notepad-modal-btn primary">{t('common.open', settings.language)}</button>
             </div>
           </form>
         </div>,
@@ -1119,21 +1120,21 @@ function RemoteTerminal({
       {isSettingsDialogOpen ? createPortal(
         <div className="notepad-modal-overlay" role="presentation" onClick={() => setIsSettingsDialogOpen(false)}>
           <div className="notepad-modal terminal-settings-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="notepad-modal-title">终端设置</div>
+            <div className="notepad-modal-title">{t('terminal.settingsDialog.title', settings.language)}</div>
             <label>
-              <span>颜色主题</span>
+              <span>{t('terminal.settingsDialog.colorTheme', settings.language)}</span>
               <select
                 className="notepad-modal-input"
                 value={settings.terminalTheme}
                 onChange={(event) => updateTerminalSetting('terminalTheme', event.target.value as ShellDeskAppSettings['terminalTheme'])}
               >
                 {terminalThemeChoices.map((themeChoice) => (
-                  <option key={themeChoice.key} value={themeChoice.key}>{themeChoice.label}</option>
+                  <option key={themeChoice.key} value={themeChoice.key}>{t(themeChoice.labelId, settings.language)}</option>
                 ))}
               </select>
             </label>
             <label>
-              <span>字号</span>
+              <span>{t('terminal.settingsDialog.fontSize', settings.language)}</span>
               <select
                 className="notepad-modal-input"
                 value={settings.terminalFontSize}
@@ -1146,7 +1147,7 @@ function RemoteTerminal({
             </label>
             <div className="terminal-settings-toggles">
               <label>
-                <span>选中即复制</span>
+                <span>{t('terminal.settingsDialog.copyOnSelect', settings.language)}</span>
                 <input
                   type="checkbox"
                   checked={settings.terminalCopyOnSelect}
@@ -1154,7 +1155,7 @@ function RemoteTerminal({
                 />
               </label>
               <label>
-                <span>右键粘贴</span>
+                <span>{t('terminal.settingsDialog.rightClickPaste', settings.language)}</span>
                 <input
                   type="checkbox"
                   checked={settings.terminalRightClickPaste}
@@ -1162,7 +1163,7 @@ function RemoteTerminal({
                 />
               </label>
               <label>
-                <span>光标闪烁</span>
+                <span>{t('terminal.settingsDialog.cursorBlink', settings.language)}</span>
                 <input
                   type="checkbox"
                   checked={settings.terminalCursorBlink}
@@ -1171,7 +1172,7 @@ function RemoteTerminal({
               </label>
             </div>
             <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn primary" onClick={() => setIsSettingsDialogOpen(false)}>完成</button>
+              <button type="button" className="notepad-modal-btn primary" onClick={() => setIsSettingsDialogOpen(false)}>{t('terminal.settingsDialog.done', settings.language)}</button>
             </div>
           </div>
         </div>,

@@ -16,6 +16,7 @@ import {
 } from './loginSessionParsers';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteLoginSessionsProps {
   connectionId: string;
@@ -29,7 +30,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteLoginSessions.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -90,7 +91,7 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
       setLoadedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setLoadedTabs((current) => new Set(current).add(tab));
       if (result.code !== 0 || result.stderr.trim()) {
-        setNotice(result.stderr || '命令返回非零状态，已尽量解析可用输出。');
+        setNotice(result.stderr || tCurrent('auto.remoteLoginSessions.xxe616'));
       }
     } catch (error) {
       setError(getErrorMessage(error));
@@ -118,27 +119,27 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
 
   const copyRecord = async (record: LoginRecord) => {
     await navigator.clipboard.writeText(formatLoginRecord(record));
-    setNotice('已复制登录记录。');
+    setNotice(tCurrent('auto.remoteLoginSessions.1a9f3ox'));
   };
 
   const copySource = async (source: string) => {
     await navigator.clipboard.writeText(source);
-    setNotice('已复制来源地址。');
+    setNotice(tCurrent('auto.remoteLoginSessions.1u8977b'));
   };
 
   return (
     <section className="login-sessions">
       <header className="login-toolbar">
-        <div className="login-tabs" role="tablist" aria-label="登录会话视图">
-          <button type="button" className={activeTab === 'current' ? 'active' : ''} onClick={() => switchTab('current')}>当前在线</button>
-          <button type="button" className={activeTab === 'history' ? 'active' : ''} onClick={() => switchTab('history')}>登录历史</button>
-          <button type="button" className={activeTab === 'failed' ? 'active' : ''} onClick={() => switchTab('failed')}>失败登录</button>
+        <div className="login-tabs" role="tablist" aria-label={tCurrent('auto.remoteLoginSessions.y0rj8c')}>
+          <button type="button" className={activeTab === 'current' ? 'active' : ''} onClick={() => switchTab('current')}>{tCurrent('auto.remoteLoginSessions.t0dnkg')}</button>
+          <button type="button" className={activeTab === 'history' ? 'active' : ''} onClick={() => switchTab('history')}>{tCurrent('auto.remoteLoginSessions.a5jayx')}</button>
+          <button type="button" className={activeTab === 'failed' ? 'active' : ''} onClick={() => switchTab('failed')}>{tCurrent('auto.remoteLoginSessions.72f95b')}</button>
         </div>
         <div className="login-toolbar-actions">
           <button type="button" className="primary" onClick={() => loadTab(activeTab)} disabled={loadingTab !== null}>
-            {loadingTab === activeTab ? '刷新中' : '刷新'}
+            {loadingTab === activeTab ? tCurrent('auto.remoteLoginSessions.1taxqz1') : tCurrent('auto.remoteLoginSessions.12qo56a')}
           </button>
-          <button type="button" onClick={onOpenSecurityAudit} disabled={!onOpenSecurityAudit}>安全巡检</button>
+          <button type="button" onClick={onOpenSecurityAudit} disabled={!onOpenSecurityAudit}>{tCurrent('auto.remoteLoginSessions.1r3p6od')}</button>
           <span>{isWindowsHost ? 'Windows Event Log' : 'w / last / lastb'}{loadedAt ? ` · ${loadedAt}` : ''}</span>
         </div>
       </header>
@@ -149,18 +150,18 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
       <div className="login-content">
         <main className="login-table-panel">
           <div className="login-table-head">
-            <strong>{activeTab === 'current' ? '在线会话' : activeTab === 'history' ? '成功登录' : '失败登录'}</strong>
-            <span>{activeEntries.length} 条</span>
+            <strong>{activeTab === 'current' ? tCurrent('auto.remoteLoginSessions.17fvhtt') : activeTab === 'history' ? tCurrent('auto.remoteLoginSessions.1c45v7w') : tCurrent('auto.remoteLoginSessions.72f95b2')}</strong>
+            <span>{activeEntries.length} {tCurrent('auto.remoteLoginSessions.1rfm5gs')}</span>
           </div>
           <div className="login-table-wrap">
             <table className="login-table">
               <thead>
                 <tr>
-                  <th>用户</th>
-                  <th>来源</th>
-                  <th>{activeTab === 'current' ? 'TTY' : '开始时间'}</th>
-                  <th>{activeTab === 'current' ? '空闲' : '结束/持续'}</th>
-                  <th>原始记录</th>
+                  <th>{tCurrent('auto.remoteLoginSessions.1in002o')}</th>
+                  <th>{tCurrent('auto.remoteLoginSessions.2tds9c')}</th>
+                  <th>{activeTab === 'current' ? 'TTY' : tCurrent('auto.remoteLoginSessions.j6x7pa')}</th>
+                  <th>{activeTab === 'current' ? tCurrent('auto.remoteLoginSessions.15lihe5') : tCurrent('auto.remoteLoginSessions.1j3hwiq')}</th>
+                  <th>{tCurrent('auto.remoteLoginSessions.ii3s0o')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,7 +175,7 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
                   </tr>
                 ))}
                 {!loadingTab && activeEntries.length === 0 ? (
-                  <tr><td colSpan={5} className="login-empty-cell">没有可展示的登录记录。</td></tr>
+                  <tr><td colSpan={5} className="login-empty-cell">{tCurrent('auto.remoteLoginSessions.1qd5m2o')}</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -184,11 +185,11 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
         <aside className="login-detail-panel">
           {activeTab === 'failed' && failedSourceStats.length ? (
             <section className="login-source-stats">
-              <h3>失败来源聚合</h3>
+              <h3>{tCurrent('auto.remoteLoginSessions.1cgmhak')}</h3>
               {failedSourceStats.map((item) => (
                 <button key={item.source} type="button" onClick={() => copySource(item.source)}>
                   <strong>{item.source}</strong>
-                  <span>{item.count} 次</span>
+                  <span>{item.count} {tCurrent('auto.remoteLoginSessions.a5jtgs')}</span>
                 </button>
               ))}
             </section>
@@ -197,38 +198,37 @@ function RemoteLoginSessions({ connectionId, systemType, onOpenSecurityAudit }: 
           {selectedRecord ? (
             <section className="login-record-detail">
               <div className="login-detail-title">
-                <span>{isHistoryEntry(selectedRecord) ? (selectedRecord.success ? '成功登录' : '失败登录') : '在线会话'}</span>
+                <span>{isHistoryEntry(selectedRecord) ? (selectedRecord.success ? tCurrent('auto.remoteLoginSessions.1c45v7w2') : tCurrent('auto.remoteLoginSessions.72f95b3')) : tCurrent('auto.remoteLoginSessions.17fvhtt2')}</span>
                 <strong>{selectedRecord.user}</strong>
               </div>
               <dl>
-                <div><dt>来源</dt><dd>{selectedRecord.source || '-'}</dd></div>
+                <div><dt>{tCurrent('auto.remoteLoginSessions.2tds9c2')}</dt><dd>{selectedRecord.source || '-'}</dd></div>
                 {isHistoryEntry(selectedRecord) ? (
                   <>
-                    <div><dt>开始</dt><dd>{selectedRecord.startedAt || '-'}</dd></div>
-                    <div><dt>结束</dt><dd>{selectedRecord.endedAt || '-'}</dd></div>
-                    <div><dt>持续</dt><dd>{selectedRecord.duration || '-'}</dd></div>
+                    <div><dt>{tCurrent('auto.remoteLoginSessions.9jqa4c')}</dt><dd>{selectedRecord.startedAt || '-'}</dd></div>
+                    <div><dt>{tCurrent('auto.remoteLoginSessions.8893k7')}</dt><dd>{selectedRecord.endedAt || '-'}</dd></div>
+                    <div><dt>{tCurrent('auto.remoteLoginSessions.1d8dbqr')}</dt><dd>{selectedRecord.duration || '-'}</dd></div>
                   </>
                 ) : (
                   <>
                     <div><dt>TTY</dt><dd>{selectedRecord.tty || '-'}</dd></div>
-                    <div><dt>登录</dt><dd>{selectedRecord.loginAt || '-'}</dd></div>
-                    <div><dt>命令</dt><dd>{selectedRecord.command || '-'}</dd></div>
+                    <div><dt>{tCurrent('auto.remoteLoginSessions.1yggxgd')}</dt><dd>{selectedRecord.loginAt || '-'}</dd></div>
+                    <div><dt>{tCurrent('auto.remoteLoginSessions.emgxwk')}</dt><dd>{selectedRecord.command || '-'}</dd></div>
                   </>
                 )}
               </dl>
               <div className="login-detail-actions">
-                <button type="button" onClick={() => copyRecord(selectedRecord)}>复制记录</button>
-                <button type="button" onClick={() => selectedRecord.source ? copySource(selectedRecord.source) : undefined} disabled={!selectedRecord.source}>复制来源</button>
+                <button type="button" onClick={() => copyRecord(selectedRecord)}>{tCurrent('auto.remoteLoginSessions.3o3a75')}</button>
+                <button type="button" onClick={() => selectedRecord.source ? copySource(selectedRecord.source) : undefined} disabled={!selectedRecord.source}>{tCurrent('auto.remoteLoginSessions.p1fn07')}</button>
               </div>
               <pre>{selectedRecord.raw}</pre>
               {activeTab === 'failed' ? (
                 <div className="login-advice">
-                  失败来源频繁出现时，可结合安全巡检和防火墙规则限制来源。
-                </div>
+                  {tCurrent('auto.remoteLoginSessions.1f24xiy')}</div>
               ) : null}
             </section>
           ) : (
-            <div className="login-empty-detail">选择一条记录查看详情。</div>
+            <div className="login-empty-detail">{tCurrent('auto.remoteLoginSessions.1rwz8oc')}</div>
           )}
         </aside>
       </div>

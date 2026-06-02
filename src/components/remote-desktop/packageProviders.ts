@@ -1,4 +1,5 @@
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
+import { tCurrent } from '../../i18n';
 
 export type PackageManagerKind = 'apt' | 'dnf' | 'yum' | 'pacman' | 'zypper' | 'apk' | 'winget' | 'choco' | 'unknown';
 export type PackageView = 'upgradable' | 'installed' | 'search';
@@ -68,29 +69,7 @@ fi
 }
 
 function createRpmUpgradableListCommand(kind: 'dnf' | 'yum') {
-  return `
-${kind} check-update 2>/dev/null | awk '
-  /^[[:space:]]*$/ || /^Last metadata expiration check/ || /^Obsoleting Packages/ || /^Obsoleted Packages/ || /^取代的软件包/ { next }
-  /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+/ {
-    print $1 "\\t" $2 "\\t" $3
-  }
-' | head -n 600 | while IFS="$(printf '\\t')" read -r package latest repo; do
-  [ -n "$package" ] || continue
-  name="$package"
-  case "$name" in
-    *.noarch|*.x86_64|*.aarch64|*.i[3-6]86|*.ppc64le|*.s390x) name="\${name%.*}" ;;
-  esac
-  installed="$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' "$package" 2>/dev/null | head -n 1)"
-  if [ -z "$installed" ]; then
-    installed="$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' "$name" 2>/dev/null | head -n 1)"
-  fi
-  case "$installed" in
-    0:*) installed="\${installed#0:}" ;;
-    "") installed="-" ;;
-  esac
-  printf '%s\\t%s\\t%s\\t%s\\n' "$package" "$installed" "$latest" "$repo"
-done
-`.trim();
+  return tCurrent('auto.packageProviders.1fgd0mm', { value0: kind }).trim();
 }
 
 export function getPackageManagerLabel(kind: PackageManagerKind) {
@@ -103,7 +82,7 @@ export function getPackageManagerLabel(kind: PackageManagerKind) {
     apk: 'APK',
     winget: 'winget',
     choco: 'Chocolatey',
-    unknown: '未知',
+    unknown: tCurrent('auto.packageProviders.1lpnuh4'),
   };
 
   return labels[kind];
@@ -158,7 +137,7 @@ export function createPackageListCommand(kind: PackageManagerKind, view: Exclude
       case 'choco':
         return powershellCommand('choco list --local-only');
       default:
-        return "echo '未识别包管理器。' >&2; exit 1";
+        return tCurrent('auto.packageProviders.g23jon');
     }
   }
 
@@ -179,7 +158,7 @@ export function createPackageListCommand(kind: PackageManagerKind, view: Exclude
     case 'choco':
       return powershellCommand('choco outdated');
     default:
-      return "echo '未识别包管理器。' >&2; exit 1";
+      return tCurrent('auto.packageProviders.g23jon2');
   }
 }
 
@@ -187,11 +166,11 @@ export function createPackageSearchCommand(kind: PackageManagerKind, keyword: st
   const query = keyword.trim();
 
   if (!query) {
-    throw new Error('请输入搜索关键词。');
+    throw new Error(tCurrent('auto.packageProviders.dgjaa2'));
   }
 
   if (query.length > 120 || /[\r\n;&|`$<>*?[\]]/.test(query)) {
-    throw new Error('搜索关键词包含不安全字符。');
+    throw new Error(tCurrent('auto.packageProviders.1vl8rti'));
   }
 
   switch (kind) {
@@ -211,7 +190,7 @@ export function createPackageSearchCommand(kind: PackageManagerKind, keyword: st
     case 'choco':
       return powershellCommand(`choco search ${powershellSingleQuote(query)}`);
     default:
-      return "echo '未识别包管理器。' >&2; exit 1";
+      return tCurrent('auto.packageProviders.g23jon3');
   }
 }
 
@@ -219,7 +198,7 @@ export function createPackageActionCommand(kind: PackageManagerKind, action: Pac
   const name = packageName?.trim() ?? '';
 
   if (action !== 'upgrade-all' && action !== 'refresh' && !isValidPackageName(name)) {
-    throw new Error('包名无效。');
+    throw new Error(tCurrent('auto.packageProviders.1e7xvxb'));
   }
 
   switch (kind) {
@@ -267,7 +246,7 @@ export function createPackageActionCommand(kind: PackageManagerKind, action: Pac
       if (action === 'upgrade-all') return 'choco upgrade all -y';
       return 'choco outdated';
     default:
-      throw new Error('未识别包管理器。');
+      throw new Error(tCurrent('auto.packageProviders.15gqg90'));
   }
 }
 
@@ -372,7 +351,7 @@ function dedupePackageList(packages: RemotePackageInfo[]) {
 }
 
 function isPackageTableNoise(name: string) {
-  return /^(\||Name|Listing|Loading|Available|Installed|Upgrades|Obsoleting|Obsoleted|Last|Security|Bugfix|Enhancement|取代的软件包|可升级的软件包|已安装的软件包|可用的软件包)/i.test(name);
+  return /^(\||Name|Listing|Loading|Available|Installed|Upgrades|Obsoleting|Obsoleted|Last|Security|Bugfix|Enhancement|\u53d6\u4ee3\u7684\u8f6f\u4ef6\u5305|\u53ef\u5347\u7ea7\u7684\u8f6f\u4ef6\u5305|\u5df2\u5b89\u88c5\u7684\u8f6f\u4ef6\u5305|\u53ef\u7528\u7684\u8f6f\u4ef6\u5305)/i.test(name);
 }
 
 function looksLikePackageName(name: string) {

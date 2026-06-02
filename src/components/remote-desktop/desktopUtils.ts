@@ -1,4 +1,4 @@
-import { getCurrentAppLocale } from '../../i18n';
+import { tCurrent, getCurrentAppLocale } from '../../i18n';
 
 export function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -9,7 +9,7 @@ export function getErrorMessage(error: unknown) {
     return error.trim();
   }
 
-  return '操作失败。';
+  return tCurrent('auto.desktopUtils.5borik');
 }
 
 export function getShellDeskLocale() {

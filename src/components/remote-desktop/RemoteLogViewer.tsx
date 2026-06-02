@@ -4,6 +4,7 @@ import DismissibleAlert from './DismissibleAlert';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 type LogSourceType = 'journal' | 'file' | 'windows-event';
 type LogLevelFilter = 'all' | 'error' | 'warning' | 'info';
@@ -63,18 +64,18 @@ const maxLines = 2000;
 const pageSize = 300;
 
 const levelOptions: Array<{ value: LogLevelFilter; label: string }> = [
-  { value: 'all', label: '全部级别' },
-  { value: 'error', label: '错误' },
-  { value: 'warning', label: '警告' },
-  { value: 'info', label: '信息' },
+  { value: 'all', label: tCurrent('auto.remoteLogViewer.12ej1cf') },
+  { value: 'error', label: tCurrent('auto.remoteLogViewer.v9pftt') },
+  { value: 'warning', label: tCurrent('auto.remoteLogViewer.1uwa1ih') },
+  { value: 'info', label: tCurrent('auto.remoteLogViewer.1ieau49') },
 ];
 
 const timeRangeOptions: Array<{ value: TimeRangePreset; label: string }> = [
-  { value: 'all', label: '全部时间' },
-  { value: '15m', label: '最近 15 分钟' },
-  { value: '1h', label: '最近 1 小时' },
-  { value: '24h', label: '最近 24 小时' },
-  { value: 'custom', label: '自定义' },
+  { value: 'all', label: tCurrent('auto.remoteLogViewer.sgku7j') },
+  { value: '15m', label: tCurrent('auto.remoteLogViewer.9dfcbz') },
+  { value: '1h', label: tCurrent('auto.remoteLogViewer.i1rszu') },
+  { value: '24h', label: tCurrent('auto.remoteLogViewer.11z4msh') },
+  { value: 'custom', label: tCurrent('auto.remoteLogViewer.ougzyc') },
 ];
 
 const serviceShortcuts = [
@@ -100,7 +101,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteLogViewer.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -154,7 +155,7 @@ function formatBytes(value: number | undefined) {
 
 function formatLoadedAt(value: number | null) {
   if (!value) {
-    return '尚未查询';
+    return tCurrent('auto.remoteLogViewer.snxhdy');
   }
 
   return new Intl.DateTimeFormat(getShellDeskLocale(), {
@@ -285,11 +286,11 @@ function normalizeLogLevel(levelValue: string, raw: string): LogLineLevel {
 }
 
 function getLevelLabel(level: LogLineLevel) {
-  if (level === 'error') return '错误';
-  if (level === 'warning') return '警告';
-  if (level === 'info') return '信息';
-  if (level === 'debug') return '调试';
-  return '日志';
+  if (level === 'error') return tCurrent('auto.remoteLogViewer.v9pftt2');
+  if (level === 'warning') return tCurrent('auto.remoteLogViewer.1uwa1ih2');
+  if (level === 'info') return tCurrent('auto.remoteLogViewer.1ieau492');
+  if (level === 'debug') return tCurrent('auto.remoteLogViewer.14582sl');
+  return tCurrent('auto.remoteLogViewer.1k863h1');
 }
 
 function parseLinuxLogLine(raw: string, index: number): LogLine {
@@ -460,13 +461,7 @@ function getLinuxJournalCommand(serviceName: string, query: LogQuery) {
   const priorityArg = getJournalPriorityArg(query.level);
   const grepArg = keyword ? ` | grep -ai -- ${shellSingleQuote(keyword)}` : '';
 
-  return `
-if ! command -v journalctl >/dev/null 2>&1; then
-  printf 'journalctl 未安装或当前 PATH 不可用。\\n'
-  exit 127
-fi
-journalctl -n ${fetchLines} --no-pager --output=short-iso ${unitArg} ${timeArgs} ${priorityArg} 2>&1${grepArg} | tail -n ${lines}
-`;
+  return tCurrent('auto.remoteLogViewer.1ezlp1g', { value0: fetchLines, value1: unitArg, value2: timeArgs, value3: priorityArg, value4: grepArg, value5: lines });
 }
 
 function getLinuxFileLogCommand(filePath: string, query: LogQuery) {
@@ -485,18 +480,7 @@ function getLinuxFileLogCommand(filePath: string, query: LogQuery) {
 
   pipelineParts.push(`tail -n ${lines}`);
 
-  return `
-log_file=${shellSingleQuote(filePath)}
-if [ ! -f "$log_file" ]; then
-  printf '文件不存在：%s\\n' "$log_file"
-  exit 1
-fi
-if [ ! -r "$log_file" ]; then
-  printf '文件不可读取，可能需要更高权限：%s\\n' "$log_file"
-  exit 1
-fi
-${pipelineParts.join(' | ')}
-`;
+  return tCurrent('auto.remoteLogViewer.1mrqfba', { value0: shellSingleQuote(filePath), value1: pipelineParts.join(' | ') });
 }
 
 function getWindowsTimeScript(query: LogQuery) {
@@ -714,8 +698,8 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           id: 'windows-events',
           label: 'Windows Event Log',
           sources: [
-            { id: 'event:System', type: 'windows-event', label: 'System', value: 'System', description: '系统事件' },
-            { id: 'event:Application', type: 'windows-event', label: 'Application', value: 'Application', description: '应用事件' },
+            { id: 'event:System', type: 'windows-event', label: 'System', value: 'System', description: tCurrent('auto.remoteLogViewer.8pjb5q') },
+            { id: 'event:Application', type: 'windows-event', label: 'Application', value: 'Application', description: tCurrent('auto.remoteLogViewer.qfh8h4') },
           ],
         },
       ];
@@ -726,7 +710,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
         id: 'journal',
         label: 'Journal',
         sources: [
-          { id: 'journal:system', type: 'journal', label: '系统日志', value: '', description: 'journalctl' },
+          { id: 'journal:system', type: 'journal', label: tCurrent('auto.remoteLogViewer.u4rwyj'), value: '', description: 'journalctl' },
           ...serviceShortcuts.map((service) => ({
             id: `journal:${service}`,
             type: 'journal' as const,
@@ -748,8 +732,8 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
 
   const hiddenCustomSources = useMemo<LogSource[]>(() => (
     isWindowsHost ? [] : [
-      { id: 'journal:service-custom', type: 'journal', label: '服务日志', value: '__service__', description: serviceName || '输入 systemd unit' },
-      { id: 'file:custom', type: 'file', label: '自定义文件', value: '', description: filePath || '输入日志路径' },
+      { id: 'journal:service-custom', type: 'journal', label: tCurrent('auto.remoteLogViewer.1cvisgn'), value: '__service__', description: serviceName || tCurrent('auto.remoteLogViewer.1j7v06k') },
+      { id: 'file:custom', type: 'file', label: tCurrent('auto.remoteLogViewer.54ua59'), value: '', description: filePath || tCurrent('auto.remoteLogViewer.14l3w5a') },
     ]
   ), [filePath, isWindowsHost, serviceName]);
 
@@ -763,7 +747,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
     if (!selectedSource) {
       return isWindowsHost
         ? { id: 'event:System', type: 'windows-event', label: 'System', value: 'System' }
-        : { id: 'journal:system', type: 'journal', label: '系统日志', value: '' };
+        : { id: 'journal:system', type: 'journal', label: tCurrent('auto.remoteLogViewer.u4rwyj2'), value: '' };
     }
 
     if (selectedSource.id === 'journal:service-custom') {
@@ -826,11 +810,11 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
       setLogFiles(nextFiles);
 
       if (result.code !== 0 && nextFiles.length === 0) {
-        setNotice(result.stderr || result.stdout || '无法读取 /var/log 文件列表。');
+        setNotice(result.stderr || result.stdout || tCurrent('auto.remoteLogViewer.1vw7iqm'));
       }
     } catch (err) {
       if (isMountedRef.current) {
-        setNotice(`日志文件发现失败：${getErrorMessage(err)}`);
+        setNotice(tCurrent('auto.remoteLogViewer.okpgji', { value0: getErrorMessage(err) }));
       }
     } finally {
       if (isMountedRef.current) {
@@ -851,11 +835,11 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
 
     try {
       if (querySource.type === 'journal' && querySource.id !== 'journal:system' && !querySource.value) {
-        throw new Error('请输入服务名，例如 nginx.service。');
+        throw new Error(tCurrent('auto.remoteLogViewer.3pqh09'));
       }
 
       if (querySource.type === 'file' && !querySource.value) {
-        throw new Error('请输入日志文件路径。');
+        throw new Error(tCurrent('auto.remoteLogViewer.103hc1q'));
       }
 
       const command = isWindowsHost
@@ -872,7 +856,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
         : parsedLines;
 
       if (result.code !== 0 && nextLines.length === 0) {
-        throw new Error(result.stderr || result.stdout || '日志查询失败。');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteLogViewer.1amadvq'));
       }
 
       if (!isMountedRef.current || requestId !== queryRequestIdRef.current) {
@@ -885,7 +869,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
       setLoadedSourceLabel(querySource.label);
 
       if (result.code !== 0) {
-        setNotice(result.stderr || '命令返回非零状态，但仍解析到了日志输出。');
+        setNotice(result.stderr || tCurrent('auto.remoteLogViewer.1wn95my'));
       }
     } catch (err) {
       if (isMountedRef.current && requestId === queryRequestIdRef.current) {
@@ -1011,9 +995,9 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
 
     try {
       await navigator.clipboard.writeText(value);
-      setSuccess(`已复制${label}。`);
+      setSuccess(tCurrent('auto.remoteLogViewer.1wvs77j', { value0: label }));
     } catch (err) {
-      setError(`复制失败：${getErrorMessage(err)}`);
+      setError(tCurrent('auto.remoteLogViewer.cd1xgf', { value0: getErrorMessage(err) }));
     }
   };
 
@@ -1051,29 +1035,27 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
       <div className="log-toolbar">
         <div className="log-toolbar-left">
           <button type="button" className="log-tool-button primary" onClick={() => void executeQuery()} disabled={loading}>
-            {loading ? '查询中' : '查询'}
+            {loading ? tCurrent('auto.remoteLogViewer.q3j9w1') : tCurrent('auto.remoteLogViewer.16mfmhy')}
           </button>
           <button type="button" className="log-tool-button" onClick={() => void executeQuery()} disabled={loading}>
-            刷新
-          </button>
+            {tCurrent('auto.remoteLogViewer.12qo56a')}</button>
           <button type="button" className="log-tool-button" onClick={clearResults} disabled={!logLines.length && !error}>
-            清空
-          </button>
+            {tCurrent('auto.remoteLogViewer.9mbwb2')}</button>
           {!isWindowsHost ? (
             <button type="button" className="log-tool-button" onClick={() => void loadLogFiles()} disabled={filesLoading}>
-              {filesLoading ? '扫描中' : '扫描 /var/log'}
+              {filesLoading ? tCurrent('auto.remoteLogViewer.15wbj2u') : tCurrent('auto.remoteLogViewer.1dovqdy')}
             </button>
           ) : null}
-          <span className="log-system-pill">{isWindowsHost ? 'Windows Event Log' : 'journalctl / 文件'}</span>
+          <span className="log-system-pill">{isWindowsHost ? 'Windows Event Log' : tCurrent('auto.remoteLogViewer.1rlrh2l')}</span>
         </div>
 
         <div className="log-toolbar-right">
-          <select className="log-select" value={level} onChange={(event) => setLevel(event.target.value as LogLevelFilter)} aria-label="日志级别">
+          <select className="log-select" value={level} onChange={(event) => setLevel(event.target.value as LogLevelFilter)} aria-label={tCurrent('auto.remoteLogViewer.1e9o6nb')}>
             {levelOptions.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
             ))}
           </select>
-          <select className="log-select log-time-select" value={timeRange} onChange={(event) => setTimeRange(event.target.value as TimeRangePreset)} aria-label="时间范围">
+          <select className="log-select log-time-select" value={timeRange} onChange={(event) => setTimeRange(event.target.value as TimeRangePreset)} aria-label={tCurrent('auto.remoteLogViewer.1jsn57s')}>
             {timeRangeOptions.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
             ))}
@@ -1086,7 +1068,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
             step={20}
             value={lines}
             onChange={(event) => setLines(clampLines(Number(event.target.value)))}
-            aria-label="读取行数"
+            aria-label={tCurrent('auto.remoteLogViewer.rcdahk')}
           />
         </div>
       </div>
@@ -1101,8 +1083,8 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
               setSelectedSourceId('journal:service-custom');
               setServiceName(event.target.value);
             }}
-            placeholder="systemd unit，例如 nginx.service"
-            aria-label="服务名"
+            placeholder={tCurrent('auto.remoteLogViewer.cysdly')}
+            aria-label={tCurrent('auto.remoteLogViewer.j60ypu')}
           />
         ) : null}
         {resolvedSource.type === 'file' ? (
@@ -1115,7 +1097,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
               setFilePath(event.target.value);
             }}
             placeholder="/var/log/nginx/error.log"
-            aria-label="日志文件路径"
+            aria-label={tCurrent('auto.remoteLogViewer.1w847h7')}
           />
         ) : null}
         <input
@@ -1123,8 +1105,8 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           className="log-keyword-input"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索关键字..."
-          aria-label="搜索关键字"
+          placeholder={tCurrent('auto.remoteLogViewer.73rkrv')}
+          aria-label={tCurrent('auto.remoteLogViewer.kzmopb')}
         />
         {timeRange === 'custom' ? (
           <>
@@ -1133,14 +1115,14 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
               className="log-date-input"
               value={since}
               onChange={(event) => setSince(event.target.value)}
-              aria-label="开始时间"
+              aria-label={tCurrent('auto.remoteLogViewer.j6x7pa')}
             />
             <input
               type="datetime-local"
               className="log-date-input"
               value={until}
               onChange={(event) => setUntil(event.target.value)}
-              aria-label="结束时间"
+              aria-label={tCurrent('auto.remoteLogViewer.9uebcl')}
             />
           </>
         ) : null}
@@ -1151,7 +1133,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
       {success ? <DismissibleAlert className="log-alert success" onDismiss={() => setSuccess('')}>{success}</DismissibleAlert> : null}
 
       <div className="log-content">
-        <aside className="log-source-panel" aria-label="日志来源">
+        <aside className="log-source-panel" aria-label={tCurrent('auto.remoteLogViewer.1bgbscg')}>
           {sourceGroups.map((group) => (
             <section key={group.id} className="log-source-section">
               <header>
@@ -1165,36 +1147,34 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           ))}
         </aside>
 
-        <section className="log-result-panel" aria-label="日志结果">
+        <section className="log-result-panel" aria-label={tCurrent('auto.remoteLogViewer.io11t6')}>
           <header className="log-result-header">
             <div>
               <span>{loadedSourceLabel || resolvedSource.label}</span>
-              <strong>{logLines.length} 行</strong>
+              <strong>{logLines.length} {tCurrent('auto.remoteLogViewer.1jjui7f')}</strong>
               <small>{formatLoadedAt(loadedAt)}</small>
             </div>
             <div className="log-result-actions">
               <button type="button" onClick={toggleCurrentPageSelection} disabled={!pageLines.length}>
-                {pageLines.length && pageLines.every((line) => selectedLineIds.has(line.id)) ? '取消本页' : '选择本页'}
+                {pageLines.length && pageLines.every((line) => selectedLineIds.has(line.id)) ? tCurrent('auto.remoteLogViewer.rgejoo') : tCurrent('auto.remoteLogViewer.dzux0c')}
               </button>
-              <button type="button" onClick={() => void copyToClipboard(selectedText, '选中日志')} disabled={!selectedText}>
-                复制选中
-              </button>
-              <button type="button" onClick={() => void copyToClipboard(logLines.map((line) => line.raw).join('\n'), '全部日志')} disabled={!logLines.length}>
-                复制全部
-              </button>
+              <button type="button" onClick={() => void copyToClipboard(selectedText, tCurrent('auto.remoteLogViewer.7c0mqv'))} disabled={!selectedText}>
+                {tCurrent('auto.remoteLogViewer.xgwaxo')}</button>
+              <button type="button" onClick={() => void copyToClipboard(logLines.map((line) => line.raw).join('\n'), tCurrent('auto.remoteLogViewer.ocy7fh'))} disabled={!logLines.length}>
+                {tCurrent('auto.remoteLogViewer.jxtocq')}</button>
             </div>
           </header>
 
           <div className="log-stats">
-            <span><strong>{stats.error}</strong> 错误</span>
-            <span><strong>{stats.warning}</strong> 警告</span>
-            <span><strong>{stats.info}</strong> 信息</span>
-            <span><strong>{stats.debug}</strong> 调试</span>
+            <span><strong>{stats.error}</strong> {tCurrent('auto.remoteLogViewer.v9pftt3')}</span>
+            <span><strong>{stats.warning}</strong> {tCurrent('auto.remoteLogViewer.1uwa1ih3')}</span>
+            <span><strong>{stats.info}</strong> {tCurrent('auto.remoteLogViewer.1ieau493')}</span>
+            <span><strong>{stats.debug}</strong> {tCurrent('auto.remoteLogViewer.14582sl2')}</span>
           </div>
 
           <div className="log-lines" role="list">
             {loading ? (
-              <div className="log-empty">正在读取远程日志...</div>
+              <div className="log-empty">{tCurrent('auto.remoteLogViewer.1bxngjg')}</div>
             ) : pageLines.length ? (
               pageLines.map((line, index) => {
                 const absoluteIndex = currentPage * pageSize + index + 1;
@@ -1206,7 +1186,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleLineSelection(line.id)}
-                      aria-label={`选择第 ${absoluteIndex} 行`}
+                      aria-label={tCurrent('auto.remoteLogViewer.1e8zp72', { value0: absoluteIndex })}
                     />
                     <span className="log-line-no">{absoluteIndex}</span>
                     <span className="log-line-time" title={line.timestamp}>{line.timestamp || '-'}</span>
@@ -1218,20 +1198,19 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
               })
             ) : (
               <div className="log-empty">
-                <strong>{loadedAt ? '没有匹配的日志' : '尚未加载日志'}</strong>
-                <span>{loadedAt ? '可以调整来源、级别、时间或关键字后重新查询。' : '选择来源后点击查询。'}</span>
+                <strong>{loadedAt ? tCurrent('auto.remoteLogViewer.1wb29af') : tCurrent('auto.remoteLogViewer.1y6932i')}</strong>
+                <span>{loadedAt ? tCurrent('auto.remoteLogViewer.11yxpbb') : tCurrent('auto.remoteLogViewer.1k1ceur')}</span>
               </div>
             )}
           </div>
 
           <footer className="log-pagination">
             <span>
-              第 <strong>{logLines.length ? currentPage + 1 : 0}</strong> / {logLines.length ? pageCount : 0} 页
-            </span>
+              {tCurrent('auto.remoteLogViewer.biig97')}<strong>{logLines.length ? currentPage + 1 : 0}</strong> / {logLines.length ? pageCount : 0} {tCurrent('auto.remoteLogViewer.1ucfmkw')}</span>
             <div>
-              <button type="button" onClick={() => setPage(0)} disabled={!logLines.length || currentPage === 0}>首页</button>
-              <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={!logLines.length || currentPage === 0}>上一页</button>
-              <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={!logLines.length || currentPage >= pageCount - 1}>下一页</button>
+              <button type="button" onClick={() => setPage(0)} disabled={!logLines.length || currentPage === 0}>{tCurrent('auto.remoteLogViewer.1ow5v10')}</button>
+              <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={!logLines.length || currentPage === 0}>{tCurrent('auto.remoteLogViewer.mtyn6e')}</button>
+              <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={!logLines.length || currentPage >= pageCount - 1}>{tCurrent('auto.remoteLogViewer.1yw313l')}</button>
             </div>
           </footer>
         </section>

@@ -18,6 +18,7 @@ import {
 } from './messageQueueParsers';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteMessageQueuePanelProps {
   connectionId: string;
@@ -32,7 +33,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteMessageQueuePanel.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -108,7 +109,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
     setSelectedQueueName((current) => current && nextQueues.some((queue) => queue.name === current) ? current : nextQueues[0]?.name ?? '');
     setRawOutput(result.stdout || result.stderr);
     setActiveTab('queues');
-    setNotice(`RabbitMQ 已刷新：${nextQueues.length} 个队列，累计 ${nextQueues.reduce((sum, queue) => sum + queue.messages, 0).toLocaleString(getShellDeskLocale())} 条消息。`);
+    setNotice(tCurrent('auto.remoteMessageQueuePanel.xewr3n', { value0: nextQueues.length, value1: nextQueues.reduce((sum, queue) => sum + queue.messages, 0).toLocaleString(getShellDeskLocale()) }));
   };
 
   const refreshKafka = async () => {
@@ -118,7 +119,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
     ]);
 
     if (topicsResult.code !== 0) {
-      throw new Error(topicsResult.stderr || topicsResult.stdout || `Kafka topic 命令退出码 ${topicsResult.code}`);
+      throw new Error(topicsResult.stderr || topicsResult.stdout || tCurrent('auto.remoteMessageQueuePanel.fr557x', { value0: topicsResult.code }));
     }
 
     const nextTopics = parseKafkaTopics(topicsResult.stdout);
@@ -131,9 +132,9 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
     setActiveTab(nextLags.length ? 'lag' : 'topics');
 
     if (lagResult.code !== 0) {
-      setNotice(lagResult.stderr || 'Consumer group lag 获取失败，已保留 topic 列表。');
+      setNotice(lagResult.stderr || tCurrent('auto.remoteMessageQueuePanel.lsw4xl'));
     } else {
-      setNotice(`Kafka 已刷新：${nextTopics.length} 个 topic，${nextLags.length} 条 lag 记录。`);
+      setNotice(tCurrent('auto.remoteMessageQueuePanel.uzoao6', { value0: nextTopics.length, value1: nextLags.length }));
     }
   };
 
@@ -159,22 +160,22 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
 
   const copyRaw = async () => {
     await navigator.clipboard.writeText(rawOutput);
-    setNotice('已复制原始输出。');
+    setNotice(tCurrent('auto.remoteMessageQueuePanel.1jag1z9'));
   };
 
   return (
     <section className="message-queue">
       <header className="mq-toolbar">
         <div className="mq-status">
-          <span>消息队列</span>
+          <span>{tCurrent('auto.remoteMessageQueuePanel.132u0au')}</span>
           <strong>{backend === 'rabbitmq' ? 'RabbitMQ' : 'Kafka'}</strong>
-          <em>{lastRefreshedAt || '未刷新'}</em>
+          <em>{lastRefreshedAt || tCurrent('auto.remoteMessageQueuePanel.1t0b1fu')}</em>
         </div>
         <div className="mq-backend-switch">
           <button type="button" className={backend === 'rabbitmq' ? 'active' : ''} onClick={() => { setBackend('rabbitmq'); setActiveTab('queues'); }}>RabbitMQ</button>
           <button type="button" className={backend === 'kafka' ? 'active' : ''} onClick={() => { setBackend('kafka'); setActiveTab('topics'); }}>Kafka</button>
         </div>
-        <button type="button" className="primary" onClick={refresh} disabled={loading}>{loading ? '刷新中' : '刷新'}</button>
+        <button type="button" className="primary" onClick={refresh} disabled={loading}>{loading ? tCurrent('auto.remoteMessageQueuePanel.1taxqz1') : tCurrent('auto.remoteMessageQueuePanel.12qo56a')}</button>
       </header>
 
       {error ? <DismissibleAlert className="mq-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
@@ -190,7 +191,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
               </div>
               {rabbitMode === 'rabbitmqctl' ? (
                 <label>
-                  <span>rabbitmqctl 路径</span>
+                  <span>{tCurrent('auto.remoteMessageQueuePanel.1btc1g3')}</span>
                   <input value={rabbitCtlPath} onChange={(event) => setRabbitCtlPath(event.target.value)} />
                 </label>
               ) : (
@@ -210,7 +211,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
                 </>
               )}
               <div className="mq-summary">
-                <span>队列</span>
+                <span>{tCurrent('auto.remoteMessageQueuePanel.1m388fv')}</span>
                 <strong>{queues.length}</strong>
                 <em>{formatNumber(totalRabbitMessages)} messages</em>
               </div>
@@ -237,18 +238,18 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
             </>
           )}
           <label>
-            <span>搜索</span>
+            <span>{tCurrent('auto.remoteMessageQueuePanel.367f3v')}</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="queue / topic / group" />
           </label>
         </aside>
 
         <main className="mq-main">
           <nav className="mq-tabs">
-            <button type="button" className={activeTab === 'queues' ? 'active' : ''} onClick={() => setActiveTab('queues')} disabled={backend !== 'rabbitmq'}>队列</button>
+            <button type="button" className={activeTab === 'queues' ? 'active' : ''} onClick={() => setActiveTab('queues')} disabled={backend !== 'rabbitmq'}>{tCurrent('auto.remoteMessageQueuePanel.1m388fv2')}</button>
             <button type="button" className={activeTab === 'topics' ? 'active' : ''} onClick={() => setActiveTab('topics')} disabled={backend !== 'kafka'}>Topic</button>
             <button type="button" className={activeTab === 'lag' ? 'active' : ''} onClick={() => setActiveTab('lag')} disabled={backend !== 'kafka'}>Consumer Lag</button>
-            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>原始输出</button>
-            <button type="button" onClick={copyRaw} disabled={!rawOutput}>复制输出</button>
+            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteMessageQueuePanel.1sxtwbe')}</button>
+            <button type="button" onClick={copyRaw} disabled={!rawOutput}>{tCurrent('auto.remoteMessageQueuePanel.tinpzn')}</button>
           </nav>
 
           {activeTab === 'queues' ? (
@@ -275,7 +276,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
                   ))}
                 </tbody>
               </table>
-              {!filteredQueues.length ? <div className="mq-empty-state">暂无 RabbitMQ 队列。</div> : null}
+              {!filteredQueues.length ? <div className="mq-empty-state">{tCurrent('auto.remoteMessageQueuePanel.5u0bqv')}</div> : null}
             </section>
           ) : null}
 
@@ -287,7 +288,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
                   <span>{lags.filter((lag) => lag.topic === topic.name).length} lag rows</span>
                 </button>
               ))}
-              {!filteredTopics.length ? <div className="mq-empty-state">暂无 Kafka topic。</div> : null}
+              {!filteredTopics.length ? <div className="mq-empty-state">{tCurrent('auto.remoteMessageQueuePanel.bbz5cc')}</div> : null}
             </section>
           ) : null}
 
@@ -319,17 +320,17 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
                   ))}
                 </tbody>
               </table>
-              {!filteredLags.length ? <div className="mq-empty-state">暂无 consumer lag 记录。</div> : null}
+              {!filteredLags.length ? <div className="mq-empty-state">{tCurrent('auto.remoteMessageQueuePanel.1cn0glm')}</div> : null}
             </section>
           ) : null}
 
-          {activeTab === 'raw' ? <pre className="mq-raw">{rawOutput || '刷新后显示原始命令输出。'}</pre> : null}
+          {activeTab === 'raw' ? <pre className="mq-raw">{rawOutput || tCurrent('auto.remoteMessageQueuePanel.1w2y2p4')}</pre> : null}
         </main>
 
         <aside className="mq-detail">
           <div className="mq-detail-head">
-            <strong>{backend === 'rabbitmq' ? '队列详情' : 'Topic 详情'}</strong>
-            <span>{backend === 'rabbitmq' ? selectedQueue?.name ?? '未选择' : selectedTopic?.name ?? '未选择'}</span>
+            <strong>{backend === 'rabbitmq' ? tCurrent('auto.remoteMessageQueuePanel.mvneo6') : tCurrent('auto.remoteMessageQueuePanel.w4ex35')}</strong>
+            <span>{backend === 'rabbitmq' ? selectedQueue?.name ?? tCurrent('auto.remoteMessageQueuePanel.1mhzgbz') : selectedTopic?.name ?? tCurrent('auto.remoteMessageQueuePanel.1mhzgbz2')}</span>
           </div>
           {backend === 'rabbitmq' ? (
             <div className="mq-detail-list">

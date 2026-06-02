@@ -4,6 +4,7 @@ import DismissibleAlert from './DismissibleAlert';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteNetworkDiagnosticsProps {
   connectionId: string;
@@ -39,12 +40,12 @@ interface NetworkFormState {
 const maxHistoryRuns = 20;
 
 const toolDefinitions: Array<{ key: NetworkToolKey; label: string; description: string }> = [
-  { key: 'ping', label: 'Ping', description: '连通性、延迟和丢包' },
-  { key: 'dns', label: 'DNS 查询', description: '解析记录与 DNS 返回' },
-  { key: 'trace', label: '路径追踪', description: '路由跳数和路径' },
-  { key: 'curl', label: 'HTTP 检测', description: '状态码、耗时和响应头' },
-  { key: 'tcp', label: 'TCP 探测', description: '目标端口可达性' },
-  { key: 'routes', label: '路由表', description: '远程主机路由视图' },
+  { key: 'ping', label: 'Ping', description: tCurrent('auto.remoteNetworkDiagnostics.co4s1f') },
+  { key: 'dns', label: tCurrent('auto.remoteNetworkDiagnostics.14nt7zn'), description: tCurrent('auto.remoteNetworkDiagnostics.19nxdtg') },
+  { key: 'trace', label: tCurrent('auto.remoteNetworkDiagnostics.1h9kdix'), description: tCurrent('auto.remoteNetworkDiagnostics.k7mqil') },
+  { key: 'curl', label: tCurrent('auto.remoteNetworkDiagnostics.18g7zaq'), description: tCurrent('auto.remoteNetworkDiagnostics.expaj0') },
+  { key: 'tcp', label: tCurrent('auto.remoteNetworkDiagnostics.uhg353'), description: tCurrent('auto.remoteNetworkDiagnostics.orxu46') },
+  { key: 'routes', label: tCurrent('auto.remoteNetworkDiagnostics.g3ahzj'), description: tCurrent('auto.remoteNetworkDiagnostics.fv1041') },
 ];
 
 const initialFormState: NetworkFormState = {
@@ -60,7 +61,7 @@ function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.g77vf3'));
   }
 
   return api.runCommand(connectionId, command);
@@ -74,7 +75,7 @@ function runCmdStream(
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.g77vf32'));
   }
 
   if (api.runCommandStream) {
@@ -116,11 +117,11 @@ function validateHost(value: string, label: string) {
   const trimmedValue = value.trim();
 
   if (!trimmedValue) {
-    throw new Error(`请输入${label}。`);
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.1c0dr7n', { value0: label }));
   }
 
   if (trimmedValue.length > 255 || /[\r\n;&|`$<>]/.test(trimmedValue)) {
-    throw new Error(`${label}包含不安全字符。`);
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.1xto81z', { value0: label }));
   }
 
   return trimmedValue;
@@ -130,18 +131,18 @@ function validateUrl(value: string) {
   const trimmedValue = value.trim();
 
   if (!/^https?:\/\/[^\s]+$/i.test(trimmedValue)) {
-    throw new Error('请输入 http:// 或 https:// 开头的 URL。');
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.1qr8q5c'));
   }
 
   if (trimmedValue.length > 512 || /[\r\n`$<>]/.test(trimmedValue)) {
-    throw new Error('URL 包含不安全字符。');
+    throw new Error(tCurrent('auto.remoteNetworkDiagnostics.ug8ntx'));
   }
 
   return trimmedValue;
 }
 
 function buildPingCommand(form: NetworkFormState, isWindowsHost: boolean) {
-  const host = validateHost(form.host, '目标主机');
+  const host = validateHost(form.host, tCurrent('auto.remoteNetworkDiagnostics.h6x85v'));
   const count = clampInteger(form.count, 4, 1, 10);
 
   return isWindowsHost
@@ -150,7 +151,7 @@ function buildPingCommand(form: NetworkFormState, isWindowsHost: boolean) {
 }
 
 function buildDnsCommand(form: NetworkFormState, isWindowsHost: boolean) {
-  const domain = validateHost(form.domain, '域名');
+  const domain = validateHost(form.domain, tCurrent('auto.remoteNetworkDiagnostics.57pmxl'));
 
   return isWindowsHost
     ? powershellCommand(`
@@ -164,11 +165,11 @@ try {
 }
 
 function buildTraceCommand(form: NetworkFormState, isWindowsHost: boolean) {
-  const host = validateHost(form.host, '目标主机');
+  const host = validateHost(form.host, tCurrent('auto.remoteNetworkDiagnostics.h6x85v2'));
 
   return isWindowsHost
     ? powershellCommand(`tracert ${powershellSingleQuote(host)}`)
-    : `if command -v tracepath >/dev/null 2>&1; then tracepath ${shellSingleQuote(host)}; elif command -v traceroute >/dev/null 2>&1; then traceroute ${shellSingleQuote(host)}; else echo '缺少 tracepath 或 traceroute。' >&2; exit 127; fi`;
+    : tCurrent('auto.remoteNetworkDiagnostics.14pspjf', { value0: shellSingleQuote(host), value1: shellSingleQuote(host) });
 }
 
 function buildCurlCommand(form: NetworkFormState, isWindowsHost: boolean) {
@@ -176,30 +177,17 @@ function buildCurlCommand(form: NetworkFormState, isWindowsHost: boolean) {
   const timeout = clampInteger(form.timeout, 5, 1, 30);
 
   return isWindowsHost
-    ? powershellCommand(`
-$watch = [System.Diagnostics.Stopwatch]::StartNew()
-try {
-  $response = Invoke-WebRequest -Uri ${powershellSingleQuote(url)} -Method Head -MaximumRedirection 5 -TimeoutSec ${timeout} -UseBasicParsing
-  $watch.Stop()
-  [Console]::Out.WriteLine("HTTP $($response.StatusCode) $($response.StatusDescription)")
-  [Console]::Out.WriteLine("耗时 $($watch.ElapsedMilliseconds) ms")
-  $response.Headers.GetEnumerator() | Sort-Object Key | ForEach-Object { [Console]::Out.WriteLine("$($_.Key): $($_.Value)") }
-} catch {
-  $watch.Stop()
-  [Console]::Out.WriteLine("耗时 $($watch.ElapsedMilliseconds) ms")
-  throw
-}
-`)
+    ? powershellCommand(tCurrent('auto.remoteNetworkDiagnostics.mnmkjd', { value0: powershellSingleQuote(url), value1: timeout }))
     : `curl -I -L --max-time ${timeout} -w '\\n__SHELLDESK_CURL_SUMMARY__ http_code=%{http_code} time_total=%{time_total} remote_ip=%{remote_ip}\\n' ${shellSingleQuote(url)}`;
 }
 
 function buildTcpCommand(form: NetworkFormState, isWindowsHost: boolean) {
-  const host = validateHost(form.host, '目标主机');
+  const host = validateHost(form.host, tCurrent('auto.remoteNetworkDiagnostics.h6x85v3'));
   const port = clampInteger(form.port, 80, 1, 65535);
 
   return isWindowsHost
     ? powershellCommand(`Test-NetConnection -ComputerName ${powershellSingleQuote(host)} -Port ${port} | Format-List | Out-String -Width 220`)
-    : `if command -v nc >/dev/null 2>&1; then nc -vz -w 5 ${shellSingleQuote(host)} ${port}; else timeout 6 bash -lc ${shellSingleQuote(`cat < /dev/null > /dev/tcp/${host}/${port}`)} && echo 'TCP 连接成功' || { echo 'TCP 连接失败' >&2; exit 1; }; fi`;
+    : tCurrent('auto.remoteNetworkDiagnostics.1wr64u8', { value0: shellSingleQuote(host), value1: port, value2: shellSingleQuote(`cat < /dev/null > /dev/tcp/${host}/${port}`) });
 }
 
 function buildRoutesCommand(isWindowsHost: boolean) {
@@ -225,7 +213,7 @@ function getToolTarget(tool: NetworkToolKey, form: NetworkFormState) {
     case 'dns': return form.domain.trim();
     case 'curl': return form.url.trim();
     case 'tcp': return `${form.host.trim()}:${form.port.trim()}`;
-    case 'routes': return '路由表';
+    case 'routes': return tCurrent('auto.remoteNetworkDiagnostics.g3ahzj2');
     default: return form.host.trim();
   }
 }
@@ -233,43 +221,43 @@ function getToolTarget(tool: NetworkToolKey, form: NetworkFormState) {
 function extractSummary(tool: NetworkToolKey, stdout: string, stderr: string, exitCode: number, durationMs: number) {
   const text = `${stdout}\n${stderr}`;
   const summary: Array<{ label: string; value: string }> = [
-    { label: '退出码', value: String(exitCode) },
-    { label: '耗时', value: `${durationMs} ms` },
+    { label: tCurrent('auto.remoteNetworkDiagnostics.1cjrdy2'), value: String(exitCode) },
+    { label: tCurrent('auto.remoteNetworkDiagnostics.12sj4tc'), value: `${durationMs} ms` },
   ];
 
   if (tool === 'ping') {
     const lossMatch = text.match(/(\d+(?:\.\d+)?)%\s*(?:packet\s*)?loss/i) ?? text.match(/\((\d+)%\s*loss\)/i);
-    const avgMatch = text.match(/(?:avg|Average)\s*[=/]\s*([\d.]+)\s*ms/i) ?? text.match(/平均\s*=\s*(\d+)ms/i);
-    if (lossMatch) summary.push({ label: '丢包', value: `${lossMatch[1]}%` });
-    if (avgMatch) summary.push({ label: '平均延迟', value: `${avgMatch[1]} ms` });
+    const avgMatch = text.match(/(?:avg|Average)\s*[=/]\s*([\d.]+)\s*ms/i) ?? text.match(/\u5e73\u5747\s*=\s*(\d+)ms/i);
+    if (lossMatch) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.183h3vk'), value: `${lossMatch[1]}%` });
+    if (avgMatch) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.6r28ho'), value: `${avgMatch[1]} ms` });
   }
 
   if (tool === 'curl') {
     const httpMatch = text.match(/HTTP\/\S+\s+(\d{3})/) ?? text.match(/HTTP\s+(\d{3})/);
     const curlSummary = text.match(/__SHELLDESK_CURL_SUMMARY__\s+http_code=(\d+)\s+time_total=([\d.]+)\s+remote_ip=([^\s]*)/);
-    if (httpMatch || curlSummary) summary.push({ label: '状态码', value: httpMatch?.[1] ?? curlSummary?.[1] ?? '-' });
-    if (curlSummary) summary.push({ label: '请求耗时', value: `${Number.parseFloat(curlSummary[2]).toFixed(3)} s` });
-    if (curlSummary?.[3]) summary.push({ label: '远端 IP', value: curlSummary[3] });
+    if (httpMatch || curlSummary) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1whwgyj'), value: httpMatch?.[1] ?? curlSummary?.[1] ?? '-' });
+    if (curlSummary) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.10i64md'), value: `${Number.parseFloat(curlSummary[2]).toFixed(3)} s` });
+    if (curlSummary?.[3]) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1i9g9f9'), value: curlSummary[3] });
   }
 
   if (tool === 'tcp') {
-    const success = /succeeded|TcpTestSucceeded\s*:\s*True|open|连接成功/i.test(text);
-    summary.push({ label: '连通', value: success ? '是' : exitCode === 0 ? '可能可达' : '否' });
+    const success = /succeeded|TcpTestSucceeded\s*:\s*True|open|\u8fde\u63a5\u6210\u529f/i.test(text);
+    summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.158ywap'), value: success ? tCurrent('auto.remoteNetworkDiagnostics.btshni') : exitCode === 0 ? tCurrent('auto.remoteNetworkDiagnostics.pi1rhw') : tCurrent('auto.remoteNetworkDiagnostics.9sspjt') });
   }
 
   if (tool === 'dns') {
     const answerCount = text.split(/\r?\n/).filter((line) => /\b(A|AAAA|CNAME|MX|Name|Address)\b/i.test(line)).length;
-    summary.push({ label: '结果行', value: String(answerCount) });
+    summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1o242jm'), value: String(answerCount) });
   }
 
   if (tool === 'trace') {
     const hopCount = text.split(/\r?\n/).filter((line) => /^\s*\d+/.test(line)).length;
-    summary.push({ label: '跳数', value: hopCount ? String(hopCount) : '-' });
+    summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1spkigm'), value: hopCount ? String(hopCount) : '-' });
   }
 
   if (tool === 'routes') {
     const routeCount = text.split(/\r?\n/).filter((line) => line.trim()).length;
-    summary.push({ label: '路由行', value: String(routeCount) });
+    summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.nuzder'), value: String(routeCount) });
   }
 
   return summary;
@@ -278,7 +266,7 @@ function extractSummary(tool: NetworkToolKey, stdout: string, stderr: string, ex
 function formatRunOutput(run: NetworkDiagnosticRun) {
   return [
     `[${run.title}] ${run.startedAt}`,
-    `退出码: ${run.status === 'running' ? '执行中' : run.exitCode}`,
+    tCurrent('auto.remoteNetworkDiagnostics.1nxtfs5', { value0: run.status === 'running' ? tCurrent('network.status.running') : run.exitCode }),
     run.stdout ? `\nSTDOUT\n${run.stdout}` : '',
     run.stderr ? `\nSTDERR\n${run.stderr}` : '',
     !run.stdout && !run.stderr && run.output ? `\nOUTPUT\n${run.output}` : '',
@@ -292,7 +280,7 @@ function getRunBadge(run: NetworkDiagnosticRun) {
 
 function getRunHistoryMeta(run: NetworkDiagnosticRun) {
   if (run.status === 'running') {
-    return `${run.startedAt} · 执行中`;
+    return tCurrent('auto.remoteNetworkDiagnostics.1ikvqbj', { value0: run.startedAt });
   }
 
   return `${run.startedAt} · ${run.durationMs} ms · code ${run.exitCode}`;
@@ -352,8 +340,8 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
         stderr: '',
         output: '',
         summary: [
-          { label: '状态', value: '执行中' },
-          { label: '退出码', value: '-' },
+          { label: tCurrent('auto.remoteNetworkDiagnostics.1ccx4t4'), value: tCurrent('auto.remoteNetworkDiagnostics.6svkbt') },
+          { label: tCurrent('auto.remoteNetworkDiagnostics.1cjrdy22'), value: '-' },
         ],
         status: 'running',
       };
@@ -416,8 +404,8 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
             stderr,
             output: `${run.output}${run.output ? '\n' : ''}${message}`,
             summary: [
-              { label: '退出码', value: '1' },
-              { label: '耗时', value: `${durationMs} ms` },
+              { label: tCurrent('auto.remoteNetworkDiagnostics.1cjrdy23'), value: '1' },
+              { label: tCurrent('auto.remoteNetworkDiagnostics.12sj4tc2'), value: `${durationMs} ms` },
             ],
             status: 'error',
           };
@@ -438,10 +426,10 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
 
   return (
     <section className="network-diagnostics">
-      <aside className="network-tool-list" aria-label="网络诊断工具">
+      <aside className="network-tool-list" aria-label={tCurrent('auto.remoteNetworkDiagnostics.wi2y15')}>
         <div className="network-tool-list-header">
-          <strong>网络诊断</strong>
-          <span>{isWindowsHost ? 'Windows' : 'Linux/Unix'} 远程视角</span>
+          <strong>{tCurrent('auto.remoteNetworkDiagnostics.1p2hkqx')}</strong>
+          <span>{isWindowsHost ? 'Windows' : 'Linux/Unix'} {tCurrent('auto.remoteNetworkDiagnostics.s75ils')}</span>
         </div>
         {toolDefinitions.map((tool) => {
           const latestRun = runs.find((run) => run.tool === tool.key);
@@ -465,11 +453,11 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
       <main className="network-main">
         <header className="network-header">
           <div>
-            <span>工具箱</span>
+            <span>{tCurrent('auto.remoteNetworkDiagnostics.1yrzdfw')}</span>
             <strong>{activeDefinition.label}</strong>
           </div>
           <button type="button" className="network-run-btn" onClick={executeTool} disabled={running}>
-            {running ? '执行中' : '执行'}
+            {running ? tCurrent('auto.remoteNetworkDiagnostics.6svkbt2') : tCurrent('auto.remoteNetworkDiagnostics.6azgji')}
           </button>
         </header>
 
@@ -478,14 +466,14 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
         <section className="network-form">
           {activeTool === 'ping' || activeTool === 'trace' || activeTool === 'tcp' ? (
             <label>
-              <span>目标主机</span>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.h6x85v4')}</span>
               <input value={form.host} onChange={(event) => updateForm('host', event.target.value)} />
             </label>
           ) : null}
 
           {activeTool === 'dns' ? (
             <label>
-              <span>域名</span>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.57pmxl2')}</span>
               <input value={form.domain} onChange={(event) => updateForm('domain', event.target.value)} />
             </label>
           ) : null}
@@ -499,37 +487,37 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
 
           {activeTool === 'tcp' ? (
             <label>
-              <span>端口</span>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.19ijc5j')}</span>
               <input inputMode="numeric" value={form.port} onChange={(event) => updateForm('port', event.target.value)} />
             </label>
           ) : null}
 
           {activeTool === 'ping' ? (
             <label>
-              <span>次数</span>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.fotggk')}</span>
               <input inputMode="numeric" value={form.count} onChange={(event) => updateForm('count', event.target.value)} />
             </label>
           ) : null}
 
           {activeTool === 'curl' ? (
             <label>
-              <span>超时秒数</span>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.tabbi8')}</span>
               <input inputMode="numeric" value={form.timeout} onChange={(event) => updateForm('timeout', event.target.value)} />
             </label>
           ) : null}
 
           {activeTool === 'routes' ? (
-            <div className="network-form-note">路由表工具无需参数，会直接读取远程主机当前路由。</div>
+            <div className="network-form-note">{tCurrent('auto.remoteNetworkDiagnostics.2a3s9p')}</div>
           ) : null}
         </section>
 
         <section className="network-result">
           <div className="network-result-head">
             <div>
-              <span>结果</span>
-              <strong>{activeRun?.title ?? '尚未执行'}</strong>
+              <span>{tCurrent('auto.remoteNetworkDiagnostics.q9h21m')}</span>
+              <strong>{activeRun?.title ?? tCurrent('auto.remoteNetworkDiagnostics.7n0mou')}</strong>
             </div>
-            <button type="button" onClick={copyActiveRun} disabled={!activeRun}>复制结果</button>
+            <button type="button" onClick={copyActiveRun} disabled={!activeRun}>{tCurrent('auto.remoteNetworkDiagnostics.y9ieg5')}</button>
           </div>
 
           {activeRun ? (
@@ -543,19 +531,19 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
                 ))}
               </div>
               <pre ref={outputRef} className="network-output">
-                {activeRun.output || activeRun.stdout || activeRun.stderr || (activeRun.status === 'running' ? '等待远程输出...' : '命令没有输出。')}
+                {activeRun.output || activeRun.stdout || activeRun.stderr || (activeRun.status === 'running' ? tCurrent('auto.remoteNetworkDiagnostics.9ipmuf') : tCurrent('auto.remoteNetworkDiagnostics.opwb2z'))}
               </pre>
             </>
           ) : (
-            <div className="network-placeholder">选择工具并执行后，这里会显示摘要和原始输出。</div>
+            <div className="network-placeholder">{tCurrent('auto.remoteNetworkDiagnostics.dgl6wz')}</div>
           )}
         </section>
       </main>
 
       <aside className="network-history">
         <div className="network-history-header">
-          <strong>历史</strong>
-          <span>最近 {maxHistoryRuns} 次</span>
+          <strong>{tCurrent('auto.remoteNetworkDiagnostics.m67vtd')}</strong>
+          <span>{tCurrent('auto.remoteNetworkDiagnostics.1a41w7e')}{maxHistoryRuns} {tCurrent('auto.remoteNetworkDiagnostics.a5jtgs')}</span>
         </div>
         <div className="network-history-list">
           {runs.map((run) => (
@@ -569,7 +557,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
               <span>{getRunHistoryMeta(run)}</span>
             </button>
           ))}
-          {runs.length === 0 ? <div className="network-history-empty">暂无历史。</div> : null}
+          {runs.length === 0 ? <div className="network-history-empty">{tCurrent('auto.remoteNetworkDiagnostics.2b0wb')}</div> : null}
         </div>
       </aside>
     </section>

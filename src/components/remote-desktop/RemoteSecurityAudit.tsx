@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
-import { translateStructuredText } from '../../i18n';
+import { t, translateStructuredText, type AppLanguage } from '../../i18n';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
 import { isWindowsSystem } from './remoteSystem';
@@ -34,59 +34,48 @@ interface SecurityAiPlan {
 const SECURITY_AI_EVIDENCE_CHAR_LIMIT = 100000;
 const SECURITY_AI_RAW_OUTPUT_LIMIT = 7000;
 
-const SECURITY_AI_PLAN_SYSTEM_PROMPT = `你是 ShellDesk 的 SD-Agent 安全巡检规划助手。你只能从用户给出的 allowlist 检查项 ID 中选择要采集的信息，不能要求执行自定义命令、写文件、改配置、安装软件或进行破坏性操作。
-
-请只返回 JSON，不要使用 Markdown 代码块。格式：
-{"checks":["ssh-config","open-ports"],"reason":"选择这些检查项的原因"}
-
-checks 必须是 allowlist 中存在的 ID。优先选择能覆盖账号、登录、进程、端口、防火墙、权限、提权面和更新状态的检查项；如果无法判断，应选择全部检查项。`;
-
-const SECURITY_AI_REPORT_SYSTEM_PROMPT = `你是 ShellDesk 的 SD-Agent 安全巡检分析助手。你只能基于用户提供的巡检输出做静态研判，不要假装访问外部情报、扫描文件、查杀病毒或已经完成未提供的数据采集。
-
-请用中文输出 Markdown 报告，重点识别 SSH 暴露、弱账号面、失败登录、异常进程、开放端口、防火墙、敏感权限、提权面和补丁更新风险。每个风险要说明依据、影响、建议核验动作和低破坏性处置建议。`;
-
-function runCmd(connectionId: string, command: string) {
+function runCmd(connectionId: string, command: string, language: AppLanguage) {
   const api = window.guiSSH?.connections;
 
   if (!api) {
-    throw new Error('ShellDesk IPC 未就绪。');
+    throw new Error(t('securityAudit.error.ipcNotReady', language));
   }
 
   return api.runCommand(connectionId, command);
 }
 
-function createFailedResult(definition: SecurityCheckDefinition, error: unknown): SecurityCheckResult {
+function createFailedResult(definition: SecurityCheckDefinition, error: unknown, language: AppLanguage): SecurityCheckResult {
   return {
     id: definition.id,
     title: definition.title,
     severity: 'info',
     status: 'unknown',
     summary: getErrorMessage(error),
-    details: ['该检查项执行失败，其他检查项不受影响。'],
+    details: [t('securityAudit.failed.detail', language)],
     rawOutput: '',
-    suggestions: ['确认远程命令权限和目标系统工具是否可用后重试。'],
+    suggestions: [t('securityAudit.failed.suggestion', language)],
   };
 }
 
-function compactAiText(value: string | undefined, maxLength: number) {
+function compactAiText(value: string | undefined, maxLength: number, language: AppLanguage) {
   const normalizedValue = (value ?? '').trim();
 
   if (normalizedValue.length <= maxLength) {
     return normalizedValue;
   }
 
-  return `${normalizedValue.slice(0, maxLength)}\n[内容过长，已截断 ${normalizedValue.length - maxLength} 字符]`;
+  return `${normalizedValue.slice(0, maxLength)}\n${t('securityAudit.ai.truncated', language, { count: normalizedValue.length - maxLength })}`;
 }
 
-function getAiReadinessError(settings: ShellDeskAppSettings) {
+function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLanguage) {
   const aiControls = window.guiSSH?.ai;
 
   if (!aiControls?.chat && !aiControls?.chatStream) {
-    return '当前运行环境未提供 SD-Agent 对话接口。';
+    return t('securityAudit.ai.noChat', language);
   }
 
   if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
-    return '请先在设置中完成 SD-Agent 提供商、API 密钥和模型配置。';
+    return t('securityAudit.ai.configRequired', language);
   }
 
   return '';
@@ -130,7 +119,7 @@ function extractJsonObject(text: string) {
   return source;
 }
 
-function parseSecurityAiPlan(content: string, definitions: SecurityCheckDefinition[]): SecurityAiPlan {
+function parseSecurityAiPlan(content: string, definitions: SecurityCheckDefinition[], language: AppLanguage): SecurityAiPlan {
   const validIds = new Set(definitions.map((definition) => definition.id));
   let parsed: unknown;
 
@@ -155,7 +144,7 @@ function parseSecurityAiPlan(content: string, definitions: SecurityCheckDefiniti
   const ids = [...new Set(parsedIds.length ? parsedIds : idsFromText)];
   const reason = typeof objectValue.reason === 'string' && objectValue.reason.trim()
     ? objectValue.reason.trim()
-    : 'SD-Agent 已根据当前系统类型和可用检查项选择采集范围。';
+    : t('securityAudit.ai.planFallback', language);
 
   return {
     ids: ids.length ? ids : definitions.map((definition) => definition.id),
@@ -169,13 +158,14 @@ function createSecurityAiEvidence(
   scannedAt: string,
   planReason: string,
   isWindowsHost: boolean,
+  language: AppLanguage,
 ) {
   const header = [
-    `主机：${hostLabel || '当前连接'}`,
-    `系统：${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
-    `采集时间：${scannedAt || new Date().toLocaleString(getShellDeskLocale())}`,
-    `AI 规划理由：${planReason}`,
-    `采集项数量：${results.length}`,
+    t('securityAudit.ai.evidence.host', language, { host: hostLabel || t('securityCheck.report.currentConnection', language) }),
+    t('securityAudit.ai.evidence.system', language, { system: isWindowsHost ? 'Windows' : 'Linux/Unix' }),
+    t('securityAudit.ai.evidence.collectedAt', language, { time: scannedAt || new Date().toLocaleString(getShellDeskLocale()) }),
+    t('securityAudit.ai.evidence.planReason', language, { reason: planReason }),
+    t('securityAudit.ai.evidence.count', language, { count: results.length }),
   ].join('\n');
   let text = `${header}\n\n`;
   let includedCount = 0;
@@ -183,23 +173,23 @@ function createSecurityAiEvidence(
   for (const result of results) {
     const section = [
       `## ${result.title} (${result.id})`,
-      `等级：${result.severity}`,
-      `状态：${result.status}`,
-      `摘要：${result.summary}`,
+      t('securityAudit.ai.evidence.severity', language, { severity: result.severity }),
+      t('securityAudit.ai.evidence.status', language, { status: result.status }),
+      t('securityAudit.ai.evidence.summary', language, { summary: result.summary }),
       '',
-      '发现：',
+      t('securityAudit.ai.evidence.findings', language),
       ...result.details.map((detail) => `- ${detail}`),
       '',
-      '建议：',
+      t('securityAudit.ai.evidence.suggestions', language),
       ...result.suggestions.map((suggestion) => `- ${suggestion}`),
       '',
-      '原始输出：',
-      compactAiText(result.rawOutput || '没有原始输出。', SECURITY_AI_RAW_OUTPUT_LIMIT),
+      t('securityAudit.ai.evidence.rawOutput', language),
+      compactAiText(result.rawOutput || t('securityAudit.ai.evidence.noRawOutput', language), SECURITY_AI_RAW_OUTPUT_LIMIT, language),
       '',
     ].join('\n');
 
     if (text.length + section.length > SECURITY_AI_EVIDENCE_CHAR_LIMIT) {
-      text += `\n[注意] 后续 ${results.length - includedCount} 个检查项因消息长度限制未发送给 SD-Agent。请在报告里说明该限制。\n`;
+      text += `\n${t('securityAudit.ai.evidence.omitted', language, { count: results.length - includedCount })}\n`;
       break;
     }
 
@@ -214,20 +204,20 @@ function createSecurityAiEvidence(
   };
 }
 
-function getSecurityAiPhaseLabel(phase: SecurityAiAuditPhase) {
-  if (phase === 'planning') return '正在规划采集项...';
-  if (phase === 'collecting') return '正在采集远端信息...';
-  if (phase === 'requesting') return '正在请求 SD-Agent...';
-  if (phase === 'streaming') return '正在生成巡检报告...';
-  if (phase === 'done') return 'AI 巡检完成';
-  if (phase === 'error') return 'AI 巡检失败';
-  return '等待开始';
+function getSecurityAiPhaseLabel(phase: SecurityAiAuditPhase, language: AppLanguage) {
+  if (phase === 'planning') return t('securityAudit.ai.phase.planning', language);
+  if (phase === 'collecting') return t('securityAudit.ai.phase.collecting', language);
+  if (phase === 'requesting') return t('securityAudit.ai.phase.requesting', language);
+  if (phase === 'streaming') return t('securityAudit.ai.phase.streaming', language);
+  if (phase === 'done') return t('securityAudit.ai.phase.done', language);
+  if (phase === 'error') return t('securityAudit.ai.phase.error', language);
+  return t('securityAudit.ai.phase.idle', language);
 }
 
-function createSecurityAiReportDocument(report: string, generatedAt: string, planNote: string, snapshotNote: string) {
+function createSecurityAiReportDocument(report: string, generatedAt: string, planNote: string, snapshotNote: string, language: AppLanguage) {
   return [
-    '# ShellDesk AI 安全巡检报告',
-    generatedAt ? `生成时间：${generatedAt}` : '',
+    t('securityAudit.ai.report.documentTitle', language),
+    generatedAt ? t('securityAudit.ai.report.generatedAt', language, { time: generatedAt }) : '',
     planNote,
     snapshotNote,
     '',
@@ -275,9 +265,11 @@ function createStreamedTextUpdater(setText: (value: string) => void, fallbackTex
   };
 }
 
-function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '当前连接' }: RemoteSecurityAuditProps) {
+function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: RemoteSecurityAuditProps) {
+  const language = settings.language;
+  const effectiveHostLabel = hostLabel || t('securityCheck.report.currentConnection', language);
   const isWindowsHost = isWindowsSystem(systemType);
-  const definitions = useMemo(() => createSecurityCheckDefinitions(isWindowsHost), [isWindowsHost]);
+  const definitions = useMemo(() => createSecurityCheckDefinitions(isWindowsHost, language), [isWindowsHost, language]);
   const [results, setResults] = useState<SecurityCheckResult[]>([]);
   const [selectedId, setSelectedId] = useState(definitions[0]?.id ?? '');
   const [runningAll, setRunningAll] = useState(false);
@@ -303,8 +295,8 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
         severity: 'info' as const,
         status: 'unknown' as const,
         summary: selectedDefinition.description,
-        details: ['尚未运行该检查项。'],
-        suggestions: ['点击单项重跑或运行全部。'],
+        details: [t('securityAudit.pending.detail', language)],
+        suggestions: [t('securityAudit.pending.suggestion', language)],
         rawOutput: '',
       }
     : null);
@@ -315,7 +307,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     info: results.filter((result) => result.severity === 'info').length,
     warning: results.filter((result) => result.status === 'warning' || result.status === 'failed').length,
   }), [results]);
-  const score = useMemo(() => calculateSecurityScore(results), [results]);
+  const score = useMemo(() => calculateSecurityScore(results, language), [language, results]);
   const isAiAuditBusy = aiAuditPhase === 'planning' || aiAuditPhase === 'collecting' || aiAuditPhase === 'requesting' || aiAuditPhase === 'streaming';
 
   const upsertResult = (nextResult: SecurityCheckResult) => {
@@ -335,13 +327,13 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
 
     try {
       const command = definition.createCommand();
-      const commandResult = await runCmd(connectionId, command);
+      const commandResult = await runCmd(connectionId, command, language);
       const result = definition.evaluate(commandResult);
       upsertResult(result);
       setScannedAt(new Date().toLocaleString(getShellDeskLocale()));
       return result;
     } catch (error) {
-      const result = createFailedResult(definition, error);
+      const result = createFailedResult(definition, error, language);
       upsertResult(result);
       return result;
     } finally {
@@ -368,7 +360,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
       }
       setResults(completedResults);
       setScannedAt(new Date().toLocaleString(getShellDeskLocale()));
-      setNotice('巡检完成，报告已刷新。');
+      setNotice(t('securityAudit.notice.completed', language));
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
@@ -381,8 +373,8 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
       return;
     }
 
-    await navigator.clipboard.writeText(formatSecurityReport(results, hostLabel, scannedAt));
-    setNotice('已复制 Markdown 巡检报告。');
+    await navigator.clipboard.writeText(formatSecurityReport(results, effectiveHostLabel, scannedAt, language));
+    setNotice(t('securityAudit.notice.copiedMarkdown', language));
   };
 
   const requestAiAudit = async () => {
@@ -402,7 +394,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     setError('');
     setNotice('');
 
-    const readinessError = getAiReadinessError(settings);
+    const readinessError = getAiReadinessError(settings, language);
 
     if (readinessError) {
       setAiAuditPhase('error');
@@ -414,7 +406,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
 
     if (!aiControls?.chat) {
       setAiAuditPhase('error');
-      setAiAuditError('当前运行环境未提供 SD-Agent 对话接口。');
+      setAiAuditError(t('securityAudit.ai.noChat', language));
       return;
     }
 
@@ -424,26 +416,26 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
       const planResult = await aiControls.chat(createAiChatRequest(settings, [
         {
           role: 'system',
-          content: SECURITY_AI_PLAN_SYSTEM_PROMPT,
+          content: t('ai.security.plan.systemPrompt', language),
         },
         {
           role: 'user',
           content: [
-            `目标主机：${hostLabel || '当前连接'}`,
-            `系统类型：${isWindowsHost ? 'Windows' : 'Linux/Unix'}`,
-            '可采集检查项 allowlist：',
+            t('securityAudit.ai.plan.host', language, { host: effectiveHostLabel }),
+            t('securityAudit.ai.plan.systemType', language, { system: isWindowsHost ? 'Windows' : 'Linux/Unix' }),
+            t('securityAudit.ai.plan.allowlist', language),
             createSecurityAiCatalog(definitions),
             '',
-            results.length ? '当前已有巡检摘要：' : '当前没有已有巡检结果。',
+            results.length ? t('securityAudit.ai.plan.currentSummary', language) : t('securityAudit.ai.plan.noSummary', language),
             ...results.map((result) => `- ${result.id}: ${result.status}/${result.severity} - ${result.summary}`),
           ].join('\n'),
         },
       ], 0.1));
 
-      plan = parseSecurityAiPlan(planResult.content, definitions);
+      plan = parseSecurityAiPlan(planResult.content, definitions, language);
     } catch (err) {
       setAiAuditPhase('error');
-      setAiAuditError(`SD-Agent 规划采集项失败：${getErrorMessage(err)}`);
+      setAiAuditError(t('securityAudit.ai.error.planFailed', language, { error: getErrorMessage(err) }));
       return;
     }
 
@@ -453,11 +445,15 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
 
     if (!selectedDefinitions.length) {
       setAiAuditPhase('error');
-      setAiAuditError('SD-Agent 没有选择可执行的巡检项。');
+      setAiAuditError(t('securityAudit.ai.error.noSelection', language));
       return;
     }
 
-    const planNote = `AI 计划采集 ${selectedDefinitions.length} 项：${selectedDefinitions.map((definition) => definition.title).join('、')}。${plan.reason}`;
+    const planNote = t('securityAudit.ai.plan.note', language, {
+      count: selectedDefinitions.length,
+      items: selectedDefinitions.map((definition) => definition.title).join(language === 'zh-CN' ? '、' : ', '),
+      reason: plan.reason,
+    });
     const completedResults: SecurityCheckResult[] = [];
 
     setAiAuditPlanNote(planNote);
@@ -465,41 +461,35 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     setSelectedId(selectedDefinitions[0].id);
 
     for (const [index, definition] of selectedDefinitions.entries()) {
-      setAiAuditSnapshotNote(`正在采集 ${index + 1} / ${selectedDefinitions.length}：${definition.title}`);
+      setAiAuditSnapshotNote(t('securityAudit.ai.collectingItem', language, { index: index + 1, total: selectedDefinitions.length, title: definition.title }));
       completedResults.push(await runCheck(definition));
     }
 
     const generatedAt = new Date().toLocaleString(getShellDeskLocale());
-    const evidence = createSecurityAiEvidence(completedResults, hostLabel, generatedAt, plan.reason, isWindowsHost);
+    const evidence = createSecurityAiEvidence(completedResults, effectiveHostLabel, generatedAt, plan.reason, isWindowsHost, language);
     const snapshotNote = evidence.omittedCount > 0
-      ? `已发送 ${evidence.includedCount} / ${completedResults.length} 个检查项；${evidence.omittedCount} 个检查项因单条消息长度限制未发送。`
-      : `已发送 ${evidence.includedCount} 个检查项。`;
+      ? t('securityAudit.ai.snapshot.partial', language, { included: evidence.includedCount, total: completedResults.length, omitted: evidence.omittedCount })
+      : t('securityAudit.ai.snapshot.all', language, { included: evidence.includedCount });
     const analysisRequest = createAiChatRequest(settings, [
       {
         role: 'system',
-        content: SECURITY_AI_REPORT_SYSTEM_PROMPT,
+        content: t('ai.security.report.systemPrompt', language),
       },
       {
         role: 'user',
         content: [
-          '请根据下面由 SD-Agent 规划并采集的 ShellDesk 安全巡检数据生成最终报告。',
-          '输出格式：',
-          '1. 总体结论：2-4 句话说明主机当前安全态势。',
-          '2. 关键风险：用表格列出风险、等级、证据、影响、建议动作；没有明确风险时写“未发现明确高风险项”。',
-          '3. 已采集信息：说明本次 AI 选择采集了哪些信息，以及是否存在采集限制。',
-          '4. 修复与加固优先级：按高/中/低优先级列出低破坏性的核验和处置步骤。',
-          '5. 继续核验：列出仅凭当前输出无法确认、但建议人工复核的事项。',
+          t('securityAudit.ai.report.userPrompt', language),
           '',
-          'AI 采集规划：',
+          t('securityAudit.ai.report.planLabel', language),
           planNote,
           '',
-          '巡检数据：',
+          t('securityAudit.ai.report.dataLabel', language),
           evidence.text,
         ].join('\n'),
       },
     ], 0.1);
     let streamedContent = '';
-    const streamedTextUpdater = createStreamedTextUpdater(setAiAuditText, '正在生成报告...');
+    const streamedTextUpdater = createStreamedTextUpdater(setAiAuditText, t('securityAudit.ai.report.generating', language));
 
     setAiAuditSnapshotNote(snapshotNote);
     setAiAuditPhase(aiControls.chatStream ? 'streaming' : 'requesting');
@@ -533,13 +523,13 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
         resultContent = result.content;
       }
 
-      setAiAuditText(resultContent || 'SD-Agent 没有返回报告内容。');
+      setAiAuditText(resultContent || t('securityAudit.ai.report.empty', language));
       setAiAuditGeneratedAt(generatedAt);
       setAiAuditPhase('done');
-      setNotice('AI 巡检完成，报告已生成。');
+      setNotice(t('securityAudit.ai.notice.completed', language));
     } catch (err) {
       setAiAuditPhase('error');
-      setAiAuditError(`SD-Agent 请求失败：${getErrorMessage(err)}`);
+      setAiAuditError(t('securityAudit.ai.error.requestFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -552,10 +542,10 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     setAiAuditError('');
 
     try {
-      await navigator.clipboard.writeText(createSecurityAiReportDocument(aiAuditText, aiAuditGeneratedAt, aiAuditPlanNote, aiAuditSnapshotNote));
-      setAiAuditNotice('已复制 AI 巡检报告。');
+      await navigator.clipboard.writeText(createSecurityAiReportDocument(aiAuditText, aiAuditGeneratedAt, aiAuditPlanNote, aiAuditSnapshotNote, language));
+      setAiAuditNotice(t('securityAudit.ai.notice.copied', language));
     } catch (err) {
-      setAiAuditError(`复制失败：${getErrorMessage(err)}`);
+      setAiAuditError(t('securityAudit.ai.error.copyFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -567,7 +557,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     const saveTextFile = window.guiSSH?.files?.saveTextFile;
 
     if (!saveTextFile) {
-      setAiAuditError('当前运行环境不支持导出报告。');
+      setAiAuditError(t('securityAudit.ai.error.exportUnsupported', language));
       return;
     }
 
@@ -576,16 +566,16 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
 
     try {
       const filePath = await saveTextFile({
-        title: '导出 AI 安全巡检报告',
+        title: t('securityAudit.ai.export.title', language),
         defaultFileName: createSecurityAiReportFileName(),
-        content: createSecurityAiReportDocument(aiAuditText, aiAuditGeneratedAt, aiAuditPlanNote, aiAuditSnapshotNote),
+        content: createSecurityAiReportDocument(aiAuditText, aiAuditGeneratedAt, aiAuditPlanNote, aiAuditSnapshotNote, language),
       });
 
       if (filePath) {
-        setAiAuditNotice(`已导出 AI 巡检报告：${filePath}`);
+        setAiAuditNotice(t('securityAudit.ai.notice.exported', language, { path: filePath }));
       }
     } catch (err) {
-      setAiAuditError(`导出失败：${getErrorMessage(err)}`);
+      setAiAuditError(t('securityAudit.ai.error.exportFailed', language, { error: getErrorMessage(err) }));
     }
   };
 
@@ -593,18 +583,18 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
     <section className="security-audit">
       <header className="security-toolbar">
         <div className="security-title">
-          <span>{isWindowsHost ? 'Windows' : 'Linux/Unix'} 安全巡检</span>
-          <strong>{hostLabel}</strong>
-          <em>{scannedAt || '尚未运行'}</em>
+          <span>{isWindowsHost ? 'Windows' : 'Linux/Unix'} {t('securityAudit.ui.titleSuffix', language)}</span>
+          <strong>{effectiveHostLabel}</strong>
+          <em>{scannedAt || t('securityAudit.ui.notRun', language)}</em>
         </div>
         <div className="security-actions">
           <button type="button" className="primary" onClick={runAllChecks} disabled={runningAll || isAiAuditBusy}>
-            {runningAll ? '巡检中' : '运行全部'}
+            {runningAll ? t('securityAudit.ui.running', language) : t('securityAudit.ui.runAll', language)}
           </button>
           <button type="button" className="ai" onClick={() => void requestAiAudit()} disabled={runningAll && !isAiAuditBusy}>
-            {isAiAuditBusy ? 'AI 巡检中' : 'AI巡检'}
+            {isAiAuditBusy ? t('securityAudit.ui.aiRunning', language) : t('securityAudit.ui.aiAudit', language)}
           </button>
-          <button type="button" onClick={copyReport} disabled={!results.length}>复制报告</button>
+          <button type="button" onClick={copyReport} disabled={!results.length}>{t('securityAudit.ui.copyReport', language)}</button>
         </div>
       </header>
 
@@ -613,15 +603,15 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
 
       <div className="security-summary">
         <div className={`security-score-card ${score.tone}`}>
-          <span>安全评分</span>
+          <span>{t('securityAudit.ui.score', language)}</span>
           <strong>{score.score ?? '--'}</strong>
           <em>{score.label}</em>
         </div>
-        <div><span>高风险</span><strong>{stats.high}</strong></div>
-        <div><span>中风险</span><strong>{stats.medium}</strong></div>
-        <div><span>低风险</span><strong>{stats.low}</strong></div>
-        <div><span>信息</span><strong>{stats.info}</strong></div>
-        <div><span>需关注</span><strong>{stats.warning}</strong></div>
+        <div><span>{t('securityAudit.ui.highRisk', language)}</span><strong>{stats.high}</strong></div>
+        <div><span>{t('securityAudit.ui.mediumRisk', language)}</span><strong>{stats.medium}</strong></div>
+        <div><span>{t('securityAudit.ui.lowRisk', language)}</span><strong>{stats.low}</strong></div>
+        <div><span>{t('securityAudit.ui.info', language)}</span><strong>{stats.info}</strong></div>
+        <div><span>{t('securityAudit.ui.needsAttention', language)}</span><strong>{stats.warning}</strong></div>
       </div>
 
       <div className="security-layout">
@@ -641,7 +631,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
                   <strong>{definition.title}</strong>
                   <small>{result?.summary ?? definition.description}</small>
                 </span>
-                <em className={result?.status ?? 'unknown'}>{isRunning ? '...' : result ? getStatusLabel(result.status) : '待运行'}</em>
+                <em className={result?.status ?? 'unknown'}>{isRunning ? '...' : result ? getStatusLabel(result.status, language) : t('securityAudit.ui.pendingRun', language)}</em>
               </button>
             );
           })}
@@ -652,17 +642,17 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
             <>
               <div className="security-detail-head">
                 <div>
-                  <span>{getStatusLabel(currentResult.status)}</span>
+                  <span>{getStatusLabel(currentResult.status, language)}</span>
                   <strong>{currentResult.title}</strong>
                 </div>
                 <div className="security-detail-actions">
-                  <span className={`security-severity ${currentResult.severity}`}>{getSeverityLabel(currentResult.severity)}</span>
+                  <span className={`security-severity ${currentResult.severity}`}>{getSeverityLabel(currentResult.severity, language)}</span>
                   <button
                     type="button"
                     onClick={() => selectedDefinition ? runCheck(selectedDefinition) : undefined}
                     disabled={!selectedDefinition || runningIds.has(currentResult.id)}
                   >
-                    {runningIds.has(currentResult.id) ? '运行中' : '单项重跑'}
+                    {runningIds.has(currentResult.id) ? t('securityAudit.ui.rerunning', language) : t('securityAudit.ui.rerunOne', language)}
                   </button>
                 </div>
               </div>
@@ -670,7 +660,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
               <div className="security-result-summary">{currentResult.summary}</div>
 
               <section className="security-section">
-                <h3>发现</h3>
+                <h3>{t('securityAudit.ui.findings', language)}</h3>
                 <ul>
                   {currentResult.details.map((detail) => (
                     <li key={detail}>{detail}</li>
@@ -679,7 +669,7 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
               </section>
 
               <section className="security-section">
-                <h3>建议</h3>
+                <h3>{t('securityAudit.ui.suggestions', language)}</h3>
                 <ul>
                   {currentResult.suggestions.map((suggestion) => (
                     <li key={suggestion}>{suggestion}</li>
@@ -688,12 +678,12 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
               </section>
 
               <section className="security-section raw">
-                <h3>原始输出</h3>
-                <pre>{currentResult.rawOutput || '没有原始输出。'}</pre>
+                <h3>{t('securityAudit.ui.rawOutput', language)}</h3>
+                <pre>{currentResult.rawOutput || t('securityAudit.ui.noRawOutput', language)}</pre>
               </section>
             </>
           ) : (
-            <div className="security-empty">暂无检查项。</div>
+            <div className="security-empty">{t('securityAudit.ui.empty', language)}</div>
           )}
         </main>
       </div>
@@ -710,17 +700,17 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
             <div className="security-ai-modal-header">
               <div>
                 <span>SD-Agent</span>
-                <strong id="security-ai-report-title">AI 安全巡检</strong>
+                <strong id="security-ai-report-title">{t('securityAudit.ai.modal.title', language)}</strong>
               </div>
-              <button type="button" className="security-ai-close" onClick={() => setAiAuditOpen(false)} aria-label="关闭 AI 巡检弹窗">×</button>
+              <button type="button" className="security-ai-close" onClick={() => setAiAuditOpen(false)} aria-label={t('securityAudit.ai.modal.closeAria', language)}>×</button>
             </div>
 
             <div className={`security-ai-progress ${aiAuditPhase}`}>
               <div className="security-ai-progress-bar" aria-hidden="true">
                 <span />
               </div>
-              <strong>{getSecurityAiPhaseLabel(aiAuditPhase)}</strong>
-              <em>{aiAuditSnapshotNote || aiAuditPlanNote || 'SD-Agent 会先选择需要采集的检查项，再生成安全巡检报告。'}</em>
+              <strong>{getSecurityAiPhaseLabel(aiAuditPhase, language)}</strong>
+              <em>{aiAuditSnapshotNote || aiAuditPlanNote || t('securityAudit.ai.modal.intro', language)}</em>
             </div>
 
             {aiAuditError ? <DismissibleAlert className="security-alert danger" onDismiss={() => setAiAuditError('')} role="alert">{aiAuditError}</DismissibleAlert> : null}
@@ -729,18 +719,18 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel = '
             <MarkdownReport
               className="security-ai-report"
               content={aiAuditText}
-              placeholder={isAiAuditBusy ? '报告生成中...' : '点击 AI巡检 后会在这里显示报告。'}
+              placeholder={isAiAuditBusy ? t('securityAudit.ai.modal.placeholderGenerating', language) : t('securityAudit.ai.modal.placeholderEmpty', language)}
               renderMarkdown={!isAiAuditBusy}
               stickToBottom={isAiAuditBusy}
             />
 
             <div className="security-modal-actions">
-              <button type="button" className="security-modal-btn" onClick={() => setAiAuditOpen(false)}>关闭</button>
+              <button type="button" className="security-modal-btn" onClick={() => setAiAuditOpen(false)}>{t('common.close', language)}</button>
               <button type="button" className="security-modal-btn" onClick={() => void copyAiAuditReport()} disabled={!aiAuditText.trim()}>
-                复制报告
+                {t('securityAudit.ai.modal.copyReport', language)}
               </button>
               <button type="button" className="security-modal-btn primary" onClick={() => void exportAiAuditReport()} disabled={!aiAuditText.trim()}>
-                导出报告
+                {t('securityAudit.ai.modal.exportReport', language)}
               </button>
             </div>
           </div>
