@@ -1934,6 +1934,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               }
 
               const app = getAppInfo(item.appKey);
+              const appLabel = translateText(app.label, settings.language);
 
               return (
                 <button
@@ -1956,7 +1957,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   <span className={`desktop-app-icon-shell desktop-app-icon-${item.appKey}`}>
                     <DesktopAppIcon appKey={item.appKey} />
                   </span>
-                  <strong>{app.label}</strong>
+                  <strong>{appLabel}</strong>
                 </button>
               );
             })}
@@ -1964,6 +1965,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
+          const appLabel = translateText(appInfo.label, settings.language);
           const livePointerFrame = windowPointerStateRef.current?.windowId === desktopWindow.id
             ? windowPointerStateRef.current.latestFrame
             : null;
@@ -1979,7 +1981,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             <section
               key={desktopWindow.id}
               className={`desktop-window desktop-window-${desktopWindow.appKey} ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
-              aria-label={appInfo.label}
+              aria-label={appLabel}
               aria-hidden={desktopWindow.isMinimized}
               style={desktopWindowStyle}
               onPointerDownCapture={() => bringWindowToFront(desktopWindow.id)}
@@ -1997,7 +1999,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   </span>
                   {desktopWindow.appKey === 'browser' ? (
                     <>
-                      <span className="desktop-window-kicker">{appInfo.label}</span>
+                      <span className="desktop-window-kicker">{appLabel}</span>
                       {desktopWindow.chromeTitle ? (
                         <strong title={desktopWindow.chromeTitle}>
                           {desktopWindow.chromeTitle}
@@ -2010,7 +2012,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                       ) : null}
                     </>
                   ) : (
-                    <strong>{appInfo.label}</strong>
+                    <strong>{appLabel}</strong>
                   )}
                 </div>
                 <div className="win-titlebar-controls" aria-label="窗口控制" onPointerDown={(event) => event.stopPropagation()}>
@@ -2114,6 +2116,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             ];
 
             return dockApps.map((app) => {
+              const appLabel = translateText(app.label, settings.language);
               const appWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === app.key);
               const hasOpenWindows = appWindows.length > 0;
               const hasVisibleWindows = appWindows.some((desktopWindow) => !desktopWindow.isMinimized);
@@ -2124,10 +2127,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 isMinimizedOnly ? 'minimized' : '',
               ].filter(Boolean).join(' ');
               const dockButtonLabel = isMinimizedOnly
-                ? `还原${app.label}`
+                ? `还原${appLabel}`
                 : hasOpenWindows
-                  ? `切换到${app.label}`
-                  : `打开${app.label}`;
+                  ? `切换到${appLabel}`
+                  : `打开${appLabel}`;
 
               return (
                 <button
@@ -2165,35 +2168,40 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             </button>
           </header>
           <div className="launchpad-grid">
-            {launchpadApps.map((app) => (
-              <button
-                key={app.key}
-                type="button"
-                className="launchpad-app-button"
-                draggable
-                onDragStart={(event) => handleDragStart(event, { source: 'launchpad', appKey: app.key })}
-                onDragEnd={handleDragEnd}
-                onMouseEnter={(event) => showLaunchpadTooltip(event.currentTarget, app.description)}
-                onMouseLeave={() => setLaunchpadTooltip(null)}
-                onFocus={(event) => showLaunchpadTooltip(event.currentTarget, app.description)}
-                onBlur={() => setLaunchpadTooltip(null)}
-                onClick={() => {
-                  closeLaunchpad();
-                  openDesktopWindow(app.key);
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeDesktopMenus();
-                  setAppContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key, source: 'launchpad' });
-                }}
-              >
-                <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
-                  <DesktopAppIcon appKey={app.key} />
-                </span>
-                <strong>{app.label}</strong>
-              </button>
-            ))}
+            {launchpadApps.map((app) => {
+              const appLabel = translateText(app.label, settings.language);
+              const appDescription = translateText(app.description, settings.language);
+
+              return (
+                <button
+                  key={app.key}
+                  type="button"
+                  className="launchpad-app-button"
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, { source: 'launchpad', appKey: app.key })}
+                  onDragEnd={handleDragEnd}
+                  onMouseEnter={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
+                  onMouseLeave={() => setLaunchpadTooltip(null)}
+                  onFocus={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
+                  onBlur={() => setLaunchpadTooltip(null)}
+                  onClick={() => {
+                    closeLaunchpad();
+                    openDesktopWindow(app.key);
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeDesktopMenus();
+                    setAppContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key, source: 'launchpad' });
+                  }}
+                >
+                  <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
+                    <DesktopAppIcon appKey={app.key} />
+                  </span>
+                  <strong>{appLabel}</strong>
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>,
@@ -2239,6 +2247,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <div className={`desktop-folder-grid ${openFolder.appKeys.length ? '' : 'empty'}`}>
             {openFolder.appKeys.length ? openFolder.appKeys.map((appKey) => {
               const app = getAppInfo(appKey);
+              const appLabel = translateText(app.label, settings.language);
 
               return (
                 <button
@@ -2265,7 +2274,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   <span className={`desktop-app-icon-shell desktop-app-icon-${appKey}`}>
                     <DesktopAppIcon appKey={appKey} />
                   </span>
-                  <strong>{app.label}</strong>
+                  <strong>{appLabel}</strong>
                 </button>
               );
             }) : (

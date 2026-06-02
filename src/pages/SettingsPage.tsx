@@ -981,14 +981,14 @@ function SettingsPage({
                   <label className="settings-row terminal-theme-row">
                     <span>
                       <strong>颜色主题</strong>
-                      <small>{selectedTerminalTheme.summary}</small>
+                      <small>{translateText(selectedTerminalTheme.summary, settings.language)}</small>
                     </span>
                     <select
                       value={settings.terminalTheme}
                       onChange={(event) => updateSetting('terminalTheme', event.target.value as ShellDeskAppSettings['terminalTheme'])}
                     >
                       {terminalThemeChoices.map((themeChoice) => (
-                        <option key={themeChoice.key} value={themeChoice.key}>{themeChoice.label}</option>
+                        <option key={themeChoice.key} value={themeChoice.key}>{translateText(themeChoice.label, settings.language)}</option>
                       ))}
                     </select>
                   </label>
@@ -1072,7 +1072,7 @@ function SettingsPage({
                       onChange={(event) => updateSetting('terminalFontWeight', Number(event.target.value))}
                     >
                       {terminalFontWeightChoices.map((choice) => (
-                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                        <option key={choice.value} value={choice.value}>{translateText(choice.label, settings.language)}</option>
                       ))}
                     </select>
                   </label>
@@ -1087,7 +1087,7 @@ function SettingsPage({
                       onChange={(event) => updateSetting('terminalFontWeightBold', Number(event.target.value))}
                     >
                       {terminalBoldWeightChoices.map((choice) => (
-                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                        <option key={choice.value} value={choice.value}>{translateText(choice.label, settings.language)}</option>
                       ))}
                     </select>
                   </label>
@@ -1323,7 +1323,7 @@ function SettingsPage({
                   <label className="settings-row">
                     <span>
                       <strong>提供商</strong>
-                      <small>{selectedAiProvider.summary}</small>
+                      <small>{translateText(selectedAiProvider.summary, settings.language)}</small>
                     </span>
                     <select
                       value={settings.aiProvider}
@@ -1537,21 +1537,21 @@ function SettingsPage({
                       <strong>数据目录</strong>
                       <small>普通配置与敏感 vault 统一放在同一目录，便于后续同步</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.path ?? '未就绪'}</code>
+                    <code className="settings-inline-code">{storageInfo?.path ?? translateText('未就绪', settings.language)}</code>
                   </div>
                   <div className="settings-row">
                     <span>
                       <strong>普通配置文件</strong>
                       <small>主机元数据、设置和书签</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.configPath ?? '未就绪'}</code>
+                    <code className="settings-inline-code">{storageInfo?.configPath ?? translateText('未就绪', settings.language)}</code>
                   </div>
                   <div className="settings-row">
                     <span>
                       <strong>敏感 vault 文件</strong>
                       <small>SSH 密码、密钥口令、私钥内容和 AI API 密钥</small>
                     </span>
-                    <code className="settings-inline-code">{storageInfo?.vaultPath ?? '未就绪'}</code>
+                    <code className="settings-inline-code">{storageInfo?.vaultPath ?? translateText('未就绪', settings.language)}</code>
                   </div>
                 </div>
                 <p className="settings-caption">私钥、密码、口令和 AI API 密钥只写入敏感 vault；普通配置文件不包含这些字段，后续可单独作为云同步配置源。</p>
@@ -1875,7 +1875,7 @@ function SettingsPage({
                           : '点击检查更新后读取 latest.yml'}
                       </small>
                     </span>
-                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? '未检查'}</code>
+                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? translateText('未检查', settings.language)}</code>
                   </div>
 
                   {updateCheckResult?.updateAvailable ? (
