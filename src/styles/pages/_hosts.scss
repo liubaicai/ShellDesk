@@ -1407,7 +1407,7 @@
 .host-card {
   min-height: 104px;
   border-color: rgba(154, 177, 210, 0.12);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 20px 20px 18px;
   user-select: none;
   background:
@@ -1437,8 +1437,8 @@
   position: absolute;
   inset: 0;
   z-index: 4;
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-content: center;
   align-items: center;
   justify-content: center;
@@ -1488,8 +1488,8 @@
 
 .host-card-loading small {
   display: block;
-  grid-column: 1 / -1;
-  justify-self: center;
+  flex: 0 0 100%;
+  text-align: center;
   max-width: calc(100% - 32px);
   overflow: hidden;
   color: #b7d9ea;

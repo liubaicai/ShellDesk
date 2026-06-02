@@ -606,6 +606,14 @@
   box-shadow: 0 12px 26px rgba(34, 55, 84, 0.08);
 }
 
+[data-theme="light"] .browser-address-shell:focus-within {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(37, 99, 235, 0.07),
+    0 10px 22px rgba(34, 55, 84, 0.08);
+}
+
 [data-theme="light"] .remote-browser-pane {
   --browser-panel: rgba(248, 250, 252, 0.82);
   --browser-panel-strong: rgba(242, 246, 251, 0.96);
@@ -624,6 +632,34 @@
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.66), rgba(227, 236, 246, 0.86)),
     var(--browser-panel-strong);
+}
+
+[data-theme="light"] .browser-start-page {
+  background:
+    linear-gradient(180deg, rgba(246, 249, 253, 0.92), rgba(235, 241, 249, 0.98)),
+    repeating-linear-gradient(90deg, rgba(37, 99, 235, 0.035) 0 1px, transparent 1px 42px),
+    repeating-linear-gradient(180deg, rgba(37, 99, 235, 0.03) 0 1px, transparent 1px 42px),
+    #edf3fa;
+}
+
+[data-theme="light"] .browser-start-card {
+  border-color: rgba(34, 55, 84, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(242, 247, 252, 0.72)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow: 0 10px 22px rgba(34, 55, 84, 0.07);
+}
+
+[data-theme="light"] .browser-start-card:hover,
+[data-theme="light"] .browser-start-card:focus-visible {
+  background:
+    linear-gradient(180deg, var(--browser-start-signal-soft), rgba(242, 247, 252, 0.84)),
+    rgba(255, 255, 255, 0.72);
+  box-shadow: 0 14px 28px rgba(34, 55, 84, 0.11);
+}
+
+[data-theme="light"] .browser-start-card-arrow {
+  border-color: rgba(34, 55, 84, 0.11);
 }
 
 [data-theme="light"] .browser-error-page {

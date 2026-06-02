@@ -1757,6 +1757,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     if (desktopWindow.appKey === 'browser') {
       return (
         <RemoteBrowser
+          connectionId={connection.id}
           partition={connection.partition}
           bookmarkScope={`${connection.host.username}@${connection.host.address}:${connection.host.port}`}
           context={{
@@ -1997,9 +1998,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   {desktopWindow.appKey === 'browser' ? (
                     <>
                       <span className="desktop-window-kicker">{appInfo.label}</span>
-                      <strong title={desktopWindow.chromeTitle || appInfo.label}>
-                        {desktopWindow.chromeTitle || appInfo.label}
-                      </strong>
+                      {desktopWindow.chromeTitle ? (
+                        <strong title={desktopWindow.chromeTitle}>
+                          {desktopWindow.chromeTitle}
+                        </strong>
+                      ) : null}
                       {desktopWindow.chromeStatus ? (
                         <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
                           {desktopWindow.chromeStatus}

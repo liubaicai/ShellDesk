@@ -4,7 +4,10 @@ import { createPortal } from 'react-dom';
 import { getErrorMessage } from './desktopUtils';
 
 const defaultBrowserUrl = 'http://127.0.0.1/';
+const browserBlankUrl = 'about:blank';
+const browserStartPageTitle = '起始页';
 const recentVisitLimit = 8;
+const browserStartPageCardLimit = 6;
 const browserRecentPreferencePrefix = 'browser.recent.';
 const browserBookmarkBarPreferencePrefix = 'browser.bookmark-bar.';
 const browserDefaultPageColorCss = `
@@ -29,6 +32,7 @@ const browserDefaultPageColorCss = `
 const loopbackServiceTargets = [
   { label: '开发服务', port: 3000 },
   { label: 'Vite', port: 5173 },
+  { label: '本地服务', port: 8000 },
   { label: '管理后台', port: 8080 },
   { label: '面板', port: 9000 },
 ] as const;
@@ -42,6 +46,7 @@ interface RemoteBrowserContext {
 }
 
 interface RemoteBrowserProps {
+  connectionId: string;
   partition: string;
   bookmarkScope: string;
   context: RemoteBrowserContext;
@@ -90,6 +95,13 @@ interface BrowserQuickTarget {
   id: string;
   label: string;
   hint: string;
+  url: string;
+}
+
+interface BrowserStartPageCard {
+  id: string;
+  title: string;
+  subtitle: string;
   url: string;
 }
 
@@ -214,6 +226,11 @@ function isHttpsBrowserUrl(value: string) {
 function isCertificateLoadError(detail: string, code?: number) {
   const signature = `${code ?? ''} ${detail}`.toUpperCase();
   return (typeof code === 'number' && code <= -200 && code > -300) || /CERT|TLS|SSL/.test(signature);
+}
+
+function getUrlFromBrowserLoadErrorDetail(detail: string) {
+  const match = detail.match(/\bhttps?:\/\/[^\s'"<>)]*/i);
+  return match?.[0] ? canonicalizeBrowserUrl(match[0]) : null;
 }
 
 function getBrowserTitle(url: string, title = '') {
@@ -349,9 +366,9 @@ function getBrowserBookmarkBarPreferenceKey(scope: string) {
 
 async function readBrowserBookmarkBarOpen(scope: string) {
   try {
-    return await window.guiSSH?.preferences?.get(getBrowserBookmarkBarPreferenceKey(scope)) !== 'hidden';
+    return await window.guiSSH?.preferences?.get(getBrowserBookmarkBarPreferenceKey(scope)) === 'visible';
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -396,6 +413,137 @@ function getBrowserQuickTargets(context: RemoteBrowserContext) {
     visitedTargets.add(target.url);
     return true;
   });
+}
+
+function getBrowserStartPageCards(bookmarks: BrowserBookmark[]) {
+  if (bookmarks.length) {
+    return bookmarks.slice(0, browserStartPageCardLimit).map((bookmark): BrowserStartPageCard => ({
+      id: bookmark.id,
+      title: bookmark.title,
+      subtitle: bookmark.url,
+      url: bookmark.url,
+    }));
+  }
+
+  return [
+    {
+      id: 'home-loopback',
+      title: '127.0.0.1',
+      subtitle: defaultBrowserUrl,
+      url: defaultBrowserUrl,
+    },
+    ...loopbackServiceTargets.map((target) => {
+      const url = getBrowserHostUrl('127.0.0.1', target.port);
+
+      return {
+        id: `home-loopback-${target.port}`,
+        title: `127.0.0.1:${target.port}`,
+        subtitle: target.label,
+        url,
+      };
+    }),
+  ].slice(0, browserStartPageCardLimit);
+}
+
+function getBrowserStartCardProbePort(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const host = parsedUrl.hostname.toLowerCase();
+
+    if (![
+      '127.0.0.1',
+      'localhost',
+      'localhost.',
+      '::1',
+      '[::1]',
+      '0:0:0:0:0:0:0:1',
+      '[0:0:0:0:0:0:0:1]',
+    ].includes(host)) {
+      return null;
+    }
+
+    if (parsedUrl.port) {
+      return Number(parsedUrl.port);
+    }
+
+    if (parsedUrl.protocol === 'http:') {
+      return 80;
+    }
+
+    if (parsedUrl.protocol === 'https:') {
+      return 443;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getBrowserStartProbePorts(cards: BrowserStartPageCard[]) {
+  const ports = new Set<number>();
+
+  for (const card of cards) {
+    const port = getBrowserStartCardProbePort(card.url);
+
+    if (port) {
+      ports.add(port);
+    }
+  }
+
+  return [...ports].sort((left, right) => left - right);
+}
+
+function buildBrowserStartLsofCommand(ports: number[]) {
+  const portArgs = ports.map((port) => String(port)).join(' ');
+
+  return `
+if ! command -v lsof >/dev/null 2>&1; then
+  printf '%s\\n' '__SHELLDESK_LSOF_MISSING__'
+  exit 0
+fi
+
+for port in ${portArgs}; do
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf 'OPEN\\t%s\\n' "$port"
+  fi
+done
+`;
+}
+
+function getOpenPortsFromLsofOutput(output: string) {
+  const openPorts = new Set<number>();
+
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^OPEN\t(\d{1,5})$/);
+
+    if (!match) {
+      continue;
+    }
+
+    const port = Number(match[1]);
+
+    if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+      openPorts.add(port);
+    }
+  }
+
+  return openPorts;
+}
+
+function getBrowserStartCardMeta(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const host = parsedUrl.hostname.replace(/^www\./i, '');
+
+    if (host === '127.0.0.1') {
+      return parsedUrl.port ? `PORT ${parsedUrl.port}` : 'LOOPBACK';
+    }
+
+    return parsedUrl.port ? `${host}:${parsedUrl.port}` : host;
+  } catch {
+    return 'BOOKMARK';
+  }
 }
 
 function getBrowserProtocolLabel(url: string) {
@@ -510,10 +658,10 @@ function BrowserIcon({ name, filled = false }: { name: BrowserIconName; filled?:
       {name === 'arrow-right' ? <path d="m9.5 5 7 7-7 7M16 12H7" /> : null}
       {name === 'clock' ? <path d="M12 7v5l3.5 2M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /> : null}
       {name === 'go' ? <path d="M5 12h13M13 6l6 6-6 6" /> : null}
-      {name === 'home' ? <path d="m4 10 8-6 8 6M7 9.5V20h10V9.5M10 20v-5h4v5" /> : null}
+      {name === 'home' ? <path d="M4.75 11.25 12 5.25l7.25 6M6.75 10v8.75h10.5V10M10 18.75v-4.5h4v4.5" /> : null}
       {name === 'more' ? <path d="M12 5.5v.01M12 12v.01M12 18.5v.01" /> : null}
       {name === 'panel' ? <path d="M5 7h14M5 12h14M5 17h9" /> : null}
-      {name === 'reload' ? <path d="M19 8v5h-5M5 16v-5h5M18.2 13a6.5 6.5 0 0 1-11.1 3M5.8 11A6.5 6.5 0 0 1 17 8" /> : null}
+      {name === 'reload' ? <path d="M18.4 8.2v4.6h-4.6M5.6 15.8v-4.6h4.6M17.65 12.8a5.75 5.75 0 0 1-9.85 3.15L5.6 13.75M6.35 11.2a5.75 5.75 0 0 1 9.85-3.15l2.2 2.2" /> : null}
       {name === 'route' ? <path d="M7 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm10-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9.5 14.5l5-5" /> : null}
       {name === 'shield' ? <path d="M12 21s7-3.1 7-9V5l-7-2-7 2v7c0 5.9 7 9 7 9Zm-3.2-9.2 2 2 4.5-5" /> : null}
       {name === 'stop' ? <path d="M7 7h10v10H7z" /> : null}
@@ -521,11 +669,11 @@ function BrowserIcon({ name, filled = false }: { name: BrowserIconName; filled?:
   );
 }
 
-function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: RemoteBrowserProps) {
-  const [browserAddress, setBrowserAddress] = useState(defaultBrowserUrl);
-  const [browserSrc, setBrowserSrc] = useState(defaultBrowserUrl);
-  const [currentUrl, setCurrentUrl] = useState(defaultBrowserUrl);
-  const [pageTitle, setPageTitle] = useState(getBrowserTitle(defaultBrowserUrl));
+function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChromeChange }: RemoteBrowserProps) {
+  const [browserAddress, setBrowserAddress] = useState(browserBlankUrl);
+  const [browserSrc, setBrowserSrc] = useState(browserBlankUrl);
+  const [currentUrl, setCurrentUrl] = useState(browserBlankUrl);
+  const [pageTitle, setPageTitle] = useState(browserStartPageTitle);
   const [loadError, setLoadError] = useState<BrowserLoadErrorState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTrustingCertificate, setIsTrustingCertificate] = useState(false);
@@ -533,13 +681,16 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const [canGoForward, setCanGoForward] = useState(false);
   const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([]);
   const [recentVisits, setRecentVisits] = useState<BrowserRecentVisit[]>([]);
-  const [isBookmarkBarOpen, setIsBookmarkBarOpen] = useState(true);
+  const [isBookmarkBarOpen, setIsBookmarkBarOpen] = useState(false);
   const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(false);
+  const [showStartPage, setShowStartPage] = useState(true);
+  const [startPagePortStatus, setStartPagePortStatus] = useState<Record<number, 'unknown' | 'open' | 'closed'>>({});
   const [bookmarkDraft, setBookmarkDraft] = useState<BrowserBookmarkDraft | null>(null);
   const [bookmarkMenu, setBookmarkMenu] = useState<BrowserBookmarkMenuState | null>(null);
   const [toolbarMenu, setToolbarMenu] = useState<BrowserToolbarMenuState | null>(null);
   const browserViewRef = useRef<BrowserWebview | null>(null);
   const isWebviewReadyRef = useRef(false);
+  const isStartPageRef = useRef(true);
   const bookmarkTriggerRef = useRef<HTMLDivElement | null>(null);
   const bookmarkPopoverRef = useRef<HTMLDivElement | null>(null);
   const bookmarkMenuPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -551,11 +702,17 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const areBookmarksReadyRef = useRef(false);
   const areRecentVisitsReadyRef = useRef(false);
 
-  const currentBookmark = bookmarks.find((bookmark) => areBrowserUrlsEquivalent(bookmark.url, currentUrl)) ?? null;
+  const currentBookmark = showStartPage
+    ? null
+    : bookmarks.find((bookmark) => areBrowserUrlsEquivalent(bookmark.url, currentUrl)) ?? null;
   const activeBookmarkMenuBookmark = bookmarkMenu
     ? bookmarks.find((bookmark) => bookmark.id === bookmarkMenu.bookmarkId) ?? null
     : null;
   const quickTargets = getBrowserQuickTargets(context);
+  const startPageCards = getBrowserStartPageCards(bookmarks);
+  const startPageProbePorts = getBrowserStartProbePorts(startPageCards);
+  const startPageProbeKey = startPageProbePorts.join(',');
+  const addressProtocolLabel = showStartPage ? 'HOME' : getBrowserProtocolLabel(currentUrl);
   const errorDiagnosis = loadError ? getBrowserErrorDiagnosis(loadError) : null;
 
   const rememberRecentVisit = (url: string, title = '') => {
@@ -577,7 +734,8 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
 
   const syncNavigationState = (nextUrl?: string, nextTitle?: string) => {
     const webview = browserViewRef.current;
-    let resolvedUrl = canonicalizeBrowserUrl(nextUrl || defaultBrowserUrl);
+    const fallbackUrl = browserSrc || currentUrl || browserBlankUrl;
+    let resolvedUrl = canonicalizeBrowserUrl(nextUrl || fallbackUrl);
     let resolvedTitle = getBrowserTitle(resolvedUrl, nextTitle || '');
     let nextCanGoBack = false;
     let nextCanGoForward = false;
@@ -585,18 +743,30 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
 
     if (webview && isWebviewReadyRef.current) {
       try {
-        resolvedUrl = canonicalizeBrowserUrl(nextUrl || webview.getURL() || defaultBrowserUrl);
+        resolvedUrl = canonicalizeBrowserUrl(nextUrl || webview.getURL() || fallbackUrl);
         resolvedTitle = getBrowserTitle(resolvedUrl, nextTitle || webview.getTitle() || '');
         nextCanGoBack = webview.canGoBack();
         nextCanGoForward = webview.canGoForward();
         nextIsLoading = webview.isLoading();
       } catch {
-        resolvedUrl = canonicalizeBrowserUrl(nextUrl || browserSrc || currentUrl || defaultBrowserUrl);
+        resolvedUrl = canonicalizeBrowserUrl(nextUrl || fallbackUrl);
         resolvedTitle = getBrowserTitle(resolvedUrl, nextTitle || pageTitle);
       }
     } else {
-      resolvedUrl = canonicalizeBrowserUrl(nextUrl || browserSrc || currentUrl || defaultBrowserUrl);
+      resolvedUrl = canonicalizeBrowserUrl(nextUrl || fallbackUrl);
       resolvedTitle = getBrowserTitle(resolvedUrl, nextTitle || pageTitle);
+    }
+
+    if (resolvedUrl === browserBlankUrl) {
+      isStartPageRef.current = true;
+      setShowStartPage(true);
+      setCurrentUrl(browserBlankUrl);
+      setBrowserAddress(browserBlankUrl);
+      setPageTitle(browserStartPageTitle);
+      setCanGoBack(nextCanGoBack);
+      setCanGoForward(nextCanGoForward);
+      setIsLoading(false);
+      return;
     }
 
     setCurrentUrl(resolvedUrl);
@@ -718,6 +888,72 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   }, [bookmarkScope]);
 
   useEffect(() => {
+    if (!showStartPage) {
+      return;
+    }
+
+    const ports = startPageProbePorts;
+
+    if (!ports.length) {
+      setStartPagePortStatus({});
+      return;
+    }
+
+    let disposed = false;
+
+    setStartPagePortStatus(() => {
+      const nextStatus: Record<number, 'unknown' | 'open' | 'closed'> = {};
+
+      for (const port of ports) {
+        nextStatus[port] = 'unknown';
+      }
+
+      return nextStatus;
+    });
+
+    const runCommand = window.guiSSH?.connections?.runCommand;
+
+    if (!runCommand) {
+      return () => {
+        disposed = true;
+      };
+    }
+
+    void runCommand(connectionId, buildBrowserStartLsofCommand(ports)).then((result) => {
+      if (disposed) {
+        return;
+      }
+
+      const openPorts = result.code === 0 && !result.stdout.includes('__SHELLDESK_LSOF_MISSING__')
+        ? getOpenPortsFromLsofOutput(result.stdout)
+        : new Set<number>();
+      const nextStatus: Record<number, 'unknown' | 'open' | 'closed'> = {};
+
+      for (const port of ports) {
+        nextStatus[port] = openPorts.has(port) ? 'open' : 'closed';
+      }
+
+      setStartPagePortStatus(nextStatus);
+    }).catch(() => {
+      if (!disposed) {
+        setStartPagePortStatus(() => {
+          const nextStatus: Record<number, 'unknown' | 'open' | 'closed'> = {};
+
+          for (const port of ports) {
+            nextStatus[port] = 'closed';
+          }
+
+          return nextStatus;
+        });
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [connectionId, showStartPage, startPageProbeKey]);
+
+  useEffect(() => {
     if (!areRecentVisitsReadyRef.current) {
       areRecentVisitsReadyRef.current = true;
       return;
@@ -735,6 +971,15 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
 
     isWebviewReadyRef.current = false;
 
+    const leaveStartPageForUrl = (url: string) => {
+      if (url === browserBlankUrl) {
+        return;
+      }
+
+      isStartPageRef.current = false;
+      setShowStartPage(false);
+    };
+
     const handleLoadCommit: EventListener = (event) => {
       const browserEvent = event as BrowserLoadCommitEvent;
 
@@ -743,6 +988,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
       }
 
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
+      leaveStartPageForUrl(nextUrl);
       setLoadError(null);
       syncNavigationState(nextUrl);
       rememberRecentVisit(nextUrl);
@@ -755,7 +1001,14 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
       }
 
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
+      leaveStartPageForUrl(nextUrl);
       setLoadError(null);
+
+      if (nextUrl === browserBlankUrl) {
+        syncNavigationState(nextUrl);
+        return;
+      }
+
       setIsLoading(true);
       setCurrentUrl(nextUrl);
       setBrowserAddress(nextUrl);
@@ -776,6 +1029,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     const handleDidNavigate: EventListener = (event) => {
       const browserEvent = event as BrowserNavigationEvent;
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
+      leaveStartPageForUrl(nextUrl);
       setLoadError(null);
       syncNavigationState(nextUrl);
       rememberRecentVisit(nextUrl);
@@ -783,10 +1037,19 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     const handleDidNavigateInPage: EventListener = (event) => {
       const browserEvent = event as BrowserNavigationEvent;
       const nextUrl = canonicalizeBrowserUrl(browserEvent.url);
+      leaveStartPageForUrl(nextUrl);
       syncNavigationState(nextUrl);
       rememberRecentVisit(nextUrl);
     };
     const handleDidStartLoading = () => {
+      const loadingUrl = canonicalizeBrowserUrl(webview.getURL() || browserSrc || currentUrl || browserBlankUrl);
+
+      if (loadingUrl === browserBlankUrl) {
+        setLoadError(null);
+        syncNavigationState(loadingUrl);
+        return;
+      }
+
       setLoadError(null);
       setIsLoading(true);
 
@@ -808,7 +1071,14 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
         return;
       }
 
-      const failedUrl = canonicalizeBrowserUrl(browserEvent.validatedURL || webview.getURL() || defaultBrowserUrl);
+      const detailUrl = getUrlFromBrowserLoadErrorDetail(browserEvent.errorDescription);
+      const failedUrl = canonicalizeBrowserUrl(detailUrl || browserEvent.validatedURL || webview.getURL() || browserSrc || currentUrl || browserBlankUrl);
+
+      if (failedUrl === browserBlankUrl) {
+        setLoadError(null);
+        syncNavigationState(failedUrl);
+        return;
+      }
 
       if (browserEvent.errorCode !== -3) {
         setLoadError({
@@ -826,6 +1096,13 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     };
     const handlePageTitleUpdated: EventListener = (event) => {
       const browserEvent = event as BrowserTitleUpdatedEvent;
+      const titleUrl = canonicalizeBrowserUrl(webview.getURL() || browserSrc || currentUrl || browserBlankUrl);
+
+      if (titleUrl === browserBlankUrl) {
+        syncNavigationState(titleUrl);
+        return;
+      }
+
       syncNavigationState(undefined, browserEvent.title);
       rememberRecentVisit(webview.getURL() || defaultBrowserUrl, browserEvent.title);
     };
@@ -865,8 +1142,8 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     }
 
     const payload = {
-      title: pageTitle || getBrowserTitle(currentUrl || browserAddress || defaultBrowserUrl),
-      status: loadError ? '加载失败' : isLoading ? '远程加载中' : 'SSH 代理',
+      title: showStartPage ? '' : pageTitle || getBrowserTitle(currentUrl || browserAddress || defaultBrowserUrl),
+      status: loadError ? '加载失败' : showStartPage ? '起始页' : isLoading ? '远程加载中' : 'SSH 代理',
       tone: loadError ? 'error' : isLoading ? 'loading' : 'idle',
     } as const;
     const payloadKey = `${payload.tone}\n${payload.status}\n${payload.title}`;
@@ -877,7 +1154,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
 
     lastChromePayloadRef.current = payloadKey;
     onChromeChange(payload);
-  }, [browserAddress, currentUrl, isLoading, loadError, onChromeChange, pageTitle]);
+  }, [browserAddress, currentUrl, isLoading, loadError, onChromeChange, pageTitle, showStartPage]);
 
   useEffect(() => {
     if (!bookmarkDraft) {
@@ -970,6 +1247,15 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
     const nextUrl = resolveBrowserUrl(value);
     const webview = browserViewRef.current;
 
+    if (nextUrl === browserBlankUrl) {
+      openStartPage();
+      return;
+    }
+
+    isStartPageRef.current = false;
+    setShowStartPage(false);
+    setIsQuickPanelOpen(false);
+
     if (!nextUrl) {
       setLoadError({
         kind: 'protocol',
@@ -1001,6 +1287,33 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
       });
       setIsLoading(false);
     });
+  };
+
+  const openStartPage = () => {
+    const webview = browserViewRef.current;
+
+    isStartPageRef.current = true;
+    setShowStartPage(true);
+    setLoadError(null);
+    setIsLoading(false);
+    setIsQuickPanelOpen(false);
+    setBrowserAddress(browserBlankUrl);
+    setCurrentUrl(browserBlankUrl);
+    setPageTitle(browserStartPageTitle);
+    setCanGoBack(false);
+    setCanGoForward(false);
+    setBrowserSrc(browserBlankUrl);
+
+    if (!webview || !isWebviewReadyRef.current) {
+      return;
+    }
+
+    try {
+      webview.stop();
+      void webview.loadURL(browserBlankUrl).catch(() => undefined);
+    } catch {
+      // Ignore webview teardown races while switching back to the internal start page.
+    }
   };
 
   const continueWithInvalidCertificate = async (url: string) => {
@@ -1051,15 +1364,12 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   const navigateWebview = (action: 'back' | 'forward' | 'reload' | 'home') => {
     const webview = browserViewRef.current;
 
+    if (action === 'home') {
+      openStartPage();
+      return;
+    }
+
     if (!webview || !isWebviewReadyRef.current) {
-      if (action === 'home') {
-        setBrowserSrc(defaultBrowserUrl);
-        setBrowserAddress(defaultBrowserUrl);
-        setCurrentUrl(defaultBrowserUrl);
-        setPageTitle(getBrowserTitle(defaultBrowserUrl));
-        setLoadError(null);
-        setIsLoading(true);
-      }
       return;
     }
 
@@ -1071,8 +1381,6 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
       if (webview.canGoForward()) {
         webview.goForward();
       }
-    } else if (action === 'home') {
-      loadBrowserUrl(defaultBrowserUrl);
     } else if (isLoading) {
       webview.stop();
     } else {
@@ -1081,7 +1389,7 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
   };
 
   const openBookmarkDraft = (bookmark?: BrowserBookmark | null) => {
-    const sourceUrl = bookmark?.url || currentUrl || normalizeBrowserUrl(browserAddress);
+    const sourceUrl = bookmark?.url || (showStartPage ? defaultBrowserUrl : currentUrl) || normalizeBrowserUrl(browserAddress);
     setBookmarkDraft({
       id: bookmark?.id ?? null,
       title: bookmark?.title || getBrowserTitle(sourceUrl, pageTitle),
@@ -1242,9 +1550,9 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
             <BrowserIcon name="home" />
           </button>
           <div className="browser-address-shell">
-            <span className="browser-security-icon" aria-label={`地址协议 ${getBrowserProtocolLabel(currentUrl)}`}>
+            <span className="browser-security-icon" aria-label={`地址协议 ${addressProtocolLabel}`}>
               <BrowserIcon name="shield" />
-              <em>{getBrowserProtocolLabel(currentUrl)}</em>
+              <em>{addressProtocolLabel}</em>
             </span>
             <input
               value={browserAddress}
@@ -1491,13 +1799,45 @@ function RemoteBrowser({ partition, bookmarkScope, context, onChromeChange }: Re
         document.body,
       ) : null}
 
-      <div className={`browser-viewport ${isLoading ? 'loading' : ''}`}>
+      <div className={`browser-viewport ${isLoading ? 'loading' : ''} ${showStartPage ? 'start' : ''}`}>
         <div className={`browser-progress ${isLoading ? 'visible' : ''}`} aria-hidden="true" />
+        {showStartPage ? (
+          <section className="browser-start-page" aria-label="浏览器起始页">
+            <div className="browser-start-grid">
+              {startPageCards.map((card) => {
+                const probePort = getBrowserStartCardProbePort(card.url);
+                const isOpen = Boolean(probePort && startPagePortStatus[probePort] === 'open');
+
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    className={`browser-start-card ${isOpen ? 'open' : ''}`}
+                    title={card.url}
+                    onClick={() => loadBrowserUrl(card.url)}
+                  >
+                    <span className="browser-start-card-top">
+                      <span className="browser-start-card-meta">
+                        <span className="browser-start-card-dot" aria-hidden="true" />
+                        {getBrowserStartCardMeta(card.url)}
+                      </span>
+                      <span className="browser-start-card-arrow" aria-hidden="true">
+                        <BrowserIcon name="go" />
+                      </span>
+                    </span>
+                    <strong>{card.title}</strong>
+                    <small>{card.subtitle}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
         <webview
           ref={(element) => {
             browserViewRef.current = element as BrowserWebview | null;
           }}
-          className="remote-webview"
+          className={`remote-webview ${showStartPage ? 'hidden' : ''}`}
           partition={partition}
           src={browserSrc}
         />
