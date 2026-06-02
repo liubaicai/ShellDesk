@@ -120,9 +120,25 @@ const aiProviderChoices: Array<{
   },
 ];
 const shellDeskRepositoryUrl = 'https://github.com/liubaicai/ShellDesk';
+const shellDeskReleasesUrl = `${shellDeskRepositoryUrl}/releases`;
 const shellDeskContactEmail = 'liushuai.baicai@hotmail.com';
 const defaultSyncRemotePath = '/ShellDesk/shelldesk-sync.json';
 const syncIntervalChoices = [5, 15, 30, 60, 120, 360];
+
+function createDefaultUpdateStatus(): ShellDeskUpdateStatus {
+  return {
+    status: 'idle',
+    percent: 0,
+    error: null,
+    version: null,
+    releaseNotes: '',
+    releaseDate: null,
+    isChecking: false,
+    supported: true,
+    unsupportedReason: '',
+    checkedAt: null,
+  };
+}
 
 function createDefaultSyncForm(): ShellDeskSyncConfigInput {
   return {
@@ -350,6 +366,7 @@ function SettingsPage({
   const [isAiModelListOpen, setIsAiModelListOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<ShellDeskAppInfo | null>(null);
   const [updateCheckResult, setUpdateCheckResult] = useState<ShellDeskUpdateCheckResult | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<ShellDeskUpdateStatus>(() => createDefaultUpdateStatus());
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const [updateCheckError, setUpdateCheckError] = useState('');
   const [syncConfig, setSyncConfig] = useState<ShellDeskSyncPublicConfig | null>(null);
@@ -405,22 +422,36 @@ function SettingsPage({
   const appDisplayName = appInfo?.productName || window.guiSSH?.appName || 'ShellDesk';
   const appVersion = appInfo?.version || '0.0.1';
   const appPlatform = appInfo ? `${appInfo.platform} ${appInfo.arch}` : t('settings.about.runtime.current', settings.language);
-  const updateStatusText = updateCheckError
-    ? updateCheckError
-    : isCheckingForUpdates
-      ? t('settings.update.status.checking', settings.language)
-      : updateCheckResult
-        ? updateCheckResult.updateAvailable
-          ? t('settings.update.status.available', settings.language, { version: updateCheckResult.latestVersion })
-          : t('settings.update.status.upToDate', settings.language)
-        : t('settings.update.status.notChecked', settings.language);
-  const updateStatusClassName = updateCheckError
+  const updateProgressPercent = Math.max(0, Math.min(100, Math.round(updateStatus.percent)));
+  const updateVersion = updateStatus.version || updateCheckResult?.latestVersion || '';
+  const isUpdateDownloading = updateStatus.status === 'downloading';
+  const isUpdateReady = updateStatus.status === 'ready';
+  const canOpenUpdateRelease = Boolean(updateCheckResult?.releaseUrl || updateCheckResult?.downloadUrl || updateStatus.version);
+  const canManualDownloadUpdate = updateStatus.supported !== false && updateStatus.status === 'available';
+  const updateStatusText = updateStatus.status === 'downloading'
+    ? t('settings.update.status.downloading', settings.language, { percent: String(updateProgressPercent) })
+    : updateStatus.status === 'ready'
+      ? t('settings.update.status.ready', settings.language)
+      : updateStatus.status === 'error'
+        ? t('settings.update.status.downloadError', settings.language, { error: updateStatus.error || t('settings.error.updateCheckFailed', settings.language) })
+        : updateCheckError
+          ? updateCheckError
+          : updateStatus.isChecking || isCheckingForUpdates
+            ? t('settings.update.status.checking', settings.language)
+            : updateStatus.status === 'available'
+              ? t('settings.update.status.available', settings.language, { version: updateVersion })
+              : updateCheckResult
+                ? updateCheckResult.updateAvailable
+                  ? t('settings.update.status.available', settings.language, { version: updateCheckResult.latestVersion })
+                  : t('settings.update.status.upToDate', settings.language)
+                : t('settings.update.status.notChecked', settings.language);
+  const updateStatusClassName = updateStatus.status === 'error' || updateCheckError
     ? 'error'
-    : updateCheckResult?.updateAvailable
+    : isUpdateReady || updateCheckResult?.updateAvailable === false
+      ? 'success'
+      : updateStatus.status === 'available' || updateStatus.status === 'downloading' || updateCheckResult?.updateAvailable
       ? 'available'
-      : updateCheckResult
-        ? 'success'
-        : '';
+      : '';
   const hasSavedWebDavPassword = Boolean(syncConfig?.hasWebDavPassword);
   const hasSavedSyncPassphrase = Boolean(syncConfig?.hasSyncPassphrase);
   const isSyncBusy = Boolean(syncPendingAction);
@@ -539,11 +570,151 @@ function SettingsPage({
     try {
       const result = await checkUpdates();
       setUpdateCheckResult(result);
+
+      if (result.updateAvailable) {
+        const checkForUpdateDownload = window.guiSSH?.app?.checkForUpdateDownload;
+
+        if (checkForUpdateDownload) {
+          setUpdateStatus((current) => ({ ...current, isChecking: true, error: null }));
+          void checkForUpdateDownload()
+            .then((autoResult) => {
+              if (autoResult.supported === false) {
+                setUpdateStatus((current) => ({
+                  ...current,
+                  supported: false,
+                  unsupportedReason: autoResult.error || current.unsupportedReason,
+                  isChecking: false,
+                }));
+                return;
+              }
+
+              if (autoResult.ready) {
+                setUpdateStatus((current) => ({
+                  ...current,
+                  status: 'ready',
+                  percent: 100,
+                  version: autoResult.version || current.version || result.latestVersion,
+                  isChecking: false,
+                  error: null,
+                }));
+                return;
+              }
+
+              if (autoResult.downloading) {
+                setUpdateStatus((current) => ({
+                  ...current,
+                  status: 'downloading',
+                  version: autoResult.version || current.version || result.latestVersion,
+                  isChecking: false,
+                  error: null,
+                }));
+                return;
+              }
+
+              if (autoResult.available && autoResult.version) {
+                setUpdateStatus((current) => ({
+                  ...current,
+                  version: autoResult.version || result.latestVersion,
+                  isChecking: Boolean(autoResult.checking),
+                  error: null,
+                }));
+                return;
+              }
+
+              if (autoResult.error) {
+                const errorMessage = autoResult.error;
+                setUpdateStatus((current) => ({
+                  ...current,
+                  status: 'error',
+                  error: errorMessage,
+                  isChecking: false,
+                }));
+                return;
+              }
+
+              setUpdateStatus((current) => ({
+                ...current,
+                isChecking: Boolean(autoResult.checking),
+              }));
+            })
+            .catch((error: unknown) => {
+              setUpdateStatus((current) => ({
+                ...current,
+                status: 'error',
+                error: getUpdateCheckErrorMessage(error, settings.language),
+                isChecking: false,
+              }));
+            });
+        }
+      }
     } catch (error) {
       setUpdateCheckResult(null);
       setUpdateCheckError(getUpdateCheckErrorMessage(error, settings.language));
     } finally {
       setIsCheckingForUpdates(false);
+    }
+  };
+
+  const downloadUpdate = async () => {
+    const download = window.guiSSH?.app?.downloadUpdate;
+
+    if (!download) {
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        error: t('settings.update.error.noApi', settings.language),
+      }));
+      return;
+    }
+
+    setUpdateStatus((current) => ({
+      ...current,
+      status: 'downloading',
+      percent: 0,
+      error: null,
+    }));
+
+    try {
+      const result = await download();
+
+      if (!result.success) {
+        setUpdateStatus((current) => ({
+          ...current,
+          status: 'error',
+          percent: 0,
+          error: result.error || t('settings.error.updateCheckFailed', settings.language),
+        }));
+      }
+    } catch (error) {
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        percent: 0,
+        error: getUpdateCheckErrorMessage(error, settings.language),
+      }));
+    }
+  };
+
+  const installUpdate = async () => {
+    const install = window.guiSSH?.app?.installUpdate;
+
+    if (!install) {
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        error: t('settings.update.error.noApi', settings.language),
+      }));
+      return;
+    }
+
+    try {
+      await install();
+    } catch (error) {
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        error: getUpdateCheckErrorMessage(error, settings.language),
+      }));
     }
   };
 
@@ -655,6 +826,34 @@ function SettingsPage({
 
     return () => {
       disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const appControls = window.guiSSH?.app;
+    const eventControls = window.guiSSH?.events;
+
+    let disposed = false;
+
+    void appControls?.getUpdateStatus?.()
+      .then((status) => {
+        if (!disposed) {
+          setUpdateStatus(status);
+        }
+      })
+      .catch(() => undefined);
+
+    const cleanups = [
+      eventControls?.onUpdateAvailable?.((payload) => setUpdateStatus(payload)),
+      eventControls?.onUpdateNotAvailable?.((payload) => setUpdateStatus(payload)),
+      eventControls?.onUpdateDownloadProgress?.((payload) => setUpdateStatus(payload)),
+      eventControls?.onUpdateDownloaded?.((payload) => setUpdateStatus(payload)),
+      eventControls?.onUpdateError?.((payload) => setUpdateStatus(payload)),
+    ].filter((cleanup): cleanup is () => void => typeof cleanup === 'function');
+
+    return () => {
+      disposed = true;
+      cleanups.forEach((cleanup) => cleanup());
     };
   }, []);
 
@@ -1861,14 +2060,27 @@ function SettingsPage({
                         {updateStatusText}
                       </small>
                     </span>
-                    <button
-                      type="button"
-                      className="command-button"
-                      onClick={checkForUpdates}
-                      disabled={isCheckingForUpdates}
-                    >
-                      {isCheckingForUpdates ? t('settings.update.checkingButton', settings.language) : t('settings.update.checkButton', settings.language)}
-                    </button>
+                    <div className="settings-update-actions">
+                      <button
+                        type="button"
+                        className="command-button"
+                        onClick={checkForUpdates}
+                        disabled={isCheckingForUpdates || updateStatus.isChecking || isUpdateDownloading || isUpdateReady}
+                      >
+                        {isCheckingForUpdates || updateStatus.isChecking
+                          ? t('settings.update.checkingButton', settings.language)
+                          : t('settings.update.checkButton', settings.language)}
+                      </button>
+                      {isUpdateReady ? (
+                        <button
+                          type="button"
+                          className="command-button"
+                          onClick={installUpdate}
+                        >
+                          {t('settings.update.installButton', settings.language)}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div className="settings-row">
@@ -1877,25 +2089,56 @@ function SettingsPage({
                       <small>
                         {updateCheckResult
                           ? [updateCheckResult.releaseName, formatDateTime(updateCheckResult.releaseDate)].filter(Boolean).join(' · ')
-                          : t('settings.update.latest.clickToCheck', settings.language)}
+                          : updateStatus.version
+                            ? t('settings.update.latest.autoDetected', settings.language, { version: updateStatus.version })
+                            : t('settings.update.latest.clickToCheck', settings.language)}
                       </small>
                     </span>
-                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? t('settings.update.latest.notChecked', settings.language)}</code>
+                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? updateStatus.version ?? t('settings.update.latest.notChecked', settings.language)}</code>
                   </div>
 
-                  {updateCheckResult?.updateAvailable ? (
+                  {isUpdateDownloading ? (
+                    <div className="settings-row settings-update-progress-row">
+                      <span>
+                        <strong>{t('settings.update.download.progress', settings.language)}</strong>
+                        <small>{t('settings.update.download.auto', settings.language)}</small>
+                      </span>
+                      <div className="settings-update-progress" aria-label={t('settings.update.download.progress', settings.language)}>
+                        <span style={{ width: `${updateProgressPercent}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {updateCheckResult?.updateAvailable || updateStatus.status === 'available' || updateStatus.status === 'error' || isUpdateReady ? (
                     <div className="settings-row">
                       <span>
                         <strong>{t('settings.update.download.title', settings.language)}</strong>
-                        <small>{[updateCheckResult.downloadName || t('settings.update.download.defaultName', settings.language), formatFileSize(updateCheckResult.downloadSize)].filter(Boolean).join(' · ')}</small>
+                        <small>
+                          {updateStatus.supported === false
+                            ? updateStatus.unsupportedReason || t('settings.update.download.manual', settings.language)
+                            : [updateCheckResult?.downloadName || t('settings.update.download.defaultName', settings.language), formatFileSize(updateCheckResult?.downloadSize ?? 0)].filter(Boolean).join(' · ')}
+                        </small>
                       </span>
-                      <button
-                        type="button"
-                        className="command-button"
-                        onClick={() => openExternalLink(updateCheckResult.downloadUrl ?? updateCheckResult.releaseUrl)}
-                      >
-                        {t('settings.update.download.open', settings.language)}
-                      </button>
+                      <div className="settings-update-actions">
+                        {canManualDownloadUpdate ? (
+                          <button
+                            type="button"
+                            className="command-button"
+                            onClick={downloadUpdate}
+                          >
+                            {t('settings.update.downloadButton', settings.language)}
+                          </button>
+                        ) : null}
+                        {canOpenUpdateRelease ? (
+                          <button
+                            type="button"
+                            className="command-button"
+                            onClick={() => openExternalLink(updateCheckResult?.downloadUrl ?? updateCheckResult?.releaseUrl ?? shellDeskReleasesUrl)}
+                          >
+                            {t('settings.update.download.open', settings.language)}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
                 </div>

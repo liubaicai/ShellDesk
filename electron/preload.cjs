@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('guiSSH', {
   app: {
     getInfo: () => ipcRenderer.invoke('app:get-info'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+    checkForUpdateDownload: () => ipcRenderer.invoke('app:check-for-update-download'),
+    downloadUpdate: () => ipcRenderer.invoke('app:download-update'),
+    installUpdate: () => ipcRenderer.invoke('app:install-update'),
+    getUpdateStatus: () => ipcRenderer.invoke('app:get-update-status'),
     openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   },
   window: {
@@ -236,5 +240,10 @@ contextBridge.exposeInMainWorld('guiSSH', {
     onVaultChanged: (callback) => onIpc('vault:changed', callback),
     onTransferProgress: (callback) => onIpc('transfer:progress', callback),
     onTransferEnd: (callback) => onIpc('transfer:end', callback),
+    onUpdateAvailable: (callback) => onIpc('app:update:available', callback),
+    onUpdateNotAvailable: (callback) => onIpc('app:update:not-available', callback),
+    onUpdateDownloadProgress: (callback) => onIpc('app:update:download-progress', callback),
+    onUpdateDownloaded: (callback) => onIpc('app:update:downloaded', callback),
+    onUpdateError: (callback) => onIpc('app:update:error', callback),
   },
 });

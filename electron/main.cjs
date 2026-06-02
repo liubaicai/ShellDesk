@@ -1,6 +1,10 @@
 const { app, BrowserWindow, nativeTheme } = require('electron');
 const { registerAiHandlers } = require('./main/aiHandlers.cjs');
 const { registerAppHandlers } = require('./main/appHandlers.cjs');
+const {
+  registerAutoUpdateHandlers,
+  startAutoUpdateCheck,
+} = require('./main/autoUpdateHandlers.cjs');
 const { registerConfigHandlers } = require('./main/configHandlers.cjs');
 const { registerConnectionHandlers } = require('./main/connectionHandlers.cjs');
 const { activeConnections, closeActiveConnection } = require('./main/connectionManager.cjs');
@@ -25,6 +29,7 @@ if (process.platform === 'win32') {
 
 registerWindowHandlers();
 registerAppHandlers(registerIpcHandler);
+registerAutoUpdateHandlers(registerIpcHandler);
 registerConfigHandlers(registerIpcHandler);
 registerAiHandlers(registerIpcHandler);
 registerConnectionHandlers(registerIpcHandler);
@@ -36,6 +41,7 @@ registerWebContentsGuards();
 
 app.whenReady().then(() => {
   createMainWindow();
+  startAutoUpdateCheck(5000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -412,6 +412,38 @@
   color: #157347 !important;
 }
 
+.settings-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-update-progress-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+}
+
+.settings-update-progress {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-control);
+}
+
+.settings-update-progress span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  min-width: 6px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width 180ms ease;
+}
+
 .settings-sync-card .settings-sync-input-row {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 460px);
 }
@@ -941,6 +973,10 @@ button:disabled {
   }
 
   .settings-sync-actions {
+    justify-content: flex-start;
+  }
+
+  .settings-update-actions {
     justify-content: flex-start;
   }
 

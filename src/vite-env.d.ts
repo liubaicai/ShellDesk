@@ -48,9 +48,51 @@ interface ShellDeskUpdateCheckResult {
   checkedAt: string;
 }
 
+type ShellDeskUpdateStatusValue = 'idle' | 'available' | 'downloading' | 'ready' | 'error';
+
+interface ShellDeskUpdateStatus {
+  status: ShellDeskUpdateStatusValue;
+  percent: number;
+  error: string | null;
+  version: string | null;
+  releaseNotes: string;
+  releaseDate: string | null;
+  isChecking: boolean;
+  supported: boolean;
+  unsupportedReason: string;
+  checkedAt: string | null;
+}
+
+interface ShellDeskAutoUpdateCheckResult {
+  available: boolean;
+  supported: boolean;
+  checking?: boolean;
+  downloading?: boolean;
+  ready?: boolean;
+  version?: string | null;
+  releaseNotes?: string;
+  releaseDate?: string | null;
+  error?: string;
+}
+
+interface ShellDeskUpdateActionResult {
+  success: boolean;
+  error?: string;
+}
+
+interface ShellDeskUpdateDownloadProgress extends ShellDeskUpdateStatus {
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
 interface ShellDeskAppControls {
   getInfo: () => Promise<ShellDeskAppInfo>;
   checkForUpdates: () => Promise<ShellDeskUpdateCheckResult>;
+  checkForUpdateDownload: () => Promise<ShellDeskAutoUpdateCheckResult>;
+  downloadUpdate: () => Promise<ShellDeskUpdateActionResult>;
+  installUpdate: () => Promise<boolean>;
+  getUpdateStatus: () => Promise<ShellDeskUpdateStatus>;
   openExternal: (url: string) => Promise<boolean>;
 }
 
@@ -881,6 +923,11 @@ interface ShellDeskEventControls {
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference'; scope?: string; key?: string }) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
+  onUpdateAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
+  onUpdateNotAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
+  onUpdateDownloadProgress: (callback: (payload: ShellDeskUpdateDownloadProgress) => void) => () => void;
+  onUpdateDownloaded: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
+  onUpdateError: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
 }
 
 interface ShellDeskApi {
