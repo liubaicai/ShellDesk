@@ -14,6 +14,7 @@ import { getAppLocale, getCurrentAppLanguage, getSystemLanguage, t, useShellDesk
 
 const hostsStorageKey = 'shelldesk:hosts';
 const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
+const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const ungroupedKey = '__ungrouped__';
 const remoteDesktopAppCatalogVersion = 2;
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
@@ -69,6 +70,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
 };
 
 type AppPage = 'hosts' | 'keys' | 'logs' | 'settings';
+type HostListSortMode = 'createdDesc' | 'createdAsc' | 'updatedDesc' | 'updatedAsc' | 'nameAsc' | 'nameDesc' | 'addressAsc';
 type HostSystemType =
   | 'unknown'
   | 'windows'
@@ -101,6 +103,26 @@ const navigationItems: ReadonlyArray<{ page: Exclude<AppPage, 'settings'>; icon:
   { page: 'keys', icon: 'keys', labelId: 'app.nav.keys' },
   { page: 'logs', icon: 'logs', labelId: 'app.nav.logs' },
 ];
+
+const hostListSortModes: ReadonlyArray<HostListSortMode> = [
+  'createdDesc',
+  'createdAsc',
+  'updatedDesc',
+  'updatedAsc',
+  'nameAsc',
+  'nameDesc',
+  'addressAsc',
+];
+
+const hostListSortModeLabelIds: Record<HostListSortMode, MessageId> = {
+  createdDesc: 'app.host.sort.createdDesc',
+  createdAsc: 'app.host.sort.createdAsc',
+  updatedDesc: 'app.host.sort.updatedDesc',
+  updatedAsc: 'app.host.sort.updatedAsc',
+  nameAsc: 'app.host.sort.nameAsc',
+  nameDesc: 'app.host.sort.nameDesc',
+  addressAsc: 'app.host.sort.addressAsc',
+};
 
 const hostSystemLabels: Record<HostSystemType, string> = {
   unknown: '',
@@ -628,6 +650,66 @@ function sortHostsByListOrder(hosts: Host[]) {
   return [...hosts].sort(compareHostsByListOrder);
 }
 
+function isHostListSortMode(value: unknown): value is HostListSortMode {
+  return typeof value === 'string' && hostListSortModes.includes(value as HostListSortMode);
+}
+
+function readHostListSortMode(): HostListSortMode {
+  try {
+    return getHostListSortMode(window.localStorage.getItem(hostListSortModeStorageKey));
+  } catch {
+    return 'createdDesc';
+  }
+}
+
+function storeHostListSortMode(sortMode: HostListSortMode) {
+  try {
+    window.localStorage.setItem(hostListSortModeStorageKey, sortMode);
+  } catch {
+    // Ignore localStorage write failures in restricted environments.
+  }
+}
+
+function getHostListSortMode(value: unknown): HostListSortMode {
+  return isHostListSortMode(value) ? value : 'createdDesc';
+}
+
+function compareHostText(left: string, right: string, locale: string) {
+  return left.localeCompare(right, locale, { numeric: true, sensitivity: 'base' });
+}
+
+function compareHostsByHostListSortMode(left: Host, right: Host, sortMode: HostListSortMode, locale: string) {
+  switch (sortMode) {
+    case 'createdAsc': {
+      const createdDiff = getSortableTimestamp(left.createdAt) - getSortableTimestamp(right.createdAt);
+      return createdDiff || left.id.localeCompare(right.id);
+    }
+    case 'updatedDesc': {
+      const updatedDiff = getSortableTimestamp(right.updatedAt) - getSortableTimestamp(left.updatedAt);
+      return updatedDiff || compareHostsByListOrder(left, right);
+    }
+    case 'updatedAsc': {
+      const updatedDiff = getSortableTimestamp(left.updatedAt) - getSortableTimestamp(right.updatedAt);
+      return updatedDiff || compareHostsByListOrder(left, right);
+    }
+    case 'nameAsc': {
+      const nameDiff = compareHostText(left.name, right.name, locale);
+      return nameDiff || compareHostsByListOrder(left, right);
+    }
+    case 'nameDesc': {
+      const nameDiff = compareHostText(right.name, left.name, locale);
+      return nameDiff || compareHostsByListOrder(left, right);
+    }
+    case 'addressAsc': {
+      const addressDiff = compareHostText(`${left.address}:${left.port}`, `${right.address}:${right.port}`, locale);
+      return addressDiff || compareHostsByListOrder(left, right);
+    }
+    case 'createdDesc':
+    default:
+      return compareHostsByListOrder(left, right);
+  }
+}
+
 function readStoredHosts(): Host[] {
   try {
     const rawHosts = window.localStorage.getItem(hostsStorageKey);
@@ -961,6 +1043,7 @@ function App() {
   const [keySearchQuery, setKeySearchQuery] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
   const [isHostGroupPanelCollapsed, setIsHostGroupPanelCollapsed] = useState(readHostGroupPanelCollapsed);
+  const [hostListSortMode, setHostListSortMode] = useState<HostListSortMode>(readHostListSortMode);
   const [formError, setFormError] = useState('');
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -1059,8 +1142,8 @@ function App() {
           .includes(query);
 
       return matchesGroup && matchesQuery;
-    }).sort(compareHostsByListOrder);
-  }, [activeGroupKey, appLanguage, hosts, searchQuery, sshKeyById]);
+    }).sort((left, right) => compareHostsByHostListSortMode(left, right, hostListSortMode, appLocale));
+  }, [activeGroupKey, appLanguage, appLocale, hostListSortMode, hosts, searchQuery, sshKeyById]);
 
   const filteredKeys = useMemo(() => {
     const query = keySearchQuery.trim().toLowerCase();
@@ -1311,6 +1394,10 @@ function App() {
   useEffect(() => {
     storeHostGroupPanelCollapsed(isHostGroupPanelCollapsed);
   }, [isHostGroupPanelCollapsed]);
+
+  useEffect(() => {
+    storeHostListSortMode(hostListSortMode);
+  }, [hostListSortMode]);
 
   useEffect(() => {
     const logsControls = window.guiSSH?.logs;
@@ -2428,8 +2515,19 @@ function App() {
                   </button>
                   <h2>{activeGroupName || t('app.host.all', appLanguage)} <b>{filteredHosts.length}</b></h2>
                 </div>
-                <span>
+                <span className="host-list-controls">
                   {t('app.host.count', appLanguage, { count: String(filteredHosts.length) })}
+                  <label className="host-sort-control">
+                    <select
+                      value={hostListSortMode}
+                      onChange={(event) => setHostListSortMode(getHostListSortMode(event.target.value))}
+                      aria-label={t('app.host.sort.aria', appLanguage)}
+                    >
+                      {hostListSortModes.map((sortMode) => (
+                        <option key={sortMode} value={sortMode}>{t(hostListSortModeLabelIds[sortMode], appLanguage)}</option>
+                      ))}
+                    </select>
+                  </label>
                   <button type="button" className="host-refresh-button" onClick={() => void refreshHosts()} aria-label={t('app.host.refreshList', appLanguage)}>
                     <span aria-hidden="true">↻</span>
                   </button>
@@ -2578,10 +2676,18 @@ function App() {
                   <strong>{hostEditorTitle}</strong>
                   <small>{editingHost ? editingHost.name : t('app.host.editor.savedToVault', appLanguage)}</small>
                 </span>
-                <button type="button" onClick={closeEditor} aria-label={t('app.host.editor.close', appLanguage)}>×</button>
+                <div className="editor-header-actions">
+                  <button type="submit" className="editor-header-submit" form="host-editor-form">
+                    {editingHost ? t('app.host.saveChanges', appLanguage) : t('app.host.addSubmit', appLanguage)}
+                  </button>
+                  <button type="button" className="editor-header-clear" onClick={resetForm}>
+                    {t('app.form.clear', appLanguage)}
+                  </button>
+                  <button type="button" className="editor-header-close" onClick={closeEditor} aria-label={t('app.host.editor.close', appLanguage)}>×</button>
+                </div>
               </div>
 
-              <form className="host-form" onSubmit={submitHost}>
+              <form id="host-editor-form" className="host-form" onSubmit={submitHost}>
                 <label className="field">
                   <span>{t('app.host.field.name', appLanguage)}</span>
                   <input

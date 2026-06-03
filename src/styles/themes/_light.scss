@@ -134,6 +134,17 @@
   background: var(--surface-hover);
 }
 
+[data-theme="light"] .host-sort-control select {
+  border-color: rgba(16, 32, 51, 0.14);
+  background: var(--surface-control);
+  color: #172033;
+}
+
+[data-theme="light"] .host-sort-control select:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
 [data-theme="light"] .host-avatar {
   background: var(--surface-icon);
   color: var(--accent);
@@ -245,15 +256,32 @@
   border-bottom-color: rgba(16, 32, 51, 0.1);
 }
 
-[data-theme="light"] .editor-header button {
+[data-theme="light"] .editor-header .editor-header-close {
   width: 34px;
   background: transparent;
   border: 0;
 }
 
-[data-theme="light"] .editor-header button:hover {
+[data-theme="light"] .editor-header .editor-header-close:hover {
   background: rgba(16, 32, 51, 0.06);
   border: 0;
+}
+
+[data-theme="light"] .editor-header .editor-header-submit {
+  border-color: var(--accent-strong-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 88%, #ffffff 12%),
+      color-mix(in srgb, var(--accent) 78%, #0f172a 22%)
+    );
+  color: var(--accent-contrast);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+[data-theme="light"] .editor-header .editor-header-clear {
+  background: var(--surface-control);
+  color: var(--muted-strong);
 }
 
 [data-theme="light"] .field input,
