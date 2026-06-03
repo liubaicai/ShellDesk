@@ -639,6 +639,10 @@
   flex: 0 0 auto;
 }
 
+.host-card-menu[open] {
+  z-index: 31;
+}
+
 .host-card-menu summary {
   display: grid;
   width: 22px;
@@ -1337,14 +1341,60 @@
 }
 
 .hosts-list-panel {
+  --hosts-overlay-scrollbar-width: 10px;
+  --hosts-panel-inline-padding: 26px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   margin: 0;
-  padding: 24px 26px 28px;
+  padding: 24px 0 28px var(--hosts-panel-inline-padding);
+}
+
+@supports (overflow-y: overlay) {
+  .host-list-scroll {
+    overflow-y: overlay;
+  }
+}
+
+.host-list-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: var(--hosts-panel-inline-padding);
+  scrollbar-gutter: auto;
+}
+
+.host-list-scroll > .host-grid,
+.host-list-scroll > .empty-state {
+  width: calc(100% + var(--hosts-overlay-scrollbar-width));
+}
+
+.host-list-scroll::-webkit-scrollbar {
+  width: var(--hosts-overlay-scrollbar-width);
+  height: var(--hosts-overlay-scrollbar-width);
+}
+
+.host-list-scroll::-webkit-scrollbar-track,
+.host-list-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.host-list-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(139, 164, 195, 0.34);
+  background-clip: content-box;
+}
+
+.host-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 164, 195, 0.48);
+  background-clip: content-box;
 }
 
 .host-list-heading {
   margin-bottom: 18px;
+  padding-right: var(--hosts-panel-inline-padding);
 }
 
 .host-list-title {
@@ -1405,6 +1455,10 @@
 
 .host-card.connecting {
   border-color: var(--accent-border);
+}
+
+.host-card:has(.host-card-menu[open]) {
+  z-index: 30;
 }
 
 .host-card-main:disabled {
@@ -1588,8 +1642,8 @@
 
 .host-card-menu-panel {
   border-radius: 12px;
-  background: var(--surface-panel);
-  backdrop-filter: blur(18px);
+  background: var(--surface);
+  backdrop-filter: none;
 }
 
 .host-grid.grid {
@@ -1600,7 +1654,7 @@
 
 .host-grid.list .host-card,
 .host-grid.grid .host-card {
-  min-height: 0;
+  min-height: 104px;
   height: auto;
   padding: 16px;
 }

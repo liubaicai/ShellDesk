@@ -603,6 +603,31 @@ function normalizeStoredHost(host: StoredHost): Host {
   };
 }
 
+function getSortableTimestamp(value: string) {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareHostsByListOrder(left: Pick<Host, 'id' | 'createdAt' | 'updatedAt'>, right: Pick<Host, 'id' | 'createdAt' | 'updatedAt'>) {
+  const createdDiff = getSortableTimestamp(right.createdAt) - getSortableTimestamp(left.createdAt);
+
+  if (createdDiff !== 0) {
+    return createdDiff;
+  }
+
+  const updatedDiff = getSortableTimestamp(right.updatedAt) - getSortableTimestamp(left.updatedAt);
+
+  if (updatedDiff !== 0) {
+    return updatedDiff;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function sortHostsByListOrder(hosts: Host[]) {
+  return [...hosts].sort(compareHostsByListOrder);
+}
+
 function readStoredHosts(): Host[] {
   try {
     const rawHosts = window.localStorage.getItem(hostsStorageKey);
@@ -617,7 +642,7 @@ function readStoredHosts(): Host[] {
       return [];
     }
 
-    return parsedHosts.filter(isStoredHost).map(normalizeStoredHost);
+    return sortHostsByListOrder(parsedHosts.filter(isStoredHost).map(normalizeStoredHost));
   } catch {
     return [];
   }
@@ -920,7 +945,7 @@ function App() {
   const initialPublicSnapshot = initialPublicSnapshotRef.current;
   const [hosts, setHosts] = useState<Host[]>(() => (
     initialPublicSnapshot
-      ? initialPublicSnapshot.hosts.filter(isStoredHost).map(normalizeStoredHost)
+      ? sortHostsByListOrder(initialPublicSnapshot.hosts.filter(isStoredHost).map(normalizeStoredHost))
       : (window.guiSSH?.vault ? [] : readStoredHosts())
   ));
   const [sshKeys, setSshKeys] = useState<SshKey[]>(() => (
@@ -963,8 +988,12 @@ function App() {
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationRequest | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const hostsRef = useRef(hosts);
+  const sshKeysRef = useRef(sshKeys);
+  const settingsRef = useRef(settings);
   const lastPersistedCollectionsRef = useRef('');
   const collectionsSaveInFlightRef = useRef(false);
+  const collectionsSaveInFlightSerializedRef = useRef('');
   const pendingCollectionsSaveRef = useRef<{ payload: VaultCollectionsSavePayload; serialized: string } | null>(null);
   const lastPersistedLogsRef = useRef('');
   const platform = window.guiSSH?.platform;
@@ -1030,7 +1059,7 @@ function App() {
           .includes(query);
 
       return matchesGroup && matchesQuery;
-    });
+    }).sort(compareHostsByListOrder);
   }, [activeGroupKey, appLanguage, hosts, searchQuery, sshKeyById]);
 
   const filteredKeys = useMemo(() => {
@@ -1053,9 +1082,11 @@ function App() {
     const { updateCollections = true, hydrated = true } = options;
 
     if (updateCollections) {
-      const nextHosts = snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost);
+      const nextHosts = sortHostsByListOrder(snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost));
       const nextKeys = snapshot.sshKeys.filter(isStoredSshKey);
 
+      hostsRef.current = nextHosts;
+      sshKeysRef.current = nextKeys;
       setHosts(nextHosts);
       setSshKeys(nextKeys);
 
@@ -1068,6 +1099,7 @@ function App() {
       }
     }
 
+    settingsRef.current = snapshot.settings;
     setSettings(snapshot.settings);
     setStorageInfo(snapshot.storage);
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
@@ -1091,6 +1123,7 @@ function App() {
 
     pendingCollectionsSaveRef.current = null;
     collectionsSaveInFlightRef.current = true;
+    collectionsSaveInFlightSerializedRef.current = pendingSave.serialized;
 
     void vaultControls.saveCollections(pendingSave.payload).then((snapshot) => {
       lastPersistedCollectionsRef.current = pendingSave.serialized;
@@ -1101,6 +1134,7 @@ function App() {
       setStatusMessage(t('app.status.saveLocalFailed', currentLanguage, { error: getErrorMessage(error, currentLanguage) }));
     }).finally(() => {
       collectionsSaveInFlightRef.current = false;
+      collectionsSaveInFlightSerializedRef.current = '';
 
       if (pendingCollectionsSaveRef.current) {
         flushCollectionsSave();
@@ -1109,6 +1143,15 @@ function App() {
   }, [vaultControls]);
 
   const scheduleCollectionsSave = useCallback((payload: VaultCollectionsSavePayload, serialized: string) => {
+    if (pendingCollectionsSaveRef.current?.serialized === serialized) {
+      return;
+    }
+
+    if (collectionsSaveInFlightSerializedRef.current === serialized) {
+      pendingCollectionsSaveRef.current = null;
+      return;
+    }
+
     pendingCollectionsSaveRef.current = { payload, serialized };
     flushCollectionsSave();
   }, [flushCollectionsSave]);
@@ -1127,9 +1170,34 @@ function App() {
     scheduleCollectionsSave(payload, serializedPayload);
   }, [isVaultHydrated, isVaultReady, scheduleCollectionsSave, vaultControls]);
 
+  const commitCollectionsState = useCallback((
+    nextHosts: Host[],
+    nextSshKeys: SshKey[],
+    nextSettings: ShellDeskAppSettings,
+  ) => {
+    const orderedHosts = sortHostsByListOrder(nextHosts);
+
+    hostsRef.current = orderedHosts;
+    sshKeysRef.current = nextSshKeys;
+    settingsRef.current = nextSettings;
+    setHosts(orderedHosts);
+    setSshKeys(nextSshKeys);
+    setSettings(nextSettings);
+    queueCollectionsSaveIfChanged({ hosts: orderedHosts, sshKeys: nextSshKeys, settings: nextSettings });
+  }, [queueCollectionsSaveIfChanged]);
+
+  const commitHosts = useCallback((nextHosts: Host[]) => {
+    commitCollectionsState(nextHosts, sshKeysRef.current, settingsRef.current);
+  }, [commitCollectionsState]);
+
+  const commitSshKeys = useCallback((nextSshKeys: SshKey[]) => {
+    commitCollectionsState(hostsRef.current, nextSshKeys, settingsRef.current);
+  }, [commitCollectionsState]);
+
   const refreshHosts = async () => {
     if (!vaultControls) {
       const nextHosts = readStoredHosts();
+      hostsRef.current = nextHosts;
       setHosts(nextHosts);
       setStatusMessage(t('app.status.hostsRefreshed', appLanguage, { count: String(nextHosts.length) }));
       return;
@@ -1143,6 +1211,18 @@ function App() {
       setStatusMessage(t('app.status.refreshHostsFailed', appLanguage, { error: getErrorMessage(error, appLanguage) }));
     }
   };
+
+  useEffect(() => {
+    hostsRef.current = hosts;
+  }, [hosts]);
+
+  useEffect(() => {
+    sshKeysRef.current = sshKeys;
+  }, [sshKeys]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     if (!windowConnectionId) {
@@ -1480,9 +1560,8 @@ function App() {
   }, [isConnectionWindow, vaultControls]);
 
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
-    setSettings(nextSettings);
-    queueCollectionsSaveIfChanged({ hosts, sshKeys, settings: nextSettings });
-  }, [hosts, queueCollectionsSaveIfChanged, sshKeys]);
+    commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
+  }, [commitCollectionsState]);
 
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '') => {
     setLogs((current) => {
@@ -1611,7 +1690,7 @@ function App() {
 
     if (editingKey) {
       const updatedKey = updateSshKeyFromForm(editingKey, keyForm);
-      setSshKeys((currentKeys) => currentKeys.map((key) => (key.id === editingKey.id ? updatedKey : key)));
+      commitSshKeys(sshKeysRef.current.map((key) => (key.id === editingKey.id ? updatedKey : key)));
       addLog('key', 'success', t('app.key.updateLog', appLanguage, { name: updatedKey.name }));
       setStatusMessage(t('app.key.updatedStatus', appLanguage, { name: updatedKey.name }));
       closeKeyEditor();
@@ -1671,16 +1750,15 @@ function App() {
   };
 
   const deleteSshKey = (key: SshKey) => {
-    const relatedHosts = hosts.filter((host) => host.keyId === key.id);
+    const relatedHosts = hostsRef.current.filter((host) => host.keyId === key.id);
     setDeleteConfirmation({ kind: 'ssh-key', key, relatedHostCount: relatedHosts.length });
   };
 
   const confirmDeleteSshKey = (key: SshKey) => {
-    const relatedHosts = hosts.filter((host) => host.keyId === key.id);
-    setSshKeys((currentKeys) => currentKeys.filter((currentKey) => currentKey.id !== key.id));
-
-    if (relatedHosts.length) {
-      setHosts((currentHosts) => currentHosts.map((host) => (
+    const relatedHosts = hostsRef.current.filter((host) => host.keyId === key.id);
+    const nextSshKeys = sshKeysRef.current.filter((currentKey) => currentKey.id !== key.id);
+    const nextHosts: Host[] = relatedHosts.length
+      ? hostsRef.current.map((host): Host => (
         host.keyId === key.id
           ? {
               ...host,
@@ -1692,8 +1770,10 @@ function App() {
               updatedAt: new Date().toISOString(),
             }
           : host
-      )));
-    }
+      ))
+      : hostsRef.current;
+
+    commitCollectionsState(nextHosts, nextSshKeys, settingsRef.current);
 
     if (editingKeyId === key.id) {
       closeKeyEditor();
@@ -1775,7 +1855,7 @@ function App() {
   ) => {
     const timestamp = new Date().toISOString();
 
-    setHosts((currentHosts) => currentHosts.map((currentHost) => (
+    commitHosts(hostsRef.current.map((currentHost): Host => (
       currentHost.id === host.id
         ? {
             ...currentHost,
@@ -1800,12 +1880,12 @@ function App() {
 
     if (editingHost) {
       const updatedHost = updateHostFromForm(editingHost, form, selectedKey);
-      setHosts((currentHosts) => currentHosts.map((host) => (host.id === editingHost.id ? updatedHost : host)));
+      commitHosts(hostsRef.current.map((host) => (host.id === editingHost.id ? updatedHost : host)));
       addLog('host', 'success', t('app.host.updateLog', appLanguage, { name: updatedHost.name }), `${updatedHost.username}@${updatedHost.address}:${updatedHost.port}`);
       setStatusMessage(t('app.host.updatedStatus', appLanguage, { name: updatedHost.name }));
     } else {
       const nextHost = createHostFromForm(form, selectedKey);
-      setHosts((currentHosts) => [nextHost, ...currentHosts]);
+      commitHosts([nextHost, ...hostsRef.current]);
       addLog('host', 'success', t('app.host.addLog', appLanguage, { name: nextHost.name }), `${nextHost.username}@${nextHost.address}:${nextHost.port}`);
       setStatusMessage(t('app.host.addedStatus', appLanguage, { name: nextHost.name }));
     }
@@ -1825,8 +1905,8 @@ function App() {
   };
 
   const confirmDeleteHost = (host: Host) => {
-    const nextHosts = hosts.filter((currentHost) => currentHost.id !== host.id);
-    setHosts(nextHosts);
+    const nextHosts = hostsRef.current.filter((currentHost) => currentHost.id !== host.id);
+    commitHosts(nextHosts);
     addLog('host', 'info', t('app.host.deleteLog', appLanguage, { name: host.name }), `${host.username}@${host.address}:${host.port}`);
     setStatusMessage(t('app.host.deletedStatus', appLanguage, { name: host.name }));
 
@@ -1914,44 +1994,45 @@ function App() {
       const hasDetectedSystem = detectedSystemType !== 'unknown' || Boolean(detectedSystemName);
       const connectionFinishedAt = new Date().toISOString();
 
-      setHosts((currentHosts) =>
-        currentHosts.map((currentHost) =>
-          currentHost.id === host.id
-            ? {
-                ...currentHost,
-                ...(credentials?.saveCredential
-                  ? {
-                      authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
-                      password: effectiveAuthMethod === 'password' ? credentials.password : '',
-                      keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
-                      keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
-                      passphrase: effectiveAuthMethod === 'key' && !selectedKey ? credentials.passphrase : '',
-                    }
-                  : {}),
-                ...(hasDetectedSystem
-                  ? {
-                      systemType: detectedSystemType,
-                      systemName: detectedSystemName,
-                    }
-                  : {}),
-                lastConnectionStatus: 'success',
-                lastConnectionAt: connectionFinishedAt,
-                lastConnectionError: '',
-                ...(credentials?.saveCredential || hasDetectedSystem
-                  ? { updatedAt: connectionFinishedAt }
-                  : {}),
-              }
-            : currentHost,
-        ),
+      const nextHosts = hostsRef.current.map((currentHost): Host =>
+        currentHost.id === host.id
+          ? {
+              ...currentHost,
+              ...(credentials?.saveCredential
+                ? {
+                    authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
+                    password: effectiveAuthMethod === 'password' ? credentials.password : '',
+                    keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
+                    keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
+                    passphrase: effectiveAuthMethod === 'key' && !selectedKey ? credentials.passphrase : '',
+                  }
+                : {}),
+              ...(hasDetectedSystem
+                ? {
+                    systemType: detectedSystemType,
+                    systemName: detectedSystemName,
+                  }
+                : {}),
+              lastConnectionStatus: 'success',
+              lastConnectionAt: connectionFinishedAt,
+              lastConnectionError: '',
+              ...(credentials?.saveCredential || hasDetectedSystem
+                ? { updatedAt: connectionFinishedAt }
+                : {}),
+            }
+          : currentHost,
       );
+      let nextSshKeys = sshKeysRef.current;
 
       if (credentials?.saveCredential && effectiveAuthMethod === 'key' && selectedKey) {
-        setSshKeys((currentKeys) => currentKeys.map((key) => (
+        nextSshKeys = sshKeysRef.current.map((key) => (
           key.id === selectedKey.id
             ? { ...key, passphrase: credentials.passphrase, updatedAt: connectionFinishedAt }
             : key
-        )));
+        ));
       }
+
+      commitCollectionsState(nextHosts, nextSshKeys, settingsRef.current);
 
       if (isConnectionWindow) {
         setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
@@ -2355,107 +2436,109 @@ function App() {
                 </span>
               </div>
 
-              {!isVaultReady ? (
-                <div className="empty-state">
-                  <span>LOADING</span>
-                  <h3>{t('app.host.loadingTitle', appLanguage)}</h3>
-                  <p>{t('app.host.loadingDescription', appLanguage)}</p>
-                </div>
-              ) : filteredHosts.length ? (
-                <div className="host-grid grid">
-                  {filteredHosts.map((host) => {
-                    const connectionState = getHostConnectionStateView(host, appLanguage);
-                    const isHostConnecting = connectingHostId === host.id;
+              <div className="host-list-scroll">
+                {!isVaultReady ? (
+                  <div className="empty-state">
+                    <span>LOADING</span>
+                    <h3>{t('app.host.loadingTitle', appLanguage)}</h3>
+                    <p>{t('app.host.loadingDescription', appLanguage)}</p>
+                  </div>
+                ) : filteredHosts.length ? (
+                  <div className="host-grid grid">
+                    {filteredHosts.map((host) => {
+                      const connectionState = getHostConnectionStateView(host, appLanguage);
+                      const isHostConnecting = connectingHostId === host.id;
 
-                    return (
-                      <article
-                        key={host.id}
-                        className={`host-card ${isHostConnecting ? 'connecting' : ''}`}
-                        aria-busy={isHostConnecting}
-                      >
-                        <button
-                          type="button"
-                          className="host-card-main"
-                          title={t('app.host.openHint', appLanguage)}
-                          disabled={isConnectionPending}
-                          onDoubleClick={() => openHostFromList(host)}
+                      return (
+                        <article
+                          key={host.id}
+                          className={`host-card ${isHostConnecting ? 'connecting' : ''}`}
+                          aria-busy={isHostConnecting}
                         >
-                          <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
-                          <span className="host-summary">
-                            <strong>{host.name}</strong>
-                            <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
-                            <span className="host-card-tags">
-                              {/* <em>SSH</em> */}
-                              <em>{host.group || t('app.host.group.ungrouped', appLanguage)}</em>
-                              <em>{host.tags.length ? host.tags.join(' / ') : t('app.host.noTags', appLanguage)}</em>
-                            </span>
-                          </span>
-                        </button>
-                        {isHostConnecting ? (
-                          <div className="host-card-loading" role="status" aria-live="polite">
-                            <span className="host-card-spinner" aria-hidden="true" />
-                            <strong>{t('app.host.connecting', appLanguage)}</strong>
-                            <small>{host.username}@{host.address}:{host.port}</small>
-                          </div>
-                        ) : null}
-                        <span className="host-card-actions">
-                          <span
-                            className={`host-connection-state ${connectionState.className}`}
-                            title={connectionState.title}
-                            aria-label={connectionState.title}
+                          <button
+                            type="button"
+                            className="host-card-main"
+                            title={t('app.host.openHint', appLanguage)}
+                            disabled={isConnectionPending}
+                            onDoubleClick={() => openHostFromList(host)}
                           >
-                            <i aria-hidden="true" />
-                            {connectionState.label}
-                          </span>
-                          {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
-                            <span className="credential-icon" title={host.authMethod === 'key' ? t('app.auth.keyLogin', appLanguage) : t('app.host.passwordSavedTitle', appLanguage)}>🔑</span>
-                          ) : null}
-                          <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
-                            <summary aria-label={t('app.host.actions', appLanguage)}>⋯</summary>
-                            <div className="host-card-menu-panel">
-                              <button
-                                type="button"
-                                disabled={isConnectionPending}
-                                onClick={(event) => {
-                                  closeHostCardMenu(event.currentTarget);
-                                  openHostFromList(host);
-                                }}
-                              >
-                                {t('app.host.open', appLanguage)}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  closeHostCardMenu(event.currentTarget);
-                                  startEditingHost(host);
-                                }}
-                              >
-                                {t('app.host.edit', appLanguage)}
-                              </button>
-                              <button
-                                type="button"
-                                className="danger-text"
-                                onClick={(event) => {
-                                  closeHostCardMenu(event.currentTarget);
-                                  deleteHost(host);
-                                }}
-                              >
-                                {t('app.host.delete', appLanguage)}
-                              </button>
+                            <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
+                            <span className="host-summary">
+                              <strong>{host.name}</strong>
+                              <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
+                              <span className="host-card-tags">
+                                {/* <em>SSH</em> */}
+                                <em>{host.group || t('app.host.group.ungrouped', appLanguage)}</em>
+                                <em>{host.tags.length ? host.tags.join(' / ') : t('app.host.noTags', appLanguage)}</em>
+                              </span>
+                            </span>
+                          </button>
+                          {isHostConnecting ? (
+                            <div className="host-card-loading" role="status" aria-live="polite">
+                              <span className="host-card-spinner" aria-hidden="true" />
+                              <strong>{t('app.host.connecting', appLanguage)}</strong>
+                              <small>{host.username}@{host.address}:{host.port}</small>
                             </div>
-                          </details>
-                        </span>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <span>EMPTY</span>
-                  <h3>{t(hosts.length ? 'app.host.emptyNoMatchesTitle' : 'app.host.emptyNoHostsTitle', appLanguage)}</h3>
-                  <p>{t(hosts.length ? 'app.host.emptyNoMatchesDescription' : 'app.host.emptyNoHostsDescription', appLanguage)}</p>
-                </div>
-              )}
+                          ) : null}
+                          <span className="host-card-actions">
+                            <span
+                              className={`host-connection-state ${connectionState.className}`}
+                              title={connectionState.title}
+                              aria-label={connectionState.title}
+                            >
+                              <i aria-hidden="true" />
+                              {connectionState.label}
+                            </span>
+                            {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
+                              <span className="credential-icon" title={host.authMethod === 'key' ? t('app.auth.keyLogin', appLanguage) : t('app.host.passwordSavedTitle', appLanguage)}>🔑</span>
+                            ) : null}
+                            <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
+                              <summary aria-label={t('app.host.actions', appLanguage)}>⋯</summary>
+                              <div className="host-card-menu-panel">
+                                <button
+                                  type="button"
+                                  disabled={isConnectionPending}
+                                  onClick={(event) => {
+                                    closeHostCardMenu(event.currentTarget);
+                                    openHostFromList(host);
+                                  }}
+                                >
+                                  {t('app.host.open', appLanguage)}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    closeHostCardMenu(event.currentTarget);
+                                    startEditingHost(host);
+                                  }}
+                                >
+                                  {t('app.host.edit', appLanguage)}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger-text"
+                                  onClick={(event) => {
+                                    closeHostCardMenu(event.currentTarget);
+                                    deleteHost(host);
+                                  }}
+                                >
+                                  {t('app.host.delete', appLanguage)}
+                                </button>
+                              </div>
+                            </details>
+                          </span>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <span>EMPTY</span>
+                    <h3>{t(hosts.length ? 'app.host.emptyNoMatchesTitle' : 'app.host.emptyNoHostsTitle', appLanguage)}</h3>
+                    <p>{t(hosts.length ? 'app.host.emptyNoMatchesDescription' : 'app.host.emptyNoHostsDescription', appLanguage)}</p>
+                  </div>
+                )}
+              </div>
             </section>
 
           </section>

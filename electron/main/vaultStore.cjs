@@ -737,6 +737,31 @@ function readPreferenceValue(rawValue) {
   return JSON.parse(serialized);
 }
 
+function getSortableTimestamp(value) {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareHostsByListOrder(left, right) {
+  const createdDiff = getSortableTimestamp(right.createdAt) - getSortableTimestamp(left.createdAt);
+
+  if (createdDiff !== 0) {
+    return createdDiff;
+  }
+
+  const updatedDiff = getSortableTimestamp(right.updatedAt) - getSortableTimestamp(left.updatedAt);
+
+  if (updatedDiff !== 0) {
+    return updatedDiff;
+  }
+
+  return String(left.id).localeCompare(String(right.id));
+}
+
+function sortHostsByListOrder(hosts) {
+  return hosts.slice().sort(compareHostsByListOrder);
+}
+
 function readVaultPayload(rawPayload) {
   if (!isPlainObject(rawPayload)) {
     throw new Error('本地数据无效。');
@@ -744,7 +769,7 @@ function readVaultPayload(rawPayload) {
 
   return {
     version: vaultSchemaVersion,
-    hosts: Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : [],
+    hosts: Array.isArray(rawPayload.hosts) ? sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host))) : [],
     sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readVaultKeyRecord(key)) : [],
     settings: readAppSettings(rawPayload.settings),
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
@@ -774,7 +799,7 @@ function toConfigSettings(settings) {
 function createConfigPayload(vault) {
   return {
     version: vaultSchemaVersion,
-    hosts: vault.hosts.map((host) => toConfigHostRecord(host)),
+    hosts: sortHostsByListOrder(vault.hosts).map((host) => toConfigHostRecord(host)),
     sshKeys: vault.sshKeys.map((key) => toConfigKeyRecord(key)),
     settings: toConfigSettings(vault.settings),
     browserBookmarks: vault.browserBookmarks,
@@ -810,7 +835,7 @@ function readConfigPayload(rawPayload) {
 
   return {
     version: vaultSchemaVersion,
-    hosts: Array.isArray(rawPayload.hosts) ? rawPayload.hosts.map((host) => readStoredHostRecord(host)) : [],
+    hosts: Array.isArray(rawPayload.hosts) ? sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host))) : [],
     sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readStoredKeyRecord(key)) : [],
     settings: readAppSettings(rawPayload.settings),
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
@@ -1150,7 +1175,7 @@ function toRendererKeyRecord(key) {
 
 function createVaultSnapshot(vault = getVault()) {
   return {
-    hosts: vault.hosts,
+    hosts: sortHostsByListOrder(vault.hosts),
     sshKeys: vault.sshKeys.map((key) => toRendererKeyRecord(key)),
     settings: vault.settings,
     browserBookmarks: vault.browserBookmarks,
@@ -1160,7 +1185,7 @@ function createVaultSnapshot(vault = getVault()) {
 
 function createPublicVaultSnapshotFromConfig(configPayload) {
   return {
-    hosts: configPayload.hosts.map((host) => ({
+    hosts: sortHostsByListOrder(configPayload.hosts).map((host) => ({
       ...host,
       password: '',
       passphrase: '',
@@ -1689,7 +1714,7 @@ function buildConfigBundle(vault = getVault()) {
     format: configBundleFormat,
     version: configBundleVersion,
     exportedAt: new Date().toISOString(),
-    hosts: vault.hosts,
+    hosts: sortHostsByListOrder(vault.hosts),
     sshKeys: vault.sshKeys.map((key) => ({
       ...toRendererKeyRecord(key),
       privateKeyBase64: Buffer.from(key.privateKey, 'utf8').toString('base64'),
@@ -1708,7 +1733,7 @@ function readConfigImportPayload(rawPayload) {
     throw new Error('备份文件版本不受支持。');
   }
 
-  const hosts = rawPayload.hosts.map((host) => readStoredHostRecord(host));
+  const hosts = sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host)));
   const sshKeys = rawPayload.sshKeys.map((key) => {
     const isLegacyKey = typeof key.keyPath === 'string' && !('source' in key);
     const baseKey = isLegacyKey ? readLegacyStoredKeyRecord(key) : readStoredKeyRecord(key);
