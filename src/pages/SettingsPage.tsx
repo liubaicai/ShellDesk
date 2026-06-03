@@ -355,7 +355,7 @@ function SettingsPage({
   onImportConfig,
   onExportConfig,
 }: SettingsPageProps) {
-  const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('general');
+  const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('about');
   const [wallpaperError, setWallpaperError] = useState('');
   const [wallpaperPresetUrls, setWallpaperPresetUrls] = useState<Record<string, string>>({});
   const [systemFonts, setSystemFonts] = useState<string[]>(fallbackSystemFontChoices);
@@ -1061,6 +1061,19 @@ function SettingsPage({
                         <option key={fontChoice} value={fontChoice}>{fontChoice}</option>
                       ))}
                     </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>{t('settings.general.minimizeToTrayOnClose.label', settings.language)}</strong>
+                      <small>{t('settings.general.minimizeToTrayOnClose.summary', settings.language)}</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.minimizeToTrayOnClose}
+                      onChange={(event) => updateSetting('minimizeToTrayOnClose', event.target.checked)}
+                    />
                   </label>
 
                 </div>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, nativeTheme } = require('electron');
+const { app, nativeTheme } = require('electron');
 const { registerAiHandlers } = require('./main/aiHandlers.cjs');
 const { registerAppHandlers } = require('./main/appHandlers.cjs');
 const {
@@ -14,8 +14,10 @@ const { registerRemoteConnectionHandlers } = require('./main/remoteConnectionHan
 const { registerSyncHandlers } = require('./main/syncHandlers.cjs');
 const {
   createMainWindow,
+  ensureAppTray,
   registerWebContentsGuards,
   registerWindowHandlers,
+  showMainWindow,
 } = require('./main/windows.cjs');
 const { registerVncHandlers } = require('./main/vncHandlers.cjs');
 
@@ -41,12 +43,11 @@ registerWebContentsGuards();
 
 app.whenReady().then(() => {
   createMainWindow();
+  ensureAppTray();
   startAutoUpdateCheck(5000);
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
+    showMainWindow();
   });
 });
 

@@ -212,6 +212,7 @@ interface ShellDeskAppSettings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
   defaultHostView: 'grid' | 'list';
+  minimizeToTrayOnClose: boolean;
   desktopWallpaperMode: 'preset' | 'custom';
   desktopWallpaperPresetId: string;
   desktopWallpaperDataUrl: string;

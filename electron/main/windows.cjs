@@ -1,11 +1,70 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, shell, Tray } = require('electron');
 const path = require('node:path');
 const { activeConnections, closeActiveConnection } = require('./connectionManager.cjs');
+const { getVault } = require('./vaultStore.cjs');
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const appIconPath = app.isPackaged
   ? path.join(process.resourcesPath, 'app-icon.png')
   : path.join(__dirname, '..', '..', 'src', 'assets', 'images', 'icon.png');
+let mainWindow = null;
+let appTray = null;
+let isAppQuitting = false;
+
+app.on('before-quit', () => {
+  isAppQuitting = true;
+});
+
+function getCurrentSettings() {
+  try {
+    return getVault().settings ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function shouldMinimizeMainWindowToTray() {
+  return getCurrentSettings().minimizeToTrayOnClose !== false;
+}
+
+function getTrayExitLabel() {
+  return getCurrentSettings().language === 'zh-CN' ? '退出' : 'Exit';
+}
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: getTrayExitLabel(),
+      click: () => {
+        isAppQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
+function isTrayUsable(tray) {
+  return Boolean(tray) && (
+    typeof tray.isDestroyed !== 'function' ||
+    !tray.isDestroyed()
+  );
+}
+
+function ensureAppTray() {
+  if (isTrayUsable(appTray)) {
+    appTray.setContextMenu(buildTrayMenu());
+    return appTray;
+  }
+
+  appTray = new Tray(appIconPath);
+  appTray.setToolTip('ShellDesk');
+  appTray.setContextMenu(buildTrayMenu());
+  appTray.on('click', () => {
+    showMainWindow();
+  });
+
+  return appTray;
+}
 
 function isSafeNavigation(targetUrl) {
   if (!targetUrl) {
@@ -23,7 +82,8 @@ function getSenderWindow(event) {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
-function configureAppWindow(appWindow) {
+function configureAppWindow(appWindow, options = {}) {
+  const { role = 'connection' } = options;
   const sendMaximizeState = () => {
     if (appWindow.isDestroyed() || appWindow.webContents.isDestroyed()) {
       return;
@@ -48,6 +108,24 @@ function configureAppWindow(appWindow) {
 
   appWindow.on('maximize', sendMaximizeState);
   appWindow.on('unmaximize', sendMaximizeState);
+
+  if (role === 'main') {
+    appWindow.on('close', (event) => {
+      if (isAppQuitting || !shouldMinimizeMainWindowToTray()) {
+        return;
+      }
+
+      event.preventDefault();
+      ensureAppTray();
+      appWindow.hide();
+    });
+
+    appWindow.on('closed', () => {
+      if (mainWindow === appWindow) {
+        mainWindow = null;
+      }
+    });
+  }
 }
 
 function loadAppWindow(appWindow, query = {}) {
@@ -66,7 +144,11 @@ function loadAppWindow(appWindow, query = {}) {
 }
 
 function createMainWindow() {
-  const mainWindow = new BrowserWindow({
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+
+  mainWindow = new BrowserWindow({
     width: 1180,
     height: 760,
     minWidth: 940,
@@ -93,8 +175,24 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  configureAppWindow(mainWindow);
+  configureAppWindow(mainWindow, { role: 'main' });
   loadAppWindow(mainWindow);
+  ensureAppTray();
+  return mainWindow;
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 function createConnectionWindow(activeConnection) {
@@ -185,7 +283,9 @@ function registerWebContentsGuards() {
 module.exports = {
   createConnectionWindow,
   createMainWindow,
+  ensureAppTray,
   getSenderWindow,
   registerWebContentsGuards,
   registerWindowHandlers,
+  showMainWindow,
 };

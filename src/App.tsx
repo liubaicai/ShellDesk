@@ -38,6 +38,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
   theme: 'dark',
   accentColor: '#43c7ff',
   defaultHostView: 'grid',
+  minimizeToTrayOnClose: true,
   desktopWallpaperMode: 'preset',
   desktopWallpaperPresetId: 'default',
   desktopWallpaperDataUrl: '',
