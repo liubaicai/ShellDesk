@@ -12,6 +12,7 @@ import {
 import { createPortal } from 'react-dom';
 
 import { t, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
+import ContextMenuIcon from './ContextMenuIcon';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
@@ -1998,43 +1999,50 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             {contextMenu.targetEntry ? (
               <>
                 {(isDirectoryEntry(contextMenu.targetEntry) || (contextMenu.targetEntry.type === 'symlink' && !isFileEntry(contextMenu.targetEntry))) && (
-                  <button type="button" role="menuitem" onClick={() => { closeContextMenu(); void openFileEntry(contextMenu.targetEntry!); }}>
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => { closeContextMenu(); void openFileEntry(contextMenu.targetEntry!); }}>
+                    <ContextMenuIcon name="open" />
                     {t('fileExplorer.context.open', language)}
                   </button>
                 )}
                 {isDirectoryEntry(contextMenu.targetEntry) && onOpenTerminal ? (
-                  <button type="button" role="menuitem" onClick={() => {
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => {
                     closeContextMenu();
                     onOpenTerminal(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
+                    <ContextMenuIcon name="terminal" />
                     {t('fileExplorer.details.openInTerminal', language)}
                   </button>
                 ) : null}
                 {isFileEntry(contextMenu.targetEntry) && isTextFile(contextMenu.targetEntry.name) && onOpenFile && (
-                  <button type="button" role="menuitem" onClick={() => {
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => {
                     closeContextMenu();
                     onOpenFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
+                    <ContextMenuIcon name="notepad" />
                     {t('fileExplorer.open.notepad', language)}
                   </button>
                 )}
                 {isFileEntry(contextMenu.targetEntry) && isSqliteFile(contextMenu.targetEntry.name) && onOpenSqliteFile && (
-                  <button type="button" role="menuitem" onClick={() => {
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => {
                     closeContextMenu();
                     onOpenSqliteFile(joinRemotePath(remotePath, contextMenu.targetEntry!.name, isWindowsHost));
                   }}>
+                    <ContextMenuIcon name="database" />
                     {t('fileExplorer.open.sqlite', language)}
                   </button>
                 )}
-                <button type="button" role="menuitem" onClick={() => startRename(contextMenu.targetEntry!)}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => startRename(contextMenu.targetEntry!)}>
+                  <ContextMenuIcon name="rename" />
                   {t('fileExplorer.context.rename', language)}
                 </button>
-                <button type="button" role="menuitem" onClick={() => copyEntryPath(contextMenu.targetEntry!)}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => copyEntryPath(contextMenu.targetEntry!)}>
+                  <ContextMenuIcon name="copy" />
                   {t('fileExplorer.context.copyPath', language)}
                 </button>
                 <button
                   type="button"
                   role="menuitem"
+                  className="context-menu-icon-button"
                   onClick={() => {
                     const targets = selectedNames.has(contextMenu.targetEntry!.name) && selectedNames.size > 1
                       ? sortedEntries.filter((entry) => selectedNames.has(entry.name))
@@ -2042,15 +2050,18 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     void downloadEntries(targets);
                   }}
                 >
+                  <ContextMenuIcon name="download" />
                   {t('fileExplorer.toolbar.download', language)}
                 </button>
                 {isArchiveFile(contextMenu.targetEntry.name) && isFileEntry(contextMenu.targetEntry) && (!isWindowsHost || contextMenu.targetEntry.name.toLowerCase().endsWith('.zip')) && (
-                  <button type="button" role="menuitem" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void decompressEntry(contextMenu.targetEntry!)}>
+                    <ContextMenuIcon name="archive" />
                     {t('fileExplorer.details.decompress', language)}
                   </button>
                 )}
                 <div className="context-menu-item-has-submenu">
-                  <button type="button" role="menuitem" aria-haspopup="menu">
+                  <button type="button" role="menuitem" className="context-menu-icon-button" aria-haspopup="menu">
+                    <ContextMenuIcon name="archive" />
                     {t('fileExplorer.context.compressAs', language)}
                   </button>
                   <div className="context-submenu">
@@ -2074,32 +2085,39 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                   </div>
                 </div>
                 <div className="context-menu-sep" />
-                <button type="button" role="menuitem" className="danger-text" onClick={() => void deleteSelectedEntries(contextMenu.targetEntry ? [contextMenu.targetEntry] : undefined)}>
+                <button type="button" role="menuitem" className="context-menu-icon-button danger-text" onClick={() => void deleteSelectedEntries(contextMenu.targetEntry ? [contextMenu.targetEntry] : undefined)}>
+                  <ContextMenuIcon name="trash" />
                   {t('fileExplorer.context.delete', language)}
                 </button>
                 <div className="context-menu-sep" />
-                <button type="button" role="menuitem" onClick={() => void showProperties(contextMenu.targetEntry!)}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void showProperties(contextMenu.targetEntry!)}>
+                  <ContextMenuIcon name="info" />
                   {t('fileExplorer.context.properties', language)}
                 </button>
               </>
             ) : (
               <>
-                <button type="button" role="menuitem" onClick={refreshFiles}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={refreshFiles}>
+                  <ContextMenuIcon name="refresh" />
                   {t('fileExplorer.toolbar.refresh', language)}
                 </button>
                 <div className="context-menu-sep" />
-                <button type="button" role="menuitem" onClick={() => startNewItem('file')}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => startNewItem('file')}>
+                  <ContextMenuIcon name="new-file" />
                   {t('fileExplorer.toolbar.newFile', language)}
                 </button>
-                <button type="button" role="menuitem" onClick={() => startNewItem('folder')}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => startNewItem('folder')}>
+                  <ContextMenuIcon name="new-folder" />
                   {t('fileExplorer.context.newFolder', language)}
                 </button>
                 <div className="context-menu-sep" />
-                <button type="button" role="menuitem" onClick={() => void uploadItems()}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void uploadItems()}>
+                  <ContextMenuIcon name="upload" />
                   {t('fileExplorer.context.uploadItems', language)}
                 </button>
                 {onOpenTerminal ? (
-                  <button type="button" role="menuitem" onClick={() => { closeContextMenu(); onOpenTerminal(remotePath); }}>
+                  <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => { closeContextMenu(); onOpenTerminal(remotePath); }}>
+                    <ContextMenuIcon name="terminal" />
                     {t('fileExplorer.details.openInTerminal', language)}
                   </button>
                 ) : null}

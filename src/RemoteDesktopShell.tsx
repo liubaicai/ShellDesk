@@ -13,6 +13,7 @@ import type {
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import { getDesktopWallpaperPreset } from './assets/desktopWallpapers';
+import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
 
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
@@ -2310,6 +2311,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <button
             type="button"
             role="menuitem"
+            className="context-menu-icon-button"
             onClick={() => {
               const { appKey, source } = appContextMenu;
               setAppContextMenu(null);
@@ -2322,12 +2324,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               openDesktopWindow(appKey);
             }}
           >
+            <ContextMenuIcon name="open" />
             {t('desktop.menu.open', settings.language)}
           </button>
           {appContextMenu.source === 'launchpad' ? (
             <button
               type="button"
               role="menuitem"
+              className="context-menu-icon-button"
               disabled={hasDesktopApp(desktopLayout, appContextMenu.appKey)}
               onClick={() => {
                 const { appKey } = appContextMenu;
@@ -2335,6 +2339,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 sendAppToDesktop(appKey);
               }}
             >
+              <ContextMenuIcon name="desktop" />
               {t('desktop.menu.sendToDesktop', settings.language)}
             </button>
           ) : appContextMenu.source === 'folder' ? (
@@ -2342,24 +2347,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               <button
                 type="button"
                 role="menuitem"
+                className="context-menu-icon-button"
                 onClick={() => {
                   const { appKey } = appContextMenu;
                   setAppContextMenu(null);
                   moveFolderAppToDesktop(appKey);
                 }}
               >
+                <ContextMenuIcon name="move-desktop" />
                 {t('desktop.menu.moveToDesktop', settings.language)}
               </button>
               <button
                 type="button"
                 role="menuitem"
-                className="danger-text"
+                className="context-menu-icon-button danger-text"
                 onClick={() => {
                   const { appKey } = appContextMenu;
                   setAppContextMenu(null);
                   deleteAppFromDesktop(appKey);
                 }}
               >
+                <ContextMenuIcon name="trash" />
                 {t('desktop.menu.delete', settings.language)}
               </button>
             </>
@@ -2367,13 +2375,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             <button
               type="button"
               role="menuitem"
-              className="danger-text"
+              className="context-menu-icon-button danger-text"
               onClick={() => {
                 const { appKey } = appContextMenu;
                 setAppContextMenu(null);
                 deleteAppFromDesktop(appKey);
               }}
             >
+              <ContextMenuIcon name="trash" />
               {t('desktop.menu.delete', settings.language)}
             </button>
           )}
@@ -2397,34 +2406,39 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <button
             type="button"
             role="menuitem"
+            className="context-menu-icon-button"
             onClick={() => {
               openDesktopFolder(folderContextMenu.folderId);
               setFolderContextMenu(null);
             }}
           >
+            <ContextMenuIcon name="open" />
             {t('desktop.menu.open', settings.language)}
           </button>
           <button
             type="button"
             role="menuitem"
+            className="context-menu-icon-button"
             onClick={() => {
               const folder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === folderContextMenu.folderId);
               setRenameFolderDialog({ folderId: folderContextMenu.folderId, name: folder?.name ?? t('desktop.folder.defaultName', settings.language) });
               setFolderContextMenu(null);
             }}
           >
+            <ContextMenuIcon name="rename" />
             {t('desktop.menu.rename', settings.language)}
           </button>
           <button
             type="button"
             role="menuitem"
-            className="danger-text"
+            className="context-menu-icon-button danger-text"
             onClick={() => {
               const { folderId } = folderContextMenu;
               setFolderContextMenu(null);
               deleteFolder(folderId);
             }}
           >
+            <ContextMenuIcon name="trash" />
             {t('desktop.menu.deleteFolder', settings.language)}
           </button>
         </div>
@@ -2447,15 +2461,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <button
             type="button"
             role="menuitem"
+            className="context-menu-icon-button"
             onClick={() => {
               setSurfaceContextMenu(null);
               createFolder();
             }}
           >
+            <ContextMenuIcon name="new-folder" />
             {t('desktop.menu.newFolder', settings.language)}
           </button>
           <div className="context-menu-item-has-submenu">
-            <button type="button" role="menuitem" aria-haspopup="menu">
+            <button type="button" role="menuitem" className="context-menu-icon-button" aria-haspopup="menu">
+              <ContextMenuIcon name="sort" />
               {t('desktop.menu.sort', settings.language)}
             </button>
             <div className="context-submenu" role="menu" aria-label={t('desktop.menu.sortMode', settings.language)}>

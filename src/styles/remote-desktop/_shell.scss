@@ -364,8 +364,8 @@
 
 .launchpad-panel {
   display: grid;
-  width: min(980px, calc(100vw - 72px));
-  max-height: min(720px, calc(100vh - 72px));
+  width: min(900px, calc(100vw - 72px));
+  max-height: min(660px, calc(100vh - 72px));
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -395,6 +395,11 @@
   padding: 18px 20px;
 }
 
+.launchpad-header {
+  gap: 12px;
+  padding: 14px 18px;
+}
+
 .launchpad-header span {
   display: block;
   color: rgba(238, 244, 255, 0.62);
@@ -404,7 +409,7 @@
 
 .launchpad-header strong {
   color: #eef4ff;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 860;
 }
 
@@ -422,11 +427,11 @@
 
 .launchpad-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 10px;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 18px;
+  padding: 14px;
 }
 
 .launchpad-app-button,
@@ -444,10 +449,10 @@
 }
 
 .launchpad-app-button {
-  min-height: 104px;
+  min-height: 88px;
   align-content: start;
-  gap: 8px;
-  padding: 12px 10px;
+  gap: 6px;
+  padding: 10px 8px;
 }
 
 .launchpad-tooltip {
@@ -486,8 +491,8 @@
 }
 
 .launchpad-app-button .desktop-app-icon-shell {
-  width: 54px;
-  height: 54px;
+  width: 48px;
+  height: 48px;
 }
 
 .launchpad-app-button strong,
@@ -962,4 +967,195 @@
 
 .win-titlebar-controls .win-btn {
   width: 46px;
+}
+
+/* Win11 desktop simulation polish */
+
+.remote-desktop-surface {
+  --win11-mica: rgba(36, 36, 42, 0.9);
+  --win11-mica-strong: rgba(37, 38, 45, 0.96);
+  --win11-mica-soft: rgba(255, 255, 255, 0.08);
+  --win11-border: rgba(255, 255, 255, 0.13);
+  --win11-border-strong: rgba(255, 255, 255, 0.22);
+  --win11-hover: rgba(255, 255, 255, 0.1);
+  --win11-hover-strong: rgba(255, 255, 255, 0.15);
+  --win11-text: #f5f7fb;
+  --win11-muted: rgba(245, 247, 251, 0.64);
+}
+
+.desktop-icons {
+  top: 10px;
+  left: 8px;
+  grid-template-rows: repeat(auto-fill, 88px);
+  grid-auto-columns: 78px;
+  column-gap: 4px;
+  row-gap: 4px;
+  max-height: calc(100% - 62px);
+}
+
+.desktop-icons button {
+  width: 74px;
+  height: 84px;
+  align-content: start;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 5px 4px 3px;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.desktop-icons button.active,
+.desktop-icons button:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+}
+
+.desktop-icons button:focus-visible {
+  outline: 1px dotted rgba(255, 255, 255, 0.9);
+  outline-offset: -3px;
+}
+
+.desktop-icons strong {
+  max-width: 68px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.18;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.72);
+}
+
+.desktop-app-icon-shell,
+.desktop-folder-icon-shell {
+  width: 46px;
+  height: 46px;
+}
+
+.desktop-window {
+  grid-template-rows: 38px minmax(0, 1fr);
+  border-color: var(--win11-border);
+  border-radius: 8px;
+  background: var(--win11-mica-strong);
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: saturate(1.8) blur(22px);
+}
+
+.desktop-window.focused {
+  border-color: var(--win11-border-strong);
+  box-shadow:
+    0 26px 68px rgba(0, 0, 0, 0.42),
+    0 4px 14px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.desktop-window.maximized {
+  border-radius: 0;
+}
+
+.desktop-window-titlebar {
+  height: 38px;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: rgba(42, 43, 50, 0.74);
+}
+
+.desktop-window-title {
+  gap: 8px;
+  padding-left: 12px;
+}
+
+.desktop-title-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.desktop-window-titlebar strong,
+.desktop-window-browser .desktop-window-titlebar strong {
+  color: var(--win11-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.desktop-window-kicker,
+.desktop-window-state-pill {
+  color: var(--win11-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.desktop-window-state-pill {
+  border-color: rgba(255, 255, 255, 0.1);
+  padding: 3px 7px;
+  background: rgba(255, 255, 255, 0.05);
+  letter-spacing: 0;
+}
+
+.win-titlebar-controls .win-btn {
+  width: 46px;
+  color: rgba(245, 247, 251, 0.72);
+}
+
+.win-titlebar-controls .win-btn:hover,
+.win-titlebar-controls .win-btn.terminal-tools.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.desktop-folder-overlay {
+  place-items: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.desktop-folder-header {
+  min-height: 64px;
+  border-bottom: 0;
+  padding: 20px 42px 10px;
+}
+
+.desktop-folder-app-button:hover,
+.desktop-folder-app-button:focus-visible {
+  border-color: transparent;
+  background: var(--win11-hover);
+}
+
+.desktop-folder-app-button .desktop-app-icon-shell {
+  width: 36px;
+  height: 36px;
+}
+
+.desktop-folder-app-button strong {
+  max-width: 82px;
+  color: var(--win11-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.18;
+}
+
+.desktop-folder-panel {
+  width: min(520px, calc(100vw - 56px));
+  border-color: var(--win11-border);
+  border-radius: 10px;
+  background: var(--win11-mica);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: saturate(2.2) blur(24px);
+}
+
+.desktop-folder-title {
+  color: var(--win11-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.desktop-folder-grid {
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 8px;
+  padding: 8px 24px 26px;
 }

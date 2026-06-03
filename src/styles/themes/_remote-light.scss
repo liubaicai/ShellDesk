@@ -390,6 +390,7 @@
 [data-theme="light"] .sysinfo-card-value {
   color: #1f2328;
 }
+
 /* Current light theme finishing rules */
 
 [data-theme="light"] .top-chrome {
@@ -894,4 +895,149 @@
 
 [data-theme="light"] .sysinfo-card-value {
   color: #1f2328;
+}
+
+/* Win11 simulation final light cascade */
+
+[data-theme="light"] .remote-desktop-surface {
+  --win11-mica: rgba(242, 242, 242, 0.92);
+  --win11-mica-strong: rgba(249, 249, 249, 0.96);
+  --win11-mica-soft: rgba(255, 255, 255, 0.72);
+  --win11-border: rgba(16, 32, 51, 0.12);
+  --win11-border-strong: rgba(16, 32, 51, 0.2);
+  --win11-hover: rgba(16, 32, 51, 0.065);
+  --win11-hover-strong: rgba(16, 32, 51, 0.1);
+  --win11-text: #1f2328;
+  --win11-muted: #57606a;
+}
+
+[data-theme="light"] .desktop-window {
+  border-color: var(--win11-border);
+  background: var(--win11-mica-strong);
+  box-shadow:
+    0 22px 54px rgba(43, 67, 92, 0.18),
+    0 4px 14px rgba(43, 67, 92, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+[data-theme="light"] .desktop-window-titlebar {
+  border-bottom-color: rgba(16, 32, 51, 0.08);
+  background: rgba(249, 249, 249, 0.72);
+}
+
+[data-theme="light"] .desktop-folder-title,
+[data-theme="light"] .desktop-folder-app-button,
+[data-theme="light"] .desktop-folder-app-button strong {
+  color: var(--win11-text);
+}
+
+[data-theme="light"] .desktop-folder-overlay {
+  background: rgba(225, 233, 243, 0.42);
+}
+
+[data-theme="light"] .desktop-folder-panel {
+  border-color: var(--win11-border);
+  background: var(--win11-mica);
+  box-shadow:
+    0 24px 62px rgba(43, 67, 92, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+[data-theme="light"] .desktop-folder-app-button:hover,
+[data-theme="light"] .desktop-folder-app-button:focus-visible {
+  border-color: transparent;
+  background: var(--win11-hover);
+}
+
+[data-theme="light"] .desktop-folder-icon-shell {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme="light"] .desktop-folder-icon-shell::before {
+  background: url("../../assets/desktop-icons/folder-bg.png") center / contain no-repeat;
+}
+
+[data-theme="light"] .explorer-pane {
+  --explorer-bg: #f7f7f7;
+  --explorer-panel: rgba(249, 249, 249, 0.94);
+  --explorer-panel-soft: rgba(16, 32, 51, 0.045);
+  --explorer-panel-strong: rgba(255, 255, 255, 0.98);
+  --explorer-border: rgba(16, 32, 51, 0.11);
+  --explorer-border-strong: rgba(16, 32, 51, 0.18);
+  --explorer-hover: rgba(16, 32, 51, 0.055);
+  --explorer-selected: rgba(0, 120, 212, 0.16);
+  --explorer-text: #1f2328;
+  --explorer-muted: #656d76;
+}
+
+[data-theme="light"] .explorer-pane,
+[data-theme="light"] .explorer-layout,
+[data-theme="light"] .explorer-main,
+[data-theme="light"] .explorer-table,
+[data-theme="light"] .explorer-header {
+  background: var(--explorer-bg);
+}
+
+[data-theme="light"] .explorer-addressbar,
+[data-theme="light"] .explorer-commandbar,
+[data-theme="light"] .explorer-statusbar {
+  border-color: var(--explorer-border);
+  background: rgba(249, 249, 249, 0.9);
+}
+
+[data-theme="light"] .explorer-sidebar,
+[data-theme="light"] .explorer-details {
+  background: rgba(249, 249, 249, 0.82);
+}
+
+[data-theme="light"] .explorer-commandbar button,
+[data-theme="light"] .explorer-details-actions button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--explorer-text);
+}
+
+[data-theme="light"] .explorer-commandbar button:hover:not(:disabled),
+[data-theme="light"] .explorer-commandbar button.active,
+[data-theme="light"] .explorer-details-actions button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--explorer-hover);
+  color: var(--explorer-text);
+}
+
+[data-theme="light"] .context-menu,
+[data-theme="light"] .context-submenu {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(249, 249, 249, 0.92);
+  box-shadow:
+    0 18px 46px rgba(43, 67, 92, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="light"] .context-menu button,
+[data-theme="light"] .context-submenu button {
+  color: #1f2328;
+}
+
+[data-theme="light"] .context-menu-icon {
+  color: rgba(31, 35, 40, 0.62);
+}
+
+[data-theme="light"] .context-menu button.danger-text .context-menu-icon,
+[data-theme="light"] .context-submenu button.danger-text .context-menu-icon {
+  color: currentColor;
+}
+
+[data-theme="light"] .context-menu button:hover,
+[data-theme="light"] .context-submenu button:hover {
+  background: rgba(16, 32, 51, 0.065);
+}
+
+[data-theme="light"] .context-menu-sep {
+  background: rgba(16, 32, 51, 0.1);
+}
+
+[data-theme="light"] .context-menu-item-has-submenu > button::after {
+  border-color: rgba(31, 35, 40, 0.58);
 }
