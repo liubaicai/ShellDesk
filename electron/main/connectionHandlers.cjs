@@ -148,6 +148,7 @@ function registerConnectionHandlers(registerIpcHandler) {
 
   registerIpcHandler('connection:get-ipc-capabilities', async () => ({
     terminalSessions: true,
+    terminalBinary: true,
   }));
 
   registerIpcHandler('connection:trust-browser-certificate', async (event, partition, rawUrl) => {

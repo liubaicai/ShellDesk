@@ -2,6 +2,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { type ITerminalOptions, Terminal as XTerminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
+import * as Zmodem from 'zmodem.js';
 import {
   type CSSProperties,
   type FormEvent,
@@ -136,6 +137,409 @@ const controlCharacterPattern = /[\x00-\x08\x0b-\x1f\x7f]/g;
 const alternateScreenPattern = /\x1b\[\?(?:47|1047|1049)([hl])/g;
 const foregroundCommandPattern = /^(?:(?:sudo|doas)\s+)?(?:top(?!\s+-b(?:\s|$))|htop|btop|atop|watch|vim|vi|nvim|nano|less|more|man)(?:\s|$)/i;
 const foregroundSequenceBufferLimit = 32;
+const sftpProbeCacheMs = 30000;
+const terminalCwdProbeTimeoutMs = 6000;
+const terminalCwdProbeBufferLimit = 12000;
+const zmodemReadChunkSize = 64 * 1024;
+const zmodemUploadCommands = new Set(['rz', 'lrz']);
+const zmodemDownloadCommands = new Set(['sz', 'lsz']);
+const szOptionsWithValue = new Set(['-B', '-L', '-l', '-w', '--bufsize', '--packetlen', '--framelen', '--window-size']);
+const szUnsupportedOptions = new Set(['-i', '--command', '-X', '--xmodem', '-Y', '--ymodem']);
+const terminalPayloadEncoder = new TextEncoder();
+
+interface TerminalTransferCommand {
+  action: 'rz' | 'sz';
+  command: string;
+  inputData: string;
+  needsLineClear: boolean;
+  remotePaths: string[];
+}
+
+interface TerminalCwdProbeState {
+  beginMarker: string;
+  endMarker: string;
+  buffer: string;
+  timer: number;
+  resolve: (directory: string) => void;
+}
+
+interface TerminalBufferLineLike {
+  isWrapped?: boolean;
+  translateToString: (trimRight?: boolean) => string;
+}
+
+function getCommandBasename(commandPath: string) {
+  return commandPath.replace(/\\/g, '/').split('/').pop()?.toLowerCase() ?? '';
+}
+
+function pushShellWord(words: string[], word: string, hasWord: boolean) {
+  if (hasWord) {
+    words.push(word);
+  }
+}
+
+function parseSimpleShellWords(command: string) {
+  const words: string[] = [];
+  let word = '';
+  let quote: '"' | "'" | null = null;
+  let hasWord = false;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+
+    if (quote === "'") {
+      if (character === "'") {
+        quote = null;
+      } else {
+        word += character;
+        hasWord = true;
+      }
+      continue;
+    }
+
+    if (quote === '"') {
+      if (character === '"') {
+        quote = null;
+        continue;
+      }
+
+      if (character === '$' || character === '`') {
+        return null;
+      }
+
+      if (character === '\\') {
+        index += 1;
+        if (index >= command.length) {
+          return null;
+        }
+        word += command[index];
+        hasWord = true;
+        continue;
+      }
+
+      word += character;
+      hasWord = true;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      pushShellWord(words, word, hasWord);
+      word = '';
+      hasWord = false;
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      quote = character;
+      hasWord = true;
+      continue;
+    }
+
+    if (/[;&|<>`$(){}]/.test(character)) {
+      return null;
+    }
+
+    if (character === '\\') {
+      index += 1;
+      if (index >= command.length) {
+        return null;
+      }
+      word += command[index];
+      hasWord = true;
+      continue;
+    }
+
+    word += character;
+    hasWord = true;
+  }
+
+  if (quote) {
+    return null;
+  }
+
+  pushShellWord(words, word, hasWord);
+  return words;
+}
+
+function optionTakesSeparateValue(option: string) {
+  if (szOptionsWithValue.has(option)) {
+    return true;
+  }
+
+  return /^-[BLlw]$/u.test(option);
+}
+
+function optionIncludesValue(option: string) {
+  return /^-[BLlw].+/u.test(option) || /^--(?:bufsize|packetlen|framelen|window-size)=/u.test(option);
+}
+
+function readSzRemotePaths(tokens: string[]) {
+  const remotePaths: string[] = [];
+  let stopParsingOptions = false;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (!stopParsingOptions && token === '--') {
+      stopParsingOptions = true;
+      continue;
+    }
+
+    if (!stopParsingOptions && szUnsupportedOptions.has(token)) {
+      return null;
+    }
+
+    if (!stopParsingOptions && optionTakesSeparateValue(token)) {
+      index += 1;
+      continue;
+    }
+
+    if (!stopParsingOptions && (optionIncludesValue(token) || (token.startsWith('-') && token.length > 1))) {
+      continue;
+    }
+
+    remotePaths.push(token);
+  }
+
+  return remotePaths.length ? remotePaths : null;
+}
+
+function readTransferCommand(command: string, inputData: string, needsLineClear: boolean): TerminalTransferCommand | null {
+  const tokens = parseSimpleShellWords(command);
+
+  if (!tokens?.length) {
+    return null;
+  }
+
+  const commandName = getCommandBasename(tokens[0]);
+
+  if (zmodemUploadCommands.has(commandName)) {
+    const hasUnexpectedArgument = tokens.slice(1).some((token) => token !== '--' && !token.startsWith('-'));
+
+    return hasUnexpectedArgument
+      ? null
+      : { action: 'rz', command, inputData, needsLineClear, remotePaths: [] };
+  }
+
+  if (zmodemDownloadCommands.has(commandName)) {
+    const remotePaths = readSzRemotePaths(tokens);
+
+    return remotePaths
+      ? { action: 'sz', command, inputData, needsLineClear, remotePaths }
+      : null;
+  }
+
+  return null;
+}
+
+function readSubmittedTransferCommand(currentBuffer: string, data: string) {
+  const commandState = collectSubmittedCommands(currentBuffer, data);
+
+  if (commandState.commands.length !== 1 || commandState.buffer) {
+    return null;
+  }
+
+  const command = commandState.commands[0];
+  const needsLineClear = currentBuffer.trim().length > 0 && /^[\r\n]+$/u.test(data);
+
+  return readTransferCommand(command, data, needsLineClear);
+}
+
+function readVisibleTerminalLine(terminal: XTerminal) {
+  const terminalBuffer = (terminal as unknown as {
+    buffer?: {
+      active?: {
+        baseY?: number;
+        cursorY?: number;
+        getLine?: (lineIndex: number) => TerminalBufferLineLike | undefined;
+      };
+    };
+  }).buffer?.active;
+
+  if (!terminalBuffer?.getLine) {
+    return '';
+  }
+
+  let lineIndex = Number(terminalBuffer.baseY ?? 0) + Number(terminalBuffer.cursorY ?? 0);
+  const parts: string[] = [];
+
+  for (let wrappedLineCount = 0; wrappedLineCount < 8 && lineIndex >= 0; wrappedLineCount += 1) {
+    const line = terminalBuffer.getLine(lineIndex);
+
+    if (!line) {
+      break;
+    }
+
+    parts.unshift(line.translateToString(true));
+
+    if (!line.isWrapped) {
+      break;
+    }
+
+    lineIndex -= 1;
+  }
+
+  return parts.join('').trimEnd();
+}
+
+function readVisibleSubmittedTransferCommand(terminal: XTerminal, data: string) {
+  if (!/^[\r\n]+$/u.test(data)) {
+    return null;
+  }
+
+  const line = readVisibleTerminalLine(terminal);
+
+  if (!line.trim()) {
+    return null;
+  }
+
+  const candidates = [line.trim()];
+  const promptDelimiterPattern = /[#$>%]\s+/gu;
+  let match: RegExpExecArray | null = promptDelimiterPattern.exec(line);
+  let lastPromptEnd = -1;
+
+  while (match) {
+    lastPromptEnd = match.index + match[0].length;
+    match = promptDelimiterPattern.exec(line);
+  }
+
+  if (lastPromptEnd >= 0) {
+    candidates.unshift(line.slice(lastPromptEnd).trim());
+  }
+
+  for (const candidate of candidates) {
+    const transferCommand = readTransferCommand(candidate, data, true);
+
+    if (transferCommand) {
+      return transferCommand;
+    }
+  }
+
+  return null;
+}
+
+function isAbsoluteTransferPath(remotePath: string, isWindowsHost: boolean) {
+  const normalizedPath = remotePath.replace(/\\/g, '/');
+
+  if (normalizedPath.startsWith('~')) {
+    return true;
+  }
+
+  if (isWindowsHost) {
+    return /^\/?[a-z]:\//iu.test(normalizedPath) || normalizedPath.startsWith('/');
+  }
+
+  return normalizedPath.startsWith('/');
+}
+
+function joinTransferRemotePath(basePath: string, remotePath: string, isWindowsHost: boolean) {
+  const normalizedRemotePath = isWindowsHost ? remotePath.replace(/\\/g, '/') : remotePath;
+
+  if (isAbsoluteTransferPath(normalizedRemotePath, isWindowsHost)) {
+    return normalizedRemotePath;
+  }
+
+  const normalizedBasePath = (isWindowsHost ? basePath.replace(/\\/g, '/') : basePath).trim() || '.';
+
+  if (normalizedBasePath === '.') {
+    return normalizedRemotePath;
+  }
+
+  if (normalizedBasePath === '/') {
+    return `/${normalizedRemotePath.replace(/^\/+/u, '')}`;
+  }
+
+  if (isWindowsHost && /^\/?[a-z]:\/?$/iu.test(normalizedBasePath)) {
+    return `${normalizedBasePath.replace(/\/?$/u, '/')}${normalizedRemotePath.replace(/^\/+/u, '')}`;
+  }
+
+  return `${normalizedBasePath.replace(/\/+$/u, '')}/${normalizedRemotePath.replace(/^\/+/u, '')}`;
+}
+
+function readTerminalPayloadBytes(payload: { data: string; bytes?: ArrayBuffer | ArrayBufferView | number[] }) {
+  const { bytes } = payload;
+
+  if (bytes instanceof ArrayBuffer) {
+    return new Uint8Array(bytes);
+  }
+
+  if (ArrayBuffer.isView(bytes)) {
+    return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+
+  if (Array.isArray(bytes)) {
+    return Uint8Array.from(bytes);
+  }
+
+  return terminalPayloadEncoder.encode(payload.data);
+}
+
+function mergeZmodemChunks(chunks: Uint8Array[]) {
+  const totalBytes = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const merged = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  chunks.forEach((chunk) => {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+
+  return merged;
+}
+
+function formatTransferBytes(size: number) {
+  if (!Number.isFinite(size) || size < 0) {
+    return '-';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = size;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function getTransferPercent(payload: Pick<ShellDeskTransferProgress, 'total' | 'transferred' | 'completedItems' | 'totalItems'>) {
+  if (payload.total > 0) {
+    return Math.max(0, Math.min(100, Math.round((payload.transferred / payload.total) * 100)));
+  }
+
+  if ((payload.totalItems ?? 0) > 0) {
+    return Math.max(0, Math.min(100, Math.round(((payload.completedItems ?? 0) / (payload.totalItems ?? 1)) * 100)));
+  }
+
+  return 0;
+}
+
+function buildSftpProgressText(
+  payload: ShellDeskTransferProgress | ShellDeskTransferEndPayload,
+  language: ShellDeskAppSettings['language'],
+  statusText = '',
+) {
+  const action = payload.type === 'download'
+    ? t('fileExplorer.transfer.download', language)
+    : t('fileExplorer.transfer.upload', language);
+  const totalText = payload.total > 0 ? ` / ${formatTransferBytes(payload.total)}` : '';
+  const itemText = (payload.totalItems ?? 0) > 0
+    ? ` · ${t('fileExplorer.transfer.items', language, {
+        completed: payload.completedItems ?? 0,
+        total: t('fileExplorer.transfer.totalSuffix', language, { total: payload.totalItems ?? 0 }),
+      })}`
+    : '';
+  const statusSuffix = statusText ? ` · ${statusText}` : '';
+
+  return [
+    `SFTP ${action}`,
+    `${getTransferPercent(payload)}%`,
+    `${formatTransferBytes(payload.transferred)}${totalText}`,
+    payload.fileName,
+  ].filter(Boolean).join(' · ') + itemText + statusSuffix;
+}
 
 function buildTerminalOptions(settings: ShellDeskAppSettings): ITerminalOptions {
   return {
@@ -344,10 +748,19 @@ function RemoteTerminal({
   const lastSizeRef = useRef({ columns: 0, rows: 0 });
   const isTerminalReadyRef = useRef(false);
   const useLegacyTerminalIpcRef = useRef(false);
+  const sftpAvailabilityRef = useRef<{ available: boolean; checkedAt: number } | null>(null);
+  const activeSftpTransferRef = useRef(false);
+  const sftpTransferQueueIdRef = useRef('');
+  const sftpTransferEndedRef = useRef(false);
+  const sftpProgressLineLengthRef = useRef(0);
+  const terminalCwdProbeRef = useRef<TerminalCwdProbeState | null>(null);
+  const zmodemSentryRef = useRef<Zmodem.Sentry | null>(null);
+  const zmodemSessionRef = useRef<Zmodem.ZmodemSession | null>(null);
   const settingsRef = useRef(settings);
   const launchOptionsRef = useRef(launchOptions);
   const followOutputRef = useRef(true);
   const commandBufferRef = useRef('');
+  const commandBufferUnsafeRef = useRef(false);
   const foregroundSequenceBufferRef = useRef('');
   const foregroundTaskSourceRef = useRef<ForegroundTaskSource | null>(null);
   const handledCommandRequestRef = useRef('');
@@ -708,9 +1121,9 @@ function RemoteTerminal({
       resizeTerminal(connectionId, columns, rows).catch(() => undefined);
     };
 
-    const writeTerminalInput = (data: string) => {
+    const writeTerminalInputAsync = (data: string) => {
       if (!isTerminalReadyRef.current) {
-        return;
+        return Promise.resolve(false);
       }
 
       const writePromise = supportsTerminalIpcOptions
@@ -723,7 +1136,455 @@ function RemoteTerminal({
       writePromise.catch((error: unknown) => {
         terminal.writeln(`\r\n${t('terminal.error.sendFailed', settings.language, { error: getErrorMessage(error) })}`);
       });
+
+      return writePromise;
     };
+
+    const writeTerminalInput = (data: string) => {
+      void writeTerminalInputAsync(data);
+    };
+
+    const writeTerminalNotice = (message: string) => {
+      terminal.writeln(`\r\n${message}`);
+      if (followOutputRef.current) {
+        terminal.scrollToBottom();
+      }
+    };
+
+    const writeSftpProgressLine = (text: string, endLine = false) => {
+      const padding = ' '.repeat(Math.max(0, sftpProgressLineLengthRef.current - text.length));
+      terminal.write(`\r${text}${padding}${endLine ? '\r\n' : ''}`, () => {
+        if (followOutputRef.current) {
+          terminal.scrollToBottom();
+        }
+      });
+      sftpProgressLineLengthRef.current = endLine ? 0 : text.length;
+    };
+
+    const renderSftpProgress = (payload: ShellDeskTransferProgress) => {
+      if (!activeSftpTransferRef.current || payload.connectionId !== connectionId) {
+        return;
+      }
+
+      if (sftpTransferQueueIdRef.current && payload.queueId && payload.queueId !== sftpTransferQueueIdRef.current) {
+        return;
+      }
+
+      if (!sftpTransferQueueIdRef.current && payload.queueId) {
+        sftpTransferQueueIdRef.current = payload.queueId;
+      }
+
+      writeSftpProgressLine(buildSftpProgressText(payload, settingsRef.current.language));
+    };
+
+    const finishSftpProgress = (payload: ShellDeskTransferEndPayload) => {
+      if (!activeSftpTransferRef.current || payload.connectionId !== connectionId) {
+        return;
+      }
+
+      if (sftpTransferQueueIdRef.current && payload.queueId && payload.queueId !== sftpTransferQueueIdRef.current) {
+        return;
+      }
+
+      const statusText = payload.success
+        ? t('terminal.transfer.sftpDone', settingsRef.current.language)
+        : t('terminal.transfer.sftpFailed', settingsRef.current.language, { error: payload.error ?? '' });
+      writeSftpProgressLine(buildSftpProgressText(payload, settingsRef.current.language, statusText), true);
+      sftpTransferEndedRef.current = true;
+      activeSftpTransferRef.current = false;
+      sftpTransferQueueIdRef.current = '';
+    };
+
+    const settleTerminalCwdProbe = (directory: string) => {
+      const probe = terminalCwdProbeRef.current;
+
+      if (!probe) {
+        return;
+      }
+
+      window.clearTimeout(probe.timer);
+      terminalCwdProbeRef.current = null;
+      probe.resolve(directory);
+    };
+
+    const processTerminalCwdProbeOutput = (data: string) => {
+      const probe = terminalCwdProbeRef.current;
+
+      if (!probe) {
+        return;
+      }
+
+      probe.buffer = `${probe.buffer}${stripTerminalControlSequences(data).replace(/\r/g, '\n')}`.slice(-terminalCwdProbeBufferLimit);
+      const lines = probe.buffer.split(/\n/u).map((line) => line.trim());
+      const beginIndex = lines.findIndex((line) => line === probe.beginMarker);
+
+      if (beginIndex < 0) {
+        return;
+      }
+
+      const endIndex = lines.findIndex((line, index) => index > beginIndex && line === probe.endMarker);
+
+      if (endIndex < 0) {
+        return;
+      }
+
+      const directory = lines
+        .slice(beginIndex + 1, endIndex)
+        .find((line) => line && line !== probe.beginMarker && line !== probe.endMarker) ?? '';
+
+      settleTerminalCwdProbe(directory);
+    };
+
+    const createTerminalCwdProbeCommand = (beginMarker: string, endMarker: string) => {
+      const shell = launchOptionsRef.current?.shell?.toLowerCase() ?? '';
+
+      if (isWindowsSystem(systemType)) {
+        if (/\bcmd(?:\.exe)?\b/u.test(shell)) {
+          return `echo ${beginMarker} & cd & echo ${endMarker}`;
+        }
+
+        return `Write-Output '${beginMarker}'; (Get-Location).Path; Write-Output '${endMarker}'`;
+      }
+
+      return `printf '%s\\n' '${beginMarker}'; pwd -P 2>/dev/null || pwd; printf '%s\\n' '${endMarker}'`;
+    };
+
+    const resolveTerminalWorkingDirectory = async () => {
+      if (!isTerminalReadyRef.current) {
+        return launchOptionsRef.current?.workingDirectory?.trim() || '.';
+      }
+
+      const sequence = Math.random().toString(36).slice(2, 10);
+      const beginMarker = `__SHELLDESK_CWD_${sequence}_BEGIN__`;
+      const endMarker = `__SHELLDESK_CWD_${sequence}_END__`;
+      const previousProbe = terminalCwdProbeRef.current;
+
+      if (previousProbe) {
+        window.clearTimeout(previousProbe.timer);
+        terminalCwdProbeRef.current = null;
+        previousProbe.resolve('');
+      }
+
+      return new Promise<string>((resolve) => {
+        const timer = window.setTimeout(() => {
+          settleTerminalCwdProbe('');
+        }, terminalCwdProbeTimeoutMs);
+
+        terminalCwdProbeRef.current = {
+          beginMarker,
+          endMarker,
+          buffer: '',
+          timer,
+          resolve,
+        };
+
+        void writeTerminalInputAsync(`${createTerminalCwdProbeCommand(beginMarker, endMarker)}\r`);
+      }).then((directory) => directory || launchOptionsRef.current?.workingDirectory?.trim() || '.');
+    };
+
+    const checkSftpAvailability = async () => {
+      const cached = sftpAvailabilityRef.current;
+
+      if (cached && Date.now() - cached.checkedAt < sftpProbeCacheMs) {
+        return cached.available;
+      }
+
+      const result = await api.connections.checkSftp(connectionId);
+      sftpAvailabilityRef.current = {
+        available: Boolean(result.available),
+        checkedAt: Date.now(),
+      };
+
+      return Boolean(result.available);
+    };
+
+    const runSftpTransferCommand = async (transferCommand: TerminalTransferCommand) => {
+      let shouldRedrawPrompt = false;
+      const beginSftpProgress = () => {
+        activeSftpTransferRef.current = true;
+        sftpTransferQueueIdRef.current = '';
+        sftpTransferEndedRef.current = false;
+        sftpProgressLineLengthRef.current = 0;
+      };
+      const cancelSftpProgress = () => {
+        if (activeSftpTransferRef.current) {
+          activeSftpTransferRef.current = false;
+          sftpTransferQueueIdRef.current = '';
+          sftpTransferEndedRef.current = false;
+          sftpProgressLineLengthRef.current = 0;
+        }
+      };
+
+      try {
+        const isSftpAvailable = await checkSftpAvailability();
+
+        if (disposed) {
+          return;
+        }
+
+        if (!isSftpAvailable) {
+          writeTerminalNotice(t('terminal.transfer.sftpFallback', settingsRef.current.language));
+          await writeTerminalInputAsync(transferCommand.inputData);
+          return;
+        }
+
+        shouldRedrawPrompt = true;
+        if (transferCommand.needsLineClear) {
+          await writeTerminalInputAsync('\x15');
+        }
+
+        const isWindowsHost = isWindowsSystem(systemType);
+        const remoteDirectory = await resolveTerminalWorkingDirectory();
+
+        if (disposed) {
+          return;
+        }
+
+        if (transferCommand.action === 'rz') {
+          writeTerminalNotice(t('terminal.transfer.sftpUpload', settingsRef.current.language, { path: remoteDirectory }));
+          beginSftpProgress();
+          const result = await api.connections.uploadFiles(connectionId, remoteDirectory);
+
+          if (result.canceled) {
+            cancelSftpProgress();
+          }
+          return;
+        }
+
+        const remotePaths = transferCommand.remotePaths.map((remotePath) =>
+          joinTransferRemotePath(remoteDirectory, remotePath, isWindowsHost));
+
+        writeTerminalNotice(t('terminal.transfer.sftpDownload', settingsRef.current.language, {
+          count: String(remotePaths.length),
+        }));
+
+        beginSftpProgress();
+        const result = remotePaths.length === 1
+          ? await api.connections.downloadFile(connectionId, remotePaths[0])
+          : await api.connections.downloadPaths(connectionId, remotePaths);
+
+        if (result.canceled) {
+          cancelSftpProgress();
+        }
+      } catch (error) {
+        sftpAvailabilityRef.current = null;
+        const isAlreadyReportedByProgress = sftpTransferEndedRef.current;
+        if (sftpProgressLineLengthRef.current > 0) {
+          writeSftpProgressLine('', true);
+        }
+        cancelSftpProgress();
+        if (!isAlreadyReportedByProgress) {
+          writeTerminalNotice(t('terminal.transfer.sftpFailed', settingsRef.current.language, {
+            error: getErrorMessage(error),
+          }));
+        }
+      } finally {
+        if (shouldRedrawPrompt && !disposed && isTerminalReadyRef.current) {
+          await writeTerminalInputAsync('\r');
+        }
+        terminal.focus();
+      }
+    };
+
+    const sendZmodemBytes = (octets: number[] | Uint8Array) => {
+      const bytes = octets instanceof Uint8Array ? octets : Uint8Array.from(octets);
+
+      api.connections.writeTerminalBytes(connectionId, terminalId, bytes).catch((error: unknown) => {
+        writeTerminalNotice(t('terminal.error.sendFailed', settingsRef.current.language, {
+          error: getErrorMessage(error),
+        }));
+      });
+    };
+
+    const closeZmodemSession = async (session: Zmodem.ZmodemSession) => {
+      try {
+        await session.close();
+      } catch {
+        session.abort?.();
+      }
+    };
+
+    const sendZmodemUploadFile = async (
+      session: Zmodem.ZmodemSession,
+      file: ShellDeskZmodemUploadFile,
+      filesRemaining: number,
+      bytesRemaining: number,
+    ) => {
+      const transfer = await session.send_offer({
+        name: file.name,
+        size: file.size,
+        mtime: new Date(file.lastModified),
+        files_remaining: filesRemaining,
+        bytes_remaining: bytesRemaining,
+      });
+
+      if (!transfer) {
+        return;
+      }
+
+      let offset = transfer.get_offset();
+
+      if (file.size <= offset) {
+        await transfer.end(new Uint8Array());
+        return;
+      }
+
+      while (offset < file.size) {
+        const chunkBuffer = await api.connections.readZmodemUploadFile(
+          file.id,
+          offset,
+          Math.min(zmodemReadChunkSize, file.size - offset),
+        );
+        const chunk = new Uint8Array(chunkBuffer);
+
+        if (!chunk.byteLength) {
+          throw new Error('本地文件读取提前结束。');
+        }
+
+        offset += chunk.byteLength;
+
+        if (offset >= file.size) {
+          await transfer.end(chunk);
+        } else {
+          transfer.send(chunk);
+        }
+      }
+    };
+
+    const handleZmodemSendSession = async (session: Zmodem.ZmodemSession) => {
+      let selectedFileIds: string[] = [];
+
+      try {
+        writeTerminalNotice(t('terminal.transfer.zmodemUploadPrompt', settingsRef.current.language));
+        const selection = await api.connections.selectZmodemUploadFiles();
+
+        if (disposed) {
+          return;
+        }
+
+        if (selection.canceled || !selection.files.length) {
+          writeTerminalNotice(t('terminal.transfer.zmodemCanceled', settingsRef.current.language));
+          session.abort?.();
+          return;
+        }
+
+        selectedFileIds = selection.files.map((file) => file.id);
+        let bytesRemaining = selection.files.reduce((total, file) => total + file.size, 0);
+
+        for (let index = 0; index < selection.files.length; index += 1) {
+          const file = selection.files[index];
+
+          await sendZmodemUploadFile(
+            session,
+            file,
+            selection.files.length - index,
+            bytesRemaining,
+          );
+          bytesRemaining -= file.size;
+        }
+
+        await closeZmodemSession(session);
+        writeTerminalNotice(t('terminal.transfer.zmodemUploadDone', settingsRef.current.language));
+      } catch (error) {
+        session.abort?.();
+        writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
+          error: getErrorMessage(error),
+        }));
+      } finally {
+        if (selectedFileIds.length) {
+          api.connections.releaseZmodemUploadFiles(selectedFileIds).catch(() => undefined);
+        }
+        terminal.focus();
+      }
+    };
+
+    const handleZmodemOffer = (offer: Zmodem.Offer) => {
+      void (async () => {
+        const details = offer.get_details();
+        const fileName = details.name || 'download';
+        const chunks: Uint8Array[] = [];
+
+        try {
+          writeTerminalNotice(t('terminal.transfer.zmodemDownloadPrompt', settingsRef.current.language, { name: fileName }));
+          await offer.accept({
+            on_input: (chunk) => {
+              chunks.push(Uint8Array.from(chunk));
+            },
+          });
+
+          const merged = mergeZmodemChunks(chunks);
+          const result = await api.connections.saveZmodemFile(fileName, merged);
+
+          if (result.canceled) {
+            writeTerminalNotice(t('terminal.transfer.zmodemCanceled', settingsRef.current.language));
+            return;
+          }
+
+          writeTerminalNotice(t('terminal.transfer.zmodemDownloadSaved', settingsRef.current.language, { name: fileName }));
+        } catch (error) {
+          try {
+            offer.skip();
+          } catch {
+            /* Ignore skip errors after an accepted transfer. */
+          }
+          writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
+            error: getErrorMessage(error),
+          }));
+        } finally {
+          terminal.focus();
+        }
+      })();
+    };
+
+    const handleZmodemDetection = (detection: Zmodem.Detection) => {
+      try {
+        const session = detection.confirm();
+
+        zmodemSessionRef.current = session;
+        session.on('session_end', () => {
+          if (zmodemSessionRef.current === session) {
+            zmodemSessionRef.current = null;
+          }
+        });
+
+        if (session.type === 'send') {
+          void handleZmodemSendSession(session);
+          return;
+        }
+
+        session.on('offer', (offer) => handleZmodemOffer(offer as Zmodem.Offer));
+        session.start?.();
+      } catch (error) {
+        detection.deny();
+        writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
+          error: getErrorMessage(error),
+        }));
+      }
+    };
+
+    const terminalOutputDecoder = new TextDecoder();
+    const writeTerminalOutputBytes = (octets: number[]) => {
+      const text = terminalOutputDecoder.decode(Uint8Array.from(octets), { stream: true });
+
+      if (!text) {
+        return;
+      }
+
+      terminal.write(text, () => {
+        if (followOutputRef.current) {
+          terminal.scrollToBottom();
+        }
+      });
+    };
+
+    const zmodemSentry = new Zmodem.Sentry({
+      to_terminal: writeTerminalOutputBytes,
+      sender: sendZmodemBytes,
+      on_detect: handleZmodemDetection,
+      on_retract: () => undefined,
+    });
+
+    zmodemSentryRef.current = zmodemSentry;
 
     const startTerminalSession = async () => {
       setSessionStatus('idle');
@@ -732,6 +1593,12 @@ function RemoteTerminal({
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
       foregroundTaskSourceRef.current = null;
+      commandBufferRef.current = '';
+      commandBufferUnsafeRef.current = false;
+      activeSftpTransferRef.current = false;
+      sftpTransferQueueIdRef.current = '';
+      sftpTransferEndedRef.current = false;
+      sftpProgressLineLengthRef.current = 0;
       isTerminalReadyRef.current = false;
       const { columns, rows } = getTerminalSize();
 
@@ -810,6 +1677,13 @@ function RemoteTerminal({
         useLegacyTerminalIpcRef.current = true;
       }
 
+      const isCwdProbeOutput = Boolean(terminalCwdProbeRef.current);
+      processTerminalCwdProbeOutput(payload.data);
+
+      if (isCwdProbeOutput) {
+        return;
+      }
+
       const foregroundSignal = readForegroundTaskSignal(foregroundSequenceBufferRef.current, payload.data);
       foregroundSequenceBufferRef.current = foregroundSignal.buffer;
 
@@ -818,7 +1692,7 @@ function RemoteTerminal({
         setHasForegroundTask(foregroundSignal.hasForegroundTask);
       }
 
-      const outputSummary = summarizeTerminalOutput(payload.data);
+      const outputSummary = zmodemSessionRef.current ? null : summarizeTerminalOutput(payload.data);
 
       if (outputSummary) {
         emitSessionEvent({
@@ -828,11 +1702,18 @@ function RemoteTerminal({
         });
       }
 
-      terminal.write(payload.data, () => {
-        if (followOutputRef.current) {
-          terminal.scrollToBottom();
-        }
-      });
+      try {
+        zmodemSentry.consume(readTerminalPayloadBytes(payload));
+      } catch (error) {
+        writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
+          error: getErrorMessage(error),
+        }));
+        terminal.write(payload.data, () => {
+          if (followOutputRef.current) {
+            terminal.scrollToBottom();
+          }
+        });
+      }
 
     });
     const removeTerminalExit = api.events.onTerminalExit((payload) => {
@@ -844,6 +1725,12 @@ function RemoteTerminal({
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
       foregroundTaskSourceRef.current = null;
+      commandBufferRef.current = '';
+      commandBufferUnsafeRef.current = false;
+      activeSftpTransferRef.current = false;
+      sftpTransferQueueIdRef.current = '';
+      sftpTransferEndedRef.current = false;
+      sftpProgressLineLengthRef.current = 0;
       setLastExitCode(Number.isInteger(payload.code) ? payload.code ?? null : null);
       setSessionStatus('exited');
       terminal.writeln(`\r\n${t('terminal.message.sessionEnded', settings.language)}`);
@@ -857,6 +1744,12 @@ function RemoteTerminal({
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
       foregroundTaskSourceRef.current = null;
+      commandBufferRef.current = '';
+      commandBufferUnsafeRef.current = false;
+      activeSftpTransferRef.current = false;
+      sftpTransferQueueIdRef.current = '';
+      sftpTransferEndedRef.current = false;
+      sftpProgressLineLengthRef.current = 0;
       setSessionError(payload.reason ?? '');
       setSessionStatus('disconnected');
       terminal.writeln(`\r\n${payload.reason ? t('terminal.message.connectionClosedWithReason', settings.language, { reason: payload.reason }) : t('terminal.message.connectionClosed', settings.language)}`);
@@ -869,11 +1762,38 @@ function RemoteTerminal({
       terminal.writeln(`\r\n${t('terminal.message.connectionRestored', settings.language)}\r\n`);
       void startTerminalSession();
     });
+    const removeTransferProgress = api.events.onTransferProgress(renderSftpProgress);
+    const removeTransferEnd = api.events.onTransferEnd(finishSftpProgress);
     const inputDisposable = terminal.onData((data) => {
       if (!isTerminalReadyRef.current) {
         return;
       }
 
+      const hasCommandLineEditingInput = data.includes('\t') || data.includes('\x1b');
+      const canReadVisibleCommand = commandBufferUnsafeRef.current && !hasCommandLineEditingInput;
+      const transferCommand = zmodemSessionRef.current
+        ? null
+        : canReadVisibleCommand
+          ? readVisibleSubmittedTransferCommand(terminal, data)
+          : hasCommandLineEditingInput
+            ? null
+            : readSubmittedTransferCommand(commandBufferRef.current, data);
+
+      if (transferCommand) {
+        commandBufferRef.current = '';
+        commandBufferUnsafeRef.current = false;
+        emitSessionEvent({
+          type: 'terminal-command',
+          command: transferCommand.command,
+          source: 'keyboard',
+        });
+        void runSftpTransferCommand(transferCommand);
+        return;
+      }
+
+      if (hasCommandLineEditingInput) {
+        commandBufferUnsafeRef.current = true;
+      }
       writeTerminalInput(data);
       if (
         data.includes('\x03') ||
@@ -884,8 +1804,17 @@ function RemoteTerminal({
         setHasForegroundTask(false);
       }
 
+      if (commandBufferUnsafeRef.current && /[\r\n]/u.test(data)) {
+        commandBufferRef.current = '';
+        commandBufferUnsafeRef.current = false;
+        return;
+      }
+
       const commandState = collectSubmittedCommands(commandBufferRef.current, data);
       commandBufferRef.current = commandState.buffer;
+      if (commandState.commands.length || data.includes('\x03') || data.includes('\x04')) {
+        commandBufferUnsafeRef.current = false;
+      }
       commandState.commands.forEach((command) => {
         if (isLikelyForegroundCommand(command)) {
           foregroundTaskSourceRef.current = 'command';
@@ -919,11 +1848,21 @@ function RemoteTerminal({
       removeTerminalExit();
       removeConnectionClosed();
       removeConnectionRestored();
+      removeTransferProgress();
+      removeTransferEnd();
 
       if (supportsTerminalIpcOptions && !useLegacyTerminalIpcRef.current) {
         api.connections.closeTerminal(connectionId, terminalId).catch(() => undefined);
       }
 
+      if (terminalCwdProbeRef.current) {
+        window.clearTimeout(terminalCwdProbeRef.current.timer);
+        terminalCwdProbeRef.current.resolve('');
+        terminalCwdProbeRef.current = null;
+      }
+      zmodemSessionRef.current?.abort?.();
+      zmodemSessionRef.current = null;
+      zmodemSentryRef.current = null;
       host.removeEventListener('contextmenu', handleTerminalContextMenu);
       terminal.dispose();
       terminalRef.current = null;

@@ -1,4 +1,5 @@
 const { BrowserWindow, dialog } = require('electron');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { TextDecoder } = require('node:util');
@@ -24,8 +25,12 @@ const {
 const maxRemotePermissionTargets = 5000;
 const maxRemoteDeleteTargets = 5000;
 const maxTransferQueueItems = 20000;
+const maxTerminalBinaryInputBytes = 256 * 1024;
+const maxZmodemReadChunkBytes = 256 * 1024;
+const maxZmodemUploadSelectionAgeMs = 30 * 60 * 1000;
 const maxDirectorySymlinkTargetStats = 80;
 const remoteEntryCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
+const zmodemUploadSelections = new Map();
 
 function validateRemotePath(rawPath) {
   const remotePath = typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : '.';
@@ -66,6 +71,101 @@ function sanitizeLocalFileName(fileName, fallback = 'download') {
   }
 
   return safeName;
+}
+
+function toIpcArrayBuffer(buffer) {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+function sendTerminalData(sender, connectionId, terminalId, chunk) {
+  if (sender.isDestroyed()) {
+    return;
+  }
+
+  sender.send('terminal:data', {
+    connectionId,
+    terminalId,
+    data: chunk.toString('utf8'),
+    bytes: toIpcArrayBuffer(chunk),
+  });
+}
+
+function readBinaryInput(rawData, label = '二进制输入', maxBytes = 0) {
+  let buffer;
+
+  if (Buffer.isBuffer(rawData)) {
+    buffer = rawData;
+  } else if (rawData instanceof ArrayBuffer) {
+    buffer = Buffer.from(rawData);
+  } else if (ArrayBuffer.isView(rawData)) {
+    buffer = Buffer.from(rawData.buffer, rawData.byteOffset, rawData.byteLength);
+  } else if (Array.isArray(rawData)) {
+    buffer = Buffer.from(rawData);
+  } else {
+    throw new Error(`${label}无效。`);
+  }
+
+  if (maxBytes > 0 && buffer.length > maxBytes) {
+    throw new Error(`${label}超过长度限制。`);
+  }
+
+  return buffer;
+}
+
+function readTerminalBinaryInput(rawData) {
+  return readBinaryInput(rawData, '终端二进制输入', maxTerminalBinaryInputBytes);
+}
+
+function createZmodemUploadSelection(localPath) {
+  const stats = fs.statSync(localPath);
+
+  if (!stats.isFile()) {
+    return null;
+  }
+
+  const id = `zmodem-${Date.now()}-${crypto.randomUUID()}`;
+  const selection = {
+    id,
+    path: localPath,
+    name: path.basename(localPath) || 'upload',
+    size: stats.size,
+    lastModified: Math.floor(stats.mtimeMs),
+    expiresAt: Date.now() + maxZmodemUploadSelectionAgeMs,
+  };
+
+  zmodemUploadSelections.set(id, selection);
+  return selection;
+}
+
+function cleanupExpiredZmodemUploadSelections() {
+  const now = Date.now();
+
+  for (const [id, selection] of zmodemUploadSelections) {
+    if (selection.expiresAt <= now) {
+      zmodemUploadSelections.delete(id);
+    }
+  }
+}
+
+function getZmodemUploadSelection(rawId) {
+  cleanupExpiredZmodemUploadSelections();
+  const id = typeof rawId === 'string' ? rawId : '';
+  const selection = zmodemUploadSelections.get(id);
+
+  if (!selection) {
+    throw new Error('上传文件选择已过期，请重新选择文件。');
+  }
+
+  selection.expiresAt = Date.now() + maxZmodemUploadSelectionAgeMs;
+  return selection;
+}
+
+function toErrorMessage(error) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error || '未知错误');
 }
 
 function joinRemoteChildPath(parentPath, childName) {
@@ -1516,14 +1616,10 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           };
 
           stream.on('data', (chunk) => {
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
-            }
+            sendTerminalData(event.sender, connectionId, terminalId, chunk);
           });
           stream.stderr.on('data', (chunk) => {
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('terminal:data', { connectionId, terminalId, data: chunk.toString('utf8') });
-            }
+            sendTerminalData(event.sender, connectionId, terminalId, chunk);
           });
           stream.once('exit', (code, signal) => {
             exitCode = Number.isInteger(code) ? code : null;
@@ -1561,6 +1657,19 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     }
 
     terminalStream.write(rawData);
+    return true;
+  });
+
+  registerIpcHandler('connection:write-terminal-binary', async (_event, connectionId, rawTerminalId, rawData) => {
+    const activeConnection = getActiveConnection(connectionId);
+    const terminalId = validateTerminalId(rawTerminalId);
+    const terminalStream = activeConnection.terminalSessions.get(terminalId);
+
+    if (!terminalStream || terminalStream.destroyed) {
+      throw new Error('终端尚未启动。');
+    }
+
+    terminalStream.write(readTerminalBinaryInput(rawData));
     return true;
   });
 
@@ -1917,6 +2026,109 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       });
     });
   }
+
+  registerIpcHandler('connection:check-sftp', async (_event, connectionId) => {
+    try {
+      await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
+        createSftpSession(activeConnection.client, async () => true));
+      return { available: true };
+    } catch (error) {
+      return { available: false, error: toErrorMessage(error) };
+    }
+  });
+
+  registerIpcHandler('connection:zmodem-select-upload-files', async (event) => {
+    cleanupExpiredZmodemUploadSelections();
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    const result = await dialog.showOpenDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: '所有文件', extensions: ['*'] }],
+      title: '选择要通过 ZMODEM 上传的文件',
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { canceled: true, files: [] };
+    }
+
+    const files = result.filePaths
+      .map((filePath) => createZmodemUploadSelection(filePath))
+      .filter(Boolean)
+      .map((selection) => ({
+        id: selection.id,
+        name: selection.name,
+        size: selection.size,
+        lastModified: selection.lastModified,
+      }));
+
+    if (!files.length) {
+      throw new Error('没有可上传的本地文件。');
+    }
+
+    return { canceled: false, files };
+  });
+
+  registerIpcHandler('connection:zmodem-read-upload-file', async (_event, rawFileId, rawOffset, rawLength) => {
+    const selection = getZmodemUploadSelection(rawFileId);
+    const offset = Number(rawOffset);
+    const requestedLength = Number(rawLength);
+
+    if (
+      !Number.isInteger(offset) ||
+      !Number.isInteger(requestedLength) ||
+      offset < 0 ||
+      requestedLength < 1 ||
+      requestedLength > maxZmodemReadChunkBytes
+    ) {
+      throw new Error('读取上传文件的范围无效。');
+    }
+
+    if (offset >= selection.size) {
+      return new ArrayBuffer(0);
+    }
+
+    const length = Math.min(requestedLength, selection.size - offset);
+    const buffer = Buffer.alloc(length);
+    const fileHandle = await fs.promises.open(selection.path, 'r');
+
+    try {
+      const result = await fileHandle.read(buffer, 0, length, offset);
+      return toIpcArrayBuffer(buffer.subarray(0, result.bytesRead));
+    } finally {
+      await fileHandle.close().catch(() => undefined);
+    }
+  });
+
+  registerIpcHandler('connection:zmodem-release-upload-files', (_event, rawFileIds) => {
+    const ids = Array.isArray(rawFileIds) ? rawFileIds : [];
+
+    for (const id of ids) {
+      if (typeof id === 'string') {
+        zmodemUploadSelections.delete(id);
+      }
+    }
+
+    cleanupExpiredZmodemUploadSelections();
+    return true;
+  });
+
+  registerIpcHandler('connection:zmodem-save-file', async (event, rawFileName, rawContent) => {
+    const fileName = sanitizeLocalFileName(typeof rawFileName === 'string' ? rawFileName : '', 'download');
+    const content = readBinaryInput(rawContent, 'ZMODEM 下载内容');
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    const result = await dialog.showSaveDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
+      defaultPath: fileName,
+      filters: [{ name: '所有文件', extensions: ['*'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+
+    await fs.promises.writeFile(result.filePath, content);
+    return { canceled: false, filePath: result.filePath, size: content.length };
+  });
 
   function statSftpPath(sftp, targetPath) {
     return new Promise((resolve, reject) => {
@@ -2291,6 +2503,23 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     }
 
     return runUploadTransfer(connectionId, event.sender, result.filePaths.slice(0, 1), currentPath);
+  });
+
+  registerIpcHandler('connection:upload-files', async (event, connectionId, rawRemotePath) => {
+    const currentPath = validateRemotePath(rawRemotePath);
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    const result = await dialog.showOpenDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: '所有文件', extensions: ['*'] }],
+      title: '选择要上传的文件',
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { canceled: true };
+    }
+
+    return runUploadTransfer(connectionId, event.sender, result.filePaths, currentPath);
   });
 
   registerIpcHandler('connection:upload-paths', async (event, connectionId, rawRemotePath) => {

@@ -143,6 +143,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
 
       return ipcRenderer.invoke('connection:write-terminal', connectionId, terminalId, data);
     },
+    writeTerminalBytes: (connectionId, terminalId, data) =>
+      ipcRenderer.invoke('connection:write-terminal-binary', connectionId, terminalId, data),
     resizeTerminal: (connectionId, terminalId, columns, rows, options) => {
       if (options?.legacy) {
         return ipcRenderer.invoke('connection:resize-terminal', connectionId, columns, rows);
@@ -164,8 +166,15 @@ contextBridge.exposeInMainWorld('guiSSH', {
     downloadFile: (connectionId, remotePath) => ipcRenderer.invoke('connection:download-file', connectionId, remotePath),
     downloadPaths: (connectionId, remotePaths) => ipcRenderer.invoke('connection:download-paths', connectionId, remotePaths),
     uploadFile: (connectionId, remotePath) => ipcRenderer.invoke('connection:upload-file', connectionId, remotePath),
+    uploadFiles: (connectionId, remotePath) => ipcRenderer.invoke('connection:upload-files', connectionId, remotePath),
     uploadPaths: (connectionId, remotePath) => ipcRenderer.invoke('connection:upload-paths', connectionId, remotePath),
     cancelTransfer: (connectionId) => ipcRenderer.invoke('connection:cancel-transfer', connectionId),
+    checkSftp: (connectionId) => ipcRenderer.invoke('connection:check-sftp', connectionId),
+    selectZmodemUploadFiles: () => ipcRenderer.invoke('connection:zmodem-select-upload-files'),
+    readZmodemUploadFile: (fileId, offset, length) =>
+      ipcRenderer.invoke('connection:zmodem-read-upload-file', fileId, offset, length),
+    releaseZmodemUploadFiles: (fileIds) => ipcRenderer.invoke('connection:zmodem-release-upload-files', fileIds),
+    saveZmodemFile: (fileName, content) => ipcRenderer.invoke('connection:zmodem-save-file', fileName, content),
     compress: (connectionId, sourcePaths, format, destPath) => ipcRenderer.invoke('connection:compress', connectionId, sourcePaths, format, destPath),
     decompress: (connectionId, archivePath, destDir) => ipcRenderer.invoke('connection:decompress', connectionId, archivePath, destDir),
     statPath: (connectionId, remotePath) => ipcRenderer.invoke('connection:stat-path', connectionId, remotePath),

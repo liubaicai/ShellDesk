@@ -1,7 +1,7 @@
 {
   "name": "shelldesk",
   "productName": "ShellDesk",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "packageManager": "pnpm@10.26.2",
   "private": true,
   "description": "Blank Electron shell for a GUI SSH client.",
@@ -48,7 +48,8 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "ssh2": "^1.17.0",
-    "ws": "^8.20.1"
+    "ws": "^8.20.1",
+    "zmodem.js": "^0.1.10"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",

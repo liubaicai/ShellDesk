@@ -458,6 +458,7 @@ interface ShellDeskRemoteMetricsReport {
 
 interface ShellDeskIpcCapabilities {
   terminalSessions: boolean;
+  terminalBinary?: boolean;
 }
 
 interface ShellDeskTerminalIpcOptions {
@@ -470,6 +471,13 @@ interface ShellDeskTerminalIpcOptions {
 
 interface ShellDeskRunCommandStreamCallbacks {
   onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void;
+}
+
+interface ShellDeskZmodemUploadFile {
+  id: string;
+  name: string;
+  size: number;
+  lastModified: number;
 }
 
 interface ShellDeskConnectionControls {
@@ -491,6 +499,11 @@ interface ShellDeskConnectionControls {
     data: string,
     options?: ShellDeskTerminalIpcOptions,
   ) => Promise<boolean>;
+  writeTerminalBytes: (
+    connectionId: string,
+    terminalId: string,
+    data: ArrayBuffer | ArrayBufferView | number[],
+  ) => Promise<boolean>;
   resizeTerminal: (
     connectionId: string,
     terminalId: string,
@@ -509,8 +522,14 @@ interface ShellDeskConnectionControls {
   downloadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; filePath?: string; size?: number }>;
   downloadPaths: (connectionId: string, remotePaths: string[]) => Promise<{ canceled: boolean; directoryPath?: string; size?: number; fileCount?: number; itemCount?: number }>;
   uploadFile: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
+  uploadFiles: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   uploadPaths: (connectionId: string, remotePath: string) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   cancelTransfer: (connectionId: string) => Promise<boolean>;
+  checkSftp: (connectionId: string) => Promise<{ available: boolean; error?: string }>;
+  selectZmodemUploadFiles: () => Promise<{ canceled: boolean; files: ShellDeskZmodemUploadFile[] }>;
+  readZmodemUploadFile: (fileId: string, offset: number, length: number) => Promise<ArrayBuffer>;
+  releaseZmodemUploadFiles: (fileIds: string[]) => Promise<boolean>;
+  saveZmodemFile: (fileName: string, content: ArrayBuffer | ArrayBufferView | number[]) => Promise<{ canceled: boolean; filePath?: string; size?: number }>;
   compress: (connectionId: string, sourcePaths: string[], format: string, destPath: string) => Promise<{ format: string; destPath: string }>;
   decompress: (connectionId: string, archivePath: string, destDir?: string) => Promise<{ archivePath: string; destDir: string }>;
   statPath: (connectionId: string, remotePath: string) => Promise<ShellDeskRemotePathStat>;
@@ -922,7 +941,7 @@ interface ShellDeskTransferEndPayload {
 }
 
 interface ShellDeskEventControls {
-  onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string }) => void) => () => void;
+  onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string; bytes?: ArrayBuffer | ArrayBufferView | number[] }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
