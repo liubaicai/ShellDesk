@@ -94,7 +94,7 @@ src/
       RemoteMySQL.tsx / RemotePostgres.tsx / RemoteRedis.tsx / RemoteSqlite.tsx
       RemoteProcessManager.tsx / RemoteServiceManager.tsx / RemoteContainerManager.tsx
       RemotePortManager.tsx / RemoteFirewallManager.tsx / RemoteNetworkDiagnostics.tsx
-      RemoteDiskAnalyzer.tsx / RemotePackageManager.tsx / RemoteScheduledTasks.tsx
+      RemoteDiskAnalyzer.tsx / RemoteDiskManager.tsx / RemotePackageManager.tsx / RemoteScheduledTasks.tsx
       RemoteSecurityAudit.tsx / RemoteLoginSessions.tsx / RemoteLogViewer.tsx
       RemoteApiDebugger.tsx / RemoteSettings.tsx
   pages/
@@ -116,13 +116,15 @@ src/
 - 新增 IPC 需同步修改：对应 `electron/main/*Handlers.cjs` handler + `electron/preload.cjs` bridge + `src/vite-env.d.ts` 类型；如涉及远程桌面应用，再同步组件调用和错误文案
 
 ### 远程桌面窗口系统
-- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/browser/vnc/log-viewer/monitor/mysql/redis/postgres/sqlite/service-manager/container-manager/port-manager/firewall-manager/network-diagnostics/disk-analyzer/package-manager/scheduled-tasks/security-audit/login-sessions/api-debugger/procmanager/settings
+- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/browser/vnc/log-viewer/monitor/mysql/redis/service-manager/container-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/web-server-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/security-audit/login-sessions/api-debugger/procmanager/settings/sqlite
 - `desktopApps`、`desktopAppIconSources`、`defaultWindowFrames`、`renderWindowContent` 是新增远程桌面应用时必须检查的核心位置
 - `ShellDeskRemoteDesktopLayout` 保存桌面排序、应用图标和文件夹布局；默认桌面应用为 files/terminal/browser/settings
 - 窗口支持拖拽移动、缩放、最大化，使用 `transform: translate3d` 定位
 - **右键菜单/弹窗**必须用 `createPortal` 渲染到 `document.body`，否则受 `transform` 影响导致定位错乱
 - **Dock 栏规则**：`dockPinnedApps` 定义固定显示在底部 Dock 的应用（files/terminal/browser），其他应用仅在桌面/Launchpad/文件夹中显示，但当其窗口打开时会动态追加到 Dock 栏（关闭后消失）
-- 新增远程桌面应用通常要同步：组件文件、`src/components/remote-desktop/index.ts`、`RemoteDesktopShell.tsx` 注册/渲染/窗口尺寸、`src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`、`src/assets/desktop-icons/` 图标、`src/styles/remote-desktop/_xxx.scss` 与 `src/styles/index.scss`
+- 新增远程桌面应用通常要同步：组件文件、`src/components/remote-desktop/index.ts`、`RemoteDesktopShell.tsx` 注册/图标/窗口尺寸/渲染分支、`src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`、`src/assets/desktop-icons/` 图标、`src/styles/remote-desktop/_xxx.scss` 与 `src/styles/index.scss`
+- 新增远程桌面 `appKey` 必须同时加入布局持久化白名单和迁移版本：`electron/main/constants.cjs` 的 `remoteDesktopAppKeys`、`remoteDesktopAppCatalogVersion`、`remoteDesktopAppCatalogMigrationKeys`，`src/RemoteDesktopShell.tsx` 的 `desktopAppCatalogVersion`、`appCatalogMigrationKeys`，以及 `src/App.tsx` 的默认 `remoteDesktopAppCatalogVersion`。否则图标拖到桌面后会在保存配置时被主进程清洗掉，重启或 vault 同步后消失。
+- 新增迁移 `appKey` 后，还要检查 `App.tsx` 和 `RemoteDesktopShell.tsx` 的 `settings.remoteDesktopLayout` 回灌逻辑：来自 `vault:changed`、其他窗口或旧保存队列的快照不能把当前布局里已有的新迁移应用删掉，否则图标会在添加到桌面后一段时间又消失。
 
 ### Electron 沙箱限制
 - `prompt()` / `confirm()` / `alert()` 在 sandbox 模式下被禁用，返回 `null`

@@ -123,6 +123,7 @@ type ShellDeskDesktopAppKey =
   | 'iptables-manager'
   | 'network-diagnostics'
   | 'disk-analyzer'
+  | 'disk-manager'
   | 'package-manager'
   | 'git-manager'
   | 'web-server-manager'

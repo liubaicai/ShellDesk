@@ -20,6 +20,7 @@
 @use "./remote-desktop/port-manager" as *;
 @use "./remote-desktop/network-diagnostics" as *;
 @use "./remote-desktop/disk-analyzer" as *;
+@use "./remote-desktop/disk-manager" as *;
 @use "./remote-desktop/package-manager" as *;
 @use "./remote-desktop/git-manager" as *;
 @use "./remote-desktop/web-server-manager" as *;

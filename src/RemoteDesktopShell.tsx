@@ -20,6 +20,7 @@ const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteA
 const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
 const RemoteContainerManager = lazy(() => import('./components/remote-desktop/RemoteContainerManager'));
 const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/RemoteDiskAnalyzer'));
+const RemoteDiskManager = lazy(() => import('./components/remote-desktop/RemoteDiskManager'));
 const RemoteFileExplorer = lazy(() => import('./components/remote-desktop/RemoteFileExplorer'));
 const RemoteFirewallManager = lazy(() => import('./components/remote-desktop/RemoteFirewallManager'));
 const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
@@ -65,6 +66,7 @@ const desktopApps = [
   { key: 'iptables-manager', labelId: 'desktop.app.iptablesManager.label', descriptionId: 'desktop.app.iptablesManager.description' },
   { key: 'network-diagnostics', labelId: 'desktop.app.networkDiagnostics.label', descriptionId: 'desktop.app.networkDiagnostics.description' },
   { key: 'disk-analyzer', labelId: 'desktop.app.diskAnalyzer.label', descriptionId: 'desktop.app.diskAnalyzer.description' },
+  { key: 'disk-manager', labelId: 'desktop.app.diskManager.label', descriptionId: 'desktop.app.diskManager.description' },
   { key: 'package-manager', labelId: 'desktop.app.packageManager.label', descriptionId: 'desktop.app.packageManager.description' },
   { key: 'git-manager', labelId: 'desktop.app.gitManager.label', descriptionId: 'desktop.app.gitManager.description' },
   { key: 'web-server-manager', labelId: 'desktop.app.webServerManager.label', descriptionId: 'desktop.app.webServerManager.description' },
@@ -105,6 +107,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'iptables-manager': new URL('./assets/desktop-icons/iptables-manager.png', import.meta.url).href,
   'network-diagnostics': new URL('./assets/desktop-icons/network-diagnostics.png', import.meta.url).href,
   'disk-analyzer': new URL('./assets/desktop-icons/disk-analyzer.png', import.meta.url).href,
+  'disk-manager': new URL('./assets/desktop-icons/disk-manager.png', import.meta.url).href,
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
   'git-manager': new URL('./assets/desktop-icons/git-manager.png', import.meta.url).href,
   'web-server-manager': new URL('./assets/desktop-icons/web-server-manager.png', import.meta.url).href,
@@ -124,7 +127,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 2;
+const desktopAppCatalogVersion = 3;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
@@ -133,6 +136,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'search-cluster',
   'message-queue',
   's3-browser',
+  'disk-manager',
 ];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
@@ -272,6 +276,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'iptables-manager': { x: 106, y: 44, width: 1160, height: 680 },
   'network-diagnostics': { x: 120, y: 52, width: 1060, height: 640 },
   'disk-analyzer': { x: 110, y: 46, width: 1120, height: 650 },
+  'disk-manager': { x: 96, y: 38, width: 1180, height: 680 },
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
   'git-manager': { x: 112, y: 46, width: 1120, height: 660 },
   'web-server-manager': { x: 112, y: 46, width: 1120, height: 660 },
@@ -391,6 +396,20 @@ function normalizeFolderName(value: unknown) {
 
 function getLayoutAppKeys(items: DesktopLayoutItem[]) {
   return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
+}
+
+function areRemoteDesktopLayoutsEqual(firstLayout: ShellDeskRemoteDesktopLayout, secondLayout: ShellDeskRemoteDesktopLayout) {
+  return JSON.stringify(firstLayout) === JSON.stringify(secondLayout);
+}
+
+function shouldPreserveCurrentDesktopLayout(
+  currentLayout: ShellDeskRemoteDesktopLayout,
+  incomingLayout: ShellDeskRemoteDesktopLayout,
+) {
+  const currentAppKeys = getLayoutAppKeys(currentLayout.items);
+  const incomingAppKeys = getLayoutAppKeys(incomingLayout.items);
+
+  return appCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
 }
 
 function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersion: number) {
@@ -853,6 +872,19 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
     );
   }
 
+  if (appKey === 'disk-manager') {
+    return (
+      <svg {...iconProps}>
+        <ellipse cx="12" cy="5.75" rx="6.25" ry="2.5" />
+        <path d="M5.75 5.75v7.5c0 1.38 2.8 2.5 6.25 2.5s6.25-1.12 6.25-2.5v-7.5" />
+        <path d="M5.75 9.5C5.75 10.88 8.55 12 12 12s6.25-1.12 6.25-2.5" />
+        <path d="M8.5 19.25h7" />
+        <path d="M12 16v5.5" />
+        <path d="M15.25 18.25 17 20l2.75-3" />
+      </svg>
+    );
+  }
+
   if (appKey === 'package-manager') {
     return (
       <svg {...iconProps}>
@@ -1027,6 +1059,16 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   useEffect(() => {
     const normalizedLayout = normalizeRemoteDesktopLayout(settings.remoteDesktopLayout);
+    const currentLayout = desktopLayoutRef.current;
+
+    if (areRemoteDesktopLayoutsEqual(currentLayout, normalizedLayout)) {
+      return;
+    }
+
+    if (shouldPreserveCurrentDesktopLayout(currentLayout, normalizedLayout)) {
+      return;
+    }
+
     desktopLayoutRef.current = normalizedLayout;
     setDesktopLayout(normalizedLayout);
   }, [settings.remoteDesktopLayout]);
@@ -1867,6 +1909,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'disk-analyzer') {
       return <RemoteDiskAnalyzer connectionId={connection.id} systemType={connection.host.systemType} onOpenFileManager={openFileManagerAtPath} />;
+    }
+
+    if (desktopWindow.appKey === 'disk-manager') {
+      return <RemoteDiskManager connectionId={connection.id} systemType={connection.host.systemType} onOpenFileManager={openFileManagerAtPath} />;
     }
 
     if (desktopWindow.appKey === 'package-manager') {

@@ -44,7 +44,7 @@ const maxAiApiBaseUrlLength = 2048;
 const maxAiApiKeyLength = 8192;
 const maxAiModelNameLength = 200;
 const maxAiProviderNameLength = 80;
-const remoteDesktopAppCatalogVersion = 2;
+const remoteDesktopAppCatalogVersion = 3;
 const remoteDesktopAppKeys = [
   'files',
   'terminal',
@@ -62,6 +62,7 @@ const remoteDesktopAppKeys = [
   'iptables-manager',
   'network-diagnostics',
   'disk-analyzer',
+  'disk-manager',
   'package-manager',
   'git-manager',
   'web-server-manager',
@@ -86,6 +87,7 @@ const remoteDesktopAppCatalogMigrationKeys = [
   'search-cluster',
   'message-queue',
   's3-browser',
+  'disk-manager',
 ];
 const remoteDesktopSortModes = new Set(['custom', 'name-asc', 'name-desc']);
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];

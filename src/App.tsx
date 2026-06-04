@@ -21,7 +21,16 @@ const hostsStorageKey = 'shelldesk:hosts';
 const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const ungroupedKey = '__ungrouped__';
-const remoteDesktopAppCatalogVersion = 2;
+const remoteDesktopAppCatalogVersion = 3;
+const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
+  'git-manager',
+  'web-server-manager',
+  'mongo',
+  'search-cluster',
+  'message-queue',
+  's3-browser',
+  'disk-manager',
+];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,
   sortMode: 'custom',
@@ -236,6 +245,34 @@ function getReadableTextColor(hexColor: string) {
   const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
 
   return luminance > 0.72 ? '#0b1220' : '#ffffff';
+}
+
+function getRemoteDesktopLayoutAppKeys(items: ShellDeskDesktopLayoutItem[]) {
+  return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
+}
+
+function shouldPreserveCurrentRemoteDesktopLayout(
+  currentLayout: ShellDeskRemoteDesktopLayout,
+  incomingLayout: ShellDeskRemoteDesktopLayout,
+) {
+  const currentAppKeys = getRemoteDesktopLayoutAppKeys(currentLayout.items);
+  const incomingAppKeys = getRemoteDesktopLayoutAppKeys(incomingLayout.items);
+
+  return remoteDesktopAppCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
+}
+
+function protectRemoteDesktopLayoutFromStaleSnapshot(
+  incomingSettings: ShellDeskAppSettings,
+  currentSettings: ShellDeskAppSettings,
+) {
+  if (!shouldPreserveCurrentRemoteDesktopLayout(currentSettings.remoteDesktopLayout, incomingSettings.remoteDesktopLayout)) {
+    return incomingSettings;
+  }
+
+  return {
+    ...incomingSettings,
+    remoteDesktopLayout: currentSettings.remoteDesktopLayout,
+  };
 }
 
 const hostSystemIconUrls: Record<HostSystemType, string> = {
@@ -1210,6 +1247,9 @@ function App() {
   const applyVaultSnapshot = (snapshot: ShellDeskVaultSnapshot, options: { updateCollections?: boolean; hydrated?: boolean } = {}) => {
     const { updateCollections = true, hydrated = true } = options;
 
+    const nextSettings = protectRemoteDesktopLayoutFromStaleSnapshot(snapshot.settings, settingsRef.current);
+    const shouldRepairPersistedDesktopLayout = nextSettings !== snapshot.settings;
+
     if (updateCollections) {
       const nextHosts = sortHostsByListOrder(snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost));
       const nextKeys = snapshot.sshKeys.filter(isStoredSshKey);
@@ -1223,19 +1263,27 @@ function App() {
         lastPersistedCollectionsRef.current = JSON.stringify({
           hosts: nextHosts,
           sshKeys: nextKeys,
-          settings: snapshot.settings,
+          settings: shouldRepairPersistedDesktopLayout ? snapshot.settings : nextSettings,
         });
       }
     }
 
-    settingsRef.current = snapshot.settings;
-    setSettings(snapshot.settings);
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
     setStorageInfo(snapshot.storage);
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
     setIsVaultReady(true);
 
     if (hydrated) {
       setIsVaultHydrated(true);
+    }
+
+    if (shouldRepairPersistedDesktopLayout) {
+      queueCollectionsSaveIfChanged({
+        hosts: hostsRef.current,
+        sshKeys: sshKeysRef.current,
+        settings: nextSettings,
+      });
     }
   };
 
