@@ -348,27 +348,6 @@
 
 /* ─── Light: System Info ────────────────────────────────────────────────── */
 
-[data-theme="light"] .sysinfo-hero {
-  border-color: var(--accent-border);
-  background:
-    radial-gradient(ellipse at 15% 40%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
-    radial-gradient(ellipse at 85% 60%, rgba(130, 80, 223, 0.04), transparent 50%),
-    linear-gradient(135deg, rgba(16, 32, 51, 0.03), rgba(16, 32, 51, 0.01));
-}
-
-[data-theme="light"] .sysinfo-hero-icon {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), rgba(130, 80, 223, 0.1));
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-[data-theme="light"] .sysinfo-hero-text strong {
-  color: #1f2328;
-}
-
-[data-theme="light"] .sysinfo-hero-text span {
-  color: var(--accent);
-}
-
 [data-theme="light"] .sysinfo-card {
   border-color: rgba(16, 32, 51, 0.08);
   background: var(--surface);
@@ -894,22 +873,6 @@
 }
 
 [data-theme="light"] .dns-server-addr {
-  color: var(--accent);
-}
-
-[data-theme="light"] .sysinfo-hero {
-  border-color: var(--accent-border);
-  background:
-    radial-gradient(ellipse at 20% 50%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
-    linear-gradient(135deg, var(--surface), var(--surface-elevated));
-  box-shadow: 0 1px 3px rgba(16, 32, 51, 0.06);
-}
-
-[data-theme="light"] .sysinfo-hero-text {
-  color: #1f2328;
-}
-
-[data-theme="light"] .sysinfo-hero-text span {
   color: var(--accent);
 }
 

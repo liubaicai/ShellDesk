@@ -2271,12 +2271,15 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
     return <pre className="sysinfo-card-value">{item.value}</pre>;
   };
 
+  const hostLabel = hostnameItem?.value || t('remoteSettings.systemInfo.remoteHost', language);
+  const osLabel = osItem ? parseOsName(osItem.value) : t('remoteSettings.systemInfo.description', language);
+
   return (
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>{t('remoteSettings.systemInfo.title', language)}</h3>
-          <p>{t('remoteSettings.systemInfo.description', language)}</p>
+          <h3>{hostLabel}</h3>
+          <p>{osLabel}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
           {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
@@ -2288,20 +2291,8 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
 
-      {/* Hero Card */}
-      {osItem ? (
-        <div className="sysinfo-hero">
-          <div className="sysinfo-hero-icon">{'\u{1F4BB}'}</div>
-          <div className="sysinfo-hero-text">
-            <strong>{hostnameItem?.value || t('remoteSettings.systemInfo.remoteHost', language)}</strong>
-            <span>{parseOsName(osItem.value)}</span>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Info Grid */}
       <div className="sysinfo-grid">
-        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os').map((item) => (
+        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os' && i.key !== 'user').map((item) => (
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
@@ -2341,13 +2332,15 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
 
   const hostnameItem = items.find((i) => i.key === 'hostname');
   const osItem = items.find((i) => i.key === 'os');
+  const hostLabel = hostnameItem?.value || t('remoteSettings.windows.host', language);
+  const osLabel = osItem?.value || t('remoteSettings.windows.systemDescription', language);
 
   return (
     <div className="settings-panel-content">
       <div className="settings-panel-header">
         <div>
-          <h3>{t('remoteSettings.systemInfo.title', language)}</h3>
-          <p>{t('remoteSettings.windows.systemDescription', language)}</p>
+          <h3>{hostLabel}</h3>
+          <p>{osLabel}</p>
         </div>
         <button type="button" className="settings-action-btn" onClick={refresh} disabled={loading}>
           {loading ? t('remoteSettings.common.loading', language) : t('remoteSettings.common.refresh', language)}
@@ -2358,17 +2351,8 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
           {error}
         </DismissibleAlert>
       ) : null}
-      {osItem ? (
-        <div className="sysinfo-hero">
-          <div className="sysinfo-hero-icon">{'\u{1F5A5}\uFE0F'}</div>
-          <div className="sysinfo-hero-text">
-            <strong>{hostnameItem?.value || t('remoteSettings.windows.host', language)}</strong>
-            <span>{osItem.value}</span>
-          </div>
-        </div>
-      ) : null}
       <div className="sysinfo-grid">
-        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os').map((item) => (
+        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os' && i.key !== 'user').map((item) => (
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
