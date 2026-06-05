@@ -468,6 +468,7 @@ interface Host {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  jumpHostId: string;
   systemType: HostSystemType;
   systemName: string;
   group: string;
@@ -498,8 +499,8 @@ interface ConnectionErrorNotice {
 
 type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
 
-type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
+type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
 
 interface HostFormState {
   name: string;
@@ -511,6 +512,7 @@ interface HostFormState {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  jumpHostId: string;
   group: string;
   tags: string;
   note: string;
@@ -524,6 +526,7 @@ interface HostGroup {
 
 type DeleteConfirmationRequest =
   | { kind: 'host'; host: Host }
+  | { kind: 'host-jump-blocked'; host: Host; dependentHosts: Host[] }
   | { kind: 'ssh-key'; key: SshKey; relatedHostCount: number };
 
 interface ConnectionClosedPayload {
@@ -570,6 +573,7 @@ const emptyHostForm: HostFormState = {
   keyId: '',
   keyPath: '',
   passphrase: '',
+  jumpHostId: '',
   group: '',
   tags: '',
   note: '',
@@ -698,6 +702,7 @@ function normalizeStoredHost(host: StoredHost): Host {
     keyId: typeof host.keyId === 'string' ? host.keyId : '',
     keyPath: typeof host.keyPath === 'string' ? host.keyPath : '',
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
+    jumpHostId: typeof host.jumpHostId === 'string' ? host.jumpHostId : '',
     systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
     lastConnectionStatus: getHostConnectionStatus(host.lastConnectionStatus),
@@ -729,6 +734,47 @@ function compareHostsByListOrder(left: Pick<Host, 'id' | 'createdAt' | 'updatedA
 
 function sortHostsByListOrder(hosts: Host[]) {
   return [...hosts].sort(compareHostsByListOrder);
+}
+
+function sanitizeHostJumpHostReferences(hosts: Host[]) {
+  const hostsById = new Map(hosts.map((host) => [host.id, host]));
+  const directOrExistingHosts = hosts.map((host): Host => {
+    const jumpHostId = host.jumpHostId.trim();
+    const jumpHost = jumpHostId ? hostsById.get(jumpHostId) : null;
+
+    if (!jumpHostId || jumpHostId === host.id || !jumpHost) {
+      return {
+        ...host,
+        jumpHostId: '',
+      };
+    }
+
+    return {
+      ...host,
+      jumpHostId,
+    };
+  });
+  const normalizedHostsById = new Map(directOrExistingHosts.map((host) => [host.id, host]));
+
+  return directOrExistingHosts.map((host): Host => {
+    const jumpHost = host.jumpHostId ? normalizedHostsById.get(host.jumpHostId) : null;
+
+    if (!host.jumpHostId || !jumpHost || jumpHost.jumpHostId) {
+      return {
+        ...host,
+        jumpHostId: '',
+      };
+    }
+
+    return {
+      ...host,
+      jumpHostId: host.jumpHostId,
+    };
+  });
+}
+
+function normalizeStoredHosts(hosts: StoredHost[]) {
+  return sortHostsByListOrder(sanitizeHostJumpHostReferences(hosts.map(normalizeStoredHost)));
 }
 
 function isHostListSortMode(value: unknown): value is HostListSortMode {
@@ -835,7 +881,7 @@ function readStoredHosts(): Host[] {
       return [];
     }
 
-    return sortHostsByListOrder(parsedHosts.filter(isStoredHost).map(normalizeStoredHost));
+    return normalizeStoredHosts(parsedHosts.filter(isStoredHost));
   } catch {
     return [];
   }
@@ -859,9 +905,16 @@ function storeHostGroupPanelCollapsed(collapsed: boolean) {
   }
 }
 
-function validateHostForm(form: HostFormState, keys: SshKey[], language: ShellDeskAppSettings['language']) {
+function validateHostForm(
+  form: HostFormState,
+  keys: SshKey[],
+  hosts: Host[],
+  editingHostId: string | null,
+  language: ShellDeskAppSettings['language'],
+) {
   const port = Number(form.port);
   const selectedKey = keys.find((key) => key.id === form.keyId);
+  const jumpHostId = form.jumpHostId.trim();
 
   if (!form.name.trim()) {
     return t('app.host.validation.nameRequired', language);
@@ -895,6 +948,22 @@ function validateHostForm(form: HostFormState, keys: SshKey[], language: ShellDe
     return t('app.host.validation.keyRequired', language);
   }
 
+  if (jumpHostId) {
+    const jumpHost = hosts.find((host) => host.id === jumpHostId) ?? null;
+
+    if (jumpHostId === editingHostId) {
+      return t('app.host.validation.jumpHostSelf', language);
+    }
+
+    if (!jumpHost) {
+      return t('app.host.validation.jumpHostMissing', language);
+    }
+
+    if (jumpHost.jumpHostId) {
+      return t('app.host.validation.jumpHostNested', language);
+    }
+  }
+
   if (form.password.length > 4096) {
     return t('app.host.validation.passwordTooLong', language);
   }
@@ -916,6 +985,7 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
     keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
     keyPath: '',
     passphrase: '',
+    jumpHostId: form.jumpHostId.trim(),
     systemType: 'unknown',
     systemName: '',
     group: form.group.trim(),
@@ -934,10 +1004,13 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     host.address !== form.address.trim() ||
     host.port !== Number(form.port) ||
     host.username !== form.username.trim();
+  const nextJumpHostId = form.jumpHostId.trim();
+  const jumpHostChanged = host.jumpHostId !== nextJumpHostId;
   const nextPassword = form.authMethod === 'password' ? form.password : '';
   const nextKeyId = form.authMethod === 'key' ? selectedKey?.id ?? '' : '';
   const connectionProfileChanged =
     endpointChanged ||
+    jumpHostChanged ||
     host.authMethod !== form.authMethod ||
     host.password !== nextPassword ||
     host.keyId !== nextKeyId;
@@ -953,8 +1026,9 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     keyId: nextKeyId,
     keyPath: '',
     passphrase: '',
-    systemType: endpointChanged ? 'unknown' : host.systemType,
-    systemName: endpointChanged ? '' : host.systemName,
+    jumpHostId: nextJumpHostId,
+    systemType: endpointChanged || jumpHostChanged ? 'unknown' : host.systemType,
+    systemName: endpointChanged || jumpHostChanged ? '' : host.systemName,
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -976,6 +1050,7 @@ function toFormState(host: Host): HostFormState {
     keyId: host.keyId,
     keyPath: host.keyPath,
     passphrase: host.passphrase,
+    jumpHostId: host.jumpHostId,
     group: host.group,
     tags: formatTags(host.tags),
     note: host.note,
@@ -1138,7 +1213,7 @@ function App() {
   const initialPublicSnapshot = initialPublicSnapshotRef.current;
   const [hosts, setHosts] = useState<Host[]>(() => (
     initialPublicSnapshot
-      ? sortHostsByListOrder(initialPublicSnapshot.hosts.filter(isStoredHost).map(normalizeStoredHost))
+      ? normalizeStoredHosts(initialPublicSnapshot.hosts.filter(isStoredHost))
       : (window.guiSSH?.vault ? [] : readStoredHosts())
   ));
   const [sshKeys, setSshKeys] = useState<SshKey[]>(() => (
@@ -1210,6 +1285,11 @@ function App() {
   const editingHost = hosts.find((host) => host.id === editingHostId) ?? null;
   const editingKey = sshKeys.find((key) => key.id === editingKeyId) ?? null;
   const sshKeyById = useMemo(() => new Map(sshKeys.map((key) => [key.id, key])), [sshKeys]);
+  const hostById = useMemo(() => new Map(hosts.map((host) => [host.id, host])), [hosts]);
+  const jumpHostOptions = useMemo(
+    () => hosts.filter((host) => host.id !== editingHostId && !host.jumpHostId),
+    [editingHostId, hosts],
+  );
   const appLanguage = settings.language;
   const appLocale = getAppLocale(appLanguage);
 
@@ -1238,6 +1318,7 @@ function App() {
 
     return hosts.filter((host) => {
       const hostKey = sshKeyById.get(host.keyId) ?? null;
+      const jumpHost = host.jumpHostId ? hostById.get(host.jumpHostId) ?? null : null;
       const matchesGroup = !activeGroupKey || getHostGroupKey(host) === activeGroupKey;
       const matchesQuery =
         !query ||
@@ -1252,6 +1333,8 @@ function App() {
           hostKey?.name,
           hostKey?.fingerprint,
           hostKey?.algorithm,
+          jumpHost?.name,
+          jumpHost?.address,
           getAuthLabel(host, hostKey, appLanguage),
           ...host.tags,
         ]
@@ -1261,7 +1344,7 @@ function App() {
 
       return matchesGroup && matchesQuery;
     }).sort((left, right) => compareHostsByHostListSortMode(left, right, hostListSortMode, appLocale));
-  }, [activeGroupKey, appLanguage, appLocale, hostListSortMode, hosts, searchQuery, sshKeyById]);
+  }, [activeGroupKey, appLanguage, appLocale, hostById, hostListSortMode, hosts, searchQuery, sshKeyById]);
 
   const filteredKeys = useMemo(() => {
     const query = keySearchQuery.trim().toLowerCase();
@@ -1286,7 +1369,7 @@ function App() {
     const shouldRepairPersistedDesktopLayout = nextSettings !== snapshot.settings;
 
     if (updateCollections) {
-      const nextHosts = sortHostsByListOrder(snapshot.hosts.filter(isStoredHost).map(normalizeStoredHost));
+      const nextHosts = normalizeStoredHosts(snapshot.hosts.filter(isStoredHost));
       const nextKeys = snapshot.sshKeys.filter(isStoredSshKey);
 
       hostsRef.current = nextHosts;
@@ -1387,7 +1470,7 @@ function App() {
     nextSshKeys: SshKey[],
     nextSettings: ShellDeskAppSettings,
   ) => {
-    const orderedHosts = sortHostsByListOrder(nextHosts);
+    const orderedHosts = sortHostsByListOrder(sanitizeHostJumpHostReferences(nextHosts));
 
     hostsRef.current = orderedHosts;
     sshKeysRef.current = nextSshKeys;
@@ -2266,7 +2349,7 @@ function App() {
     event.preventDefault();
 
     const selectedKey = sshKeyById.get(form.keyId) ?? null;
-    const validationError = validateHostForm(form, sshKeys, appLanguage);
+    const validationError = validateHostForm(form, sshKeys, hostsRef.current, editingHostId, appLanguage);
 
     if (validationError) {
       setFormError(validationError);
@@ -2296,6 +2379,13 @@ function App() {
   };
 
   const deleteHost = (host: Host) => {
+    const dependentHosts = hostsRef.current.filter((currentHost) => currentHost.jumpHostId === host.id);
+
+    if (dependentHosts.length) {
+      setDeleteConfirmation({ kind: 'host-jump-blocked', host, dependentHosts });
+      return;
+    }
+
     setDeleteConfirmation({ kind: 'host', host });
   };
 
@@ -2312,6 +2402,11 @@ function App() {
 
   const confirmPendingDelete = () => {
     if (!deleteConfirmation) {
+      return;
+    }
+
+    if (deleteConfirmation.kind === 'host-jump-blocked') {
+      setDeleteConfirmation(null);
       return;
     }
 
@@ -2512,6 +2607,7 @@ function App() {
       keyId: '',
       keyPath: parsedCommand.keyPath,
       passphrase: '',
+      jumpHostId: '',
       systemType: 'unknown',
       systemName: '',
       group: '',
@@ -2641,8 +2737,27 @@ function App() {
   const keyEditorSummary = editingKey
     ? editingKey.name
     : t(keyEditorMode === 'generate' ? 'app.key.editor.generateSummary' : 'app.key.editor.importSummary', appLanguage);
+  const blockedJumpHostPreview = deleteConfirmation?.kind === 'host-jump-blocked'
+    ? deleteConfirmation.dependentHosts.slice(0, 3)
+    : [];
+  const blockedJumpHostMoreCount = deleteConfirmation?.kind === 'host-jump-blocked'
+    ? Math.max(0, deleteConfirmation.dependentHosts.length - blockedJumpHostPreview.length)
+    : 0;
+  const blockedJumpHostMoreLabel = blockedJumpHostMoreCount
+    ? t('app.deleteConfirm.hostJumpInUseMore', appLanguage, { count: String(blockedJumpHostMoreCount) })
+    : '';
+  const blockedJumpHostNames = blockedJumpHostPreview
+    .map((host) => host.name)
+    .join(appLanguage === 'zh-CN' ? '、' : ', ');
+  const isHostDeleteBlocked = deleteConfirmation?.kind === 'host-jump-blocked';
   const deleteConfirmationMessage = deleteConfirmation
-    ? deleteConfirmation.kind === 'ssh-key'
+    ? deleteConfirmation.kind === 'host-jump-blocked'
+      ? t('app.deleteConfirm.hostJumpInUse', appLanguage, {
+          name: deleteConfirmation.host.name,
+          hosts: blockedJumpHostNames,
+          more: blockedJumpHostMoreLabel,
+        })
+      : deleteConfirmation.kind === 'ssh-key'
       ? deleteConfirmation.relatedHostCount
         ? t('app.deleteConfirm.keyWithHosts', appLanguage, { name: deleteConfirmation.key.name, count: String(deleteConfirmation.relatedHostCount) })
         : t('app.deleteConfirm.key', appLanguage, { name: deleteConfirmation.key.name })
@@ -2958,6 +3073,7 @@ function App() {
                     {filteredHosts.map((host) => {
                       const connectionState = getHostConnectionStateView(host, appLanguage);
                       const isHostConnecting = connectingHostId === host.id;
+                      const jumpHost = host.jumpHostId ? hostById.get(host.jumpHostId) ?? null : null;
 
                       return (
                         <article
@@ -2975,7 +3091,18 @@ function App() {
                             <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
                             <span className="host-summary">
                               <strong>{host.name}</strong>
-                              <small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small>
+                              <small>
+                                {jumpHost ? (
+                                  <span
+                                    className="host-jump-inline"
+                                    title={t('app.host.jumpVia', appLanguage, { host: jumpHost.name })}
+                                    aria-label={t('app.host.jumpVia', appLanguage, { host: jumpHost.name })}
+                                  >
+                                    ↪
+                                  </span>
+                                ) : null}
+                                <span className="host-endpoint">{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</span>
+                              </small>
                               <span className="host-card-tags">
                                 {/* <em>SSH</em> */}
                                 <em>{host.group || t('app.host.group.ungrouped', appLanguage)}</em>
@@ -3204,6 +3331,24 @@ function App() {
                 )}
 
                 <label className="field">
+                  <span>{t('app.host.field.jumpHost', appLanguage)}</span>
+                  <select
+                    value={form.jumpHostId}
+                    onChange={(event) => updateFormField('jumpHostId', event.target.value)}
+                  >
+                    <option value="">{t('app.host.field.jumpHostDirect', appLanguage)}</option>
+                    {jumpHostOptions.map((host) => (
+                      <option key={host.id} value={host.id}>{host.name} · {host.username}@{host.address}:{host.port}</option>
+                    ))}
+                  </select>
+                  <small className="field-note">
+                    {jumpHostOptions.length
+                      ? t('app.host.field.jumpHostHint', appLanguage)
+                      : t('app.host.field.jumpHostEmpty', appLanguage)}
+                  </small>
+                </label>
+
+                <label className="field">
                   <span>{t('app.host.field.group', appLanguage)}</span>
                   <input
                     value={form.group}
@@ -3237,10 +3382,6 @@ function App() {
                   </DismissibleAlert>
                 ) : null}
 
-                <div className="form-actions">
-                  <button type="submit" className="primary-action">{editingHost ? t('app.host.saveChanges', appLanguage) : t('app.host.addSubmit', appLanguage)}</button>
-                  <button type="button" className="command-button" onClick={resetForm}>{t('app.form.clear', appLanguage)}</button>
-                </div>
               </form>
             </aside>
           ) : null}
@@ -3462,11 +3603,19 @@ function App() {
           {deleteConfirmation ? (
             <div className="notepad-modal-overlay no-drag" role="presentation" onClick={() => setDeleteConfirmation(null)}>
               <div className="notepad-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" onClick={(event) => event.stopPropagation()}>
-                <div id="delete-confirm-title" className="notepad-modal-title">{t('app.deleteConfirm.title', appLanguage)}</div>
+                <div id="delete-confirm-title" className="notepad-modal-title">
+                  {t(isHostDeleteBlocked ? 'app.deleteConfirm.blockedTitle' : 'app.deleteConfirm.title', appLanguage)}
+                </div>
                 <div className="notepad-modal-message">{deleteConfirmationMessage}</div>
                 <div className="notepad-modal-actions">
-                  <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmation(null)}>{t('common.cancel', appLanguage)}</button>
-                  <button type="button" className="notepad-modal-btn danger" onClick={confirmPendingDelete}>{t('app.host.delete', appLanguage)}</button>
+                  {isHostDeleteBlocked ? (
+                    <button type="button" className="notepad-modal-btn primary" onClick={() => setDeleteConfirmation(null)}>{t('common.close', appLanguage)}</button>
+                  ) : (
+                    <>
+                      <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmation(null)}>{t('common.cancel', appLanguage)}</button>
+                      <button type="button" className="notepad-modal-btn danger" onClick={confirmPendingDelete}>{t('app.host.delete', appLanguage)}</button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

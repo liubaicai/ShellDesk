@@ -1628,10 +1628,41 @@
 }
 
 .host-summary small {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
   margin-top: 3px;
   color: var(--muted-strong);
   font-size: 14px;
   font-weight: 620;
+}
+
+.host-summary .host-jump-inline {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-top: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.host-summary .host-endpoint {
+  display: inline-block;
+  min-width: 0;
+  margin-top: 0;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .host-card-tags {

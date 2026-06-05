@@ -308,6 +308,7 @@ interface ShellDeskStoredHostRecord {
   keyId: string;
   keyPath?: string;
   passphrase?: string;
+  jumpHostId?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
   lastConnectionStatus?: 'unknown' | 'success' | 'failed';
@@ -379,6 +380,7 @@ interface ShellDeskVaultControls {
 }
 
 interface ShellDeskHostConnectionRequest {
+  id?: string;
   name: string;
   address: string;
   port: number;
@@ -388,8 +390,17 @@ interface ShellDeskHostConnectionRequest {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  jumpHostId?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
+}
+
+interface ShellDeskJumpHostConnectionInfo {
+  id: string;
+  name: string;
+  address: string;
+  port: number;
+  username: string;
 }
 
 interface ShellDeskConnectionInfo {
@@ -397,7 +408,9 @@ interface ShellDeskConnectionInfo {
   partition: string;
   proxyPort: number;
   connectedAt: string;
-  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'systemType' | 'systemName'>;
+  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'systemType' | 'systemName'> & {
+    jumpHost?: ShellDeskJumpHostConnectionInfo;
+  };
 }
 
 interface ShellDeskRemoteFileEntry {

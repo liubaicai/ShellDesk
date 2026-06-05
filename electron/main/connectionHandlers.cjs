@@ -4,7 +4,7 @@ const {
   activeConnections,
   bindActiveConnectionClient,
   closeActiveConnection,
-  connectSshClient,
+  connectSshClientWithJump,
   createSocksProxy,
   ensureActiveConnectionClient,
   getActiveConnection,
@@ -73,11 +73,14 @@ function registerConnectionHandlers(registerIpcHandler) {
 
   ipcMain.handle('connection:connect', async (_event, rawHost) => {
     let client;
+    let jumpClient;
     let activeConnection;
 
     try {
-      const { displayHost, sshConfig } = validateHostRequest(rawHost);
-      client = await connectSshClient(sshConfig);
+      const { displayHost, sshConfig, jumpSshConfig, jumpHost } = validateHostRequest(rawHost);
+      const connectedClients = await connectSshClientWithJump(sshConfig, jumpSshConfig, jumpHost);
+      client = connectedClients.client;
+      jumpClient = connectedClients.jumpClient;
       try {
         Object.assign(displayHost, await detectRemoteSystem(client));
       } catch (systemError) {
@@ -89,7 +92,10 @@ function registerConnectionHandlers(registerIpcHandler) {
       activeConnection = {
         id,
         client: null,
+        jumpClient,
         sshConfig,
+        jumpSshConfig,
+        jumpHost,
         socksServer: null,
         proxyPort: 0,
         partition,
@@ -132,6 +138,7 @@ function registerConnectionHandlers(registerIpcHandler) {
         await closeActiveConnection(activeConnection.id, '连接初始化失败。').catch(() => undefined);
       } else {
         client?.end();
+        jumpClient?.end();
       }
       return { ok: false, error: toConnectionErrorMessage(error) };
     }

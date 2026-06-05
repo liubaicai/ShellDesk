@@ -103,6 +103,91 @@ function connectSshClient(sshConfig) {
   });
 }
 
+function closeSshClient(client) {
+  if (!client) {
+    return;
+  }
+
+  try {
+    client.removeAllListeners('close');
+    client.removeAllListeners('error');
+    client.on('error', () => undefined);
+    client.end();
+  } catch {
+    // Ignore stale SSH client cleanup errors.
+  }
+}
+
+function closeStream(stream) {
+  if (!stream || stream.destroyed) {
+    return;
+  }
+
+  try {
+    stream.destroy();
+  } catch {
+    // Ignore stale stream cleanup errors.
+  }
+}
+
+function formatSshEndpoint(sshConfig) {
+  return `${sshConfig?.username || 'unknown'}@${sshConfig?.host || 'unknown'}:${sshConfig?.port || 22}`;
+}
+
+function formatJumpHostLabel(jumpHost, jumpSshConfig) {
+  if (jumpHost?.name) {
+    return jumpHost.name;
+  }
+
+  return formatSshEndpoint(jumpSshConfig);
+}
+
+async function connectSshClientWithJump(sshConfig, jumpSshConfig = null, jumpHost = null) {
+  if (!jumpSshConfig) {
+    console.info(`[shelldesk] SSH connect direct ${formatSshEndpoint(sshConfig)}`);
+
+    return {
+      client: await connectSshClient(sshConfig),
+      jumpClient: null,
+    };
+  }
+
+  const jumpLabel = formatJumpHostLabel(jumpHost, jumpSshConfig);
+  console.info(`[shelldesk] SSH connect via jump ${jumpLabel} (${formatSshEndpoint(jumpSshConfig)}) -> ${formatSshEndpoint(sshConfig)}`);
+
+  let jumpClient = null;
+  let targetStream = null;
+
+  try {
+    jumpClient = await connectSshClient(jumpSshConfig);
+  } catch (error) {
+    throw new Error(`跳板机「${jumpLabel}」连接失败：${toErrorMessage(error)}`);
+  }
+
+  try {
+    targetStream = await forwardOut(jumpClient, sshConfig.host, sshConfig.port);
+  } catch (error) {
+    closeSshClient(jumpClient);
+    throw new Error(`跳板机「${jumpLabel}」无法转发到目标 ${formatSshEndpoint(sshConfig)}：${toErrorMessage(error)}`);
+  }
+
+  try {
+    const client = await connectSshClient({
+      ...sshConfig,
+      sock: targetStream,
+    });
+
+    return {
+      client,
+      jumpClient,
+    };
+  } catch (error) {
+    closeStream(targetStream);
+    closeSshClient(jumpClient);
+    throw new Error(`通过跳板机「${jumpLabel}」连接目标 ${formatSshEndpoint(sshConfig)} 失败：${toErrorMessage(error)}`);
+  }
+}
+
 function cleanupTerminalSessions(activeConnection) {
   if (!activeConnection.terminalSessions) {
     return;
@@ -140,6 +225,8 @@ function markActiveConnectionDisconnected(activeConnection, reason) {
   activeConnection.disconnectedAt = new Date().toISOString();
   activeConnection.lastDisconnectReason = reason || 'SSH 连接已断开。';
   cleanupTerminalSessions(activeConnection);
+  closeSshClient(activeConnection.jumpClient);
+  activeConnection.jumpClient = null;
   notifyConnectionClosed(activeConnection.id, activeConnection.lastDisconnectReason);
 }
 
@@ -198,6 +285,7 @@ async function reconnectActiveConnection(activeConnection, reason = 'SSH 连接�
 
   activeConnection.reconnectPromise = (async () => {
     const oldClient = activeConnection.client;
+    const oldJumpClient = activeConnection.jumpClient;
     activeConnection.clientOnline = false;
     notifyConnectionEvent('connection:reconnecting', {
       connectionId: activeConnection.id,
@@ -205,27 +293,26 @@ async function reconnectActiveConnection(activeConnection, reason = 'SSH 连接�
       startedAt: new Date().toISOString(),
     });
 
-    if (oldClient) {
-      try {
-        oldClient.removeAllListeners('close');
-        oldClient.removeAllListeners('error');
-        oldClient.on('error', () => undefined);
-        oldClient.end();
-      } catch {
-        // Ignore stale client shutdown errors before reconnecting.
-      }
-    }
+    closeSshClient(oldClient);
+    closeSshClient(oldJumpClient);
+    activeConnection.jumpClient = null;
 
-    const nextClient = await connectSshClient(activeConnection.sshConfig);
+    const { client: nextClient, jumpClient: nextJumpClient } = await connectSshClientWithJump(
+      activeConnection.sshConfig,
+      activeConnection.jumpSshConfig,
+      activeConnection.jumpHost,
+    );
 
     if (
       activeConnections.get(activeConnection.id) !== activeConnection ||
       !isConnectionWindowAlive(activeConnection)
     ) {
-      nextClient.end();
+      closeSshClient(nextClient);
+      closeSshClient(nextJumpClient);
       throw new Error('连接窗口已关闭，不再自动重连。');
     }
 
+    activeConnection.jumpClient = nextJumpClient;
     bindActiveConnectionClient(activeConnection, nextClient);
     activeConnection.reconnectedAt = new Date().toISOString();
     notifyConnectionEvent('connection:restored', {
@@ -714,8 +801,10 @@ async function closeActiveConnection(connectionId, reason = '连接已断开。'
   await closeServer(activeConnection.socksServer);
 
   if (!fromClientClose) {
-    activeConnection.client.end();
+    closeSshClient(activeConnection.client);
   }
+
+  closeSshClient(activeConnection.jumpClient);
 
   notifyConnectionClosed(connectionId, reason);
 
@@ -737,6 +826,7 @@ module.exports = {
   bindActiveConnectionClient,
   closeActiveConnection,
   connectSshClient,
+  connectSshClientWithJump,
   createBufferedReader,
   createSocksProxy,
   ensureActiveConnectionClient,

@@ -15,6 +15,10 @@ function toErrorMessage(error) {
 function toConnectionErrorMessage(error) {
   const message = toErrorMessage(error);
 
+  if (/^(跳板机|通过跳板机)/.test(message)) {
+    return message;
+  }
+
   if (/All configured authentication methods failed/i.test(message)) {
     return 'SSH 认证失败：请检查用户名、密码、私钥或密钥口令，或确认服务器允许当前认证方式。';
   }

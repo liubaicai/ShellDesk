@@ -625,6 +625,7 @@ function readStoredHostRecord(rawHost) {
       trim: false,
       rejectLineBreaks: false,
     }),
+    jumpHostId: readBoundedString(rawHost.jumpHostId ?? '', '跳板机 ID', 128, { required: false }),
     systemType: readRemoteSystemType(rawHost.systemType),
     systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
     lastConnectionStatus: readHostConnectionStatus(rawHost.lastConnectionStatus),
@@ -768,14 +769,55 @@ function sortHostsByListOrder(hosts) {
   return hosts.slice().sort(compareHostsByListOrder);
 }
 
+function sanitizeHostJumpHostReferences(hosts) {
+  const hostsById = new Map(hosts.map((host) => [host.id, host]));
+  const directOrExistingHosts = hosts.map((host) => {
+    const jumpHostId = typeof host.jumpHostId === 'string' ? host.jumpHostId.trim() : '';
+    const jumpHost = jumpHostId ? hostsById.get(jumpHostId) : null;
+
+    if (!jumpHostId || jumpHostId === host.id || !jumpHost) {
+      return {
+        ...host,
+        jumpHostId: '',
+      };
+    }
+
+    return {
+      ...host,
+      jumpHostId,
+    };
+  });
+  const normalizedHostsById = new Map(directOrExistingHosts.map((host) => [host.id, host]));
+
+  return directOrExistingHosts.map((host) => {
+    const jumpHost = host.jumpHostId ? normalizedHostsById.get(host.jumpHostId) : null;
+
+    if (!host.jumpHostId || !jumpHost || jumpHost.jumpHostId) {
+      return {
+        ...host,
+        jumpHostId: '',
+      };
+    }
+
+    return {
+      ...host,
+      jumpHostId: host.jumpHostId,
+    };
+  });
+}
+
 function readVaultPayload(rawPayload) {
   if (!isPlainObject(rawPayload)) {
     throw new Error('本地数据无效。');
   }
 
+  const hosts = Array.isArray(rawPayload.hosts)
+    ? sanitizeHostJumpHostReferences(rawPayload.hosts.map((host) => readStoredHostRecord(host)))
+    : [];
+
   return {
     version: vaultSchemaVersion,
-    hosts: Array.isArray(rawPayload.hosts) ? sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host))) : [],
+    hosts: sortHostsByListOrder(hosts),
     sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readVaultKeyRecord(key)) : [],
     settings: readAppSettings(rawPayload.settings),
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
@@ -839,9 +881,13 @@ function readConfigPayload(rawPayload) {
     throw new Error('配置数据无效。');
   }
 
+  const hosts = Array.isArray(rawPayload.hosts)
+    ? sanitizeHostJumpHostReferences(rawPayload.hosts.map((host) => readStoredHostRecord(host)))
+    : [];
+
   return {
     version: vaultSchemaVersion,
-    hosts: Array.isArray(rawPayload.hosts) ? sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host))) : [],
+    hosts: sortHostsByListOrder(hosts),
     sshKeys: Array.isArray(rawPayload.sshKeys) ? rawPayload.sshKeys.map((key) => readStoredKeyRecord(key)) : [],
     settings: readAppSettings(rawPayload.settings),
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
@@ -1553,13 +1599,23 @@ function generateRsaKeyPairInVault(rawPayload) {
   return { snapshot: createVaultSnapshot(nextVault), key: toRendererKeyRecord(nextKey) };
 }
 
-function validateHostRequest(rawHost) {
+function buildDisplayHost(rawHost, host, port, username) {
+  return {
+    name: readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false }) || host,
+    address: host,
+    port,
+    username,
+    authMethod: rawHost.authMethod,
+    systemType: readRemoteSystemType(rawHost.systemType),
+    systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
+  };
+}
+
+function buildSshConfigFromHostRequest(rawHost, matchedStoredHost = null) {
   if (!isPlainObject(rawHost)) {
     throw new Error('主机信息无效。');
   }
 
-  const hostId = readBoundedString(rawHost.id ?? '', '主机 ID', 128, { required: false });
-  const name = readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false });
   const host = readBoundedString(rawHost.address, '主机地址', 255);
   const username = readBoundedString(rawHost.username, '用户名', 128);
   const port = Number(rawHost.port);
@@ -1571,14 +1627,6 @@ function validateHostRequest(rawHost) {
   if (rawHost.authMethod !== 'password' && rawHost.authMethod !== 'key' && rawHost.authMethod !== 'agent') {
     throw new Error('登录方式无效。');
   }
-
-  const storedHost = hostId ? getHostById(hostId) : null;
-  const matchedStoredHost = storedHost &&
-    storedHost.address === host &&
-    storedHost.port === port &&
-    storedHost.username === username
-    ? storedHost
-    : null;
 
   const sshConfig = {
     host,
@@ -1635,16 +1683,71 @@ function validateHostRequest(rawHost) {
   }
 
   return {
-    displayHost: {
-      name: name || host,
-      address: host,
-      port,
-      username,
-      authMethod: rawHost.authMethod,
-      systemType: readRemoteSystemType(rawHost.systemType),
-      systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
-    },
+    displayHost: buildDisplayHost(rawHost, host, port, username),
     sshConfig,
+  };
+}
+
+function validateHostRequest(rawHost) {
+  if (!isPlainObject(rawHost)) {
+    throw new Error('主机信息无效。');
+  }
+
+  const hostId = readBoundedString(rawHost.id ?? '', '主机 ID', 128, { required: false });
+  const storedHost = hostId ? getHostById(hostId) : null;
+  const rawHostAddress = typeof rawHost.address === 'string' ? rawHost.address.trim() : '';
+  const rawHostPort = Number(rawHost.port);
+  const rawUsername = typeof rawHost.username === 'string' ? rawHost.username.trim() : '';
+  const matchedStoredHost = storedHost &&
+    storedHost.address === rawHostAddress &&
+    storedHost.port === rawHostPort &&
+    storedHost.username === rawUsername
+    ? storedHost
+    : null;
+  const { displayHost, sshConfig } = buildSshConfigFromHostRequest(rawHost, matchedStoredHost);
+  const jumpHostId = readBoundedString(rawHost.jumpHostId || matchedStoredHost?.jumpHostId || '', '跳板机 ID', 128, { required: false });
+  let jumpHost = null;
+  let jumpSshConfig = null;
+
+  if (jumpHostId) {
+    if (jumpHostId === hostId) {
+      throw new Error('目标主机不能选择自己作为跳板机。');
+    }
+
+    jumpHost = getHostById(jumpHostId);
+
+    if (!jumpHost) {
+      throw new Error('跳板机不存在，请重新选择。');
+    }
+
+    if (jumpHost.jumpHostId) {
+      throw new Error('当前仅支持单层跳板机，请选择一台直连主机作为跳板。');
+    }
+
+    if (jumpHost.authMethod === 'password' && !jumpHost.password) {
+      throw new Error(`跳板机「${jumpHost.name}」未保存 SSH 密码，请先完善跳板机凭据。`);
+    }
+
+    const jumpRequest = {
+      ...jumpHost,
+      authMethod: jumpHost.authMethod,
+    };
+    const jumpConfig = buildSshConfigFromHostRequest(jumpRequest, jumpHost);
+    jumpSshConfig = jumpConfig.sshConfig;
+    displayHost.jumpHost = {
+      id: jumpHost.id,
+      name: jumpHost.name,
+      address: jumpHost.address,
+      port: jumpHost.port,
+      username: jumpHost.username,
+    };
+  }
+
+  return {
+    displayHost,
+    sshConfig,
+    jumpSshConfig,
+    jumpHost: displayHost.jumpHost ?? null,
   };
 }
 
@@ -1739,7 +1842,7 @@ function readConfigImportPayload(rawPayload) {
     throw new Error('备份文件版本不受支持。');
   }
 
-  const hosts = sortHostsByListOrder(rawPayload.hosts.map((host) => readStoredHostRecord(host)));
+  const hosts = sortHostsByListOrder(sanitizeHostJumpHostReferences(rawPayload.hosts.map((host) => readStoredHostRecord(host))));
   const sshKeys = rawPayload.sshKeys.map((key) => {
     const isLegacyKey = typeof key.keyPath === 'string' && !('source' in key);
     const baseKey = isLegacyKey ? readLegacyStoredKeyRecord(key) : readStoredKeyRecord(key);

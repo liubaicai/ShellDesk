@@ -38,5 +38,12 @@ export interface RemoteConnectionInfo {
     authMethod: 'password' | 'key' | 'agent';
     systemType?: RemoteSystemType;
     systemName?: string;
+    jumpHost?: {
+      id: string;
+      name: string;
+      address: string;
+      port: number;
+      username: string;
+    };
   };
 }
