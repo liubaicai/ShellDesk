@@ -49,3 +49,4 @@
 | SQLite | SQLite Manager | ℹ️ |
 | VNC Viewer | VNC Viewer | ℹ️ |
 | Web 服务 | Web Server Manager | ℹ️ |
+| 磁盘管理 | Disk Manager | ℹ️ |

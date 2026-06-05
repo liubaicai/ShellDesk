@@ -151,7 +151,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Ubuntu 20.04 LTS |  |  |
 | Debian 13 Trixie |  |  |
 | Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
-| Debian 11 Bullseye |  |  |
+| Debian 11 Bullseye | ✅ | [Report](docs/system-compatibility-reports/debian11.md) |
 | RHEL 10 |  |  |
 | RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |

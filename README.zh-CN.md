@@ -146,22 +146,22 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | 发行版 / 环境 | 状态 | 说明 |
 | :--- | :---: | :--- |
 | Ubuntu 26.04 LTS |  |  |
-| Ubuntu 24.04 LTS | ✅ | [报告](docs/system-compatibility-reports/ubuntu2404.md) |
+| Ubuntu 24.04 LTS | ✅ | [Report](docs/system-compatibility-reports/ubuntu2404.md) |
 | Ubuntu 22.04 LTS |  |  |
 | Ubuntu 20.04 LTS |  |  |
 | Debian 13 Trixie |  |  |
-| Debian 12 Bookworm | ✅ | [报告](docs/system-compatibility-reports/debian12.md) |
-| Debian 11 Bullseye |  |  |
+| Debian 12 Bookworm | ✅ | [Report](docs/system-compatibility-reports/debian12.md) |
+| Debian 11 Bullseye | ✅ | [Report](docs/system-compatibility-reports/debian11.md) |
 | RHEL 10 |  |  |
-| RHEL 9 | ✅ | [报告](docs/system-compatibility-reports/rhel9.md) |
+| RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |
-| CentOS 7 | ⚠️ | [报告](docs/system-compatibility-reports/centos7.md) |
+| CentOS 7 | ⚠️ | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
 | openSUSE Leap 15.6 |  |  |
 | Alibaba Cloud Linux 3 |  |  |
 | TencentOS Server 4 |  |  |
-| openEuler 24.03 LTS | ✅ | [报告](docs/system-compatibility-reports/openeuler2403.md) |
+| openEuler 24.03 LTS | ✅ | [Report](docs/system-compatibility-reports/openeuler2403.md) |
 | Kylin Server V10 |  |  |
 | UOS Server 20 |  |  |
 | Linux Mint 22 |  |  |
@@ -175,8 +175,8 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | Windows Server 2022 |  |  |
 | Windows Server 2019 |  |  |
 | Windows Server 2016 |  |  |
-| Windows 11 | ✅ | [报告](docs/system-compatibility-reports/windows11.md) |
-| Windows 10 | ✅ | [报告](docs/system-compatibility-reports/windows10.md) |
+| Windows 11 | ✅ | [Report](docs/system-compatibility-reports/windows11.md) |
+| Windows 10 | ✅ | [Report](docs/system-compatibility-reports/windows10.md) |
 
 ---
 
