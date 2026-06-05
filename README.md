@@ -14,13 +14,17 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/github/package-json/v/liubaicai/ShellDesk?label=version&style=for-the-badge&color=blue">
+  <img alt="GitHub Release" src="https://img.shields.io/github/v/release/liubaicai/ShellDesk?style=for-the-badge&logo=github&label=Release">
   &nbsp;
-  <img alt="Stage" src="https://img.shields.io/badge/stage-Alpha-orange?style=for-the-badge">
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=for-the-badge&logo=electron">
   &nbsp;
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows_first-lightgrey?style=for-the-badge&logo=electron">
-  &nbsp;
-  <img alt="Package manager" src="https://img.shields.io/badge/package-pnpm-f69220?style=for-the-badge&logo=pnpm">
+  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-green?style=for-the-badge">
+</p>
+
+<p align="center">
+  <a href="https://github.com/liubaicai/ShellDesk/releases/latest">
+    <img src="https://img.shields.io/github/v/release/liubaicai/ShellDesk?style=for-the-badge&logo=github&label=下载最新版&color=success" alt="下载最新版">
+  </a>
 </p>
 
 <p align="center">
@@ -67,8 +71,6 @@ ShellDesk is useful for:
 - Opening multiple remote tools side by side inside one connection window instead of switching between terminal, SFTP, database, and browser clients
 - Handling common server operations through a graphical interface while keeping a full terminal available as the fallback
 - Storing hosts, keys, app settings, bookmarks, and logs in a local vault for backup and migration
-
-The project is currently in Alpha and is primarily developed and packaged for Windows desktop environments.
 
 ---
 
@@ -159,12 +161,6 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | RHEL 10 |  |  |
 | RHEL 9 | ✅ | [Report](docs/system-compatibility-reports/rhel9.md) |
 | RHEL 8 |  |  |
-| Rocky Linux 10 |  |  |
-| Rocky Linux 9 |  |  |
-| Rocky Linux 8 |  |  |
-| AlmaLinux 10 |  |  |
-| AlmaLinux 9 |  |  |
-| AlmaLinux 8 |  |  |
 | CentOS 7 | ⚠️ | [Report](docs/system-compatibility-reports/centos7.md) |
 | Fedora Server 41 |  |  |
 | Fedora Workstation 41 |  |  |
@@ -239,7 +235,7 @@ Stop-Process -Id <PID>
 | `pnpm hooks:install` | Configures local Git hooks from `.githooks` |
 | `pnpm tag` | Creates and pushes a `v<package.json version>` Git tag |
 | `pnpm release:dir` | Builds and outputs an electron-builder directory package |
-| `pnpm release` | Builds the Windows x64 NSIS installer |
+| `pnpm release` | Builds installer |
 | `pnpm pack` | Packages with electron-builder without publishing |
 
 More platform packaging scripts are available in [package.json](package.json).
