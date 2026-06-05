@@ -117,6 +117,13 @@ const findmntMarker = '__SHELLDESK_DISK_FINDMNT__';
 const pvsMarker = '__SHELLDESK_DISK_LVM_PVS__';
 const vgsMarker = '__SHELLDESK_DISK_LVM_VGS__';
 const lvsMarker = '__SHELLDESK_DISK_LVM_LVS__';
+const diskManagerSectionMarkers = [
+  lsblkMarker,
+  findmntMarker,
+  pvsMarker,
+  vgsMarker,
+  lvsMarker,
+];
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -231,15 +238,14 @@ function parseJsonObject(text: string): Record<string, unknown> {
 function collectMarkedSections(stdout: string) {
   const sections = new Map<string, string>();
   let currentMarker = '';
+  let normalizedStdout = stdout;
 
-  for (const line of stdout.split(/\r?\n/)) {
-    const marker = [
-      lsblkMarker,
-      findmntMarker,
-      pvsMarker,
-      vgsMarker,
-      lvsMarker,
-    ].find((item) => line.trim() === item);
+  for (const marker of diskManagerSectionMarkers) {
+    normalizedStdout = normalizedStdout.split(marker).join(`\n${marker}\n`);
+  }
+
+  for (const line of normalizedStdout.split(/\r?\n/)) {
+    const marker = diskManagerSectionMarkers.find((item) => line.trim() === item);
 
     if (marker) {
       currentMarker = marker;
@@ -672,15 +678,15 @@ $volumes = @(Get-Volume -ErrorAction SilentlyContinue | ForEach-Object {
   return {
     command: [
       `printf '%s\\n' ${shellSingleQuote(lsblkMarker)}`,
-      "lsblk -J -b -o NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,UUID,MODEL,SERIAL,ROTA,RM,RO,TRAN,STATE,PARTTYPE 2>/dev/null || printf '{\"blockdevices\":[]}'",
+      "lsblk -J -b -o NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,UUID,MODEL,SERIAL,ROTA,RM,RO,TRAN,STATE,PARTTYPE 2>/dev/null || printf '%s\\n' '{\"blockdevices\":[]}'",
       `printf '%s\\n' ${shellSingleQuote(findmntMarker)}`,
-      "findmnt -J -b -o TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,OPTIONS 2>/dev/null || printf '{\"filesystems\":[]}'",
+      "findmnt -J -b -o TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,OPTIONS 2>/dev/null || printf '%s\\n' '{\"filesystems\":[]}'",
       `printf '%s\\n' ${shellSingleQuote(pvsMarker)}`,
-      "if command -v pvs >/dev/null 2>&1; then pvs --reportformat json --units b --nosuffix -o pv_name,vg_name,pv_size,pv_free,pv_attr 2>/dev/null || printf '{\"report\":[{\"pv\":[]}]}'; else printf '{\"report\":[{\"pv\":[]}]}'; fi",
+      "if command -v pvs >/dev/null 2>&1; then pvs --reportformat json --units b --nosuffix -o pv_name,vg_name,pv_size,pv_free,pv_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"pv\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"pv\":[]}]}'; fi",
       `printf '%s\\n' ${shellSingleQuote(vgsMarker)}`,
-      "if command -v vgs >/dev/null 2>&1; then vgs --reportformat json --units b --nosuffix -o vg_name,pv_count,lv_count,vg_size,vg_free,vg_attr 2>/dev/null || printf '{\"report\":[{\"vg\":[]}]}'; else printf '{\"report\":[{\"vg\":[]}]}'; fi",
+      "if command -v vgs >/dev/null 2>&1; then vgs --reportformat json --units b --nosuffix -o vg_name,pv_count,lv_count,vg_size,vg_free,vg_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"vg\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"vg\":[]}]}'; fi",
       `printf '%s\\n' ${shellSingleQuote(lvsMarker)}`,
-      "if command -v lvs >/dev/null 2>&1; then lvs --reportformat json --units b --nosuffix -o lv_name,vg_name,lv_path,lv_size,lv_attr 2>/dev/null || printf '{\"report\":[{\"lv\":[]}]}'; else printf '{\"report\":[{\"lv\":[]}]}'; fi",
+      "if command -v lvs >/dev/null 2>&1; then lvs --reportformat json --units b --nosuffix -o lv_name,vg_name,lv_path,lv_size,lv_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"lv\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"lv\":[]}]}'; fi",
     ].join('; '),
   };
 }
