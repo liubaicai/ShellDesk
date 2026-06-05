@@ -600,11 +600,10 @@ async function forwardOut(client, destinationHost, destinationPort, sourcePort =
     const stream = await openSshTcpStream(client, destinationHost, destinationPort, sourcePort);
     return markTransport(stream, 'ssh-tunnel');
   } catch (tunnelError) {
-    console.info(`[shelldesk] SSH TCP forwarding failed for ${destinationHost}:${destinationPort}, trying exec relay: ${toErrorMessage(tunnelError)}`);
-
     try {
       return await openExecTcpRelayStream(client, destinationHost, destinationPort, tunnelError);
     } catch (relayError) {
+      console.warn(`[shelldesk] SSH TCP forwarding and exec relay failed for ${destinationHost}:${destinationPort}: ${toErrorMessage(relayError)}`);
       throw new Error(`SSH TCP 转发失败，远程 TCP 代理也无法启动：${toErrorMessage(relayError)}。请确认服务器允许 TCP 转发，或远端安装 nc/ncat/socat。原始转发错误：${toErrorMessage(tunnelError)}`);
     }
   }
