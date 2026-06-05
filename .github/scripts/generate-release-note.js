@@ -10,16 +10,6 @@ function getVersion() {
     return process.env.VERSION;
   }
 
-  try {
-    const pkgPath = path.join(__dirname, '..', '..', 'package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    if (pkg.version) {
-      return pkg.version;
-    }
-  } catch {
-    // Fall back to CI metadata below when running outside a checked-out repo.
-  }
-
   const refName = process.env.GITHUB_REF_NAME;
   if (refName && /^v\d+\.\d+\.\d+/.test(refName)) {
     return refName.replace(/^v/, '');
@@ -29,7 +19,14 @@ function getVersion() {
   if (sha) {
     return sha.substring(0, 7);
   }
-  return '0.0.0';
+
+  try {
+    const pkgPath = path.join(__dirname, '..', '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return pkg.version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 const version = getVersion();

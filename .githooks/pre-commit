@@ -1,5 +1,0 @@
-#!/usr/bin/env sh
-set -eu
-
-node scripts/bump-package-version.cjs
-git add package.json
