@@ -1570,7 +1570,6 @@
 }
 
 .host-card {
-  min-height: 104px;
   border-color: var(--border);
   border-radius: 8px;
   padding: 20px 20px 18px;
@@ -1749,9 +1748,15 @@
   font-weight: 740;
 }
 
+.host-card-tags em.host-card-tag-placeholder {
+  background: color-mix(in srgb, var(--surface-pill) 58%, transparent);
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+  font-weight: 650;
+}
+
 .host-card-actions {
-  top: 10px;
-  right: 10px;
+  top: 6px;
+  right: 6px;
   gap: 5px;
 }
 
@@ -1782,11 +1787,13 @@
 }
 
 .credential-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  line-height: 16px;
+  text-align: center;
   background: rgba(56, 212, 122, 0.1);
-  font-size: 11px;
+  font-size: 8px;
 }
 
 .host-card-menu summary {
@@ -1816,9 +1823,8 @@
 
 .host-grid.list .host-card,
 .host-grid.grid .host-card {
-  min-height: 104px;
-  height: auto;
-  padding: 16px;
+  height: 90px;
+  padding: 10px 8px;
 }
 
 .host-grid.grid .host-card {

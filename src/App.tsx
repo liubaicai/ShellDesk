@@ -3444,8 +3444,11 @@ function App() {
                               </small>
                               <span className="host-card-tags">
                                 {/* <em>SSH</em> */}
-                                <em>{host.group || t('app.host.group.ungrouped', appLanguage)}</em>
-                                <em>{host.tags.length ? host.tags.join(' / ') : t('app.host.noTags', appLanguage)}</em>
+                                {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
+                                  <span className="credential-icon" title={host.authMethod === 'key' ? t('app.auth.keyLogin', appLanguage) : t('app.host.passwordSavedTitle', appLanguage)}>🔑</span>
+                                ) : null}
+                                <em className={!host.group ? 'host-card-tag-placeholder' : undefined}>{host.group || t('app.host.group.ungrouped', appLanguage)}</em>
+                                <em className={!host.tags.length ? 'host-card-tag-placeholder' : undefined}>{host.tags.length ? host.tags.join(' / ') : t('app.host.noTags', appLanguage)}</em>
                               </span>
                             </span>
                           </button>
@@ -3465,9 +3468,6 @@ function App() {
                               <i aria-hidden="true" />
                               {connectionState.label}
                             </span>
-                            {(host.authMethod === 'password' && host.password) || host.authMethod === 'key' ? (
-                              <span className="credential-icon" title={host.authMethod === 'key' ? t('app.auth.keyLogin', appLanguage) : t('app.host.passwordSavedTitle', appLanguage)}>🔑</span>
-                            ) : null}
                             <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
                               <summary aria-label={t('app.host.actions', appLanguage)}>⋯</summary>
                               <div className="host-card-menu-panel">

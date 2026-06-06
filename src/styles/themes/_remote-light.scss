@@ -482,6 +482,11 @@
   color: #526178;
 }
 
+[data-theme="light"] .host-card-tags em.host-card-tag-placeholder {
+  background: rgba(82, 97, 120, 0.08);
+  color: rgba(82, 97, 120, 0.54);
+}
+
 [data-theme="light"] .desktop-window,
 [data-theme="light"] .desktop-window-titlebar,
 [data-theme="light"] .browser-chrome,
