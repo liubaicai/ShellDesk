@@ -17,6 +17,7 @@ import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUt
 import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
 import { isTextFile } from './RemoteNotepad';
+import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
 
 interface RemoteFileExplorerProps {
@@ -660,6 +661,20 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       }
 
       let lastError = getPrivilegeErrorMessage(error);
+      const cachedOptions = getCachedSudoOptions(connectionId);
+
+      if (cachedOptions) {
+        try {
+          return await run(cachedOptions);
+        } catch (cachedError) {
+          if (!shouldPromptForSudoPassword(cachedError)) {
+            throw cachedError;
+          }
+
+          clearCachedSudoPassword(connectionId);
+          lastError = getPrivilegeErrorMessage(cachedError);
+        }
+      }
 
       for (;;) {
         const sudoPassword = await requestSudoPassword(operation, target, lastError);
@@ -669,17 +684,20 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         }
 
         try {
-          return await run({ sudoPassword });
+          const result = await run({ sudoPassword });
+          setCachedSudoPassword(connectionId, sudoPassword);
+          return result;
         } catch (retryError) {
           if (!shouldPromptForSudoPassword(retryError)) {
             throw retryError;
           }
 
+          clearCachedSudoPassword(connectionId);
           lastError = getPrivilegeErrorMessage(retryError);
         }
       }
     }
-  }, [isWindowsHost, requestSudoPassword]);
+  }, [connectionId, isWindowsHost, requestSudoPassword]);
 
   useEffect(() => {
     setPathDraft(remotePath);

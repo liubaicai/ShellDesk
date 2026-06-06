@@ -18,6 +18,8 @@ interface RunCommandOptions {
   onSudoAttempt?: () => void;
 }
 
+const sudoPasswordCache = new Map<string, string>();
+
 const elevationPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
@@ -116,6 +118,23 @@ function isAuthFailureText(text: string) {
   return hasPattern(text, sudoAuthFailurePatterns);
 }
 
+export function getCachedSudoPassword(connectionId: string): string | null {
+  return sudoPasswordCache.has(connectionId) ? sudoPasswordCache.get(connectionId) ?? '' : null;
+}
+
+export function setCachedSudoPassword(connectionId: string, password: string) {
+  sudoPasswordCache.set(connectionId, password);
+}
+
+export function clearCachedSudoPassword(connectionId: string) {
+  sudoPasswordCache.delete(connectionId);
+}
+
+export function getCachedSudoOptions(connectionId: string): ShellDeskSudoPasswordOptions | undefined {
+  const password = getCachedSudoPassword(connectionId);
+  return password === null ? undefined : { sudoPassword: password };
+}
+
 function getRemoteCommand(input: string | RemoteCommandInput, stdin?: string) {
   return typeof input === 'string'
     ? { command: input, stdin }
@@ -184,6 +203,37 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
       }
     }
 
+    const cachedPassword = getCachedSudoPassword(connectionId);
+
+    if (cachedPassword !== null) {
+      options.onSudoAttempt?.();
+
+      try {
+        const result = await api.runCommand(connectionId, commandInput.command, commandInput.stdin, { sudoPassword: cachedPassword });
+        const retryFailureText = getPrivilegeFailureText(result, systemType);
+
+        if (!retryFailureText) {
+          return result;
+        }
+
+        if (!isAuthFailureText(retryFailureText)) {
+          return result;
+        }
+
+        clearCachedSudoPassword(connectionId);
+        failureText = retryFailureText;
+      } catch (error) {
+        const retryFailureText = getPrivilegeFailureText(error, systemType);
+
+        if (!retryFailureText) {
+          throw error;
+        }
+
+        clearCachedSudoPassword(connectionId);
+        failureText = retryFailureText;
+      }
+    }
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const password = await requestSudoPassword(commandInput.command, failureText);
 
@@ -198,6 +248,7 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
         const retryFailureText = getPrivilegeFailureText(result, systemType);
 
         if (!retryFailureText) {
+          setCachedSudoPassword(connectionId, password);
           return result;
         }
 
@@ -250,6 +301,37 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
       }
     }
 
+    const cachedPassword = getCachedSudoPassword(connectionId);
+
+    if (cachedPassword !== null) {
+      options.onSudoAttempt?.();
+
+      try {
+        const result = await api.runCommandStream(connectionId, commandInput.command, commandInput.stdin, callbacks, { sudoPassword: cachedPassword });
+        const retryFailureText = getPrivilegeFailureText(result, systemType);
+
+        if (!retryFailureText) {
+          return result;
+        }
+
+        if (!isAuthFailureText(retryFailureText)) {
+          return result;
+        }
+
+        clearCachedSudoPassword(connectionId);
+        failureText = retryFailureText;
+      } catch (error) {
+        const retryFailureText = getPrivilegeFailureText(error, systemType);
+
+        if (!retryFailureText) {
+          throw error;
+        }
+
+        clearCachedSudoPassword(connectionId);
+        failureText = retryFailureText;
+      }
+    }
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const password = await requestSudoPassword(commandInput.command, failureText);
 
@@ -264,6 +346,7 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
         const retryFailureText = getPrivilegeFailureText(result, systemType);
 
         if (!retryFailureText) {
+          setCachedSudoPassword(connectionId, password);
           return result;
         }
 

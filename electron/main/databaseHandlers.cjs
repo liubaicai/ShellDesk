@@ -1059,6 +1059,224 @@ function registerDatabaseHandlers(registerIpcHandler) {
     return `'${String(value).replace(/'/g, "''")}'`;
   }
 
+  function isPermissionDeniedError(error) {
+    const message = String(error?.message ?? error ?? '');
+    const code = error?.code;
+
+    return code === 3 ||
+      code === 'EACCES' ||
+      /permission denied|access denied|eacces|eperm/i.test(message);
+  }
+
+  function readSqlitePrivilegeOptions(rawOptions) {
+    if (!rawOptions || typeof rawOptions !== 'object' || Array.isArray(rawOptions)) {
+      return {};
+    }
+
+    const options = {};
+
+    if (typeof rawOptions.sudoPassword === 'string') {
+      options.sudoPassword = readBoundedString(rawOptions.sudoPassword, 'sudo 密码', 4096, {
+        required: false,
+        trim: false,
+        rejectLineBreaks: true,
+      });
+    }
+
+    return options;
+  }
+
+  function hasSudoPasswordOption(options = {}) {
+    return Object.prototype.hasOwnProperty.call(options, 'sudoPassword');
+  }
+
+  function getSqlitePrivilegeFromConnection(activeConnection, options = {}) {
+    if (activeConnection.displayHost.systemType === 'windows') {
+      return null;
+    }
+
+    if (hasSudoPasswordOption(options)) {
+      return {
+        mode: 'sudo',
+        password: options.sudoPassword ?? '',
+      };
+    }
+
+    const privilegeConfig = activeConnection.privilegeConfig;
+
+    if (privilegeConfig?.mode === 'su-root' && privilegeConfig.rootPassword) {
+      return {
+        mode: 'su-root',
+        password: privilegeConfig.rootPassword,
+      };
+    }
+
+    return null;
+  }
+
+  function getSqlitePrivilegeFromSession(entry, options = {}) {
+    if (entry.systemType === 'windows') {
+      return null;
+    }
+
+    if (hasSudoPasswordOption(options)) {
+      return {
+        mode: 'sudo',
+        password: options.sudoPassword ?? '',
+      };
+    }
+
+    if (entry.privilege) {
+      return entry.privilege;
+    }
+
+    if (entry.privilegeConfig?.mode === 'su-root' && entry.privilegeConfig.rootPassword) {
+      return {
+        mode: 'su-root',
+        password: entry.privilegeConfig.rootPassword,
+      };
+    }
+
+    return null;
+  }
+
+  function isSudoPrivilegeModeFromConnection(activeConnection) {
+    return activeConnection.displayHost.systemType !== 'windows' &&
+      activeConnection.privilegeConfig?.mode === 'sudo';
+  }
+
+  function isSudoPrivilegeModeFromSession(entry) {
+    return entry.systemType !== 'windows' &&
+      entry.privilegeConfig?.mode === 'sudo';
+  }
+
+  function createPrivilegeStdin(privilege, stdin = '') {
+    return privilege ? `${privilege.password ?? ''}\n${stdin}` : stdin;
+  }
+
+  function stripSuRootPasswordPrompt(stderr) {
+    return String(stderr || '').replace(/^\s*(?:password|密码|口令)[:：]\s*/i, '');
+  }
+
+  function normalizePrivilegeResult(result, privilege) {
+    if (privilege?.mode !== 'su-root') {
+      return result;
+    }
+
+    return {
+      ...result,
+      stderr: stripSuRootPasswordPrompt(result.stderr),
+    };
+  }
+
+  function isSudoAuthenticationFailure(result) {
+    return /sorry, try again|incorrect password|authentication failure|authentication failed/i.test(result.stderr);
+  }
+
+  function isSuAuthenticationFailure(result) {
+    return /su:.*authentication failure|authentication failure|authentication failed|incorrect password|su:.*permission denied|su:.*denied|密码.*错误|认证失败|鉴定故障/i.test(result.stderr);
+  }
+
+  function isSuPasswordInputFailure(result) {
+    return /must be run from a terminal|cannot open session|no tty|conversation error|authentication token manipulation/i.test(result.stderr);
+  }
+
+  function createPrivilegedShellCommand(script, args, privilege = null) {
+    const baseCommand = [
+      'sh',
+      '-c',
+      escapeShellSingleQuotedArg(script),
+      'sh',
+      ...args.map((arg) => escapeShellSingleQuotedArg(String(arg))),
+    ].join(' ');
+
+    if (privilege?.mode === 'sudo') {
+      return [
+        'if [ "$(id -u 2>/dev/null)" = "0" ]; then',
+        'IFS= read -r _shelldesk_sudo_password || true;',
+        `${baseCommand};`,
+        'else',
+        'IFS= read -r _shelldesk_sudo_password || exit 43;',
+        'printf "%s\\n" "$_shelldesk_sudo_password" | sudo -S -p \'\' -v &&',
+        `sudo -n ${baseCommand};`,
+        'fi',
+      ].join(' ');
+    }
+
+    if (privilege?.mode === 'su-root') {
+      return [
+        'if [ "$(id -u 2>/dev/null)" = "0" ]; then',
+        'IFS= read -r _shelldesk_root_password || true;',
+        `${baseCommand};`,
+        'else',
+        `su - root -c ${escapeShellSingleQuotedArg(baseCommand)};`,
+        'fi',
+      ].join(' ');
+    }
+
+    return baseCommand;
+  }
+
+  function createElevationRequiredError(result, fallbackMessage = '当前账号需要 sudo 密码才能访问该 SQLite 数据库。') {
+    const detail = result?.stderr?.trim?.() || result?.message || fallbackMessage;
+    if (String(detail).startsWith('SHELLDESK_ELEVATION_REQUIRED:')) {
+      return new Error(detail);
+    }
+    return new Error(`SHELLDESK_ELEVATION_REQUIRED:${detail}`);
+  }
+
+  function createElevationAuthFailedError(result) {
+    const detail = result.stderr.trim() || 'sudo 密码验证失败或当前账号没有提权权限。';
+    return new Error(`SHELLDESK_ELEVATION_AUTH_FAILED:${detail}`);
+  }
+
+  function createSuRootElevationFailedError(result) {
+    const detail = result.stderr.trim();
+    const message = detail
+      ? `root 密码验证失败，或当前账号不能通过 su root 提权：${detail}`
+      : 'root 密码验证失败，或当前账号不能通过 su root 提权。';
+    return new Error(`SHELLDESK_SU_ROOT_AUTH_FAILED:${message}`);
+  }
+
+  function createSuRootElevationUnsupportedError(result) {
+    const detail = result.stderr.trim();
+    const message = detail
+      ? `远程系统无法在非交互 SSH 命令中使用 su root：${detail}`
+      : '远程系统无法在非交互 SSH 命令中使用 su root。';
+    return new Error(`SHELLDESK_SU_ROOT_UNSUPPORTED:${message}`);
+  }
+
+  function assertSqlitePrivilegeResult(result, privilege) {
+    if (result.code === 0 || !privilege) {
+      return;
+    }
+
+    if (privilege.mode === 'sudo' && isSudoAuthenticationFailure(result)) {
+      throw createElevationAuthFailedError(result);
+    }
+
+    if (privilege.mode === 'su-root') {
+      if (isSuPasswordInputFailure(result)) {
+        throw createSuRootElevationUnsupportedError(result);
+      }
+
+      if (isSuAuthenticationFailure(result)) {
+        throw createSuRootElevationFailedError(result);
+      }
+    }
+  }
+
+  function isSqliteElevationCandidate(errorOrResult) {
+    const message = [
+      errorOrResult?.message,
+      errorOrResult?.stderr,
+      errorOrResult?.stdout,
+      String(errorOrResult ?? ''),
+    ].filter(Boolean).join('\n');
+
+    return /permission denied|access denied|eacces|eperm|unable to open database file|attempt to write a readonly database|readonly database|authorization denied|password is required|a terminal is required|no tty present|askpass/i.test(message);
+  }
+
   function parseSqliteCsv(csvText) {
     const normalizedText = String(csvText ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
@@ -1163,34 +1381,177 @@ exit $LASTEXITCODE
 `);
   }
 
-  async function execSqliteOnRemote(client, systemType, filePath, command) {
-    const escapedPath = escapeShellSingleQuotedArg(filePath);
-    const escapedCommand = escapeShellSingleQuotedArg(command);
-    const commandInput = systemType === 'windows'
-      ? createWindowsSqliteCommand(filePath, command)
-      : { command: `sqlite3 -csv -header ${escapedPath} ${escapedCommand}`, stdin: '' };
-    const result = await execRemoteCommandRaw(client, commandInput.command, commandInput.stdin);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || result.stdout || `sqlite3 返回码 ${result.code}`);
+  function createUnixSqliteCommand(filePath, command, privilege = null) {
+    if (!privilege) {
+      const escapedPath = escapeShellSingleQuotedArg(filePath);
+      const escapedCommand = escapeShellSingleQuotedArg(command);
+      return { command: `sqlite3 -csv -header ${escapedPath} ${escapedCommand}`, stdin: '' };
     }
-    return result.stdout;
+
+    const sqliteScript = [
+      'if ! command -v sqlite3 >/dev/null 2>&1; then',
+      '  printf "%s\\n" "远端 Linux 未找到 sqlite3。请安装 SQLite CLI 后重试。" >&2',
+      '  exit 127',
+      'fi',
+      'exec sqlite3 -csv -header "$1" "$2"',
+    ].join('\n');
+
+    return {
+      command: createPrivilegedShellCommand(sqliteScript, [filePath, command], privilege),
+      stdin: createPrivilegeStdin(privilege),
+    };
   }
 
-  registerIpcHandler('connection:sqlite-open', async (_event, connectionId, rawFilePath) => {
-    const filePath = validateRemotePath(rawFilePath);
-    if (filePath === '.' || filePath === '/') {
-      throw new Error('无效的 SQLite 文件路径。');
+  async function execSqliteOnRemote(client, systemType, filePath, command, privilege = null, options = {}) {
+    const commandInput = systemType === 'windows'
+      ? createWindowsSqliteCommand(filePath, command)
+      : createUnixSqliteCommand(filePath, command, privilege);
+    const result = await execRemoteCommandRaw(client, commandInput.command, commandInput.stdin);
+    const normalizedResult = normalizePrivilegeResult(result, privilege);
+
+    if (normalizedResult.code !== 0) {
+      assertSqlitePrivilegeResult(normalizedResult, privilege);
+
+      if (!privilege && options.canPromptForSudo && isSqliteElevationCandidate(normalizedResult)) {
+        throw createElevationRequiredError(normalizedResult);
+      }
+
+      throw new Error(normalizedResult.stderr || normalizedResult.stdout || `sqlite3 返回码 ${normalizedResult.code}`);
     }
-    const activeConnection = await withActiveConnectionClientRetry(connectionId, async (connection) => {
-      const stat = await statRemotePath(connection.client, filePath);
+
+    return normalizedResult.stdout;
+  }
+
+  async function assertRemoteSqliteFile(client, systemType, filePath, privilege = null) {
+    if (systemType === 'windows' || !privilege) {
+      const stat = await statRemotePath(client, filePath);
 
       if (stat.type !== 'file') {
         throw new Error('请选择可读取的 SQLite 文件。');
       }
 
-      await execSqliteOnRemote(connection.client, connection.displayHost.systemType, filePath, 'PRAGMA schema_version');
-      return connection;
-    });
+      return;
+    }
+
+    const statScript = [
+      'if [ ! -e "$1" ]; then',
+      '  printf "%s\\n" "SQLite 文件不存在。" >&2',
+      '  exit 2',
+      'fi',
+      'if [ ! -f "$1" ]; then',
+      '  printf "%s\\n" "请选择可读取的 SQLite 文件。" >&2',
+      '  exit 3',
+      'fi',
+    ].join('\n');
+    const result = normalizePrivilegeResult(
+      await execRemoteCommandRaw(
+        client,
+        createPrivilegedShellCommand(statScript, [filePath], privilege),
+        createPrivilegeStdin(privilege),
+      ),
+      privilege,
+    );
+
+    if (result.code !== 0) {
+      assertSqlitePrivilegeResult(result, privilege);
+      throw new Error(result.stderr || result.stdout || `SQLite 文件检查失败，退出码 ${result.code}`);
+    }
+  }
+
+  async function openSqliteOnConnection(activeConnection, filePath, options = {}) {
+    const systemType = activeConnection.displayHost.systemType;
+    const explicitSudoPrivilege = hasSudoPasswordOption(options)
+      ? getSqlitePrivilegeFromConnection(activeConnection, options)
+      : null;
+
+    if (explicitSudoPrivilege) {
+      await assertRemoteSqliteFile(activeConnection.client, systemType, filePath, explicitSudoPrivilege);
+      await execSqliteOnRemote(activeConnection.client, systemType, filePath, 'PRAGMA schema_version', explicitSudoPrivilege);
+      return { activeConnection, privilege: explicitSudoPrivilege };
+    }
+
+    try {
+      await assertRemoteSqliteFile(activeConnection.client, systemType, filePath);
+      await execSqliteOnRemote(activeConnection.client, systemType, filePath, 'PRAGMA schema_version');
+      return { activeConnection, privilege: null };
+    } catch (error) {
+      if (systemType === 'windows') {
+        throw error;
+      }
+
+      const configuredPrivilege = getSqlitePrivilegeFromConnection(activeConnection, options);
+
+      if (configuredPrivilege) {
+        await assertRemoteSqliteFile(activeConnection.client, systemType, filePath, configuredPrivilege);
+        await execSqliteOnRemote(activeConnection.client, systemType, filePath, 'PRAGMA schema_version', configuredPrivilege);
+        return { activeConnection, privilege: configuredPrivilege };
+      }
+
+      if (isSudoPrivilegeModeFromConnection(activeConnection) && (isPermissionDeniedError(error) || isSqliteElevationCandidate(error))) {
+        throw createElevationRequiredError(error, '需要 sudo 密码才能打开该 SQLite 数据库。');
+      }
+
+      throw error;
+    }
+  }
+
+  async function execSqliteForSession(entry, rawOptions, sql) {
+    const options = readSqlitePrivilegeOptions(rawOptions);
+    const explicitSudoPrivilege = hasSudoPasswordOption(options)
+      ? getSqlitePrivilegeFromSession(entry, options)
+      : null;
+    const initialPrivilege = explicitSudoPrivilege || entry.privilege || null;
+
+    try {
+      const stdout = await execSqliteOnRemote(
+        entry.client,
+        entry.systemType,
+        entry.filePath,
+        sql,
+        initialPrivilege,
+        { canPromptForSudo: isSudoPrivilegeModeFromSession(entry) && !initialPrivilege },
+      );
+
+      if (explicitSudoPrivilege) {
+        entry.privilege = explicitSudoPrivilege;
+      }
+
+      return stdout;
+    } catch (error) {
+      if (entry.systemType === 'windows' || explicitSudoPrivilege || !isSqliteElevationCandidate(error)) {
+        throw error;
+      }
+
+      const configuredPrivilege = getSqlitePrivilegeFromSession(entry, options);
+
+      if (configuredPrivilege && configuredPrivilege !== initialPrivilege) {
+        const stdout = await execSqliteOnRemote(
+          entry.client,
+          entry.systemType,
+          entry.filePath,
+          sql,
+          configuredPrivilege,
+        );
+        entry.privilege = configuredPrivilege;
+        return stdout;
+      }
+
+      if (isSudoPrivilegeModeFromSession(entry)) {
+        throw createElevationRequiredError(error, '需要 sudo 密码才能访问该 SQLite 数据库。');
+      }
+
+      throw error;
+    }
+  }
+
+  registerIpcHandler('connection:sqlite-open', async (_event, connectionId, rawFilePath, rawOptions) => {
+    const filePath = validateRemotePath(rawFilePath);
+    if (filePath === '.' || filePath === '/') {
+      throw new Error('无效的 SQLite 文件路径。');
+    }
+    const options = readSqlitePrivilegeOptions(rawOptions);
+    const { activeConnection, privilege } = await withActiveConnectionClientRetry(connectionId, (connection) =>
+      openSqliteOnConnection(connection, filePath, options));
     const sqliteId = crypto.randomUUID();
     const key = getSqliteKey(connectionId, sqliteId);
     activeSqliteSessions.set(key, {
@@ -1199,6 +1560,8 @@ exit $LASTEXITCODE
       filePath,
       client: activeConnection.client,
       systemType: activeConnection.displayHost.systemType,
+      privilege,
+      privilegeConfig: activeConnection.privilegeConfig ?? null,
     });
     return { sqliteId, filePath };
   });
@@ -1210,9 +1573,9 @@ exit $LASTEXITCODE
     return true;
   });
 
-  registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId) => {
+  registerIpcHandler('connection:sqlite-tables', async (_event, connectionId, rawSqliteId, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
-    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
+    const stdout = await execSqliteForSession(entry, rawOptions, 'SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name');
     return parseSqliteNameList(stdout);
   });
 
@@ -1225,22 +1588,21 @@ exit $LASTEXITCODE
     })).filter((item) => item.type && item.name);
   }
 
-  registerIpcHandler('connection:sqlite-objects', async (_event, connectionId, rawSqliteId) => {
+  registerIpcHandler('connection:sqlite-objects', async (_event, connectionId, rawSqliteId, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
-    const stdout = await execSqliteOnRemote(
-      entry.client,
-      entry.systemType,
-      entry.filePath,
+    const stdout = await execSqliteForSession(
+      entry,
+      rawOptions,
       "SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type IN ('table','view','index') AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'view' THEN 1 ELSE 2 END, name",
     );
 
     return parseSqliteObjectRows(stdout);
   });
 
-  registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, rawSqliteId, rawTable) => {
+  registerIpcHandler('connection:sqlite-columns', async (_event, connectionId, rawSqliteId, rawTable, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const table = readBoundedString(rawTable, '表名', 256);
-    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, `PRAGMA table_info(${quoteSqliteLiteral(table)})`);
+    const stdout = await execSqliteForSession(entry, rawOptions, `PRAGMA table_info(${quoteSqliteLiteral(table)})`);
     const parsed = parseSqliteCsv(stdout);
     return parsed.rows.map((row) => ({
       name: row.name || row.Name || '',
@@ -1251,14 +1613,13 @@ exit $LASTEXITCODE
     }));
   });
 
-  registerIpcHandler('connection:sqlite-schema', async (_event, connectionId, rawSqliteId, rawObjectType, rawObjectName) => {
+  registerIpcHandler('connection:sqlite-schema', async (_event, connectionId, rawSqliteId, rawObjectType, rawObjectName, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const objectType = readBoundedString(rawObjectType, '对象类型', 32);
     const objectName = readBoundedString(rawObjectName, '对象名', 256);
-    const stdout = await execSqliteOnRemote(
-      entry.client,
-      entry.systemType,
-      entry.filePath,
+    const stdout = await execSqliteForSession(
+      entry,
+      rawOptions,
       `SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE type = ${quoteSqliteLiteral(objectType)} AND name = ${quoteSqliteLiteral(objectName)} LIMIT 1`,
     );
     const [schema] = parseSqliteObjectRows(stdout);
@@ -1270,15 +1631,15 @@ exit $LASTEXITCODE
     return schema;
   });
 
-  registerIpcHandler('connection:sqlite-query', async (_event, connectionId, rawSqliteId, rawSql) => {
+  registerIpcHandler('connection:sqlite-query', async (_event, connectionId, rawSqliteId, rawSql, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
-    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, sql);
+    const stdout = await execSqliteForSession(entry, rawOptions, sql);
     const parsed = parseSqliteCsv(stdout);
     return { columns: parsed.columns, rows: parsed.rows };
   });
 
-  registerIpcHandler('connection:sqlite-update-cell', async (_event, connectionId, rawSqliteId, rawTable, rawColumn, rawNewValue, rawTarget) => {
+  registerIpcHandler('connection:sqlite-update-cell', async (_event, connectionId, rawSqliteId, rawTable, rawColumn, rawNewValue, rawTarget, rawOptions) => {
     const { entry } = getActiveSqliteSession(connectionId, rawSqliteId);
     const table = readBoundedString(rawTable, '表名', 256);
     const column = readBoundedString(rawColumn, '列名', 256);
@@ -1304,7 +1665,7 @@ exit $LASTEXITCODE
       'SELECT changes() AS affectedRows;',
       'COMMIT;',
     ].join(' ');
-    const stdout = await execSqliteOnRemote(entry.client, entry.systemType, entry.filePath, sql);
+    const stdout = await execSqliteForSession(entry, rawOptions, sql);
     const parsed = parseSqliteCsv(stdout);
     const affectedRows = Number(parsed.rows[0]?.affectedRows ?? 0);
 

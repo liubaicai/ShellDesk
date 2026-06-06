@@ -610,13 +610,13 @@ interface ShellDeskConnectionControls {
   vncProbe: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProbeResult>;
   vncStart: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProxyInfo>;
   vncStop: (connectionId: string, vncId: string) => Promise<boolean>;
-  sqliteOpen: (connectionId: string, filePath: string) => Promise<{ sqliteId: string; filePath: string }>;
+  sqliteOpen: (connectionId: string, filePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ sqliteId: string; filePath: string }>;
   sqliteClose: (connectionId: string, sqliteId: string) => Promise<boolean>;
-  sqliteTables: (connectionId: string, sqliteId: string) => Promise<string[]>;
-  sqliteObjects: (connectionId: string, sqliteId: string) => Promise<ShellDeskSqliteObject[]>;
-  sqliteColumns: (connectionId: string, sqliteId: string, table: string) => Promise<ShellDeskSqliteColumn[]>;
-  sqliteSchema: (connectionId: string, sqliteId: string, objectType: string, objectName: string) => Promise<ShellDeskSqliteObject>;
-  sqliteQuery: (connectionId: string, sqliteId: string, sql: string) => Promise<ShellDeskSqliteQueryResult>;
+  sqliteTables: (connectionId: string, sqliteId: string, options?: ShellDeskSudoPasswordOptions) => Promise<string[]>;
+  sqliteObjects: (connectionId: string, sqliteId: string, options?: ShellDeskSudoPasswordOptions) => Promise<ShellDeskSqliteObject[]>;
+  sqliteColumns: (connectionId: string, sqliteId: string, table: string, options?: ShellDeskSudoPasswordOptions) => Promise<ShellDeskSqliteColumn[]>;
+  sqliteSchema: (connectionId: string, sqliteId: string, objectType: string, objectName: string, options?: ShellDeskSudoPasswordOptions) => Promise<ShellDeskSqliteObject>;
+  sqliteQuery: (connectionId: string, sqliteId: string, sql: string, options?: ShellDeskSudoPasswordOptions) => Promise<ShellDeskSqliteQueryResult>;
   sqliteUpdateCell: (
     connectionId: string,
     sqliteId: string,
@@ -624,6 +624,7 @@ interface ShellDeskConnectionControls {
     column: string,
     newValue: unknown,
     target: ShellDeskSqliteUpdateTarget,
+    options?: ShellDeskSudoPasswordOptions,
   ) => Promise<{ affectedRows: number }>;
 }
 

@@ -37,6 +37,7 @@ import plaintext from 'highlight.js/lib/languages/plaintext';
 import { t, translateStructuredText, type AppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
 import RemoteFilePicker from './RemoteFilePicker';
+import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
 
 hljs.registerLanguage('javascript', javascript);
@@ -886,6 +887,20 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       }
 
       let lastError = getPrivilegeErrorMessage(error);
+      const cachedOptions = getCachedSudoOptions(connectionId);
+
+      if (cachedOptions) {
+        try {
+          return await window.guiSSH!.connections.readFile(connectionId, filePath, cachedOptions);
+        } catch (cachedError) {
+          if (!shouldPromptForSudoPassword(cachedError)) {
+            throw cachedError;
+          }
+
+          clearCachedSudoPassword(connectionId);
+          lastError = getPrivilegeErrorMessage(cachedError);
+        }
+      }
 
       for (;;) {
         const sudoPassword = await requestSudoPassword(operation, filePath, lastError);
@@ -895,12 +910,15 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
         }
 
         try {
-          return await window.guiSSH!.connections.readFile(connectionId, filePath, { sudoPassword });
+          const content = await window.guiSSH!.connections.readFile(connectionId, filePath, { sudoPassword });
+          setCachedSudoPassword(connectionId, sudoPassword);
+          return content;
         } catch (retryError) {
           if (!shouldPromptForSudoPassword(retryError)) {
             throw retryError;
           }
 
+          clearCachedSudoPassword(connectionId);
           lastError = getPrivilegeErrorMessage(retryError);
         }
       }
@@ -920,6 +938,21 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       }
 
       let lastError = getPrivilegeErrorMessage(error);
+      const cachedOptions = getCachedSudoOptions(connectionId);
+
+      if (cachedOptions) {
+        try {
+          await window.guiSSH!.connections.writeFile(connectionId, filePath, content, cachedOptions);
+          return;
+        } catch (cachedError) {
+          if (!shouldPromptForSudoPassword(cachedError)) {
+            throw cachedError;
+          }
+
+          clearCachedSudoPassword(connectionId);
+          lastError = getPrivilegeErrorMessage(cachedError);
+        }
+      }
 
       for (;;) {
         const sudoPassword = await requestSudoPassword('save', filePath, lastError);
@@ -930,12 +963,14 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
         try {
           await window.guiSSH!.connections.writeFile(connectionId, filePath, content, { sudoPassword });
+          setCachedSudoPassword(connectionId, sudoPassword);
           return;
         } catch (retryError) {
           if (!shouldPromptForSudoPassword(retryError)) {
             throw retryError;
           }
 
+          clearCachedSudoPassword(connectionId);
           lastError = getPrivilegeErrorMessage(retryError);
         }
       }

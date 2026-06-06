@@ -217,15 +217,16 @@ contextBridge.exposeInMainWorld('guiSSH', {
     vncProbe: (connectionId, config) => ipcRenderer.invoke('connection:vnc-probe', connectionId, config),
     vncStart: (connectionId, config) => ipcRenderer.invoke('connection:vnc-start', connectionId, config),
     vncStop: (connectionId, vncId) => ipcRenderer.invoke('connection:vnc-stop', connectionId, vncId),
-    sqliteOpen: (connectionId, filePath) => ipcRenderer.invoke('connection:sqlite-open', connectionId, filePath),
+    sqliteOpen: (connectionId, filePath, options) => ipcRenderer.invoke('connection:sqlite-open', connectionId, filePath, options),
     sqliteClose: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-close', connectionId, sqliteId),
-    sqliteTables: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-tables', connectionId, sqliteId),
-    sqliteObjects: (connectionId, sqliteId) => ipcRenderer.invoke('connection:sqlite-objects', connectionId, sqliteId),
-    sqliteColumns: (connectionId, sqliteId, table) => ipcRenderer.invoke('connection:sqlite-columns', connectionId, sqliteId, table),
-    sqliteSchema: (connectionId, sqliteId, objectType, objectName) => ipcRenderer.invoke('connection:sqlite-schema', connectionId, sqliteId, objectType, objectName),
-    sqliteQuery: (connectionId, sqliteId, sql) => ipcRenderer.invoke('connection:sqlite-query', connectionId, sqliteId, sql),
-    sqliteUpdateCell: (connectionId, sqliteId, table, column, newValue, target) =>
-      ipcRenderer.invoke('connection:sqlite-update-cell', connectionId, sqliteId, table, column, newValue, target),
+    sqliteTables: (connectionId, sqliteId, options) => ipcRenderer.invoke('connection:sqlite-tables', connectionId, sqliteId, options),
+    sqliteObjects: (connectionId, sqliteId, options) => ipcRenderer.invoke('connection:sqlite-objects', connectionId, sqliteId, options),
+    sqliteColumns: (connectionId, sqliteId, table, options) => ipcRenderer.invoke('connection:sqlite-columns', connectionId, sqliteId, table, options),
+    sqliteSchema: (connectionId, sqliteId, objectType, objectName, options) =>
+      ipcRenderer.invoke('connection:sqlite-schema', connectionId, sqliteId, objectType, objectName, options),
+    sqliteQuery: (connectionId, sqliteId, sql, options) => ipcRenderer.invoke('connection:sqlite-query', connectionId, sqliteId, sql, options),
+    sqliteUpdateCell: (connectionId, sqliteId, table, column, newValue, target, options) =>
+      ipcRenderer.invoke('connection:sqlite-update-cell', connectionId, sqliteId, table, column, newValue, target, options),
   },
   events: {
     onTerminalData: (callback) => onIpc('terminal:data', callback),

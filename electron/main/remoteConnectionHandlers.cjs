@@ -3663,18 +3663,21 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       throw new Error('上传失败：当前主机未配置可用的提权方式。');
     }
 
+    const readyMarker = `SHELLDESK_UPLOAD_READY_${crypto.randomUUID().replace(/-/g, '')}`;
     const script = [
       'remote_path=$1',
+      'ready_marker=$2',
       'parent_dir=$(dirname -- "$remote_path") || exit 1',
       'base_name=$(basename -- "$remote_path") || exit 1',
       'if [ ! -d "$parent_dir" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
       'if [ "$parent_dir" = "/" ]; then tmp_path="/.${base_name}.shelldesk-upload.$$"; else tmp_path="${parent_dir%/}/.${base_name}.shelldesk-upload.$$"; fi',
       'cleanup_upload_tmp() { rm -f -- "$tmp_path"; }',
       'trap cleanup_upload_tmp INT TERM HUP',
+      'printf "%s\\n" "$ready_marker" >&2',
       'cat > "$tmp_path" || { cleanup_upload_tmp; exit 1; }',
       'mv -f -- "$tmp_path" "$remote_path"',
     ].join('\n');
-    const command = createPrivilegedShellCommand(script, [file.remotePath], privilege);
+    const command = createPrivilegedShellCommand(script, [file.remotePath, readyMarker], privilege);
 
     queue.startFile(file.relativePath, file.size);
 
@@ -3685,6 +3688,9 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       const stderrChunks = [];
       let sshStream = null;
       let readStream = null;
+      let uploadStarted = false;
+      let markerProbeText = '';
+      let startupTimer = null;
 
       const destroy = (error) => {
         if (readStream) {
@@ -3698,10 +3704,54 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       const fail = (error) => {
         if (settled) return;
         settled = true;
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
         queue.clearActiveDestroy(destroy);
         queue.rollbackBytes(transferredForFile);
         destroy();
         reject(error);
+      };
+
+      const startUpload = () => {
+        if (settled || uploadStarted || !sshStream) {
+          return;
+        }
+
+        uploadStarted = true;
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
+
+        readStream = fs.createReadStream(file.localPath);
+        readStream.once('error', fail);
+        readStream.on('data', (chunk) => {
+          transferredForFile += chunk.length;
+          queue.addBytes(chunk.length);
+        });
+        readStream.pipe(sshStream);
+      };
+
+      const handleStderrChunk = (chunk) => {
+        const buffer = Buffer.from(chunk);
+        stderrChunks.push(buffer);
+
+        if (uploadStarted) {
+          return;
+        }
+
+        markerProbeText = `${markerProbeText}${buffer.toString('utf8')}`;
+        if (markerProbeText.includes(readyMarker)) {
+          startUpload();
+          return;
+        }
+
+        const maxProbeLength = readyMarker.length + 2048;
+        if (markerProbeText.length > maxProbeLength) {
+          markerProbeText = markerProbeText.slice(-maxProbeLength);
+        }
       };
 
       activeConnection.client.exec(command, (error, stream) => {
@@ -3711,27 +3761,37 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         }
 
         sshStream = stream;
-        readStream = fs.createReadStream(file.localPath);
         queue.setActiveDestroy(destroy);
 
-        stream.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
+        stream.on('data', () => {});
+        stream.stderr.on('data', handleStderrChunk);
         stream.once('error', fail);
-        readStream.once('error', fail);
-        readStream.on('data', (chunk) => {
-          transferredForFile += chunk.length;
-          queue.addBytes(chunk.length);
-        });
         stream.on('close', (code) => {
           if (settled) {
             return;
           }
 
+          if (startupTimer) {
+            clearTimeout(startupTimer);
+            startupTimer = null;
+          }
+
           exitCode = code ?? 0;
-          const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
+          const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks)).replace(readyMarker, '').trim();
           const result = normalizePrivilegeResult({ stdout: '', stderr, code: exitCode }, privilege);
 
           if (result.code !== 0) {
             fail(createPrivilegedTransferError(result, privilege, `提权上传文件失败，退出码 ${result.code}`));
+            return;
+          }
+
+          if (!uploadStarted) {
+            fail(new Error(result.stderr || '提权上传未进入远程接收阶段。'));
+            return;
+          }
+
+          if (transferredForFile < file.size) {
+            fail(new Error('上传在本地文件发送完成前结束。'));
             return;
           }
 
@@ -3741,8 +3801,11 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           resolve(file.size);
         });
 
+        startupTimer = setTimeout(() => {
+          const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks)).replace(readyMarker, '').trim();
+          fail(new Error(stderr || '提权上传启动超时，远端未进入文件接收阶段。'));
+        }, 20000);
         stream.write(createPrivilegeStdin(privilege), 'utf8');
-        readStream.pipe(stream);
       });
     });
   }

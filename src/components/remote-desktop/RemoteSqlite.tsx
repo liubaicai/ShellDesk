@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import RemoteFilePicker from './RemoteFilePicker';
+import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
 import { tCurrent } from '../../i18n';
 
@@ -62,10 +63,21 @@ interface PendingWriteSql {
   sql: string;
 }
 
+interface SqliteSudoPrompt {
+  operation: string;
+  target: string;
+  error: string;
+  password: string;
+}
+
 const pageSize = 100;
 const tablePreviewLimit = 500;
 const maxHistoryItems = 12;
 const rowidColumn = '__shelldesk_rowid';
+const elevationErrorPrefixes = [
+  'SHELLDESK_ELEVATION_REQUIRED:',
+  'SHELLDESK_ELEVATION_AUTH_FAILED:',
+];
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -142,6 +154,23 @@ function getFileName(filePath: string): string {
   return filePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || filePath;
 }
 
+function shouldPromptForSudoPassword(error: unknown) {
+  const message = getErrorMessage(error);
+
+  if (elevationErrorPrefixes.some((prefix) => message.startsWith(prefix))) {
+    return true;
+  }
+
+  return /sudo.*password|password.*sudo|a password is required|authentication failure|sorry, try again/i.test(message);
+}
+
+function getPrivilegeErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+  const prefix = elevationErrorPrefixes.find((candidate) => message.startsWith(candidate));
+
+  return prefix ? message.slice(prefix.length).trim() || message : message;
+}
+
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (left === null || left === undefined) return right === null || right === undefined;
   if (right === null || right === undefined) return false;
@@ -153,6 +182,8 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const sqliteIdRef = useRef('');
   const autoOpenRef = useRef(false);
   const sqlRef = useRef<HTMLTextAreaElement | null>(null);
+  const sudoPasswordInputRef = useRef<HTMLInputElement | null>(null);
+  const sudoPromptResolverRef = useRef<((password: string | null) => void) | null>(null);
 
   const [status, setStatus] = useState<SqliteStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -178,6 +209,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
   const [filePickerVisible, setFilePickerVisible] = useState(false);
+  const [sudoPrompt, setSudoPrompt] = useState<SqliteSudoPrompt | null>(null);
 
   const isReady = status === 'connected';
 
@@ -245,6 +277,90 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     ].slice(0, maxHistoryItems));
   }, []);
 
+  const requestSudoPassword = useCallback((
+    operation: string,
+    target: string,
+    error: string,
+  ) => new Promise<string | null>((resolve) => {
+    sudoPromptResolverRef.current?.(null);
+    sudoPromptResolverRef.current = resolve;
+    setSudoPrompt({
+      operation,
+      target,
+      error,
+      password: '',
+    });
+  }), []);
+
+  const resolveSudoPrompt = useCallback((password: string | null) => {
+    sudoPromptResolverRef.current?.(password);
+    sudoPromptResolverRef.current = null;
+    setSudoPrompt(null);
+  }, []);
+
+  const runWithSudoRetry = useCallback(async <T,>(
+    operation: string,
+    target: string,
+    run: (options?: ShellDeskSudoPasswordOptions) => Promise<T>,
+    useStoredPassword = true,
+  ): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (systemType === 'windows' || !shouldPromptForSudoPassword(error)) {
+        throw error;
+      }
+
+      let lastError = getPrivilegeErrorMessage(error);
+      const cachedOptions = useStoredPassword ? getCachedSudoOptions(connectionId) : undefined;
+
+      if (cachedOptions) {
+        try {
+          return await run(cachedOptions);
+        } catch (cachedError) {
+          if (!shouldPromptForSudoPassword(cachedError)) {
+            throw cachedError;
+          }
+
+          clearCachedSudoPassword(connectionId);
+          lastError = getPrivilegeErrorMessage(cachedError);
+        }
+      }
+
+      for (;;) {
+        const sudoPassword = await requestSudoPassword(operation, target, lastError);
+
+        if (sudoPassword === null) {
+          throw new Error(lastError);
+        }
+
+        try {
+          const result = await run({ sudoPassword });
+          setCachedSudoPassword(connectionId, sudoPassword);
+          return result;
+        } catch (retryError) {
+          if (!shouldPromptForSudoPassword(retryError)) {
+            throw retryError;
+          }
+
+          clearCachedSudoPassword(connectionId);
+          lastError = getPrivilegeErrorMessage(retryError);
+        }
+      }
+    }
+  }, [connectionId, requestSudoPassword, systemType]);
+
+  useEffect(() => {
+    if (sudoPrompt) {
+      sudoPasswordInputRef.current?.focus();
+    }
+  }, [sudoPrompt?.operation, sudoPrompt?.target]);
+
+  useEffect(() => () => {
+    sudoPromptResolverRef.current?.(null);
+    sudoPromptResolverRef.current = null;
+  }, []);
+
   const refreshObjects = useCallback(async (sqliteIdOverride?: string) => {
     const activeSqliteId = sqliteIdOverride ?? sqliteId;
 
@@ -254,7 +370,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setMessage(null);
 
     try {
-      const nextObjects = await api.connections.sqliteObjects(connectionId, activeSqliteId);
+      const nextObjects = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.refresh'),
+        filePath || activeSqliteId,
+        (options) => api.connections.sqliteObjects(connectionId, activeSqliteId, options),
+      );
       setObjects(nextObjects);
       setMessage({ type: 'success', text: tCurrent('auto.remoteSqlite.1cb3a9') });
     } catch (error) {
@@ -262,18 +382,23 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     } finally {
       setObjectsLoading(false);
     }
-  }, [api, connectionId, sqliteId]);
+  }, [api, connectionId, filePath, runWithSudoRetry, sqliteId]);
 
   const openDatabase = useCallback(async (nextFilePath: string) => {
     if (!api?.connections || !nextFilePath.trim()) return;
 
+    const trimmedPath = nextFilePath.trim();
     setStatus('opening');
     setErrorMessage('');
     setMessage(null);
     resetWorkspace();
 
     try {
-      const result = await api.connections.sqliteOpen(connectionId, nextFilePath.trim());
+      const result = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.open'),
+        trimmedPath,
+        (options) => api.connections.sqliteOpen(connectionId, trimmedPath, options),
+      );
       sqliteIdRef.current = result.sqliteId;
       setSqliteId(result.sqliteId);
       setFilePath(result.filePath);
@@ -285,7 +410,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     }
-  }, [api, connectionId, refreshObjects, resetWorkspace]);
+  }, [api, connectionId, refreshObjects, resetWorkspace, runWithSudoRetry]);
 
   const handleOpen = useCallback(() => {
     void openDatabase(filePath);
@@ -327,7 +452,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setResultMeta(null);
 
     try {
-      const schema = await api.connections.sqliteSchema(connectionId, sqliteId, object.type, object.name);
+      const schema = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.schema'),
+        filePath,
+        (options) => api.connections.sqliteSchema(connectionId, sqliteId, object.type, object.name, options),
+      );
       setSchemaSql(schema.sql || object.sql || '');
     } catch {
       setSchemaSql(object.sql || '');
@@ -338,18 +467,30 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     }
 
     try {
-      const nextColumns = await api.connections.sqliteColumns(connectionId, sqliteId, object.name);
+      const nextColumns = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.schema'),
+        filePath,
+        (options) => api.connections.sqliteColumns(connectionId, sqliteId, object.name, options),
+      );
       let nextResult: ShellDeskSqliteQueryResult;
       let rowidAvailable = false;
       let executedSql = preferredSql;
 
       try {
-        nextResult = await api.connections.sqliteQuery(connectionId, sqliteId, preferredSql);
+        nextResult = await runWithSudoRetry(
+          tCurrent('sqlite.sudo.operation.query'),
+          filePath,
+          (options) => api.connections.sqliteQuery(connectionId, sqliteId, preferredSql, options),
+        );
         rowidAvailable = nextResult.columns.includes(rowidColumn);
       } catch (error) {
         if (object.type !== 'table') throw error;
         executedSql = fallbackSql;
-        nextResult = await api.connections.sqliteQuery(connectionId, sqliteId, fallbackSql);
+        nextResult = await runWithSudoRetry(
+          tCurrent('sqlite.sudo.operation.query'),
+          filePath,
+          (options) => api.connections.sqliteQuery(connectionId, sqliteId, fallbackSql, options),
+        );
       }
 
       const queryTime = Math.round(performance.now() - startTime);
@@ -384,7 +525,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         queryTime,
       });
     }
-  }, [addHistoryItem, api, connectionId, sqliteId]);
+  }, [addHistoryItem, api, connectionId, filePath, runWithSudoRetry, sqliteId]);
 
   const executeSql = useCallback(async (sqlText: string) => {
     if (!api?.connections || !sqliteId || !sqlText.trim()) return;
@@ -399,7 +540,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setEditingCell(null);
 
     try {
-      const result = await api.connections.sqliteQuery(connectionId, sqliteId, statement);
+      const result = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.query'),
+        filePath,
+        (options) => api.connections.sqliteQuery(connectionId, sqliteId, statement, options),
+      );
       const queryTime = Math.round(performance.now() - startTime);
 
       setQueryResult(result);
@@ -443,7 +588,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     } finally {
       setQueryRunning(false);
     }
-  }, [addHistoryItem, api, connectionId, refreshObjects, sqliteId]);
+  }, [addHistoryItem, api, connectionId, filePath, refreshObjects, runWithSudoRetry, sqliteId]);
 
   const handleExecuteSql = useCallback(() => {
     if (!sql.trim()) return;
@@ -546,13 +691,18 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setMessage(null);
 
     try {
-      const result = await api.connections.sqliteUpdateCell(
-        connectionId,
-        sqliteId,
-        pendingEdit.table,
-        pendingEdit.column,
-        pendingEdit.newValue,
-        pendingEdit.target,
+      const result = await runWithSudoRetry(
+        tCurrent('sqlite.sudo.operation.update'),
+        filePath,
+        (options) => api.connections.sqliteUpdateCell(
+          connectionId,
+          sqliteId,
+          pendingEdit.table,
+          pendingEdit.column,
+          pendingEdit.newValue,
+          pendingEdit.target,
+          options,
+        ),
       );
 
       if (result.affectedRows <= 0) {
@@ -575,7 +725,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     } finally {
       setEditSaving(false);
     }
-  }, [api, connectionId, pendingEdit, queryResult, sqliteId]);
+  }, [api, connectionId, filePath, pendingEdit, queryResult, runWithSudoRetry, sqliteId]);
 
   const handleConfirmWriteSql = useCallback(async () => {
     if (!pendingWrite) return;
@@ -601,6 +751,47 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       }
     };
   }, [api, connectionId]);
+
+  const sudoPromptPortal = sudoPrompt ? createPortal(
+    <div className="notepad-modal-overlay" role="presentation" onClick={() => resolveSudoPrompt(null)}>
+      <form
+        className="notepad-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sqlite-sudo-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          resolveSudoPrompt(sudoPrompt.password);
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div id="sqlite-sudo-title" className="notepad-modal-title">{tCurrent('sqlite.sudo.title')}</div>
+        <div className="notepad-modal-message">
+          {tCurrent('sqlite.sudo.message', {
+            operation: sudoPrompt.operation,
+            target: sudoPrompt.target,
+          })}
+        </div>
+        {sudoPrompt.error ? <div className="notepad-modal-message">{sudoPrompt.error}</div> : null}
+        <label className="notepad-modal-field">
+          <span>{tCurrent('sqlite.sudo.password')}</span>
+          <input
+            ref={sudoPasswordInputRef}
+            className="notepad-modal-input"
+            type="password"
+            value={sudoPrompt.password}
+            autoComplete="current-password"
+            onChange={(event) => setSudoPrompt((current) => current ? { ...current, password: event.target.value } : current)}
+          />
+        </label>
+        <div className="notepad-modal-actions">
+          <button type="button" className="notepad-modal-btn" onClick={() => resolveSudoPrompt(null)}>{tCurrent('auto.remoteSqlite.1589w37')}</button>
+          <button type="submit" className="notepad-modal-btn primary">{tCurrent('sqlite.sudo.continue')}</button>
+        </div>
+      </form>
+    </div>,
+    document.body,
+  ) : null;
 
   if (!isReady) {
     return (
@@ -666,6 +857,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
           }}
           onCancel={() => setFilePickerVisible(false)}
         />
+        {sudoPromptPortal}
       </>
     );
   }
@@ -983,6 +1175,8 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         </div>,
         document.body,
       ) : null}
+
+      {sudoPromptPortal}
     </>
   );
 }
