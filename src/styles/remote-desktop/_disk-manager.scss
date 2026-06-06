@@ -146,15 +146,37 @@
 }
 
 .disk-manager-alert {
+  align-items: center;
   margin: 8px 10px 0;
   border: 1px solid;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 9px 7px 12px;
   font-size: 12px;
   font-weight: 730;
-  line-height: 1.45;
+  line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.disk-manager-alert .dismissible-alert-content {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+}
+
+.disk-manager-alert .dismissible-alert-close {
+  box-sizing: border-box;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex-basis: 28px;
+  margin: 0;
+  padding: 0;
+  border-color: currentColor;
+  border-radius: 7px;
+  font-size: 17px;
+  line-height: 1;
 }
 
 .disk-manager-alert.danger {

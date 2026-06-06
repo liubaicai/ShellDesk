@@ -87,6 +87,23 @@ function getCommandPreview(command: RemoteCommandInput) {
   return command.stdin ? `${command.command}\n\nstdin:\n${command.stdin}` : command.command;
 }
 
+function isSudoPrivilegeFailure(error: unknown) {
+  const message = getErrorMessage(error);
+
+  return /sudo|sudoers/i.test(message) && (
+    /sudoers/i.test(message) ||
+    /may not run/i.test(message) ||
+    /not allowed/i.test(message) ||
+    /not permitted/i.test(message) ||
+    /permission denied/i.test(message) ||
+    /authentication fail/i.test(message) ||
+    /incorrect password/i.test(message) ||
+    /sorry,\s*try again/i.test(message) ||
+    /不在.*sudoers/i.test(message) ||
+    /不允许|未授权|认证失败|密码验证失败|权限不足/i.test(message)
+  );
+}
+
 function DiskInfoList({ disk }: { disk: ManagedDisk }) {
   return (
     <dl className="disk-manager-facts">
@@ -491,6 +508,9 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       setPendingAction(null);
       await refreshSnapshot();
     } catch (error) {
+      if (isSudoPrivilegeFailure(error)) {
+        setPendingAction(null);
+      }
       setError(getErrorMessage(error));
     } finally {
       setActionRunning(false);
