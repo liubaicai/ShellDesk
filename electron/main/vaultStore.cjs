@@ -552,6 +552,10 @@ function readRemoteSystemType(value) {
   return remoteSystemTypeChoices.has(normalizedValue) ? normalizedValue : 'unknown';
 }
 
+function readPrivilegeMode(value) {
+  return value === 'su-root' ? 'su-root' : 'sudo';
+}
+
 function readHostConnectionStatus(value) {
   return value === 'success' || value === 'failed' ? value : 'unknown';
 }
@@ -625,6 +629,12 @@ function readStoredHostRecord(rawHost) {
       trim: false,
       rejectLineBreaks: false,
     }),
+    privilegeMode: readPrivilegeMode(rawHost.privilegeMode),
+    rootPassword: readBoundedString(rawHost.rootPassword ?? '', 'root 密码', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: true,
+    }),
     jumpHostId: readBoundedString(rawHost.jumpHostId ?? '', '跳板机 ID', 128, { required: false }),
     systemType: readRemoteSystemType(rawHost.systemType),
     systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
@@ -656,6 +666,10 @@ function readStoredHostRecord(rawHost) {
     host.passphrase = '';
   } else {
     host.password = '';
+  }
+
+  if (host.privilegeMode !== 'su-root') {
+    host.rootPassword = '';
   }
 
   return host;
@@ -828,7 +842,7 @@ function readVaultPayload(rawPayload) {
 }
 
 function toConfigHostRecord(host) {
-  const { password: _password, passphrase: _passphrase, ...configHost } = host;
+  const { password: _password, passphrase: _passphrase, rootPassword: _rootPassword, ...configHost } = host;
   return configHost;
 }
 
@@ -863,8 +877,9 @@ function createVaultSecretsPayload(vault) {
         id: host.id,
         password: host.password,
         passphrase: host.passphrase,
+        rootPassword: host.rootPassword,
       }))
-      .filter((secret) => secret.password || secret.passphrase),
+      .filter((secret) => secret.password || secret.passphrase || secret.rootPassword),
     sshKeySecrets: vault.sshKeys.map((key) => ({
       id: key.id,
       privateKey: key.privateKey,
@@ -929,6 +944,11 @@ function readHostSecretRecord(rawSecret) {
       required: false,
       trim: false,
       rejectLineBreaks: false,
+    }),
+    rootPassword: readBoundedString(rawSecret.rootPassword ?? '', 'root 密码', 4096, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: true,
     }),
   };
 }
@@ -1000,6 +1020,7 @@ function mergeConfigAndSecrets(configPayload, secretsPayload) {
       ...host,
       password: secret?.password ?? host.password,
       passphrase: secret?.passphrase ?? host.passphrase,
+      rootPassword: secret?.rootPassword ?? host.rootPassword,
     });
   });
 
@@ -1241,6 +1262,7 @@ function createPublicVaultSnapshotFromConfig(configPayload) {
       ...host,
       password: '',
       passphrase: '',
+      rootPassword: '',
     })),
     sshKeys: configPayload.sshKeys.map((key) => toRendererKeyRecord({
       ...key,
@@ -1599,16 +1621,42 @@ function generateRsaKeyPairInVault(rawPayload) {
   return { snapshot: createVaultSnapshot(nextVault), key: toRendererKeyRecord(nextKey) };
 }
 
-function buildDisplayHost(rawHost, host, port, username) {
+function buildDisplayHost(rawHost, host, port, username, matchedStoredHost = null) {
   return {
     name: readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false }) || host,
     address: host,
     port,
     username,
     authMethod: rawHost.authMethod,
+    privilegeMode: readPrivilegeMode(rawHost.privilegeMode ?? matchedStoredHost?.privilegeMode),
     systemType: readRemoteSystemType(rawHost.systemType),
     systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
   };
+}
+
+function buildPrivilegeConfigFromHostRequest(rawHost, matchedStoredHost = null) {
+  const privilegeMode = readPrivilegeMode(rawHost.privilegeMode ?? matchedStoredHost?.privilegeMode);
+
+  if (privilegeMode !== 'su-root') {
+    return { mode: 'sudo', rootPassword: '' };
+  }
+
+  const rawRootPassword = typeof rawHost.rootPassword === 'string' ? rawHost.rootPassword : '';
+  const rootPassword = readBoundedString(
+    rawRootPassword || (matchedStoredHost?.privilegeMode === 'su-root' ? matchedStoredHost.rootPassword : ''),
+    'root 密码',
+    4096,
+    {
+      trim: false,
+      rejectLineBreaks: true,
+    },
+  );
+
+  if (!rootPassword) {
+    throw new Error('该主机已选择 su root 提权，但本机没有保存 root 密码，请编辑主机配置。');
+  }
+
+  return { mode: 'su-root', rootPassword };
 }
 
 function buildSshConfigFromHostRequest(rawHost, matchedStoredHost = null) {
@@ -1683,7 +1731,7 @@ function buildSshConfigFromHostRequest(rawHost, matchedStoredHost = null) {
   }
 
   return {
-    displayHost: buildDisplayHost(rawHost, host, port, username),
+    displayHost: buildDisplayHost(rawHost, host, port, username, matchedStoredHost),
     sshConfig,
   };
 }
@@ -1705,6 +1753,7 @@ function validateHostRequest(rawHost) {
     ? storedHost
     : null;
   const { displayHost, sshConfig } = buildSshConfigFromHostRequest(rawHost, matchedStoredHost);
+  const privilegeConfig = buildPrivilegeConfigFromHostRequest(rawHost, matchedStoredHost);
   const jumpHostId = readBoundedString(rawHost.jumpHostId || matchedStoredHost?.jumpHostId || '', '跳板机 ID', 128, { required: false });
   let jumpHost = null;
   let jumpSshConfig = null;
@@ -1746,6 +1795,7 @@ function validateHostRequest(rawHost) {
   return {
     displayHost,
     sshConfig,
+    privilegeConfig,
     jumpSshConfig,
     jumpHost: displayHost.jumpHost ?? null,
   };

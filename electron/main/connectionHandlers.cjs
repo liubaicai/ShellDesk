@@ -77,7 +77,7 @@ function registerConnectionHandlers(registerIpcHandler) {
     let activeConnection;
 
     try {
-      const { displayHost, sshConfig, jumpSshConfig, jumpHost } = validateHostRequest(rawHost);
+      const { displayHost, sshConfig, privilegeConfig, jumpSshConfig, jumpHost } = validateHostRequest(rawHost);
       const connectedClients = await connectSshClientWithJump(sshConfig, jumpSshConfig, jumpHost);
       client = connectedClients.client;
       jumpClient = connectedClients.jumpClient;
@@ -94,6 +94,7 @@ function registerConnectionHandlers(registerIpcHandler) {
         client: null,
         jumpClient,
         sshConfig,
+        privilegeConfig,
         jumpSshConfig,
         jumpHost,
         socksServer: null,

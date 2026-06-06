@@ -90,6 +90,10 @@ function getCommandPreview(command: RemoteCommandInput) {
 function isSudoPrivilegeFailure(error: unknown) {
   const message = getErrorMessage(error);
 
+  if (/su root|root 密码|SHELLDESK_SU_ROOT/i.test(message)) {
+    return /authentication fail|incorrect password|permission denied|不能通过 su root|无法.*su root|密码验证失败|认证失败|权限不足/i.test(message);
+  }
+
   return /sudo|sudoers/i.test(message) && (
     /sudoers/i.test(message) ||
     /may not run/i.test(message) ||

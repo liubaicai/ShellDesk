@@ -21,6 +21,13 @@ interface RunCommandOptions {
 const elevationPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
+  'SHELLDESK_SU_ROOT_AUTH_FAILED:',
+  'SHELLDESK_SU_ROOT_UNSUPPORTED:',
+];
+
+const fatalElevationPrefixes = [
+  'SHELLDESK_SU_ROOT_AUTH_FAILED:',
+  'SHELLDESK_SU_ROOT_UNSUPPORTED:',
 ];
 
 const sudoPasswordRequiredPatterns = [
@@ -56,6 +63,22 @@ function stripElevationPrefix(message: string) {
   return prefix ? trimmedMessage.slice(prefix.length).trim() : trimmedMessage;
 }
 
+function getRawErrorMessage(value: unknown) {
+  if (value instanceof Error && value.message) {
+    return value.message.replace(/^Error invoking remote method '[^']+': Error: /, '').trim();
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return '';
+}
+
+function isFatalElevationErrorText(text: string) {
+  return fatalElevationPrefixes.some((prefix) => text.trim().startsWith(prefix));
+}
+
 function getResultText(result: RemoteCommandResult) {
   return [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
 }
@@ -79,7 +102,13 @@ function getPrivilegeFailureText(value: RemoteCommandResult | unknown, systemTyp
     return hasPattern(text, privilegeFailurePatterns) ? text : '';
   }
 
-  const text = stripElevationPrefix(getErrorMessage(value));
+  const rawText = getRawErrorMessage(value);
+
+  if (isFatalElevationErrorText(rawText)) {
+    return '';
+  }
+
+  const text = stripElevationPrefix(rawText || getErrorMessage(value));
   return hasPattern(text, privilegeFailurePatterns) ? text : '';
 }
 

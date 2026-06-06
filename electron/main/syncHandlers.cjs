@@ -353,11 +353,12 @@ function compareTime(left, right) {
 }
 
 function toPublicHostPayload(host) {
-  const { password: _password, passphrase: _passphrase, ...publicHost } = host;
+  const { password: _password, passphrase: _passphrase, rootPassword: _rootPassword, ...publicHost } = host;
   return {
     ...publicHost,
     password: '',
     passphrase: '',
+    rootPassword: '',
   };
 }
 
@@ -1140,13 +1141,19 @@ function rebuildBookmarksFromRecords(records) {
 
 function mergeHostSecrets(publicHost, currentHost) {
   if (!currentHost) {
-    return publicHost;
+    return {
+      ...publicHost,
+      password: '',
+      passphrase: '',
+      rootPassword: '',
+    };
   }
 
   return {
     ...publicHost,
     password: currentHost.password || '',
     passphrase: currentHost.passphrase || '',
+    rootPassword: currentHost.rootPassword || '',
   };
 }
 

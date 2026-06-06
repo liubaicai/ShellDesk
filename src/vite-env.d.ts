@@ -297,6 +297,8 @@ type ShellDeskHostSystemType =
   | 'linux'
   | 'unix';
 
+type ShellDeskPrivilegeMode = 'sudo' | 'su-root';
+
 interface ShellDeskStoredHostRecord {
   id: string;
   name: string;
@@ -308,6 +310,8 @@ interface ShellDeskStoredHostRecord {
   keyId: string;
   keyPath?: string;
   passphrase?: string;
+  privilegeMode?: ShellDeskPrivilegeMode;
+  rootPassword?: string;
   jumpHostId?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
@@ -390,6 +394,8 @@ interface ShellDeskHostConnectionRequest {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  privilegeMode?: ShellDeskPrivilegeMode;
+  rootPassword?: string;
   jumpHostId?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
@@ -408,7 +414,7 @@ interface ShellDeskConnectionInfo {
   partition: string;
   proxyPort: number;
   connectedAt: string;
-  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'systemType' | 'systemName'> & {
+  host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'privilegeMode' | 'systemType' | 'systemName'> & {
     jumpHost?: ShellDeskJumpHostConnectionInfo;
   };
 }

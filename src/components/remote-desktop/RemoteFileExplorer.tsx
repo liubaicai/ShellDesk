@@ -1440,7 +1440,20 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
   }, [closeContextMenu, connectionId, downloadFile, isWindowsHost, remotePath]);
 
-  const uploadItems = useCallback(async () => {
+  const uploadFiles = useCallback(async () => {
+    closeContextMenu();
+    try {
+      setFilesError('');
+      const result = await window.guiSSH?.connections.uploadFiles(connectionId, remotePath);
+      if (!result?.canceled) {
+        refreshFiles();
+      }
+    } catch (error) {
+      setFilesError(getErrorMessage(error));
+    }
+  }, [closeContextMenu, connectionId, remotePath, refreshFiles]);
+
+  const uploadFolders = useCallback(async () => {
     closeContextMenu();
     try {
       setFilesError('');
@@ -1661,8 +1674,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           <button type="button" onClick={() => startNewItem('folder')}>
             {t('fileExplorer.toolbar.newFolder', language)}
           </button>
-          <button type="button" onClick={() => void uploadItems()}>
+          <button type="button" onClick={() => void uploadFiles()}>
             {t('fileExplorer.toolbar.upload', language)}
+          </button>
+          <button type="button" onClick={() => void uploadFolders()}>
+            {t('fileExplorer.toolbar.uploadFolder', language)}
           </button>
           <button type="button" onClick={() => void downloadEntries(selectedEntries)} disabled={!selectedEntries.length}>
             {t('fileExplorer.toolbar.download', language)}
@@ -2111,9 +2127,13 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                   {t('fileExplorer.context.newFolder', language)}
                 </button>
                 <div className="context-menu-sep" />
-                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void uploadItems()}>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void uploadFiles()}>
                   <ContextMenuIcon name="upload" />
-                  {t('fileExplorer.context.uploadItems', language)}
+                  {t('fileExplorer.context.uploadFiles', language)}
+                </button>
+                <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => void uploadFolders()}>
+                  <ContextMenuIcon name="upload" />
+                  {t('fileExplorer.context.uploadFolder', language)}
                 </button>
                 {onOpenTerminal ? (
                   <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => { closeContextMenu(); onOpenTerminal(remotePath); }}>

@@ -456,6 +456,7 @@ function toKeyFormState(key: SshKey): KeyFormState {
 type AuthMethod = 'password' | 'key';
 type ConnectionAuthMethod = AuthMethod | 'agent';
 type HostConnectionStatus = 'unknown' | 'success' | 'failed';
+type PrivilegeMode = 'sudo' | 'su-root';
 
 interface Host {
   id: string;
@@ -468,6 +469,8 @@ interface Host {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  privilegeMode: PrivilegeMode;
+  rootPassword: string;
   jumpHostId: string;
   systemType: HostSystemType;
   systemName: string;
@@ -499,8 +502,8 @@ interface ConnectionErrorNotice {
 
 type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
 
-type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
+type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
 
 interface HostFormState {
   name: string;
@@ -512,6 +515,8 @@ interface HostFormState {
   keyId: string;
   keyPath: string;
   passphrase: string;
+  privilegeMode: PrivilegeMode;
+  rootPassword: string;
   jumpHostId: string;
   group: string;
   tags: string;
@@ -573,6 +578,8 @@ const emptyHostForm: HostFormState = {
   keyId: '',
   keyPath: '',
   passphrase: '',
+  privilegeMode: 'sudo',
+  rootPassword: '',
   jumpHostId: '',
   group: '',
   tags: '',
@@ -629,6 +636,14 @@ function formatTags(tags: string[]) {
 
 function getAuthMethod(value: unknown): AuthMethod {
   return value === 'key' ? 'key' : 'password';
+}
+
+function getPrivilegeMode(value: unknown): PrivilegeMode {
+  return value === 'su-root' ? 'su-root' : 'sudo';
+}
+
+function isRootLoginUsername(username: string) {
+  return username.trim().toLowerCase() === 'root';
 }
 
 function getHostConnectionStatus(value: unknown): HostConnectionStatus {
@@ -702,6 +717,8 @@ function normalizeStoredHost(host: StoredHost): Host {
     keyId: typeof host.keyId === 'string' ? host.keyId : '',
     keyPath: typeof host.keyPath === 'string' ? host.keyPath : '',
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
+    privilegeMode: getPrivilegeMode(host.privilegeMode),
+    rootPassword: getPrivilegeMode(host.privilegeMode) === 'su-root' && typeof host.rootPassword === 'string' ? host.rootPassword : '',
     jumpHostId: typeof host.jumpHostId === 'string' ? host.jumpHostId : '',
     systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
@@ -968,11 +985,21 @@ function validateHostForm(
     return t('app.host.validation.passwordTooLong', language);
   }
 
+  if (form.rootPassword.length > 4096) {
+    return t('app.host.validation.rootPasswordTooLong', language);
+  }
+
+  if (!isRootLoginUsername(form.username) && form.privilegeMode === 'su-root' && !form.rootPassword) {
+    return t('app.host.validation.rootPasswordRequired', language);
+  }
+
   return '';
 }
 
 function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Host {
   const now = new Date().toISOString();
+  const rootLogin = isRootLoginUsername(form.username);
+  const privilegeMode = rootLogin ? 'sudo' : form.privilegeMode;
 
   return {
     id: createId(),
@@ -985,6 +1012,8 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
     keyId: form.authMethod === 'key' ? selectedKey?.id ?? '' : '',
     keyPath: '',
     passphrase: '',
+    privilegeMode,
+    rootPassword: privilegeMode === 'su-root' ? form.rootPassword : '',
     jumpHostId: form.jumpHostId.trim(),
     systemType: 'unknown',
     systemName: '',
@@ -1008,12 +1037,17 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
   const jumpHostChanged = host.jumpHostId !== nextJumpHostId;
   const nextPassword = form.authMethod === 'password' ? form.password : '';
   const nextKeyId = form.authMethod === 'key' ? selectedKey?.id ?? '' : '';
+  const rootLogin = isRootLoginUsername(form.username);
+  const nextPrivilegeMode: PrivilegeMode = rootLogin ? 'sudo' : form.privilegeMode;
+  const nextRootPassword = nextPrivilegeMode === 'su-root' ? form.rootPassword : '';
   const connectionProfileChanged =
     endpointChanged ||
     jumpHostChanged ||
     host.authMethod !== form.authMethod ||
     host.password !== nextPassword ||
-    host.keyId !== nextKeyId;
+    host.keyId !== nextKeyId ||
+    host.privilegeMode !== nextPrivilegeMode ||
+    host.rootPassword !== nextRootPassword;
 
   return {
     ...host,
@@ -1026,6 +1060,8 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     keyId: nextKeyId,
     keyPath: '',
     passphrase: '',
+    privilegeMode: nextPrivilegeMode,
+    rootPassword: nextRootPassword,
     jumpHostId: nextJumpHostId,
     systemType: endpointChanged || jumpHostChanged ? 'unknown' : host.systemType,
     systemName: endpointChanged || jumpHostChanged ? '' : host.systemName,
@@ -1050,6 +1086,8 @@ function toFormState(host: Host): HostFormState {
     keyId: host.keyId,
     keyPath: host.keyPath,
     passphrase: host.passphrase,
+    privilegeMode: host.privilegeMode,
+    rootPassword: host.rootPassword,
     jumpHostId: host.jumpHostId,
     group: host.group,
     tags: formatTags(host.tags),
@@ -2633,6 +2671,8 @@ function App() {
       keyId: '',
       keyPath: parsedCommand.keyPath,
       passphrase: '',
+      privilegeMode: 'sudo',
+      rootPassword: '',
       jumpHostId: '',
       systemType: 'unknown',
       systemName: '',
@@ -2757,6 +2797,7 @@ function App() {
   const maximizeWindowLabel = t(isWindowMaximized ? 'app.titlebar.restore' : 'app.titlebar.maximize', appLanguage);
   const hostGroupToggleLabel = t(isHostGroupPanelCollapsed ? 'app.host.groupsShow' : 'app.host.groupsHide', appLanguage);
   const hostEditorTitle = t(editingHost ? 'app.host.editor.editAria' : 'app.host.editor.newAria', appLanguage);
+  const hostFormUsesRootLogin = isRootLoginUsername(form.username);
   const keyEditorTitle = editingKey
     ? t('app.key.editor.editTitle', appLanguage)
     : t(keyEditorMode === 'generate' ? 'app.key.editor.generateTitle' : 'app.key.editor.importTitle', appLanguage);
@@ -3355,6 +3396,48 @@ function App() {
                     />
                   </label>
                 )}
+
+                {!hostFormUsesRootLogin ? (
+                  <>
+                    <div className="auth-method-section">
+                      <span className="field-label">{t('app.host.field.privilegeMode', appLanguage)}</span>
+                      <div className="auth-switch" role="group" aria-label={t('app.host.field.privilegeMode', appLanguage)}>
+                        <button
+                          type="button"
+                          className={form.privilegeMode === 'sudo' ? 'active' : ''}
+                          onClick={() => {
+                            updateFormField('privilegeMode', 'sudo');
+                            updateFormField('rootPassword', '');
+                          }}
+                        >
+                          <strong>{t('app.host.privilege.sudo', appLanguage)}</strong>
+                          <small>{t('app.host.privilege.sudoSummary', appLanguage)}</small>
+                        </button>
+                        <button
+                          type="button"
+                          className={form.privilegeMode === 'su-root' ? 'active' : ''}
+                          onClick={() => updateFormField('privilegeMode', 'su-root')}
+                        >
+                          <strong>{t('app.host.privilege.suRoot', appLanguage)}</strong>
+                          <small>{t('app.host.privilege.suRootSummary', appLanguage)}</small>
+                        </button>
+                      </div>
+                    </div>
+
+                    {form.privilegeMode === 'su-root' ? (
+                      <label className="field">
+                        <span>{t('app.host.field.rootPassword', appLanguage)}</span>
+                        <input
+                          type="password"
+                          value={form.rootPassword}
+                          onChange={(event) => updateFormField('rootPassword', event.target.value)}
+                          placeholder={t('app.host.field.rootPasswordPlaceholder', appLanguage)}
+                        />
+                        <small className="field-note">{t('app.host.field.rootPasswordHint', appLanguage)}</small>
+                      </label>
+                    ) : null}
+                  </>
+                ) : null}
 
                 <label className="field">
                   <span>{t('app.host.field.jumpHost', appLanguage)}</span>

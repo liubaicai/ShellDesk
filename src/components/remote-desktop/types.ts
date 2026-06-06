@@ -36,6 +36,7 @@ export interface RemoteConnectionInfo {
     port: number;
     username: string;
     authMethod: 'password' | 'key' | 'agent';
+    privilegeMode?: 'sudo' | 'su-root';
     systemType?: RemoteSystemType;
     systemName?: string;
     jumpHost?: {

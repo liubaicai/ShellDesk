@@ -73,6 +73,16 @@ function sanitizeLocalFileName(fileName, fallback = 'download') {
   return safeName;
 }
 
+function sanitizeRelativeLocalPath(relativePath, fallback = 'download') {
+  const parts = String(relativePath || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((part, index) => sanitizeLocalFileName(part, index === 0 ? fallback : 'item'));
+
+  return parts.length ? path.join(...parts) : fallback;
+}
+
 function toIpcArrayBuffer(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 }
@@ -296,6 +306,48 @@ function createTerminalStartupInput(launchOptions, systemType) {
   return startupLines.length ? `${startupLines.join('\r')}\r` : '';
 }
 
+function createTerminalStartupPlan(activeConnection, launchOptions) {
+  const startupInput = createTerminalStartupInput(launchOptions, activeConnection.displayHost.systemType);
+  const privilegeConfig = activeConnection.privilegeConfig;
+
+  if (
+    activeConnection.displayHost.systemType === 'windows' ||
+    privilegeConfig?.mode !== 'su-root' ||
+    !privilegeConfig.rootPassword
+  ) {
+    return {
+      initialInput: startupInput,
+      rootPassword: '',
+      afterAuthInput: '',
+    };
+  }
+
+  return {
+    initialInput: 'su - root\r',
+    rootPassword: privilegeConfig.rootPassword,
+    afterAuthInput: startupInput,
+  };
+}
+
+function stripTerminalControlSequences(value) {
+  return String(value || '')
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, '')
+    .replace(/\r/g, '\n');
+}
+
+function isTerminalPasswordPrompt(value) {
+  return /(?:^|\n)\s*(?:password|密码|口令)[:：]\s*$/i.test(stripTerminalControlSequences(value));
+}
+
+function isTerminalSuAuthenticationFailure(value) {
+  return /su:.*authentication failure|authentication failure|authentication failed|incorrect password|su:.*permission denied|su:.*denied|密码.*错误|认证失败|鉴定故障/i.test(stripTerminalControlSequences(value));
+}
+
+function isTerminalLikelyRootPrompt(value) {
+  return /(?:^|\n)[^\n]*#\s*$/.test(stripTerminalControlSequences(value));
+}
+
 function getSftpEntryType(attrs) {
   const mode = attrs.mode ?? 0;
   const fileType = mode & 0o170000;
@@ -309,6 +361,75 @@ function getSftpEntryType(attrs) {
   }
 
   return 'file';
+}
+
+function sortRemoteFileEntries(entries) {
+  return entries.sort((left, right) => {
+    const leftSortType = left.type === 'symlink' && left.targetType === 'directory' ? 'directory' : left.type;
+    const rightSortType = right.type === 'symlink' && right.targetType === 'directory' ? 'directory' : right.type;
+
+    if (leftSortType === rightSortType) {
+      return remoteEntryCollator.compare(left.name, right.name);
+    }
+
+    return leftSortType === 'directory' ? -1 : 1;
+  });
+}
+
+function decodeBase64DirectoryField(value) {
+  try {
+    return Buffer.from(value || '', 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function parsePrivilegedDirectoryListing(output, fallbackPath) {
+  let displayPath = fallbackPath;
+  const entries = [];
+
+  for (const line of output.split(/\r?\n/)) {
+    if (!line) {
+      continue;
+    }
+
+    const parts = line.split('\t');
+
+    if (parts[0] === 'PATH') {
+      displayPath = decodeBase64DirectoryField(parts[1]) || fallbackPath;
+      continue;
+    }
+
+    if (parts[0] !== 'ENTRY' || parts.length < 6) {
+      continue;
+    }
+
+    const name = decodeBase64DirectoryField(parts[1]);
+    const type = parts[2] === 'directory' || parts[2] === 'symlink' ? parts[2] : 'file';
+    const targetType = parts[3] === 'directory' || parts[3] === 'file' || parts[3] === 'symlink' || parts[3] === 'unknown'
+      ? parts[3]
+      : undefined;
+    const size = Number(parts[4]);
+    const mtime = Number(parts[5]);
+
+    if (!name || name === '.' || name === '..') {
+      continue;
+    }
+
+    entries.push({
+      name,
+      longname: '',
+      type,
+      targetType: type === 'symlink' ? targetType ?? 'unknown' : undefined,
+      size: Number.isFinite(size) && size >= 0 ? size : 0,
+      modifiedAt: Number.isFinite(mtime) && mtime > 0 ? new Date(mtime * 1000).toISOString() : '',
+    });
+  }
+
+  return {
+    path: displayPath,
+    entries: sortRemoteFileEntries(entries),
+  };
 }
 
 function listRemoteDirectory(client, remotePath) {
@@ -358,16 +479,7 @@ function listRemoteDirectory(client, remotePath) {
                 };
               }));
 
-            const sortedEntries = listedEntries.sort((left, right) => {
-              const leftSortType = left.type === 'symlink' && left.targetType === 'directory' ? 'directory' : left.type;
-              const rightSortType = right.type === 'symlink' && right.targetType === 'directory' ? 'directory' : right.type;
-
-              if (leftSortType === rightSortType) {
-                return remoteEntryCollator.compare(left.name, right.name);
-              }
-
-              return leftSortType === 'directory' ? -1 : 1;
-            });
+            const sortedEntries = sortRemoteFileEntries(listedEntries);
             const displayPath = await resolveSftpDisplayPath(sftp, remotePath);
 
             resolve({ path: displayPath, entries: sortedEntries });
@@ -1623,12 +1735,71 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           let streamClosed = false;
           let exitCode = null;
           let exitSignal = null;
+          const startupPlan = createTerminalStartupPlan(activeConnection, launchOptions);
+          let terminalPromptBuffer = '';
+          let pendingRootPassword = startupPlan.rootPassword;
+          let pendingAfterAuthInput = startupPlan.afterAuthInput;
+          let rootPasswordSent = false;
+          let afterAuthTimer = null;
+          const clearAfterAuthTimer = () => {
+            if (afterAuthTimer) {
+              clearTimeout(afterAuthTimer);
+              afterAuthTimer = null;
+            }
+          };
+          const flushAfterAuthInput = () => {
+            clearAfterAuthTimer();
+
+            if (!streamClosed && !stream.destroyed && pendingAfterAuthInput) {
+              stream.write(pendingAfterAuthInput);
+            }
+
+            pendingAfterAuthInput = '';
+          };
+          const scheduleAfterAuthInput = () => {
+            if (!pendingAfterAuthInput) {
+              return;
+            }
+
+            clearAfterAuthTimer();
+            afterAuthTimer = setTimeout(() => {
+              afterAuthTimer = null;
+              flushAfterAuthInput();
+            }, 4000);
+          };
+          const handleAutoSuRoot = (chunk) => {
+            if (!startupPlan.rootPassword || (!pendingRootPassword && !afterAuthTimer)) {
+              return;
+            }
+
+            terminalPromptBuffer = `${terminalPromptBuffer}${Buffer.from(chunk).toString('utf8')}`.slice(-2048);
+
+            if (rootPasswordSent && afterAuthTimer && isTerminalSuAuthenticationFailure(terminalPromptBuffer)) {
+              clearAfterAuthTimer();
+              pendingAfterAuthInput = '';
+              return;
+            }
+
+            if (rootPasswordSent && afterAuthTimer && isTerminalLikelyRootPrompt(terminalPromptBuffer)) {
+              flushAfterAuthInput();
+              return;
+            }
+
+            if (!rootPasswordSent && pendingRootPassword && isTerminalPasswordPrompt(terminalPromptBuffer)) {
+              const password = pendingRootPassword;
+              pendingRootPassword = '';
+              rootPasswordSent = true;
+              stream.write(`${password}\r`);
+              scheduleAfterAuthInput();
+            }
+          };
           const closeTerminalStream = () => {
             if (streamClosed) {
               return;
             }
 
             streamClosed = true;
+            clearAfterAuthTimer();
 
             if (activeConnection.terminalSessions.get(terminalId) === stream) {
               activeConnection.terminalSessions.delete(terminalId);
@@ -1640,9 +1811,11 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           };
 
           stream.on('data', (chunk) => {
+            handleAutoSuRoot(chunk);
             sendTerminalData(event.sender, connectionId, terminalId, chunk);
           });
           stream.stderr.on('data', (chunk) => {
+            handleAutoSuRoot(chunk);
             sendTerminalData(event.sender, connectionId, terminalId, chunk);
           });
           stream.once('exit', (code, signal) => {
@@ -1651,10 +1824,9 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           });
           stream.once('error', closeTerminalStream);
           stream.once('close', closeTerminalStream);
-          const startupInput = createTerminalStartupInput(launchOptions, activeConnection.displayHost.systemType);
 
-          if (startupInput) {
-            stream.write(startupInput);
+          if (startupPlan.initialInput) {
+            stream.write(startupPlan.initialInput);
           }
 
           resolve();
@@ -1733,39 +1905,84 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
   registerIpcHandler('connection:list-directory', async (_event, connectionId, rawPath) => {
     const remotePath = validateRemotePath(rawPath);
-    const directory = await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      listRemoteDirectory(activeConnection.client, remotePath));
+    const directory = await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        return await listRemoteDirectory(activeConnection.client, remotePath);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        return listRemoteDirectoryWithPrivilege(activeConnection, remotePath);
+      }
+    });
 
     return directory;
   });
 
   registerIpcHandler('connection:create-directory', async (_event, connectionId, rawPath) => {
     const remotePath = validateMutableRemotePath(rawPath);
-    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      createRemoteDirectory(activeConnection.client, remotePath));
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        await createRemoteDirectory(activeConnection.client, remotePath);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        await createRemoteDirectoryWithPrivilege(activeConnection, remotePath);
+      }
+    });
     return true;
   });
 
   registerIpcHandler('connection:delete-path', async (_event, connectionId, rawPath, rawType) => {
     const remotePath = validateMutableRemotePath(rawPath);
     const entryType = rawType === 'directory' ? 'directory' : 'file';
-    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      deleteRemotePath(activeConnection.client, remotePath, entryType));
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        await deleteRemotePath(activeConnection.client, remotePath, entryType);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        await deleteRemotePathWithPrivilege(activeConnection, remotePath, entryType);
+      }
+    });
     return true;
   });
 
   registerIpcHandler('connection:rename-path', async (_event, connectionId, rawOldPath, rawNewPath) => {
     const oldPath = validateMutableRemotePath(rawOldPath);
     const newPath = validateMutableRemotePath(rawNewPath);
-    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      renameRemotePath(activeConnection.client, oldPath, newPath));
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        await renameRemotePath(activeConnection.client, oldPath, newPath);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        await renameRemotePathWithPrivilege(activeConnection, oldPath, newPath);
+      }
+    });
     return true;
   });
 
   registerIpcHandler('connection:create-file', async (_event, connectionId, rawPath) => {
     const remotePath = validateMutableRemotePath(rawPath);
-    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      createRemoteFile(activeConnection.client, remotePath));
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        await createRemoteFile(activeConnection.client, remotePath);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        await createRemoteFileWithPrivilege(activeConnection, remotePath);
+      }
+    });
     return true;
   });
 
@@ -1836,6 +2053,49 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return { sudoPassword };
   }
 
+  function getConfiguredPrivilege(activeConnection, options = {}) {
+    if (activeConnection.displayHost.systemType === 'windows') {
+      return null;
+    }
+
+    if (options.sudoPassword) {
+      return {
+        mode: 'sudo',
+        password: options.sudoPassword,
+      };
+    }
+
+    const privilegeConfig = activeConnection.privilegeConfig;
+
+    if (privilegeConfig?.mode === 'su-root' && privilegeConfig.rootPassword) {
+      return {
+        mode: 'su-root',
+        password: privilegeConfig.rootPassword,
+      };
+    }
+
+    return null;
+  }
+
+  function createPrivilegeStdin(privilege, stdin = '') {
+    return privilege?.password ? `${privilege.password}\n${stdin}` : stdin;
+  }
+
+  function stripSuRootPasswordPrompt(stderr) {
+    return String(stderr || '').replace(/^\s*(?:password|密码|口令)[:：]\s*/i, '');
+  }
+
+  function normalizePrivilegeResult(result, privilege) {
+    if (privilege?.mode !== 'su-root') {
+      return result;
+    }
+
+    return {
+      ...result,
+      stderr: stripSuRootPasswordPrompt(result.stderr),
+    };
+  }
+
   function isSudoPasswordRequired(result) {
     return /password is required|a terminal is required|no tty present|askpass/i.test(result.stderr);
   }
@@ -1844,7 +2104,15 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return /sorry, try again|incorrect password|authentication failure|authentication failed/i.test(result.stderr);
   }
 
-  function createPrivilegedShellCommand(script, args, verifyPassword = false) {
+  function isSuAuthenticationFailure(result) {
+    return /su:.*authentication failure|authentication failure|authentication failed|incorrect password|su:.*permission denied|su:.*denied|密码.*错误|认证失败|鉴定故障/i.test(result.stderr);
+  }
+
+  function isSuPasswordInputFailure(result) {
+    return /must be run from a terminal|cannot open session|no tty|conversation error|authentication token manipulation/i.test(result.stderr);
+  }
+
+  function createPrivilegedShellCommand(script, args, privilege = null) {
     const baseCommand = [
       'sh',
       '-c',
@@ -1853,7 +2121,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       ...args.map((arg) => escapeShellSingleQuotedArg(String(arg))),
     ].join(' ');
 
-    if (verifyPassword) {
+    if (privilege?.mode === 'sudo') {
       return [
         'if [ "$(id -u 2>/dev/null)" = "0" ]; then',
         'IFS= read -r _shelldesk_sudo_password || true;',
@@ -1862,6 +2130,17 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         'IFS= read -r _shelldesk_sudo_password || exit 43;',
         'printf "%s\\n" "$_shelldesk_sudo_password" | sudo -S -p \'\' -v &&',
         `sudo -n ${baseCommand};`,
+        'fi',
+      ].join(' ');
+    }
+
+    if (privilege?.mode === 'su-root') {
+      return [
+        'if [ "$(id -u 2>/dev/null)" = "0" ]; then',
+        'IFS= read -r _shelldesk_root_password || true;',
+        `${baseCommand};`,
+        'else',
+        `su - root -c ${escapeShellSingleQuotedArg(baseCommand)};`,
         'fi',
       ].join(' ');
     }
@@ -1884,6 +2163,19 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     ].join(' ');
   }
 
+  function createSuRootVerifiedUserCommand(command) {
+    const quotedCommand = escapeShellSingleQuotedArg(command);
+
+    return [
+      'if [ "$(id -u 2>/dev/null)" = "0" ]; then',
+      'IFS= read -r _shelldesk_root_password || true;',
+      `sh -c ${quotedCommand};`,
+      'else',
+      `su - root -c ${quotedCommand};`,
+      'fi',
+    ].join(' ');
+  }
+
   function createElevationRequiredError(result) {
     const detail = result.stderr.trim() || '当前账号需要 sudo 密码才能访问该文件。';
     return new Error(`SHELLDESK_ELEVATION_REQUIRED:${detail}`);
@@ -1894,7 +2186,43 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return new Error(`SHELLDESK_ELEVATION_AUTH_FAILED:${detail}`);
   }
 
-  async function readRemoteFileWithPrivilege(client, remotePath, sudoPassword = '') {
+  function createSuRootElevationFailedError(result) {
+    const detail = result.stderr.trim();
+    const message = detail
+      ? `root 密码验证失败，或当前账号不能通过 su root 提权：${detail}`
+      : 'root 密码验证失败，或当前账号不能通过 su root 提权。';
+    return new Error(`SHELLDESK_SU_ROOT_AUTH_FAILED:${message}`);
+  }
+
+  function createSuRootElevationUnsupportedError(result) {
+    const detail = result.stderr.trim();
+    const message = detail
+      ? `远程系统无法在非交互 SSH 命令中使用 su root：${detail}`
+      : '远程系统无法在非交互 SSH 命令中使用 su root。';
+    return new Error(`SHELLDESK_SU_ROOT_UNSUPPORTED:${message}`);
+  }
+
+  function assertPrivilegeResult(result, privilege) {
+    if (result.code === 0 || !privilege) {
+      return;
+    }
+
+    if (privilege.mode === 'sudo' && isSudoAuthenticationFailure(result)) {
+      throw createElevationAuthFailedError(result);
+    }
+
+    if (privilege.mode === 'su-root') {
+      if (isSuPasswordInputFailure(result)) {
+        throw createSuRootElevationUnsupportedError(result);
+      }
+
+      if (isSuAuthenticationFailure(result)) {
+        throw createSuRootElevationFailedError(result);
+      }
+    }
+  }
+
+  async function readRemoteFileWithPrivilege(client, remotePath, privilege = null) {
     const script = [
       'remote_path=$1',
       'max_bytes=$2',
@@ -1904,19 +2232,20 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       'if [ "$size" -gt "$max_bytes" ]; then printf "文件超过 %s MB，请先下载后用本地编辑器打开。\\n" "$((max_bytes / 1024 / 1024))" >&2; exit 41; fi',
       'cat -- "$remote_path"',
     ].join('\n');
-    const command = createPrivilegedShellCommand(script, [remotePath, String(maxRemoteTextFileBytes)], Boolean(sudoPassword));
-    const result = await execRemoteCommandRawText(client, command, sudoPassword ? `${sudoPassword}\n` : '');
+    const command = createPrivilegedShellCommand(script, [remotePath, String(maxRemoteTextFileBytes)], privilege);
+    const result = normalizePrivilegeResult(
+      await execRemoteCommandRawText(client, command, createPrivilegeStdin(privilege)),
+      privilege,
+    );
 
     if (result.code === 0) {
       return result.stdout;
     }
 
-    if (!sudoPassword && isSudoPasswordRequired(result)) {
-      throw createElevationRequiredError(result);
-    }
+    assertPrivilegeResult(result, privilege);
 
-    if (sudoPassword && isSudoAuthenticationFailure(result)) {
-      throw createElevationAuthFailedError(result);
+    if (!privilege && isSudoPasswordRequired(result)) {
+      throw createElevationRequiredError(result);
     }
 
     throw new Error(result.stderr.trim() || `提权读取文件失败，退出码 ${result.code}`);
@@ -1948,7 +2277,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     });
   }
 
-  async function writeRemoteFileWithPrivilege(client, remotePath, content, sudoPassword = '') {
+  async function writeRemoteFileWithPrivilege(client, remotePath, content, privilege = null) {
     if (Buffer.byteLength(content, 'utf8') > maxRemoteTextWriteBytes) {
       throw new Error(`文件内容超过 ${Math.round(maxRemoteTextWriteBytes / 1024 / 1024)} MB，请使用上传功能替换大文件。`);
     }
@@ -1959,22 +2288,164 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       'if [ ! -d "$parent_dir" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
       'cat > "$remote_path"',
     ].join('\n');
-    const command = createPrivilegedShellCommand(script, [remotePath], Boolean(sudoPassword));
-    const result = await execRemoteCommandRawText(client, command, sudoPassword ? `${sudoPassword}\n${content}` : content);
+    const command = createPrivilegedShellCommand(script, [remotePath], privilege);
+    const result = normalizePrivilegeResult(
+      await execRemoteCommandRawText(client, command, createPrivilegeStdin(privilege, content)),
+      privilege,
+    );
 
     if (result.code === 0) {
       return true;
     }
 
-    if (!sudoPassword && isSudoPasswordRequired(result)) {
+    assertPrivilegeResult(result, privilege);
+
+    if (!privilege && isSudoPasswordRequired(result)) {
       throw createElevationRequiredError(result);
     }
 
-    if (sudoPassword && isSudoAuthenticationFailure(result)) {
-      throw createElevationAuthFailedError(result);
+    throw new Error(result.stderr.trim() || `提权写入文件失败，退出码 ${result.code}`);
+  }
+
+  async function execPrivilegedFileScript(activeConnection, script, args, label) {
+    const privilege = getConfiguredPrivilege(activeConnection);
+
+    if (!privilege) {
+      throw new Error(`${label}失败：当前主机未配置可用的提权方式。`);
     }
 
-    throw new Error(result.stderr.trim() || `提权写入文件失败，退出码 ${result.code}`);
+    const command = createPrivilegedShellCommand(script, args, privilege);
+    const result = normalizePrivilegeResult(
+      await execRemoteCommandRawText(activeConnection.client, command, createPrivilegeStdin(privilege)),
+      privilege,
+    );
+
+    if (result.code === 0) {
+      return result;
+    }
+
+    assertPrivilegeResult(result, privilege);
+    throw new Error(result.stderr.trim() || `${label}失败，退出码 ${result.code}`);
+  }
+
+  async function listRemoteDirectoryWithPrivilege(activeConnection, remotePath) {
+    const script = [
+      'target=$1',
+      'if [ ! -d "$target" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
+      'display_path=$(cd -- "$target" 2>/dev/null && pwd -P) || display_path="$target"',
+      'printf "PATH\\t%s\\n" "$(printf "%s" "$display_path" | base64 | tr -d "\\n")"',
+      'for entry in "$target"/* "$target"/.[!.]* "$target"/..?*; do',
+      '  if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then continue; fi',
+      '  name=${entry##*/}',
+      '  type=file',
+      '  target_type=',
+      '  if [ -L "$entry" ]; then',
+      '    type=symlink',
+      '    if [ -d "$entry" ]; then target_type=directory; elif [ -f "$entry" ]; then target_type=file; else target_type=unknown; fi',
+      '  elif [ -d "$entry" ]; then',
+      '    type=directory',
+      '  elif [ -f "$entry" ]; then',
+      '    type=file',
+      '  fi',
+      '  size=$(stat -Lc "%s" -- "$entry" 2>/dev/null || stat -c "%s" -- "$entry" 2>/dev/null || printf "0")',
+      '  mtime=$(stat -Lc "%Y" -- "$entry" 2>/dev/null || stat -c "%Y" -- "$entry" 2>/dev/null || printf "0")',
+      '  printf "ENTRY\\t%s\\t%s\\t%s\\t%s\\t%s\\n" "$(printf "%s" "$name" | base64 | tr -d "\\n")" "$type" "$target_type" "$size" "$mtime"',
+      'done',
+    ].join('\n');
+    const result = await execPrivilegedFileScript(activeConnection, script, [remotePath], '提权读取目录');
+
+    return parsePrivilegedDirectoryListing(result.stdout, remotePath);
+  }
+
+  async function createRemoteDirectoryWithPrivilege(activeConnection, remotePath) {
+    const script = [
+      'target=$1',
+      'mkdir -- "$target"',
+    ].join('\n');
+
+    await execPrivilegedFileScript(activeConnection, script, [remotePath], '提权创建目录');
+    return true;
+  }
+
+  async function ensureRemoteDirectoryWithPrivilege(activeConnection, remotePath) {
+    const script = [
+      'target=$1',
+      'if [ -d "$target" ]; then exit 0; fi',
+      'mkdir -- "$target"',
+    ].join('\n');
+
+    await execPrivilegedFileScript(activeConnection, script, [remotePath], '提权创建目录');
+    return true;
+  }
+
+  async function createRemoteFileWithPrivilege(activeConnection, remotePath) {
+    const script = [
+      'target=$1',
+      'parent_dir=$(dirname -- "$target") || exit 1',
+      'if [ ! -d "$parent_dir" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
+      ': > "$target"',
+    ].join('\n');
+
+    await execPrivilegedFileScript(activeConnection, script, [remotePath], '提权创建文件');
+    return true;
+  }
+
+  async function renameRemotePathWithPrivilege(activeConnection, oldPath, newPath) {
+    const script = [
+      'old_path=$1',
+      'new_path=$2',
+      'mv -- "$old_path" "$new_path"',
+    ].join('\n');
+
+    await execPrivilegedFileScript(activeConnection, script, [oldPath, newPath], '提权重命名');
+    return true;
+  }
+
+  async function deleteRemotePathWithPrivilege(activeConnection, remotePath, entryType) {
+    const script = [
+      'target=$1',
+      'entry_type=$2',
+      'max_targets=$3',
+      'if [ "$entry_type" = "directory" ]; then',
+      '  if [ ! -d "$target" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
+      '  count=$(find -P "$target" -print 2>/dev/null | wc -l | tr -dc "0-9") || exit 1',
+      '  if [ -z "$count" ]; then count=0; fi',
+      '  if [ "$count" -gt "$max_targets" ]; then printf "删除目标超过 %s 项，请在终端中分批删除。\\n" "$max_targets" >&2; exit 41; fi',
+      '  rm -rf -- "$target"',
+      'else',
+      '  if [ ! -e "$target" ] && [ ! -L "$target" ]; then printf "%s\\n" "远程文件不存在。" >&2; exit 40; fi',
+      '  rm -f -- "$target"',
+      'fi',
+    ].join('\n');
+
+    await execPrivilegedFileScript(activeConnection, script, [remotePath, entryType, String(maxRemoteDeleteTargets)], '提权删除');
+    return true;
+  }
+
+  async function chmodRemotePathWithPrivilege(activeConnection, remotePath, mode, recursive) {
+    const script = [
+      'target=$1',
+      'mode=$2',
+      'recursive=$3',
+      'max_targets=$4',
+      'if [ ! -e "$target" ] && [ ! -L "$target" ]; then printf "%s\\n" "远程路径不存在。" >&2; exit 40; fi',
+      'if [ "$recursive" = "1" ] && [ -d "$target" ]; then',
+      '  count=$(find -P "$target" -print 2>/dev/null | wc -l | tr -dc "0-9") || exit 1',
+      '  if [ -z "$count" ]; then count=0; fi',
+      '  if [ "$count" -gt "$max_targets" ]; then printf "递归目标超过 %s 项，请在终端中分批修改。\\n" "$max_targets" >&2; exit 41; fi',
+      '  chmod -R "$mode" -- "$target"',
+      'else',
+      '  chmod "$mode" -- "$target"',
+      'fi',
+    ].join('\n');
+
+    await execPrivilegedFileScript(
+      activeConnection,
+      script,
+      [remotePath, mode.toString(8), recursive ? '1' : '0', String(maxRemotePermissionTargets)],
+      '提权修改权限',
+    );
+    return true;
   }
 
   registerIpcHandler('connection:stat-path', async (_event, connectionId, rawPath) => {
@@ -1986,8 +2457,17 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
   registerIpcHandler('connection:set-path-permissions', async (_event, connectionId, rawPath, rawOptions) => {
     const remotePath = validateMutableRemotePath(rawPath);
     const options = readPathPermissionOptions(rawOptions);
-    await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-      chmodRemotePath(activeConnection.client, remotePath, options.mode, options.recursive));
+    await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      try {
+        await chmodRemotePath(activeConnection.client, remotePath, options.mode, options.recursive);
+      } catch (error) {
+        if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !getConfiguredPrivilege(activeConnection)) {
+          throw error;
+        }
+
+        await chmodRemotePathWithPrivilege(activeConnection, remotePath, options.mode, options.recursive);
+      }
+    });
     return true;
   });
 
@@ -2003,7 +2483,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           throw error;
         }
 
-        return readRemoteFileWithPrivilege(activeConnection.client, remotePath, options.sudoPassword);
+        return readRemoteFileWithPrivilege(activeConnection.client, remotePath, getConfiguredPrivilege(activeConnection, options));
       }
     });
   });
@@ -2023,7 +2503,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
           throw error;
         }
 
-        await writeRemoteFileWithPrivilege(activeConnection.client, remotePath, content, options.sudoPassword);
+        await writeRemoteFileWithPrivilege(activeConnection.client, remotePath, content, getConfiguredPrivilege(activeConnection, options));
       }
     });
     return true;
@@ -2135,6 +2615,15 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         transferred += byteCount;
         currentFileTransferred += byteCount;
         sendProgress();
+      },
+      rollbackBytes(byteCount) {
+        if (byteCount <= 0) {
+          return;
+        }
+
+        transferred = Math.max(0, transferred - byteCount);
+        currentFileTransferred = Math.max(0, currentFileTransferred - byteCount);
+        sendProgress(true);
       },
       completeFile() {
         completedFiles += 1;
@@ -2411,6 +2900,129 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return { directories, files, totalBytes, itemCount };
   }
 
+  async function collectRemoteDownloadPlanWithPrivilege(activeConnection, roots, queue) {
+    const directories = [];
+    const files = [];
+    let totalBytes = 0;
+    let itemCount = 0;
+
+    const countItem = () => {
+      itemCount += 1;
+      if (itemCount > maxTransferQueueItems) {
+        throw new Error(`传输项目超过 ${maxTransferQueueItems} 项，请分批传输。`);
+      }
+    };
+
+    const localPathForEntry = (root, relativePath) => {
+      const normalizedRootRelative = String(root.relativePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      const normalizedRelative = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+
+      if (!normalizedRelative || normalizedRelative === normalizedRootRelative) {
+        return root.localPath;
+      }
+
+      if (normalizedRootRelative && normalizedRelative.startsWith(`${normalizedRootRelative}/`)) {
+        return path.join(root.localPath, sanitizeRelativeLocalPath(normalizedRelative.slice(normalizedRootRelative.length + 1)));
+      }
+
+      return path.join(path.dirname(root.localPath), sanitizeRelativeLocalPath(normalizedRelative));
+    };
+
+    const parseOutput = (output, root) => {
+      for (const line of output.split(/\r?\n/)) {
+        if (!line) {
+          continue;
+        }
+
+        const parts = line.split('\t');
+
+        if (parts[0] !== 'ENTRY' || parts.length < 5) {
+          continue;
+        }
+
+        const remotePath = decodeBase64DirectoryField(parts[1]);
+        const relativePath = decodeBase64DirectoryField(parts[2]);
+        const type = parts[3] === 'directory' ? 'directory' : 'file';
+        const size = Number(parts[4]);
+
+        if (!remotePath || !relativePath) {
+          continue;
+        }
+
+        countItem();
+
+        const entry = {
+          remotePath,
+          localPath: localPathForEntry(root, relativePath),
+          relativePath,
+        };
+
+        if (type === 'directory') {
+          directories.push(entry);
+          continue;
+        }
+
+        const normalizedSize = Number.isFinite(size) && size >= 0 ? size : 0;
+        totalBytes += normalizedSize;
+        files.push({ ...entry, size: normalizedSize });
+      }
+    };
+
+    const script = [
+      'target=$1',
+      'relative_root=$2',
+      'file_only=$3',
+      'encode_field() { printf "%s" "$1" | base64 | tr -d "\\n"; }',
+      'emit_entry() {',
+      '  entry=$1',
+      '  relative=$2',
+      '  entry_type=file',
+      '  if [ -L "$entry" ]; then',
+      '    entry_type=file',
+      '  elif [ -d "$entry" ]; then',
+      '    entry_type=directory',
+      '  fi',
+      '  size=0',
+      '  if [ "$entry_type" = "file" ]; then',
+      '    size=$(stat -Lc "%s" -- "$entry" 2>/dev/null || stat -c "%s" -- "$entry" 2>/dev/null || wc -c < "$entry" 2>/dev/null || printf "0")',
+      '  fi',
+      '  printf "ENTRY\\t%s\\t%s\\t%s\\t%s\\n" "$(encode_field "$entry")" "$(encode_field "$relative")" "$entry_type" "$size"',
+      '}',
+      'if [ ! -e "$target" ] && [ ! -L "$target" ]; then printf "%s\\n" "远程路径不存在。" >&2; exit 40; fi',
+      'if [ -L "$target" ] || [ ! -d "$target" ]; then',
+      '  emit_entry "$target" "$relative_root"',
+      '  exit 0',
+      'fi',
+      'if [ "$file_only" = "1" ]; then printf "%s\\n" "请选择批量下载来下载文件夹。" >&2; exit 41; fi',
+      'target_prefix=${target%/}',
+      'if [ -z "$target_prefix" ]; then target_prefix=/; fi',
+      'emit_entry "$target_prefix" "$relative_root"',
+      'find "$target_prefix" -mindepth 1 -print | while IFS= read -r entry; do',
+      '  suffix=${entry#"$target_prefix"/}',
+      '  if [ "$suffix" = "$entry" ]; then suffix=${entry#"$target_prefix"}; suffix=${suffix#/}; fi',
+      '  if [ -n "$suffix" ]; then relative="$relative_root/$suffix"; else relative="$relative_root"; fi',
+      '  emit_entry "$entry" "$relative"',
+      'done',
+    ].join('\n');
+
+    for (const root of roots) {
+      queue.assertActive();
+      const result = await execPrivilegedFileScript(
+        activeConnection,
+        script,
+        [root.remotePath, root.relativePath, root.fileOnly ? '1' : '0'],
+        '提权准备下载',
+      );
+      parseOutput(result.stdout, root);
+    }
+
+    if (!itemCount) {
+      throw new Error('没有可传输的文件。');
+    }
+
+    return { directories, files, totalBytes, itemCount };
+  }
+
   function collectLocalUploadPlan(localPaths, remoteDirectory, queue) {
     const directories = [];
     const files = [];
@@ -2477,6 +3089,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
     return new Promise((resolve, reject) => {
       let settled = false;
+      let transferredForFile = 0;
       const readStream = sftp.createReadStream(file.remotePath);
       const writeStream = fs.createWriteStream(file.localPath, { flags: 'w' });
       const destroy = (error) => {
@@ -2496,12 +3109,16 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         if (settled) return;
         settled = true;
         queue.clearActiveDestroy(destroy);
+        queue.rollbackBytes(transferredForFile);
         destroy();
         reject(error);
       };
 
       queue.setActiveDestroy(destroy);
-      readStream.on('data', (chunk) => queue.addBytes(chunk.length));
+      readStream.on('data', (chunk) => {
+        transferredForFile += chunk.length;
+        queue.addBytes(chunk.length);
+      });
       readStream.on('error', fail);
       writeStream.on('error', fail);
       writeStream.on('finish', finish);
@@ -2514,6 +3131,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
     return new Promise((resolve, reject) => {
       let settled = false;
+      let transferredForFile = 0;
       const readStream = fs.createReadStream(file.localPath);
       const writeStream = sftp.createWriteStream(file.remotePath);
       const destroy = (error) => {
@@ -2533,16 +3151,222 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         if (settled) return;
         settled = true;
         queue.clearActiveDestroy(destroy);
+        queue.rollbackBytes(transferredForFile);
         destroy();
         reject(error);
       };
 
       queue.setActiveDestroy(destroy);
-      readStream.on('data', (chunk) => queue.addBytes(chunk.length));
+      readStream.on('data', (chunk) => {
+        transferredForFile += chunk.length;
+        queue.addBytes(chunk.length);
+      });
       readStream.on('error', fail);
       writeStream.on('error', fail);
       writeStream.on('close', finish);
       readStream.pipe(writeStream);
+    });
+  }
+
+  function createPrivilegedTransferError(result, privilege, fallbackMessage) {
+    try {
+      assertPrivilegeResult(result, privilege);
+    } catch (error) {
+      return error;
+    }
+
+    if (!privilege && isSudoPasswordRequired(result)) {
+      return createElevationRequiredError(result);
+    }
+
+    return new Error(result.stderr.trim() || fallbackMessage);
+  }
+
+  function transferRemoteFileToLocalWithPrivilege(activeConnection, file, queue) {
+    const privilege = getConfiguredPrivilege(activeConnection);
+
+    if (!privilege) {
+      throw new Error('下载失败：当前主机未配置可用的提权方式。');
+    }
+
+    const script = [
+      'remote_path=$1',
+      'if [ ! -f "$remote_path" ]; then printf "%s\\n" "只能下载普通文件。" >&2; exit 40; fi',
+      'cat -- "$remote_path"',
+    ].join('\n');
+    const command = createPrivilegedShellCommand(script, [file.remotePath], privilege);
+
+    queue.startFile(file.relativePath, file.size);
+    fs.mkdirSync(path.dirname(file.localPath), { recursive: true });
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let transferredForFile = 0;
+      let sshClosed = false;
+      let writeFinished = false;
+      let exitCode = 0;
+      const stderrChunks = [];
+      let sshStream = null;
+      let writeStream = null;
+
+      const destroy = (error) => {
+        if (sshStream) {
+          sshStream.destroy(error);
+        }
+        if (writeStream) {
+          writeStream.destroy(error);
+        }
+      };
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        queue.clearActiveDestroy(destroy);
+        queue.rollbackBytes(transferredForFile);
+        destroy();
+        reject(error);
+      };
+
+      const finishIfReady = () => {
+        if (settled || !sshClosed || !writeFinished) {
+          return;
+        }
+
+        const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
+        const result = normalizePrivilegeResult({ stdout: '', stderr, code: exitCode ?? 0 }, privilege);
+
+        if (result.code !== 0) {
+          fail(createPrivilegedTransferError(result, privilege, `提权下载文件失败，退出码 ${result.code}`));
+          return;
+        }
+
+        settled = true;
+        queue.clearActiveDestroy(destroy);
+        queue.completeFile();
+        resolve(file.size);
+      };
+
+      activeConnection.client.exec(command, (error, stream) => {
+        if (error) {
+          fail(error);
+          return;
+        }
+
+        sshStream = stream;
+        writeStream = fs.createWriteStream(file.localPath, { flags: 'w' });
+        queue.setActiveDestroy(destroy);
+
+        stream.on('data', (chunk) => {
+          const buffer = Buffer.from(chunk);
+          transferredForFile += buffer.length;
+          queue.addBytes(buffer.length);
+        });
+        stream.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
+        stream.once('error', fail);
+        writeStream.once('error', fail);
+        writeStream.on('finish', () => {
+          writeFinished = true;
+          finishIfReady();
+        });
+        stream.on('close', (code) => {
+          sshClosed = true;
+          exitCode = code ?? 0;
+          finishIfReady();
+        });
+        stream.pipe(writeStream);
+        stream.end(createPrivilegeStdin(privilege), 'utf8');
+      });
+    });
+  }
+
+  function transferLocalFileToRemoteWithPrivilege(activeConnection, file, queue) {
+    const privilege = getConfiguredPrivilege(activeConnection);
+
+    if (!privilege) {
+      throw new Error('上传失败：当前主机未配置可用的提权方式。');
+    }
+
+    const script = [
+      'remote_path=$1',
+      'parent_dir=$(dirname -- "$remote_path") || exit 1',
+      'base_name=$(basename -- "$remote_path") || exit 1',
+      'if [ ! -d "$parent_dir" ]; then printf "%s\\n" "远程目录不存在。" >&2; exit 40; fi',
+      'if [ "$parent_dir" = "/" ]; then tmp_path="/.${base_name}.shelldesk-upload.$$"; else tmp_path="${parent_dir%/}/.${base_name}.shelldesk-upload.$$"; fi',
+      'cleanup_upload_tmp() { rm -f -- "$tmp_path"; }',
+      'trap cleanup_upload_tmp INT TERM HUP',
+      'cat > "$tmp_path" || { cleanup_upload_tmp; exit 1; }',
+      'mv -f -- "$tmp_path" "$remote_path"',
+    ].join('\n');
+    const command = createPrivilegedShellCommand(script, [file.remotePath], privilege);
+
+    queue.startFile(file.relativePath, file.size);
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let transferredForFile = 0;
+      let exitCode = 0;
+      const stderrChunks = [];
+      let sshStream = null;
+      let readStream = null;
+
+      const destroy = (error) => {
+        if (readStream) {
+          readStream.destroy(error);
+        }
+        if (sshStream) {
+          sshStream.destroy(error);
+        }
+      };
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        queue.clearActiveDestroy(destroy);
+        queue.rollbackBytes(transferredForFile);
+        destroy();
+        reject(error);
+      };
+
+      activeConnection.client.exec(command, (error, stream) => {
+        if (error) {
+          fail(error);
+          return;
+        }
+
+        sshStream = stream;
+        readStream = fs.createReadStream(file.localPath);
+        queue.setActiveDestroy(destroy);
+
+        stream.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
+        stream.once('error', fail);
+        readStream.once('error', fail);
+        readStream.on('data', (chunk) => {
+          transferredForFile += chunk.length;
+          queue.addBytes(chunk.length);
+        });
+        stream.on('close', (code) => {
+          if (settled) {
+            return;
+          }
+
+          exitCode = code ?? 0;
+          const stderr = decodeSshOutputBuffer(Buffer.concat(stderrChunks));
+          const result = normalizePrivilegeResult({ stdout: '', stderr, code: exitCode }, privilege);
+
+          if (result.code !== 0) {
+            fail(createPrivilegedTransferError(result, privilege, `提权上传文件失败，退出码 ${result.code}`));
+            return;
+          }
+
+          settled = true;
+          queue.clearActiveDestroy(destroy);
+          queue.completeFile();
+          resolve(file.size);
+        });
+
+        stream.write(createPrivilegeStdin(privilege), 'utf8');
+        readStream.pipe(stream);
+      });
     });
   }
 
@@ -2571,25 +3395,58 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       let totalFiles = 0;
       let totalItems = 0;
 
-      await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-        createSftpSession(activeConnection.client, async (sftp) => {
-          const plan = await collectRemoteDownloadPlan(sftp, roots, queue);
-          totalBytes = plan.totalBytes;
-          totalFiles = plan.files.length;
-          totalItems = plan.itemCount;
-          queue.setTotals(totalBytes, totalFiles, totalItems);
+      await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+        const privilege = getConfiguredPrivilege(activeConnection);
+        let plan = null;
+        let privilegedPlan = false;
 
-          for (const directory of plan.directories) {
-            queue.assertActive();
-            fs.mkdirSync(directory.localPath, { recursive: true });
-            queue.completeDirectory(directory.relativePath);
+        try {
+          plan = await createSftpSession(activeConnection.client, (sftp) =>
+            collectRemoteDownloadPlan(sftp, roots, queue));
+        } catch (error) {
+          if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !privilege) {
+            throw error;
           }
 
+          plan = await collectRemoteDownloadPlanWithPrivilege(activeConnection, roots, queue);
+          privilegedPlan = true;
+        }
+
+        totalBytes = plan.totalBytes;
+        totalFiles = plan.files.length;
+        totalItems = plan.itemCount;
+        queue.setTotals(totalBytes, totalFiles, totalItems);
+
+        for (const directory of plan.directories) {
+          queue.assertActive();
+          fs.mkdirSync(directory.localPath, { recursive: true });
+          queue.completeDirectory(directory.relativePath);
+        }
+
+        if (privilegedPlan) {
           for (const file of plan.files) {
             queue.assertActive();
-            await transferRemoteFileToLocal(sftp, file, queue);
+            await transferRemoteFileToLocalWithPrivilege(activeConnection, file, queue);
           }
-        }));
+          return;
+        }
+
+        await createSftpSession(activeConnection.client, async (sftp) => {
+          for (const file of plan.files) {
+            queue.assertActive();
+
+            try {
+              await transferRemoteFileToLocal(sftp, file, queue);
+            } catch (error) {
+              if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !privilege) {
+                throw error;
+              }
+
+              await transferRemoteFileToLocalWithPrivilege(activeConnection, file, queue);
+            }
+          }
+        });
+      });
 
       return { size: totalBytes, fileCount: totalFiles, itemCount: totalItems };
     });
@@ -2600,19 +3457,41 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       const plan = collectLocalUploadPlan(localPaths, remoteDirectory, queue);
       queue.setTotals(plan.totalBytes, plan.files.length, plan.itemCount);
 
-      await withActiveConnectionClientRetry(connectionId, (activeConnection) =>
-        createSftpSession(activeConnection.client, async (sftp) => {
+      await withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+        const privilege = getConfiguredPrivilege(activeConnection);
+
+        await createSftpSession(activeConnection.client, async (sftp) => {
           for (const directory of plan.directories) {
             queue.assertActive();
-            await makeSftpDirectory(sftp, directory.remotePath);
+
+            try {
+              await makeSftpDirectory(sftp, directory.remotePath);
+            } catch (error) {
+              if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !privilege) {
+                throw error;
+              }
+
+              await ensureRemoteDirectoryWithPrivilege(activeConnection, directory.remotePath);
+            }
+
             queue.completeDirectory(directory.relativePath);
           }
 
           for (const file of plan.files) {
             queue.assertActive();
-            await transferLocalFileToRemote(sftp, file, queue);
+
+            try {
+              await transferLocalFileToRemote(sftp, file, queue);
+            } catch (error) {
+              if (activeConnection.displayHost.systemType === 'windows' || !isPermissionDeniedError(error) || !privilege) {
+                throw error;
+              }
+
+              await transferLocalFileToRemoteWithPrivilege(activeConnection, file, queue);
+            }
           }
-        }));
+        });
+      });
 
       return {
         remotePath: plan.rootRemotePaths[0],
@@ -2713,9 +3592,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
 
     const result = await dialog.showOpenDialog(senderWindow ?? BrowserWindow.getAllWindows()[0], {
-      properties: ['openFile', 'openDirectory', 'multiSelections'],
-      filters: [{ name: '所有文件', extensions: ['*'] }],
-      title: '选择要上传的文件或文件夹',
+      properties: ['openDirectory', 'multiSelections'],
+      title: '选择要上传的文件夹',
     });
 
     if (result.canceled || !result.filePaths.length) {
@@ -2747,13 +3625,30 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       : '';
     const options = readFilePrivilegeOptions(rawOptions);
 
-    return withActiveConnectionClientRetry(connectionId, (activeConnection) => {
-      if (options.sudoPassword && activeConnection.displayHost.systemType !== 'windows') {
-        return execRemoteCommandRaw(
+    return withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      const privilege = getConfiguredPrivilege(activeConnection, options);
+
+      if (privilege?.mode === 'sudo') {
+        const result = await execRemoteCommandRaw(
           activeConnection.client,
           createSudoVerifiedUserCommand(command),
-          `${options.sudoPassword}\n${stdin}`,
+          createPrivilegeStdin(privilege, stdin),
         );
+        assertPrivilegeResult(result, privilege);
+        return result;
+      }
+
+      if (privilege?.mode === 'su-root') {
+        const result = normalizePrivilegeResult(
+          await execRemoteCommandRaw(
+            activeConnection.client,
+            createSuRootVerifiedUserCommand(command),
+            createPrivilegeStdin(privilege, stdin),
+          ),
+          privilege,
+        );
+        assertPrivilegeResult(result, privilege);
+        return result;
       }
 
       return execRemoteCommandRaw(activeConnection.client, command, stdin);
@@ -2768,15 +3663,34 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const streamId = readBoundedString(rawStreamId, '命令流标识', 120);
     const options = readFilePrivilegeOptions(rawOptions);
 
-    return withActiveConnectionClientRetry(connectionId, (activeConnection) => {
-      if (options.sudoPassword && activeConnection.displayHost.systemType !== 'windows') {
-        return execRemoteCommandStream(
+    return withActiveConnectionClientRetry(connectionId, async (activeConnection) => {
+      const privilege = getConfiguredPrivilege(activeConnection, options);
+
+      if (privilege?.mode === 'sudo') {
+        const result = await execRemoteCommandStream(
           event,
           activeConnection.client,
           createSudoVerifiedUserCommand(command),
-          `${options.sudoPassword}\n${stdin}`,
+          createPrivilegeStdin(privilege, stdin),
           streamId,
         );
+        assertPrivilegeResult(result, privilege);
+        return result;
+      }
+
+      if (privilege?.mode === 'su-root') {
+        const result = normalizePrivilegeResult(
+          await execRemoteCommandStream(
+            event,
+            activeConnection.client,
+            createSuRootVerifiedUserCommand(command),
+            createPrivilegeStdin(privilege, stdin),
+            streamId,
+          ),
+          privilege,
+        );
+        assertPrivilegeResult(result, privilege);
+        return result;
       }
 
       return execRemoteCommandStream(event, activeConnection.client, command, stdin, streamId);
