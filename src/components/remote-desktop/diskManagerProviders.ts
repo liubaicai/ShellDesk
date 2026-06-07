@@ -114,15 +114,21 @@ export type WindowsFormatFileSystem = 'NTFS' | 'ReFS' | 'exFAT' | 'FAT32';
 
 const lsblkMarker = '__SHELLDESK_DISK_LSBLK__';
 const findmntMarker = '__SHELLDESK_DISK_FINDMNT__';
+const procMountsMarker = '__SHELLDESK_DISK_PROC_MOUNTS__';
+const sysBlockMarker = '__SHELLDESK_DISK_SYS_BLOCK__';
 const pvsMarker = '__SHELLDESK_DISK_LVM_PVS__';
 const vgsMarker = '__SHELLDESK_DISK_LVM_VGS__';
 const lvsMarker = '__SHELLDESK_DISK_LVM_LVS__';
+const diagnosticsMarker = '__SHELLDESK_DISK_DIAGNOSTICS__';
 const diskManagerSectionMarkers = [
   lsblkMarker,
   findmntMarker,
+  procMountsMarker,
+  sysBlockMarker,
   pvsMarker,
   vgsMarker,
   lvsMarker,
+  diagnosticsMarker,
 ];
 
 function shellSingleQuote(value: string) {
@@ -231,8 +237,12 @@ function parseJsonObject(text: string): Record<string, unknown> {
     return {};
   }
 
-  const parsedValue = JSON.parse(trimmedText) as unknown;
-  return toRecord(parsedValue) ?? {};
+  try {
+    const parsedValue = JSON.parse(trimmedText) as unknown;
+    return toRecord(parsedValue) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 function collectMarkedSections(stdout: string) {
@@ -266,6 +276,10 @@ function collectMarkedSections(stdout: string) {
 function parseUsePercent(value: string) {
   const parsedValue = Number.parseFloat(value.replace('%', ''));
   return Number.isFinite(parsedValue) ? Math.min(Math.max(parsedValue, 0), 100) : 0;
+}
+
+function decodeProcMountValue(value: string) {
+  return value.replace(/\\([0-7]{3})/g, (_, octalValue: string) => String.fromCharCode(Number.parseInt(octalValue, 8)));
 }
 
 function parseMountPointArray(record: Record<string, unknown>) {
@@ -314,6 +328,38 @@ function parseLinuxMounts(findmntText: string): ManagedMount[] {
 
   filesystems.forEach(visit);
   return mounts;
+}
+
+function parseProcMounts(procMountsText: string): ManagedMount[] {
+  return procMountsText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [source = '', target = '', fsType = '', options = ''] = line.split(/\s+/);
+      const decodedSource = decodeProcMountValue(source);
+      const decodedTarget = decodeProcMountValue(target);
+
+      if (!decodedSource || !decodedTarget) {
+        return null;
+      }
+
+      return {
+        id: `${decodedSource}:${decodedTarget}`,
+        source: decodedSource,
+        target: decodedTarget,
+        fsType: fsType || '-',
+        sizeBytes: 0,
+        usedBytes: 0,
+        availableBytes: 0,
+        sizeText: '0 B',
+        usedText: '0 B',
+        availableText: '0 B',
+        usePercent: 0,
+        options,
+      } satisfies ManagedMount;
+    })
+    .filter((mount): mount is ManagedMount => Boolean(mount));
 }
 
 function parseLinuxBlockDevices(lsblkText: string, mounts: ManagedMount[]) {
@@ -401,6 +447,170 @@ function parseLinuxBlockDevices(lsblkText: string, mounts: ManagedMount[]) {
   };
 }
 
+function parseSysBlockDevices(sysBlockText: string, mounts: ManagedMount[]) {
+  const disks = new Map<string, ManagedDisk>();
+  const partitions = new Map<string, ManagedPartition>();
+
+  for (const line of sysBlockText.split(/\r?\n/)) {
+    const parts = line.split('\t');
+    const kind = parts[0];
+
+    if (kind === 'DISK') {
+      const [, name = '', path = '', size = '', model = '', serial = '', rotational = '', removable = '', readOnly = '', state = '', transport = ''] = parts;
+      const id = path || (name ? `/dev/${name}` : '');
+
+      if (!id) {
+        continue;
+      }
+
+      const sizeBytes = parseNumericValue(size);
+      disks.set(id, {
+        id,
+        name: name || path,
+        path: path || id,
+        model: model || '-',
+        serial: serial || '-',
+        sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+        sizeText: formatDiskBytes(sizeBytes),
+        type: 'disk',
+        transport: transport || '-',
+        state: state || '-',
+        partitionStyle: '-',
+        rotational: rotational === '1',
+        removable: removable === '1',
+        readOnly: readOnly === '1',
+        partitionIds: [],
+      });
+      continue;
+    }
+
+    if (kind !== 'PART') {
+      continue;
+    }
+
+    const [, name = '', path = '', parentPath = '', size = '', readOnly = ''] = parts;
+    const id = path || (name ? `/dev/${name}` : '');
+    const diskId = parentPath;
+
+    if (!id || !diskId) {
+      continue;
+    }
+
+    const matchedMounts = mounts.filter((mount) => mount.source === path || mount.source === name || mount.source.endsWith(`/${name}`));
+    const mountPoints = Array.from(new Set(matchedMounts.map((mount) => mount.target).filter(Boolean)));
+    const sizeBytes = parseNumericValue(size);
+    const partition: ManagedPartition = {
+      id,
+      diskId,
+      name: name || path,
+      path: path || id,
+      device: path || id,
+      type: 'part',
+      partType: '',
+      fsType: matchedMounts[0]?.fsType || '-',
+      label: '',
+      uuid: '',
+      sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+      sizeText: formatDiskBytes(sizeBytes),
+      mountPoints,
+      isMounted: mountPoints.length > 0,
+      driveLetter: '',
+      accessPaths: mountPoints,
+      readOnly: readOnly === '1',
+    };
+
+    partitions.set(id, partition);
+
+    const parentDisk = disks.get(diskId);
+    if (parentDisk && !parentDisk.partitionIds.includes(id)) {
+      parentDisk.partitionIds.push(id);
+    }
+  }
+
+  return {
+    disks: Array.from(disks.values()),
+    partitions: Array.from(partitions.values()),
+  };
+}
+
+type LinuxDiskCommandState = 'ok' | 'missing' | 'error';
+
+interface LinuxDiskCommandDiagnostic {
+  status: LinuxDiskCommandState;
+  path: string;
+  message: string;
+}
+
+function parseLinuxDiskDiagnostics(diagnosticsText: string) {
+  const commands = new Map<string, LinuxDiskCommandDiagnostic>();
+
+  for (const line of diagnosticsText.split(/\r?\n/)) {
+    const [kind, name = '', status = '', path = '', message = ''] = line.split('\t');
+
+    if (kind !== 'CMD' || !name) {
+      continue;
+    }
+
+    commands.set(name, {
+      status: status === 'ok' || status === 'error' ? status : 'missing',
+      path,
+      message,
+    });
+  }
+
+  return commands;
+}
+
+function getLinuxCommandStatus(commands: Map<string, LinuxDiskCommandDiagnostic>, name: string) {
+  return commands.get(name)?.status ?? 'missing';
+}
+
+function buildLinuxDiskNotice(
+  diagnostics: Map<string, LinuxDiskCommandDiagnostic>,
+  disks: ManagedDisk[],
+  mounts: ManagedMount[],
+  stderr: string,
+) {
+  if (diagnostics.size === 0) {
+    return stderr.trim();
+  }
+
+  const notices = [stderr.trim()].filter(Boolean);
+  const lsblkStatus = getLinuxCommandStatus(diagnostics, 'lsblk');
+  const findmntStatus = getLinuxCommandStatus(diagnostics, 'findmnt');
+  const lvmMissing = ['pvs', 'vgs', 'lvs'].some((command) => getLinuxCommandStatus(diagnostics, command) === 'missing');
+  const partedMissing = ['parted', 'partprobe'].some((command) => getLinuxCommandStatus(diagnostics, command) === 'missing');
+
+  if (lsblkStatus === 'missing') {
+    notices.push(disks.length
+      ? '未检测到 lsblk，已使用 /sys/block 兜底读取基础磁盘信息；建议安装 util-linux（Alpine: apk add util-linux）以获得完整分区、文件系统和设备属性。'
+      : '未检测到 lsblk，且 /sys/block 未返回可管理磁盘；请安装 util-linux 后重试（Alpine: apk add util-linux）。');
+  } else if (lsblkStatus === 'error') {
+    const message = diagnostics.get('lsblk')?.message;
+    notices.push(`lsblk JSON 输出失败，已尝试 /sys/block 兜底；建议确认 util-linux 的 lsblk 可用${message ? `：${message}` : '。'}`);
+  } else if (disks.length === 0) {
+    notices.push('lsblk 未返回可管理磁盘；如果远端运行在容器、受限 chroot 或缺少 /sys/block 访问权限，磁盘管理可能无法读取物理磁盘。');
+  }
+
+  if (findmntStatus === 'missing') {
+    notices.push(mounts.length
+      ? '未检测到 findmnt，挂载点信息已使用 /proc/mounts 兜底；容量使用率可能不完整。可安装 util-linux（Alpine: apk add util-linux）。'
+      : '未检测到 findmnt，挂载点列表不可用；可安装 util-linux（Alpine: apk add util-linux）。');
+  } else if (findmntStatus === 'error') {
+    notices.push('findmnt JSON 输出失败，挂载点信息已尝试使用 /proc/mounts 兜底。');
+  }
+
+  if (lvmMissing) {
+    notices.push('未检测到完整 LVM 命令（pvs/vgs/lvs），LVM 列表不可用；如需 LVM 管理，请安装 lvm2（Alpine: apk add lvm2）。');
+  }
+
+  if (partedMissing) {
+    notices.push('分区创建/删除需要 parted 和 partprobe；如需使用分区操作，请安装 parted（Alpine: apk add parted）。');
+  }
+
+  return Array.from(new Set(notices)).join('\n');
+}
+
 function parseLvmReportArray(text: string, key: string) {
   const root = parseJsonObject(text);
   const reports = asArray(root.report);
@@ -471,8 +681,16 @@ function parseLinuxLvm(pvsText: string, vgsText: string, lvsText: string): LvmSn
 
 export function parseLinuxDiskManagerSnapshot(stdout: string, stderr = ''): DiskManagerSnapshot {
   const sections = collectMarkedSections(stdout);
-  const mounts = parseLinuxMounts(sections.get(findmntMarker) ?? '');
-  const { disks, partitions } = parseLinuxBlockDevices(sections.get(lsblkMarker) ?? '', mounts);
+  const diagnostics = parseLinuxDiskDiagnostics(sections.get(diagnosticsMarker) ?? '');
+  const findmntMounts = parseLinuxMounts(sections.get(findmntMarker) ?? '');
+  const procMounts = parseProcMounts(sections.get(procMountsMarker) ?? '');
+  const mounts = findmntMounts.length ? findmntMounts : procMounts;
+  let { disks, partitions } = parseLinuxBlockDevices(sections.get(lsblkMarker) ?? '', mounts);
+
+  if (disks.length === 0) {
+    ({ disks, partitions } = parseSysBlockDevices(sections.get(sysBlockMarker) ?? '', mounts));
+  }
+
   const lvm = parseLinuxLvm(
     sections.get(pvsMarker) ?? '',
     sections.get(vgsMarker) ?? '',
@@ -486,7 +704,7 @@ export function parseLinuxDiskManagerSnapshot(stdout: string, stderr = ''): Disk
     mounts,
     lvm,
     rawOutput: stdout,
-    notice: stderr.trim(),
+    notice: buildLinuxDiskNotice(diagnostics, disks, mounts, stderr),
   };
 }
 
@@ -676,18 +894,190 @@ $volumes = @(Get-Volume -ErrorAction SilentlyContinue | ForEach-Object {
   }
 
   return {
-    command: [
-      `printf '%s\\n' ${shellSingleQuote(lsblkMarker)}`,
-      "lsblk -J -b -o NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,UUID,MODEL,SERIAL,ROTA,RM,RO,TRAN,STATE,PARTTYPE 2>/dev/null || printf '%s\\n' '{\"blockdevices\":[]}'",
-      `printf '%s\\n' ${shellSingleQuote(findmntMarker)}`,
-      "findmnt -J -b -o TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,OPTIONS 2>/dev/null || printf '%s\\n' '{\"filesystems\":[]}'",
-      `printf '%s\\n' ${shellSingleQuote(pvsMarker)}`,
-      "if command -v pvs >/dev/null 2>&1; then pvs --reportformat json --units b --nosuffix -o pv_name,vg_name,pv_size,pv_free,pv_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"pv\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"pv\":[]}]}'; fi",
-      `printf '%s\\n' ${shellSingleQuote(vgsMarker)}`,
-      "if command -v vgs >/dev/null 2>&1; then vgs --reportformat json --units b --nosuffix -o vg_name,pv_count,lv_count,vg_size,vg_free,vg_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"vg\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"vg\":[]}]}'; fi",
-      `printf '%s\\n' ${shellSingleQuote(lvsMarker)}`,
-      "if command -v lvs >/dev/null 2>&1; then lvs --reportformat json --units b --nosuffix -o lv_name,vg_name,lv_path,lv_size,lv_attr 2>/dev/null || printf '%s\\n' '{\"report\":[{\"lv\":[]}]}'; else printf '%s\\n' '{\"report\":[{\"lv\":[]}]}'; fi",
-    ].join('; '),
+    command: `
+sanitize_disk_field() {
+  printf '%s' "$1" | tr '\\011\\012\\015' '   '
+}
+read_disk_sys_value() {
+  if [ -r "$1" ]; then
+    sed -n '1p' "$1" 2>/dev/null | tr '\\011\\012\\015' '   '
+  fi
+}
+guess_disk_transport() {
+  case "$1" in
+    nvme*) printf 'nvme' ;;
+    vd*) printf 'virtio' ;;
+    xvd*) printf 'xen' ;;
+    sd*) printf 'scsi' ;;
+    mmcblk*) printf 'mmc' ;;
+    dm-*) printf 'device-mapper' ;;
+    *) printf '' ;;
+  esac
+}
+
+lsblk_output='{"blockdevices":[]}'
+lsblk_status='missing'
+lsblk_path=''
+lsblk_error=''
+if lsblk_path="$(command -v lsblk 2>/dev/null)"; then
+  lsblk_status='error'
+  lsblk_raw="$(lsblk -J -b -o NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,UUID,MODEL,SERIAL,ROTA,RM,RO,TRAN,STATE,PARTTYPE 2>&1)"
+  if [ "$?" = "0" ]; then
+    case "$lsblk_raw" in
+      *'"blockdevices"'*) lsblk_status='ok'; lsblk_output="$lsblk_raw" ;;
+      *) lsblk_error="$lsblk_raw" ;;
+    esac
+  else
+    lsblk_error="$lsblk_raw"
+    lsblk_raw="$(lsblk -J -b -o NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,UUID,MODEL,SERIAL,ROTA,RM,RO,TRAN,STATE 2>&1)"
+    if [ "$?" = "0" ]; then
+      case "$lsblk_raw" in
+        *'"blockdevices"'*) lsblk_status='ok'; lsblk_output="$lsblk_raw"; lsblk_error='' ;;
+        *) lsblk_error="$lsblk_raw" ;;
+      esac
+    fi
+  fi
+fi
+
+findmnt_output='{"filesystems":[]}'
+findmnt_status='missing'
+findmnt_path=''
+findmnt_error=''
+if findmnt_path="$(command -v findmnt 2>/dev/null)"; then
+  findmnt_status='error'
+  findmnt_raw="$(findmnt -J -b -o TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,OPTIONS 2>&1)"
+  if [ "$?" = "0" ]; then
+    case "$findmnt_raw" in
+      *'"filesystems"'*) findmnt_status='ok'; findmnt_output="$findmnt_raw" ;;
+      *) findmnt_error="$findmnt_raw" ;;
+    esac
+  else
+    findmnt_error="$findmnt_raw"
+  fi
+fi
+
+pvs_output='{"report":[{"pv":[]}]}'
+pvs_status='missing'
+pvs_path=''
+pvs_error=''
+if pvs_path="$(command -v pvs 2>/dev/null)"; then
+  pvs_status='error'
+  pvs_raw="$(pvs --reportformat json --units b --nosuffix -o pv_name,vg_name,pv_size,pv_free,pv_attr 2>&1)"
+  if [ "$?" = "0" ]; then
+    case "$pvs_raw" in
+      *'"report"'*) pvs_status='ok'; pvs_output="$pvs_raw" ;;
+      *) pvs_error="$pvs_raw" ;;
+    esac
+  else
+    pvs_error="$pvs_raw"
+  fi
+fi
+
+vgs_output='{"report":[{"vg":[]}]}'
+vgs_status='missing'
+vgs_path=''
+vgs_error=''
+if vgs_path="$(command -v vgs 2>/dev/null)"; then
+  vgs_status='error'
+  vgs_raw="$(vgs --reportformat json --units b --nosuffix -o vg_name,pv_count,lv_count,vg_size,vg_free,vg_attr 2>&1)"
+  if [ "$?" = "0" ]; then
+    case "$vgs_raw" in
+      *'"report"'*) vgs_status='ok'; vgs_output="$vgs_raw" ;;
+      *) vgs_error="$vgs_raw" ;;
+    esac
+  else
+    vgs_error="$vgs_raw"
+  fi
+fi
+
+lvs_output='{"report":[{"lv":[]}]}'
+lvs_status='missing'
+lvs_path=''
+lvs_error=''
+if lvs_path="$(command -v lvs 2>/dev/null)"; then
+  lvs_status='error'
+  lvs_raw="$(lvs --reportformat json --units b --nosuffix -o lv_name,vg_name,lv_path,lv_size,lv_attr 2>&1)"
+  if [ "$?" = "0" ]; then
+    case "$lvs_raw" in
+      *'"report"'*) lvs_status='ok'; lvs_output="$lvs_raw" ;;
+      *) lvs_error="$lvs_raw" ;;
+    esac
+  else
+    lvs_error="$lvs_raw"
+  fi
+fi
+
+parted_status='missing'
+parted_path=''
+if parted_path="$(command -v parted 2>/dev/null)"; then
+  parted_status='ok'
+fi
+partprobe_status='missing'
+partprobe_path=''
+if partprobe_path="$(command -v partprobe 2>/dev/null)"; then
+  partprobe_status='ok'
+fi
+
+printf '%s\\n' ${shellSingleQuote(diagnosticsMarker)}
+printf 'CMD\\tlsblk\\t%s\\t%s\\t%s\\n' "$lsblk_status" "$(sanitize_disk_field "$lsblk_path")" "$(sanitize_disk_field "$lsblk_error")"
+printf 'CMD\\tfindmnt\\t%s\\t%s\\t%s\\n' "$findmnt_status" "$(sanitize_disk_field "$findmnt_path")" "$(sanitize_disk_field "$findmnt_error")"
+printf 'CMD\\tpvs\\t%s\\t%s\\t%s\\n' "$pvs_status" "$(sanitize_disk_field "$pvs_path")" "$(sanitize_disk_field "$pvs_error")"
+printf 'CMD\\tvgs\\t%s\\t%s\\t%s\\n' "$vgs_status" "$(sanitize_disk_field "$vgs_path")" "$(sanitize_disk_field "$vgs_error")"
+printf 'CMD\\tlvs\\t%s\\t%s\\t%s\\n' "$lvs_status" "$(sanitize_disk_field "$lvs_path")" "$(sanitize_disk_field "$lvs_error")"
+printf 'CMD\\tparted\\t%s\\t%s\\t\\n' "$parted_status" "$(sanitize_disk_field "$parted_path")"
+printf 'CMD\\tpartprobe\\t%s\\t%s\\t\\n' "$partprobe_status" "$(sanitize_disk_field "$partprobe_path")"
+
+printf '%s\\n' ${shellSingleQuote(lsblkMarker)}
+printf '%s\\n' "$lsblk_output"
+printf '%s\\n' ${shellSingleQuote(findmntMarker)}
+printf '%s\\n' "$findmnt_output"
+printf '%s\\n' ${shellSingleQuote(procMountsMarker)}
+if [ -r /proc/self/mounts ]; then
+  cat /proc/self/mounts
+elif [ -r /proc/mounts ]; then
+  cat /proc/mounts
+fi
+printf '%s\\n' ${shellSingleQuote(sysBlockMarker)}
+if [ -d /sys/block ]; then
+  for disk_dir in /sys/block/*; do
+    [ -d "$disk_dir" ] || continue
+    disk_name="\${disk_dir##*/}"
+    case "$disk_name" in
+      loop*|ram*|fd*|zram*) continue ;;
+    esac
+    disk_sectors="$(read_disk_sys_value "$disk_dir/size")"
+    case "$disk_sectors" in ''|*[!0-9]*) disk_sectors=0 ;; esac
+    disk_size_bytes=$((disk_sectors * 512))
+    disk_path="/dev/$disk_name"
+    disk_model="$(read_disk_sys_value "$disk_dir/device/model")"
+    disk_vendor="$(read_disk_sys_value "$disk_dir/device/vendor")"
+    if [ -z "$disk_model" ]; then disk_model="$disk_vendor"; fi
+    disk_serial="$(read_disk_sys_value "$disk_dir/device/serial")"
+    disk_rota="$(read_disk_sys_value "$disk_dir/queue/rotational")"
+    disk_rm="$(read_disk_sys_value "$disk_dir/removable")"
+    disk_ro="$(read_disk_sys_value "$disk_dir/ro")"
+    disk_state="$(read_disk_sys_value "$disk_dir/device/state")"
+    disk_tran="$(guess_disk_transport "$disk_name")"
+    printf 'DISK\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$(sanitize_disk_field "$disk_name")" "$(sanitize_disk_field "$disk_path")" "$disk_size_bytes" "$(sanitize_disk_field "$disk_model")" "$(sanitize_disk_field "$disk_serial")" "$(sanitize_disk_field "$disk_rota")" "$(sanitize_disk_field "$disk_rm")" "$(sanitize_disk_field "$disk_ro")" "$(sanitize_disk_field "$disk_state")" "$(sanitize_disk_field "$disk_tran")"
+    for part_dir in "$disk_dir"/"$disk_name"*; do
+      [ -f "$part_dir/partition" ] || continue
+      part_name="\${part_dir##*/}"
+      part_sectors="$(read_disk_sys_value "$part_dir/size")"
+      case "$part_sectors" in ''|*[!0-9]*) part_sectors=0 ;; esac
+      part_size_bytes=$((part_sectors * 512))
+      part_path="/dev/$part_name"
+      part_ro="$(read_disk_sys_value "$part_dir/ro")"
+      printf 'PART\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$(sanitize_disk_field "$part_name")" "$(sanitize_disk_field "$part_path")" "$(sanitize_disk_field "$disk_path")" "$part_size_bytes" "$(sanitize_disk_field "$part_ro")"
+    done
+  done
+fi
+printf '%s\\n' ${shellSingleQuote(pvsMarker)}
+printf '%s\\n' "$pvs_output"
+printf '%s\\n' ${shellSingleQuote(vgsMarker)}
+printf '%s\\n' "$vgs_output"
+printf '%s\\n' ${shellSingleQuote(lvsMarker)}
+printf '%s\\n' "$lvs_output"
+`.trim(),
   };
 }
 

@@ -514,11 +514,15 @@ function parseProcFsLinuxProcessLine(line: string, language: AppLanguage): Remot
 
   const statusText = parts[2] || '';
   const uid = readProcFsStatusValue(statusText, 'uid');
+  const cpuPercent = readNumber(readProcFsStatusValue(statusText, 'cpu'));
+  const memoryPercent = readNumber(readProcFsStatusValue(statusText, 'mem'));
 
   return {
     pid,
     ppid: readInteger(readProcFsStatusValue(statusText, 'ppid')),
     user: uid ? `uid:${uid}` : '-',
+    cpuPercent,
+    memoryPercent,
     vszKb: readInteger(readProcFsStatusValue(statusText, 'vsz')),
     rssKb: readInteger(readProcFsStatusValue(statusText, 'rss')),
     tty: '-',
@@ -670,14 +674,14 @@ if [ -n "$output" ]; then
     BEGIN { OFS = "\\t"; count = 0 }
     /^[[:space:]]*USER[[:space:]]+PID[[:space:]]+/ { next }
     {
-      if ($1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/) {
+      if ($1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $4 ~ /^[0-9.]+$/ && $5 ~ /^[0-9.]+$/) {
         command = ""
         for (i = 13; i <= NF; i++) command = command (i == 13 ? "" : " ") $i
         print "PROC", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, command
         count += 1
         next
       }
-      if ($2 ~ /^[0-9]+$/) {
+      if ($2 ~ /^[0-9]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9.]+$/) {
         command = ""
         for (i = 11; i <= NF; i++) command = command (i == 11 ? "" : " ") $i
         print "PROC", $2, "", $1, $3, $4, $5, $6, $7, $8, $9, "", $10, command
@@ -691,10 +695,43 @@ if [ -n "$output" ]; then
 fi
 
 if [ -d /proc ]; then
+  mem_total_kb="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo 2>/dev/null)"
+  case "$mem_total_kb" in ''|*[!0-9]*) mem_total_kb=0 ;; esac
+  uptime_seconds="$(awk '{ print $1; exit }' /proc/uptime 2>/dev/null)"
+  clk_tck="$(getconf CLK_TCK 2>/dev/null || printf '100')"
+  page_size_bytes="$(getconf PAGESIZE 2>/dev/null || getconf PAGE_SIZE 2>/dev/null || printf '4096')"
+  case "$clk_tck" in ''|*[!0-9]*) clk_tck=100 ;; esac
+  case "$page_size_bytes" in ''|*[!0-9]*) page_size_bytes=4096 ;; esac
+  page_size_kb=$((page_size_bytes / 1024))
+  [ "$page_size_kb" -gt 0 ] || page_size_kb=4
   count=0
   for d in /proc/[0-9]*; do
     [ -d "$d" ] || continue
     pid="\${d##*/}"
+    stat_line=""
+    [ -r "$d/stat" ] && stat_line="$(cat "$d/stat" 2>/dev/null || true)"
+    stat_values=""
+    if [ -n "$stat_line" ]; then
+      stat_values="$(printf '%s\\n' "$stat_line" | sed 's/^.*) //' | awk -v uptime="$uptime_seconds" -v hz="$clk_tck" -v page_kb="$page_size_kb" -v mem_total="$mem_total_kb" '
+        {
+          utime = $12 + 0
+          stime = $13 + 0
+          start_ticks = $20 + 0
+          rss_pages = $22 + 0
+          cpu = "-"
+          mem = "-"
+          rss_from_stat = rss_pages * page_kb
+          if (uptime > 0 && hz > 0 && start_ticks > 0) {
+            elapsed = uptime - (start_ticks / hz)
+            if (elapsed > 0) cpu = sprintf("%.2f", ((utime + stime) / hz) / elapsed * 100)
+          }
+          if (mem_total > 0 && rss_from_stat > 0) {
+            mem = sprintf("%.2f", rss_from_stat / mem_total * 100)
+          }
+          printf " cpu=%s mem=%s rss_stat=%s", cpu, mem, rss_from_stat
+        }
+      ' 2>/dev/null || true)"
+    fi
     status="$(awk '
       /^PPid:/ { ppid = $2 }
       /^Uid:/ { uid = $2 }
@@ -711,6 +748,7 @@ if [ -d /proc ]; then
       }
     ' "$d/status" 2>/dev/null || true)"
     [ -n "$status" ] || continue
+    status="\${status}\${stat_values}"
 
     command=""
     if [ -r "$d/cmdline" ]; then

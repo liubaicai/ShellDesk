@@ -3,7 +3,7 @@
 ## 测试方式
 
 - 云厂商 / 虚拟化平台：
-- 镜像：Red Hat Enterprise Linux 9.7 (Plow)
+- 镜像：
 - CPU型号: 
 - CPU / 内存：
 - 用户：

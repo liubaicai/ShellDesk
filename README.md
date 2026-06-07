@@ -170,8 +170,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 | Pop!_OS |  |  |
 | Kali Linux |  |  |
 | Raspberry Pi OS 12 Bookworm |  |  |
-| Alpine Linux 3.23 |  |  |
-| Alpine Linux 3.22 |  |  |
+| Alpine Linux 3.23 | ⚠️ | [Report](docs/system-compatibility-reports/alpine323.md) |
 | Windows Server 2022 |  |  |
 | Windows Server 2019 |  |  |
 | Windows Server 2016 |  |  |

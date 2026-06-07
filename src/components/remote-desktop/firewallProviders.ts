@@ -42,6 +42,19 @@ function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function withLinuxFirewallPrivilege(command: string) {
+  return `run_shelldesk_privileged() {
+  if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -n "$@"
+  else
+    "$@"
+  fi
+}
+${command}`;
+}
+
 function readString(record: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -542,12 +555,12 @@ export function createFirewallAddRuleCommand(backend: FirewallBackend, draft: Fi
     const actionPart = draft.action === 'deny' || draft.action === 'reject'
       ? `prepend ${draft.action}`
       : draft.action;
-    return `sudo -n ufw ${actionPart} ${sourcePart}`;
+    return withLinuxFirewallPrivilege(`run_shelldesk_privileged ufw ${actionPart} ${sourcePart}`);
   }
 
   if (backend === 'firewalld') {
     const targetZone = zone || 'public';
-    return `sudo -n firewall-cmd --zone=${shellSingleQuote(targetZone)} --add-port=${shellSingleQuote(`${port}/${protocol}`)} --permanent && sudo -n firewall-cmd --reload`;
+    return withLinuxFirewallPrivilege(`run_shelldesk_privileged firewall-cmd --zone=${shellSingleQuote(targetZone)} --add-port=${shellSingleQuote(`${port}/${protocol}`)} --permanent && run_shelldesk_privileged firewall-cmd --reload`);
   }
 
   if (backend === 'windows') {
@@ -636,9 +649,9 @@ export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: 
   if (backend === 'ufw') {
     const number = rule.id.match(/^ufw:(\d+)$/)?.[1];
 
-    return number
-      ? `sudo -n ufw --force delete ${number}`
-      : `sudo -n ufw --force delete ${createUfwRuleDeleteSpec(rule)}`;
+    return withLinuxFirewallPrivilege(number
+      ? `run_shelldesk_privileged ufw --force delete ${number}`
+      : `run_shelldesk_privileged ufw --force delete ${createUfwRuleDeleteSpec(rule)}`);
   }
 
   if (backend === 'firewalld') {
@@ -647,7 +660,7 @@ export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: 
     }
 
     const targetZone = zone || 'public';
-    return `sudo -n firewall-cmd --zone=${shellSingleQuote(targetZone)} --remove-port=${shellSingleQuote(`${rule.port}/${rule.protocol}`)} --permanent && sudo -n firewall-cmd --reload`;
+    return withLinuxFirewallPrivilege(`run_shelldesk_privileged firewall-cmd --zone=${shellSingleQuote(targetZone)} --remove-port=${shellSingleQuote(`${rule.port}/${rule.protocol}`)} --permanent && run_shelldesk_privileged firewall-cmd --reload`);
   }
 
   if (backend === 'windows') {
@@ -659,21 +672,37 @@ export function createFirewallDeleteRuleCommand(backend: FirewallBackend, rule: 
 }
 
 export function createFirewallReloadCommand(backend: FirewallBackend) {
-  if (backend === 'ufw') return 'sudo -n ufw reload';
-  if (backend === 'firewalld') return 'sudo -n firewall-cmd --reload';
+  if (backend === 'ufw') return withLinuxFirewallPrivilege('run_shelldesk_privileged ufw reload');
+  if (backend === 'firewalld') return withLinuxFirewallPrivilege('run_shelldesk_privileged firewall-cmd --reload');
   if (backend === 'windows') return powershellCommand('Get-NetFirewallProfile | Format-Table -AutoSize | Out-String');
   throw new Error(tCurrent('auto.firewallProviders.vl06p0'));
 }
 
 export function createFirewallSetEnabledCommand(backend: FirewallBackend, enabled: boolean) {
   if (backend === 'ufw') {
-    return enabled ? 'sudo -n ufw --force enable' : 'sudo -n ufw disable';
+    return withLinuxFirewallPrivilege(enabled
+      ? 'run_shelldesk_privileged ufw --force enable'
+      : 'run_shelldesk_privileged ufw disable');
   }
 
   if (backend === 'firewalld') {
-    return enabled
-      ? tCurrent('auto.firewallProviders.rizhvl')
-      : tCurrent('auto.firewallProviders.zbzxdl');
+    return withLinuxFirewallPrivilege(enabled
+      ? `if command -v systemctl >/dev/null 2>&1; then
+  run_shelldesk_privileged systemctl enable --now firewalld
+elif command -v service >/dev/null 2>&1; then
+  run_shelldesk_privileged service firewalld start
+else
+  printf '未检测到 systemctl 或 service，无法启用 firewalld。\\n' >&2
+  exit 1
+fi`
+      : `if command -v systemctl >/dev/null 2>&1; then
+  run_shelldesk_privileged systemctl disable --now firewalld
+elif command -v service >/dev/null 2>&1; then
+  run_shelldesk_privileged service firewalld stop
+else
+  printf '未检测到 systemctl 或 service，无法停用 firewalld。\\n' >&2
+  exit 1
+fi`);
   }
 
   throw new Error(tCurrent('auto.firewallProviders.1w7t573'));

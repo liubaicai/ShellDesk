@@ -6,6 +6,7 @@ import { tCurrent } from '../../i18n';
 
 const defaultBrowserUrl = 'http://127.0.0.1/';
 const browserBlankUrl = 'about:blank';
+const browserStartAddress = '';
 const browserStartPageTitle = tCurrent('auto.remoteBrowser.z0eh12');
 const recentVisitLimit = 8;
 const browserStartPageCardLimit = 6;
@@ -495,24 +496,86 @@ function getBrowserStartProbePorts(cards: BrowserStartPageCard[]) {
   return [...ports].sort((left, right) => left - right);
 }
 
-function buildBrowserStartLsofCommand(ports: number[]) {
-  const portArgs = ports.map((port) => String(port)).join(' ');
+function buildBrowserStartPortProbeCommand(ports: number[]) {
+  const portArgs = ports
+    .filter((port) => Number.isInteger(port) && port >= 1 && port <= 65535)
+    .map((port) => String(port))
+    .join(' ');
+
+  if (!portArgs) {
+    return 'exit 0';
+  }
 
   return `
-if ! command -v lsof >/dev/null 2>&1; then
-  printf '%s\\n' '__SHELLDESK_LSOF_MISSING__'
-  exit 0
-fi
+shelldesk_has_tcp_listener() {
+  probe_port="$1"
+  case "$probe_port" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  if [ "$probe_port" -lt 1 ] || [ "$probe_port" -gt 65535 ]; then
+    return 1
+  fi
+
+  probe_hex=$(printf '%04X' "$probe_port" 2>/dev/null || true)
+  if [ -n "$probe_hex" ]; then
+    for probe_file in /proc/net/tcp /proc/net/tcp6; do
+      if [ -r "$probe_file" ] && awk -v port="$probe_hex" '
+        NR > 1 && $4 == "0A" {
+          split($2, local, ":")
+          if (toupper(local[2]) == port) found = 1
+        }
+        END { exit found ? 0 : 1 }
+      ' "$probe_file" 2>/dev/null; then
+        return 0
+      fi
+    done
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    if (ss -H -ltn 2>/dev/null || ss -ltn 2>/dev/null) | awk -v port="$probe_port" '
+      /LISTEN/ {
+        local_index = ($1 ~ /^(tcp|tcp6)$/) ? 5 : 4
+        value = $local_index
+        gsub(/^\\[/, "", value)
+        n = split(value, parts, ":")
+        endpoint_port = parts[n]
+        gsub(/[^0-9].*$/, "", endpoint_port)
+        if (endpoint_port == port) found = 1
+      }
+      END { exit found ? 0 : 1 }
+    '; then
+      return 0
+    fi
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    if (netstat -ltn 2>/dev/null || netstat -tnl 2>/dev/null) | awk -v port="$probe_port" '
+      /^[Tt][Cc][Pp]/ && /LISTEN/ {
+        n = split($4, parts, ":")
+        endpoint_port = parts[n]
+        gsub(/[^0-9].*$/, "", endpoint_port)
+        if (endpoint_port == port) found = 1
+      }
+      END { exit found ? 0 : 1 }
+    '; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
 
 for port in ${portArgs}; do
-  if lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { found = 1 } END { exit found ? 0 : 1 }'; then
+  if shelldesk_has_tcp_listener "$port"; then
     printf 'OPEN\\t%s\\n' "$port"
+  else
+    printf 'CLOSED\\t%s\\n' "$port"
   fi
 done
 `;
 }
 
-function getOpenPortsFromLsofOutput(output: string) {
+function getOpenPortsFromProbeOutput(output: string) {
   const openPorts = new Set<number>();
 
   for (const line of output.split(/\r?\n/)) {
@@ -671,7 +734,7 @@ function BrowserIcon({ name, filled = false }: { name: BrowserIconName; filled?:
 }
 
 function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChromeChange }: RemoteBrowserProps) {
-  const [browserAddress, setBrowserAddress] = useState(browserBlankUrl);
+  const [browserAddress, setBrowserAddress] = useState(browserStartAddress);
   const [browserSrc, setBrowserSrc] = useState(browserBlankUrl);
   const [currentUrl, setCurrentUrl] = useState(browserBlankUrl);
   const [pageTitle, setPageTitle] = useState(browserStartPageTitle);
@@ -762,7 +825,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       isStartPageRef.current = true;
       setShowStartPage(true);
       setCurrentUrl(browserBlankUrl);
-      setBrowserAddress(browserBlankUrl);
+      setBrowserAddress(browserStartAddress);
       setPageTitle(browserStartPageTitle);
       setCanGoBack(nextCanGoBack);
       setCanGoForward(nextCanGoForward);
@@ -920,13 +983,13 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       };
     }
 
-    void runCommand(connectionId, buildBrowserStartLsofCommand(ports)).then((result) => {
+    void runCommand(connectionId, buildBrowserStartPortProbeCommand(ports)).then((result) => {
       if (disposed) {
         return;
       }
 
-      const openPorts = result.code === 0 && !result.stdout.includes('__SHELLDESK_LSOF_MISSING__')
-        ? getOpenPortsFromLsofOutput(result.stdout)
+      const openPorts = result.code === 0
+        ? getOpenPortsFromProbeOutput(result.stdout)
         : new Set<number>();
       const nextStatus: Record<number, 'unknown' | 'open' | 'closed'> = {};
 
@@ -1298,7 +1361,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
     setLoadError(null);
     setIsLoading(false);
     setIsQuickPanelOpen(false);
-    setBrowserAddress(browserBlankUrl);
+    setBrowserAddress(browserStartAddress);
     setCurrentUrl(browserBlankUrl);
     setPageTitle(browserStartPageTitle);
     setCanGoBack(false);

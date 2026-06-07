@@ -170,8 +170,7 @@ ShellDesk 的本地数据存放在 Electron 用户数据目录中，设置页会
 | Pop!_OS |  |  |
 | Kali Linux |  |  |
 | Raspberry Pi OS 12 Bookworm |  |  |
-| Alpine Linux 3.23 |  |  |
-| Alpine Linux 3.22 |  |  |
+| Alpine Linux 3.23 | ⚠️ | [Report](docs/system-compatibility-reports/alpine323.md) |
 | Windows Server 2022 |  |  |
 | Windows Server 2019 |  |  |
 | Windows Server 2016 |  |  |

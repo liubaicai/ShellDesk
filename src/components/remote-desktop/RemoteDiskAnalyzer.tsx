@@ -35,6 +35,7 @@ type DiskPanel = 'children' | 'large';
 
 const duMarker = '__SHELLDESK_DU__';
 const metaMarker = '__SHELLDESK_DU_META__';
+const diskAnalyzerDiagnosticMarker = '__SHELLDESK_DISK_ANALYZER_DIAGNOSTICS__';
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -183,12 +184,53 @@ function createWindowsMountCommand() {
 
 function createUnixScanCommand(path: string) {
   const quotedPath = shellSingleQuote(path);
-  return [
-    `echo ${duMarker}`,
-    `du -x -d 1 -B1 ${quotedPath} 2>/dev/null | sort -nr | head -n 160`,
-    `echo ${metaMarker}`,
-    `find ${quotedPath} -maxdepth 1 -mindepth 1 -printf '%y\\t%TY-%Tm-%Td %TH:%TM\\t%p\\n' 2>/dev/null | head -n 300`,
-  ].join('; ');
+  return `
+target=${quotedPath}
+format_mtime() {
+  mtime="$(stat -c '%y' "$1" 2>/dev/null | cut -c1-16)"
+  if [ -z "$mtime" ]; then
+    mtime="$(date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null)"
+  fi
+  printf '%s' "$mtime"
+}
+scan_children() {
+  if [ "$target" = "/" ]; then
+    for item in /* /.[!.]* /..?*; do
+      [ -e "$item" ] || continue
+      printf '%s\\n' "$item"
+    done
+  else
+    base="\${target%/}"
+    for item in "$base"/* "$base"/.[!.]* "$base"/..?*; do
+      [ -e "$item" ] || continue
+      printf '%s\\n' "$item"
+    done
+  fi
+}
+printf '%s\\n' ${shellSingleQuote(diskAnalyzerDiagnosticMarker)}
+if ! command -v du >/dev/null 2>&1; then
+  printf 'MISSING\\tdu\\t缺少 du，无法统计目录大小；Alpine 可安装 coreutils：apk add coreutils\\n'
+fi
+if [ ! -e "$target" ]; then
+  printf 'NOTICE\\t路径不存在或不可访问：%s\\n' "$target"
+fi
+printf '%s\\n' ${shellSingleQuote(duMarker)}
+if command -v du >/dev/null 2>&1 && [ -d "$target" ]; then
+  scan_children | while IFS= read -r item; do
+    size_kb="$(du -sk -x "$item" 2>/dev/null | awk 'NR==1 { print $1 }')"
+    case "$size_kb" in ''|*[!0-9]*) size_kb="$(du -sk "$item" 2>/dev/null | awk 'NR==1 { print $1 }')" ;; esac
+    case "$size_kb" in ''|*[!0-9]*) size_kb=0 ;; esac
+    printf '%s\\t%s\\n' "$((size_kb * 1024))" "$item"
+  done | sort -nr | head -n 160
+fi
+printf '%s\\n' ${shellSingleQuote(metaMarker)}
+if [ -d "$target" ]; then
+  scan_children | head -n 300 | while IFS= read -r item; do
+    if [ -d "$item" ]; then type='d'; elif [ -f "$item" ]; then type='f'; else type='u'; fi
+    printf '%s\\t%s\\t%s\\n' "$type" "$(format_mtime "$item")" "$item"
+  done
+fi
+`.trim();
 }
 
 function createWindowsScanCommand(path: string) {
@@ -214,12 +256,39 @@ $rows | Sort-Object SizeBytes -Descending | ConvertTo-Json -Depth 4
 `);
 }
 
-function parseUnixScan(stdout: string, currentPath: string): DirectorySizeEntry[] {
-  const sections = stdout.split(metaMarker);
-  const duText = sections[0].replace(duMarker, '').trim();
+function parseDiskAnalyzerDiagnosticNotice(text: string) {
+  const notices: string[] = [];
+
+  text.split(/\r?\n/).forEach((line) => {
+    const [kind, commandName, message] = line.split('\t');
+
+    if (kind === 'MISSING' && message) {
+      notices.push(message);
+      return;
+    }
+
+    if (kind === 'NOTICE') {
+      notices.push([commandName, message].filter(Boolean).join('\t'));
+    }
+  });
+
+  return Array.from(new Set(notices)).join('\n');
+}
+
+function parseUnixScan(stdout: string, currentPath: string): { entries: DirectorySizeEntry[]; notice: string } {
+  const [diagnosticPrefix = '', afterDiagnostic = stdout] = stdout.includes(diskAnalyzerDiagnosticMarker)
+    ? stdout.split(diskAnalyzerDiagnosticMarker)
+    : ['', stdout];
+  void diagnosticPrefix;
+  const [diagnosticText = '', scanText = afterDiagnostic] = afterDiagnostic.includes(duMarker)
+    ? afterDiagnostic.split(duMarker)
+    : ['', afterDiagnostic];
+  const sections = scanText.split(metaMarker);
+  const duText = sections[0].trim();
   const metaText = sections[1] ?? '';
   const metaByPath = new Map<string, { type: DirectorySizeEntry['type']; modifiedAt?: string }>();
   const entries: DirectorySizeEntry[] = [];
+  const notice = parseDiskAnalyzerDiagnosticNotice(diagnosticText.trim());
 
   metaText.split(/\r?\n/).forEach((line) => {
     const [typeText, modifiedAt, path] = line.split('\t');
@@ -251,7 +320,10 @@ function parseUnixScan(stdout: string, currentPath: string): DirectorySizeEntry[
       });
     });
 
-  return entries.sort((left, right) => right.sizeBytes - left.sizeBytes);
+  return {
+    entries: entries.sort((left, right) => right.sizeBytes - left.sizeBytes),
+    notice,
+  };
 }
 
 function parseWindowsScan(stdout: string): DirectorySizeEntry[] {
@@ -272,7 +344,37 @@ function parseWindowsScan(stdout: string): DirectorySizeEntry[] {
 }
 
 function createUnixLargeFileCommand(path: string, minMb: number) {
-  return `find ${shellSingleQuote(path)} -type f -size +${minMb}M -printf '%s\\t%TY-%Tm-%Td %TH:%TM\\t%p\\n' 2>/dev/null | sort -nr | head -n 100`;
+  const minKb = Math.max(minMb * 1024, 1);
+  return `
+target=${shellSingleQuote(path)}
+format_mtime() {
+  mtime="$(stat -c '%y' "$1" 2>/dev/null | cut -c1-16)"
+  if [ -z "$mtime" ]; then
+    mtime="$(date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null)"
+  fi
+  printf '%s' "$mtime"
+}
+printf '%s\\n' ${shellSingleQuote(diskAnalyzerDiagnosticMarker)}
+if ! command -v find >/dev/null 2>&1; then
+  printf 'MISSING\\tfind\\t缺少 find，无法搜索大文件；Alpine 可安装 findutils：apk add findutils\\n'
+fi
+if [ ! -e "$target" ]; then
+  printf 'NOTICE\\t路径不存在或不可访问：%s\\n' "$target"
+fi
+printf '%s\\n' ${shellSingleQuote(duMarker)}
+if command -v find >/dev/null 2>&1 && [ -d "$target" ]; then
+  find "$target" -type f -size +${minKb}k -exec sh -c '
+    file=$1
+    size=$(wc -c < "$file" 2>/dev/null || printf 0)
+    case "$size" in ""|*[!0-9]*) size=0 ;; esac
+    mtime=$(stat -c "%y" "$file" 2>/dev/null | cut -c1-16)
+    if [ -z "$mtime" ]; then
+      mtime=$(date -r "$file" "+%Y-%m-%d %H:%M" 2>/dev/null)
+    fi
+    printf "%s\\t%s\\t%s\\n" "$size" "$mtime" "$file"
+  ' sh {} \\; 2>/dev/null | sort -nr | head -n 100
+fi
+`.trim();
 }
 
 function createWindowsLargeFileCommand(path: string, minMb: number) {
@@ -287,10 +389,17 @@ Get-ChildItem -LiteralPath $target -Force -Recurse -File -ErrorAction SilentlyCo
 `);
 }
 
-function parseUnixLargeFiles(stdout: string): DirectorySizeEntry[] {
+function parseUnixLargeFiles(stdout: string): { entries: DirectorySizeEntry[]; notice: string } {
+  const [, afterDiagnostic = stdout] = stdout.includes(diskAnalyzerDiagnosticMarker)
+    ? stdout.split(diskAnalyzerDiagnosticMarker)
+    : ['', stdout];
+  const [diagnosticText = '', fileText = afterDiagnostic] = afterDiagnostic.includes(duMarker)
+    ? afterDiagnostic.split(duMarker)
+    : ['', afterDiagnostic];
   const entries: DirectorySizeEntry[] = [];
+  const notice = parseDiskAnalyzerDiagnosticNotice(diagnosticText.trim());
 
-  stdout
+  fileText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -308,7 +417,7 @@ function parseUnixLargeFiles(stdout: string): DirectorySizeEntry[] {
       });
     });
 
-  return entries;
+  return { entries, notice };
 }
 
 function parseWindowsLargeFiles(stdout: string): DirectorySizeEntry[] {
@@ -380,13 +489,15 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
 
     try {
       const result = await runCommand(isWindowsHost ? createWindowsScanCommand(nextPath) : createUnixScanCommand(nextPath));
-      const nextEntries = isWindowsHost ? parseWindowsScan(result.stdout) : parseUnixScan(result.stdout, nextPath);
+      const parsedUnixScan = isWindowsHost ? null : parseUnixScan(result.stdout, nextPath);
+      const nextEntries = isWindowsHost ? parseWindowsScan(result.stdout) : parsedUnixScan?.entries ?? [];
+      const nextNotice = [result.stderr.trim(), parsedUnixScan?.notice].filter(Boolean).join('\n');
       setCurrentPath(nextPath);
       setPathDraft(nextPath);
       setEntries(nextEntries);
       setSelectedPath(nextEntries[0]?.path ?? '');
-      if (result.stderr.trim()) {
-        setNotice(result.stderr.trim());
+      if (nextNotice) {
+        setNotice(nextNotice);
       }
     } catch (error) {
       setError(getErrorMessage(error));
@@ -405,12 +516,14 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
 
     try {
       const result = await runCommand(isWindowsHost ? createWindowsLargeFileCommand(currentPath, minMb) : createUnixLargeFileCommand(currentPath, minMb));
-      const nextFiles = isWindowsHost ? parseWindowsLargeFiles(result.stdout) : parseUnixLargeFiles(result.stdout);
+      const parsedUnixFiles = isWindowsHost ? null : parseUnixLargeFiles(result.stdout);
+      const nextFiles = isWindowsHost ? parseWindowsLargeFiles(result.stdout) : parsedUnixFiles?.entries ?? [];
+      const nextNotice = [result.stderr.trim(), parsedUnixFiles?.notice].filter(Boolean).join('\n');
       setLargeFiles(nextFiles);
       setActivePanel('large');
       setSelectedPath(nextFiles[0]?.path ?? '');
-      if (result.stderr.trim()) {
-        setNotice(result.stderr.trim());
+      if (nextNotice) {
+        setNotice(nextNotice);
       }
     } catch (error) {
       setError(getErrorMessage(error));

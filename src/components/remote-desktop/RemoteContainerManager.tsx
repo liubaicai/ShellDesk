@@ -724,6 +724,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [containersLoading, setContainersLoading] = useState(false);
   const [imagesLoading, setImagesLoading] = useState(false);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actingKey, setActingKey] = useState('');
   const [pulling, setPulling] = useState(false);
@@ -866,12 +867,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       }
 
       setImages(nextImages);
+      setImagesLoaded(true);
 
       if (result.code !== 0) {
         setNotice(result.stderr || t('container.notice.partialImages', language));
       }
     } catch (err) {
       if (isMountedRef.current) {
+        setImagesLoaded(true);
         setError(getErrorMessage(err));
       }
     } finally {
@@ -923,6 +926,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setRuntimeValue(null);
     setContainers([]);
     setImages([]);
+    setImagesLoaded(false);
     setDetail(null);
     setSelectedContainerId('');
     setExecOutput('');
@@ -943,10 +947,10 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   }, [loadContainerDetail, selectedContainerId]);
 
   useEffect(() => {
-    if (activeTab === 'images' && images.length === 0 && !imagesLoading) {
+    if (activeTab === 'images' && !imagesLoaded && !imagesLoading) {
       void refreshImages();
     }
-  }, [activeTab, images.length, imagesLoading, refreshImages]);
+  }, [activeTab, imagesLoaded, imagesLoading, refreshImages]);
 
   const selectedContainer = useMemo(
     () => containers.find((container) => container.id === selectedContainerId) ?? null,

@@ -60,8 +60,34 @@ function getPortFromLine(line: string) {
   return line.match(/(?::|LocalPort=)(\d{1,5})\b/i)?.[1] ?? null;
 }
 
+function isPortListenerLine(line: string) {
+  const trimmedLine = line.trim();
+
+  if (!trimmedLine || /^(Active|Proto|Netid|State)\b/i.test(trimmedLine)) {
+    return false;
+  }
+
+  if (/\bLocalPort=\d{1,5}\b/i.test(trimmedLine)) {
+    return true;
+  }
+
+  if (/^(udp|udp6)\b/i.test(trimmedLine)) {
+    return true;
+  }
+
+  if (/^(tcp|tcp6)\b/i.test(trimmedLine)) {
+    return /\bLISTEN\b/i.test(trimmedLine);
+  }
+
+  return /\bLISTEN\b/i.test(trimmedLine);
+}
+
+function getPortListenerLines(outputLines: string[]) {
+  return outputLines.filter(isPortListenerLine);
+}
+
 function getPublicHighRiskPortLines(outputLines: string[]) {
-  return outputLines.filter((line) => {
+  return getPortListenerLines(outputLines).filter((line) => {
     const port = getPortFromLine(line);
     return hasPublicBind(line) && port && highRiskPorts.has(port);
   });
@@ -283,8 +309,9 @@ function evaluateFailedLogins(result: SecurityCommandResult, language: AppLangua
 
 function evaluateOpenPorts(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
   const outputLines = lines(raw(result));
-  const riskyLines = getPublicHighRiskPortLines(outputLines);
-  const listenCount = outputLines.filter((line) => /LISTEN|LocalPort=|UDP/i.test(line)).length;
+  const listenerLines = getPortListenerLines(outputLines);
+  const riskyLines = getPublicHighRiskPortLines(listenerLines);
+  const listenCount = listenerLines.length;
   const severity: SecuritySeverity = riskyLines.length ? 'medium' : 'info';
   const status: SecurityStatus = riskyLines.length ? 'warning' : 'passed';
 
@@ -296,7 +323,7 @@ function evaluateOpenPorts(result: SecurityCommandResult, language: AppLanguage)
     riskyLines.length
       ? t('securityCheck.openPorts.summary.risky', language, { count: riskyLines.length })
       : t('securityCheck.openPorts.summary.count', language, { count: listenCount }),
-    riskyLines.length ? riskyLines.slice(0, 8) : outputLines.slice(0, 8),
+    riskyLines.length ? riskyLines.slice(0, 8) : listenerLines.slice(0, 8),
     riskyLines.length
       ? [t('securityCheck.openPorts.suggestion.risky1', language), t('securityCheck.openPorts.suggestion.risky2', language)]
       : [t('securityCheck.openPorts.suggestion.ok', language)],
@@ -563,9 +590,9 @@ function linuxPortsCommand(language: AppLanguage) {
 
   return `
 if command -v ss >/dev/null 2>&1; then
-  ss -H -tunlp 2>/dev/null || ss -H -tunl 2>/dev/null || true
+  ss -H -ltnup 2>/dev/null || ss -H -ltnu 2>/dev/null || true
 elif command -v netstat >/dev/null 2>&1; then
-  netstat -tunlp 2>/dev/null || netstat -tunl 2>/dev/null || true
+  netstat -ltnup 2>/dev/null || netstat -ltnu 2>/dev/null || true
 else
   printf '${missingTools}\\n'
 fi
@@ -603,9 +630,9 @@ else
   printf 'FIREWALL_PROVIDER:none\\n'
 fi
 if command -v ss >/dev/null 2>&1; then
-  ss -H -tunlp 2>/dev/null || ss -H -tunl 2>/dev/null || true
+  ss -H -ltnup 2>/dev/null || ss -H -ltnu 2>/dev/null || true
 elif command -v netstat >/dev/null 2>&1; then
-  netstat -tunlp 2>/dev/null || netstat -tunl 2>/dev/null || true
+  netstat -ltnup 2>/dev/null || netstat -ltnu 2>/dev/null || true
 fi | sed 's/^/PORT_LINE:/'
 `;
 }

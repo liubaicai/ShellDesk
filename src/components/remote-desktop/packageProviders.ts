@@ -69,6 +69,34 @@ function createRpmUpgradableListCommand(kind: 'dnf' | 'yum') {
   return tCurrent('auto.packageProviders.1fgd0mm', { value0: kind }).trim();
 }
 
+function createApkUpgradableListCommand() {
+  return `
+apk version -v -l '<' 2>/dev/null | awk '
+  /^[[:space:]]*$/ || /^Installed:[[:space:]]*Available:/ || /^Installed:/ || /^Available:/ { next }
+  {
+    installed=$1
+    relation=$2
+    available=$3
+    if (relation != "<" || installed == "" || available == "") next
+
+    name=installed
+    sub(/-[0-9][^[:space:]]*$/, "", name)
+    if (name == installed || name == "") next
+
+    installed_version=substr(installed, length(name) + 2)
+    available_version=available
+    prefix=name "-"
+    if (index(available_version, prefix) == 1) {
+      available_version=substr(available_version, length(prefix) + 1)
+    }
+    if (installed_version == "" || available_version == "") next
+
+    printf "%s\\t%s\\t%s\\n", name, installed_version, available_version
+  }
+' | head -n 600
+`.trim();
+}
+
 export function getPackageManagerLabel(kind: PackageManagerKind) {
   const labels: Record<PackageManagerKind, string> = {
     apt: 'APT',
@@ -149,7 +177,7 @@ export function createPackageListCommand(kind: PackageManagerKind, view: Exclude
     case 'zypper':
       return 'zypper --no-color list-updates | tail -n +5 | head -n 600';
     case 'apk':
-      return "apk version -l '<' 2>/dev/null | head -n 600";
+      return createApkUpgradableListCommand();
     case 'winget':
       return powershellCommand('winget upgrade --accept-source-agreements');
     case 'choco':
@@ -251,6 +279,28 @@ function parseAptUpgradable(line: string): RemotePackageInfo | null {
   const match = line.match(/^([^/]+)\/\S+\s+(\S+)\s+.*\[upgradable from:\s*([^\]]+)]/);
   if (!match) return null;
   return { name: match[1], latestVersion: match[2], version: match[3], installed: true, upgradable: true };
+}
+
+function parseApkPackageVersion(value: string) {
+  const match = value.trim().match(/^(.+)-([0-9][^\s]*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    name: match[1],
+    version: match[2],
+  };
+}
+
+function normalizeApkAvailableVersion(name: string, value: string) {
+  const availableVersion = value.trim();
+  const packagePrefix = `${name}-`;
+
+  return availableVersion.startsWith(packagePrefix)
+    ? availableVersion.slice(packagePrefix.length)
+    : availableVersion;
 }
 
 function splitPackageLine(line: string): string[] {
@@ -422,17 +472,47 @@ export function parsePackageOutput(kind: PackageManagerKind, view: PackageView, 
 
   if (kind === 'apk') {
     return lines.map((line) => {
+      const tabParts = splitPackageLine(line);
+
+      if (view === 'upgradable' && tabParts.length >= 3) {
+        return {
+          name: tabParts[0],
+          version: tabParts[1],
+          latestVersion: tabParts[2],
+          description: tabParts.slice(3).join(' '),
+          installed: true,
+          upgradable: true,
+        };
+      }
+
+      if (view === 'upgradable') {
+        const parts = line.split(/\s+/);
+        const relationIndex = parts.indexOf('<');
+        const installedPackage = relationIndex > 0 ? parseApkPackageVersion(parts[relationIndex - 1]) : null;
+        const availableVersion = installedPackage && parts[relationIndex + 1]
+          ? normalizeApkAvailableVersion(installedPackage.name, parts[relationIndex + 1])
+          : '';
+
+        return {
+          name: installedPackage?.name ?? '',
+          version: installedPackage?.version,
+          latestVersion: availableVersion,
+          source: line,
+          installed: true,
+          upgradable: true,
+        };
+      }
+
       const [left, description = ''] = line.split(' - ');
-      const match = left.match(/^(.+)-([0-9][^\s]*)/);
+      const match = parseApkPackageVersion(left);
+
       return {
-        name: match?.[1] ?? left,
-        version: view === 'upgradable' ? undefined : match?.[2],
-        latestVersion: view === 'upgradable' ? match?.[2] : undefined,
+        name: match?.name ?? left,
+        version: match?.version,
         description,
         installed: view !== 'search',
-        upgradable: view === 'upgradable',
       };
-    }).filter((pkg) => Boolean(pkg.name));
+    }).filter((pkg) => Boolean(pkg.name) && !isPackageTableNoise(pkg.name) && looksLikePackageName(pkg.name));
   }
 
   return dedupePackageList(lines.map((line) => {

@@ -483,18 +483,220 @@ function parseWindowsServiceDetailOutput(stdout: string, serviceName: string, fa
 }
 
 function getLinuxServiceListCommand() {
-  return tCurrent('auto.remoteServiceManager.ftv1bn', { value0: SERVICE_LIST_ERROR_PREFIX, value1: SERVICE_LIST_UNITS_MARKER, value2: SERVICE_LIST_UNIT_FILES_MARKER });
+  return `
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  printf '${SERVICE_LIST_UNITS_MARKER}\\n'
+  systemctl list-units --type=service --all --no-pager --plain --no-legend 2>/dev/null | awk 'BEGIN{OFS="\\t"} NF >= 4 { unit=$1; load=$2; active=$3; sub=$4; desc=""; for (i=5; i<=NF; i++) desc=desc (i>5?" ":"") $i; print unit, load, active, sub, desc }'
+  printf '${SERVICE_LIST_UNIT_FILES_MARKER}\\n'
+  systemctl list-unit-files --type=service --no-pager --plain --no-legend 2>/dev/null | awk 'BEGIN{OFS="\\t"} NF >= 2 { print $1, $2 }'
+  exit 0
+fi
+
+if command -v rc-service >/dev/null 2>&1 && [ -d /etc/init.d ]; then
+  shelldesk_openrc_state() {
+    state_text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$state_text" in
+      *crashed*|*failed*|*error*) printf 'failed\\tfailed' ;;
+      *starting*) printf 'activating\\tstarting' ;;
+      *stopping*) printf 'deactivating\\tstopping' ;;
+      *started*|*running*) printf 'active\\trunning' ;;
+      *stopped*|*inactive*) printf 'inactive\\tstopped' ;;
+      *) printf 'unknown\\tunknown' ;;
+    esac
+  }
+
+  enabled_services="$(
+    if command -v rc-update >/dev/null 2>&1; then
+      rc-update show 2>/dev/null | awk -F'|' 'NF >= 2 { name=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); if (name != "") print name }' | sort -u
+    fi
+  )"
+
+  printf '${SERVICE_LIST_UNITS_MARKER}\\n'
+  for script in /etc/init.d/*; do
+    [ -f "$script" ] || continue
+    name="\${script##*/}"
+    [ -n "$name" ] || continue
+    status_output="$(rc-service "$name" status 2>&1 || true)"
+    state_pair="$(shelldesk_openrc_state "$status_output")"
+    active_state="\${state_pair%%	*}"
+    sub_state="\${state_pair#*	}"
+    description="$(awk -F= '/^[[:space:]]*description=/ { value=$0; sub(/^[^=]*=/, "", value); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); gsub(/^"/, "", value); gsub(/"$/, "", value); print value; exit }' "$script" 2>/dev/null)"
+    printf '%s\\topenrc\\t%s\\t%s\\t%s\\n' "$name" "$active_state" "$sub_state" "$description"
+  done | sort
+
+  printf '${SERVICE_LIST_UNIT_FILES_MARKER}\\n'
+  for script in /etc/init.d/*; do
+    [ -f "$script" ] || continue
+    name="\${script##*/}"
+    [ -n "$name" ] || continue
+    enabled_state="disabled"
+    if printf '%s\\n' "$enabled_services" | grep -Fxq "$name" 2>/dev/null; then
+      enabled_state="enabled"
+    fi
+    printf '%s\\t%s\\n' "$name" "$enabled_state"
+  done | sort
+  exit 0
+fi
+
+printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。'
+exit 0
+`;
 }
 
 function getLinuxServiceDetailCommand(serviceName: string) {
   const unit = shellSingleQuote(serviceName);
 
-  return tCurrent('auto.remoteServiceManager.tz62dt', { value0: SERVICE_LIST_ERROR_PREFIX, value1: SERVICE_DETAIL_PROPS_MARKER, value2: unit, value3: SERVICE_DETAIL_STATUS_MARKER, value4: unit, value5: SERVICE_DETAIL_LOGS_MARKER, value6: unit, value7: SERVICE_DETAIL_UNIT_MARKER, value8: unit });
+  return `
+unit=${unit}
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  printf '${SERVICE_DETAIL_PROPS_MARKER}\\n'
+  systemctl show "$unit" --no-pager -p Id -p Description -p LoadState -p ActiveState -p SubState -p UnitFileState -p MainPID -p MemoryCurrent -p FragmentPath -p ActiveEnterTimestamp -p ExecMainStartTimestamp 2>&1 || true
+  printf '${SERVICE_DETAIL_STATUS_MARKER}\\n'
+  systemctl status "$unit" --no-pager --lines=80 2>&1 || true
+  printf '${SERVICE_DETAIL_LOGS_MARKER}\\n'
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl -u "$unit" -n 100 --no-pager --output=short-iso 2>&1 || true
+  else
+    printf 'journalctl 不可用。\\n'
+  fi
+  printf '${SERVICE_DETAIL_UNIT_MARKER}\\n'
+  systemctl cat "$unit" --no-pager 2>&1 || true
+  exit 0
+fi
+
+if command -v rc-service >/dev/null 2>&1 && [ -d /etc/init.d ]; then
+  service_name="\${unit%.service}"
+  script_path="/etc/init.d/$service_name"
+  status_output="$(rc-service "$service_name" status 2>&1 || true)"
+  state_text="$(printf '%s' "$status_output" | tr '[:upper:]' '[:lower:]')"
+  active_state="unknown"
+  sub_state="unknown"
+  case "$state_text" in
+    *crashed*|*failed*|*error*) active_state="failed"; sub_state="failed" ;;
+    *starting*) active_state="activating"; sub_state="starting" ;;
+    *stopping*) active_state="deactivating"; sub_state="stopping" ;;
+    *started*|*running*) active_state="active"; sub_state="running" ;;
+    *stopped*|*inactive*) active_state="inactive"; sub_state="stopped" ;;
+  esac
+  enabled_state="disabled"
+  enabled_runlevels="$(
+    if command -v rc-update >/dev/null 2>&1; then
+      rc-update show 2>/dev/null | awk -F'|' -v svc="$service_name" 'NF >= 2 { name=$1; runlevel=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); gsub(/^[[:space:]]+|[[:space:]]+$/, "", runlevel); if (name == svc && runlevel != "") print runlevel }'
+    fi
+  )"
+  if [ -n "$enabled_runlevels" ]; then
+    enabled_state="enabled"
+  fi
+  description=""
+  if [ -f "$script_path" ]; then
+    description="$(awk -F= '/^[[:space:]]*description=/ { value=$0; sub(/^[^=]*=/, "", value); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); gsub(/^"/, "", value); gsub(/"$/, "", value); print value; exit }' "$script_path" 2>/dev/null)"
+  fi
+
+  printf '${SERVICE_DETAIL_PROPS_MARKER}\\n'
+  printf 'Id=%s\\n' "$service_name"
+  printf 'Description=%s\\n' "$description"
+  printf 'LoadState=openrc\\n'
+  printf 'ActiveState=%s\\n' "$active_state"
+  printf 'SubState=%s\\n' "$sub_state"
+  printf 'UnitFileState=%s\\n' "$enabled_state"
+  printf 'MainPID=0\\n'
+  printf 'MemoryCurrent=\\n'
+  printf 'FragmentPath=%s\\n' "$script_path"
+  printf 'ActiveEnterTimestamp=\\n'
+  printf 'ExecMainStartTimestamp=\\n'
+  printf 'OpenRCRunlevels=%s\\n' "$(printf '%s' "$enabled_runlevels" | tr '\\n' ' ')"
+
+  printf '${SERVICE_DETAIL_STATUS_MARKER}\\n'
+  printf '%s\\n' "$status_output"
+  if command -v rc-status >/dev/null 2>&1; then
+    printf '\\n-- rc-status --\\n'
+    rc-status -a 2>&1 | grep -i "$service_name" || true
+  fi
+
+  printf '${SERVICE_DETAIL_LOGS_MARKER}\\n'
+  if [ -f "/var/log/$service_name.log" ]; then
+    tail -n 100 "/var/log/$service_name.log" 2>&1 || true
+  elif [ -f /var/log/messages ]; then
+    grep -i "$service_name" /var/log/messages 2>/dev/null | tail -n 100 || true
+  elif command -v logread >/dev/null 2>&1; then
+    logread 2>/dev/null | grep -i "$service_name" | tail -n 100 || true
+  else
+    printf 'OpenRC 未提供 journalctl；可查看 /var/log/messages 或服务自己的日志文件。\\n'
+  fi
+
+  printf '${SERVICE_DETAIL_UNIT_MARKER}\\n'
+  if [ -f "$script_path" ]; then
+    sed -n '1,240p' "$script_path" 2>&1 || true
+  else
+    printf '未找到 OpenRC 脚本：%s\\n' "$script_path"
+  fi
+  exit 0
+fi
+
+printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。'
+exit 127
+`;
 }
 
 function getLinuxServiceActionCommand(action: ServiceAction, serviceName: string) {
   const unit = shellSingleQuote(serviceName);
-  return tCurrent('auto.remoteServiceManager.1jxcuyv', { value0: action, value1: unit, value2: action, value3: unit, value4: action, value5: unit });
+  const actionName = shellSingleQuote(action);
+
+  return `
+unit=${unit}
+service_action=${actionName}
+
+run_maybe_sudo() {
+  if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo -n "$@"
+  else
+    "$@"
+  fi
+}
+
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  run_maybe_sudo systemctl "$service_action" "$unit" 2>&1
+  exit $?
+fi
+
+if command -v rc-service >/dev/null 2>&1; then
+  service_name="\${unit%.service}"
+  case "$service_action" in
+    start|stop|restart|reload)
+      run_maybe_sudo rc-service "$service_name" "$service_action" 2>&1
+      exit $?
+      ;;
+    enable)
+      if ! command -v rc-update >/dev/null 2>&1; then
+        printf 'rc-update 未安装，无法设置 OpenRC 开机自启。\\n' >&2
+        exit 127
+      fi
+      run_maybe_sudo rc-update add "$service_name" default 2>&1
+      exit $?
+      ;;
+    disable)
+      if ! command -v rc-update >/dev/null 2>&1; then
+        printf 'rc-update 未安装，无法关闭 OpenRC 开机自启。\\n' >&2
+        exit 127
+      fi
+      runlevels="$(rc-update show 2>/dev/null | awk -F'|' -v svc="$service_name" 'NF >= 2 { name=$1; runlevel=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); gsub(/^[[:space:]]+|[[:space:]]+$/, "", runlevel); if (name == svc && runlevel != "") print runlevel }')"
+      if [ -z "$runlevels" ]; then
+        runlevels="default"
+      fi
+      status=0
+      for runlevel in $runlevels; do
+        run_maybe_sudo rc-update del "$service_name" "$runlevel" 2>&1 || status=$?
+      done
+      exit "$status"
+      ;;
+  esac
+fi
+
+printf 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。\\n' >&2
+exit 127
+`;
 }
 
 function getWindowsServiceListCommand() {
@@ -747,6 +949,11 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
     enabled: services.filter((service) => service.enabledState === 'enabled').length,
     disabled: services.filter((service) => service.enabledState === 'disabled').length,
   }), [services]);
+  const serviceBackendLabel = isWindowsHost
+    ? 'Windows Services'
+    : services.some((service) => service.loadState === 'openrc') || currentDetail?.loadState === 'openrc'
+      ? 'OpenRC'
+      : 'systemd';
 
   const copyToClipboard = async (value: string, label: string) => {
     setError('');
@@ -893,7 +1100,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
           <button type="button" className="service-tool-button" onClick={() => void refreshCurrentService()} disabled={!selectedService || detailLoading}>
             {detailLoading ? tCurrent('auto.remoteServiceManager.10y5j8r') : tCurrent('auto.remoteServiceManager.146hdy2')}
           </button>
-          <span className="service-system-pill">{isWindowsHost ? 'Windows Services' : 'systemd'}</span>
+          <span className="service-system-pill">{serviceBackendLabel}</span>
           <span className="service-summary">
             <strong>{visibleServices.length}</strong> / {services.length}
           </span>
