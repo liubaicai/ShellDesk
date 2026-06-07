@@ -188,14 +188,19 @@
 
 .network-card-tags {
   display: flex !important;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 5px;
   margin-top: 7px !important;
+  min-width: 0;
+  overflow: hidden;
   padding-right: 3px;
 }
 
 .network-card-tags em {
+  flex: 0 1 auto;
   max-width: 100%;
+  min-width: 0;
   min-height: 21px !important;
   overflow: hidden;
   padding: 3px 7px !important;
@@ -207,6 +212,26 @@
   max-width: min(100%, 210px);
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   font-size: 10.5px !important;
+}
+
+.network-card-tags .network-test-badge {
+  flex: 0 1 auto;
+  max-width: 128px;
+}
+
+.network-test-badge.testing {
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent) !important;
+  color: var(--accent) !important;
+}
+
+.network-test-badge.success {
+  border-color: rgba(119, 244, 197, 0.28) !important;
+  color: #86f7d8 !important;
+}
+
+.network-test-badge.error {
+  border-color: rgba(255, 111, 143, 0.3) !important;
+  color: #ffb7bd !important;
 }
 
 .network-card-actions {
@@ -228,8 +253,41 @@
   width: min(500px, calc(100% - 36px));
 }
 
+.network-editor-popover .editor-header-test {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-control));
+  color: var(--accent);
+}
+
+.network-editor-popover .editor-header-test:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
 .network-editor-form {
   gap: 11px;
+}
+
+.network-test-message {
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.network-test-message.success {
+  border-color: rgba(119, 244, 197, 0.28);
+  background: rgba(119, 244, 197, 0.1);
+  color: #9cf9dd;
+}
+
+.network-test-message.error {
+  border-color: rgba(255, 111, 143, 0.26);
+  background: rgba(255, 111, 143, 0.11);
+  color: #ffd7df;
 }
 
 .network-hidden-input {
@@ -261,6 +319,31 @@
 }
 
 [data-theme="light"] .network-save-state.error {
+  color: #b42335;
+}
+
+[data-theme="light"] .network-test-badge.success {
+  border-color: rgba(22, 163, 74, 0.24) !important;
+  color: #15803d !important;
+}
+
+[data-theme="light"] .network-test-badge.error {
+  color: #b42335 !important;
+}
+
+[data-theme="light"] .network-editor-popover .editor-header-test {
+  border-color: color-mix(in srgb, var(--accent) 22%, rgba(16, 32, 51, 0.14));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-control));
+  color: var(--accent);
+}
+
+[data-theme="light"] .network-test-message.success {
+  border-color: rgba(22, 163, 74, 0.24);
+  background: rgba(22, 163, 74, 0.08);
+  color: #15803d;
+}
+
+[data-theme="light"] .network-test-message.error {
   color: #b42335;
 }
 

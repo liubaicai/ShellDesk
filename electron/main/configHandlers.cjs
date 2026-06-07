@@ -3,9 +3,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { maxConfigImportBytes } = require('./constants.cjs');
+const { testProxyConfig } = require('./connectionManager.cjs');
 const { getSystemFontFamilies } = require('./systemFonts.cjs');
 const { getSenderWindow } = require('./windows.cjs');
-const { isPlainObject, readBoundedString } = require('./validation.cjs');
+const { isPlainObject, readBoundedString, readIntegerInRange } = require('./validation.cjs');
 const {
   buildConfigBundle,
   createPublicVaultSnapshot,
@@ -116,6 +117,61 @@ function readSystemKnownHosts() {
   };
 }
 
+function readProxyTestConfig(rawConfig) {
+  if (!isPlainObject(rawConfig)) {
+    throw new Error('代理配置无效。');
+  }
+
+  const type = rawConfig.type === 'http' || rawConfig.type === 'socks5' || rawConfig.type === 'command'
+    ? rawConfig.type
+    : '';
+
+  if (!type) {
+    throw new Error('代理类型无效。');
+  }
+
+  if (type === 'command') {
+    return {
+      type,
+      host: '',
+      port: 0,
+      command: readBoundedString(rawConfig.command ?? '', '代理命令', 4096),
+      username: '',
+      password: '',
+    };
+  }
+
+  return {
+    type,
+    host: readBoundedString(rawConfig.host ?? '', '代理主机', 255),
+    port: readIntegerInRange(rawConfig.port, '代理端口', 1, 65535),
+    command: '',
+    username: readBoundedString(rawConfig.username ?? '', '代理用户名', 128, { required: false }),
+    password: readBoundedString(rawConfig.password ?? '', '代理密码', 4096, { required: false, trim: false }),
+  };
+}
+
+function readProxyTestTarget(rawTarget) {
+  if (!isPlainObject(rawTarget)) {
+    return {
+      kind: 'http',
+      host: 'example.com',
+      port: 80,
+      timeoutMs: 15000,
+    };
+  }
+
+  const kind = rawTarget.kind === 'ssh' ? 'ssh' : 'http';
+  const defaultPort = kind === 'ssh' ? 22 : 80;
+
+  return {
+    kind,
+    host: readBoundedString(rawTarget.host ?? 'example.com', '代理测试目标主机', 255),
+    port: readIntegerInRange(rawTarget.port ?? defaultPort, '代理测试目标端口', 1, 65535),
+    timeoutMs: readIntegerInRange(rawTarget.timeoutMs ?? 15000, '代理测试超时时间', 3000, 30000),
+  };
+}
+
 function registerConfigHandlers(registerIpcHandler) {
   ipcMain.handle('dialog:select-private-key', async (event) => {
     const window = getSenderWindow(event);
@@ -171,6 +227,14 @@ function registerConfigHandlers(registerIpcHandler) {
   registerIpcHandler('system:list-fonts', async () => getSystemFontFamilies());
 
   registerIpcHandler('system:read-known-hosts', async () => readSystemKnownHosts());
+
+  registerIpcHandler('system:test-proxy', async (_event, rawPayload) => {
+    const payload = isPlainObject(rawPayload) ? rawPayload : {};
+    const proxyConfig = readProxyTestConfig(payload.config ?? rawPayload);
+    const target = readProxyTestTarget(payload.target);
+
+    return testProxyConfig(proxyConfig, target);
+  });
 
   registerIpcHandler('vault:save-collections', async (_event, rawPayload) => upsertVaultCollections(rawPayload));
 

@@ -112,6 +112,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
   system: {
     listFonts: () => ipcRenderer.invoke('system:list-fonts'),
     readKnownHosts: () => ipcRenderer.invoke('system:read-known-hosts'),
+    testProxy: (payload) => ipcRenderer.invoke('system:test-proxy', payload),
   },
   ai: {
     listModels: (request) => ipcRenderer.invoke('ai:list-models', request),

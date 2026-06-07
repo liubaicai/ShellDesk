@@ -61,6 +61,22 @@ interface ShellDeskProxyProfile {
   updatedAt: string;
 }
 
+interface ShellDeskProxyTestTarget {
+  kind?: 'http' | 'ssh';
+  host?: string;
+  port?: number;
+  timeoutMs?: number;
+}
+
+interface ShellDeskProxyTestResult {
+  ok: boolean;
+  targetHost: string;
+  targetPort: number;
+  latencyMs: number;
+  checkedAt: string;
+  error: string;
+}
+
 interface ShellDeskKnownHost {
   id: string;
   hostname: string;
@@ -909,6 +925,7 @@ interface ShellDeskPreferenceControls {
 interface ShellDeskSystemControls {
   listFonts: () => Promise<string[]>;
   readKnownHosts: () => Promise<ShellDeskKnownHostsReadResult>;
+  testProxy: (payload: { config: ShellDeskProxyConfig; target?: ShellDeskProxyTestTarget }) => Promise<ShellDeskProxyTestResult>;
 }
 
 interface ShellDeskAiControls {

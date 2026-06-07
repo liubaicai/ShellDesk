@@ -132,6 +132,12 @@ function closeStream(stream) {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function formatSshEndpoint(sshConfig) {
   return `${sshConfig?.username || 'unknown'}@${sshConfig?.host || 'unknown'}:${sshConfig?.port || 22}`;
 }
@@ -469,6 +475,183 @@ async function createProxySocket(proxyConfig, destinationHost, destinationPort) 
   }
 
   throw new Error('代理类型无效。');
+}
+
+function readProxyTestHttpHeader(stream, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let length = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      stream.removeListener('data', onData);
+      stream.removeListener('error', onError);
+      stream.removeListener('close', onClose);
+      stream.removeListener('end', onClose);
+    };
+
+    const finish = (callback) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onData = (chunk) => {
+      chunks.push(Buffer.from(chunk));
+      length += chunk.length;
+
+      if (length > 64 * 1024) {
+        finish(() => reject(new Error('代理测试响应过大。')));
+        return;
+      }
+
+      const header = Buffer.concat(chunks, length).toString('latin1');
+
+      if (header.includes('\r\n\r\n') || header.includes('\n\n')) {
+        finish(() => resolve(header));
+      }
+    };
+
+    const onError = (error) => finish(() => reject(error));
+    const onClose = () => finish(() => reject(new Error('代理已连接，但测试目标未返回响应。')));
+    const timeoutId = setTimeout(() => {
+      finish(() => reject(new Error('代理测试超时。')));
+    }, timeoutMs);
+
+    stream.on('data', onData);
+    stream.once('error', onError);
+    stream.once('close', onClose);
+    stream.once('end', onClose);
+  });
+}
+
+function readProxyTestSshBanner(stream, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let length = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      stream.removeListener('data', onData);
+      stream.removeListener('error', onError);
+      stream.removeListener('close', onClose);
+      stream.removeListener('end', onClose);
+    };
+
+    const finish = (callback) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const inspectBuffer = () => {
+      const text = Buffer.concat(chunks, length).toString('latin1');
+      const bannerMatch = text.match(/(?:^|\r?\n)(SSH-\d+\.\d+-[^\r\n]*)/u);
+
+      if (bannerMatch) {
+        finish(() => resolve(bannerMatch[1]));
+        return;
+      }
+
+      if (/^(?:HTTP\/|<!doctype html|<html\b)/iu.test(text.trimStart())) {
+        finish(() => reject(new Error('代理已连接，但测试目标响应不是 SSH 服务。')));
+        return;
+      }
+
+      if (length > 8192) {
+        finish(() => reject(new Error('代理已连接，但目标 SSH 服务未返回有效握手 banner。')));
+      }
+    };
+
+    const onData = (chunk) => {
+      chunks.push(Buffer.from(chunk));
+      length += chunk.length;
+      inspectBuffer();
+    };
+
+    const onError = (error) => finish(() => reject(error));
+    const onClose = () => finish(() => reject(new Error('代理已连接，但目标 SSH 服务未返回握手 banner。')));
+    const timeoutId = setTimeout(() => {
+      finish(() => reject(new Error('代理已连接，但等待目标 SSH 握手超时。')));
+    }, timeoutMs);
+
+    stream.on('data', onData);
+    stream.once('error', onError);
+    stream.once('close', onClose);
+    stream.once('end', onClose);
+  });
+}
+
+async function testProxyConfig(proxyConfig, target = {}) {
+  const targetKind = target.kind === 'ssh' ? 'ssh' : 'http';
+  const targetHost = String(target.host || 'example.com').trim() || 'example.com';
+  const targetPort = Number(target.port) || (targetKind === 'ssh' ? 22 : 80);
+  const timeoutMs = Math.min(Math.max(Number(target.timeoutMs) || 15000, 3000), 30000);
+  const startedAt = Date.now();
+  let stream = null;
+
+  try {
+    stream = await createProxySocket(proxyConfig, targetHost, targetPort);
+
+    if (!stream) {
+      throw new Error('代理配置为空。');
+    }
+
+    if (targetKind === 'ssh') {
+      await readProxyTestSshBanner(stream, timeoutMs);
+
+      return {
+        ok: true,
+        targetHost,
+        targetPort,
+        latencyMs: Date.now() - startedAt,
+        checkedAt: new Date().toISOString(),
+        error: '',
+      };
+    }
+
+    await wait(40);
+    await writeSocket(stream, Buffer.from(
+      `HEAD / HTTP/1.1\r\nHost: ${targetHost}\r\nConnection: close\r\n\r\n`,
+      'utf8',
+    ));
+    const header = await readProxyTestHttpHeader(stream, timeoutMs);
+    const statusLine = header.split(/\r?\n/u)[0] || '';
+
+    if (!/^HTTP\/\d(?:\.\d)?\s+\d{3}\b/i.test(statusLine)) {
+      throw new Error('代理已连接，但测试目标响应不是有效 HTTP。');
+    }
+
+    return {
+      ok: true,
+      targetHost,
+      targetPort,
+      latencyMs: Date.now() - startedAt,
+      checkedAt: new Date().toISOString(),
+      error: '',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      targetHost,
+      targetPort,
+      latencyMs: Date.now() - startedAt,
+      checkedAt: new Date().toISOString(),
+      error: toErrorMessage(error),
+    };
+  } finally {
+    closeStream(stream);
+  }
 }
 
 async function connectSshClientWithProxy(sshConfig, proxyConfig, label) {
@@ -1183,6 +1366,7 @@ module.exports = {
   forwardOut,
   getActiveConnection,
   registerConnectionCleanup,
+  testProxyConfig,
   toConnectionInfo,
   withActiveConnectionClientRetry,
 };

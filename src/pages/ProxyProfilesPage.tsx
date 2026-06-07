@@ -12,6 +12,13 @@ interface ProxyProfilesPageProps {
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type ProxyTestStatus = 'testing' | 'success' | 'error';
+
+interface ProxyTestState {
+  status: ProxyTestStatus;
+  message: string;
+  detail: string;
+}
 
 interface ProxyDraft {
   id: string;
@@ -77,6 +84,13 @@ function text(language: ShellDeskAppSettings['language']) {
         password: '密码',
         optional: '可选',
         actions: '代理操作',
+        test: '测试',
+        testing: '测试中...',
+        testSuccess: '{latency} ms',
+        testFailed: '不可用：{error}',
+        testUnavailable: '当前运行环境不支持代理测试。',
+        testTarget: '测试目标 {host}:{port}',
+        testRequired: '请填写代理主机/端口或 ProxyCommand 后再测试。',
         edit: '编辑',
         duplicate: '复制',
         delete: '删除',
@@ -117,6 +131,13 @@ function text(language: ShellDeskAppSettings['language']) {
         password: 'Password',
         optional: 'Optional',
         actions: 'Proxy actions',
+        test: 'Test',
+        testing: 'Testing...',
+        testSuccess: '{latency} ms',
+        testFailed: 'Unavailable: {error}',
+        testUnavailable: 'This runtime cannot test proxies.',
+        testTarget: 'Test target {host}:{port}',
+        testRequired: 'Enter proxy host/port or ProxyCommand before testing.',
         edit: 'Edit',
         duplicate: 'Duplicate',
         delete: 'Delete',
@@ -169,30 +190,110 @@ function formatCount(template: string, count: number) {
   return template.replace('{count}', String(count));
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message.replace(/^Error invoking remote method '[^']+': Error: /u, '');
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+
+  return 'unknown';
+}
+
+function formatProxyTestDetail(template: string, result: ShellDeskProxyTestResult) {
+  return template
+    .replace('{host}', result.targetHost)
+    .replace('{port}', String(result.targetPort));
+}
+
+function formatProxyTestMessage(
+  copy: ReturnType<typeof text>,
+  result: ShellDeskProxyTestResult,
+) {
+  if (result.ok) {
+    return copy.testSuccess.replace('{latency}', String(result.latencyMs));
+  }
+
+  return copy.testFailed.replace('{error}', result.error || 'unknown');
+}
+
+function buildConfigFromDraft(draft: ProxyDraft): ShellDeskProxyConfig {
+  const isCommand = draft.type === 'command';
+
+  return isCommand
+    ? {
+        type: 'command',
+        host: '',
+        port: 0,
+        command: draft.command.trim(),
+        username: '',
+        password: '',
+      }
+    : {
+        type: draft.type,
+        host: draft.host.trim(),
+        port: Number(draft.port),
+        command: '',
+        username: draft.username.trim(),
+        password: draft.password,
+      };
+}
+
+function validateProxyDraft(
+  draft: ProxyDraft,
+  copy: ReturnType<typeof text>,
+  options: { requireLabel: boolean },
+) {
+  const isCommand = draft.type === 'command';
+  const port = Number(draft.port);
+
+  if (options.requireLabel && !draft.label.trim()) {
+    return copy.required;
+  }
+
+  if (isCommand ? !draft.command.trim() : (!draft.host.trim() || !draft.port.trim())) {
+    return options.requireLabel ? copy.required : copy.testRequired;
+  }
+
+  if (!isCommand && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    return copy.invalidPort;
+  }
+
+  return '';
+}
+
+function createProxyTestState(
+  copy: ReturnType<typeof text>,
+  result: ShellDeskProxyTestResult,
+): ProxyTestState {
+  const message = formatProxyTestMessage(copy, result);
+
+  return {
+    status: result.ok ? 'success' : 'error',
+    message,
+    detail: `${formatProxyTestDetail(copy.testTarget, result)} · ${message}`,
+  };
+}
+
+function createProxyTestErrorState(copy: ReturnType<typeof text>, error: unknown): ProxyTestState {
+  const message = getErrorMessage(error);
+
+  return {
+    status: 'error',
+    message: copy.testFailed.replace('{error}', message),
+    detail: message,
+  };
+}
+
 function buildProfileFromDraft(draft: ProxyDraft): ShellDeskProxyProfile {
   const now = new Date().toISOString();
-  const isCommand = draft.type === 'command';
 
   return {
     id: draft.id || createId(),
     label: draft.label.trim(),
-    config: isCommand
-      ? {
-          type: 'command',
-          host: '',
-          port: 0,
-          command: draft.command.trim(),
-          username: '',
-          password: '',
-        }
-      : {
-          type: draft.type,
-          host: draft.host.trim(),
-          port: Number(draft.port),
-          command: '',
-          username: draft.username.trim(),
-          password: draft.password,
-        },
+    config: buildConfigFromDraft(draft),
     createdAt: draft.createdAt || now,
     updatedAt: now,
   };
@@ -206,7 +307,10 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
   const [formError, setFormError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ShellDeskProxyProfile | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [proxyTestResults, setProxyTestResults] = useState<Record<string, ProxyTestState>>({});
+  const [draftTestState, setDraftTestState] = useState<ProxyTestState | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const draftTestRunIdRef = useRef(0);
 
   const usageByProfileId = useMemo(() => {
     const usage = new Map<string, number>();
@@ -217,6 +321,20 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
 
     return usage;
   }, [hosts, proxyProfiles]);
+
+  const proxyTestHostByProfileId = useMemo(() => {
+    const testHosts = new Map<string, ShellDeskStoredHostRecord>();
+
+    for (const host of hosts) {
+      const proxyProfileId = host.proxyProfileId?.trim();
+
+      if (proxyProfileId && !testHosts.has(proxyProfileId)) {
+        testHosts.set(proxyProfileId, host);
+      }
+    }
+
+    return testHosts;
+  }, [hosts]);
 
   const filteredProfiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -250,14 +368,41 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
     }
   };
 
+  const getProxyTestTarget = (profileId: string): ShellDeskProxyTestTarget | undefined => {
+    const testHost = proxyTestHostByProfileId.get(profileId);
+
+    if (!testHost) {
+      return undefined;
+    }
+
+    return {
+      kind: 'ssh',
+      host: testHost.address,
+      port: testHost.port,
+      timeoutMs: 15000,
+    };
+  };
+
+  const clearDraftTestState = () => {
+    draftTestRunIdRef.current += 1;
+    setDraftTestState(null);
+  };
+
+  const updateDraft = (nextDraft: ProxyDraft) => {
+    setDraft(nextDraft);
+    clearDraftTestState();
+  };
+
   const openCreate = () => {
     setDraft({ ...emptyDraft });
     setFormError('');
+    clearDraftTestState();
   };
 
   const openEdit = (profile: ShellDeskProxyProfile) => {
     setDraft(profileToDraft(profile));
     setFormError('');
+    clearDraftTestState();
   };
 
   const duplicateProfile = (profile: ShellDeskProxyProfile) => {
@@ -276,6 +421,104 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
     setTemporarySaveStatus('saved');
   };
 
+  const testProxy = async (profile: ShellDeskProxyProfile) => {
+    const runTest = window.guiSSH?.system?.testProxy;
+
+    setProxyTestResults((current) => ({
+      ...current,
+      [profile.id]: {
+        status: 'testing',
+        message: copy.testing,
+        detail: '',
+      },
+    }));
+
+    if (!runTest) {
+      setProxyTestResults((current) => ({
+        ...current,
+        [profile.id]: {
+          status: 'error',
+          message: copy.testUnavailable,
+          detail: copy.testUnavailable,
+        },
+      }));
+      return;
+    }
+
+    try {
+      const result = await runTest({ config: profile.config, target: getProxyTestTarget(profile.id) });
+      setProxyTestResults((current) => ({
+        ...current,
+        [profile.id]: createProxyTestState(copy, result),
+      }));
+    } catch (error) {
+      setProxyTestResults((current) => ({
+        ...current,
+        [profile.id]: createProxyTestErrorState(copy, error),
+      }));
+    }
+  };
+
+  const testDraftProxy = async () => {
+    if (!draft) {
+      return;
+    }
+
+    const validationError = validateProxyDraft(draft, copy, { requireLabel: false });
+
+    if (validationError) {
+      setFormError(validationError);
+      clearDraftTestState();
+      return;
+    }
+
+    const runTest = window.guiSSH?.system?.testProxy;
+    const runId = draftTestRunIdRef.current + 1;
+    draftTestRunIdRef.current = runId;
+    setFormError('');
+    setDraftTestState({
+      status: 'testing',
+      message: copy.testing,
+      detail: '',
+    });
+
+    if (!runTest) {
+      if (draftTestRunIdRef.current === runId) {
+        setDraftTestState({
+          status: 'error',
+          message: copy.testUnavailable,
+          detail: copy.testUnavailable,
+        });
+      }
+      return;
+    }
+
+    try {
+      const config = buildConfigFromDraft(draft);
+      const result = await runTest({ config, target: draft.id ? getProxyTestTarget(draft.id) : undefined });
+      const nextTestState = createProxyTestState(copy, result);
+
+      if (draftTestRunIdRef.current !== runId) {
+        return;
+      }
+
+      setDraftTestState(nextTestState);
+
+      if (draft.id) {
+        setProxyTestResults((current) => ({
+          ...current,
+          [draft.id]: nextTestState,
+        }));
+      }
+    } catch (error) {
+      if (draftTestRunIdRef.current !== runId) {
+        return;
+      }
+
+      setDraftTestState(createProxyTestErrorState(copy, error));
+    }
+  };
+
   const saveDraft = (event: FormEvent) => {
     event.preventDefault();
 
@@ -283,17 +526,10 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
       return;
     }
 
-    const label = draft.label.trim();
-    const isCommand = draft.type === 'command';
-    const port = Number(draft.port);
+    const validationError = validateProxyDraft(draft, copy, { requireLabel: true });
 
-    if (!label || (isCommand ? !draft.command.trim() : (!draft.host.trim() || !draft.port.trim()))) {
-      setFormError(copy.required);
-      return;
-    }
-
-    if (!isCommand && (!Number.isInteger(port) || port < 1 || port > 65535)) {
-      setFormError(copy.invalidPort);
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
@@ -307,6 +543,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
         : [profile, ...proxyProfiles]);
       setDraft(null);
       setFormError('');
+      clearDraftTestState();
       setTemporarySaveStatus('saved');
     } catch {
       setTemporarySaveStatus('error');
@@ -332,6 +569,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
     setDeleteTarget(null);
     if (draft?.id === deleteTarget.id) {
       setDraft(null);
+      clearDraftTestState();
     }
     setTemporarySaveStatus('saved');
   };
@@ -398,6 +636,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
               <div className="host-grid grid network-card-grid">
                 {filteredProfiles.map((profile) => {
                   const usageCount = usageByProfileId.get(profile.id) ?? 0;
+                  const testState = proxyTestResults[profile.id];
 
                   return (
                     <article key={profile.id} className={`host-card network-card ${draft?.id === profile.id ? 'active' : ''}`}>
@@ -412,6 +651,11 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                             <em>{typeLabels[profile.config.type]}</em>
                             <em>{formatCount(copy.usage, usageCount)}</em>
                             {profile.config.username ? <em>{copy.username}</em> : null}
+                            {testState ? (
+                              <em className={`network-test-badge ${testState.status}`} title={testState.detail || testState.message}>
+                                {testState.message}
+                              </em>
+                            ) : null}
                           </span>
                         </span>
                       </button>
@@ -419,6 +663,16 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                         <details className="host-card-menu" onClick={(event) => event.stopPropagation()}>
                           <summary aria-label={copy.actions}>⋯</summary>
                           <div className="host-card-menu-panel">
+                            <button
+                              type="button"
+                              disabled={testState?.status === 'testing'}
+                              onClick={(event) => {
+                                closeDetailsMenu(event.currentTarget);
+                                void testProxy(profile);
+                              }}
+                            >
+                              {testState?.status === 'testing' ? copy.testing : copy.test}
+                            </button>
                             <button
                               type="button"
                               onClick={(event) => {
@@ -473,10 +727,28 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
               <small>{draft.label || copy.editorHint}</small>
             </span>
             <div className="editor-header-actions">
+              <button
+                type="button"
+                className="editor-header-test"
+                disabled={draftTestState?.status === 'testing'}
+                onClick={() => {
+                  void testDraftProxy();
+                }}
+              >
+                {draftTestState?.status === 'testing' ? copy.testing : copy.test}
+              </button>
               <button type="submit" className="editor-header-submit" form="proxy-editor-form">
                 {copy.save}
               </button>
-              <button type="button" className="editor-header-clear" onClick={() => setDraft(null)}>
+              <button
+                type="button"
+                className="editor-header-clear"
+                onClick={() => {
+                  setDraft(null);
+                  setFormError('');
+                  clearDraftTestState();
+                }}
+              >
                 {copy.cancel}
               </button>
             </div>
@@ -488,7 +760,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
               <input
                 value={draft.label}
                 maxLength={80}
-                onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+                onChange={(event) => updateDraft({ ...draft, label: event.target.value })}
                 placeholder={copy.namePlaceholder}
               />
             </label>
@@ -499,7 +771,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                 value={draft.type}
                 onChange={(event) => {
                   const type = event.target.value as ShellDeskProxyType;
-                  setDraft({
+                  updateDraft({
                     ...draft,
                     type,
                     port: type === 'http' ? '8080' : type === 'socks5' ? '1080' : '',
@@ -517,7 +789,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                 <span>{copy.command}</span>
                 <input
                   value={draft.command}
-                  onChange={(event) => setDraft({ ...draft, command: event.target.value })}
+                  onChange={(event) => updateDraft({ ...draft, command: event.target.value })}
                   placeholder="nc -X connect -x proxy.example.com:8080 {host} {port}"
                 />
                 <small className="field-note">{copy.commandHint}</small>
@@ -530,7 +802,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                     <input
                       value={draft.host}
                       maxLength={255}
-                      onChange={(event) => setDraft({ ...draft, host: event.target.value })}
+                      onChange={(event) => updateDraft({ ...draft, host: event.target.value })}
                       placeholder="proxy.example.com"
                     />
                   </label>
@@ -540,7 +812,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                     <input
                       value={draft.port}
                       inputMode="numeric"
-                      onChange={(event) => setDraft({ ...draft, port: event.target.value })}
+                      onChange={(event) => updateDraft({ ...draft, port: event.target.value })}
                       placeholder={draft.type === 'socks5' ? '1080' : '8080'}
                     />
                   </label>
@@ -551,7 +823,7 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                   <input
                     value={draft.username}
                     maxLength={128}
-                    onChange={(event) => setDraft({ ...draft, username: event.target.value })}
+                    onChange={(event) => updateDraft({ ...draft, username: event.target.value })}
                     placeholder="proxy-user"
                   />
                 </label>
@@ -561,13 +833,18 @@ function ProxyProfilesPage({ hosts, proxyProfiles, onProxyProfilesChange }: Prox
                   <input
                     type="password"
                     value={draft.password}
-                    onChange={(event) => setDraft({ ...draft, password: event.target.value })}
+                    onChange={(event) => updateDraft({ ...draft, password: event.target.value })}
                     placeholder="••••••••"
                   />
                 </label>
               </>
             )}
 
+            {draftTestState ? (
+              <div className={`network-test-message ${draftTestState.status}`} role="status" title={draftTestState.detail || draftTestState.message}>
+                {draftTestState.message}
+              </div>
+            ) : null}
             {formError ? <div className="snippet-form-error">{formError}</div> : null}
           </form>
         </aside>
