@@ -544,6 +544,15 @@ async function getLocalSymlinkTargetType(localPath) {
   try {
     const stats = await fs.promises.stat(localPath);
     if (stats.isDirectory()) {
+      if (process.platform === 'win32') {
+        try {
+          const directory = await fs.promises.opendir(localPath);
+          await directory.close();
+        } catch {
+          return 'unknown';
+        }
+      }
+
       return 'directory';
     }
     if (stats.isFile()) {
@@ -556,6 +565,34 @@ async function getLocalSymlinkTargetType(localPath) {
   return 'unknown';
 }
 
+async function getLocalSymlinkTargetPath(localPath) {
+  try {
+    return await fs.promises.readlink(localPath);
+  } catch {
+    return '';
+  }
+}
+
+async function createLocalDirectoryReadError(localPath, error) {
+  if (process.platform !== 'win32' || !['EACCES', 'EPERM'].includes(error?.code)) {
+    return error;
+  }
+
+  try {
+    const stats = await fs.promises.lstat(localPath);
+    if (!stats.isSymbolicLink()) {
+      return error;
+    }
+  } catch {
+    return error;
+  }
+
+  const targetPath = await getLocalSymlinkTargetPath(localPath);
+  const targetHint = targetPath ? `请直接打开目标路径：${toDisplayPath(targetPath)}。` : '请改为打开它指向的真实目录。';
+
+  return new Error(`无法打开 Windows 兼容性目录链接：${toDisplayPath(localPath)}。${targetHint}`);
+}
+
 async function readLocalDirectoryEntry(localPath, dirent) {
   const pathModule = getPathModuleForLocal();
   const entryPath = pathModule.join(localPath, dirent.name);
@@ -563,12 +600,16 @@ async function readLocalDirectoryEntry(localPath, dirent) {
   try {
     const entryStats = await fs.promises.lstat(entryPath);
     const type = toLocalEntryType(entryStats);
+    const targetPath = type === 'symlink' ? await getLocalSymlinkTargetPath(entryPath) : '';
 
     return {
       name: dirent.name,
       longname: dirent.name,
       type,
-      ...(type === 'symlink' ? { targetType: await getLocalSymlinkTargetType(entryPath) } : {}),
+      ...(type === 'symlink' ? {
+        targetType: await getLocalSymlinkTargetType(entryPath),
+        ...(targetPath ? { targetPath: toDisplayPath(targetPath) } : {}),
+      } : {}),
       size: entryStats.isFile() ? entryStats.size : 0,
       modifiedAt: new Date(entryStats.mtimeMs).toISOString(),
     };
@@ -618,7 +659,13 @@ async function listLocalDirectory(rawPath) {
     throw new Error('本地路径不是目录。');
   }
 
-  const dirents = await fs.promises.readdir(localPath, { withFileTypes: true });
+  let dirents;
+  try {
+    dirents = await fs.promises.readdir(localPath, { withFileTypes: true });
+  } catch (error) {
+    throw await createLocalDirectoryReadError(localPath, error);
+  }
+
   const entries = (await Promise.all(dirents.map((dirent) => readLocalDirectoryEntry(localPath, dirent))))
     .filter(Boolean);
 

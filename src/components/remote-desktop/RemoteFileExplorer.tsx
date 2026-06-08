@@ -37,6 +37,7 @@ interface RemoteFileEntry {
   longname: string;
   type: RemoteFileEntryType;
   targetType?: RemoteSymlinkTargetType;
+  targetPath?: string;
   size: number;
   modifiedAt: string;
 }
@@ -1262,6 +1263,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
   const openFileEntry = useCallback(async (entry: RemoteFileEntry) => {
     const entryPath = joinRemotePath(remotePath, entry.name, isWindowsHost);
     let effectiveType = getEffectiveEntryType(entry);
+    let openPath = entry.type === 'symlink' && entry.targetPath ? entry.targetPath : entryPath;
 
     if (entry.type === 'symlink' && effectiveType === 'symlink' && window.guiSSH?.connections) {
       try {
@@ -1282,12 +1284,17 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       }
     }
 
+    if (entry.type === 'symlink' && entry.targetPath && (effectiveType === 'symlink' || effectiveType === 'directory')) {
+      effectiveType = 'directory';
+      openPath = entry.targetPath;
+    }
+
     if (effectiveType === 'directory') {
-      navigateToPath(entryPath);
+      navigateToPath(openPath);
     } else if (effectiveType === 'file' && isSqliteFile(entry.name) && onOpenSqliteFile) {
-      onOpenSqliteFile(entryPath);
+      onOpenSqliteFile(openPath);
     } else if (effectiveType === 'file' && isTextFile(entry.name) && onOpenFile) {
-      onOpenFile(entryPath);
+      onOpenFile(openPath);
     }
   }, [connectionId, isWindowsHost, navigateToPath, remotePath, onOpenFile, onOpenSqliteFile]);
 
