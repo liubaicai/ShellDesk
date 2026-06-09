@@ -28,6 +28,27 @@ select {
   font: inherit;
 }
 
+select {
+  background-color: var(--surface-input);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: var(--surface-input);
+  color: var(--text);
+}
+
+select option:checked {
+  background-color: var(--accent-soft);
+  color: var(--text);
+}
+
+[data-theme="light"] select {
+  color-scheme: light;
+}
+
 button {
   color: inherit;
 }

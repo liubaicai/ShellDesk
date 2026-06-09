@@ -47,6 +47,23 @@ interface ContainerStats {
   error?: string;
 }
 
+type RestartPolicy = 'no' | 'on-failure' | 'unless-stopped' | 'always';
+type RunNetworkMode = 'default' | 'bridge' | 'host' | 'none' | 'custom';
+
+interface ContainerRuntimeConfig {
+  restartPolicy: RestartPolicy;
+  restartPolicyText: string;
+  networkMode: string;
+  privileged: string;
+  hostname: string;
+  user: string;
+  workingDir: string;
+  entrypoint: string;
+  command: string;
+  labels: string[];
+  resources: Array<{ label: string; value: string }>;
+}
+
 interface ContainerDetail {
   id: string;
   name: string;
@@ -61,6 +78,7 @@ interface ContainerDetail {
   inspectText: string;
   statsText: string;
   stats?: ContainerStats;
+  config: ContainerRuntimeConfig;
   inspectError?: string;
 }
 
@@ -71,10 +89,36 @@ interface ContainerTroubleshooting {
   rawOutput: string;
 }
 
+interface ContainerRunForm {
+  image: string;
+  name: string;
+  ports: string;
+  volumes: string;
+  environment: string;
+  restartPolicy: RestartPolicy;
+  networkMode: RunNetworkMode;
+  network: string;
+  hostname: string;
+  workdir: string;
+  user: string;
+  command: string;
+  extraArgs: string;
+  createOnly: boolean;
+  removeWhenStopped: boolean;
+}
+
+interface ContainerConfigForm {
+  name: string;
+  restartPolicy: RestartPolicy;
+  cpuLimit: string;
+  memoryLimit: string;
+}
+
 type ManagerTab = 'containers' | 'images';
 type ContainerFilter = 'all' | ContainerState;
-type DetailTab = 'summary' | 'logs' | 'inspect' | 'exec';
-type ContainerAction = 'start' | 'stop' | 'restart' | 'remove';
+type DetailTab = 'summary' | 'config' | 'logs' | 'inspect' | 'exec';
+type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'kill' | 'remove';
+type ImagePruneMode = 'dangling' | 'unused';
 
 type PendingAction =
   | { kind: 'container'; action: 'remove'; container: ContainerSummary }
@@ -102,8 +146,60 @@ const containerActionLabels: Record<ContainerAction, { labelId: MessageId; succe
   start: { labelId: 'container.action.start', successId: 'container.action.success.start', primary: true },
   stop: { labelId: 'container.action.stop', successId: 'container.action.success.stop', danger: true },
   restart: { labelId: 'container.action.restart', successId: 'container.action.success.restart' },
+  pause: { labelId: 'container.action.pause', successId: 'container.action.success.pause' },
+  unpause: { labelId: 'container.action.unpause', successId: 'container.action.success.unpause', primary: true },
+  kill: { labelId: 'container.action.kill', successId: 'container.action.success.kill', danger: true },
   remove: { labelId: 'container.action.remove', successId: 'container.action.success.remove', danger: true },
 };
+
+const restartPolicyOptions: Array<{ value: RestartPolicy; labelId: MessageId }> = [
+  { value: 'no', labelId: 'container.restartPolicy.no' },
+  { value: 'on-failure', labelId: 'container.restartPolicy.onFailure' },
+  { value: 'unless-stopped', labelId: 'container.restartPolicy.unlessStopped' },
+  { value: 'always', labelId: 'container.restartPolicy.always' },
+];
+
+const runNetworkModeOptions: Array<{ value: RunNetworkMode; labelId: MessageId }> = [
+  { value: 'default', labelId: 'container.network.default' },
+  { value: 'bridge', labelId: 'container.network.bridge' },
+  { value: 'host', labelId: 'container.network.host' },
+  { value: 'none', labelId: 'container.network.none' },
+  { value: 'custom', labelId: 'container.network.custom' },
+];
+
+const imagePruneOptions: Array<{ value: ImagePruneMode; labelId: MessageId; descriptionId: MessageId }> = [
+  { value: 'dangling', labelId: 'container.prune.dangling', descriptionId: 'container.prune.danglingDescription' },
+  { value: 'unused', labelId: 'container.prune.unused', descriptionId: 'container.prune.unusedDescription' },
+];
+
+function createDefaultRunForm(image = ''): ContainerRunForm {
+  return {
+    image,
+    name: image ? createContainerNameSuggestion(image) : '',
+    ports: '',
+    volumes: '',
+    environment: '',
+    restartPolicy: 'unless-stopped',
+    networkMode: 'default',
+    network: '',
+    hostname: '',
+    workdir: '',
+    user: '',
+    command: '',
+    extraArgs: '',
+    createOnly: false,
+    removeWhenStopped: false,
+  };
+}
+
+function createDefaultConfigForm(): ContainerConfigForm {
+  return {
+    name: '',
+    restartPolicy: 'no',
+    cpuLimit: '',
+    memoryLimit: '',
+  };
+}
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -143,6 +239,180 @@ function readString(record: Record<string, unknown> | undefined, ...keys: string
   }
 
   return '';
+}
+
+function readNumber(record: Record<string, unknown> | undefined, ...keys: string[]) {
+  if (!record) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsedValue = Number(value);
+
+      if (Number.isFinite(parsedValue)) {
+        return parsedValue;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function formatInspectValue(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return '-';
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter(Boolean).join(' ') || '-';
+  }
+
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return String(value);
+}
+
+function formatByteLimit(value: number | undefined) {
+  if (!value || value <= 0) {
+    return '';
+  }
+
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let nextValue = value;
+  let unitIndex = 0;
+
+  while (nextValue >= 1024 && unitIndex < units.length - 1) {
+    nextValue /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = nextValue >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${nextValue.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function normalizeRestartPolicy(value: string): RestartPolicy {
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (normalizedValue === 'always') return 'always';
+  if (normalizedValue === 'unless-stopped') return 'unless-stopped';
+  if (normalizedValue.startsWith('on-failure')) return 'on-failure';
+  return 'no';
+}
+
+function createContainerNameSuggestion(imageRef: string) {
+  const imageName = imageRef
+    .replace(/^sha256:/, '')
+    .split('@')[0]
+    .replace(/:[^/:]+$/u, '')
+    .split('/')
+    .filter(Boolean)
+    .pop() || '';
+  const normalizedName = imageName
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '');
+
+  return normalizedName ? `${normalizedName}-app` : '';
+}
+
+function parseMultilineValues(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function parseContainerCliTokens(value: string, fieldLabel: string, language: AppLanguage) {
+  const tokens: string[] = [];
+  let currentToken = '';
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (const char of value.trim()) {
+    if (escaping) {
+      currentToken += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\' && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        currentToken += char;
+      }
+
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/u.test(char)) {
+      if (currentToken) {
+        tokens.push(currentToken);
+        currentToken = '';
+      }
+
+      continue;
+    }
+
+    currentToken += char;
+  }
+
+  if (escaping) {
+    currentToken += '\\';
+  }
+
+  if (quote) {
+    throw new Error(t('container.error.unclosedQuote', language, { field: fieldLabel }));
+  }
+
+  if (currentToken) {
+    tokens.push(currentToken);
+  }
+
+  return tokens;
+}
+
+function formatRuntimeCommand(runtime: ContainerRuntime, args: string[]) {
+  return `${runtime} ${args.map(shellSingleQuote).join(' ')}`;
+}
+
+function getRuntimeCliCommand(runtime: ContainerRuntime, args: string[], isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    const powershellArgs = args.map(powershellSingleQuote).join(', ');
+
+    return powershellCommand(`
+$runtime = ${powershellSingleQuote(runtime)}
+$containerArgs = @(${powershellArgs})
+& $runtime @containerArgs 2>&1 | ForEach-Object { $_.ToString() }
+$exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+exit $exitCode
+`);
+  }
+
+  return `${formatRuntimeCommand(runtime, args)} 2>&1`;
 }
 
 function parseJsonDocument(text: string): unknown[] {
@@ -394,6 +664,54 @@ function extractEnv(inspectRecord: Record<string, unknown> | undefined) {
     .filter(Boolean);
 }
 
+function extractContainerRuntimeConfig(inspectRecord: Record<string, unknown> | undefined): ContainerRuntimeConfig {
+  const config = toRecord(inspectRecord?.Config);
+  const hostConfig = toRecord(inspectRecord?.HostConfig);
+  const restartPolicyRecord = toRecord(hostConfig?.RestartPolicy);
+  const restartPolicyName = normalizeRestartPolicy(readString(restartPolicyRecord, 'Name'));
+  const restartPolicyRetryCount = readNumber(restartPolicyRecord, 'MaximumRetryCount');
+  const labelsRecord = toRecord(config?.Labels);
+  const labels = labelsRecord
+    ? Object.entries(labelsRecord).map(([key, value]) => `${key}=${formatInspectValue(value)}`)
+    : [];
+  const resources: Array<{ label: string; value: string }> = [];
+  const nanoCpus = readNumber(hostConfig, 'NanoCpus');
+  const cpuQuota = readNumber(hostConfig, 'CpuQuota');
+  const cpuPeriod = readNumber(hostConfig, 'CpuPeriod');
+  const memory = readNumber(hostConfig, 'Memory');
+  const memorySwap = readNumber(hostConfig, 'MemorySwap');
+
+  if (nanoCpus && nanoCpus > 0) {
+    resources.push({ label: 'CPU', value: `${Number((nanoCpus / 1_000_000_000).toFixed(3))}` });
+  } else if (cpuQuota && cpuQuota > 0 && cpuPeriod && cpuPeriod > 0) {
+    resources.push({ label: 'CPU', value: `${Number((cpuQuota / cpuPeriod).toFixed(3))}` });
+  }
+
+  if (memory && memory > 0) {
+    resources.push({ label: 'Memory', value: formatByteLimit(memory) });
+  }
+
+  if (memorySwap && memorySwap > 0) {
+    resources.push({ label: 'Swap', value: formatByteLimit(memorySwap) });
+  }
+
+  return {
+    restartPolicy: restartPolicyName,
+    restartPolicyText: restartPolicyRetryCount && restartPolicyRetryCount > 0
+      ? `${restartPolicyName}:${restartPolicyRetryCount}`
+      : restartPolicyName,
+    networkMode: readString(hostConfig, 'NetworkMode') || '-',
+    privileged: readString(hostConfig, 'Privileged') || '-',
+    hostname: readString(config, 'Hostname') || '-',
+    user: readString(config, 'User') || '-',
+    workingDir: readString(config, 'WorkingDir') || '-',
+    entrypoint: formatInspectValue(config?.Entrypoint),
+    command: formatInspectValue(config?.Cmd),
+    labels,
+    resources,
+  };
+}
+
 function parseContainerStats(statsText: string): ContainerStats | undefined {
   if (!statsText) {
     return undefined;
@@ -457,6 +775,7 @@ function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary, 
     inspectText: sections.inspect,
     statsText: sections.stats,
     stats: parseContainerStats(sections.stats),
+    config: extractContainerRuntimeConfig(inspectRecord),
     inspectError: inspectError || undefined,
   };
 }
@@ -557,6 +876,142 @@ exit $exitCode
   return `${runtime} ${runtimeAction} ${shellSingleQuote(containerId)} 2>&1`;
 }
 
+function buildContainerRunArgs(form: ContainerRunForm, language: AppLanguage) {
+  const image = form.image.trim();
+
+  if (!image) {
+    throw new Error(t('container.error.imageRequired', language));
+  }
+
+  const args = [form.createOnly ? 'create' : 'run'];
+  const name = form.name.trim();
+  const network = form.networkMode === 'custom' ? form.network.trim() : form.networkMode === 'default' ? '' : form.networkMode;
+  const hostname = form.hostname.trim();
+  const workdir = form.workdir.trim();
+  const user = form.user.trim();
+
+  if (form.networkMode === 'custom' && !network) {
+    throw new Error(t('container.error.customNetworkRequired', language));
+  }
+
+  if (!form.createOnly) {
+    args.push('-d');
+  }
+
+  if (!form.createOnly && form.removeWhenStopped) {
+    args.push('--rm');
+  }
+
+  if (name) {
+    args.push('--name', name);
+  }
+
+  if (form.restartPolicy !== 'no' && (form.createOnly || !form.removeWhenStopped)) {
+    args.push('--restart', form.restartPolicy);
+  }
+
+  if (network) {
+    args.push('--network', network);
+  }
+
+  if (hostname) {
+    args.push('--hostname', hostname);
+  }
+
+  if (workdir) {
+    args.push('-w', workdir);
+  }
+
+  if (user) {
+    args.push('-u', user);
+  }
+
+  parseMultilineValues(form.ports).forEach((port) => args.push('-p', port));
+  parseMultilineValues(form.volumes).forEach((volume) => args.push('-v', volume));
+  parseMultilineValues(form.environment).forEach((env) => args.push('-e', env));
+  args.push(...parseContainerCliTokens(form.extraArgs, t('container.ui.extraArgs', language), language));
+  args.push(image);
+  args.push(...parseContainerCliTokens(form.command, t('container.ui.command', language), language));
+
+  return args;
+}
+
+function buildImagePruneArgs(mode: ImagePruneMode) {
+  const args = ['image', 'prune', '--force'];
+
+  if (mode === 'unused') {
+    args.push('--all');
+  }
+
+  return args;
+}
+
+function buildContainerConfigCommandGroups(containerId: string, form: ContainerConfigForm, detail: ContainerDetail, language: AppLanguage) {
+  const groups: string[][] = [];
+  const nextName = form.name.trim();
+  const cpuLimit = form.cpuLimit.trim();
+  const memoryLimit = form.memoryLimit.trim();
+  const currentRestartPolicy = detail.config.restartPolicy;
+  const updateArgs = ['update'];
+
+  if (nextName && nextName !== detail.name) {
+    if (/\s/u.test(nextName)) {
+      throw new Error(t('container.error.invalidContainerName', language));
+    }
+
+    groups.push(['rename', containerId, nextName]);
+  }
+
+  if (form.restartPolicy !== currentRestartPolicy) {
+    updateArgs.push('--restart', form.restartPolicy);
+  }
+
+  if (cpuLimit) {
+    updateArgs.push('--cpus', cpuLimit);
+  }
+
+  if (memoryLimit) {
+    updateArgs.push('--memory', memoryLimit);
+  }
+
+  if (updateArgs.length > 1) {
+    updateArgs.push(containerId);
+    groups.push(updateArgs);
+  }
+
+  if (groups.length === 0) {
+    throw new Error(t('container.error.noConfigChange', language));
+  }
+
+  return groups;
+}
+
+function getContainerConfigUpdateCommand(runtime: ContainerRuntime, commandGroups: string[][], isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    const powershellGroups = commandGroups
+      .map((group) => `, @(${group.map(powershellSingleQuote).join(', ')})`)
+      .join('\n');
+
+    return powershellCommand(`
+$runtime = ${powershellSingleQuote(runtime)}
+$commandGroups = @(
+${powershellGroups}
+)
+foreach ($containerArgs in $commandGroups) {
+  & $runtime @containerArgs 2>&1 | ForEach-Object { $_.ToString() }
+  $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+  if ($exitCode -ne 0) { exit $exitCode }
+}
+exit 0
+`);
+  }
+
+  return [
+    'set -e',
+    ...commandGroups.map((args) => `${formatRuntimeCommand(runtime, args)} 2>&1`),
+  ].join('\n');
+}
+
 function getImagePullCommand(runtime: ContainerRuntime, imageName: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
     return powershellCommand(`
@@ -652,9 +1107,7 @@ function buildContainerDiagnostics(detail: ContainerDetail, language: AppLanguag
   ].join('\n');
 }
 
-function buildDockerRestartCommand(containerId: string, language: AppLanguage) {
-  const target = shellSingleQuote(containerId);
-
+function buildDockerDaemonRestartCommand(language: AppLanguage) {
   return [
     t('container.restart.warning', language),
     'set -e',
@@ -671,8 +1124,34 @@ function buildDockerRestartCommand(containerId: string, language: AppLanguage) {
     '    sudo service docker restart',
     '  fi',
     'fi',
+  ].join('\n');
+}
+
+function buildDockerRestartCommand(containerId: string, language: AppLanguage) {
+  const target = shellSingleQuote(containerId);
+
+  return [
+    buildDockerDaemonRestartCommand(language),
     `docker start ${target}`,
   ].join('\n');
+}
+
+function isDockerNetworkTrouble(output: string, runtime: ContainerRuntime) {
+  return (
+    runtime === 'docker' &&
+    /iptables/i.test(output) &&
+    /\bDOCKER\b/.test(output) &&
+    /No chain\/target\/match by that name/i.test(output)
+  );
+}
+
+function createDockerNetworkTroubleshooting(output: string, commands: string, language: AppLanguage): ContainerTroubleshooting {
+  return {
+    title: t('container.troubleshooting.title', language),
+    message: t('container.troubleshooting.message', language),
+    commands,
+    rawOutput: output,
+  };
 }
 
 function createContainerTroubleshooting(
@@ -682,22 +1161,11 @@ function createContainerTroubleshooting(
   container: ContainerSummary,
   language: AppLanguage,
 ): ContainerTroubleshooting | null {
-  if (
-    runtime !== 'docker' ||
-    (action !== 'start' && action !== 'restart') ||
-    !/iptables/i.test(output) ||
-    !/\bDOCKER\b/.test(output) ||
-    !/No chain\/target\/match by that name/i.test(output)
-  ) {
+  if ((action !== 'start' && action !== 'restart') || !isDockerNetworkTrouble(output, runtime)) {
     return null;
   }
 
-  return {
-    title: t('container.troubleshooting.title', language),
-    message: t('container.troubleshooting.message', language),
-    commands: buildDockerRestartCommand(container.id, language),
-    rawOutput: output,
-  };
+  return createDockerNetworkTroubleshooting(output, buildDockerRestartCommand(container.id, language), language);
 }
 
 function RemoteContainerManager({ connectionId, systemType }: RemoteContainerManagerProps) {
@@ -719,8 +1187,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [containerFilter, setContainerFilter] = useState<ContainerFilter>('all');
   const [imageSearch, setImageSearch] = useState('');
   const [pullImageName, setPullImageName] = useState('');
+  const [imagePruneMode, setImagePruneMode] = useState<ImagePruneMode>('dangling');
+  const [imagePruneDialogOpen, setImagePruneDialogOpen] = useState(false);
+  const [imagePruneError, setImagePruneError] = useState('');
   const [execCommand, setExecCommand] = useState('id && uname -a');
   const [execOutput, setExecOutput] = useState('');
+  const [runPanelOpen, setRunPanelOpen] = useState(false);
+  const [runForm, setRunForm] = useState<ContainerRunForm>(() => createDefaultRunForm());
+  const [configForm, setConfigForm] = useState<ContainerConfigForm>(() => createDefaultConfigForm());
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [containersLoading, setContainersLoading] = useState(false);
   const [imagesLoading, setImagesLoading] = useState(false);
@@ -728,11 +1202,16 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [detailLoading, setDetailLoading] = useState(false);
   const [actingKey, setActingKey] = useState('');
   const [pulling, setPulling] = useState(false);
+  const [pruningImages, setPruningImages] = useState(false);
+  const [runningContainer, setRunningContainer] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [execRunning, setExecRunning] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [success, setSuccess] = useState('');
   const [troubleshooting, setTroubleshooting] = useState<ContainerTroubleshooting | null>(null);
+  const [runError, setRunError] = useState('');
+  const [runTroubleshooting, setRunTroubleshooting] = useState<ContainerTroubleshooting | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const setRuntimeValue = useCallback((value: ContainerRuntime | null) => {
@@ -744,7 +1223,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     selectedContainerIdRef.current = selectedContainerId;
   }, [selectedContainerId]);
 
-  const detectRuntime = useCallback(async () => {
+  const detectRuntime = useCallback(async (options?: { suppressGlobalError?: boolean }) => {
     if (runtimeRef.current) {
       return runtimeRef.current;
     }
@@ -770,7 +1249,9 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     } catch (err) {
       if (isMountedRef.current) {
         setRuntimeValue(null);
-        setError(getErrorMessage(err));
+        if (!options?.suppressGlobalError) {
+          setError(getErrorMessage(err));
+        }
       }
 
       throw err;
@@ -781,7 +1262,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     }
   }, [isWindowsHost, language, runCommand, setRuntimeValue]);
 
-  const refreshContainers = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean; preferredContainerId?: string }) => {
+  const refreshContainers = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean; preferredContainerId?: string; preferredContainerName?: string }) => {
     if (!options?.silent) {
       setContainersLoading(true);
     }
@@ -822,9 +1303,12 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       }
 
       const preferredContainerId = options?.preferredContainerId ?? selectedContainerIdRef.current;
-      const nextSelectedContainerId = preferredContainerId && nextContainers.some((container) => container.id === preferredContainerId)
-        ? preferredContainerId
-        : nextContainers[0]?.id ?? '';
+      const preferredContainerName = options?.preferredContainerName?.trim();
+      const preferredContainer = nextContainers.find((container) => (
+        (preferredContainerId && (container.id === preferredContainerId || preferredContainerId.startsWith(container.id) || container.id.startsWith(preferredContainerId))) ||
+        (preferredContainerName && container.name === preferredContainerName)
+      ));
+      const nextSelectedContainerId = preferredContainer?.id ?? nextContainers[0]?.id ?? '';
 
       setSelectedContainerId(nextSelectedContainerId);
       return nextSelectedContainerId;
@@ -930,6 +1414,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setDetail(null);
     setSelectedContainerId('');
     setExecOutput('');
+    setRunForm(createDefaultRunForm());
+    setConfigForm(createDefaultConfigForm());
+    setRunError('');
+    setRunTroubleshooting(null);
+    setRunPanelOpen(false);
+    setImagePruneMode('dangling');
+    setImagePruneDialogOpen(false);
+    setImagePruneError('');
     void refreshContainers();
 
     return () => {
@@ -958,6 +1450,20 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   );
 
   const selectedDetail = detail?.id === selectedContainerId ? detail : null;
+
+  useEffect(() => {
+    if (!selectedDetail) {
+      setConfigForm(createDefaultConfigForm());
+      return;
+    }
+
+    setConfigForm({
+      name: selectedDetail.name,
+      restartPolicy: selectedDetail.config.restartPolicy,
+      cpuLimit: '',
+      memoryLimit: '',
+    });
+  }, [selectedDetail?.id, selectedDetail?.name, selectedDetail?.config.restartPolicy]);
 
   const visibleContainers = useMemo(() => {
     const query = containerSearch.trim();
@@ -989,6 +1495,177 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       setSuccess(t('container.message.copied', language, { label }));
     } catch (err) {
       setError(t('container.error.copyFailed', language, { error: getErrorMessage(err) }));
+    }
+  };
+
+  const updateRunForm = <Key extends keyof ContainerRunForm>(key: Key, value: ContainerRunForm[Key]) => {
+    setRunForm((currentForm) => ({ ...currentForm, [key]: value }));
+  };
+
+  const updateConfigForm = <Key extends keyof ContainerConfigForm>(key: Key, value: ContainerConfigForm[Key]) => {
+    setConfigForm((currentForm) => ({ ...currentForm, [key]: value }));
+  };
+
+  const runCommandPreview = useMemo(() => {
+    try {
+      if (!runForm.image.trim()) {
+        return '';
+      }
+
+      return formatRuntimeCommand(runtime ?? 'docker', buildContainerRunArgs(runForm, language));
+    } catch {
+      return '';
+    }
+  }, [language, runForm, runtime]);
+
+  const imagePruneCommandPreview = useMemo(
+    () => formatRuntimeCommand(runtime ?? 'docker', buildImagePruneArgs(imagePruneMode)),
+    [imagePruneMode, runtime],
+  );
+
+  const prepareRunFromImage = (image: ImageSummary) => {
+    const imageRef = getImageReference(image);
+
+    setRunError('');
+    setRunTroubleshooting(null);
+    setRunForm((currentForm) => ({
+      ...currentForm,
+      image: imageRef,
+      name: createContainerNameSuggestion(imageRef),
+    }));
+    setActiveTab('containers');
+    setRunPanelOpen(true);
+  };
+
+  const openRunDialog = () => {
+    setActiveTab('containers');
+    setRunError('');
+    setRunTroubleshooting(null);
+    setRunPanelOpen(true);
+  };
+
+  const resetRunDialog = () => {
+    setRunError('');
+    setRunTroubleshooting(null);
+    setRunForm(createDefaultRunForm());
+  };
+
+  const openImagePruneDialog = () => {
+    setImagePruneError('');
+    setPendingAction(null);
+    setImagePruneDialogOpen(true);
+  };
+
+  const executeRunContainer = async () => {
+    let args: string[];
+
+    try {
+      args = buildContainerRunArgs(runForm, language);
+    } catch (err) {
+      setRunError(getErrorMessage(err));
+      setRunTroubleshooting(null);
+      return;
+    }
+
+    setRunningContainer(true);
+    setRunError('');
+    setNotice('');
+    setSuccess('');
+    setRunTroubleshooting(null);
+
+    try {
+      const activeRuntime = await detectRuntime({ suppressGlobalError: true });
+      const result = await runCommand(getRuntimeCliCommand(activeRuntime, args, isWindowsHost));
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+
+      if (result.code !== 0) {
+        if (isDockerNetworkTrouble(output, activeRuntime)) {
+          const repairCommand = [
+            buildDockerDaemonRestartCommand(language),
+            formatRuntimeCommand(activeRuntime, args),
+          ].join('\n');
+          setRunTroubleshooting(createDockerNetworkTroubleshooting(output, repairCommand, language));
+          throw new Error(t('container.error.dockerNetworkTrouble', language));
+        }
+
+        throw new Error(output || t('container.error.runFailed', language));
+      }
+
+      const preferredContainerName = runForm.name.trim();
+      setSuccess(t(runForm.createOnly ? 'container.success.containerCreated' : 'container.success.containerStarted', language, {
+        name: preferredContainerName || formatShortId(output),
+      }));
+      setActiveTab('containers');
+      setRunPanelOpen(false);
+      const nextSelectedContainerId = await refreshContainers({
+        runtimeOverride: activeRuntime,
+        silent: true,
+        preferredContainerId: output,
+        preferredContainerName,
+      });
+
+      if (nextSelectedContainerId) {
+        setSelectedContainerId(nextSelectedContainerId);
+        setDetailTab('summary');
+        await loadContainerDetail(nextSelectedContainerId);
+      }
+    } catch (err) {
+      setRunError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setRunningContainer(false);
+      }
+    }
+  };
+
+  const executeConfigUpdate = async () => {
+    if (!selectedContainer || !selectedDetail) {
+      setError(t('container.error.selectContainer', language));
+      return;
+    }
+
+    let commandGroups: string[][];
+
+    try {
+      commandGroups = buildContainerConfigCommandGroups(selectedContainer.id, configForm, selectedDetail, language);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return;
+    }
+
+    setSavingConfig(true);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+
+    try {
+      const activeRuntime = await detectRuntime();
+      const result = await runCommand(getContainerConfigUpdateCommand(activeRuntime, commandGroups, isWindowsHost));
+      const output = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
+
+      if (result.code !== 0) {
+        throw new Error(output || t('container.error.configFailed', language));
+      }
+
+      const preferredContainerName = configForm.name.trim();
+      setSuccess(t('container.success.configSaved', language, { name: preferredContainerName || selectedContainer.name }));
+      const nextSelectedContainerId = await refreshContainers({
+        runtimeOverride: activeRuntime,
+        silent: true,
+        preferredContainerId: selectedContainer.id,
+        preferredContainerName,
+      });
+
+      if (nextSelectedContainerId) {
+        await loadContainerDetail(nextSelectedContainerId);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setSavingConfig(false);
+      }
     }
   };
 
@@ -1065,6 +1742,38 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     } finally {
       if (isMountedRef.current) {
         setPulling(false);
+      }
+    }
+  };
+
+  const executeImagePrune = async () => {
+    setPruningImages(true);
+    setImagePruneError('');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+
+    try {
+      const activeRuntime = await detectRuntime({ suppressGlobalError: true });
+      const result = await runCommand(getRuntimeCliCommand(activeRuntime, buildImagePruneArgs(imagePruneMode), isWindowsHost));
+      const output = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
+
+      if (result.code !== 0) {
+        throw new Error(output || t('container.error.pruneImagesFailed', language));
+      }
+
+      const selectedPruneOption = imagePruneOptions.find((option) => option.value === imagePruneMode) ?? imagePruneOptions[0];
+      setSuccess(t('container.success.imagesPruned', language, { scope: t(selectedPruneOption.labelId, language) }));
+      setImagePruneDialogOpen(false);
+      await refreshImages({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      if (isMountedRef.current) {
+        setImagePruneError(getErrorMessage(err));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPruningImages(false);
       }
     }
   };
@@ -1150,8 +1859,16 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       return selectedContainer.state === 'running';
     }
 
-    if (action === 'stop' || action === 'restart') {
+    if (action === 'stop' || action === 'restart' || action === 'kill') {
+      return selectedContainer.state !== 'running' && selectedContainer.state !== 'paused';
+    }
+
+    if (action === 'pause') {
       return selectedContainer.state !== 'running';
+    }
+
+    if (action === 'unpause') {
+      return selectedContainer.state !== 'paused';
     }
 
     return false;
@@ -1244,6 +1961,9 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           <button type="button" className="container-tool-button primary" onClick={() => void executeImagePull()} disabled={pulling}>
             {pulling ? t('container.ui.pulling', language) : 'Pull'}
           </button>
+          <button type="button" className="container-tool-button danger" onClick={openImagePruneDialog} disabled={pruningImages}>
+            {pruningImages ? t('container.ui.pruning', language) : t('container.ui.pruneImages', language)}
+          </button>
         </>
       );
     }
@@ -1268,6 +1988,399 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           onChange={(event) => setContainerSearch(event.target.value)}
         />
       </>
+    );
+  };
+
+  const renderRunWorkbench = () => createPortal(
+    <div
+      className="container-run-modal-overlay"
+      role="presentation"
+      onClick={() => {
+        if (!runningContainer) {
+          setRunPanelOpen(false);
+        }
+      }}
+    >
+      <section
+        className="container-run-dialog container-run-workbench"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('container.ui.runWorkbenchAria', language)}
+        onClick={(event) => event.stopPropagation()}
+      >
+      <header className="container-workbench-header">
+        <div>
+          <strong>{t('container.ui.runWorkbench', language)}</strong>
+          <span>{runtime ? getRuntimeLabel(runtime, language) : t('container.runtime.notDetected', language)}</span>
+        </div>
+        <div>
+          <button type="button" className="container-tool-button" onClick={resetRunDialog}>
+            {t('container.ui.reset', language)}
+          </button>
+          <button type="button" className="container-tool-button" onClick={() => setRunPanelOpen(false)} disabled={runningContainer}>
+            {t('common.close', language)}
+          </button>
+        </div>
+      </header>
+      {runError ? <DismissibleAlert className="container-alert danger container-run-alert" onDismiss={() => setRunError('')} role="alert">{runError}</DismissibleAlert> : null}
+      {runTroubleshooting ? (
+        <section className="container-troubleshooting container-run-troubleshooting" aria-label={t('container.ui.troubleshootingAria', language)}>
+          <div>
+            <strong>{runTroubleshooting.title}</strong>
+            <p>{runTroubleshooting.message}</p>
+          </div>
+          <div className="container-troubleshooting-actions">
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(runTroubleshooting.commands, t('container.ui.copyFixCommandLabel', language))}>
+              {t('container.ui.copyFixCommand', language)}
+            </button>
+            <button type="button" className="container-tool-button" onClick={() => void copyToClipboard(runTroubleshooting.rawOutput, t('container.ui.copyRawErrorLabel', language))}>
+              {t('container.ui.copyRawError', language)}
+            </button>
+          </div>
+          <pre>{runTroubleshooting.commands}</pre>
+        </section>
+      ) : null}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void executeRunContainer();
+        }}
+      >
+        <div className="container-run-grid">
+          <label className="wide">
+            <span>{t('container.ui.image', language)}</span>
+            <input
+              type="text"
+              value={runForm.image}
+              onChange={(event) => updateRunForm('image', event.target.value)}
+              placeholder="nginx:latest"
+            />
+          </label>
+          <label>
+            <span>{t('container.ui.name', language)}</span>
+            <input
+              type="text"
+              value={runForm.name}
+              onChange={(event) => updateRunForm('name', event.target.value)}
+              placeholder="web-1"
+            />
+          </label>
+          <label>
+            <span>{t('container.ui.restartPolicy', language)}</span>
+            <select value={runForm.restartPolicy} onChange={(event) => updateRunForm('restartPolicy', event.target.value as RestartPolicy)}>
+              {restartPolicyOptions.map((option) => (
+                <option key={option.value} value={option.value}>{t(option.labelId, language)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t('container.ui.network', language)}</span>
+            <select
+              value={runForm.networkMode}
+              onChange={(event) => {
+                const nextMode = event.target.value as RunNetworkMode;
+                setRunForm((currentForm) => ({
+                  ...currentForm,
+                  networkMode: nextMode,
+                  network: nextMode === 'custom' ? currentForm.network : '',
+                }));
+              }}
+            >
+              {runNetworkModeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{t(option.labelId, language)}</option>
+              ))}
+            </select>
+          </label>
+          {runForm.networkMode === 'custom' ? (
+            <label>
+              <span>{t('container.ui.customNetwork', language)}</span>
+              <input
+                type="text"
+                value={runForm.network}
+                onChange={(event) => updateRunForm('network', event.target.value)}
+                placeholder="app-net"
+              />
+            </label>
+          ) : null}
+          <label>
+            <span>{t('container.ui.hostname', language)}</span>
+            <input
+              type="text"
+              value={runForm.hostname}
+              onChange={(event) => updateRunForm('hostname', event.target.value)}
+              placeholder="app"
+            />
+          </label>
+          <label>
+            <span>{t('container.ui.workdir', language)}</span>
+            <input
+              type="text"
+              value={runForm.workdir}
+              onChange={(event) => updateRunForm('workdir', event.target.value)}
+              placeholder="/app"
+            />
+          </label>
+          <label>
+            <span>{t('container.ui.user', language)}</span>
+            <input
+              type="text"
+              value={runForm.user}
+              onChange={(event) => updateRunForm('user', event.target.value)}
+              placeholder="1000:1000"
+            />
+          </label>
+          <label className="stack">
+            <span>{t('container.ui.portMappings', language)}</span>
+            <textarea
+              value={runForm.ports}
+              onChange={(event) => updateRunForm('ports', event.target.value)}
+              placeholder="8080:80"
+              rows={3}
+            />
+          </label>
+          <label className="stack">
+            <span>{t('container.ui.volumeMappings', language)}</span>
+            <textarea
+              value={runForm.volumes}
+              onChange={(event) => updateRunForm('volumes', event.target.value)}
+              placeholder="/host/data:/data"
+              rows={3}
+            />
+          </label>
+          <label className="stack">
+            <span>{t('container.ui.environment', language)}</span>
+            <textarea
+              value={runForm.environment}
+              onChange={(event) => updateRunForm('environment', event.target.value)}
+              placeholder="NODE_ENV=production"
+              rows={3}
+            />
+          </label>
+          <label className="wide">
+            <span>{t('container.ui.command', language)}</span>
+            <input
+              type="text"
+              value={runForm.command}
+              onChange={(event) => updateRunForm('command', event.target.value)}
+              placeholder={'sh -c "npm start"'}
+            />
+          </label>
+          <label className="wide">
+            <span>{t('container.ui.extraArgs', language)}</span>
+            <input
+              type="text"
+              value={runForm.extraArgs}
+              onChange={(event) => updateRunForm('extraArgs', event.target.value)}
+              placeholder="--add-host app.local:127.0.0.1"
+            />
+          </label>
+        </div>
+        <div className="container-run-options">
+          <label>
+            <input
+              type="checkbox"
+              checked={runForm.createOnly}
+              onChange={(event) => updateRunForm('createOnly', event.target.checked)}
+            />
+            <span>{t('container.ui.createOnly', language)}</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={!runForm.createOnly && runForm.removeWhenStopped}
+              disabled={runForm.createOnly}
+              onChange={(event) => updateRunForm('removeWhenStopped', event.target.checked)}
+            />
+            <span>{t('container.ui.removeWhenStopped', language)}</span>
+          </label>
+        </div>
+        {runCommandPreview ? (
+          <div className="container-command-preview">
+            <header>
+              <span>{t('container.ui.commandPreview', language)}</span>
+              <button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(runCommandPreview, t('container.ui.commandPreview', language))}>
+                {t('container.ui.copy', language)}
+              </button>
+            </header>
+            <pre>{runCommandPreview}</pre>
+          </div>
+        ) : null}
+        <div className="container-workbench-actions">
+          <button type="submit" className="container-action-btn primary" disabled={runningContainer}>
+            {runningContainer ? t('container.ui.processing', language) : t(runForm.createOnly ? 'container.ui.createContainer' : 'container.ui.runContainer', language)}
+          </button>
+        </div>
+      </form>
+      </section>
+    </div>,
+    document.body,
+  );
+
+  const renderImagePruneDialog = () => createPortal(
+    <div
+      className="container-modal-overlay"
+      role="presentation"
+      onClick={() => {
+        if (!pruningImages) {
+          setImagePruneDialogOpen(false);
+        }
+      }}
+    >
+      <div
+        className="container-modal container-prune-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="container-image-prune-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div id="container-image-prune-title" className="container-modal-title">
+          {t('container.modal.pruneImages', language)}
+        </div>
+        <div className="container-modal-message">
+          <p>{t('container.modal.pruneImagesDescription', language)}</p>
+        </div>
+        {imagePruneError ? (
+          <DismissibleAlert className="container-alert danger container-prune-alert" onDismiss={() => setImagePruneError('')} role="alert">
+            {imagePruneError}
+          </DismissibleAlert>
+        ) : null}
+        <div className="container-prune-options" role="radiogroup" aria-label={t('container.modal.pruneImages', language)}>
+          {imagePruneOptions.map((option) => (
+            <label key={option.value} className={`container-prune-option ${imagePruneMode === option.value ? 'selected' : ''}`}>
+              <input
+                type="radio"
+                name="container-image-prune-mode"
+                value={option.value}
+                checked={imagePruneMode === option.value}
+                disabled={pruningImages}
+                onChange={() => {
+                  setImagePruneError('');
+                  setImagePruneMode(option.value);
+                }}
+              />
+              <span>
+                <strong>{t(option.labelId, language)}</strong>
+                <small>{t(option.descriptionId, language)}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="container-command-preview container-prune-preview">
+          <header>
+            <span>{t('container.ui.commandPreview', language)}</span>
+            <button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(imagePruneCommandPreview, t('container.ui.commandPreview', language))}>
+              {t('container.ui.copy', language)}
+            </button>
+          </header>
+          <pre>{imagePruneCommandPreview}</pre>
+        </div>
+        <div className="container-modal-actions">
+          <button type="button" className="container-modal-btn" onClick={() => setImagePruneDialogOpen(false)} disabled={pruningImages}>{t('common.cancel', language)}</button>
+          <button type="button" className="container-modal-btn danger" onClick={() => void executeImagePrune()} disabled={pruningImages}>
+            {pruningImages ? t('container.ui.pruning', language) : t('container.modal.confirmPrune', language)}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+
+  const renderContainerConfig = () => {
+    if (!selectedDetail) {
+      return <div className="container-empty">{detailLoading ? t('container.ui.loadingDetail', language) : t('container.ui.noDetail', language)}</div>;
+    }
+
+    const configItems = [
+      { label: t('container.ui.restartPolicy', language), value: selectedDetail.config.restartPolicyText },
+      { label: t('container.ui.network', language), value: selectedDetail.config.networkMode },
+      { label: t('container.ui.privileged', language), value: selectedDetail.config.privileged },
+      { label: t('container.ui.hostname', language), value: selectedDetail.config.hostname },
+      { label: t('container.ui.user', language), value: selectedDetail.config.user },
+      { label: t('container.ui.workdir', language), value: selectedDetail.config.workingDir },
+      { label: t('container.ui.entrypoint', language), value: selectedDetail.config.entrypoint },
+      { label: t('container.ui.command', language), value: selectedDetail.config.command },
+    ];
+
+    return (
+      <div className="container-config-workbench">
+        <section className="container-config-current">
+          <header>
+            <strong>{t('container.ui.currentConfig', language)}</strong>
+            <button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(selectedDetail.inspectText, 'inspect')}>
+              {t('container.ui.copyInspect', language)}
+            </button>
+          </header>
+          <div className="container-config-grid">
+            {configItems.map((item) => (
+              <div key={item.label}>
+                <span>{item.label}</span>
+                <strong title={item.value}>{item.value || '-'}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="container-config-lists">
+            <section>
+              <header>
+                <strong>{t('container.ui.resourceLimits', language)}</strong>
+                <span>{selectedDetail.config.resources.length}</span>
+              </header>
+              <div className="container-chip-list">
+                {selectedDetail.config.resources.length ? selectedDetail.config.resources.map((item) => <code key={`${item.label}:${item.value}`}>{item.label}: {item.value}</code>) : <span>{t('container.ui.noResourceLimits', language)}</span>}
+              </div>
+            </section>
+            <section>
+              <header>
+                <strong>Labels</strong>
+                <span>{selectedDetail.config.labels.length}</span>
+              </header>
+              <div className="container-chip-list">
+                {selectedDetail.config.labels.length ? selectedDetail.config.labels.slice(0, 18).map((label) => <code key={label}>{label}</code>) : <span>{t('container.ui.noLabels', language)}</span>}
+                {selectedDetail.config.labels.length > 18 ? <span>{t('container.ui.moreItems', language, { count: selectedDetail.config.labels.length - 18 })}</span> : null}
+              </div>
+            </section>
+          </div>
+        </section>
+        <form
+          className="container-config-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void executeConfigUpdate();
+          }}
+        >
+          <header>
+            <strong>{t('container.ui.dynamicConfig', language)}</strong>
+            <span>{t('container.ui.dynamicConfigHint', language)}</span>
+          </header>
+          <div className="container-config-fields">
+            <label>
+              <span>{t('container.ui.name', language)}</span>
+              <input type="text" value={configForm.name} onChange={(event) => updateConfigForm('name', event.target.value)} />
+            </label>
+            <label>
+              <span>{t('container.ui.restartPolicy', language)}</span>
+              <select value={configForm.restartPolicy} onChange={(event) => updateConfigForm('restartPolicy', event.target.value as RestartPolicy)}>
+                {restartPolicyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{t(option.labelId, language)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>CPU</span>
+              <input type="text" value={configForm.cpuLimit} onChange={(event) => updateConfigForm('cpuLimit', event.target.value)} placeholder="0.50" />
+            </label>
+            <label>
+              <span>{t('container.ui.memory', language)}</span>
+              <input type="text" value={configForm.memoryLimit} onChange={(event) => updateConfigForm('memoryLimit', event.target.value)} placeholder="512m" />
+            </label>
+          </div>
+          <div className="container-inline-warning">{t('container.ui.recreateHint', language)}</div>
+          <div className="container-workbench-actions">
+            <button type="submit" className="container-action-btn primary" disabled={savingConfig}>
+              {savingConfig ? t('container.ui.processing', language) : t('container.ui.saveConfig', language)}
+            </button>
+          </div>
+        </form>
+      </div>
     );
   };
 
@@ -1347,6 +2460,9 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           <button type="button" className="container-tool-button" onClick={() => void refreshCurrentContainer()} disabled={!selectedContainer || detailLoading}>
             {detailLoading ? t('container.ui.reading', language) : t('container.ui.refreshCurrent', language)}
           </button>
+          <button type="button" className="container-tool-button primary" onClick={openRunDialog}>
+            {t('container.ui.newContainer', language)}
+          </button>
           <span className="container-runtime-pill">{getRuntimeLabel(runtime, language)}</span>
           <span className="container-summary">
             <strong>{activeTab === 'images' ? visibleImages.length : visibleContainers.length}</strong> / {activeTab === 'images' ? images.length : containers.length}
@@ -1393,6 +2509,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           <pre>{troubleshooting.commands}</pre>
         </section>
       ) : null}
+      {activeTab === 'containers' && runPanelOpen ? renderRunWorkbench() : null}
 
       {activeTab === 'containers' ? (
         <div className="container-content">
@@ -1442,7 +2559,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                 </div>
 
                 <div className="container-action-bar" aria-label={t('container.ui.actionsAria', language)}>
-                  {(['start', 'stop', 'restart', 'remove'] as ContainerAction[]).map(renderContainerActionButton)}
+                  {(['start', 'stop', 'restart', 'pause', 'unpause', 'kill', 'remove'] as ContainerAction[]).map(renderContainerActionButton)}
                   <button type="button" className="container-action-btn" onClick={() => { setDetailTab('logs'); void loadContainerDetail(selectedContainer.id); }}>
                     {t('container.ui.viewLogs', language)}
                   </button>
@@ -1453,6 +2570,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
                 <div className="container-detail-tabs" role="tablist" aria-label={t('container.ui.detailTabsAria', language)}>
                   <button type="button" role="tab" className={detailTab === 'summary' ? 'active' : ''} onClick={() => setDetailTab('summary')}>{t('container.ui.summary', language)}</button>
+                  <button type="button" role="tab" className={detailTab === 'config' ? 'active' : ''} onClick={() => setDetailTab('config')}>{t('container.ui.config', language)}</button>
                   <button type="button" role="tab" className={detailTab === 'logs' ? 'active' : ''} onClick={() => setDetailTab('logs')}>{t('container.ui.logs', language)}</button>
                   <button type="button" role="tab" className={detailTab === 'inspect' ? 'active' : ''} onClick={() => setDetailTab('inspect')}>Inspect</button>
                   <button type="button" role="tab" className={detailTab === 'exec' ? 'active' : ''} onClick={() => setDetailTab('exec')}>Exec</button>
@@ -1463,6 +2581,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                   {selectedDetail || !detailLoading ? (
                     <>
                       {detailTab === 'summary' ? renderDetailSummary() : null}
+                      {detailTab === 'config' ? renderContainerConfig() : null}
                       {detailTab === 'logs' ? (
                         <pre>{selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre>
                       ) : null}
@@ -1535,6 +2654,14 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                       <td>{image.size}</td>
                       <td title={image.createdAt}>{image.createdAt || '-'}</td>
                       <td>
+                        <div className="container-image-actions-cell">
+                          <button
+                            type="button"
+                            className="container-table-action"
+                            onClick={() => prepareRunFromImage(image)}
+                          >
+                            {t('container.ui.run', language)}
+                          </button>
                         <button
                           type="button"
                           className="container-table-danger"
@@ -1543,6 +2670,7 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
                         >
                           {actingKey === `image-remove:${image.id}` ? t('container.ui.removing', language) : t('container.action.remove', language)}
                         </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1552,6 +2680,8 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
           </div>
         </div>
       ) : null}
+
+      {imagePruneDialogOpen ? renderImagePruneDialog() : null}
 
       {pendingAction ? createPortal(
         <div className="container-modal-overlay" role="presentation" onClick={() => setPendingAction(null)}>
