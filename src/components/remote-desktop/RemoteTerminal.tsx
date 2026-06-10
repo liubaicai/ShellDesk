@@ -559,9 +559,9 @@ function getLocalWindowsPtyOption(enabled: boolean): IWindowsPty | undefined {
 
 function buildTerminalOptions(settings: ShellDeskAppSettings, windowsPty?: IWindowsPty): ITerminalOptions {
   return {
+    allowProposedApi: true,
     allowTransparency: true,
     altClickMovesCursor: settings.terminalAltClickMovesCursor,
-    ...(windowsPty ? { allowProposedApi: true } : {}),
     cursorBlink: settings.terminalCursorBlink,
     cursorInactiveStyle: settings.terminalCursorInactiveStyle,
     cursorStyle: settings.terminalCursorStyle,
