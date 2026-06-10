@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import {
   createKafkaSampleCommand,
   createKafkaLagCommand,
@@ -33,6 +34,7 @@ import { tCurrent } from '../../i18n';
 
 interface RemoteMessageQueuePanelProps {
   connectionId: string;
+  hostId: string;
   systemType?: RemoteSystemType;
 }
 
@@ -62,7 +64,7 @@ function createKafkaCommandTarget(mode: KafkaExecutionMode, commandPath: string,
     : { mode, commandPath };
 }
 
-function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueuePanelProps) {
+function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMessageQueuePanelProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [backend, setBackend] = useState<QueueBackend>('rabbitmq');
   const [rabbitMode, setRabbitMode] = useState<RabbitMode>('rabbitmqctl');
@@ -133,6 +135,40 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
   const selectedTopicOffsets = selectedTopic ? topicOffsets[selectedTopic.name] : undefined;
   const totalRabbitMessages = useMemo(() => queues.reduce((sum, queue) => sum + queue.messages, 0), [queues]);
   const totalLag = useMemo(() => lags.reduce((sum, lag) => sum + (lag.lag ?? 0), 0), [lags]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'message-queue').then((profile) => {
+      if (disposed || !profile) return;
+
+      const nextBackend = readProfileString(profile, 'backend', 'rabbitmq');
+      const nextRabbitMode = readProfileString(profile, 'rabbitMode', 'rabbitmqctl');
+      const nextKafkaMode = readProfileString(profile, 'kafkaMode', 'host');
+
+      setBackend(nextBackend === 'kafka' ? 'kafka' : 'rabbitmq');
+      setRabbitMode(nextRabbitMode === 'management-api' ? 'management-api' : 'rabbitmqctl');
+      setRabbitCtlPath(readProfileString(profile, 'rabbitCtlPath', 'rabbitmqctl'));
+      setRabbitApiUrl(readProfileString(profile, 'rabbitApiUrl', 'http://127.0.0.1:15672'));
+      setRabbitUser(readProfileString(profile, 'rabbitUser', 'guest'));
+      setRabbitPassword(readProfileString(profile, 'rabbitPassword', 'guest'));
+      setKafkaBootstrap(readProfileString(profile, 'kafkaBootstrap', '127.0.0.1:9092'));
+      setKafkaMode(nextKafkaMode === 'docker' ? 'docker' : 'host');
+      setKafkaDockerPath(readProfileString(profile, 'kafkaDockerPath', 'docker'));
+      setKafkaContainerName(readProfileString(profile, 'kafkaContainerName', ''));
+      setKafkaTopicsPath(readProfileString(profile, 'kafkaTopicsPath', DEFAULT_KAFKA_TOPICS_PATH));
+      setKafkaGroupsPath(readProfileString(profile, 'kafkaGroupsPath', DEFAULT_KAFKA_CONSUMER_GROUPS_PATH));
+      setKafkaConsumerPath(readProfileString(profile, 'kafkaConsumerPath', DEFAULT_KAFKA_CONSOLE_CONSUMER_PATH));
+      setKafkaOffsetsPath(readProfileString(profile, 'kafkaOffsetsPath', DEFAULT_KAFKA_GET_OFFSETS_PATH));
+      setSampleMaxMessages(readProfileString(profile, 'sampleMaxMessages', '20'));
+      setSampleTimeoutMs(readProfileString(profile, 'sampleTimeoutMs', '10000'));
+      setSampleFromBeginning(readProfileBoolean(profile, 'sampleFromBeginning', false));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const refreshRabbit = async () => {
     const command = rabbitMode === 'rabbitmqctl'
@@ -274,6 +310,25 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
       }
 
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
+      void saveRemoteConnectionProfile(hostId, 'message-queue', {
+        backend,
+        rabbitMode,
+        rabbitCtlPath,
+        rabbitApiUrl,
+        rabbitUser,
+        rabbitPassword,
+        kafkaBootstrap,
+        kafkaMode,
+        kafkaDockerPath,
+        kafkaContainerName,
+        kafkaTopicsPath,
+        kafkaGroupsPath,
+        kafkaConsumerPath,
+        kafkaOffsetsPath,
+        sampleMaxMessages,
+        sampleTimeoutMs,
+        sampleFromBeginning,
+      }).catch(() => undefined);
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {

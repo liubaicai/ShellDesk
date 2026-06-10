@@ -13,6 +13,7 @@ import type {
   RemoteTerminalToolRequest,
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
+import { getRemoteConnectionProfileHostId } from './components/remote-desktop/remoteConnectionProfiles';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
@@ -1077,6 +1078,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings, presetWallpaperUrl);
   const hasCustomWallpaper = hasCustomDesktopWallpaper(settings);
+  const remoteConnectionProfileHostId = getRemoteConnectionProfileHostId(connection);
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
   const appLocale = getAppLocale(settings.language);
@@ -1936,19 +1938,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'mysql') {
-      return <RemoteMySQL connectionId={connection.id} />;
+      return <RemoteMySQL connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'clickhouse') {
-      return <RemoteClickHouse connectionId={connection.id} />;
+      return <RemoteClickHouse connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'redis') {
-      return <RemoteRedis connectionId={connection.id} />;
+      return <RemoteRedis connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'vnc') {
-      return <RemoteVncViewer connectionId={connection.id} />;
+      return <RemoteVncViewer connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'log-viewer') {
@@ -2012,23 +2014,23 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'postgres') {
-      return <RemotePostgres connectionId={connection.id} />;
+      return <RemotePostgres connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'mongo') {
-      return <RemoteMongo connectionId={connection.id} />;
+      return <RemoteMongo connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
     }
 
     if (desktopWindow.appKey === 'search-cluster') {
-      return <RemoteSearchCluster connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteSearchCluster connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'message-queue') {
-      return <RemoteMessageQueuePanel connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteMessageQueuePanel connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 's3-browser') {
-      return <RemoteS3Browser connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteS3Browser connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'security-audit') {

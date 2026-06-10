@@ -4,10 +4,12 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
 interface RemoteVncViewerProps {
   connectionId: string;
+  hostId: string;
 }
 
 type VncStatus = 'idle' | 'probing' | 'starting' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -220,7 +222,7 @@ function getFailureCopy(failureKind: VncFailureKind, errorMessage: string) {
   }
 }
 
-function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
+function RemoteVncViewer({ connectionId, hostId }: RemoteVncViewerProps) {
   const api = window.guiSSH;
   const screenRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -267,7 +269,24 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
   useEffect(() => {
     let disposed = false;
 
-    void readStoredVncTarget().then((target) => {
+    void (async () => {
+      const profile = await loadRemoteConnectionProfile(hostId, 'vnc');
+
+      if (disposed) {
+        return;
+      }
+
+      if (profile) {
+        setHost(readProfileString(profile, 'host', defaultVncStoredTarget.host));
+        setPort(readProfileString(profile, 'port', String(defaultVncStoredTarget.port)));
+        setUsername(readProfileString(profile, 'username', defaultVncStoredTarget.username));
+        setPassword(readProfileString(profile, 'password', ''));
+        setShared(readProfileBoolean(profile, 'shared', defaultVncStoredTarget.shared));
+        return;
+      }
+
+      const target = await readStoredVncTarget();
+
       if (disposed) {
         return;
       }
@@ -276,12 +295,12 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
       setPort(String(target.port));
       setUsername(target.username);
       setShared(target.shared);
-    });
+    })();
 
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [hostId]);
 
   useEffect(() => {
     let disposed = false;
@@ -505,6 +524,13 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
         setConnectedAt(new Date().toISOString());
         setLatencyLabel(tCurrent('auto.remoteVncViewer.nl7mmu', { value0: formatDuration(performance.now() - connectStartedAtRef.current) }));
         appendDiagnostic('rfb', tCurrent('auto.remoteVncViewer.53f91k'), 'success');
+        void saveRemoteConnectionProfile(hostId, 'vnc', {
+          host: targetHost,
+          port: String(targetPort),
+          username: trimmedUsername,
+          password,
+          shared,
+        }).catch(() => undefined);
       });
 
       rfb.addEventListener('desktopname', (event) => {
@@ -631,6 +657,7 @@ function RemoteVncViewer({ connectionId }: RemoteVncViewerProps) {
     connectionId,
     disconnectVnc,
     host,
+    hostId,
     password,
     performanceMode,
     port,

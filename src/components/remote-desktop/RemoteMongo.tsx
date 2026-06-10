@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
 interface RemoteMongoProps {
   connectionId: string;
+  hostId: string;
 }
 
 type MongoStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -70,7 +72,7 @@ function tryFormatJsonDraft(value: string) {
   return stringifyJson(JSON.parse(trimmed));
 }
 
-function RemoteMongo({ connectionId }: RemoteMongoProps) {
+function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const api = window.guiSSH?.connections;
   const mongoIdRef = useRef('');
   const [status, setStatus] = useState<MongoStatus>('disconnected');
@@ -102,6 +104,24 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
   const documents = queryResult?.documents ?? [];
   const documentColumns = useMemo(() => getDocumentColumns(documents), [documents]);
   const selectedDocument = documents[selectedDocumentIndex] ?? documents[0] ?? null;
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'mongo').then((profile) => {
+      if (disposed || !profile) return;
+
+      setHost(readProfileString(profile, 'host', '127.0.0.1'));
+      setPort(readProfileString(profile, 'port', '27017'));
+      setUsername(readProfileString(profile, 'username', ''));
+      setPassword(readProfileString(profile, 'password', ''));
+      setAuthSource(readProfileString(profile, 'authSource', 'admin'));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const filteredDatabases = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -189,6 +209,13 @@ function RemoteMongo({ connectionId }: RemoteMongoProps) {
 
       mongoIdRef.current = result.mongoId;
       setMongoId(result.mongoId);
+      void saveRemoteConnectionProfile(hostId, 'mongo', {
+        host: host || '127.0.0.1',
+        port: String(Number.parseInt(port, 10) || 27017),
+        username,
+        password,
+        authSource: authSource || 'admin',
+      }).catch(() => undefined);
       await loadDatabases(result.mongoId);
       setStatus('connected');
       setNotice(result.alreadyConnected ? tCurrent('auto.remoteMongo.ghif5z') : tCurrent('auto.remoteMongo.1jlva9o'));

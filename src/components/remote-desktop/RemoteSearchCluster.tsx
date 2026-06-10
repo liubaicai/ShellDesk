@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
+import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import {
   createSearchClusterCommand,
   normalizeIndices,
@@ -17,6 +18,7 @@ import { tCurrent } from '../../i18n';
 
 interface RemoteSearchClusterProps {
   connectionId: string;
+  hostId: string;
   systemType?: RemoteSystemType;
 }
 
@@ -44,7 +46,7 @@ function runCmd(connectionId: string, command: string, stdin?: string) {
   return api.runCommand(connectionId, command, stdin);
 }
 
-function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterProps) {
+function RemoteSearchCluster({ connectionId, hostId, systemType }: RemoteSearchClusterProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [url, setUrl] = useState('http://127.0.0.1:9200');
   const [username, setUsername] = useState('');
@@ -74,6 +76,24 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
     timeoutSeconds: Number.parseInt(timeoutSeconds, 10) || 10,
     ignoreSslCertificate,
   }), [ignoreSslCertificate, password, timeoutSeconds, url, username]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'search-cluster').then((profile) => {
+      if (disposed || !profile) return;
+
+      setUrl(readProfileString(profile, 'url', 'http://127.0.0.1:9200'));
+      setUsername(readProfileString(profile, 'username', ''));
+      setPassword(readProfileString(profile, 'password', ''));
+      setTimeoutSeconds(readProfileString(profile, 'timeoutSeconds', '10'));
+      setIgnoreSslCertificate(readProfileBoolean(profile, 'ignoreSslCertificate', false));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const filteredIndices = useMemo(() => {
     const keyword = indexSearch.trim().toLowerCase();
@@ -117,12 +137,19 @@ function RemoteSearchCluster({ connectionId, systemType }: RemoteSearchClusterPr
       setQueryIndex((current) => current || nextIndices[0]?.index || '');
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(tCurrent('auto.remoteSearchCluster.5mg5ut', { value0: nextIndices.length, value1: nextShards.length }));
+      void saveRemoteConnectionProfile(hostId, 'search-cluster', {
+        url,
+        username,
+        password,
+        timeoutSeconds: String(config.timeoutSeconds),
+        ignoreSslCertificate,
+      }).catch(() => undefined);
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }, [executeJsonRequest]);
+  }, [config.timeoutSeconds, executeJsonRequest, hostId, ignoreSslCertificate, password, url, username]);
 
   const runSearch = async () => {
     const indexName = queryIndex.trim() || selectedIndex?.index || '';

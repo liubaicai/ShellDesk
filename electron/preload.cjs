@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld('guiSSH', {
     generateRsaKeyPair: (payload) => ipcRenderer.invoke('vault:generate-rsa-key-pair', payload),
     getBookmarks: (scope) => ipcRenderer.invoke('vault:get-bookmarks', scope),
     saveBookmarks: (scope, bookmarks) => ipcRenderer.invoke('vault:save-bookmarks', scope, bookmarks),
+    getRemoteConnectionProfile: (hostId, appKey) => ipcRenderer.invoke('vault:get-remote-connection-profile', hostId, appKey),
+    saveRemoteConnectionProfile: (hostId, appKey, values) => ipcRenderer.invoke('vault:save-remote-connection-profile', hostId, appKey, values),
   },
   logs: {
     getEntries: () => ipcRenderer.invoke('logs:get-entries'),

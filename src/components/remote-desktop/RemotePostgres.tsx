@@ -2,10 +2,12 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
 interface RemotePostgresProps {
   connectionId: string;
+  hostId: string;
 }
 
 type PostgresStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -61,7 +63,7 @@ function createGenericColumns(names: string[]): ShellDeskPostgresColumn[] {
   }));
 }
 
-function RemotePostgres({ connectionId }: RemotePostgresProps) {
+function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const api = window.guiSSH?.connections;
   const postgresIdRef = useRef('');
   const sqlRef = useRef<HTMLTextAreaElement | null>(null);
@@ -88,6 +90,24 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
   const [history, setHistory] = useState<QueryHistoryItem[]>([]);
 
   const isConnected = status === 'connected';
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'postgres').then((profile) => {
+      if (disposed || !profile) return;
+
+      setHost(readProfileString(profile, 'host', '127.0.0.1'));
+      setPort(readProfileString(profile, 'port', '5432'));
+      setUser(readProfileString(profile, 'user', 'postgres'));
+      setPassword(readProfileString(profile, 'password', ''));
+      setDatabase(readProfileString(profile, 'database', 'postgres'));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const filteredSchemas = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -153,6 +173,13 @@ function RemotePostgres({ connectionId }: RemotePostgresProps) {
       });
       postgresIdRef.current = result.postgresId;
       setPostgresId(result.postgresId);
+      void saveRemoteConnectionProfile(hostId, 'postgres', {
+        host: host || '127.0.0.1',
+        port: String(Number.parseInt(port, 10) || 5432),
+        user: user || 'postgres',
+        password,
+        database: database || 'postgres',
+      }).catch(() => undefined);
       await loadSchemas(result.postgresId);
       setStatus('connected');
       setNotice(result.alreadyConnected ? tCurrent('auto.remotePostgres.yxz4ef') : tCurrent('auto.remotePostgres.1mpv5ri'));

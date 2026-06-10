@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
 interface RemoteMySQLProps {
   connectionId: string;
+  hostId: string;
 }
 
 type MysqlStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -163,7 +165,7 @@ function describeResult(result: ShellDeskMysqlQueryResult): string {
   return tCurrent('auto.remoteMySQL.18tehe0', { value0: result.rows.length });
 }
 
-function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
+function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const api = window.guiSSH;
   const initialQueryStateRef = useRef(createInitialQueryState());
   const mysqlIdRef = useRef('');
@@ -215,6 +217,24 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
   const isActiveResultEditable = Boolean(activeResultTab?.table && activeResultPrimaryKeys.length > 0);
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'mysql').then((profile) => {
+      if (disposed || !profile) return;
+
+      setHost(readProfileString(profile, 'host', '127.0.0.1'));
+      setPort(readProfileString(profile, 'port', String(defaultPort)));
+      setUser(readProfileString(profile, 'user', 'root'));
+      setPassword(readProfileString(profile, 'password', ''));
+      setInitialDatabase(readProfileString(profile, 'initialDatabase', ''));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const filteredDatabases = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -364,6 +384,13 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
 
       setMysqlId(result.mysqlId);
       setStatus('connected');
+      void saveRemoteConnectionProfile(hostId, 'mysql', {
+        host: host || '127.0.0.1',
+        port: String(parseInt(port, 10) || defaultPort),
+        user: user || 'root',
+        password,
+        initialDatabase: initialDatabase.trim(),
+      }).catch(() => undefined);
 
       const dbs = await api.connections.mysqlDatabases(connectionId, result.mysqlId);
       const requestedDb = initialDatabase.trim();
@@ -391,7 +418,7 @@ function RemoteMySQL({ connectionId }: RemoteMySQLProps) {
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     }
-  }, [api, connectionId, host, initialDatabase, password, port, user]);
+  }, [api, connectionId, host, hostId, initialDatabase, password, port, user]);
 
   const handleDisconnect = useCallback(async () => {
     if (!api?.connections || !mysqlId) return;

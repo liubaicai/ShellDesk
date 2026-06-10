@@ -32,6 +32,7 @@ export interface RemoteConnectionInfo {
   proxyPort: number;
   connectedAt: string;
   host: {
+    id?: string;
     name: string;
     address: string;
     port: number;

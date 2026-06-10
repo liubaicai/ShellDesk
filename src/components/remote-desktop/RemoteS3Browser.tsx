@@ -4,6 +4,7 @@ import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
+import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import {
   createS3DeleteObjectCommand,
   createS3DetectCommand,
@@ -23,6 +24,7 @@ import { tCurrent } from '../../i18n';
 
 interface RemoteS3BrowserProps {
   connectionId: string;
+  hostId: string;
   systemType?: RemoteSystemType;
 }
 
@@ -89,7 +91,7 @@ function createBreadcrumb(prefix: string) {
   }));
 }
 
-function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
+function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [mode, setMode] = useState<S3CliMode>('mc');
   const [config, setConfig] = useState<S3ConnectionConfig>(defaultConfig);
@@ -130,6 +132,28 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
   const updateConfig = <Key extends keyof S3ConnectionConfig>(key: Key, value: S3ConnectionConfig[Key]) => {
     setConfig((currentConfig) => ({ ...currentConfig, [key]: value }));
   };
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 's3-browser').then((profile) => {
+      if (disposed || !profile) return;
+
+      const nextMode = readProfileString(profile, 'mode', 'mc');
+      setMode(nextMode === 'aws' ? 'aws' : 'mc');
+      setConfig({
+        endpoint: readProfileString(profile, 'endpoint', defaultConfig.endpoint),
+        accessKey: readProfileString(profile, 'accessKey', defaultConfig.accessKey),
+        secretKey: readProfileString(profile, 'secretKey', defaultConfig.secretKey),
+        region: readProfileString(profile, 'region', defaultConfig.region),
+        pathStyle: readProfileBoolean(profile, 'pathStyle', defaultConfig.pathStyle),
+      });
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const detectTools = useCallback(async () => {
     try {
@@ -174,6 +198,14 @@ function RemoteS3Browser({ connectionId, systemType }: RemoteS3BrowserProps) {
       setRawOutput(result.stdout || result.stderr);
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(tCurrent('auto.remoteS3Browser.rp1fyr', { value0: nextBuckets.length }));
+      void saveRemoteConnectionProfile(hostId, 's3-browser', {
+        mode,
+        endpoint: config.endpoint,
+        accessKey: config.accessKey,
+        secretKey: config.secretKey,
+        region: config.region,
+        pathStyle: config.pathStyle,
+      }).catch(() => undefined);
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {

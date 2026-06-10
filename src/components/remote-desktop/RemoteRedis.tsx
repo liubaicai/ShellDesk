@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
 interface RemoteRedisProps {
   connectionId: string;
+  hostId: string;
 }
 
 type RedisStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -229,7 +231,7 @@ function formatCommandResult(result: unknown): string {
   return stringifyJson(result);
 }
 
-function RemoteRedis({ connectionId }: RemoteRedisProps) {
+function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
   const api = window.guiSSH;
   const redisIdRef = useRef('');
   const [status, setStatus] = useState<RedisStatus>('disconnected');
@@ -259,6 +261,23 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
   const [pendingRunning, setPendingRunning] = useState(false);
 
   const isReady = status === 'connected';
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'redis').then((profile) => {
+      if (disposed || !profile) return;
+
+      setHost(readProfileString(profile, 'host', '127.0.0.1'));
+      setPort(readProfileString(profile, 'port', String(defaultPort)));
+      setPassword(readProfileString(profile, 'password', ''));
+      setDbNum(readProfileString(profile, 'dbNum', '0'));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const selectedKeyEntry = useMemo(() => {
     return keys.find((entry) => entry.name === selectedKey) ?? null;
@@ -349,12 +368,18 @@ function RemoteRedis({ connectionId }: RemoteRedisProps) {
       redisIdRef.current = result.redisId;
       setRedisId(result.redisId);
       setStatus('connected');
+      void saveRemoteConnectionProfile(hostId, 'redis', {
+        host: host || '127.0.0.1',
+        port: String(parseInt(port, 10) || defaultPort),
+        password,
+        dbNum: String(parseInt(dbNum, 10) || 0),
+      }).catch(() => undefined);
       await scanKeys({ reset: true, redisIdOverride: result.redisId });
     } catch (error) {
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     }
-  }, [api, connectionId, dbNum, host, password, port, scanKeys]);
+  }, [api, connectionId, dbNum, host, hostId, password, port, scanKeys]);
 
   const handleDisconnect = useCallback(async () => {
     if (!api?.connections || !redisId) return;

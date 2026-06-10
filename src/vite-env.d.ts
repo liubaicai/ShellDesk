@@ -322,6 +322,9 @@ interface ShellDeskAppSettings {
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 
+type ShellDeskRemoteConnectionProfileValue = string | number | boolean;
+type ShellDeskRemoteConnectionProfileValues = Record<string, ShellDeskRemoteConnectionProfileValue>;
+
 interface ShellDeskStoredKeyRecord {
   id: string;
   name: string;
@@ -456,6 +459,12 @@ interface ShellDeskVaultControls {
   }) => Promise<{ snapshot: ShellDeskVaultSnapshot; key: ShellDeskStoredKeyRecord }>;
   getBookmarks: (scope: string) => Promise<ShellDeskBrowserBookmark[]>;
   saveBookmarks: (scope: string, bookmarks: ShellDeskBrowserBookmark[]) => Promise<ShellDeskBrowserBookmark[]>;
+  getRemoteConnectionProfile: (hostId: string, appKey: ShellDeskDesktopAppKey) => Promise<ShellDeskRemoteConnectionProfileValues | null>;
+  saveRemoteConnectionProfile: (
+    hostId: string,
+    appKey: ShellDeskDesktopAppKey,
+    values: ShellDeskRemoteConnectionProfileValues,
+  ) => Promise<ShellDeskRemoteConnectionProfileValues>;
 }
 
 interface ShellDeskHostConnectionRequest {
@@ -492,6 +501,7 @@ interface ShellDeskConnectionInfo {
   proxyPort: number;
   connectedAt: string;
   host: Pick<ShellDeskHostConnectionRequest, 'name' | 'address' | 'port' | 'username' | 'authMethod' | 'privilegeMode' | 'systemType' | 'systemName'> & {
+    id?: string;
     jumpHost?: ShellDeskJumpHostConnectionInfo;
   };
 }

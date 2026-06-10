@@ -13,12 +13,14 @@ const {
   createVaultSnapshot,
   generateRsaKeyPairInVault,
   getConfigPreference,
+  getRemoteConnectionProfile,
   getVault,
   importKeyPairToVault,
   notifyVaultChanged,
   readConfigImportPayload,
   readLogEntries,
   saveBrowserBookmarks,
+  saveRemoteConnectionProfile,
   setConfigPreference,
   setVault,
   upsertVaultCollections,
@@ -344,6 +346,14 @@ function registerConfigHandlers(registerIpcHandler) {
   });
 
   registerIpcHandler('vault:save-bookmarks', async (_event, rawScope, rawBookmarks) => saveBrowserBookmarks(rawScope, rawBookmarks));
+
+  registerIpcHandler('vault:get-remote-connection-profile', async (_event, rawHostId, rawAppKey) => (
+    getRemoteConnectionProfile(rawHostId, rawAppKey)
+  ));
+
+  registerIpcHandler('vault:save-remote-connection-profile', async (_event, rawHostId, rawAppKey, rawValues) => (
+    saveRemoteConnectionProfile(rawHostId, rawAppKey, rawValues)
+  ));
 
   registerIpcHandler('config:export', async (event) => {
     const bundle = buildConfigBundle();

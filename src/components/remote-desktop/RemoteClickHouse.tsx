@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
+import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 
 interface RemoteClickHouseProps {
   connectionId: string;
+  hostId: string;
 }
 
 type ClickHouseStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -170,7 +172,7 @@ function describeStatistics(statistics?: ShellDeskClickHouseQueryStatistics): st
   return parts.join(' · ');
 }
 
-function RemoteClickHouse({ connectionId }: RemoteClickHouseProps) {
+function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   const api = window.guiSSH;
   const initialQueryStateRef = useRef(createInitialQueryState());
   const clickhouseIdRef = useRef('');
@@ -216,6 +218,25 @@ function RemoteClickHouse({ connectionId }: RemoteClickHouseProps) {
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
   const displayPort = parseInt(port, 10) || (secure ? defaultHttpsPort : defaultHttpPort);
   const isNativeTcpPort = displayPort === 9000;
+
+  useEffect(() => {
+    let disposed = false;
+
+    void loadRemoteConnectionProfile(hostId, 'clickhouse').then((profile) => {
+      if (disposed || !profile) return;
+
+      setHost(readProfileString(profile, 'host', '127.0.0.1'));
+      setPort(readProfileString(profile, 'port', String(defaultHttpPort)));
+      setUser(readProfileString(profile, 'user', 'default'));
+      setPassword(readProfileString(profile, 'password', ''));
+      setInitialDatabase(readProfileString(profile, 'initialDatabase', ''));
+      setSecure(readProfileBoolean(profile, 'secure', false));
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [hostId]);
 
   const filteredDatabases = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -378,6 +399,14 @@ function RemoteClickHouse({ connectionId }: RemoteClickHouseProps) {
 
       setClickhouseId(result.clickhouseId);
       setStatus('connected');
+      void saveRemoteConnectionProfile(hostId, 'clickhouse', {
+        host: host || '127.0.0.1',
+        port: String(displayPort),
+        user: user || 'default',
+        password,
+        initialDatabase: initialDatabase.trim(),
+        secure,
+      }).catch(() => undefined);
 
       const dbs = await api.connections.clickhouseDatabases(connectionId, result.clickhouseId);
       const requestedDb = initialDatabase.trim();
@@ -409,7 +438,7 @@ function RemoteClickHouse({ connectionId }: RemoteClickHouseProps) {
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     }
-  }, [api, connectionId, displayPort, host, initialDatabase, password, secure, user]);
+  }, [api, connectionId, displayPort, host, hostId, initialDatabase, password, secure, user]);
 
   const handleDisconnect = useCallback(async () => {
     if (!api?.connections || !clickhouseId) return;

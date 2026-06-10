@@ -47,6 +47,12 @@ const {
 
 let vaultCache = null;
 
+const remoteConnectionProfileSecretKeyPattern = /(?:password|passphrase|secret|token|apiKey|accessKey|secretKey)$/i;
+
+function isRemoteConnectionProfileSecretKey(key) {
+  return remoteConnectionProfileSecretKeyPattern.test(String(key || ''));
+}
+
 function getDefaultLanguage() {
   try {
     const locale = typeof app.getLocale === 'function' ? app.getLocale() : '';
@@ -903,6 +909,7 @@ function createEmptyVault() {
     settings: createDefaultSettings(),
     browserBookmarks: [],
     preferences: {},
+    remoteConnectionProfiles: [],
   };
 }
 
@@ -946,6 +953,128 @@ function readPreferenceValue(rawValue) {
   }
 
   return JSON.parse(serialized);
+}
+
+function readRemoteConnectionProfileHostId(rawHostId) {
+  return readBoundedString(rawHostId, '远程组件主机 ID', 512);
+}
+
+function readRemoteConnectionProfileAppKey(rawAppKey) {
+  const appKey = readBoundedString(rawAppKey, '远程组件标识', 80);
+
+  if (!remoteDesktopAppKeySet.has(appKey)) {
+    throw new Error('远程组件标识无效。');
+  }
+
+  return appKey;
+}
+
+function readRemoteConnectionProfileValue(rawValue, label) {
+  if (typeof rawValue === 'string') {
+    return readBoundedString(rawValue, label, 8192, {
+      required: false,
+      trim: false,
+      rejectLineBreaks: false,
+    });
+  }
+
+  if (typeof rawValue === 'boolean') {
+    return rawValue;
+  }
+
+  if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+    return rawValue;
+  }
+
+  return '';
+}
+
+function readRemoteConnectionProfileValues(rawValues) {
+  if (!isPlainObject(rawValues)) {
+    return {};
+  }
+
+  const serialized = JSON.stringify(rawValues);
+  if (serialized === undefined || Buffer.byteLength(serialized, 'utf8') > 64 * 1024) {
+    throw new Error('远程组件连接配置超过大小限制。');
+  }
+
+  const values = {};
+  for (const [rawKey, rawValue] of Object.entries(rawValues).slice(0, 80)) {
+    const key = readBoundedString(rawKey, '远程组件配置键', 80);
+
+    if (!/^[a-z0-9._:-]+$/i.test(key)) {
+      continue;
+    }
+
+    values[key] = readRemoteConnectionProfileValue(rawValue, `远程组件配置 ${key}`);
+  }
+
+  return values;
+}
+
+function splitRemoteConnectionProfileValues(values) {
+  const configValues = {};
+  const secretValues = {};
+
+  for (const [key, value] of Object.entries(values || {})) {
+    if (isRemoteConnectionProfileSecretKey(key)) {
+      secretValues[key] = value;
+    } else {
+      configValues[key] = value;
+    }
+  }
+
+  return { configValues, secretValues };
+}
+
+function readRemoteConnectionProfileRecord(rawRecord) {
+  if (!isPlainObject(rawRecord)) {
+    throw new Error('远程组件连接配置无效。');
+  }
+
+  return {
+    hostId: readRemoteConnectionProfileHostId(rawRecord.hostId),
+    appKey: readRemoteConnectionProfileAppKey(rawRecord.appKey),
+    values: readRemoteConnectionProfileValues(rawRecord.values),
+    updatedAt: rawRecord.updatedAt
+      ? readTimestampString(rawRecord.updatedAt, '远程组件连接配置更新时间')
+      : new Date().toISOString(),
+  };
+}
+
+function readRemoteConnectionProfiles(rawProfiles) {
+  if (!Array.isArray(rawProfiles)) {
+    return [];
+  }
+
+  const profiles = [];
+  const seen = new Set();
+
+  for (const rawProfile of rawProfiles.slice(0, 1000)) {
+    const profile = readRemoteConnectionProfileRecord(rawProfile);
+    const profileKey = `${profile.hostId}:${profile.appKey}`;
+
+    if (seen.has(profileKey)) {
+      continue;
+    }
+
+    seen.add(profileKey);
+    profiles.push(profile);
+  }
+
+  return profiles;
+}
+
+function toRemoteConnectionProfileConfigRecord(profile) {
+  const { configValues } = splitRemoteConnectionProfileValues(profile.values);
+
+  return {
+    hostId: profile.hostId,
+    appKey: profile.appKey,
+    values: configValues,
+    updatedAt: profile.updatedAt,
+  };
 }
 
 function getSortableTimestamp(value) {
@@ -1053,6 +1182,7 @@ function readVaultPayload(rawPayload) {
       ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
       : [],
     preferences: readPreferenceStore(rawPayload.preferences),
+    remoteConnectionProfiles: readRemoteConnectionProfiles(rawPayload.remoteConnectionProfiles),
   };
 }
 
@@ -1093,6 +1223,7 @@ function createConfigPayload(vault) {
     settings: toConfigSettings(vault.settings),
     browserBookmarks: vault.browserBookmarks,
     preferences: vault.preferences,
+    remoteConnectionProfiles: vault.remoteConnectionProfiles.map((profile) => toRemoteConnectionProfileConfigRecord(profile)),
   };
 }
 
@@ -1121,6 +1252,18 @@ function createVaultSecretsPayload(vault) {
     aiSecret: {
       apiKey: vault.settings.aiApiKey || '',
     },
+    remoteConnectionProfileSecrets: vault.remoteConnectionProfiles
+      .map((profile) => {
+        const { secretValues } = splitRemoteConnectionProfileValues(profile.values);
+
+        return {
+          hostId: profile.hostId,
+          appKey: profile.appKey,
+          values: secretValues,
+          updatedAt: profile.updatedAt,
+        };
+      })
+      .filter((profile) => Object.keys(profile.values).length),
   };
 }
 
@@ -1148,6 +1291,7 @@ function readConfigPayload(rawPayload) {
       ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
       : [],
     preferences: readPreferenceStore(rawPayload.preferences),
+    remoteConnectionProfiles: readRemoteConnectionProfiles(rawPayload.remoteConnectionProfiles),
   };
 }
 
@@ -1241,6 +1385,16 @@ function readAiSecretRecord(rawSecret) {
   };
 }
 
+function readRemoteConnectionProfileSecretRecord(rawSecret) {
+  const profile = readRemoteConnectionProfileRecord(rawSecret);
+  const { secretValues } = splitRemoteConnectionProfileValues(profile.values);
+
+  return {
+    ...profile,
+    values: secretValues,
+  };
+}
+
 function readVaultSecretsPayload(rawPayload) {
   if (!isPlainObject(rawPayload)) {
     throw new Error('敏感数据无效。');
@@ -1262,6 +1416,9 @@ function readVaultSecretsPayload(rawPayload) {
       ? rawPayload.proxyProfileSecrets.map((secret) => readProxyProfileSecretRecord(secret))
       : [],
     aiSecret: readAiSecretRecord(rawPayload.aiSecret),
+    remoteConnectionProfileSecrets: Array.isArray(rawPayload.remoteConnectionProfileSecrets)
+      ? rawPayload.remoteConnectionProfileSecrets.map((secret) => readRemoteConnectionProfileSecretRecord(secret))
+      : [],
   };
 }
 
@@ -1271,6 +1428,7 @@ function isVaultSecretsPayload(rawPayload) {
     Array.isArray(rawPayload.sshKeySecrets) ||
     Array.isArray(rawPayload.keySecrets) ||
     Array.isArray(rawPayload.proxyProfileSecrets) ||
+    Array.isArray(rawPayload.remoteConnectionProfileSecrets) ||
     isPlainObject(rawPayload.aiSecret)
   );
 }
@@ -1279,6 +1437,7 @@ function mergeConfigAndSecrets(configPayload, secretsPayload) {
   const hostSecretsById = new Map(secretsPayload.hostSecrets.map((secret) => [secret.id, secret]));
   const keySecretsById = new Map(secretsPayload.sshKeySecrets.map((secret) => [secret.id, secret]));
   const proxySecretsById = new Map((secretsPayload.proxyProfileSecrets ?? []).map((secret) => [secret.id, secret]));
+  const profileSecretsById = new Map((secretsPayload.remoteConnectionProfileSecrets ?? []).map((secret) => [`${secret.hostId}:${secret.appKey}`, secret]));
 
   const hosts = configPayload.hosts.map((host) => {
     const secret = hostSecretsById.get(host.id);
@@ -1317,6 +1476,23 @@ function mergeConfigAndSecrets(configPayload, secretsPayload) {
       },
     });
   });
+  const remoteConnectionProfiles = configPayload.remoteConnectionProfiles.map((profile) => {
+    const profileKey = `${profile.hostId}:${profile.appKey}`;
+    const secret = profileSecretsById.get(profileKey);
+    profileSecretsById.delete(profileKey);
+
+    return readRemoteConnectionProfileRecord({
+      ...profile,
+      values: {
+        ...profile.values,
+        ...(secret?.values ?? {}),
+      },
+    });
+  });
+
+  for (const secret of profileSecretsById.values()) {
+    remoteConnectionProfiles.push(readRemoteConnectionProfileRecord(secret));
+  }
 
   return readVaultPayload({
     version: vaultSchemaVersion,
@@ -1330,6 +1506,7 @@ function mergeConfigAndSecrets(configPayload, secretsPayload) {
     },
     browserBookmarks: configPayload.browserBookmarks,
     preferences: configPayload.preferences,
+    remoteConnectionProfiles,
   });
 }
 
@@ -1602,6 +1779,39 @@ function setConfigPreference(rawKey, rawValue) {
   writeConfigToDisk(nextVault);
   notifyVaultChanged({ kind: 'preference', key });
   return nextVault.preferences[key] ?? null;
+}
+
+function getRemoteConnectionProfile(rawHostId, rawAppKey) {
+  const hostId = readRemoteConnectionProfileHostId(rawHostId);
+  const appKey = readRemoteConnectionProfileAppKey(rawAppKey);
+  const profile = getVault().remoteConnectionProfiles.find((item) => item.hostId === hostId && item.appKey === appKey);
+
+  return profile?.values ?? null;
+}
+
+function saveRemoteConnectionProfile(rawHostId, rawAppKey, rawValues) {
+  const hostId = readRemoteConnectionProfileHostId(rawHostId);
+  const appKey = readRemoteConnectionProfileAppKey(rawAppKey);
+  const values = readRemoteConnectionProfileValues(rawValues);
+  const currentVault = getVault();
+  const updatedAt = new Date().toISOString();
+  const nextProfile = {
+    hostId,
+    appKey,
+    values,
+    updatedAt,
+  };
+  const nextProfiles = [
+    nextProfile,
+    ...currentVault.remoteConnectionProfiles.filter((profile) => profile.hostId !== hostId || profile.appKey !== appKey),
+  ];
+  const nextVault = setVault({
+    ...currentVault,
+    remoteConnectionProfiles: nextProfiles,
+  });
+
+  notifyVaultChanged({ kind: 'preference', key: `remote-connection-profile:${hostId}:${appKey}` });
+  return nextVault.remoteConnectionProfiles.find((profile) => profile.hostId === hostId && profile.appKey === appKey)?.values ?? values;
 }
 
 function upsertVaultCollections(rawPayload) {
@@ -1938,7 +2148,10 @@ function generateRsaKeyPairInVault(rawPayload) {
 }
 
 function buildDisplayHost(rawHost, host, port, username, matchedStoredHost = null) {
+  const id = readBoundedString(rawHost.id ?? matchedStoredHost?.id ?? '', '主机 ID', 128, { required: false });
+
   return {
+    ...(id ? { id } : {}),
     name: readBoundedString(rawHost.name ?? '', '主机名称', 80, { required: false }) || host,
     address: host,
     port,
@@ -2216,6 +2429,7 @@ function buildConfigBundle(vault = getVault()) {
     knownHosts: vault.knownHosts,
     settings: vault.settings,
     browserBookmarks: vault.browserBookmarks,
+    remoteConnectionProfiles: vault.remoteConnectionProfiles,
   };
 }
 
@@ -2261,6 +2475,7 @@ function readConfigImportPayload(rawPayload) {
     browserBookmarks: Array.isArray(rawPayload.browserBookmarks)
       ? rawPayload.browserBookmarks.map((collection) => readBookmarkCollection(collection))
       : [],
+    remoteConnectionProfiles: readRemoteConnectionProfiles(rawPayload.remoteConnectionProfiles),
   };
 }
 
@@ -2294,12 +2509,14 @@ module.exports = {
   createVaultSnapshot,
   generateRsaKeyPairInVault,
   getConfigPreference,
+  getRemoteConnectionProfile,
   getVault,
   importKeyPairToVault,
   notifyVaultChanged,
   readConfigImportPayload,
   readLogEntries,
   saveBrowserBookmarks,
+  saveRemoteConnectionProfile,
   setConfigPreference,
   setVault,
   upsertVaultCollections,
