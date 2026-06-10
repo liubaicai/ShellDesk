@@ -1272,10 +1272,11 @@ async function getLocalMetrics() {
   };
 }
 
-function createTransferPayload(connectionId, queueId, type, fileName, transferred, total, completedItems, totalItems) {
+function createTransferPayload(connectionId, queueId, clientId, type, fileName, transferred, total, completedItems, totalItems) {
   return {
     connectionId,
     queueId,
+    ...(clientId ? { clientId } : {}),
     type,
     fileName,
     transferred,
@@ -1316,22 +1317,27 @@ async function collectCopyPlan(sourcePath, destPath, plan) {
   return plan;
 }
 
-async function copyPlanEntries(connectionId, sender, type, plan) {
+async function copyPlanEntries(connectionId, sender, type, plan, options = {}) {
   const queueId = `local-transfer-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const clientId = typeof options.transferClientId === 'string' ? options.transferClientId : '';
   const total = plan.reduce((sum, item) => sum + item.size, 0);
   let transferred = 0;
   let completedItems = 0;
   let currentFileName = type === 'download' ? '准备下载...' : '准备上传...';
   let canceled = false;
 
-  activeLocalTransfers.set(connectionId, () => {
-    canceled = true;
+  activeLocalTransfers.set(queueId, {
+    connectionId,
+    cancel: () => {
+      canceled = true;
+    },
   });
 
   const sendProgress = () => {
     sendTransferEvent(sender, 'transfer:progress', createTransferPayload(
       connectionId,
       queueId,
+      clientId,
       type,
       currentFileName,
       transferred,
@@ -1363,7 +1369,7 @@ async function copyPlanEntries(connectionId, sender, type, plan) {
     }
 
     sendTransferEvent(sender, 'transfer:end', {
-      ...createTransferPayload(connectionId, queueId, type, currentFileName, transferred, total, completedItems, plan.length),
+      ...createTransferPayload(connectionId, queueId, clientId, type, currentFileName, transferred, total, completedItems, plan.length),
       success: true,
     });
 
@@ -1375,19 +1381,19 @@ async function copyPlanEntries(connectionId, sender, type, plan) {
     };
   } catch (error) {
     sendTransferEvent(sender, 'transfer:end', {
-      ...createTransferPayload(connectionId, queueId, type, currentFileName, transferred, total, completedItems, plan.length),
+      ...createTransferPayload(connectionId, queueId, clientId, type, currentFileName, transferred, total, completedItems, plan.length),
       success: false,
       error: toErrorMessage(error),
     });
     throw error;
   } finally {
-    if (activeLocalTransfers.get(connectionId)) {
-      activeLocalTransfers.delete(connectionId);
+    if (activeLocalTransfers.get(queueId)?.connectionId === connectionId) {
+      activeLocalTransfers.delete(queueId);
     }
   }
 }
 
-async function copyLocalDownload(connectionId, sender, rawRemotePaths, destinationPath, fileOnly = false) {
+async function copyLocalDownload(connectionId, sender, rawRemotePaths, destinationPath, fileOnly = false, options = {}) {
   const pathModule = getPathModuleForLocal();
   const plan = [];
 
@@ -1399,10 +1405,10 @@ async function copyLocalDownload(connectionId, sender, rawRemotePaths, destinati
     await collectCopyPlan(sourcePath, destination, plan);
   }
 
-  return copyPlanEntries(connectionId, sender, 'download', plan);
+  return copyPlanEntries(connectionId, sender, 'download', plan, options);
 }
 
-async function copyLocalUpload(connectionId, sender, rawItems, rawTargetPath) {
+async function copyLocalUpload(connectionId, sender, rawItems, rawTargetPath, options = {}) {
   const targetPath = normalizeLocalPath(rawTargetPath);
   const targetStats = await fs.promises.stat(targetPath);
   if (!targetStats.isDirectory()) {
@@ -1418,18 +1424,30 @@ async function copyLocalUpload(connectionId, sender, rawItems, rawTargetPath) {
     await collectCopyPlan(sourcePath, pathModule.join(targetPath, remoteName), plan);
   }
 
-  return copyPlanEntries(connectionId, sender, 'upload', plan);
+  return copyPlanEntries(connectionId, sender, 'upload', plan, options);
 }
 
-function cancelLocalTransfer(connectionId) {
-  const cancel = activeLocalTransfers.get(connectionId);
-  if (!cancel) {
-    return false;
+function cancelLocalTransfer(connectionId, queueId = '') {
+  if (queueId) {
+    const transfer = activeLocalTransfers.get(queueId);
+
+    if (!transfer || transfer.connectionId !== connectionId) {
+      return false;
+    }
+
+    transfer.cancel();
+    return true;
   }
 
-  cancel();
-  activeLocalTransfers.delete(connectionId);
-  return true;
+  let canceled = false;
+  for (const transfer of activeLocalTransfers.values()) {
+    if (transfer.connectionId === connectionId) {
+      transfer.cancel();
+      canceled = true;
+    }
+  }
+
+  return canceled;
 }
 
 module.exports = {

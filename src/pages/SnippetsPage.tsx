@@ -78,7 +78,11 @@ function getAiReadinessError(settings: ShellDeskAppSettings, language: ShellDesk
     return t('snippets.ai.noChat', language);
   }
 
-  if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+  if (
+    !settings.aiApiBaseUrl.trim() ||
+    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
+    !settings.aiModel.trim()
+  ) {
     return t('snippets.ai.configRequired', language);
   }
 

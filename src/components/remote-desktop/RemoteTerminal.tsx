@@ -162,6 +162,7 @@ interface TerminalCwdProbeState {
   beginMarker: string;
   endMarker: string;
   buffer: string;
+  hasBeginMarker: boolean;
   timer: number;
   resolve: (directory: string) => void;
 }
@@ -769,6 +770,7 @@ function RemoteTerminal({
   const useLegacyTerminalIpcRef = useRef(false);
   const sftpAvailabilityRef = useRef<{ available: boolean; checkedAt: number } | null>(null);
   const activeSftpTransferRef = useRef(false);
+  const sftpTransferClientIdRef = useRef('');
   const sftpTransferQueueIdRef = useRef('');
   const sftpTransferEndedRef = useRef(false);
   const sftpProgressLineLengthRef = useRef(0);
@@ -1019,7 +1021,7 @@ function RemoteTerminal({
     const terminal = new XTerminal(buildTerminalOptions(settingsRef.current, localWindowsPty));
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon({ highlightLimit: 500 });
-    const unicodeGraphemesAddon = localWindowsPty ? new UnicodeGraphemesAddon() : null;
+    const unicodeGraphemesAddon = new UnicodeGraphemesAddon();
 
     isTerminalReadyRef.current = false;
     terminalRef.current = terminal;
@@ -1027,9 +1029,7 @@ function RemoteTerminal({
     searchAddonRef.current = searchAddon;
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(searchAddon);
-    if (unicodeGraphemesAddon) {
-      terminal.loadAddon(unicodeGraphemesAddon);
-    }
+    terminal.loadAddon(unicodeGraphemesAddon);
     terminal.open(host);
     terminal.focus();
     setSessionStatus('idle');
@@ -1204,6 +1204,10 @@ function RemoteTerminal({
         return;
       }
 
+      if (sftpTransferClientIdRef.current && payload.clientId !== sftpTransferClientIdRef.current) {
+        return;
+      }
+
       if (sftpTransferQueueIdRef.current && payload.queueId && payload.queueId !== sftpTransferQueueIdRef.current) {
         return;
       }
@@ -1220,6 +1224,10 @@ function RemoteTerminal({
         return;
       }
 
+      if (sftpTransferClientIdRef.current && payload.clientId !== sftpTransferClientIdRef.current) {
+        return;
+      }
+
       if (sftpTransferQueueIdRef.current && payload.queueId && payload.queueId !== sftpTransferQueueIdRef.current) {
         return;
       }
@@ -1230,6 +1238,7 @@ function RemoteTerminal({
       writeSftpProgressLine(buildSftpProgressText(payload, settingsRef.current.language, statusText), true);
       sftpTransferEndedRef.current = true;
       activeSftpTransferRef.current = false;
+      sftpTransferClientIdRef.current = '';
       sftpTransferQueueIdRef.current = '';
     };
 
@@ -1249,21 +1258,26 @@ function RemoteTerminal({
       const probe = terminalCwdProbeRef.current;
 
       if (!probe) {
-        return;
+        return false;
       }
 
-      probe.buffer = `${probe.buffer}${stripTerminalControlSequences(data).replace(/\r/g, '\n')}`.slice(-terminalCwdProbeBufferLimit);
+      const normalizedData = stripTerminalControlSequences(data).replace(/\r/g, '\n');
+      const wasCapturing = probe.hasBeginMarker;
+      const hasProbeMarker = normalizedData.includes(probe.beginMarker) || normalizedData.includes(probe.endMarker);
+      probe.buffer = `${probe.buffer}${normalizedData}`.slice(-terminalCwdProbeBufferLimit);
       const lines = probe.buffer.split(/\n/u).map((line) => line.trim());
       const beginIndex = lines.findIndex((line) => line === probe.beginMarker);
 
       if (beginIndex < 0) {
-        return;
+        return wasCapturing || hasProbeMarker;
       }
+
+      probe.hasBeginMarker = true;
 
       const endIndex = lines.findIndex((line, index) => index > beginIndex && line === probe.endMarker);
 
       if (endIndex < 0) {
-        return;
+        return true;
       }
 
       const directory = lines
@@ -1271,6 +1285,7 @@ function RemoteTerminal({
         .find((line) => line && line !== probe.beginMarker && line !== probe.endMarker) ?? '';
 
       settleTerminalCwdProbe(directory);
+      return true;
     };
 
     const createTerminalCwdProbeCommand = (beginMarker: string, endMarker: string) => {
@@ -1312,6 +1327,7 @@ function RemoteTerminal({
           beginMarker,
           endMarker,
           buffer: '',
+          hasBeginMarker: false,
           timer,
           resolve,
         };
@@ -1338,8 +1354,11 @@ function RemoteTerminal({
 
     const runSftpTransferCommand = async (transferCommand: TerminalTransferCommand) => {
       let shouldRedrawPrompt = false;
+      const transferClientId = `terminal-transfer-${terminalId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const transferOptions: ShellDeskSudoPasswordOptions = { transferClientId };
       const beginSftpProgress = () => {
         activeSftpTransferRef.current = true;
+        sftpTransferClientIdRef.current = transferClientId;
         sftpTransferQueueIdRef.current = '';
         sftpTransferEndedRef.current = false;
         sftpProgressLineLengthRef.current = 0;
@@ -1347,6 +1366,7 @@ function RemoteTerminal({
       const cancelSftpProgress = () => {
         if (activeSftpTransferRef.current) {
           activeSftpTransferRef.current = false;
+          sftpTransferClientIdRef.current = '';
           sftpTransferQueueIdRef.current = '';
           sftpTransferEndedRef.current = false;
           sftpProgressLineLengthRef.current = 0;
@@ -1381,7 +1401,7 @@ function RemoteTerminal({
         if (transferCommand.action === 'rz') {
           writeTerminalNotice(t('terminal.transfer.sftpUpload', settingsRef.current.language, { path: remoteDirectory }));
           beginSftpProgress();
-          const result = await api.connections.uploadFiles(connectionId, remoteDirectory);
+          const result = await api.connections.uploadFiles(connectionId, remoteDirectory, transferOptions);
 
           if (result.canceled) {
             cancelSftpProgress();
@@ -1398,8 +1418,8 @@ function RemoteTerminal({
 
         beginSftpProgress();
         const result = remotePaths.length === 1
-          ? await api.connections.downloadFile(connectionId, remotePaths[0])
-          : await api.connections.downloadPaths(connectionId, remotePaths);
+          ? await api.connections.downloadFile(connectionId, remotePaths[0], transferOptions)
+          : await api.connections.downloadPaths(connectionId, remotePaths, transferOptions);
 
         if (result.canceled) {
           cancelSftpProgress();
@@ -1634,6 +1654,7 @@ function RemoteTerminal({
       commandBufferRef.current = '';
       commandBufferUnsafeRef.current = false;
       activeSftpTransferRef.current = false;
+      sftpTransferClientIdRef.current = '';
       sftpTransferQueueIdRef.current = '';
       sftpTransferEndedRef.current = false;
       sftpProgressLineLengthRef.current = 0;
@@ -1715,8 +1736,7 @@ function RemoteTerminal({
         useLegacyTerminalIpcRef.current = true;
       }
 
-      const isCwdProbeOutput = Boolean(terminalCwdProbeRef.current);
-      processTerminalCwdProbeOutput(payload.data);
+      const isCwdProbeOutput = processTerminalCwdProbeOutput(payload.data);
 
       if (isCwdProbeOutput) {
         return;
@@ -1766,6 +1786,7 @@ function RemoteTerminal({
       commandBufferRef.current = '';
       commandBufferUnsafeRef.current = false;
       activeSftpTransferRef.current = false;
+      sftpTransferClientIdRef.current = '';
       sftpTransferQueueIdRef.current = '';
       sftpTransferEndedRef.current = false;
       sftpProgressLineLengthRef.current = 0;
@@ -1785,6 +1806,7 @@ function RemoteTerminal({
       commandBufferRef.current = '';
       commandBufferUnsafeRef.current = false;
       activeSftpTransferRef.current = false;
+      sftpTransferClientIdRef.current = '';
       sftpTransferQueueIdRef.current = '';
       sftpTransferEndedRef.current = false;
       sftpProgressLineLengthRef.current = 0;

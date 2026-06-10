@@ -2485,22 +2485,27 @@ function App() {
   }, [commitCollectionsState, persistCurrentCollections]);
 
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '') => {
+    const entry: LogEntry = {
+      id: createId(),
+      timestamp: new Date().toISOString(),
+      category,
+      level,
+      message,
+      detail,
+    };
+
     setLogs((current) => {
-      const entry: LogEntry = {
-        id: createId(),
-        timestamp: new Date().toISOString(),
-        category,
-        level,
-        message,
-        detail,
-      };
       const next = [entry, ...current];
       return next.length > 500 ? next.slice(0, 500) : next;
     });
+
+    void window.guiSSH?.logs?.appendEntry(entry as unknown as ShellDeskLogEntry).catch(() => undefined);
   };
 
   const clearLogs = () => {
+    lastPersistedLogsRef.current = JSON.stringify([]);
     setLogs([]);
+    void window.guiSSH?.logs?.clearEntries().catch(() => undefined);
   };
 
   const minimizeWindow = () => {

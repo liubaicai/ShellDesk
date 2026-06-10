@@ -852,7 +852,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0], [tabs, activeTabId]);
   const isAiConfigured = Boolean(
     settings.aiApiBaseUrl.trim() &&
-    settings.aiApiKey.trim() &&
+    (settings.aiApiFormat !== 'anthropic' || settings.aiApiKey.trim()) &&
     settings.aiModel.trim() &&
     (window.guiSSH?.ai?.chatStream || window.guiSSH?.ai?.chat),
   );
@@ -1538,7 +1538,11 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
       return;
     }
 
-    if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+    if (
+      !settings.aiApiBaseUrl.trim() ||
+      (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
+      !settings.aiModel.trim()
+    ) {
       setAiError(t('notepad.error.aiConfigRequired', language));
       return;
     }

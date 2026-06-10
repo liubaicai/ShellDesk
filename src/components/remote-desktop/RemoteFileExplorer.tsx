@@ -1003,20 +1003,67 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         return;
       }
 
-      setTransferProgress(payload);
       const activeTaskId = activeTransferTaskIdRef.current;
-      if (activeTaskId) {
-        setTransferQueue((tasks) => tasks.map((task) => task.id === activeTaskId
-          ? { ...task, progress: payload }
-          : task));
+
+      if (!payload.clientId) {
+        setTransferProgress((currentProgress) => {
+          if (currentProgress?.queueId && payload.queueId && currentProgress.queueId === payload.queueId) {
+            return payload;
+          }
+
+          return currentProgress;
+        });
+        return;
       }
+
+      if (payload.clientId && activeTaskId && payload.clientId !== activeTaskId) {
+        return;
+      }
+
+      if (!activeTaskId) {
+        setTransferProgress((currentProgress) => currentProgress?.clientId === payload.clientId ? payload : currentProgress);
+        return;
+      }
+
+      setTransferProgress((currentProgress) => {
+        if (currentProgress?.queueId && payload.queueId && currentProgress.queueId !== payload.queueId) {
+          return currentProgress;
+        }
+
+        return payload;
+      });
+
+      setTransferQueue((tasks) => tasks.map((task) => task.id === payload.clientId
+        ? { ...task, progress: payload }
+        : task));
     });
     const unsubEnd = window.guiSSH?.events.onTransferEnd((payload) => {
       if (payload.connectionId && payload.connectionId !== connectionId) {
         return;
       }
 
+      const activeTaskId = activeTransferTaskIdRef.current;
+
+      if (!payload.clientId) {
+        setTransferProgress((currentProgress) => {
+          if (currentProgress?.queueId && payload.queueId && currentProgress.queueId === payload.queueId) {
+            return null;
+          }
+
+          return currentProgress;
+        });
+        return;
+      }
+
+      if (payload.clientId && activeTaskId && payload.clientId !== activeTaskId) {
+        return;
+      }
+
       setTransferProgress((currentProgress) => {
+        if (payload.clientId && currentProgress?.clientId && currentProgress.clientId !== payload.clientId) {
+          return currentProgress;
+        }
+
         if (currentProgress?.queueId && payload.queueId && currentProgress.queueId !== payload.queueId) {
           return currentProgress;
         }
@@ -1336,6 +1383,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         }));
 
         try {
+          const withTransferClientId = (options?: ShellDeskSudoPasswordOptions): ShellDeskSudoPasswordOptions => ({
+            ...(options ?? {}),
+            transferClientId: task.id,
+          });
+
           if (task.type === 'upload') {
             const uploadItems = task.uploadItems ?? [];
 
@@ -1346,7 +1398,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             const result = await runWithSudoRetry(
               t('fileExplorer.sudo.operation.upload', language),
               task.uploadTarget,
-              (options) => window.guiSSH!.connections.uploadLocalPaths(connectionId, task.uploadTarget!, uploadItems, options),
+              (options) => window.guiSSH!.connections.uploadLocalPaths(connectionId, task.uploadTarget!, uploadItems, withTransferClientId(options)),
             );
 
             updateTransferTask(task.id, (currentTask) => ({
@@ -1365,7 +1417,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               const result = await runWithSudoRetry(
                 t('fileExplorer.sudo.operation.download', language),
                 task.downloadFilePath,
-                (options) => window.guiSSH!.connections.downloadFile(connectionId, task.downloadFilePath!, options),
+                (options) => window.guiSSH!.connections.downloadFile(connectionId, task.downloadFilePath!, withTransferClientId(options)),
               );
 
               updateTransferTask(task.id, (currentTask) => ({
@@ -1377,7 +1429,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               const result = await runWithSudoRetry(
                 t('fileExplorer.sudo.operation.download', language),
                 remotePath,
-                (options) => window.guiSSH!.connections.downloadPaths(connectionId, remotePaths, options),
+                (options) => window.guiSSH!.connections.downloadPaths(connectionId, remotePaths, withTransferClientId(options)),
               );
 
               updateTransferTask(task.id, (currentTask) => ({
@@ -2016,9 +2068,9 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
   const cancelTransfer = useCallback(async () => {
     try {
-      await window.guiSSH?.connections.cancelTransfer(connectionId);
+      await window.guiSSH?.connections.cancelTransfer(connectionId, transferProgress?.queueId);
     } catch { /* ignore */ }
-  }, [connectionId]);
+  }, [connectionId, transferProgress?.queueId]);
 
   const compressEntries = useCallback(async (entries: RemoteFileEntry[], format: string) => {
     closeContextMenu();

@@ -240,7 +240,11 @@ function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLangua
     return t('process.error.noAiChat', language);
   }
 
-  if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+  if (
+    !settings.aiApiBaseUrl.trim() ||
+    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
+    !settings.aiModel.trim()
+  ) {
     return t('process.error.aiConfigRequired', language);
   }
 

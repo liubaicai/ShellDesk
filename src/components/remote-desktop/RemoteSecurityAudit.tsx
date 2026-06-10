@@ -201,7 +201,11 @@ function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLangua
     return t('securityAudit.ai.noChat', language);
   }
 
-  if (!settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim() || !settings.aiModel.trim()) {
+  if (
+    !settings.aiApiBaseUrl.trim() ||
+    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
+    !settings.aiModel.trim()
+  ) {
     return t('securityAudit.ai.configRequired', language);
   }
 

@@ -365,6 +365,7 @@ type ShellDeskPrivilegeMode = 'sudo' | 'su-root';
 
 interface ShellDeskSudoPasswordOptions {
   sudoPassword?: string;
+  transferClientId?: string;
 }
 
 interface ShellDeskStoredHostRecord {
@@ -679,7 +680,7 @@ interface ShellDeskConnectionControls {
   uploadFiles: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   uploadPaths: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   uploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
-  cancelTransfer: (connectionId: string) => Promise<boolean>;
+  cancelTransfer: (connectionId: string, queueId?: string) => Promise<boolean>;
   checkSftp: (connectionId: string) => Promise<{ available: boolean; error?: string }>;
   selectZmodemUploadFiles: () => Promise<{ canceled: boolean; files: ShellDeskZmodemUploadFile[] }>;
   readZmodemUploadFile: (fileId: string, offset: number, length: number) => Promise<ArrayBuffer>;
@@ -1030,7 +1031,9 @@ interface ShellDeskLogEntry {
 
 interface ShellDeskLogsControls {
   getEntries: () => Promise<ShellDeskLogEntry[]>;
+  clearEntries: () => Promise<ShellDeskLogEntry[]>;
   saveEntries: (entries: ShellDeskLogEntry[]) => Promise<ShellDeskLogEntry[]>;
+  appendEntry: (entry: ShellDeskLogEntry) => Promise<ShellDeskLogEntry[]>;
 }
 
 interface ShellDeskPreferenceControls {
@@ -1171,6 +1174,7 @@ interface ShellDeskSyncControls {
 interface ShellDeskTransferProgress {
   connectionId?: string;
   queueId?: string;
+  clientId?: string;
   type: 'download' | 'upload';
   fileName: string;
   transferred: number;
@@ -1186,6 +1190,7 @@ interface ShellDeskTransferProgress {
 interface ShellDeskTransferEndPayload {
   connectionId?: string;
   queueId?: string;
+  clientId?: string;
   type: 'download' | 'upload';
   fileName: string;
   transferred: number;

@@ -2,7 +2,7 @@ const { app, dialog, ipcMain } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { maxConfigImportBytes } = require('./constants.cjs');
+const { maxConfigImportBytes, maxLogEntries } = require('./constants.cjs');
 const { testProxyConfig } = require('./connectionManager.cjs');
 const { getSystemFontFamilies } = require('./systemFonts.cjs');
 const { getSenderWindow } = require('./windows.cjs');
@@ -72,6 +72,77 @@ function sanitizeTextFileName(value, fallback) {
     .slice(0, 180);
 
   return sanitizedValue || fallback;
+}
+
+function readLogEntry(rawEntry) {
+  if (!isPlainObject(rawEntry)) {
+    return null;
+  }
+
+  const id = typeof rawEntry.id === 'string' && rawEntry.id.trim()
+    ? readBoundedString(rawEntry.id, '日志 ID', 120)
+    : '';
+  const timestamp = typeof rawEntry.timestamp === 'string' && rawEntry.timestamp.trim()
+    ? readBoundedString(rawEntry.timestamp, '日志时间', 80)
+    : new Date().toISOString();
+  const category = ['connection', 'host', 'key', 'config', 'system'].includes(rawEntry.category)
+    ? rawEntry.category
+    : 'system';
+  const level = ['info', 'success', 'warning', 'error'].includes(rawEntry.level)
+    ? rawEntry.level
+    : 'info';
+  const message = readBoundedString(String(rawEntry.message ?? ''), '日志内容', 500, {
+    required: false,
+    rejectLineBreaks: false,
+  });
+  const detail = readBoundedString(String(rawEntry.detail ?? ''), '日志详情', 4000, {
+    required: false,
+    rejectLineBreaks: false,
+  });
+
+  if (!id || !message) {
+    return null;
+  }
+
+  return {
+    id,
+    timestamp,
+    category,
+    level,
+    message,
+    detail,
+  };
+}
+
+function readLogEntryList(rawEntries) {
+  if (!Array.isArray(rawEntries)) {
+    return [];
+  }
+
+  return rawEntries
+    .slice(0, maxLogEntries)
+    .map((entry) => readLogEntry(entry))
+    .filter(Boolean);
+}
+
+function mergeLogEntries(primaryEntries, secondaryEntries = []) {
+  const seenIds = new Set();
+  const nextEntries = [];
+
+  for (const entry of [...primaryEntries, ...secondaryEntries]) {
+    if (!entry || seenIds.has(entry.id)) {
+      continue;
+    }
+
+    seenIds.add(entry.id);
+    nextEntries.push(entry);
+
+    if (nextEntries.length >= maxLogEntries) {
+      break;
+    }
+  }
+
+  return nextEntries;
 }
 
 function getSystemKnownHostsPaths() {
@@ -214,9 +285,33 @@ function registerConfigHandlers(registerIpcHandler) {
 
   registerIpcHandler('logs:get-entries', async () => readLogEntries());
 
+  registerIpcHandler('logs:clear-entries', async () => {
+    writeLogEntries([]);
+    return [];
+  });
+
   registerIpcHandler('logs:save-entries', async (_event, rawEntries) => {
-    const entries = Array.isArray(rawEntries) ? rawEntries : [];
-    writeLogEntries(entries);
+    const entries = readLogEntryList(rawEntries);
+
+    if (Array.isArray(rawEntries) && rawEntries.length === 0) {
+      writeLogEntries([]);
+      return readLogEntries();
+    }
+
+    const existingEntries = readLogEntryList(readLogEntries());
+    writeLogEntries(mergeLogEntries(entries, existingEntries));
+    return readLogEntries();
+  });
+
+  registerIpcHandler('logs:append-entry', async (_event, rawEntry) => {
+    const entry = readLogEntry(rawEntry);
+
+    if (!entry) {
+      throw new Error('日志条目无效。');
+    }
+
+    const existingEntries = readLogEntryList(readLogEntries());
+    writeLogEntries(mergeLogEntries([entry], existingEntries));
     return readLogEntries();
   });
 

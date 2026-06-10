@@ -29,6 +29,16 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(appUserModelId);
 }
 
+const singleInstanceLock = app.requestSingleInstanceLock();
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
+}
+
 registerWindowHandlers();
 registerAppHandlers(registerIpcHandler);
 registerAutoUpdateHandlers(registerIpcHandler);
@@ -41,15 +51,17 @@ registerVncHandlers(registerIpcHandler);
 registerSyncHandlers(registerIpcHandler);
 registerWebContentsGuards();
 
-app.whenReady().then(() => {
-  createMainWindow();
-  ensureAppTray();
-  startAutoUpdateCheck(5000);
+if (singleInstanceLock) {
+  app.whenReady().then(() => {
+    createMainWindow();
+    ensureAppTray();
+    startAutoUpdateCheck(5000);
 
-  app.on('activate', () => {
-    showMainWindow();
+    app.on('activate', () => {
+      showMainWindow();
+    });
   });
-});
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

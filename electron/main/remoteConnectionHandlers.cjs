@@ -50,6 +50,7 @@ const {
 const maxRemotePermissionTargets = 5000;
 const maxRemoteDeleteTargets = 5000;
 const maxTransferQueueItems = 20000;
+const maxTransferQueueIdLength = 120;
 const maxTerminalBinaryInputBytes = 256 * 1024;
 const maxZmodemReadChunkBytes = 256 * 1024;
 const maxZmodemUploadSelectionAgeMs = 30 * 60 * 1000;
@@ -2042,6 +2043,10 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         });
     }
 
+    if (typeof rawOptions.transferClientId === 'string' && rawOptions.transferClientId.trim()) {
+      options.transferClientId = readBoundedString(rawOptions.transferClientId, '传输任务 ID', maxTransferQueueIdLength);
+    }
+
     return options;
   }
 
@@ -2898,6 +2903,14 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return error?.code === 'SHELLDESK_TRANSFER_CANCELED' || /传输已取消/.test(error?.message ?? '');
   }
 
+  function readTransferQueueId(rawQueueId) {
+    if (typeof rawQueueId !== 'string' || !rawQueueId.trim()) {
+      return '';
+    }
+
+    return readBoundedString(rawQueueId, '传输队列 ID', maxTransferQueueIdLength);
+  }
+
   function readRemotePathList(rawPaths) {
     if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
       throw new Error('请选择要传输的远程项目。');
@@ -2956,7 +2969,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     }
   }
 
-  function createTransferQueue(connectionId, type, sender) {
+  function createTransferQueue(connectionId, type, sender, clientId = '') {
     const queueId = `transfer-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     let activeDestroy = null;
     let canceled = false;
@@ -2975,6 +2988,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const createPayload = () => ({
       connectionId,
       queueId,
+      ...(clientId ? { clientId } : {}),
       type,
       fileName,
       transferred,
@@ -2998,7 +3012,9 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     };
 
     const queue = {
+      connectionId,
       queueId,
+      clientId,
       get canceled() {
         return canceled;
       },
@@ -3067,8 +3083,8 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         }
 
         ended = true;
-        if (activeTransferQueues.get(connectionId) === queue) {
-          activeTransferQueues.delete(connectionId);
+        if (activeTransferQueues.get(queueId) === queue) {
+          activeTransferQueues.delete(queueId);
         }
 
         sendTransferPayload(sender, 'transfer:end', {
@@ -3082,23 +3098,39 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return queue;
   }
 
-  function cancelActiveTransferQueue(connectionId) {
-    const queue = activeTransferQueues.get(connectionId);
-    if (!queue) {
-      return false;
+  function cancelActiveTransferQueue(connectionId, rawQueueId) {
+    const queueId = readTransferQueueId(rawQueueId);
+
+    if (queueId) {
+      const queue = activeTransferQueues.get(queueId);
+
+      if (!queue || queue.connectionId !== connectionId) {
+        return false;
+      }
+
+      queue.cancel();
+      return true;
     }
 
-    queue.cancel();
-    return true;
+    let canceled = false;
+    for (const queue of activeTransferQueues.values()) {
+      if (queue.connectionId === connectionId) {
+        queue.cancel();
+        canceled = true;
+      }
+    }
+
+    return canceled;
   }
 
-  registerIpcHandler('connection:cancel-transfer', (_event, connectionId) => {
+  registerIpcHandler('connection:cancel-transfer', (_event, connectionId, rawQueueId) => {
     const activeConnection = getActiveConnection(connectionId);
     if (isLocalConnection(activeConnection)) {
-      return cancelLocalTransfer(connectionId) || cancelActiveTransferQueue(connectionId);
+      return cancelLocalTransfer(connectionId, readTransferQueueId(rawQueueId)) ||
+        cancelActiveTransferQueue(connectionId, rawQueueId);
     }
 
-    return cancelActiveTransferQueue(connectionId);
+    return cancelActiveTransferQueue(connectionId, rawQueueId);
   });
 
   function createSftpSession(client, callback) {
@@ -3862,10 +3894,9 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     });
   }
 
-  async function runTransferQueue(connectionId, type, sender, executor) {
-    cancelActiveTransferQueue(connectionId);
-    const queue = createTransferQueue(connectionId, type, sender);
-    activeTransferQueues.set(connectionId, queue);
+  async function runTransferQueue(connectionId, type, sender, executor, options = {}) {
+    const queue = createTransferQueue(connectionId, type, sender, options.transferClientId);
+    activeTransferQueues.set(queue.queueId, queue);
     queue.setTotals(0, 0, 0);
 
     try {
@@ -4012,7 +4043,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
       });
 
       return { size: totalBytes, fileCount: totalFiles, itemCount: totalItems };
-    });
+    }, options);
   }
 
   async function runUploadTransfer(connectionId, sender, localPaths, remoteDirectory, options = {}) {
@@ -4125,7 +4156,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         fileCount: plan.files.length,
         itemCount: plan.itemCount,
       };
-    });
+    }, options);
   }
 
   registerIpcHandler('connection:download-file', async (event, connectionId, rawPath, rawOptions) => {
@@ -4145,7 +4176,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
     const activeConnection = getActiveConnection(connectionId);
     if (isLocalConnection(activeConnection)) {
-      const transferResult = await copyLocalDownload(connectionId, event.sender, [remotePath], result.filePath, true);
+      const transferResult = await copyLocalDownload(connectionId, event.sender, [remotePath], result.filePath, true, options);
       return { ...transferResult, filePath: result.filePath };
     }
 
@@ -4176,7 +4207,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const localDirectory = result.filePaths[0];
     const activeConnection = getActiveConnection(connectionId);
     if (isLocalConnection(activeConnection)) {
-      const transferResult = await copyLocalDownload(connectionId, event.sender, remotePaths, localDirectory, false);
+      const transferResult = await copyLocalDownload(connectionId, event.sender, remotePaths, localDirectory, false, options);
       return { ...transferResult, directoryPath: localDirectory };
     }
 
@@ -4249,6 +4280,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         event.sender,
         result.filePaths.slice(0, 1).map((localPath) => ({ localPath })),
         currentPath,
+        options,
       );
       return { ...transferResult, remotePath: currentPath };
     }
@@ -4278,6 +4310,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         event.sender,
         result.filePaths.map((localPath) => ({ localPath })),
         currentPath,
+        options,
       );
       return { ...transferResult, remotePath: currentPath };
     }
@@ -4306,6 +4339,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         event.sender,
         result.filePaths.map((localPath) => ({ localPath })),
         currentPath,
+        options,
       );
       return { ...transferResult, remotePath: currentPath };
     }
@@ -4319,7 +4353,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const options = readFilePrivilegeOptions(rawOptions);
     const activeConnection = getActiveConnection(connectionId);
     if (isLocalConnection(activeConnection)) {
-      const transferResult = await copyLocalUpload(connectionId, event.sender, localItems, currentPath);
+      const transferResult = await copyLocalUpload(connectionId, event.sender, localItems, currentPath, options);
       return { ...transferResult, remotePath: currentPath };
     }
 

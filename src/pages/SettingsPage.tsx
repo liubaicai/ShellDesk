@@ -553,7 +553,7 @@ function SettingsPage({
       return;
     }
 
-    if (!settings.aiApiKey.trim()) {
+    if (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) {
       setAiModelsError(t('settings.ai.model.error.apiKeyRequired', settings.language));
       setAiModelsMessage('');
       return;
@@ -1865,7 +1865,7 @@ function SettingsPage({
                         type="button"
                         className="command-button"
                         onClick={fetchAiModels}
-                        disabled={isAiModelsLoading || !settings.aiApiBaseUrl.trim() || !settings.aiApiKey.trim()}
+                        disabled={isAiModelsLoading || !settings.aiApiBaseUrl.trim() || (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim())}
                       >
                         {isAiModelsLoading ? t('settings.ai.model.fetching', settings.language) : t('settings.ai.model.fetch', settings.language)}
                       </button>

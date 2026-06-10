@@ -113,7 +113,9 @@ contextBridge.exposeInMainWorld('guiSSH', {
   },
   logs: {
     getEntries: () => ipcRenderer.invoke('logs:get-entries'),
+    clearEntries: () => ipcRenderer.invoke('logs:clear-entries'),
     saveEntries: (entries) => ipcRenderer.invoke('logs:save-entries', entries),
+    appendEntry: (entry) => ipcRenderer.invoke('logs:append-entry', entry),
   },
   preferences: {
     get: (key) => ipcRenderer.invoke('preferences:get', key),
@@ -186,7 +188,7 @@ contextBridge.exposeInMainWorld('guiSSH', {
     uploadFiles: (connectionId, remotePath, options) => ipcRenderer.invoke('connection:upload-files', connectionId, remotePath, options),
     uploadPaths: (connectionId, remotePath, options) => ipcRenderer.invoke('connection:upload-paths', connectionId, remotePath, options),
     uploadLocalPaths: (connectionId, remotePath, items, options) => ipcRenderer.invoke('connection:upload-local-paths', connectionId, remotePath, items, options),
-    cancelTransfer: (connectionId) => ipcRenderer.invoke('connection:cancel-transfer', connectionId),
+    cancelTransfer: (connectionId, queueId) => ipcRenderer.invoke('connection:cancel-transfer', connectionId, queueId),
     checkSftp: (connectionId) => ipcRenderer.invoke('connection:check-sftp', connectionId),
     selectZmodemUploadFiles: () => ipcRenderer.invoke('connection:zmodem-select-upload-files'),
     readZmodemUploadFile: (fileId, offset, length) =>

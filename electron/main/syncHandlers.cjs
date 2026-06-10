@@ -939,6 +939,20 @@ function createRedirectUrl(requestUrl, location) {
   }
 }
 
+function isSameUrlOrigin(leftUrl, rightUrl) {
+  try {
+    return new URL(leftUrl).origin === new URL(rightUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function omitAuthorizationHeader(headers) {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'authorization'),
+  );
+}
+
 async function readResponseText(response) {
   try {
     return await response.text();
@@ -1018,7 +1032,10 @@ async function webDavRequestAtUrl(config, requestUrl, method, headers, body, red
       if (redirectUrl) {
         const nextMethod = response.status === 303 ? 'GET' : method;
         const nextBody = nextMethod === 'GET' ? null : body;
-        return webDavRequestAtUrl(config, redirectUrl, nextMethod, headers, nextBody, redirectCount + 1);
+        const nextHeaders = isSameUrlOrigin(requestUrl, redirectUrl)
+          ? headers
+          : omitAuthorizationHeader(headers);
+        return webDavRequestAtUrl(config, redirectUrl, nextMethod, nextHeaders, nextBody, redirectCount + 1);
       }
     }
 

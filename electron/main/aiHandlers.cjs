@@ -41,9 +41,14 @@ function readAiModelListRequest(rawRequest) {
   const fallbackFormat = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiFormat = aiApiFormatChoices.includes(rawRequest.apiFormat) ? rawRequest.apiFormat : fallbackFormat;
   const apiBaseUrl = readAiApiBaseUrl(rawRequest.apiBaseUrl);
-  const apiKey = readBoundedString(rawRequest.apiKey, 'AI API 密钥', maxAiApiKeyLength, {
+  const apiKey = readBoundedString(rawRequest.apiKey ?? '', 'AI API 密钥', maxAiApiKeyLength, {
     trim: true,
+    required: false,
   });
+
+  if (apiFormat === 'anthropic' && !apiKey) {
+    throw new Error('请输入AI API 密钥。');
+  }
 
   return {
     apiFormat,
@@ -157,6 +162,10 @@ function readErrorMessage(payload, fallbackText) {
     }
   }
 
+  if (typeof payload?.error === 'string' && payload.error.trim()) {
+    return payload.error.trim();
+  }
+
   if (typeof payload?.message === 'string' && payload.message.trim()) {
     return payload.message.trim();
   }
@@ -180,9 +189,51 @@ function toIsoTime(value) {
   return undefined;
 }
 
+function readAiTextValue(value) {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return '';
+}
+
+function readAiContentText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (!Array.isArray(value)) {
+    return '';
+  }
+
+  return value
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item;
+      }
+
+      if (!isPlainObject(item)) {
+        return '';
+      }
+
+      return typeof item.text === 'string'
+        ? item.text
+        : typeof item.content === 'string'
+          ? item.content
+          : typeof item.input_text === 'string'
+            ? item.input_text
+            : '';
+    })
+    .join('');
+}
+
 function normalizeModelEntry(rawModel) {
-  if (typeof rawModel === 'string') {
-    const modelId = rawModel.trim();
+  if (typeof rawModel === 'string' || typeof rawModel === 'number') {
+    const modelId = readAiTextValue(rawModel);
     return modelId ? { id: modelId, name: modelId } : null;
   }
 
@@ -190,22 +241,25 @@ function normalizeModelEntry(rawModel) {
     return null;
   }
 
-  const modelId = typeof rawModel.id === 'string' ? rawModel.id.trim() : '';
+  const modelId = readAiTextValue(rawModel.id) ||
+    readAiTextValue(rawModel.name) ||
+    readAiTextValue(rawModel.model) ||
+    readAiTextValue(rawModel.slug);
 
   if (!modelId) {
     return null;
   }
 
-  const modelName = typeof rawModel.display_name === 'string' && rawModel.display_name.trim()
-    ? rawModel.display_name.trim()
-    : typeof rawModel.name === 'string' && rawModel.name.trim()
-      ? rawModel.name.trim()
-      : modelId;
-  const ownedBy = typeof rawModel.owned_by === 'string' && rawModel.owned_by.trim()
-    ? rawModel.owned_by.trim()
-    : typeof rawModel.type === 'string' && rawModel.type.trim()
-      ? rawModel.type.trim()
-      : undefined;
+  const modelName = readAiTextValue(rawModel.display_name) ||
+    readAiTextValue(rawModel.displayName) ||
+    readAiTextValue(rawModel.label) ||
+    readAiTextValue(rawModel.name) ||
+    modelId;
+  const ownedBy = readAiTextValue(rawModel.owned_by) ||
+    readAiTextValue(rawModel.ownedBy) ||
+    readAiTextValue(rawModel.owner) ||
+    readAiTextValue(rawModel.type) ||
+    undefined;
 
   return {
     id: modelId,
@@ -216,11 +270,17 @@ function normalizeModelEntry(rawModel) {
 }
 
 function parseModelList(payload) {
-  const rawModels = Array.isArray(payload?.data)
+  const rawModels = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
     ? payload.data
     : Array.isArray(payload?.models)
       ? payload.models
-      : [];
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload?.model_ids)
+          ? payload.model_ids
+          : [];
   const seenModelIds = new Set();
   const models = [];
 
@@ -239,24 +299,19 @@ function parseModelList(payload) {
 }
 
 function readOpenAiChatContent(payload) {
-  const content = payload?.choices?.[0]?.message?.content;
+  const firstChoice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
+  const content = firstChoice?.message?.content ?? firstChoice?.text ?? firstChoice?.delta?.content ?? payload?.output_text;
+  const text = readAiContentText(content);
 
-  if (typeof content === 'string' && content.trim()) {
-    return content;
+  if (text.trim()) {
+    return text;
   }
 
   throw new Error('SD-Agent 响应为空。');
 }
 
 function readAnthropicChatContent(payload) {
-  if (!Array.isArray(payload?.content)) {
-    throw new Error('SD-Agent 响应为空。');
-  }
-
-  const content = payload.content
-    .map((item) => isPlainObject(item) && item.type === 'text' && typeof item.text === 'string' ? item.text : '')
-    .join('')
-    .trim();
+  const content = readAiContentText(payload?.content).trim();
 
   if (content) {
     return content;
@@ -299,9 +354,11 @@ function createChatHeaders(request) {
   };
 
   if (request.apiFormat === 'anthropic') {
-    headers['x-api-key'] = request.apiKey;
+    if (request.apiKey) {
+      headers['x-api-key'] = request.apiKey;
+    }
     headers['anthropic-version'] = anthropicApiVersion;
-  } else {
+  } else if (request.apiKey) {
     headers.authorization = `Bearer ${request.apiKey}`;
   }
 
@@ -319,8 +376,8 @@ function extractOpenAiStreamDelta(payload) {
 
   return payload.choices
     .map((choice) => {
-      const content = choice?.delta?.content ?? choice?.message?.content ?? '';
-      return typeof content === 'string' ? content : '';
+      const content = choice?.delta?.content ?? choice?.message?.content ?? choice?.text ?? '';
+      return readAiContentText(content);
     })
     .join('');
 }
@@ -472,6 +529,27 @@ async function requestAiChatStream(event, rawRequest) {
       throw new Error(readErrorMessage(parseJsonResponse(responseText), responseText));
     }
 
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (!/text\/event-stream/i.test(contentType)) {
+      const responseText = await response.text();
+      const payload = parseJsonResponse(responseText);
+      const chunk = request.apiFormat === 'anthropic'
+        ? readAnthropicChatContent(payload)
+        : readOpenAiChatContent(payload);
+
+      content += chunk;
+      event.sender.send('ai:chat-stream:chunk', {
+        streamId: request.streamId,
+        chunk,
+      });
+
+      return {
+        endpoint,
+        content,
+      };
+    }
+
     await readEventStream(response, ({ data }) => {
       if (data === '[DONE]') {
         return;
@@ -527,9 +605,11 @@ async function listAiModels(rawRequest) {
   };
 
   if (request.apiFormat === 'anthropic') {
-    headers['x-api-key'] = request.apiKey;
+    if (request.apiKey) {
+      headers['x-api-key'] = request.apiKey;
+    }
     headers['anthropic-version'] = anthropicApiVersion;
-  } else {
+  } else if (request.apiKey) {
     headers.authorization = `Bearer ${request.apiKey}`;
   }
 
