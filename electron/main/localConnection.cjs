@@ -1138,7 +1138,9 @@ async function startLocalTerminal(activeConnection, terminalId, columns, rows, s
     ...(process.platform === 'win32' ? {} : { encoding: null }),
   });
   const terminalSession = createLocalTerminalSession(ptyProcess);
-  const outputCleaner = process.platform === 'win32' ? createPowerShellCliXmlStreamCleaner() : null;
+  const outputCleaner = process.platform === 'win32'
+    ? createPowerShellCliXmlStreamCleaner({ preservePlainTextWhitespace: true })
+    : null;
   let exitCode = null;
   let exitSignal = null;
   let closed = false;

@@ -24,13 +24,18 @@ function extractPowerShellCliXmlMessages(value) {
   return messages.join('\n');
 }
 
-function cleanPowerShellCliXmlOutput(value) {
-  return String(value || '')
+function cleanPowerShellCliXmlOutput(value, options = {}) {
+  const cleaned = String(value || '')
     .replace(/#< CLIXML[ \t]*(?:\r?\n)?/g, '')
     .replace(/<Objs\b[\s\S]*?<\/Objs>/g, (cliXml) => extractPowerShellCliXmlMessages(cliXml))
     .replace(/<Objs\b[\s\S]*$/g, (cliXml) => extractPowerShellCliXmlMessages(cliXml))
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
+    .split(/\r?\n/);
+
+  const lines = options.preservePlainTextWhitespace
+    ? cleaned
+    : cleaned.map((line) => line.trimEnd());
+
+  return lines
     .filter((line) => line.trim() !== '#< CLIXML')
     .join('\n');
 }
@@ -50,7 +55,7 @@ function getTrailingCliXmlPrefixLength(value) {
   return prefixLength;
 }
 
-function createPowerShellCliXmlStreamCleaner() {
+function createPowerShellCliXmlStreamCleaner(options = {}) {
   let buffer = '';
 
   const push = (text = '', flush = false) => {
@@ -65,24 +70,24 @@ function createPowerShellCliXmlStreamCleaner() {
           const trailingPrefixLength = getTrailingCliXmlPrefixLength(buffer);
 
           if (trailingPrefixLength > 0) {
-            output += cleanPowerShellCliXmlOutput(buffer.slice(0, -trailingPrefixLength));
+            output += cleanPowerShellCliXmlOutput(buffer.slice(0, -trailingPrefixLength), options);
             buffer = buffer.slice(-trailingPrefixLength);
             break;
           }
         }
 
-        output += cleanPowerShellCliXmlOutput(buffer);
+        output += cleanPowerShellCliXmlOutput(buffer, options);
         buffer = '';
         break;
       }
 
-      output += cleanPowerShellCliXmlOutput(buffer.slice(0, xmlStart));
+      output += cleanPowerShellCliXmlOutput(buffer.slice(0, xmlStart), options);
 
       const xmlEnd = buffer.indexOf('</Objs>', xmlStart);
 
       if (xmlEnd === -1) {
         if (flush) {
-          output += cleanPowerShellCliXmlOutput(buffer.slice(xmlStart));
+          output += cleanPowerShellCliXmlOutput(buffer.slice(xmlStart), options);
           buffer = '';
         } else {
           buffer = buffer.slice(xmlStart);
