@@ -3,17 +3,28 @@ import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import {
+  createKafkaSampleCommand,
   createKafkaLagCommand,
+  createKafkaOffsetsCommand,
   createKafkaTopicsCommand,
   createRabbitCtlCommand,
   createRabbitManagementCommand,
+  DEFAULT_KAFKA_CONSOLE_CONSUMER_PATH,
+  DEFAULT_KAFKA_CONSUMER_GROUPS_PATH,
+  DEFAULT_KAFKA_GET_OFFSETS_PATH,
+  DEFAULT_KAFKA_TOPICS_PATH,
   formatRabbitCommandError,
   parseKafkaLag,
+  parseKafkaPartitionOffsets,
+  parseKafkaSampleMessages,
   parseKafkaTopics,
   parseRabbitCtlQueues,
   parseRabbitManagementQueues,
+  summarizeKafkaTopicOffsets,
+  type KafkaCommandTarget,
   type KafkaConsumerLag,
   type KafkaTopicSummary,
+  type KafkaTopicOffsetSummary,
   type RabbitQueueSummary,
 } from './messageQueueParsers';
 import { isWindowsSystem } from './remoteSystem';
@@ -27,7 +38,8 @@ interface RemoteMessageQueuePanelProps {
 
 type QueueBackend = 'rabbitmq' | 'kafka';
 type RabbitMode = 'rabbitmqctl' | 'management-api';
-type QueueTab = 'queues' | 'topics' | 'lag' | 'raw';
+type KafkaExecutionMode = KafkaCommandTarget['mode'];
+type QueueTab = 'queues' | 'topics' | 'lag' | 'messages' | 'raw';
 
 function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
@@ -44,6 +56,12 @@ function formatNumber(value?: number) {
   return value.toLocaleString(getShellDeskLocale());
 }
 
+function createKafkaCommandTarget(mode: KafkaExecutionMode, commandPath: string, containerName: string, dockerPath: string): KafkaCommandTarget {
+  return mode === 'docker'
+    ? { mode, commandPath, containerName, dockerPath }
+    : { mode, commandPath };
+}
+
 function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueuePanelProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [backend, setBackend] = useState<QueueBackend>('rabbitmq');
@@ -53,17 +71,29 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
   const [rabbitUser, setRabbitUser] = useState('guest');
   const [rabbitPassword, setRabbitPassword] = useState('guest');
   const [kafkaBootstrap, setKafkaBootstrap] = useState('127.0.0.1:9092');
-  const [kafkaTopicsPath, setKafkaTopicsPath] = useState('kafka-topics.sh');
-  const [kafkaGroupsPath, setKafkaGroupsPath] = useState('kafka-consumer-groups.sh');
+  const [kafkaMode, setKafkaMode] = useState<KafkaExecutionMode>('host');
+  const [kafkaDockerPath, setKafkaDockerPath] = useState('docker');
+  const [kafkaContainerName, setKafkaContainerName] = useState('');
+  const [kafkaTopicsPath, setKafkaTopicsPath] = useState(DEFAULT_KAFKA_TOPICS_PATH);
+  const [kafkaGroupsPath, setKafkaGroupsPath] = useState(DEFAULT_KAFKA_CONSUMER_GROUPS_PATH);
+  const [kafkaConsumerPath, setKafkaConsumerPath] = useState(DEFAULT_KAFKA_CONSOLE_CONSUMER_PATH);
+  const [kafkaOffsetsPath, setKafkaOffsetsPath] = useState(DEFAULT_KAFKA_GET_OFFSETS_PATH);
+  const [sampleMaxMessages, setSampleMaxMessages] = useState('20');
+  const [sampleTimeoutMs, setSampleTimeoutMs] = useState('10000');
+  const [sampleFromBeginning, setSampleFromBeginning] = useState(false);
   const [queues, setQueues] = useState<RabbitQueueSummary[]>([]);
   const [topics, setTopics] = useState<KafkaTopicSummary[]>([]);
   const [lags, setLags] = useState<KafkaConsumerLag[]>([]);
+  const [topicOffsets, setTopicOffsets] = useState<Record<string, KafkaTopicOffsetSummary>>({});
+  const [sampleMessages, setSampleMessages] = useState<string[]>([]);
   const [selectedQueueName, setSelectedQueueName] = useState('');
   const [selectedTopicName, setSelectedTopicName] = useState('');
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<QueueTab>('queues');
   const [rawOutput, setRawOutput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sampling, setSampling] = useState(false);
+  const [offsetLoading, setOffsetLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
@@ -85,9 +115,22 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
       : lags;
   }, [lags, search]);
 
+  const filteredSampleMessages = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return keyword ? sampleMessages.filter((message) => message.toLowerCase().includes(keyword)) : sampleMessages;
+  }, [sampleMessages, search]);
+
   const selectedQueue = useMemo(() => queues.find((queue) => queue.name === selectedQueueName) ?? queues[0] ?? null, [queues, selectedQueueName]);
   const selectedTopic = useMemo(() => topics.find((topic) => topic.name === selectedTopicName) ?? topics[0] ?? null, [selectedTopicName, topics]);
   const lagForSelectedTopic = useMemo(() => selectedTopic ? lags.filter((lag) => lag.topic === selectedTopic.name) : [], [lags, selectedTopic]);
+  const lagRowsByTopic = useMemo(() => {
+    const next: Record<string, number> = {};
+    lags.forEach((lag) => {
+      next[lag.topic] = (next[lag.topic] ?? 0) + 1;
+    });
+    return next;
+  }, [lags]);
+  const selectedTopicOffsets = selectedTopic ? topicOffsets[selectedTopic.name] : undefined;
   const totalRabbitMessages = useMemo(() => queues.reduce((sum, queue) => sum + queue.messages, 0), [queues]);
   const totalLag = useMemo(() => lags.reduce((sum, lag) => sum + (lag.lag ?? 0), 0), [lags]);
 
@@ -113,9 +156,11 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
   };
 
   const refreshKafka = async () => {
+    const topicsTarget = createKafkaCommandTarget(kafkaMode, kafkaTopicsPath, kafkaContainerName, kafkaDockerPath);
+    const lagTarget = createKafkaCommandTarget(kafkaMode, kafkaGroupsPath, kafkaContainerName, kafkaDockerPath);
     const [topicsResult, lagResult] = await Promise.all([
-      runCmd(connectionId, createKafkaTopicsCommand(kafkaTopicsPath, kafkaBootstrap, isWindowsHost)),
-      runCmd(connectionId, createKafkaLagCommand(kafkaGroupsPath, kafkaBootstrap, isWindowsHost)),
+      runCmd(connectionId, createKafkaTopicsCommand(topicsTarget, kafkaBootstrap, isWindowsHost)),
+      runCmd(connectionId, createKafkaLagCommand(lagTarget, kafkaBootstrap, isWindowsHost)),
     ]);
 
     if (topicsResult.code !== 0) {
@@ -127,6 +172,8 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
 
     setTopics(nextTopics);
     setLags(nextLags);
+    setTopicOffsets({});
+    setSampleMessages([]);
     setSelectedTopicName((current) => current && nextTopics.some((topic) => topic.name === current) ? current : nextTopics[0]?.name ?? '');
     setRawOutput([topicsResult.stdout, lagResult.stderr, lagResult.stdout].filter(Boolean).join('\n\n'));
     setActiveTab(nextLags.length ? 'lag' : 'topics');
@@ -135,6 +182,82 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
       setNotice(lagResult.stderr || tCurrent('auto.remoteMessageQueuePanel.lsw4xl'));
     } else {
       setNotice(tCurrent('auto.remoteMessageQueuePanel.uzoao6', { value0: nextTopics.length, value1: nextLags.length }));
+    }
+  };
+
+  const refreshKafkaTopicOffsets = async () => {
+    if (!selectedTopic) {
+      setError(tCurrent('messageQueue.kafka.topicRequired'));
+      return;
+    }
+
+    setOffsetLoading(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const target = createKafkaCommandTarget(kafkaMode, kafkaOffsetsPath, kafkaContainerName, kafkaDockerPath);
+      const [earliestResult, latestResult] = await Promise.all([
+        runCmd(connectionId, createKafkaOffsetsCommand(target, kafkaBootstrap, selectedTopic.name, '-2', isWindowsHost)),
+        runCmd(connectionId, createKafkaOffsetsCommand(target, kafkaBootstrap, selectedTopic.name, '-1', isWindowsHost)),
+      ]);
+
+      const failedResult = earliestResult.code !== 0 ? earliestResult : latestResult.code !== 0 ? latestResult : null;
+      if (failedResult) {
+        throw new Error(failedResult.stderr || failedResult.stdout || tCurrent('messageQueue.kafka.offsetsFailed', { value0: failedResult.code }));
+      }
+
+      const summary = summarizeKafkaTopicOffsets(
+        parseKafkaPartitionOffsets(earliestResult.stdout),
+        parseKafkaPartitionOffsets(latestResult.stdout),
+      );
+
+      if (!summary) {
+        throw new Error(tCurrent('messageQueue.kafka.offsetsEmpty'));
+      }
+
+      setTopicOffsets((current) => ({ ...current, [selectedTopic.name]: summary }));
+      setRawOutput([earliestResult.stderr, earliestResult.stdout, latestResult.stderr, latestResult.stdout].filter(Boolean).join('\n\n'));
+      setNotice(tCurrent('messageQueue.kafka.offsetsNotice', { value0: formatNumber(summary.messageCount), value1: summary.partitionCount }));
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setOffsetLoading(false);
+    }
+  };
+
+  const sampleKafkaMessages = async () => {
+    if (!selectedTopic) {
+      setError(tCurrent('messageQueue.kafka.topicRequired'));
+      return;
+    }
+
+    setSampling(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const target = createKafkaCommandTarget(kafkaMode, kafkaConsumerPath, kafkaContainerName, kafkaDockerPath);
+      const result = await runCmd(connectionId, createKafkaSampleCommand(target, kafkaBootstrap, {
+        topicName: selectedTopic.name,
+        maxMessages: Number(sampleMaxMessages),
+        timeoutMs: Number(sampleTimeoutMs),
+        fromBeginning: sampleFromBeginning,
+      }, isWindowsHost));
+
+      if (result.code !== 0) {
+        throw new Error(result.stderr || result.stdout || tCurrent('messageQueue.kafka.sampleFailed', { value0: result.code }));
+      }
+
+      const nextMessages = parseKafkaSampleMessages(result.stdout);
+      setSampleMessages(nextMessages);
+      setRawOutput([result.stderr, result.stdout].filter(Boolean).join('\n\n'));
+      setActiveTab('messages');
+      setNotice(tCurrent('messageQueue.kafka.sampleNotice', { value0: nextMessages.length }));
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setSampling(false);
     }
   };
 
@@ -218,17 +341,53 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
             </>
           ) : (
             <>
+              <div className="mq-mode-switch" role="group" aria-label="Kafka execution mode">
+                <button type="button" className={kafkaMode === 'host' ? 'active' : ''} onClick={() => setKafkaMode('host')}>{tCurrent('messageQueue.kafka.mode.host')}</button>
+                <button type="button" className={kafkaMode === 'docker' ? 'active' : ''} onClick={() => setKafkaMode('docker')}>{tCurrent('messageQueue.kafka.mode.docker')}</button>
+              </div>
               <label>
-                <span>Bootstrap Server</span>
+                <span>{tCurrent('messageQueue.kafka.bootstrap')}</span>
                 <input value={kafkaBootstrap} onChange={(event) => setKafkaBootstrap(event.target.value)} />
               </label>
+              {kafkaMode === 'docker' ? (
+                <>
+                  <label>
+                    <span>{tCurrent('messageQueue.kafka.container')}</span>
+                    <input value={kafkaContainerName} onChange={(event) => setKafkaContainerName(event.target.value)} placeholder="mss-kafka-1 / 91e0f4972d94" />
+                  </label>
+                  <label>
+                    <span>{tCurrent('messageQueue.kafka.dockerPath')}</span>
+                    <input value={kafkaDockerPath} onChange={(event) => setKafkaDockerPath(event.target.value)} />
+                  </label>
+                </>
+              ) : null}
               <label>
-                <span>kafka-topics</span>
+                <span>{tCurrent('messageQueue.kafka.topicsPath')}</span>
                 <input value={kafkaTopicsPath} onChange={(event) => setKafkaTopicsPath(event.target.value)} />
               </label>
               <label>
-                <span>consumer-groups</span>
+                <span>{tCurrent('messageQueue.kafka.groupsPath')}</span>
                 <input value={kafkaGroupsPath} onChange={(event) => setKafkaGroupsPath(event.target.value)} />
+              </label>
+              <label>
+                <span>{tCurrent('messageQueue.kafka.consumerPath')}</span>
+                <input value={kafkaConsumerPath} onChange={(event) => setKafkaConsumerPath(event.target.value)} />
+              </label>
+              <label>
+                <span>{tCurrent('messageQueue.kafka.offsetsPath')}</span>
+                <input value={kafkaOffsetsPath} onChange={(event) => setKafkaOffsetsPath(event.target.value)} />
+              </label>
+              <label>
+                <span>{tCurrent('messageQueue.kafka.sampleLimit')}</span>
+                <input type="number" min="1" max="100" value={sampleMaxMessages} onChange={(event) => setSampleMaxMessages(event.target.value)} />
+              </label>
+              <label>
+                <span>{tCurrent('messageQueue.kafka.sampleTimeout')}</span>
+                <input type="number" min="1000" max="60000" step="1000" value={sampleTimeoutMs} onChange={(event) => setSampleTimeoutMs(event.target.value)} />
+              </label>
+              <label className="mq-checkbox">
+                <input type="checkbox" checked={sampleFromBeginning} onChange={(event) => setSampleFromBeginning(event.target.checked)} />
+                <span>{tCurrent('messageQueue.kafka.fromBeginning')}</span>
               </label>
               <div className="mq-summary">
                 <span>Lag</span>
@@ -239,7 +398,7 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
           )}
           <label>
             <span>{tCurrent('auto.remoteMessageQueuePanel.367f3v')}</span>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="queue / topic / group" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="queue / topic / group / message" />
           </label>
         </aside>
 
@@ -248,6 +407,9 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
             <button type="button" className={activeTab === 'queues' ? 'active' : ''} onClick={() => setActiveTab('queues')} disabled={backend !== 'rabbitmq'}>{tCurrent('auto.remoteMessageQueuePanel.1m388fv2')}</button>
             <button type="button" className={activeTab === 'topics' ? 'active' : ''} onClick={() => setActiveTab('topics')} disabled={backend !== 'kafka'}>Topic</button>
             <button type="button" className={activeTab === 'lag' ? 'active' : ''} onClick={() => setActiveTab('lag')} disabled={backend !== 'kafka'}>Consumer Lag</button>
+            <button type="button" className={activeTab === 'messages' ? 'active' : ''} onClick={() => setActiveTab('messages')} disabled={backend !== 'kafka'}>{tCurrent('messageQueue.kafka.messagesTab')}</button>
+            <button type="button" onClick={() => void refreshKafkaTopicOffsets()} disabled={backend !== 'kafka' || !selectedTopic || offsetLoading || loading || sampling}>{offsetLoading ? tCurrent('messageQueue.kafka.offsetsLoading') : tCurrent('messageQueue.kafka.refreshOffsets')}</button>
+            <button type="button" onClick={() => void sampleKafkaMessages()} disabled={backend !== 'kafka' || !selectedTopic || sampling || loading}>{sampling ? tCurrent('messageQueue.kafka.sampling') : tCurrent('messageQueue.kafka.sampleButton')}</button>
             <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteMessageQueuePanel.1sxtwbe')}</button>
             <button type="button" onClick={copyRaw} disabled={!rawOutput}>{tCurrent('auto.remoteMessageQueuePanel.tinpzn')}</button>
           </nav>
@@ -283,9 +445,9 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
           {activeTab === 'topics' ? (
             <section className="mq-topic-grid">
               {filteredTopics.map((topic) => (
-                <button key={topic.name} type="button" className={selectedTopic?.name === topic.name ? 'active' : ''} onClick={() => setSelectedTopicName(topic.name)}>
+                <button key={topic.name} type="button" className={selectedTopic?.name === topic.name ? 'active' : ''} onClick={() => { setSelectedTopicName(topic.name); setSampleMessages([]); }}>
                   <strong>{topic.name}</strong>
-                  <span>{lags.filter((lag) => lag.topic === topic.name).length} lag rows</span>
+                  <span>{topicOffsets[topic.name] ? tCurrent('messageQueue.kafka.topicCardMeta', { value0: formatNumber(topicOffsets[topic.name].messageCount), value1: lagRowsByTopic[topic.name] ?? 0 }) : tCurrent('messageQueue.kafka.topicCardLag', { value0: lagRowsByTopic[topic.name] ?? 0 })}</span>
                 </button>
               ))}
               {!filteredTopics.length ? <div className="mq-empty-state">{tCurrent('auto.remoteMessageQueuePanel.bbz5cc')}</div> : null}
@@ -324,6 +486,18 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
             </section>
           ) : null}
 
+          {activeTab === 'messages' ? (
+            <section className="mq-message-samples">
+              {filteredSampleMessages.map((message, index) => (
+                <article key={`${index}-${message.slice(0, 24)}`} className="mq-message-sample">
+                  <span>#{index + 1}</span>
+                  <pre>{message}</pre>
+                </article>
+              ))}
+              {!filteredSampleMessages.length ? <div className="mq-empty-state">{tCurrent('messageQueue.kafka.sampleEmpty')}</div> : null}
+            </section>
+          ) : null}
+
           {activeTab === 'raw' ? <pre className="mq-raw">{rawOutput || tCurrent('auto.remoteMessageQueuePanel.1w2y2p4')}</pre> : null}
         </main>
 
@@ -343,8 +517,10 @@ function RemoteMessageQueuePanel({ connectionId, systemType }: RemoteMessageQueu
           ) : (
             <div className="mq-detail-list">
               <span>Topic</span><strong>{selectedTopic?.name ?? '-'}</strong>
-              <span>Lag Rows</span><strong>{lagForSelectedTopic.length}</strong>
-              <span>Total Lag</span><strong>{formatNumber(lagForSelectedTopic.reduce((sum, lag) => sum + (lag.lag ?? 0), 0))}</strong>
+              <span>{tCurrent('messageQueue.kafka.brokerMessages')}</span><strong>{formatNumber(selectedTopicOffsets?.messageCount)}</strong>
+              <span>{tCurrent('messageQueue.kafka.partitions')}</span><strong>{formatNumber(selectedTopicOffsets?.partitionCount)}</strong>
+              <span>{tCurrent('messageQueue.kafka.consumerLagRows')}</span><strong>{lagForSelectedTopic.length}</strong>
+              <span>{tCurrent('messageQueue.kafka.totalConsumerLag')}</span><strong>{formatNumber(lagForSelectedTopic.reduce((sum, lag) => sum + (lag.lag ?? 0), 0))}</strong>
               <span>Groups</span><strong>{new Set(lagForSelectedTopic.map((lag) => lag.group)).size}</strong>
             </div>
           )}

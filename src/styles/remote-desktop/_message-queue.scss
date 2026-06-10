@@ -73,6 +73,7 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .mq-toolbar button.primary,
@@ -152,6 +153,11 @@
   padding: 10px;
 }
 
+.mq-config {
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
 .mq-config label {
   display: grid;
   min-width: 0;
@@ -181,6 +187,25 @@
 .mq-config input:focus {
   border-color: rgba(243, 179, 95, 0.5);
   box-shadow: 0 0 0 3px rgba(243, 179, 95, 0.12);
+}
+
+.mq-config .mq-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mq-config .mq-checkbox input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  accent-color: var(--mq-accent);
+}
+
+.mq-config .mq-checkbox span {
+  min-width: 0;
+  color: var(--mq-muted-strong);
 }
 
 .mq-summary {
@@ -213,7 +238,12 @@
 
 .mq-tabs {
   border-bottom: 1px solid var(--mq-border);
+  overflow-x: auto;
   padding: 10px;
+}
+
+.mq-tabs button {
+  flex: 0 0 auto;
 }
 
 .mq-table-wrap {
@@ -312,6 +342,43 @@
   font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mq-message-samples {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 8px;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 10px;
+}
+
+.mq-message-sample {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 8px;
+  border: 1px solid rgba(205, 185, 148, 0.12);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mq-message-sample span {
+  color: var(--mq-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.mq-message-sample pre {
+  min-width: 0;
+  margin: 0;
+  color: var(--mq-muted-strong);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

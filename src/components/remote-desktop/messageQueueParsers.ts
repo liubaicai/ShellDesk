@@ -25,6 +25,36 @@ export interface KafkaConsumerLag {
   clientId?: string;
 }
 
+export interface KafkaPartitionOffset {
+  topic: string;
+  partition: number;
+  offset: number;
+}
+
+export interface KafkaTopicOffsetSummary {
+  topic: string;
+  partitionCount: number;
+  earliestOffset: number;
+  latestOffset: number;
+  messageCount: number;
+}
+
+export interface KafkaSampleOptions {
+  topicName: string;
+  maxMessages: number;
+  timeoutMs: number;
+  fromBeginning: boolean;
+}
+
+export type KafkaCommandTarget =
+  | { mode: 'host'; commandPath: string }
+  | { mode: 'docker'; commandPath: string; containerName: string; dockerPath: string };
+
+export const DEFAULT_KAFKA_TOPICS_PATH = '/opt/kafka/bin/kafka-topics.sh';
+export const DEFAULT_KAFKA_CONSUMER_GROUPS_PATH = '/opt/kafka/bin/kafka-consumer-groups.sh';
+export const DEFAULT_KAFKA_CONSOLE_CONSUMER_PATH = '/opt/kafka/bin/kafka-console-consumer.sh';
+export const DEFAULT_KAFKA_GET_OFFSETS_PATH = '/opt/kafka/bin/kafka-get-offsets.sh';
+
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -37,6 +67,21 @@ function toNumber(value: unknown, fallback = 0) {
 function normalizeCommandPath(value: string, fallback: string) {
   const trimmed = value.trim();
   return trimmed || fallback;
+}
+
+function normalizeRequiredValue(value: string, messageId: 'messageQueue.kafka.containerRequired' | 'messageQueue.kafka.topicRequired') {
+  const trimmed = value.trim();
+
+  if (!trimmed || /[\r\n]/.test(trimmed)) {
+    throw new Error(tCurrent(messageId));
+  }
+
+  return trimmed;
+}
+
+function normalizeBoundedInteger(value: number, min: number, max: number, fallback: number) {
+  const next = Number.isFinite(value) ? Math.trunc(value) : fallback;
+  return Math.min(Math.max(next, min), max);
 }
 
 function normalizeUrl(value: string) {
@@ -93,26 +138,69 @@ exit $LASTEXITCODE
   return `curl -sS --max-time 15 ${authArgs} ${shellSingleQuote(queuesUrl)}`;
 }
 
-export function createKafkaTopicsCommand(commandPath: string, bootstrapServer: string, isWindowsHost: boolean) {
-  const executable = normalizeCommandPath(commandPath, 'kafka-topics.sh');
+function createKafkaCliCommand(target: KafkaCommandTarget, fallbackCommand: string, bootstrapServer: string, isWindowsHost: boolean, args: string[]) {
+  const executable = normalizeCommandPath(target.commandPath, fallbackCommand);
   const server = bootstrapServer.trim() || '127.0.0.1:9092';
+  const kafkaArgs = ['--bootstrap-server', server, ...args];
 
-  if (isWindowsHost) {
-    return powershellCommand(`& ${powershellSingleQuote(executable)} --bootstrap-server ${powershellSingleQuote(server)} --list`);
+  if (target.mode === 'docker') {
+    const dockerExecutable = normalizeCommandPath(target.dockerPath, 'docker');
+    const containerName = normalizeRequiredValue(target.containerName, 'messageQueue.kafka.containerRequired');
+
+    if (isWindowsHost) {
+      const powershellArgs = kafkaArgs.map((arg) => powershellSingleQuote(arg)).join(' ');
+      return powershellCommand(`& ${powershellSingleQuote(dockerExecutable)} exec ${powershellSingleQuote(containerName)} ${powershellSingleQuote(executable)} ${powershellArgs}`);
+    }
+
+    const shellArgs = kafkaArgs.map((arg) => shellSingleQuote(arg)).join(' ');
+    return `${shellSingleQuote(dockerExecutable)} exec ${shellSingleQuote(containerName)} ${shellSingleQuote(executable)} ${shellArgs}`;
   }
 
-  return `${shellSingleQuote(executable)} --bootstrap-server ${shellSingleQuote(server)} --list`;
+  if (isWindowsHost) {
+    const powershellArgs = kafkaArgs.map((arg) => powershellSingleQuote(arg)).join(' ');
+    return powershellCommand(`& ${powershellSingleQuote(executable)} ${powershellArgs}`);
+  }
+
+  const shellArgs = kafkaArgs.map((arg) => shellSingleQuote(arg)).join(' ');
+  return `${shellSingleQuote(executable)} ${shellArgs}`;
 }
 
-export function createKafkaLagCommand(commandPath: string, bootstrapServer: string, isWindowsHost: boolean) {
-  const executable = normalizeCommandPath(commandPath, 'kafka-consumer-groups.sh');
-  const server = bootstrapServer.trim() || '127.0.0.1:9092';
+export function createKafkaTopicsCommand(target: KafkaCommandTarget, bootstrapServer: string, isWindowsHost: boolean) {
+  return createKafkaCliCommand(target, DEFAULT_KAFKA_TOPICS_PATH, bootstrapServer, isWindowsHost, ['--list']);
+}
 
-  if (isWindowsHost) {
-    return powershellCommand(`& ${powershellSingleQuote(executable)} --bootstrap-server ${powershellSingleQuote(server)} --describe --all-groups`);
-  }
+export function createKafkaLagCommand(target: KafkaCommandTarget, bootstrapServer: string, isWindowsHost: boolean) {
+  return createKafkaCliCommand(target, DEFAULT_KAFKA_CONSUMER_GROUPS_PATH, bootstrapServer, isWindowsHost, ['--describe', '--all-groups']);
+}
 
-  return `${shellSingleQuote(executable)} --bootstrap-server ${shellSingleQuote(server)} --describe --all-groups`;
+export function createKafkaOffsetsCommand(target: KafkaCommandTarget, bootstrapServer: string, topicName: string, offsetTime: '-1' | '-2', isWindowsHost: boolean) {
+  const normalizedTopic = normalizeRequiredValue(topicName, 'messageQueue.kafka.topicRequired');
+
+  return createKafkaCliCommand(target, DEFAULT_KAFKA_GET_OFFSETS_PATH, bootstrapServer, isWindowsHost, ['--topic', normalizedTopic, '--time', offsetTime]);
+}
+
+export function createKafkaSampleCommand(target: KafkaCommandTarget, bootstrapServer: string, options: KafkaSampleOptions, isWindowsHost: boolean) {
+  const topicName = normalizeRequiredValue(options.topicName, 'messageQueue.kafka.topicRequired');
+  const maxMessages = normalizeBoundedInteger(options.maxMessages, 1, 100, 20);
+  const timeoutMs = normalizeBoundedInteger(options.timeoutMs, 1000, 60000, 10000);
+
+  return createKafkaCliCommand(
+    target,
+    DEFAULT_KAFKA_CONSOLE_CONSUMER_PATH,
+    bootstrapServer,
+    isWindowsHost,
+    [
+      '--topic',
+      topicName,
+      ...(options.fromBeginning ? ['--from-beginning'] : []),
+      '--consumer-property',
+      'enable.auto.commit=false',
+      '--max-messages',
+      String(maxMessages),
+      '--timeout-ms',
+      String(timeoutMs),
+    ],
+  );
 }
 
 export function parseRabbitCtlQueues(stdout: string): RabbitQueueSummary[] {
@@ -180,4 +268,59 @@ export function parseKafkaLag(stdout: string): KafkaConsumerLag[] {
       };
     })
     .filter((item) => item.group && item.topic);
+}
+
+export function parseKafkaPartitionOffsets(stdout: string): KafkaPartitionOffset[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [topic = '', partition = '', offset = ''] = line.split(':');
+
+      return {
+        topic,
+        partition: toNumber(partition, -1),
+        offset: toNumber(offset, -1),
+      };
+    })
+    .filter((item) => item.topic && item.partition >= 0 && item.offset >= 0);
+}
+
+export function summarizeKafkaTopicOffsets(earliestOffsets: KafkaPartitionOffset[], latestOffsets: KafkaPartitionOffset[]): KafkaTopicOffsetSummary | null {
+  const latestByPartition = new Map<number, KafkaPartitionOffset>();
+  latestOffsets.forEach((offset) => latestByPartition.set(offset.partition, offset));
+
+  let earliestOffsetTotal = 0;
+  let latestOffsetTotal = 0;
+  let messageCount = 0;
+  let topic = latestOffsets[0]?.topic ?? earliestOffsets[0]?.topic ?? '';
+
+  earliestOffsets.forEach((earliest) => {
+    const latest = latestByPartition.get(earliest.partition);
+    if (!latest) return;
+    topic = topic || latest.topic || earliest.topic;
+    earliestOffsetTotal += earliest.offset;
+    latestOffsetTotal += latest.offset;
+    messageCount += Math.max(latest.offset - earliest.offset, 0);
+  });
+
+  if (!topic || latestByPartition.size === 0) {
+    return null;
+  }
+
+  return {
+    topic,
+    partitionCount: latestByPartition.size,
+    earliestOffset: earliestOffsetTotal,
+    latestOffset: latestOffsetTotal,
+    messageCount,
+  };
+}
+
+export function parseKafkaSampleMessages(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .filter((line) => !/^Processed a total of \d+ messages?\.?$/i.test(line.trim()));
 }
