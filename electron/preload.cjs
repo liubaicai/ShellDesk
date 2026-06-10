@@ -211,6 +211,12 @@ contextBridge.exposeInMainWorld('guiSSH', {
     mysqlQuery: (connectionId, mysqlId, sql, database) => ipcRenderer.invoke('connection:mysql-query', connectionId, mysqlId, sql, database),
     mysqlUpdateCell: (connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues) =>
       ipcRenderer.invoke('connection:mysql-update-cell', connectionId, mysqlId, database, table, pkColumn, pkValue, column, newValue, pkColumns, pkValues),
+    clickhouseConnect: (connectionId, config) => ipcRenderer.invoke('connection:clickhouse-connect', connectionId, config),
+    clickhouseDisconnect: (connectionId, clickhouseId) => ipcRenderer.invoke('connection:clickhouse-disconnect', connectionId, clickhouseId),
+    clickhouseDatabases: (connectionId, clickhouseId) => ipcRenderer.invoke('connection:clickhouse-databases', connectionId, clickhouseId),
+    clickhouseTables: (connectionId, clickhouseId, database) => ipcRenderer.invoke('connection:clickhouse-tables', connectionId, clickhouseId, database),
+    clickhouseColumns: (connectionId, clickhouseId, database, table) => ipcRenderer.invoke('connection:clickhouse-columns', connectionId, clickhouseId, database, table),
+    clickhouseQuery: (connectionId, clickhouseId, sql, database) => ipcRenderer.invoke('connection:clickhouse-query', connectionId, clickhouseId, sql, database),
     postgresConnect: (connectionId, config) => ipcRenderer.invoke('connection:postgres-connect', connectionId, config),
     postgresDisconnect: (connectionId, postgresId) => ipcRenderer.invoke('connection:postgres-disconnect', connectionId, postgresId),
     postgresDatabases: (connectionId, postgresId) => ipcRenderer.invoke('connection:postgres-databases', connectionId, postgresId),

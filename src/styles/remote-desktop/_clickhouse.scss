@@ -1,0 +1,72 @@
+/* ─── ClickHouse ───────────────────────────────────────────────────────────── */
+
+.clickhouse-scope {
+  height: 100%;
+  min-height: 0;
+}
+
+.clickhouse-scope .mysql-connect-panel {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--bg) 84%, #3f3100), var(--bg) 58%),
+    var(--bg);
+}
+
+.clickhouse-scope .mysql-connect-card {
+  background: color-mix(in srgb, var(--surface) 90%, #2d2300);
+}
+
+.clickhouse-scope .mysql-connect-mark {
+  border-color: rgba(246, 211, 71, 0.32);
+  background: rgba(246, 211, 71, 0.14);
+  color: #f6d347;
+}
+
+.clickhouse-scope .mysql-status-dot {
+  background: #f6d347;
+  box-shadow: 0 0 0 3px rgba(246, 211, 71, 0.14);
+}
+
+.clickhouse-scope .mysql-tree-db-btn.active,
+.clickhouse-scope .mysql-tree-table-btn.selected {
+  background: rgba(246, 211, 71, 0.12);
+  color: #f6d347;
+}
+
+.clickhouse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.clickhouse-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: #f6d347;
+}
+
+.clickhouse-port-warning {
+  padding: 8px 10px;
+  border: 1px solid rgba(246, 183, 60, 0.26);
+  border-radius: 6px;
+  background: rgba(246, 183, 60, 0.1);
+  color: #f8ca6f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.clickhouse-table-engine {
+  flex-shrink: 0;
+  max-width: 82px;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid rgba(246, 211, 71, 0.22);
+  border-radius: 999px;
+  color: #f6d347;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

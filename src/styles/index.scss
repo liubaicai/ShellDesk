@@ -41,6 +41,7 @@
 @use "./themes/light" as *;
 @use "./remote-desktop/notepad" as *;
 @use "./remote-desktop/mysql" as *;
+@use "./remote-desktop/clickhouse" as *;
 @use "./remote-desktop/redis" as *;
 @use "./remote-desktop/sqlite" as *;
 @use "./remote-desktop/file-picker" as *;

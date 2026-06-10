@@ -1,10 +1,10 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-06-04，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
+截至 2026-06-10，ShellDesk 远程桌面工作台已经形成一组可直接使用的内置应用，并保留一组按优先级排序的扩展组件设计文档。
 
 本文档包含材料：
 
-- `remote-desktop-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-32`。
+- `remote-desktop-components/`：已实现或已纳入远程桌面的组件文档，当前编号 `01-33`。
 
 组件排序综合考虑：
 
@@ -52,3 +52,4 @@
 | 30 | Nginx / Apache / Caddy 管理器 | [Nginx / Apache / Caddy 管理器](./remote-desktop-components/30-nginx-apache-caddy-manager.md) | Web 服务检测、站点配置摘要、记事本配置修改、配置测试、reload 和 restart |
 | 31 | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/31-minio-s3-browser.md) | 基于远程 `mc` / `aws` CLI 浏览 bucket、prefix、对象，支持删除、下载和复制 URL |
 | 32 | 磁盘管理器 | [磁盘管理器](./remote-desktop-components/32-disk-manager.md) | 物理磁盘、分区、挂载/卸载、格式化、分区维护和 Linux LVM 配置 |
+| 33 | ClickHouse 管理器 | [ClickHouse 管理器](./remote-desktop-components/33-clickhouse-manager.md) | SSH 隧道访问 ClickHouse HTTP 接口、库表列浏览、SQL 查询和只读表预览 |

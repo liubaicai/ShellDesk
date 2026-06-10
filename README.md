@@ -97,7 +97,7 @@ ShellDesk is useful for:
 
 ### Databases and System Tools
 
-- MySQL, PostgreSQL, MongoDB, Redis, and SQLite tools cover connection, browsing, querying, and common editing actions
+- MySQL, PostgreSQL, ClickHouse, MongoDB, Redis, and SQLite tools cover connection, browsing, querying, and common editing actions where the backend supports them
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
 - System Monitor, Process Manager, Service Manager, Container Manager, Port Listener, and Disk Analyzer help with daily checks
@@ -244,7 +244,7 @@ ShellDesk/
 │   ├── preload.cjs                      # Secure contextBridge API
 │   └── main/
 │       ├── connectionHandlers.cjs       # SSH connection, SOCKS, terminal, and SFTP IPC
-│       ├── databaseHandlers.cjs         # MySQL / PostgreSQL / Redis / SQLite IPC
+│       ├── databaseHandlers.cjs         # MySQL / PostgreSQL / ClickHouse / Redis / SQLite IPC
 │       ├── remoteConnectionHandlers.cjs # Remote system detection and system information
 │       ├── vaultStore.cjs               # Local vault, settings, import/export
 │       ├── systemFonts.cjs              # System font enumeration

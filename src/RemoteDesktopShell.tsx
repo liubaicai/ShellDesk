@@ -19,6 +19,7 @@ import { getAppLocale, t, type MessageId } from './i18n';
 
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
 const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
+const RemoteClickHouse = lazy(() => import('./components/remote-desktop/RemoteClickHouse'));
 const RemoteContainerManager = lazy(() => import('./components/remote-desktop/RemoteContainerManager'));
 const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/RemoteDiskAnalyzer'));
 const RemoteDiskManager = lazy(() => import('./components/remote-desktop/RemoteDiskManager'));
@@ -59,6 +60,7 @@ const desktopApps = [
   { key: 'log-viewer', labelId: 'desktop.app.logViewer.label', descriptionId: 'desktop.app.logViewer.description' },
   { key: 'monitor', labelId: 'desktop.app.monitor.label', descriptionId: 'desktop.app.monitor.description' },
   { key: 'mysql', labelId: 'desktop.app.mysql.label', descriptionId: 'desktop.app.mysql.description' },
+  { key: 'clickhouse', labelId: 'desktop.app.clickhouse.label', descriptionId: 'desktop.app.clickhouse.description' },
   { key: 'redis', labelId: 'desktop.app.redis.label', descriptionId: 'desktop.app.redis.description' },
   { key: 'service-manager', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
   { key: 'container-manager', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
@@ -100,6 +102,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'log-viewer': new URL('./assets/desktop-icons/log-viewer.png', import.meta.url).href,
   monitor: new URL('./assets/desktop-icons/monitor.png', import.meta.url).href,
   mysql: new URL('./assets/desktop-icons/mysql.png', import.meta.url).href,
+  clickhouse: new URL('./assets/desktop-icons/clickhouse.png', import.meta.url).href,
   redis: new URL('./assets/desktop-icons/redis.png', import.meta.url).href,
   'service-manager': new URL('./assets/desktop-icons/service-manager.png', import.meta.url).href,
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
@@ -128,7 +131,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 3;
+const desktopAppCatalogVersion = 4;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
@@ -138,6 +141,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'message-queue',
   's3-browser',
   'disk-manager',
+  'clickhouse',
 ];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
@@ -271,6 +275,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'log-viewer': { x: 118, y: 46, width: 1080, height: 650 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },
+  clickhouse: { x: 100, y: 40, width: 1080, height: 650 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
@@ -1932,6 +1937,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'mysql') {
       return <RemoteMySQL connectionId={connection.id} />;
+    }
+
+    if (desktopWindow.appKey === 'clickhouse') {
+      return <RemoteClickHouse connectionId={connection.id} />;
     }
 
     if (desktopWindow.appKey === 'redis') {

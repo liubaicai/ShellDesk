@@ -43,7 +43,7 @@ const maxAiApiBaseUrlLength = 2048;
 const maxAiApiKeyLength = 8192;
 const maxAiModelNameLength = 200;
 const maxAiProviderNameLength = 80;
-const remoteDesktopAppCatalogVersion = 3;
+const remoteDesktopAppCatalogVersion = 4;
 const remoteDesktopAppKeys = [
   'files',
   'terminal',
@@ -53,6 +53,7 @@ const remoteDesktopAppKeys = [
   'log-viewer',
   'monitor',
   'mysql',
+  'clickhouse',
   'redis',
   'service-manager',
   'container-manager',
@@ -87,6 +88,7 @@ const remoteDesktopAppCatalogMigrationKeys = [
   'message-queue',
   's3-browser',
   'disk-manager',
+  'clickhouse',
 ];
 const remoteDesktopSortModes = new Set(['custom', 'name-asc', 'name-desc']);
 const defaultIdentityFileNames = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_dsa'];

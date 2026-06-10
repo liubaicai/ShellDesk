@@ -29,7 +29,7 @@ const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const dismissedUpdateReadyVersionStorageKey = 'shelldesk:update-ready-dismissed-version';
 const ungroupedKey = '__ungrouped__';
-const remoteDesktopAppCatalogVersion = 3;
+const remoteDesktopAppCatalogVersion = 4;
 const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'git-manager',
   'web-server-manager',
@@ -38,6 +38,7 @@ const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'message-queue',
   's3-browser',
   'disk-manager',
+  'clickhouse',
 ];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,

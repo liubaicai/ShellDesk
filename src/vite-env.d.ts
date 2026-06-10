@@ -177,6 +177,7 @@ type ShellDeskDesktopAppKey =
   | 'log-viewer'
   | 'monitor'
   | 'mysql'
+  | 'clickhouse'
   | 'redis'
   | 'service-manager'
   | 'container-manager'
@@ -717,6 +718,12 @@ interface ShellDeskConnectionControls {
     pkColumns?: string[],
     pkValues?: unknown[],
   ) => Promise<{ affectedRows: number }>;
+  clickhouseConnect: (connectionId: string, config: ShellDeskClickHouseConnectConfig) => Promise<ShellDeskClickHouseConnectResult>;
+  clickhouseDisconnect: (connectionId: string, clickhouseId: string) => Promise<boolean>;
+  clickhouseDatabases: (connectionId: string, clickhouseId: string) => Promise<string[]>;
+  clickhouseTables: (connectionId: string, clickhouseId: string, database: string) => Promise<ShellDeskClickHouseTable[]>;
+  clickhouseColumns: (connectionId: string, clickhouseId: string, database: string, table: string) => Promise<ShellDeskClickHouseColumn[]>;
+  clickhouseQuery: (connectionId: string, clickhouseId: string, sql: string, database?: string) => Promise<ShellDeskClickHouseQueryResult>;
   postgresConnect: (connectionId: string, config: ShellDeskPostgresConnectConfig) => Promise<{ postgresId: string; alreadyConnected?: boolean }>;
   postgresDisconnect: (connectionId: string, postgresId: string) => Promise<boolean>;
   postgresDatabases: (connectionId: string, postgresId: string) => Promise<string[]>;
@@ -791,6 +798,54 @@ interface ShellDeskMysqlQueryResult {
   rows: Record<string, unknown>[];
   affectedRows?: number;
   insertId?: string;
+}
+
+interface ShellDeskClickHouseConnectConfig {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database?: string;
+  secure?: boolean;
+  clickhouseId?: string;
+}
+
+type ShellDeskClickHouseTransport = 'ssh-tunnel' | 'ssh-exec';
+
+interface ShellDeskClickHouseConnectResult {
+  clickhouseId: string;
+  alreadyConnected?: boolean;
+  transport?: ShellDeskClickHouseTransport;
+}
+
+interface ShellDeskClickHouseTable {
+  name: string;
+  engine: string;
+  totalRows?: number | null;
+  totalBytes?: number | null;
+}
+
+interface ShellDeskClickHouseColumn {
+  name: string;
+  type: string;
+  defaultKind: string;
+  defaultExpression: string;
+  comment: string;
+  isPrimaryKey: boolean;
+  isSortingKey: boolean;
+}
+
+interface ShellDeskClickHouseQueryStatistics {
+  elapsed?: number;
+  rowsRead?: number;
+  bytesRead?: number;
+}
+
+interface ShellDeskClickHouseQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount?: number;
+  statistics?: ShellDeskClickHouseQueryStatistics;
 }
 
 interface ShellDeskPostgresConnectConfig {

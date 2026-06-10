@@ -1,5 +1,8 @@
 const crypto = require('node:crypto');
+const http = require('node:http');
+const https = require('node:https');
 const net = require('node:net');
+const tls = require('node:tls');
 const {
   forwardOut,
   registerConnectionCleanup,
@@ -313,6 +316,325 @@ function registerDatabaseHandlers(registerIpcHandler) {
     const [result] = await entry.connection.query(sql, params);
 
     return { affectedRows: result.affectedRows };
+  });
+
+  // ─── ClickHouse over SSH tunnel ────────────────────────────────────────────
+
+  const activeClickHouseConnections = new Map();
+  const maxClickHouseResponseBytes = 25 * 1024 * 1024;
+
+  function getClickHouseKey(connectionId, clickhouseId) {
+    return `${connectionId}::${clickhouseId}`;
+  }
+
+  function quoteClickHouseString(value) {
+    return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  }
+
+  function createClickHouseEntry(connectionId, clickhouseId, config) {
+    return { connectionId, clickhouseId, config };
+  }
+
+  function createClickHouseRequestStream(rawStream, config) {
+    const stream = adaptConnectedSocketStream(rawStream);
+
+    if (!config.secure) {
+      return stream;
+    }
+
+    return tls.connect({
+      socket: stream,
+      servername: config.host,
+      rejectUnauthorized: false,
+    });
+  }
+
+  function parseClickHouseJsonResponse(text) {
+    if (!text.trim()) {
+      return {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+      };
+    }
+
+    let payload;
+
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return {
+        columns: ['response'],
+        rows: [{ response: text }],
+        rowCount: 1,
+      };
+    }
+
+    const rows = Array.isArray(payload.data)
+      ? payload.data.map((row) => (isPlainObject(row) ? row : { value: row }))
+      : [];
+    const columns = Array.isArray(payload.meta)
+      ? payload.meta.map((column) => String(column.name || '')).filter(Boolean)
+      : rows.length > 0
+        ? Object.keys(rows[0])
+        : [];
+    const statistics = isPlainObject(payload.statistics)
+      ? {
+          elapsed: Number(payload.statistics.elapsed) || 0,
+          rowsRead: Number(payload.statistics.rows_read) || 0,
+          bytesRead: Number(payload.statistics.bytes_read) || 0,
+        }
+      : undefined;
+
+    return {
+      columns,
+      rows,
+      rowCount: Number.isFinite(Number(payload.rows)) ? Number(payload.rows) : rows.length,
+      statistics,
+    };
+  }
+
+  function formatClickHouseRequestFailure(config, message) {
+    const normalizedMessage = String(message || '').trim().replace(/\s+/g, ' ');
+    const target = `${config.secure ? 'https' : 'http'}://${config.host}:${config.port}`;
+
+    if (/connection refused|econnrefused/i.test(normalizedMessage)) {
+      return `ClickHouse HTTP 接口 ${target} 拒绝连接。请确认远端 ClickHouse 已开启 HTTP 端口（默认 8123，HTTPS 默认 8443），不要填写原生 TCP 端口 9000；如果服务只监听特定地址，请把主机改为实际监听地址。原始错误：${normalizedMessage}`;
+    }
+
+    if (/wrong version number|ssl|tls|certificate|eproto/i.test(normalizedMessage)) {
+      return `ClickHouse HTTP 接口 ${target} 的 TLS/协议不匹配。请检查 HTTPS / TLS 开关是否和端口一致：普通 HTTP 通常是 8123，HTTPS 通常是 8443。原始错误：${normalizedMessage}`;
+    }
+
+    if (/timeout|timed out/i.test(normalizedMessage)) {
+      return `ClickHouse HTTP 接口 ${target} 请求超时。请确认端口可从当前 SSH 服务器访问，并缩小查询范围后重试。原始错误：${normalizedMessage}`;
+    }
+
+    return `ClickHouse 请求失败（${target}）：${normalizedMessage}`;
+  }
+
+  async function sendClickHouseQuery(entry, sql, database) {
+    const body = String(sql || '').trim();
+
+    if (!body) {
+      throw new Error('ClickHouse SQL 语句不能为空。');
+    }
+
+    const config = entry.config;
+    const params = new URLSearchParams({
+      default_format: 'JSON',
+      wait_end_of_query: '1',
+    });
+
+    if (database) {
+      params.set('database', database);
+    }
+
+    return withActiveConnectionClientRetry(entry.connectionId, async (activeConnection) => {
+      const rawStream = await forwardOut(activeConnection.client, config.host, config.port);
+      const transport = rawStream.shellDeskTransport || 'ssh-tunnel';
+      const stream = createClickHouseRequestStream(rawStream, config);
+      const requestModule = config.secure ? https : http;
+
+      try {
+        const text = await new Promise((resolve, reject) => {
+          let responseBytes = 0;
+          const chunks = [];
+          const request = requestModule.request({
+            host: config.host,
+            port: config.port,
+            method: 'POST',
+            path: `/?${params.toString()}`,
+            createConnection: () => stream,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Content-Length': Buffer.byteLength(body),
+              'X-ClickHouse-User': config.user,
+              ...(config.password ? { 'X-ClickHouse-Key': config.password } : {}),
+            },
+            timeout: 60000,
+          }, (response) => {
+            response.on('data', (chunk) => {
+              responseBytes += chunk.length;
+
+              if (responseBytes > maxClickHouseResponseBytes) {
+                request.destroy(new Error('ClickHouse 响应超过 25MB，请缩小查询范围。'));
+                return;
+              }
+
+              chunks.push(Buffer.from(chunk));
+            });
+
+            response.on('end', () => {
+              const responseText = Buffer.concat(chunks).toString('utf8');
+
+              if (response.statusCode && response.statusCode >= 400) {
+                const responseError = new Error(responseText.trim() || `ClickHouse HTTP ${response.statusCode}`);
+                responseError.shellDeskClickHouseHttpError = true;
+                reject(responseError);
+                return;
+              }
+
+              resolve(responseText);
+            });
+          });
+
+          request.on('timeout', () => request.destroy(new Error('ClickHouse 请求超时。')));
+          request.on('error', reject);
+          request.end(body);
+        });
+
+        return { ...parseClickHouseJsonResponse(text), transport };
+      } catch (error) {
+        const relayStderr = rawStream.shellDeskTransportDetails?.getStderr?.();
+
+        if (error?.shellDeskClickHouseHttpError) {
+          throw error;
+        }
+
+        if (relayStderr) {
+          throw new Error(formatClickHouseRequestFailure(config, relayStderr));
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        if (/connection refused|econnrefused|wrong version number|ssl|tls|certificate|eproto|timeout|timed out/i.test(errorMessage)) {
+          throw new Error(formatClickHouseRequestFailure(config, errorMessage));
+        }
+
+        throw error;
+      } finally {
+        stream.destroy();
+        rawStream.destroy();
+      }
+    });
+  }
+
+  function getActiveClickHouseConnection(connectionId, rawClickhouseId) {
+    const clickhouseId = readBoundedString(rawClickhouseId, 'ClickHouse 连接 ID', 128);
+    const key = getClickHouseKey(connectionId, clickhouseId);
+    const entry = activeClickHouseConnections.get(key);
+
+    if (!entry) {
+      throw new Error('ClickHouse 连接已断开。');
+    }
+
+    return { clickhouseId, entry };
+  }
+
+  registerIpcHandler('connection:clickhouse-connect', async (_event, connectionId, rawConfig) => {
+    if (!isPlainObject(rawConfig)) {
+      throw new Error('ClickHouse 连接配置无效。');
+    }
+
+    const clickhouseHost = readBoundedString(rawConfig.host || '127.0.0.1', 'ClickHouse 主机', 256);
+    const clickhousePort = readIntegerInRange(rawConfig.port, 'ClickHouse HTTP 端口', 1, 65535, rawConfig.secure ? 8443 : 8123);
+    const clickhouseUser = readBoundedString(rawConfig.user || 'default', 'ClickHouse 用户名', 128);
+    const clickhousePassword = typeof rawConfig.password === 'string' ? rawConfig.password : '';
+    const clickhouseDatabase = typeof rawConfig.database === 'string' && rawConfig.database
+      ? readBoundedString(rawConfig.database, 'ClickHouse 数据库', 256)
+      : undefined;
+    const clickhouseId = readBoundedString(rawConfig.clickhouseId || crypto.randomUUID(), 'ClickHouse 连接 ID', 128);
+    const clickhouseSecure = Boolean(rawConfig.secure);
+    const key = getClickHouseKey(connectionId, clickhouseId);
+    const existing = activeClickHouseConnections.get(key);
+
+    if (existing) {
+      try {
+        const result = await sendClickHouseQuery(existing, 'SELECT 1 AS ok', clickhouseDatabase);
+        return { clickhouseId, alreadyConnected: true, transport: result.transport || 'ssh-tunnel' };
+      } catch {
+        activeClickHouseConnections.delete(key);
+      }
+    }
+
+    const entry = createClickHouseEntry(connectionId, clickhouseId, {
+      host: clickhouseHost,
+      port: clickhousePort,
+      user: clickhouseUser,
+      password: clickhousePassword,
+      database: clickhouseDatabase,
+      secure: clickhouseSecure,
+    });
+    const result = await sendClickHouseQuery(entry, 'SELECT 1 AS ok', clickhouseDatabase);
+
+    activeClickHouseConnections.set(key, entry);
+
+    return { clickhouseId, transport: result.transport || 'ssh-tunnel' };
+  });
+
+  registerIpcHandler('connection:clickhouse-disconnect', async (_event, connectionId, rawClickhouseId) => {
+    const clickhouseId = readBoundedString(rawClickhouseId, 'ClickHouse 连接 ID', 128);
+    const key = getClickHouseKey(connectionId, clickhouseId);
+    activeClickHouseConnections.delete(key);
+    return true;
+  });
+
+  registerIpcHandler('connection:clickhouse-databases', async (_event, connectionId, rawClickhouseId) => {
+    const { entry } = getActiveClickHouseConnection(connectionId, rawClickhouseId);
+    const result = await sendClickHouseQuery(entry, 'SELECT name FROM system.databases ORDER BY name');
+    return result.rows.map((row) => row.name).filter((name) => typeof name === 'string');
+  });
+
+  registerIpcHandler('connection:clickhouse-tables', async (_event, connectionId, rawClickhouseId, rawDatabase) => {
+    const database = readBoundedString(rawDatabase, '数据库名', 256);
+    const { entry } = getActiveClickHouseConnection(connectionId, rawClickhouseId);
+    const result = await sendClickHouseQuery(
+      entry,
+      [
+        'SELECT name, engine, total_rows AS totalRows, total_bytes AS totalBytes',
+        'FROM system.tables',
+        `WHERE database = ${quoteClickHouseString(database)}`,
+        'ORDER BY name',
+      ].join(' '),
+    );
+
+    return result.rows.map((row) => ({
+      name: String(row.name || ''),
+      engine: String(row.engine || ''),
+      totalRows: row.totalRows === null || row.totalRows === undefined ? null : Number(row.totalRows),
+      totalBytes: row.totalBytes === null || row.totalBytes === undefined ? null : Number(row.totalBytes),
+    })).filter((table) => table.name);
+  });
+
+  registerIpcHandler('connection:clickhouse-columns', async (_event, connectionId, rawClickhouseId, rawDatabase, rawTable) => {
+    const database = readBoundedString(rawDatabase, '数据库名', 256);
+    const table = readBoundedString(rawTable, '表名', 256);
+    const { entry } = getActiveClickHouseConnection(connectionId, rawClickhouseId);
+    const result = await sendClickHouseQuery(
+      entry,
+      [
+        'SELECT name, type, default_kind AS defaultKind, default_expression AS defaultExpression, comment,',
+        'is_in_primary_key AS isPrimaryKey, is_in_sorting_key AS isSortingKey',
+        'FROM system.columns',
+        `WHERE database = ${quoteClickHouseString(database)} AND table = ${quoteClickHouseString(table)}`,
+        'ORDER BY position',
+      ].join(' '),
+    );
+
+    return result.rows.map((row) => ({
+      name: String(row.name || ''),
+      type: String(row.type || ''),
+      defaultKind: String(row.defaultKind || ''),
+      defaultExpression: String(row.defaultExpression || ''),
+      comment: String(row.comment || ''),
+      isPrimaryKey: Boolean(Number(row.isPrimaryKey || 0)),
+      isSortingKey: Boolean(Number(row.isSortingKey || 0)),
+    })).filter((column) => column.name);
+  });
+
+  registerIpcHandler('connection:clickhouse-query', async (_event, connectionId, rawClickhouseId, rawSql, rawDatabase) => {
+    const sql = readBoundedString(rawSql, 'SQL 语句', 1024 * 1024, { rejectLineBreaks: false });
+    const database = rawDatabase ? readBoundedString(rawDatabase, '数据库名', 256) : undefined;
+    const { entry } = getActiveClickHouseConnection(connectionId, rawClickhouseId);
+    const result = await sendClickHouseQuery(entry, sql, database);
+
+    return {
+      columns: result.columns,
+      rows: result.rows,
+      rowCount: result.rowCount,
+      statistics: result.statistics,
+    };
   });
 
   // ─── MongoDB over SSH tunnel ───────────────────────────────────────────────
@@ -1717,6 +2039,12 @@ exit $LASTEXITCODE
       if (entry.connectionId === connectionId) {
         activePostgresConnections.delete(key);
         entry.client.end().catch(() => {});
+      }
+    }
+
+    for (const [key, entry] of activeClickHouseConnections) {
+      if (entry.connectionId === connectionId) {
+        activeClickHouseConnections.delete(key);
       }
     }
 
