@@ -5,6 +5,7 @@ const http = require('node:http');
 const https = require('node:https');
 const os = require('node:os');
 const path = require('node:path');
+const { remoteDesktopAppCatalogMigrationKeys } = require('./constants.cjs');
 const { createVaultSnapshot, getVault, notifyVaultChanged, setVault } = require('./vaultStore.cjs');
 const { isPlainObject, readBoolean, readBoundedString, readIntegerInRange } = require('./validation.cjs');
 
@@ -1431,6 +1432,59 @@ function mergeProxyProfileSecrets(publicProfile, currentProfile) {
   };
 }
 
+function getRemoteDesktopLayoutAppKeys(layout) {
+  const appKeys = new Set();
+  const items = Array.isArray(layout?.items) ? layout.items : [];
+
+  for (const item of items) {
+    if (!isPlainObject(item)) {
+      continue;
+    }
+
+    if (item.type === 'app' && typeof item.appKey === 'string') {
+      appKeys.add(item.appKey);
+      continue;
+    }
+
+    if (item.type !== 'folder' || !Array.isArray(item.appKeys)) {
+      continue;
+    }
+
+    for (const appKey of item.appKeys) {
+      if (typeof appKey === 'string') {
+        appKeys.add(appKey);
+      }
+    }
+  }
+
+  return appKeys;
+}
+
+function shouldPreserveCurrentRemoteDesktopLayout(currentLayout, incomingLayout) {
+  const currentAppKeys = getRemoteDesktopLayoutAppKeys(currentLayout);
+  const incomingAppKeys = getRemoteDesktopLayoutAppKeys(incomingLayout);
+
+  return remoteDesktopAppCatalogMigrationKeys.some(
+    (appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey),
+  );
+}
+
+function protectRemoteDesktopLayoutFromStaleSync(incomingSettings, currentSettings) {
+  if (
+    !shouldPreserveCurrentRemoteDesktopLayout(
+      currentSettings?.remoteDesktopLayout,
+      incomingSettings?.remoteDesktopLayout,
+    )
+  ) {
+    return incomingSettings;
+  }
+
+  return {
+    ...incomingSettings,
+    remoteDesktopLayout: currentSettings.remoteDesktopLayout,
+  };
+}
+
 function applyMergedDocumentToVault(document) {
   const currentVault = getVault();
   const currentHostsById = new Map(currentVault.hosts.map((host) => [host.id, host]));
@@ -1448,10 +1502,13 @@ function applyMergedDocumentToVault(document) {
     .sort((left, right) => `${left.hostname}:${left.port}`.localeCompare(`${right.hostname}:${right.port}`, 'zh-CN'));
   const settingsRecord = document.records['settings:app'];
   const settings = settingsRecord?.type === 'settings'
-    ? {
-        ...settingsRecord.payload,
-        aiApiKey: currentVault.settings.aiApiKey || '',
-      }
+    ? protectRemoteDesktopLayoutFromStaleSync(
+        {
+          ...settingsRecord.payload,
+          aiApiKey: currentVault.settings.aiApiKey || '',
+        },
+        currentVault.settings,
+      )
     : currentVault.settings;
   const nextVault = setVault({
     ...currentVault,
