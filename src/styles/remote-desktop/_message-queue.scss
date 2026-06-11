@@ -8,6 +8,7 @@
   --mq-accent: #f3b35f;
   --mq-blue: #75c9ff;
   --mq-danger: #ff8fa3;
+  --mq-tabs-bg: rgba(20, 19, 27, 0.72);
   display: flex;
   height: 100%;
   min-height: 0;
@@ -237,9 +238,16 @@
 }
 
 .mq-tabs {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
   border-bottom: 1px solid var(--mq-border);
-  overflow-x: auto;
-  padding: 10px;
+  overflow: hidden;
+  padding: 8px 10px;
+  background: var(--mq-tabs-bg);
+  row-gap: 6px;
 }
 
 .mq-tabs button {
@@ -441,4 +449,5 @@
   --mq-text: #2c2115;
   --mq-muted: #796d61;
   --mq-muted-strong: #4b3824;
+  --mq-tabs-bg: rgba(255, 255, 255, 0.78);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
@@ -42,6 +42,10 @@ type QueueBackend = 'rabbitmq' | 'kafka';
 type RabbitMode = 'rabbitmqctl' | 'management-api';
 type KafkaExecutionMode = KafkaCommandTarget['mode'];
 type QueueTab = 'queues' | 'topics' | 'lag' | 'messages' | 'raw';
+type RemoteCommandResult = Awaited<ReturnType<typeof runCmd>>;
+
+const kafkaAutoSamplePauseMs = 600;
+const maxRenderedKafkaSampleMessages = 500;
 
 function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
@@ -56,6 +60,20 @@ function runCmd(connectionId: string, command: string) {
 function formatNumber(value?: number) {
   if (value === undefined || Number.isNaN(value)) return '-';
   return value.toLocaleString(getShellDeskLocale());
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+function appendKafkaSampleMessages(currentMessages: string[], nextMessages: string[], replace = false) {
+  const mergedMessages = replace ? nextMessages : [...currentMessages, ...nextMessages];
+  return mergedMessages.slice(-maxRenderedKafkaSampleMessages);
+}
+
+function isKafkaSampleTimeoutResult(result: RemoteCommandResult) {
+  const output = [result.stderr, result.stdout].filter(Boolean).join('\n');
+  return /TimeoutException|ConsumerTimeoutException|timed?\s*out|Processed a total of 0 messages/i.test(output);
 }
 
 function createKafkaCommandTarget(mode: KafkaExecutionMode, commandPath: string, containerName: string, dockerPath: string): KafkaCommandTarget {
@@ -82,7 +100,7 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
   const [kafkaOffsetsPath, setKafkaOffsetsPath] = useState(DEFAULT_KAFKA_GET_OFFSETS_PATH);
   const [sampleMaxMessages, setSampleMaxMessages] = useState('20');
   const [sampleTimeoutMs, setSampleTimeoutMs] = useState('10000');
-  const [sampleFromBeginning, setSampleFromBeginning] = useState(false);
+  const [sampleFromBeginning, setSampleFromBeginning] = useState(true);
   const [queues, setQueues] = useState<RabbitQueueSummary[]>([]);
   const [topics, setTopics] = useState<KafkaTopicSummary[]>([]);
   const [lags, setLags] = useState<KafkaConsumerLag[]>([]);
@@ -99,6 +117,8 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
+  const [autoSampleRevision, setAutoSampleRevision] = useState(0);
+  const autoSampleRunRef = useRef(0);
 
   const filteredQueues = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -162,7 +182,7 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
       setKafkaOffsetsPath(readProfileString(profile, 'kafkaOffsetsPath', DEFAULT_KAFKA_GET_OFFSETS_PATH));
       setSampleMaxMessages(readProfileString(profile, 'sampleMaxMessages', '20'));
       setSampleTimeoutMs(readProfileString(profile, 'sampleTimeoutMs', '10000'));
-      setSampleFromBeginning(readProfileBoolean(profile, 'sampleFromBeginning', false));
+      setSampleFromBeginning(readProfileBoolean(profile, 'sampleFromBeginning', true));
     });
 
     return () => {
@@ -212,7 +232,8 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
     setSampleMessages([]);
     setSelectedTopicName((current) => current && nextTopics.some((topic) => topic.name === current) ? current : nextTopics[0]?.name ?? '');
     setRawOutput([topicsResult.stdout, lagResult.stderr, lagResult.stdout].filter(Boolean).join('\n\n'));
-    setActiveTab(nextLags.length ? 'lag' : 'topics');
+    setActiveTab(nextTopics.length ? 'messages' : nextLags.length ? 'lag' : 'topics');
+    setAutoSampleRevision((current) => current + 1);
 
     if (lagResult.code !== 0) {
       setNotice(lagResult.stderr || tCurrent('auto.remoteMessageQueuePanel.lsw4xl'));
@@ -286,7 +307,7 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
       }
 
       const nextMessages = parseKafkaSampleMessages(result.stdout);
-      setSampleMessages(nextMessages);
+      setSampleMessages((current) => appendKafkaSampleMessages(current, nextMessages, true));
       setRawOutput([result.stderr, result.stdout].filter(Boolean).join('\n\n'));
       setActiveTab('messages');
       setNotice(tCurrent('messageQueue.kafka.sampleNotice', { value0: nextMessages.length }));
@@ -296,6 +317,96 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
       setSampling(false);
     }
   };
+
+  useEffect(() => {
+    if (backend !== 'kafka' || !selectedTopic?.name) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const runId = autoSampleRunRef.current + 1;
+    autoSampleRunRef.current = runId;
+    const topicName = selectedTopic.name;
+
+    const isCurrentRun = () => !cancelled && autoSampleRunRef.current === runId;
+
+    const sampleLoop = async () => {
+      let fromBeginning = true;
+      setSampling(true);
+      setError('');
+      setNotice('');
+      setSampleMessages([]);
+      setActiveTab('messages');
+
+      while (isCurrentRun()) {
+        try {
+          const target = createKafkaCommandTarget(kafkaMode, kafkaConsumerPath, kafkaContainerName, kafkaDockerPath);
+          const result = await runCmd(connectionId, createKafkaSampleCommand(target, kafkaBootstrap, {
+            topicName,
+            maxMessages: Number(sampleMaxMessages),
+            timeoutMs: Number(sampleTimeoutMs),
+            fromBeginning,
+          }, isWindowsHost));
+
+          if (!isCurrentRun()) {
+            break;
+          }
+
+          const nextMessages = parseKafkaSampleMessages(result.stdout);
+          const output = [result.stderr, result.stdout].filter(Boolean).join('\n\n');
+
+          if (output) {
+            setRawOutput(output);
+          }
+
+          if (result.code !== 0 && !nextMessages.length && !isKafkaSampleTimeoutResult(result)) {
+            throw new Error(result.stderr || result.stdout || tCurrent('messageQueue.kafka.sampleFailed', { value0: result.code }));
+          }
+
+          if (nextMessages.length) {
+            setSampleMessages((current) => appendKafkaSampleMessages(current, nextMessages));
+            setNotice(tCurrent('messageQueue.kafka.sampleNotice', { value0: nextMessages.length }));
+          }
+
+          setError('');
+          fromBeginning = false;
+        } catch (error) {
+          if (isCurrentRun()) {
+            setError(getErrorMessage(error));
+          }
+          break;
+        }
+
+        await sleep(kafkaAutoSamplePauseMs);
+      }
+
+      if (isCurrentRun()) {
+        setSampling(false);
+      }
+    };
+
+    void sampleLoop();
+
+    return () => {
+      cancelled = true;
+      if (autoSampleRunRef.current === runId) {
+        autoSampleRunRef.current += 1;
+      }
+    };
+  }, [
+    autoSampleRevision,
+    backend,
+    connectionId,
+    isWindowsHost,
+    kafkaBootstrap,
+    kafkaConsumerPath,
+    kafkaContainerName,
+    kafkaDockerPath,
+    kafkaMode,
+    sampleMaxMessages,
+    sampleTimeoutMs,
+    selectedTopic?.name,
+  ]);
 
   const refresh = async () => {
     setLoading(true);
@@ -500,7 +611,7 @@ function RemoteMessageQueuePanel({ connectionId, hostId, systemType }: RemoteMes
           {activeTab === 'topics' ? (
             <section className="mq-topic-grid">
               {filteredTopics.map((topic) => (
-                <button key={topic.name} type="button" className={selectedTopic?.name === topic.name ? 'active' : ''} onClick={() => { setSelectedTopicName(topic.name); setSampleMessages([]); }}>
+                <button key={topic.name} type="button" className={selectedTopic?.name === topic.name ? 'active' : ''} onClick={() => { setSelectedTopicName(topic.name); setSampleMessages([]); setActiveTab('messages'); setAutoSampleRevision((current) => current + 1); }}>
                   <strong>{topic.name}</strong>
                   <span>{topicOffsets[topic.name] ? tCurrent('messageQueue.kafka.topicCardMeta', { value0: formatNumber(topicOffsets[topic.name].messageCount), value1: lagRowsByTopic[topic.name] ?? 0 }) : tCurrent('messageQueue.kafka.topicCardLag', { value0: lagRowsByTopic[topic.name] ?? 0 })}</span>
                 </button>
