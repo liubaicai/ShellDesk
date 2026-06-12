@@ -1539,7 +1539,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
       const targetPath = joinRemotePath(remotePath, item.name, isWindowsHost);
 
       try {
-        await window.guiSSH!.connections.statPath(connectionId, targetPath);
+        await runWithSudoRetry(
+          t('fileExplorer.sudo.operation.upload', language),
+          targetPath,
+          (options) => window.guiSSH!.connections.statPath(connectionId, targetPath, options),
+        );
         conflicts.push({ item, remotePath: targetPath });
       } catch (error) {
         if (!isRemotePathMissingError(error)) {
@@ -1549,7 +1553,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     }
 
     return conflicts;
-  }, [connectionId, isWindowsHost, remotePath]);
+  }, [connectionId, isWindowsHost, language, remotePath, runWithSudoRetry]);
 
   const prepareUploadSelection = useCallback(async (items: ShellDeskSelectedUploadItem[]) => {
     if (!items.length) {

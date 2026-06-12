@@ -2810,6 +2810,51 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     return parsePrivilegedDirectoryListing(result.stdout, remotePath);
   }
 
+  function parsePrivilegedPathStat(output) {
+    const line = String(output || '').trim().split(/\r?\n/u).find((candidate) => {
+      const parts = candidate.split('\t');
+      return (parts[0] === 'file' || parts[0] === 'directory' || parts[0] === 'symlink') && parts.length >= 7;
+    });
+
+    if (!line) {
+      throw new Error('提权读取路径属性失败：远程 stat 未返回结果。');
+    }
+
+    const [typeValue, sizeValue, modeValue, ownerValue, groupValue, modifiedValue, accessedValue] = line.split('\t');
+    const type = typeValue === 'directory' || typeValue === 'symlink' ? typeValue : 'file';
+    const mode = Number.parseInt(modeValue || '0', 16) || 0;
+    const modifiedSeconds = Number.parseInt(modifiedValue || '0', 10) || 0;
+    const accessedSeconds = Number.parseInt(accessedValue || '0', 10) || 0;
+
+    return {
+      type,
+      size: Number.parseInt(sizeValue || '0', 10) || 0,
+      mode,
+      owner: Number.parseInt(ownerValue || '0', 10) || 0,
+      group: Number.parseInt(groupValue || '0', 10) || 0,
+      modifiedAt: modifiedSeconds ? new Date(modifiedSeconds * 1000).toISOString() : '',
+      accessedAt: accessedSeconds ? new Date(accessedSeconds * 1000).toISOString() : '',
+    };
+  }
+
+  async function statRemotePathWithPrivilege(activeConnection, remotePath, options = {}) {
+    const script = [
+      'target=$1',
+      'if [ ! -e "$target" ] && [ ! -L "$target" ]; then printf "%s\\n" "远程路径不存在。" >&2; exit 40; fi',
+      'entry_type=file',
+      'if [ -L "$target" ]; then',
+      '  entry_type=symlink',
+      'elif [ -d "$target" ]; then',
+      '  entry_type=directory',
+      'fi',
+      'stat_line=$(stat -Lc "%s\\t%f\\t%u\\t%g\\t%Y\\t%X" -- "$target" 2>/dev/null || stat -c "%s\\t%f\\t%u\\t%g\\t%Y\\t%X" -- "$target" 2>/dev/null) || exit 1',
+      'printf "%s\\t%s\\n" "$entry_type" "$stat_line"',
+    ].join('\n');
+    const result = await execPrivilegedFileScript(activeConnection, script, [remotePath], '提权读取路径属性', options);
+
+    return parsePrivilegedPathStat(result.stdout);
+  }
+
   async function createRemoteDirectoryWithPrivilege(activeConnection, remotePath, options = {}) {
     const script = [
       'target=$1',
@@ -2916,7 +2961,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
         privilegeOptions,
         () => statRemotePath(activeConnection.client, remotePath),
         (_sftp, sudoClient) => statRemotePath(sudoClient, remotePath),
-        null,
+        () => statRemotePathWithPrivilege(activeConnection, remotePath, privilegeOptions),
       ));
   });
 
