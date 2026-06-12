@@ -36,6 +36,7 @@ export interface RemoteTerminalLaunchOptions {
   initialCommand?: string;
   workingDirectory?: string;
   mode?: 'tmux';
+  tmuxSessionName?: string;
 }
 
 export interface RemoteTerminalChromePayload {
@@ -110,6 +111,7 @@ interface RemoteTerminalProps {
   onToolRequestHandled?: (requestId: string) => void;
   onOpenTerminal?: (options?: RemoteTerminalLaunchOptions) => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
+  onCommandIntercept?: (command: string) => boolean;
   onSessionEvent?: (event: RemoteTerminalSessionEvent) => void;
   onSessionStateChange?: (state: RemoteTerminalSessionState) => void;
   onSettingsChange?: (settings: ShellDeskAppSettings) => void;
@@ -126,7 +128,7 @@ interface TerminalSearchResultState {
   count: number;
 }
 
-type TerminalLaunchDraft = Required<Omit<RemoteTerminalLaunchOptions, 'mode'>>;
+type TerminalLaunchDraft = Required<Omit<RemoteTerminalLaunchOptions, 'mode' | 'tmuxSessionName'>>;
 
 const outputSummaryLimit = 1200;
 const terminalSearchOptions: ISearchOptions = {
@@ -757,6 +759,7 @@ function RemoteTerminal({
   onToolRequestHandled,
   onOpenTerminal,
   onOpenNote,
+  onCommandIntercept,
   onSessionEvent,
   onSessionStateChange,
   onSettingsChange,
@@ -790,6 +793,7 @@ function RemoteTerminal({
   const handledCommandRequestRef = useRef('');
   const handledToolRequestRef = useRef('');
   const onChromeChangeRef = useRef(onChromeChange);
+  const onCommandInterceptRef = useRef(onCommandIntercept);
   const onSessionEventRef = useRef(onSessionEvent);
   const onSessionStateChangeRef = useRef(onSessionStateChange);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -966,6 +970,10 @@ function RemoteTerminal({
   useEffect(() => {
     onChromeChangeRef.current = onChromeChange;
   }, [onChromeChange]);
+
+  useEffect(() => {
+    onCommandInterceptRef.current = onCommandIntercept;
+  }, [onCommandIntercept]);
 
   useEffect(() => {
     onSessionStateChangeRef.current = onSessionStateChange;
@@ -1857,6 +1865,24 @@ function RemoteTerminal({
       if (hasCommandLineEditingInput) {
         commandBufferUnsafeRef.current = true;
       }
+
+      if (!commandBufferUnsafeRef.current && launchOptionsRef.current?.mode !== 'tmux') {
+        const commandState = collectSubmittedCommands(commandBufferRef.current, data);
+        const interceptedCommand = commandState.commands.find((command) => onCommandInterceptRef.current?.(command));
+
+        if (interceptedCommand) {
+          commandBufferRef.current = commandState.buffer;
+          commandBufferUnsafeRef.current = false;
+          writeTerminalInput('\x15');
+          emitSessionEvent({
+            type: 'terminal-command',
+            command: interceptedCommand,
+            source: 'keyboard',
+          });
+          return;
+        }
+      }
+
       writeTerminalInput(data);
       if (
         data.includes('\x03') ||

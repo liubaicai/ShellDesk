@@ -615,6 +615,7 @@ interface ShellDeskTerminalIpcOptions {
   initialCommand?: string;
   workingDirectory?: string;
   mode?: 'tmux';
+  tmuxSessionName?: string;
 }
 
 interface ShellDeskRunCommandStreamCallbacks {
