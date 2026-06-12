@@ -752,6 +752,56 @@ function readHostConnectionStatus(value) {
   return value === 'success' || value === 'failed' ? value : 'unknown';
 }
 
+function readHostInfoItem(rawItem) {
+  if (!isPlainObject(rawItem)) {
+    return null;
+  }
+
+  const key = readBoundedString(rawItem.key ?? '', '主机信息键', 80, { required: false });
+  const label = readBoundedString(rawItem.label ?? '', '主机信息标签', 80, { required: false });
+  const value = readBoundedString(rawItem.value ?? '', '主机信息内容', 20000, {
+    required: false,
+    rejectLineBreaks: false,
+  });
+  const icon = readBoundedString(rawItem.icon ?? '', '主机信息图标', 16, { required: false });
+
+  if (!key || !label) {
+    return null;
+  }
+
+  return {
+    key,
+    label,
+    ...(icon ? { icon } : {}),
+    value,
+  };
+}
+
+function readHostInfoSnapshot(rawInfo) {
+  if (!isPlainObject(rawInfo)) {
+    return null;
+  }
+
+  const collectedAt = typeof rawInfo.collectedAt === 'string' && rawInfo.collectedAt.trim()
+    ? readTimestampString(rawInfo.collectedAt, '主机信息采集时间')
+    : '';
+  const items = Array.isArray(rawInfo.items)
+    ? rawInfo.items.slice(0, 32).map((item) => readHostInfoItem(item)).filter(Boolean)
+    : [];
+
+  if (!collectedAt || !items.length) {
+    return null;
+  }
+
+  return {
+    address: readBoundedString(rawInfo.address ?? '', '主机信息地址', 255, { required: false }),
+    collectedAt,
+    systemType: readRemoteSystemType(rawInfo.systemType),
+    systemName: readBoundedString(rawInfo.systemName ?? '', '主机信息系统名称', 160, { required: false }),
+    items,
+  };
+}
+
 function readStoredKeyRecord(rawKey) {
   if (!isPlainObject(rawKey)) {
     throw new Error('密钥数据无效。');
@@ -832,6 +882,7 @@ function readStoredHostRecord(rawHost) {
     proxyProfileId: readBoundedString(rawHost.proxyProfileId ?? '', '代理 ID', 128, { required: false }),
     systemType: readRemoteSystemType(rawHost.systemType),
     systemName: readBoundedString(rawHost.systemName ?? '', '系统名称', 160, { required: false }),
+    hostInfo: readHostInfoSnapshot(rawHost.hostInfo),
     lastConnectionStatus: readHostConnectionStatus(rawHost.lastConnectionStatus),
     lastConnectionAt: rawHost.lastConnectionAt
       ? readTimestampString(rawHost.lastConnectionAt, '上次连接时间')
@@ -864,6 +915,10 @@ function readStoredHostRecord(rawHost) {
 
   if (host.privilegeMode !== 'su-root') {
     host.rootPassword = '';
+  }
+
+  if (host.hostInfo?.address && host.hostInfo.address !== host.address) {
+    host.hostInfo = null;
   }
 
   return host;

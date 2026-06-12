@@ -371,6 +371,21 @@ interface ShellDeskSudoPasswordOptions {
   transferClientId?: string;
 }
 
+interface ShellDeskHostInfoItem {
+  key: string;
+  label: string;
+  icon?: string;
+  value: string;
+}
+
+interface ShellDeskHostInfoSnapshot {
+  address: string;
+  collectedAt: string;
+  systemType?: ShellDeskHostSystemType;
+  systemName?: string;
+  items: ShellDeskHostInfoItem[];
+}
+
 interface ShellDeskStoredHostRecord {
   id: string;
   name: string;
@@ -389,6 +404,7 @@ interface ShellDeskStoredHostRecord {
   proxyProfileId?: string;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
+  hostInfo?: ShellDeskHostInfoSnapshot | null;
   lastConnectionStatus?: 'unknown' | 'success' | 'failed';
   lastConnectionAt?: string;
   lastConnectionError?: string;

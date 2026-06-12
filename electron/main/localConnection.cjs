@@ -1202,6 +1202,26 @@ function formatBytes(value) {
   return `${nextValue.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function getLocalDiskInfo() {
+  try {
+    if (typeof fs.statfsSync !== 'function') {
+      return process.cwd();
+    }
+
+    const stats = fs.statfsSync(process.cwd());
+    const total = Number(stats.blocks) * Number(stats.bsize);
+    const free = Number(stats.bfree) * Number(stats.bsize);
+
+    if (!Number.isFinite(total) || total <= 0) {
+      return process.cwd();
+    }
+
+    return `${process.cwd()} - Total: ${formatBytes(total)}, Free: ${formatBytes(free)}`;
+  } catch {
+    return process.cwd();
+  }
+}
+
 async function getLocalStatus() {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
@@ -1230,8 +1250,9 @@ async function getLocalSystemInfo() {
       { key: 'kernel', label: '内核版本', icon: '\u2699\uFE0F', value: os.release() },
       { key: 'hostname', label: '主机名', icon: '\u{1F3E0}', value: os.hostname() || 'localhost' },
       { key: 'arch', label: '系统架构', icon: '\u{1F9E9}', value: `${os.platform()} ${os.arch()}` },
-      { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', value: cpus[0]?.model || '未检测到' },
+      { key: 'cpu', label: 'CPU', icon: '\u{1F4BB}', value: `${cpus[0]?.model || '未检测到'}；逻辑核心 ${cpus.length || 0}` },
       { key: 'memory', label: '内存', icon: '\u{1F9E0}', value: `已用 ${formatBytes(totalMemory - freeMemory)} / 总计 ${formatBytes(totalMemory)}，空闲 ${formatBytes(freeMemory)}` },
+      { key: 'disk', label: '磁盘', icon: '\u{1F4BD}', value: getLocalDiskInfo() },
       { key: 'uptime', label: '运行时间', icon: '\u23F1\uFE0F', value: formatDuration(os.uptime()) },
       { key: 'load', label: '系统负载', icon: '\u26A1', value: os.loadavg().map((value) => value.toFixed(2)).join(', ') },
       { key: 'shell', label: '默认 Shell', icon: '\u{1F4BB}', value: process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : (process.env.SHELL || '/bin/sh') },

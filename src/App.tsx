@@ -595,6 +595,21 @@ type ConnectionAuthMethod = AuthMethod | 'agent';
 type HostConnectionStatus = 'unknown' | 'success' | 'failed';
 type PrivilegeMode = 'sudo' | 'su-root';
 
+interface HostInfoItem {
+  key: string;
+  label: string;
+  icon?: string;
+  value: string;
+}
+
+interface HostInfoSnapshot {
+  address: string;
+  collectedAt: string;
+  systemType: HostSystemType;
+  systemName: string;
+  items: HostInfoItem[];
+}
+
 interface Host {
   id: string;
   name: string;
@@ -613,6 +628,7 @@ interface Host {
   proxyProfileId: string;
   systemType: HostSystemType;
   systemName: string;
+  hostInfo: HostInfoSnapshot | null;
   group: string;
   tags: string[];
   note: string;
@@ -645,8 +661,10 @@ interface ConnectionErrorNotice {
 
 type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
 
-type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>>;
+type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'systemType' | 'systemName' | 'hostInfo' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>> & {
+    hostInfo?: unknown;
+  };
 
 interface HostFormState {
   name: string;
@@ -811,6 +829,89 @@ function getHostConnectionStatus(value: unknown): HostConnectionStatus {
   return value === 'success' || value === 'failed' ? value : 'unknown';
 }
 
+function readHostInfoItem(value: unknown): HostInfoItem | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const item = value as Partial<HostInfoItem>;
+  const key = typeof item.key === 'string' ? item.key.trim().slice(0, 80) : '';
+  const label = typeof item.label === 'string' ? item.label.trim().slice(0, 80) : '';
+  const icon = typeof item.icon === 'string' ? item.icon.trim().slice(0, 16) : '';
+  const itemValue = typeof item.value === 'string' ? item.value.replace(/\0/g, '').slice(0, 20000).trim() : '';
+
+  if (!key || !label) {
+    return null;
+  }
+
+  return {
+    key,
+    label,
+    ...(icon ? { icon } : {}),
+    value: itemValue,
+  };
+}
+
+function getHostInfoSnapshot(value: unknown): HostInfoSnapshot | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const snapshot = value as Partial<HostInfoSnapshot>;
+  const collectedAt = typeof snapshot.collectedAt === 'string' ? snapshot.collectedAt.trim() : '';
+  const items = Array.isArray(snapshot.items)
+    ? snapshot.items.slice(0, 32).map(readHostInfoItem).filter((item): item is HostInfoItem => Boolean(item))
+    : [];
+
+  if (!collectedAt || !items.length) {
+    return null;
+  }
+
+  return {
+    address: typeof snapshot.address === 'string' ? snapshot.address.trim().slice(0, 255) : '',
+    collectedAt,
+    systemType: getHostSystemType(snapshot.systemType, snapshot.systemName),
+    systemName: typeof snapshot.systemName === 'string' ? snapshot.systemName.trim().slice(0, 160) : '',
+    items,
+  };
+}
+
+function formatHostInfoTime(value: string, language: ShellDeskAppSettings['language']) {
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return value || '-';
+  }
+
+  return new Date(timestamp).toLocaleString(getAppLocale(language));
+}
+
+function createHostInfoSnapshot(
+  host: Pick<Host, 'address' | 'systemName' | 'systemType'>,
+  report: ShellDeskRemoteSystemInfoReport,
+  systemType: HostSystemType,
+  systemName: string,
+): HostInfoSnapshot | null {
+  const items = Array.isArray(report.items)
+    ? report.items.slice(0, 32).map(readHostInfoItem).filter((item): item is HostInfoItem => Boolean(item))
+    : [];
+
+  if (!items.length) {
+    return null;
+  }
+
+  const effectiveSystemType = systemType !== 'unknown' ? systemType : host.systemType;
+  const effectiveSystemName = systemName || host.systemName;
+
+  return {
+    address: host.address,
+    collectedAt: report.refreshedAt || new Date().toISOString(),
+    systemType: effectiveSystemType,
+    systemName: effectiveSystemName,
+    items,
+  };
+}
+
 function getAuthLabel(host: Pick<Host, 'authMethod' | 'password'>, key: SshKey | null, language: ShellDeskAppSettings['language']) {
   if (host.authMethod === 'key') {
     if (!key) {
@@ -891,6 +992,9 @@ function isStoredHost(value: unknown): value is StoredHost {
 }
 
 function normalizeStoredHost(host: StoredHost): Host {
+  const hostInfo = getHostInfoSnapshot(host.hostInfo);
+  const normalizedAddress = host.address.trim();
+
   return {
     ...host,
     authMethod: getAuthMethod(host.authMethod),
@@ -900,15 +1004,62 @@ function normalizeStoredHost(host: StoredHost): Host {
     passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
     privilegeMode: getPrivilegeMode(host.privilegeMode),
     rootPassword: getPrivilegeMode(host.privilegeMode) === 'su-root' && typeof host.rootPassword === 'string' ? host.rootPassword : '',
+    address: normalizedAddress,
     jumpHostId: typeof host.jumpHostId === 'string' ? host.jumpHostId : '',
     canBeJumpHost: host.canBeJumpHost === true,
     proxyProfileId: typeof host.proxyProfileId === 'string' ? host.proxyProfileId : '',
     systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
+    hostInfo: hostInfo && (!hostInfo.address || hostInfo.address === normalizedAddress) ? hostInfo : null,
     lastConnectionStatus: getHostConnectionStatus(host.lastConnectionStatus),
     lastConnectionAt: typeof host.lastConnectionAt === 'string' ? host.lastConnectionAt : '',
     lastConnectionError: typeof host.lastConnectionError === 'string' ? host.lastConnectionError : '',
   };
+}
+
+function protectHostInfoFromStaleSnapshot(incomingHosts: Host[], currentHosts: Host[]) {
+  if (!currentHosts.length) {
+    return incomingHosts;
+  }
+
+  const currentHostById = new Map(currentHosts.map((host) => [host.id, host]));
+
+  return incomingHosts.map((incomingHost): Host => {
+    const currentHost = currentHostById.get(incomingHost.id);
+
+    if (!currentHost || currentHost.address !== incomingHost.address) {
+      return incomingHost;
+    }
+
+    const shouldKeepHostInfo = !incomingHost.hostInfo && Boolean(currentHost.hostInfo);
+    const shouldKeepLastConnection =
+      Boolean(currentHost.lastConnectionAt) &&
+      getSortableTimestamp(currentHost.lastConnectionAt) > getSortableTimestamp(incomingHost.lastConnectionAt);
+    const shouldKeepUpdatedAt = getSortableTimestamp(currentHost.updatedAt) > getSortableTimestamp(incomingHost.updatedAt);
+
+    if (!shouldKeepHostInfo && !shouldKeepLastConnection && !shouldKeepUpdatedAt) {
+      return incomingHost;
+    }
+
+    return {
+      ...incomingHost,
+      ...(shouldKeepHostInfo
+        ? {
+            hostInfo: currentHost.hostInfo,
+            systemType: incomingHost.systemType === 'unknown' ? currentHost.systemType : incomingHost.systemType,
+            systemName: incomingHost.systemName || currentHost.systemName,
+          }
+        : {}),
+      ...(shouldKeepLastConnection
+        ? {
+            lastConnectionStatus: currentHost.lastConnectionStatus,
+            lastConnectionAt: currentHost.lastConnectionAt,
+            lastConnectionError: currentHost.lastConnectionError,
+          }
+        : {}),
+      ...(shouldKeepUpdatedAt ? { updatedAt: currentHost.updatedAt } : {}),
+    };
+  });
 }
 
 function getSortableTimestamp(value: string) {
@@ -1305,6 +1456,7 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
     proxyProfileId: form.proxyProfileId.trim(),
     systemType: 'unknown',
     systemName: '',
+    hostInfo: null,
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
@@ -1317,8 +1469,10 @@ function createHostFromForm(form: HostFormState, selectedKey: SshKey | null): Ho
 }
 
 function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey | null): Host {
+  const nextAddress = form.address.trim();
+  const addressChanged = host.address !== nextAddress;
   const endpointChanged =
-    host.address !== form.address.trim() ||
+    addressChanged ||
     host.port !== Number(form.port) ||
     host.username !== form.username.trim();
   const nextJumpHostId = form.jumpHostId.trim();
@@ -1343,7 +1497,7 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
   return {
     ...host,
     name: form.name.trim(),
-    address: form.address.trim(),
+    address: nextAddress,
     port: Number(form.port),
     username: form.username.trim(),
     authMethod: form.authMethod,
@@ -1356,14 +1510,15 @@ function updateHostFromForm(host: Host, form: HostFormState, selectedKey: SshKey
     jumpHostId: nextJumpHostId,
     canBeJumpHost: form.canBeJumpHost,
     proxyProfileId: nextProxyProfileId,
-    systemType: endpointChanged || jumpHostChanged || proxyProfileChanged ? 'unknown' : host.systemType,
-    systemName: endpointChanged || jumpHostChanged || proxyProfileChanged ? '' : host.systemName,
+    systemType: addressChanged ? 'unknown' : host.systemType,
+    systemName: addressChanged ? '' : host.systemName,
+    hostInfo: addressChanged ? null : host.hostInfo,
     group: form.group.trim(),
     tags: parseTags(form.tags),
     note: form.note.trim(),
-    lastConnectionStatus: connectionProfileChanged ? 'unknown' : host.lastConnectionStatus,
-    lastConnectionAt: connectionProfileChanged ? '' : host.lastConnectionAt,
-    lastConnectionError: connectionProfileChanged ? '' : host.lastConnectionError,
+    lastConnectionStatus: addressChanged || connectionProfileChanged ? 'unknown' : host.lastConnectionStatus,
+    lastConnectionAt: addressChanged ? '' : host.lastConnectionAt,
+    lastConnectionError: addressChanged || connectionProfileChanged ? '' : host.lastConnectionError,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -1620,6 +1775,7 @@ function App() {
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
+  const [hostInfoDialogHostId, setHostInfoDialogHostId] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationRequest | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const hostsRef = useRef(hosts);
@@ -1695,6 +1851,8 @@ function App() {
           host.note,
           host.systemName,
           hostSystemLabels[host.systemType],
+          host.hostInfo?.systemName,
+          host.hostInfo?.items.map((item) => `${item.label} ${item.value}`).join(' '),
           hostKey?.name,
           hostKey?.fingerprint,
           hostKey?.algorithm,
@@ -1727,6 +1885,38 @@ function App() {
   }, [keySearchQuery, sshKeys]);
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
+  const hostInfoDialogHost = hostInfoDialogHostId
+    ? hosts.find((host) => host.id === hostInfoDialogHostId) ?? null
+    : null;
+  const hostInfoDialogTimeItems = hostInfoDialogHost
+    ? [
+        {
+          key: 'createdAt',
+          label: t('app.host.info.createdAt', appLanguage),
+          value: hostInfoDialogHost.createdAt,
+        },
+        {
+          key: 'updatedAt',
+          label: t('app.host.info.updatedAt', appLanguage),
+          value: hostInfoDialogHost.updatedAt,
+        },
+        {
+          key: 'lastConnectionAt',
+          label: t('app.host.info.lastConnectionAt', appLanguage),
+          value: hostInfoDialogHost.lastConnectionAt,
+          emptyLabel: t('app.host.info.neverConnected', appLanguage),
+        },
+        ...(hostInfoDialogHost.hostInfo
+          ? [
+              {
+                key: 'collectedAt',
+                label: t('app.host.info.collectedAt', appLanguage),
+                value: hostInfoDialogHost.hostInfo.collectedAt,
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   const getSelectedSshKey = (host: Pick<Host, 'keyId'>) => sshKeyById.get(host.keyId) ?? null;
 
@@ -1737,7 +1927,10 @@ function App() {
     const shouldRepairPersistedSettings = nextSettings !== snapshot.settings;
 
     if (updateCollections) {
-      const nextHosts = normalizeStoredHosts(snapshot.hosts.filter(isStoredHost));
+      const nextHosts = protectHostInfoFromStaleSnapshot(
+        normalizeStoredHosts(snapshot.hosts.filter(isStoredHost)),
+        hostsRef.current,
+      );
       const nextKeys = snapshot.sshKeys.filter(isStoredSshKey);
       const nextProxyProfiles = snapshot.proxyProfiles;
       const nextKnownHosts = snapshot.knownHosts;
@@ -2274,6 +2467,21 @@ function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hostInfoDialogHostId) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setHostInfoDialogHostId(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [hostInfoDialogHostId]);
 
   useEffect(() => {
     const logsControls = window.guiSSH?.logs;
@@ -3166,6 +3374,47 @@ function App() {
     }
   };
 
+  const openHostInfoDialog = (host: Host) => {
+    setHostInfoDialogHostId(host.id);
+  };
+
+  const collectHostInfoAfterConnection = async (
+    host: Pick<Host, 'address' | 'id' | 'systemName' | 'systemType'>,
+    connectionInfo: RemoteConnectionInfo,
+    systemType: HostSystemType,
+    systemName: string,
+  ) => {
+    const connections = window.guiSSH?.connections;
+
+    if (!connections?.getSystemInfo || !hostsRef.current.some((currentHost) => currentHost.id === host.id)) {
+      return;
+    }
+
+    try {
+      const report = await connections.getSystemInfo(connectionInfo.id);
+      const snapshot = createHostInfoSnapshot(host, report, systemType, systemName);
+
+      if (!snapshot) {
+        return;
+      }
+
+      commitHosts(hostsRef.current.map((currentHost): Host => {
+        if (currentHost.id !== host.id || currentHost.address !== host.address) {
+          return currentHost;
+        }
+
+        return {
+          ...currentHost,
+          systemType: snapshot.systemType !== 'unknown' ? snapshot.systemType : currentHost.systemType,
+          systemName: snapshot.systemName || currentHost.systemName,
+          hostInfo: snapshot,
+        };
+      }));
+    } catch (error) {
+      console.info(`[shelldesk] host info collection failed for ${host.address}:`, getErrorMessage(error));
+    }
+  };
+
   const connectHost = async (
     host: ConnectionHost,
     credentials?: CredentialFormState,
@@ -3263,6 +3512,7 @@ function App() {
       }
 
       commitCollectionsState(nextHosts, nextSshKeys, settingsRef.current);
+      void collectHostInfoAfterConnection(host, nextConnection, detectedSystemType, detectedSystemName);
 
       if (isConnectionWindow) {
         setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
@@ -3389,6 +3639,7 @@ function App() {
       proxyProfileId: '',
       systemType: 'unknown',
       systemName: '',
+      hostInfo: null,
       group: '',
       tags: [],
       note: '',
@@ -4092,6 +4343,15 @@ function App() {
                                   type="button"
                                   onClick={(event) => {
                                     closeHostCardMenu(event.currentTarget);
+                                    openHostInfoDialog(host);
+                                  }}
+                                >
+                                  {t('app.host.info.menu', appLanguage)}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    closeHostCardMenu(event.currentTarget);
                                     startEditingHost(host);
                                   }}
                                 >
@@ -4656,6 +4916,62 @@ function App() {
                 </div>
               </form>
             </aside>
+          ) : null}
+
+          {hostInfoDialogHost ? createPortal(
+            <div className="host-info-modal-overlay no-drag" role="presentation" onClick={() => setHostInfoDialogHostId(null)}>
+              <section
+                className="host-info-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="host-info-modal-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="host-info-modal-header">
+                  <HostSystemIcon systemName={getHostSystemLabel(hostInfoDialogHost, appLanguage)} systemType={hostInfoDialogHost.systemType} />
+                  <div>
+                    <span>{t('app.host.info.title', appLanguage)}</span>
+                    <strong id="host-info-modal-title">{hostInfoDialogHost.name}</strong>
+                    <small>{hostInfoDialogHost.username}@{hostInfoDialogHost.address}:{hostInfoDialogHost.port}</small>
+                  </div>
+                  <button type="button" onClick={() => setHostInfoDialogHostId(null)} aria-label={t('app.host.info.close', appLanguage)}>×</button>
+                </header>
+
+                <div className="host-info-timeline">
+                  {hostInfoDialogTimeItems.map((item) => (
+                    <div key={item.key} className="host-info-time">
+                      <span>{item.label}</span>
+                      {item.value ? (
+                        <time dateTime={item.value}>{formatHostInfoTime(item.value, appLanguage)}</time>
+                      ) : (
+                        <strong>{item.emptyLabel ?? '-'}</strong>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {hostInfoDialogHost.hostInfo ? (
+                  <dl className="host-info-list">
+                    {hostInfoDialogHost.hostInfo.items.map((item) => (
+                      <div key={`${item.key}-${item.label}`} className="host-info-item">
+                        <dt>
+                          {item.icon ? <span aria-hidden="true">{item.icon}</span> : null}
+                          {item.label}
+                        </dt>
+                        <dd>{item.value || '-'}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <div className="host-info-empty">
+                    <span>INFO</span>
+                    <h3>{t('app.host.info.emptyTitle', appLanguage)}</h3>
+                    <p>{t('app.host.info.emptyDescription', appLanguage)}</p>
+                  </div>
+                )}
+              </section>
+            </div>,
+            document.body,
           ) : null}
 
           {deleteConfirmation ? (

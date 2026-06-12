@@ -209,6 +209,14 @@
   color: var(--muted-strong);
 }
 
+[data-theme="light"] .host-info-modal-overlay {
+  background: rgba(16, 32, 51, 0.34);
+}
+
+[data-theme="light"] .host-info-modal {
+  box-shadow: 0 26px 80px rgba(43, 67, 92, 0.22);
+}
+
 [data-theme="light"] .danger-text {
   color: #c8304e !important;
 }

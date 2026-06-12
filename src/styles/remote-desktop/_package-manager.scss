@@ -177,6 +177,13 @@
   grid-template-columns: 250px minmax(0, 1fr) 300px;
 }
 
+.package-layout.source-mode .package-nav-group {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+}
+
 .package-source-editor-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -253,9 +260,34 @@
 
 .package-source-list {
   display: grid;
+  flex: 1 1 0;
+  align-content: start;
   gap: 7px;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-color: rgba(148, 170, 204, 0.48) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.package-source-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.package-source-list::-webkit-scrollbar-track,
+.package-source-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.package-source-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 170, 204, 0.32);
+}
+
+.package-source-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 170, 204, 0.48);
 }
 
 .package-source-list button {
