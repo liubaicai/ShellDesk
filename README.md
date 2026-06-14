@@ -26,7 +26,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshot-en.png" alt="ShellDesk English interface screenshot" width="920">
+  <img src="docs/images/screenshot-en1.png" alt="ShellDesk English interface screenshot" width="920">
+</p>
+<p align="center">
+  <img src="docs/images/screenshot-en2.png" alt="ShellDesk English interface screenshot" width="920">
 </p>
 
 ---

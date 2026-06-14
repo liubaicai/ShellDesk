@@ -26,7 +26,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshot-zh.png" alt="ShellDesk 中文界面截图" width="920">
+  <img src="docs/images/screenshot-zh1.png" alt="ShellDesk 中文界面截图" width="920">
+</p>
+<p align="center">
+  <img src="docs/images/screenshot-zh2.png" alt="ShellDesk 中文界面截图" width="920">
 </p>
 
 ---
