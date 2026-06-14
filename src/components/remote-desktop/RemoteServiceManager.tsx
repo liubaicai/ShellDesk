@@ -6,7 +6,7 @@ import { useSudoCommand } from './sudoPrompt';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
-import { tCurrent } from '../../i18n';
+import { tCurrent, useCurrentAppLanguage, type MessageId } from '../../i18n';
 
 export type RemoteServiceActiveState = 'active' | 'inactive' | 'failed' | 'activating' | 'deactivating' | 'unknown';
 export type RemoteServiceEnabledState = 'enabled' | 'disabled' | 'static' | 'masked' | 'unknown';
@@ -60,22 +60,22 @@ const SERVICE_DETAIL_STATUS_MARKER = '__SHELLDESK_SERVICE_STATUS__';
 const SERVICE_DETAIL_LOGS_MARKER = '__SHELLDESK_SERVICE_LOGS__';
 const SERVICE_DETAIL_UNIT_MARKER = '__SHELLDESK_SERVICE_UNIT__';
 
-const serviceFilters: Array<{ key: ServiceFilter; label: string }> = [
-  { key: 'all', label: tCurrent('auto.remoteServiceManager.q6w6ul') },
-  { key: 'active', label: tCurrent('auto.remoteServiceManager.1bywqik') },
-  { key: 'failed', label: tCurrent('auto.remoteServiceManager.12db3qz') },
-  { key: 'inactive', label: tCurrent('auto.remoteServiceManager.1gqawiz') },
-  { key: 'enabled', label: tCurrent('auto.remoteServiceManager.1w2s4cy') },
-  { key: 'disabled', label: tCurrent('auto.remoteServiceManager.z0vsqk') },
+const serviceFilters: Array<{ key: ServiceFilter; labelId: MessageId }> = [
+  { key: 'all', labelId: 'auto.remoteServiceManager.q6w6ul' },
+  { key: 'active', labelId: 'auto.remoteServiceManager.1bywqik' },
+  { key: 'failed', labelId: 'auto.remoteServiceManager.12db3qz' },
+  { key: 'inactive', labelId: 'auto.remoteServiceManager.1gqawiz' },
+  { key: 'enabled', labelId: 'auto.remoteServiceManager.1w2s4cy' },
+  { key: 'disabled', labelId: 'auto.remoteServiceManager.z0vsqk' },
 ];
 
-const actionDefinitions: Record<ServiceAction, { label: string; success: string; danger?: boolean; confirm?: boolean; primary?: boolean }> = {
-  start: { label: tCurrent('auto.remoteServiceManager.155xe0y'), success: tCurrent('auto.remoteServiceManager.whsqz6'), primary: true },
-  stop: { label: tCurrent('auto.remoteServiceManager.1pnni9n'), success: tCurrent('auto.remoteServiceManager.1gqawiz2'), danger: true, confirm: true },
-  restart: { label: tCurrent('auto.remoteServiceManager.1fa8wet'), success: tCurrent('auto.remoteServiceManager.18bkm3p'), danger: true, confirm: true },
-  reload: { label: 'Reload', success: tCurrent('auto.remoteServiceManager.jqtxq7') },
-  enable: { label: tCurrent('auto.remoteServiceManager.15qofhx'), success: tCurrent('auto.remoteServiceManager.1hpotpb') },
-  disable: { label: tCurrent('auto.remoteServiceManager.1o6i0tj'), success: tCurrent('auto.remoteServiceManager.1hxu1y5') },
+const actionDefinitions: Record<ServiceAction, { labelId: MessageId; successId: MessageId; danger?: boolean; confirm?: boolean; primary?: boolean }> = {
+  start: { labelId: 'auto.remoteServiceManager.155xe0y', successId: 'auto.remoteServiceManager.whsqz6', primary: true },
+  stop: { labelId: 'auto.remoteServiceManager.1pnni9n', successId: 'auto.remoteServiceManager.1gqawiz2', danger: true, confirm: true },
+  restart: { labelId: 'auto.remoteServiceManager.1fa8wet', successId: 'auto.remoteServiceManager.18bkm3p', danger: true, confirm: true },
+  reload: { labelId: 'auto.remoteServiceManager.jqtxq7', successId: 'auto.remoteServiceManager.jqtxq7' },
+  enable: { labelId: 'auto.remoteServiceManager.15qofhx', successId: 'auto.remoteServiceManager.1hpotpb' },
+  disable: { labelId: 'auto.remoteServiceManager.1o6i0tj', successId: 'auto.remoteServiceManager.1hxu1y5' },
 };
 
 const activeStateOrder: Record<RemoteServiceActiveState, number> = {
@@ -538,7 +538,7 @@ if command -v rc-service >/dev/null 2>&1 && [ -d /etc/init.d ]; then
   exit 0
 fi
 
-printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。'
+printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service is not installed or the current PATH is unavailable.'
 exit 0
 `;
 }
@@ -557,7 +557,7 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   if command -v journalctl >/dev/null 2>&1; then
     journalctl -u "$unit" -n 100 --no-pager --output=short-iso 2>&1 || true
   else
-    printf 'journalctl 不可用。\\n'
+    printf 'journalctl is unavailable.\\n'
   fi
   printf '${SERVICE_DETAIL_UNIT_MARKER}\\n'
   systemctl cat "$unit" --no-pager 2>&1 || true
@@ -621,19 +621,19 @@ if command -v rc-service >/dev/null 2>&1 && [ -d /etc/init.d ]; then
   elif command -v logread >/dev/null 2>&1; then
     logread 2>/dev/null | grep -i "$service_name" | tail -n 100 || true
   else
-    printf 'OpenRC 未提供 journalctl；可查看 /var/log/messages 或服务自己的日志文件。\\n'
+    printf 'OpenRC does not provide journalctl; check /var/log/messages or service-specific log files.\\n'
   fi
 
   printf '${SERVICE_DETAIL_UNIT_MARKER}\\n'
   if [ -f "$script_path" ]; then
     sed -n '1,240p' "$script_path" 2>&1 || true
   else
-    printf '未找到 OpenRC 脚本：%s\\n' "$script_path"
+    printf 'OpenRC script was not found: %s\\n' "$script_path"
   fi
   exit 0
 fi
 
-printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。'
+printf '${SERVICE_LIST_ERROR_PREFIX}%s\\n' 'systemctl / OpenRC rc-service is not installed or the current PATH is unavailable.'
 exit 127
 `;
 }
@@ -670,7 +670,7 @@ if command -v rc-service >/dev/null 2>&1; then
       ;;
     enable)
       if ! command -v rc-update >/dev/null 2>&1; then
-        printf 'rc-update 未安装，无法设置 OpenRC 开机自启。\\n' >&2
+        printf 'rc-update is not installed, so OpenRC autostart cannot be enabled.\\n' >&2
         exit 127
       fi
       run_maybe_sudo rc-update add "$service_name" default 2>&1
@@ -678,7 +678,7 @@ if command -v rc-service >/dev/null 2>&1; then
       ;;
     disable)
       if ! command -v rc-update >/dev/null 2>&1; then
-        printf 'rc-update 未安装，无法关闭 OpenRC 开机自启。\\n' >&2
+        printf 'rc-update is not installed, so OpenRC autostart cannot be disabled.\\n' >&2
         exit 127
       fi
       runlevels="$(rc-update show 2>/dev/null | awk -F'|' -v svc="$service_name" 'NF >= 2 { name=$1; runlevel=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); gsub(/^[[:space:]]+|[[:space:]]+$/, "", runlevel); if (name == svc && runlevel != "") print runlevel }')"
@@ -694,7 +694,7 @@ if command -v rc-service >/dev/null 2>&1; then
   esac
 fi
 
-printf 'systemctl / OpenRC rc-service 未安装或当前 PATH 不可用。\\n' >&2
+printf 'systemctl / OpenRC rc-service is not installed or the current PATH is unavailable.\\n' >&2
 exit 127
 `;
 }
@@ -793,6 +793,7 @@ function buildDiagnostics(detail: RemoteServiceDetail) {
 }
 
 function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps) {
+  const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const isMountedRef = useRef(true);
@@ -983,7 +984,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
         throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteServiceManager.pbnt82'));
       }
 
-      setSuccess(`${actionDefinitions[action].success}：${service.name}`);
+      setSuccess(`${tCurrent(actionDefinitions[action].successId)}${language === 'zh-CN' ? '：' : ': '}${service.name}`);
       await refreshServices({ silent: true, preferredServiceName: service.name });
       await loadServiceDetail(service.name);
     } catch (err) {
@@ -1047,6 +1048,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
 
   const renderActionButton = (action: ServiceAction) => {
     const definition = actionDefinitions[action];
+    const label = tCurrent(definition.labelId);
     const disabled = isActionDisabled(action);
     const className = [
       'service-action-btn',
@@ -1060,10 +1062,10 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
         type="button"
         className={className}
         disabled={disabled}
-        title={isWindowsHost && action === 'reload' ? tCurrent('auto.remoteServiceManager.bl36ui') : definition.label}
+        title={isWindowsHost && action === 'reload' ? tCurrent('auto.remoteServiceManager.bl36ui') : label}
         onClick={() => requestServiceAction(action)}
       >
-        {actingAction === action ? tCurrent('auto.remoteServiceManager.1h3kna') : definition.label}
+        {actingAction === action ? tCurrent('auto.remoteServiceManager.1h3kna') : label}
       </button>
     );
   };
@@ -1114,7 +1116,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
             aria-label={tCurrent('auto.remoteServiceManager.jw61qj')}
           >
             {serviceFilters.map((item) => (
-              <option key={item.key} value={item.key}>{item.label}</option>
+              <option key={item.key} value={item.key}>{tCurrent(item.labelId)}</option>
             ))}
           </select>
           <input
@@ -1242,7 +1244,7 @@ function ServiceManager({ connectionId, systemType }: RemoteServiceManagerProps)
             onClick={(event) => event.stopPropagation()}
           >
             <div id="service-action-confirm-title" className="service-modal-title">
-              {actionDefinitions[pendingAction.action].label}{tCurrent('auto.remoteServiceManager.2yn6uz2')}</div>
+              {tCurrent(actionDefinitions[pendingAction.action].labelId)}{language === 'zh-CN' ? '' : ' '}{tCurrent('auto.remoteServiceManager.2yn6uz2')}</div>
             <div className="service-modal-message">
               <p>{tCurrent('auto.remoteServiceManager.g66cve')}<strong>{pendingAction.service.name}</strong></p>
               <p>{tCurrent('auto.remoteServiceManager.1b1spgs')}</p>
