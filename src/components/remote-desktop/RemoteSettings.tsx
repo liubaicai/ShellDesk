@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import { useSudoCommand } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
 import { getCurrentAppLanguage, t, translateStructuredText, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
@@ -148,6 +148,72 @@ async function getSystemInfoItems(connectionId: string): Promise<SysInfoItem[]> 
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function createUnixDiskSummaryCommand(language: AppLanguage) {
+  const availableLabel = shellQuote(t('remoteSettings.disk.available', language));
+  const totalLabel = shellQuote(t('remoteSettings.disk.total', language));
+  const unsupportedLabel = shellQuote(t('remoteSettings.disk.unsupported', language));
+
+  return `
+available_label=${availableLabel}
+total_label=${totalLabel}
+format_disk_summary_bytes() {
+  awk -v available_label="$available_label" -v total_label="$total_label" '
+    NR > 1 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && !seen[$1]++ {
+      total += $2
+      available += $3
+    }
+    END {
+      if (total > 0) {
+        printf "%s: %.1f GB\\n%s: %.1f GB\\n", available_label, available / 1024 / 1024 / 1024, total_label, total / 1024 / 1024 / 1024
+      } else {
+        exit 1
+      }
+    }
+  '
+}
+format_disk_summary_kb() {
+  awk -v available_label="$available_label" -v total_label="$total_label" '
+    NR > 1 && $2 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && !seen[$1]++ {
+      total += $2 * 1024
+      available += $4 * 1024
+    }
+    END {
+      if (total > 0) {
+        printf "%s: %.1f GB\\n%s: %.1f GB\\n", available_label, available / 1024 / 1024 / 1024, total_label, total / 1024 / 1024 / 1024
+      } else {
+        exit 1
+      }
+    }
+  '
+}
+df -B1 -x tmpfs -x devtmpfs -x squashfs --output=source,size,avail 2>/dev/null | format_disk_summary_bytes ||
+df -Pk -x tmpfs -x devtmpfs -x squashfs 2>/dev/null | format_disk_summary_kb ||
+df -Pk 2>/dev/null | format_disk_summary_kb ||
+printf '%s\\n' ${unsupportedLabel}
+`;
+}
+
+function createWindowsDiskSummaryCommand(language: AppLanguage) {
+  const availableLabel = powershellSingleQuote(t('remoteSettings.disk.available', language));
+  const totalLabel = powershellSingleQuote(t('remoteSettings.disk.total', language));
+  const unsupportedLabel = powershellSingleQuote(t('remoteSettings.disk.unsupported', language));
+
+  return powershellCommand(`
+$availableLabel = ${availableLabel}
+$totalLabel = ${totalLabel}
+$unsupportedLabel = ${unsupportedLabel}
+$drives = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)
+$totalBytes = ($drives | Measure-Object -Property Size -Sum).Sum
+$availableBytes = ($drives | Measure-Object -Property FreeSpace -Sum).Sum
+if ($null -ne $totalBytes -and [double]$totalBytes -gt 0) {
+  "{0}: {1} GB" -f $availableLabel, [math]::Round(([double]$availableBytes / 1GB), 1)
+  "{0}: {1} GB" -f $totalLabel, [math]::Round(([double]$totalBytes / 1GB), 1)
+} else {
+  $unsupportedLabel
+}
+`);
 }
 
 function withLinuxPrivilege(command: string) {
@@ -1952,8 +2018,6 @@ function DiskPanel() {
   const language = useCurrentAppLanguage();
   const runCommand = useRemoteSettingsCommand();
   const [diskInfo, setDiskInfo] = useState('');
-  const [mountInfo, setMountInfo] = useState('');
-  const [blkInfo, setBlkInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -1961,14 +2025,8 @@ function DiskPanel() {
     setLoading(true);
     setError('');
     try {
-      const [diskResult, mountResult, blkResult] = await Promise.all([
-        runCommand('df -hT 2>/dev/null || df -h'),
-        runCommand('mount | column -t 2>/dev/null || mount'),
-        runCommand(`lsblk -f 2>/dev/null || lsblk 2>/dev/null || echo ${shellQuote(t('remoteSettings.disk.unsupported', language))}`),
-      ]);
+      const diskResult = await runCommand(createUnixDiskSummaryCommand(language));
       setDiskInfo(diskResult.stdout || diskResult.stderr);
-      setMountInfo(mountResult.stdout || mountResult.stderr);
-      setBlkInfo(blkResult.stdout || blkResult.stderr);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -1998,14 +2056,6 @@ function DiskPanel() {
         <h4>{t('remoteSettings.disk.usage', language)}</h4>
         <pre className="settings-output">{diskInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
-      <div className="settings-section">
-        <h4>{t('remoteSettings.disk.blockDevices', language)}</h4>
-        <pre className="settings-output">{blkInfo || t('remoteSettings.common.loading', language)}</pre>
-      </div>
-      <div className="settings-section">
-        <h4>{t('remoteSettings.disk.mounts', language)}</h4>
-        <pre className="settings-output">{mountInfo || t('remoteSettings.common.loading', language)}</pre>
-      </div>
     </div>
   );
 }
@@ -2018,6 +2068,15 @@ interface SysInfoItem {
   icon: string;
   value: string;
   detail?: string;
+}
+
+const hiddenSystemInfoItemKeys = new Set(['cpuCores', 'memoryTotal', 'diskTotal']);
+
+function isVisibleSystemInfoItem(item: SysInfoItem) {
+  return !hiddenSystemInfoItemKeys.has(item.key)
+    && item.key !== 'hostname'
+    && item.key !== 'os'
+    && item.key !== 'user';
 }
 
 interface CpuInfoSummary {
@@ -2036,6 +2095,11 @@ interface MemoryInfoSummary {
   cache: string;
   available: string;
   usagePercent: number | null;
+}
+
+interface DiskInfoSummary {
+  total: string;
+  available: string;
 }
 
 function parseColonSeparatedBlock(raw: string) {
@@ -2099,6 +2163,142 @@ function parseHumanReadableBytes(raw: string) {
   };
 
   return value * (multipliers[unit] ?? 1);
+}
+
+function formatSysInfoDiskBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const precision = value >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${Number(value.toFixed(precision))} ${units[unitIndex]}`;
+}
+
+function parseLabeledDiskInfoSummary(raw: string): DiskInfoSummary | null {
+  const values = parseColonSeparatedBlock(raw);
+  const total = values.get('总量') ?? values.get('总计') ?? values.get('Total') ?? '';
+  const available = values.get('可用') ?? values.get('空闲') ?? values.get('Available') ?? values.get('Free') ?? '';
+
+  if (!total || !available) {
+    return null;
+  }
+
+  return {
+    total,
+    available,
+  };
+}
+
+function parseDfDiskInfoSummary(raw: string): DiskInfoSummary | null {
+  let totalBytes = 0;
+  let availableBytes = 0;
+  const seenFilesystems = new Set<string>();
+  const ignoredFilesystems = /^(tmpfs|devtmpfs|overlay|udev|shm|none|cgroup2?|proc|sysfs)$/i;
+
+  for (const line of raw.split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+
+    if (parts.length < 5 || /^filesystem$/i.test(parts[0]) || ignoredFilesystems.test(parts[0])) {
+      continue;
+    }
+
+    const useIndex = parts.findIndex((part, index) => index > 0 && /^\d+%$/.test(part));
+    const size = useIndex >= 3 ? parseHumanReadableBytes(parts[useIndex - 3]) : null;
+    const available = useIndex >= 3 ? parseHumanReadableBytes(parts[useIndex - 1]) : null;
+
+    if (!size || !available || seenFilesystems.has(parts[0])) {
+      continue;
+    }
+
+    seenFilesystems.add(parts[0]);
+    totalBytes += size;
+    availableBytes += available;
+  }
+
+  if (totalBytes <= 0) {
+    return null;
+  }
+
+  return {
+    total: formatSysInfoDiskBytes(totalBytes),
+    available: formatSysInfoDiskBytes(availableBytes),
+  };
+}
+
+function parseWindowsDiskInfoSummary(raw: string): DiskInfoSummary | null {
+  let totalBytes = 0;
+  let availableBytes = 0;
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmedLine = line.trim();
+
+    if (!trimmedLine || /^[-\s]+$/.test(trimmedLine) || /^DeviceID\b/i.test(trimmedLine)) {
+      continue;
+    }
+
+    const match = trimmedLine.match(/([\d.]+)\s+([\d.]+)\s*$/);
+
+    if (!match) {
+      continue;
+    }
+
+    const sizeGb = Number.parseFloat(match[1]);
+    const freeGb = Number.parseFloat(match[2]);
+
+    if (!Number.isFinite(sizeGb) || !Number.isFinite(freeGb) || sizeGb <= 0) {
+      continue;
+    }
+
+    totalBytes += sizeGb * 1024 ** 3;
+    availableBytes += freeGb * 1024 ** 3;
+  }
+
+  if (totalBytes <= 0) {
+    return null;
+  }
+
+  return {
+    total: formatSysInfoDiskBytes(totalBytes),
+    available: formatSysInfoDiskBytes(availableBytes),
+  };
+}
+
+function parseDiskInfoSummary(raw: string): DiskInfoSummary | null {
+  return parseLabeledDiskInfoSummary(raw)
+    ?? parseDfDiskInfoSummary(raw)
+    ?? parseWindowsDiskInfoSummary(raw);
+}
+
+function renderDiskInfoSummary(raw: string, language: AppLanguage) {
+  const summary = parseDiskInfoSummary(raw);
+
+  if (!summary) {
+    return <pre className="sysinfo-card-value">{raw}</pre>;
+  }
+
+  return (
+    <div className="sysinfo-feature-block">
+      <div className="sysinfo-metric-grid">
+        <div className="sysinfo-metric">
+          <span>{t('remoteSettings.disk.available', language)}</span>
+          <strong>{summary.available || '--'}</strong>
+        </div>
+        <div className="sysinfo-metric">
+          <span>{t('remoteSettings.disk.total', language)}</span>
+          <strong>{summary.total || '--'}</strong>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function parseCpuInfoSummary(raw: string): CpuInfoSummary | null {
@@ -2264,6 +2464,10 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
       );
     }
 
+    if (item.key === 'disk') {
+      return renderDiskInfoSummary(item.value, language);
+    }
+
     return <pre className="sysinfo-card-value">{item.value}</pre>;
   };
 
@@ -2288,7 +2492,7 @@ function SystemInfoPanel({ connectionId }: { connectionId: string }) {
       ) : null}
 
       <div className="sysinfo-grid">
-        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os' && i.key !== 'user').map((item) => (
+        {items.filter(isVisibleSystemInfoItem).map((item) => (
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
@@ -2348,13 +2552,13 @@ function WindowsSystemInfoPanel({ connectionId }: { connectionId: string }) {
         </DismissibleAlert>
       ) : null}
       <div className="sysinfo-grid">
-        {items.filter((i) => i.key !== 'hostname' && i.key !== 'os' && i.key !== 'user').map((item) => (
+        {items.filter(isVisibleSystemInfoItem).map((item) => (
           <article key={item.key} className="sysinfo-card">
             <div className="sysinfo-card-head">
               <span className="sysinfo-card-icon">{item.icon}</span>
               <span className="sysinfo-card-label">{translateStructuredText(item.label, language)}</span>
             </div>
-            <pre className="sysinfo-card-value">{item.value}</pre>
+            {item.key === 'disk' ? renderDiskInfoSummary(item.value, language) : <pre className="sysinfo-card-value">{item.value}</pre>}
           </article>
         ))}
       </div>
@@ -2603,8 +2807,6 @@ function WindowsDiskPanel() {
   const language = useCurrentAppLanguage();
   const runCommand = useRemoteSettingsCommand();
   const [diskInfo, setDiskInfo] = useState('');
-  const [volumeInfo, setVolumeInfo] = useState('');
-  const [driveInfo, setDriveInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -2612,20 +2814,14 @@ function WindowsDiskPanel() {
     setLoading(true);
     setError('');
     try {
-      const [diskResult, volumeResult, driveResult] = await Promise.all([
-        runCommand(powershellCommand("Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200")),
-        runCommand(powershellCommand('Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem, HealthStatus, SizeRemaining, Size | Format-Table -AutoSize | Out-String -Width 220')),
-        runCommand(powershellCommand('Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize | Out-String -Width 200')),
-      ]);
+      const diskResult = await runCommand(createWindowsDiskSummaryCommand(language));
       setDiskInfo(diskResult.stdout || diskResult.stderr);
-      setVolumeInfo(volumeResult.stdout || volumeResult.stderr);
-      setDriveInfo(driveResult.stdout || driveResult.stderr);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [runCommand]);
+  }, [language, runCommand]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -2648,14 +2844,6 @@ function WindowsDiskPanel() {
       <div className="settings-section">
         <h4>{t('remoteSettings.windows.localDisks', language)}</h4>
         <pre className="settings-output">{diskInfo || t('remoteSettings.common.loading', language)}</pre>
-      </div>
-      <div className="settings-section">
-        <h4>{t('remoteSettings.windows.volumes', language)}</h4>
-        <pre className="settings-output">{volumeInfo || t('remoteSettings.common.loading', language)}</pre>
-      </div>
-      <div className="settings-section">
-        <h4>PSDrive</h4>
-        <pre className="settings-output">{driveInfo || t('remoteSettings.common.loading', language)}</pre>
       </div>
     </div>
   );

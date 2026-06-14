@@ -201,7 +201,15 @@ function createInitialAppSettings(): ShellDeskAppSettings {
 
 type AppPage = 'hosts' | 'keys' | 'snippets' | 'proxies' | 'known-hosts' | 'logs' | 'settings';
 type HostViewMode = ShellDeskAppSettings['defaultHostView'];
-type HostListSortMode = 'createdDesc' | 'createdAsc' | 'updatedDesc' | 'updatedAsc' | 'nameAsc' | 'nameDesc' | 'addressAsc';
+type HostListSortMode =
+  | 'lastConnectionDesc'
+  | 'createdDesc'
+  | 'createdAsc'
+  | 'updatedDesc'
+  | 'updatedAsc'
+  | 'nameAsc'
+  | 'nameDesc'
+  | 'addressAsc';
 type SyncNotice = Pick<
   ShellDeskSyncResult,
   | 'conflictCount'
@@ -260,6 +268,7 @@ const navigationItems: ReadonlyArray<NavigationItem> = [
 ];
 
 const hostListSortModes: ReadonlyArray<HostListSortMode> = [
+  'lastConnectionDesc',
   'createdDesc',
   'createdAsc',
   'updatedDesc',
@@ -270,6 +279,7 @@ const hostListSortModes: ReadonlyArray<HostListSortMode> = [
 ];
 
 const hostListSortModeLabelIds: Record<HostListSortMode, MessageId> = {
+  lastConnectionDesc: 'app.host.sort.lastConnectionDesc',
   createdDesc: 'app.host.sort.createdDesc',
   createdAsc: 'app.host.sort.createdAsc',
   updatedDesc: 'app.host.sort.updatedDesc',
@@ -1590,6 +1600,10 @@ function compareHostText(left: string, right: string, locale: string) {
 
 function compareHostsByHostListSortMode(left: Host, right: Host, sortMode: HostListSortMode, locale: string) {
   switch (sortMode) {
+    case 'lastConnectionDesc': {
+      const lastConnectionDiff = getSortableTimestamp(right.lastConnectionAt) - getSortableTimestamp(left.lastConnectionAt);
+      return lastConnectionDiff || compareHostsByListOrder(left, right);
+    }
     case 'createdAsc': {
       const createdDiff = getSortableTimestamp(left.createdAt) - getSortableTimestamp(right.createdAt);
       return createdDiff || left.id.localeCompare(right.id);
