@@ -195,6 +195,7 @@ type ShellDeskDesktopAppKey =
   | 'package-manager'
   | 'git-manager'
   | 'web-server-manager'
+  | 'cert-manager'
   | 'scheduled-tasks'
   | 'postgres'
   | 'mongo'

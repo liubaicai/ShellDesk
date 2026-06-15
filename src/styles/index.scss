@@ -27,6 +27,7 @@
 @use "./remote-desktop/package-manager" as *;
 @use "./remote-desktop/git-manager" as *;
 @use "./remote-desktop/web-server-manager" as *;
+@use "./remote-desktop/cert-manager" as *;
 @use "./remote-desktop/scheduled-tasks" as *;
 @use "./remote-desktop/postgres" as *;
 @use "./remote-desktop/mongo" as *;
