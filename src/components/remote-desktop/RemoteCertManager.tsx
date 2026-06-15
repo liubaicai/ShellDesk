@@ -318,8 +318,8 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
     setNotice(tCurrent('auto.remoteCertManager.pemShown'));
   };
 
-  const addTrustedRoot = async () => {
-    const filePath = caPathDraft.trim();
+  const addTrustedRoot = async (overridePath?: string) => {
+    const filePath = (overridePath ?? caPathDraft).trim();
     if (!filePath) {
       setError(tCurrent('auto.remoteCertManager.caPathRequired'));
       return;
@@ -340,6 +340,32 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
+      setActionRunning(false);
+    }
+  };
+
+  const uploadAndAddTrustedRoot = async () => {
+    const api = window.guiSSH?.connections;
+    if (!api) {
+      setError(tCurrent('auto.remoteCertManager.actionFailed'));
+      return;
+    }
+
+    setActionRunning(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const uploadResult = await api.uploadFile(connectionId, '/tmp');
+      if (uploadResult.canceled || !uploadResult.remotePath) {
+        setActionRunning(false);
+        return;
+      }
+
+      const uploadedPath = uploadResult.remotePaths?.[0] ?? uploadResult.remotePath;
+      await addTrustedRoot(uploadedPath);
+    } catch (error) {
+      setError(getErrorMessage(error));
       setActionRunning(false);
     }
   };
@@ -557,8 +583,11 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
                 onChange={(event) => setCaPathDraft(event.target.value)}
                 placeholder={tCurrent('auto.remoteCertManager.caPathPlaceholder')}
               />
-              <button type="button" className="primary" onClick={addTrustedRoot} disabled={actionRunning || !caPathDraft.trim()}>
+              <button type="button" className="primary" onClick={() => addTrustedRoot()} disabled={actionRunning || !caPathDraft.trim()}>
                 {actionRunning ? tCurrent('auto.remoteCertManager.running') : tCurrent('auto.remoteCertManager.addTrust')}
+              </button>
+              <button type="button" onClick={uploadAndAddTrustedRoot} disabled={actionRunning}>
+                {tCurrent('auto.remoteCertManager.uploadCa')}
               </button>
             </div>
             <pre className="cert-raw-output">{rawOutput || tCurrent('auto.remoteCertManager.noRawOutput')}</pre>
