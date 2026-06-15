@@ -1179,7 +1179,7 @@ function formatHostCapacity(bytes: number) {
     return `${Number((gib / 1024).toFixed(1))} TB`;
   }
 
-  return `${Number(gib.toFixed(gib >= 10 ? 0 : 1))} GB`;
+  return `${Number(gib.toFixed(1))} GB`;
 }
 
 function getFirstCapacityValue(rawValue: string) {
