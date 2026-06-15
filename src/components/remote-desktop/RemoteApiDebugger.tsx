@@ -992,8 +992,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
           {requestTab === 'headers' ? (
             <div className="api-header-editor">
-              <div className="api-header-row">
-                <span />
+              <div className="api-request-line" style={{ minHeight: 42, borderBottom: '1px solid var(--api-border)', padding: '6px 10px' }}>
                 <select value={auth.type} onChange={(event) => updateAuth({ type: event.target.value as ApiDebugAuthConfig['type'] })} aria-label={tCurrent('auto.remoteApiDebugger.auth')}>
                   <option value="none">None</option>
                   <option value="bearer">Bearer Token</option>
@@ -1003,19 +1002,16 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
                 {auth.type === 'bearer' ? (
                   <input value={showSensitive ? auth.bearerToken : maskSensitiveValue(auth.bearerToken)} readOnly={!showSensitive && Boolean(auth.bearerToken)} onChange={(event) => updateAuth({ bearerToken: event.target.value })} placeholder="Token" />
                 ) : auth.type === 'basic' ? (
-                  <input value={auth.basicUsername} onChange={(event) => updateAuth({ basicUsername: event.target.value })} placeholder="Username" />
+                  <>
+                    <input value={auth.basicUsername} onChange={(event) => updateAuth({ basicUsername: event.target.value })} placeholder="Username" />
+                    <input value={showSensitive ? auth.basicPassword : maskSensitiveValue(auth.basicPassword)} readOnly={!showSensitive && Boolean(auth.basicPassword)} onChange={(event) => updateAuth({ basicPassword: event.target.value })} placeholder="Password" />
+                  </>
                 ) : auth.type === 'apiKey' ? (
-                  <input value={auth.apiKeyName} onChange={(event) => updateAuth({ apiKeyName: event.target.value })} placeholder="X-API-Key" />
-                ) : (
-                  <span />
-                )}
-                {auth.type === 'basic' ? (
-                  <input value={showSensitive ? auth.basicPassword : maskSensitiveValue(auth.basicPassword)} readOnly={!showSensitive && Boolean(auth.basicPassword)} onChange={(event) => updateAuth({ basicPassword: event.target.value })} placeholder="Password" />
-                ) : auth.type === 'apiKey' ? (
-                  <input value={showSensitive ? auth.apiKeyValue : maskSensitiveValue(auth.apiKeyValue)} readOnly={!showSensitive && Boolean(auth.apiKeyValue)} onChange={(event) => updateAuth({ apiKeyValue: event.target.value })} placeholder="Value" />
-                ) : (
-                  <span />
-                )}
+                  <>
+                    <input value={auth.apiKeyName} onChange={(event) => updateAuth({ apiKeyName: event.target.value })} placeholder="X-API-Key" />
+                    <input value={showSensitive ? auth.apiKeyValue : maskSensitiveValue(auth.apiKeyValue)} readOnly={!showSensitive && Boolean(auth.apiKeyValue)} onChange={(event) => updateAuth({ apiKeyValue: event.target.value })} placeholder="Value" />
+                  </>
+                ) : null}
               </div>
               {request.headers.map((header) => (
                 <div key={header.id} className="api-header-row">
