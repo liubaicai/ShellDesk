@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
@@ -9,6 +9,15 @@ import { tCurrent } from '../../i18n';
 interface RemoteClickHouseProps {
   connectionId: string;
   hostId: string;
+}
+
+interface ClickHouseConnectionForm {
+  host: string;
+  port: string;
+  secure: boolean;
+  user: string;
+  password: string;
+  initialDatabase: string;
 }
 
 type ClickHouseStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -184,12 +193,32 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   const [errorMessage, setErrorMessage] = useState('');
   const [message, setMessage] = useState<ClickHouseMessage | null>(null);
   const [clickhouseId, setClickhouseId] = useState('');
-  const [host, setHost] = useState('127.0.0.1');
-  const [port, setPort] = useState(String(defaultHttpPort));
-  const [secure, setSecure] = useState(false);
-  const [user, setUser] = useState('default');
-  const [password, setPassword] = useState('');
-  const [initialDatabase, setInitialDatabase] = useState('');
+  const [connectionForm, setConnectionForm] = useState<ClickHouseConnectionForm>({
+    host: '127.0.0.1',
+    port: String(defaultHttpPort),
+    secure: false,
+    user: 'default',
+    password: '',
+    initialDatabase: '',
+  });
+  const { host, port, secure, user, password, initialDatabase } = connectionForm;
+  const updateConnectionFormField = useCallback(<Key extends keyof ClickHouseConnectionForm,>(
+    key: Key,
+    value: SetStateAction<ClickHouseConnectionForm[Key]>,
+  ) => {
+    setConnectionForm((currentForm) => ({
+      ...currentForm,
+      [key]: typeof value === 'function'
+        ? (value as (currentValue: ClickHouseConnectionForm[Key]) => ClickHouseConnectionForm[Key])(currentForm[key])
+        : value,
+    }));
+  }, []);
+  const setHost = useCallback((value: SetStateAction<string>) => updateConnectionFormField('host', value), [updateConnectionFormField]);
+  const setPort = useCallback((value: SetStateAction<string>) => updateConnectionFormField('port', value), [updateConnectionFormField]);
+  const setSecure = useCallback((value: SetStateAction<boolean>) => updateConnectionFormField('secure', value), [updateConnectionFormField]);
+  const setUser = useCallback((value: SetStateAction<string>) => updateConnectionFormField('user', value), [updateConnectionFormField]);
+  const setPassword = useCallback((value: SetStateAction<string>) => updateConnectionFormField('password', value), [updateConnectionFormField]);
+  const setInitialDatabase = useCallback((value: SetStateAction<string>) => updateConnectionFormField('initialDatabase', value), [updateConnectionFormField]);
   const [databases, setDatabases] = useState<string[]>([]);
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set());
@@ -227,12 +256,14 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     void loadRemoteConnectionProfile(hostId, 'clickhouse').then((profile) => {
       if (disposed || !profile) return;
 
-      setHost(readProfileString(profile, 'host', '127.0.0.1'));
-      setPort(readProfileString(profile, 'port', String(defaultHttpPort)));
-      setUser(readProfileString(profile, 'user', 'default'));
-      setPassword(readProfileString(profile, 'password', ''));
-      setInitialDatabase(readProfileString(profile, 'initialDatabase', ''));
-      setSecure(readProfileBoolean(profile, 'secure', false));
+      setConnectionForm({
+        host: readProfileString(profile, 'host', '127.0.0.1'),
+        port: readProfileString(profile, 'port', String(defaultHttpPort)),
+        secure: readProfileBoolean(profile, 'secure', false),
+        user: readProfileString(profile, 'user', 'default'),
+        password: readProfileString(profile, 'password', ''),
+        initialDatabase: readProfileString(profile, 'initialDatabase', ''),
+      });
     });
 
     return () => {
@@ -410,8 +441,14 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         secure,
       }).catch(() => undefined);
 
-      const dbs = await api.connections.clickhouseDatabases(connectionId, result.clickhouseId);
       const requestedDb = initialDatabase.trim();
+      setSchemaLoading(true);
+      const [dbs, requestedTables] = await Promise.all([
+        api.connections.clickhouseDatabases(connectionId, result.clickhouseId),
+        requestedDb
+          ? api.connections.clickhouseTables(connectionId, result.clickhouseId, requestedDb).catch(() => [])
+          : Promise.resolve(null),
+      ]);
       const nextActiveDb = requestedDb && dbs.includes(requestedDb)
         ? requestedDb
         : dbs.includes('default')
@@ -421,11 +458,9 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       const nextTables: Record<string, ShellDeskClickHouseTable[]> = {};
 
       if (nextActiveDb) {
-        try {
-          nextTables[nextActiveDb] = await api.connections.clickhouseTables(connectionId, result.clickhouseId, nextActiveDb);
-        } catch {
-          nextTables[nextActiveDb] = [];
-        }
+        nextTables[nextActiveDb] = requestedDb && nextActiveDb === requestedDb && requestedTables
+          ? requestedTables
+          : await api.connections.clickhouseTables(connectionId, result.clickhouseId, nextActiveDb).catch(() => []);
       }
 
       setDatabases(dbs);
@@ -446,6 +481,8 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     } catch (error) {
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
+    } finally {
+      setSchemaLoading(false);
     }
   }, [api, connectionId, displayPort, host, hostId, initialDatabase, password, secure, user]);
 

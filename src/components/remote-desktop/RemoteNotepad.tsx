@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -9,18 +11,15 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import { indentWithTab } from '@codemirror/commands';
-import { openSearchPanel } from '@codemirror/search';
-import type { Extension } from '@codemirror/state';
-import { EditorSelection } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-
 import { t, translateStructuredText, type AppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
+import type { NotepadEditorHandle } from './NotepadEditor';
 import RemoteFilePicker from './RemoteFilePicker';
 import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
+import { getFileExtension, isTextFile } from './textFileUtils';
 import type { RemoteSystemType } from './types';
+
+const NotepadEditor = lazy(() => import('./NotepadEditor'));
 
 interface NotepadTab {
   id: string;
@@ -125,35 +124,6 @@ interface EditorSelectionSnapshot {
   text: string;
 }
 
-/** Binary file extension denylist; other files are allowed to open in Notepad. */
-const BINARY_EXTENSIONS = new Set([
-  // Images
-  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'avif', 'tiff', 'tif',
-  'psd', 'ai', 'eps', 'raw', 'cr2', 'nef', 'arw', 'dng', 'heic', 'heif',
-  // Audio
-  'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'aiff', 'opus', 'mid', 'midi',
-  // Video
-  'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp',
-  // Archives
-  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst', 'lz4', 'tgz', 'tbz2',
-  'cab', 'iso', 'dmg', 'img', 'wim', 'swm', 'esd',
-  // Executables and compiled artifacts
-  'exe', 'dll', 'so', 'dylib', 'bin', 'msi', 'app', 'deb', 'rpm', 'snap', 'flatpak',
-  'apk', 'ipa', 'war', 'jar', 'ear', 'class', 'pyc', 'pyo', 'whl',
-  'o', 'obj', 'a', 'lib', 'pdb',
-  // Databases and binary data
-  'db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb', 'mdb', 'accdb',
-  // Binary document formats
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
-  // Binary font formats
-  'woff', 'woff2', 'eot', 'ttc',
-  // Other binary formats
-  'dat', 'bin', 'sav', 'pickle', 'pkl', 'npy', 'npz', 'parquet', 'feather', 'arrow',
-  'pb', 'onnx', 'tflite', 'h5', 'hdf5', 'caffemodel',
-  'torrent', 'wasm',
-  'keystore', 'jks', 'truststore',
-]);
-
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
   ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
@@ -226,68 +196,6 @@ const LANGUAGE_OPTIONS: Array<{ value: string; label?: string; labelId?: Message
 ];
 
 const LANGUAGE_OPTION_VALUES = new Set(LANGUAGE_OPTIONS.map((language) => language.value));
-type CodeMirrorLanguageLoader = () => Promise<Extension>;
-
-const CODEMIRROR_LANGUAGE_LOADERS: Partial<Record<string, CodeMirrorLanguageLoader>> = {
-  javascript: async () => (await import('@codemirror/lang-javascript')).javascript({ jsx: true }),
-  typescript: async () => (await import('@codemirror/lang-javascript')).javascript({ jsx: true, typescript: true }),
-  html: async () => (await import('@codemirror/lang-html')).html(),
-  xml: async () => (await import('@codemirror/lang-xml')).xml(),
-  css: async () => (await import('@codemirror/lang-css')).css(),
-  json: async () => (await import('@codemirror/lang-json')).json(),
-  yaml: async () => (await import('@codemirror/lang-yaml')).yaml(),
-  bash: async () => {
-    const [{ StreamLanguage }, { shell }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/shell'),
-    ]);
-    return StreamLanguage.define(shell);
-  },
-  markdown: async () => (await import('@codemirror/lang-markdown')).markdown(),
-  sql: async () => (await import('@codemirror/lang-sql')).sql(),
-  python: async () => (await import('@codemirror/lang-python')).python(),
-  go: async () => (await import('@codemirror/lang-go')).go(),
-  rust: async () => (await import('@codemirror/lang-rust')).rust(),
-  java: async () => (await import('@codemirror/lang-java')).java(),
-  c: async () => (await import('@codemirror/lang-cpp')).cpp(),
-  cpp: async () => (await import('@codemirror/lang-cpp')).cpp(),
-  php: async () => (await import('@codemirror/lang-php')).php(),
-  ruby: async () => {
-    const [{ StreamLanguage }, { ruby }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/ruby'),
-    ]);
-    return StreamLanguage.define(ruby);
-  },
-  ini: async () => {
-    const [{ StreamLanguage }, { properties }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/properties'),
-    ]);
-    return StreamLanguage.define(properties);
-  },
-  nginx: async () => {
-    const [{ StreamLanguage }, { nginx }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/nginx'),
-    ]);
-    return StreamLanguage.define(nginx);
-  },
-  dockerfile: async () => {
-    const [{ StreamLanguage }, { dockerFile }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/dockerfile'),
-    ]);
-    return StreamLanguage.define(dockerFile);
-  },
-  diff: async () => {
-    const [{ StreamLanguage }, { diff }] = await Promise.all([
-      import('@codemirror/language'),
-      import('@codemirror/legacy-modes/mode/diff'),
-    ]);
-    return StreamLanguage.define(diff);
-  },
-};
 const MAX_DIFF_INPUT_LINES = 180;
 const MAX_DIFF_OUTPUT_LINES = 280;
 const MAX_LANGUAGE_DETECTION_CHARACTERS = 24000;
@@ -300,12 +208,6 @@ const MAX_AI_COMMAND_OUTPUT_CHARACTERS = 12000;
 const MAX_AI_HISTORY_MESSAGES = 14;
 const elevationRequiredPrefix = 'SHELLDESK_ELEVATION_REQUIRED:';
 const elevationAuthFailedPrefix = 'SHELLDESK_ELEVATION_AUTH_FAILED:';
-
-function getFileExtension(name: string): string {
-  const dotIndex = name.lastIndexOf('.');
-  if (dotIndex <= 0) return '';
-  return name.slice(dotIndex + 1).toLowerCase();
-}
 
 function normalizeLanguage(language?: string): string {
   if (language && LANGUAGE_OPTION_VALUES.has(language)) {
@@ -404,12 +306,6 @@ function getLanguage(fileName: string, content = ''): string {
   }
 
   return detectLanguageFromContent(content);
-}
-
-function isTextFile(fileName: string): boolean {
-  const ext = getFileExtension(fileName);
-  if (!ext && !fileName.includes('.')) return true;
-  return !BINARY_EXTENSIONS.has(ext);
 }
 
 function getFileNameFromPath(filePath: string): string {
@@ -798,7 +694,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const [remoteEnvironment, setRemoteEnvironment] = useState('');
   const [includeAiFileContext, setIncludeAiFileContext] = useState(true);
   const [lastAiSelection, setLastAiSelection] = useState<EditorSelectionSnapshot | null>(null);
-  const [codeMirrorLanguageExtensions, setCodeMirrorLanguageExtensions] = useState<Extension[]>([]);
   const [prefersLightTheme, setPrefersLightTheme] = useState(() => getPreferredLightTheme());
   const [sudoPrompt, setSudoPrompt] = useState<NotepadSudoPrompt | null>(null);
 
@@ -807,7 +702,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const [filePickerTitle, setFilePickerTitle] = useState('');
   const [filePickerOnConfirm, setFilePickerOnConfirm] = useState<((path: string) => void) | null>(null);
 
-  const codeMirrorRef = useRef<ReactCodeMirrorRef>(null);
+  const editorRef = useRef<NotepadEditorHandle>(null);
   const goToLineInputRef = useRef<HTMLInputElement>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
   const aiMessagesEndRef = useRef<HTMLDivElement>(null);
@@ -850,33 +745,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
     return () => mediaQuery.removeEventListener('change', handleThemeChange);
   }, []);
-
-  useEffect(() => {
-    const normalizedLanguage = normalizeLanguage(activeTab.language);
-    const languageLoader = CODEMIRROR_LANGUAGE_LOADERS[normalizedLanguage];
-    let cancelled = false;
-
-    if (!languageLoader) {
-      setCodeMirrorLanguageExtensions([]);
-      return undefined;
-    }
-
-    languageLoader()
-      .then((extension) => {
-        if (!cancelled) {
-          setCodeMirrorLanguageExtensions([extension]);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCodeMirrorLanguageExtensions([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab.language]);
 
   useEffect(() => {
     if (sudoPrompt) {
@@ -1123,76 +991,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const effectiveWrapEnabled = wrapEnabled;
   const codeMirrorTheme = settings.theme === 'system' ? (prefersLightTheme ? 'light' : 'dark') : settings.theme;
   const lineEndingLabel = useMemo(() => getLineEndingLabel(activeContent, language), [activeContent, language]);
-  const codeMirrorExtensions = useMemo<Extension[]>(() => [
-    keymap.of([indentWithTab]),
-    ...codeMirrorLanguageExtensions,
-    ...(effectiveWrapEnabled ? [EditorView.lineWrapping] : []),
-    EditorView.theme({
-      '&': {
-        height: '100%',
-        minHeight: '0',
-        backgroundColor: 'var(--surface)',
-        color: 'var(--text)',
-        fontSize: '13px',
-      },
-      '.cm-scroller': {
-        backgroundColor: 'var(--surface)',
-        fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
-        lineHeight: '20px',
-      },
-      '.cm-content': {
-        padding: '8px 0',
-        caretColor: 'var(--text)',
-      },
-      '.cm-line': {
-        padding: '0 12px',
-      },
-      '.cm-gutters': {
-        borderRight: '1px solid var(--border)',
-        backgroundColor: 'var(--surface-soft)',
-        color: 'var(--muted)',
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: 'transparent',
-        color: 'var(--accent)',
-      },
-      '.cm-activeLine': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
-      },
-      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-        backgroundColor: 'rgba(67, 199, 255, 0.25)',
-      },
-      '&.cm-focused': {
-        outline: 'none',
-      },
-      '.cm-panels': {
-        borderColor: 'var(--border)',
-        backgroundColor: 'var(--surface-panel)',
-        color: 'var(--text)',
-      },
-      '.cm-panel input': {
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        padding: '4px 7px',
-        backgroundColor: 'var(--surface-input)',
-        color: 'var(--text)',
-      },
-      '.cm-panel button': {
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        padding: '4px 8px',
-        backgroundColor: 'var(--surface-control)',
-        color: 'var(--muted-strong)',
-      },
-      '.cm-panel button:hover': {
-        borderColor: 'var(--border-strong)',
-        backgroundColor: 'var(--surface-hover)',
-        color: 'var(--text)',
-      },
-    }, {
-      dark: codeMirrorTheme === 'dark',
-    }),
-  ], [codeMirrorLanguageExtensions, codeMirrorTheme, effectiveWrapEnabled]);
 
   const saveTabToPath = useCallback(async (tabId: string, filePath: string, options: SaveOptions = {}) => {
     const tabToSave = tabsRef.current.find((tab) => tab.id === tabId);
@@ -1328,13 +1126,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     closeTabNow(tabId);
   }, [closeTabNow]);
 
-  const updateCursorPosition = useCallback((view = codeMirrorRef.current?.view) => {
-    if (!view) return;
-
-    const position = view.state.selection.main.head;
-    const line = view.state.doc.lineAt(position);
-    setCursorLine(line.number);
-    setCursorCol(position - line.from + 1);
+  const updateCursorPosition = useCallback((position: { line: number; col: number }) => {
+    setCursorLine(position.line);
+    setCursorCol(position.col);
   }, []);
 
   const handleEditorChange = useCallback((nextContent: string) => {
@@ -1349,19 +1143,8 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   }, [activeTabId, updateTab]);
 
   const selectEditorRange = useCallback((start: number, end: number) => {
-    const view = codeMirrorRef.current?.view;
-    if (!view) return;
-
-    const docLength = view.state.doc.length;
-    const selectionStart = Math.max(0, Math.min(start, docLength));
-    const selectionEnd = Math.max(0, Math.min(end, docLength));
-    view.focus();
-    view.dispatch({
-      selection: EditorSelection.range(selectionStart, selectionEnd),
-      scrollIntoView: true,
-    });
-    updateCursorPosition(view);
-  }, [updateCursorPosition]);
+    editorRef.current?.selectRange(start, end);
+  }, []);
 
   const replaceActiveContent = useCallback((nextContent: string, nextSelectionStart: number, nextSelectionEnd: number) => {
     updateTab(activeTabId, (tab) => tab.readOnly ? tab : {
@@ -1377,20 +1160,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   }, [activeTabId, selectEditorRange, updateTab]);
 
   const getCurrentEditorSelection = useCallback((): EditorSelectionSnapshot => {
-    const view = codeMirrorRef.current?.view;
-
-    if (!view) {
-      return { start: 0, end: 0, text: '' };
-    }
-
-    const selection = view.state.selection.main;
-    const start = selection.from;
-    const end = selection.to;
-    return {
-      start,
-      end,
-      text: view.state.doc.sliceString(start, end),
-    };
+    return editorRef.current?.getSelection() ?? { start: 0, end: 0, text: '' };
   }, []);
 
   const buildAiContextMessage = useCallback((
@@ -1781,11 +1551,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   }, [activeTab.content, goToLineValue, lineCount, selectEditorRange]);
 
   const openFindBar = useCallback(() => {
-    const view = codeMirrorRef.current?.view;
-    if (!view) return;
-
-    view.focus();
-    openSearchPanel(view);
+    editorRef.current?.openSearch();
   }, []);
 
   const handleKeyDown = useCallback((event: ReactKeyboardEvent) => {
@@ -2048,35 +1814,19 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
           <div className="notepad-loading">{t('notepad.loading', language)}</div>
         ) : (
           <div className={`notepad-editor-wrap ${effectiveWrapEnabled ? 'wrapped' : ''}`}>
-            <CodeMirror
-              ref={codeMirrorRef}
-              className="notepad-codemirror"
-              value={activeTab.content}
-              height="100%"
-              basicSetup={{
-                lineNumbers: true,
-                foldGutter: true,
-                highlightActiveLine: true,
-                highlightActiveLineGutter: true,
-                bracketMatching: true,
-                closeBrackets: true,
-                autocompletion: true,
-                searchKeymap: true,
-                defaultKeymap: true,
-                history: true,
-              }}
-              theme={codeMirrorTheme}
-              extensions={codeMirrorExtensions}
-              editable={!activeTab.readOnly}
-              readOnly={activeTab.readOnly}
-              onChange={handleEditorChange}
-              onUpdate={(viewUpdate) => {
-                if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-                  updateCursorPosition(viewUpdate.view);
-                }
-              }}
-              aria-label={t('notepad.editor.aria', language, { title: activeTab.title })}
-            />
+            <Suspense fallback={<div className="notepad-loading">{t('notepad.loading', language)}</div>}>
+              <NotepadEditor
+                ref={editorRef}
+                content={activeTab.content}
+                language={normalizeLanguage(activeTab.language)}
+                readOnly={activeTab.readOnly}
+                theme={codeMirrorTheme}
+                wrapEnabled={effectiveWrapEnabled}
+                onChange={handleEditorChange}
+                onCursorChange={updateCursorPosition}
+                ariaLabel={t('notepad.editor.aria', language, { title: activeTab.title })}
+              />
+            </Suspense>
           </div>
         )}
 
@@ -2373,5 +2123,4 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   );
 }
 
-export { isTextFile };
 export default RemoteNotepad;

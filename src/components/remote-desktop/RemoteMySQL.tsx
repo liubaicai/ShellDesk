@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
@@ -10,6 +10,14 @@ import { tCurrent } from '../../i18n';
 interface RemoteMySQLProps {
   connectionId: string;
   hostId: string;
+}
+
+interface MysqlConnectionForm {
+  host: string;
+  port: string;
+  user: string;
+  password: string;
+  initialDatabase: string;
 }
 
 type MysqlStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -176,11 +184,30 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const [errorMessage, setErrorMessage] = useState('');
   const [message, setMessage] = useState<MysqlMessage | null>(null);
   const [mysqlId, setMysqlId] = useState('');
-  const [host, setHost] = useState('127.0.0.1');
-  const [port, setPort] = useState(String(defaultPort));
-  const [user, setUser] = useState('root');
-  const [password, setPassword] = useState('');
-  const [initialDatabase, setInitialDatabase] = useState('');
+  const [connectionForm, setConnectionForm] = useState<MysqlConnectionForm>({
+    host: '127.0.0.1',
+    port: String(defaultPort),
+    user: 'root',
+    password: '',
+    initialDatabase: '',
+  });
+  const { host, port, user, password, initialDatabase } = connectionForm;
+  const updateConnectionFormField = useCallback(<Key extends keyof MysqlConnectionForm,>(
+    key: Key,
+    value: SetStateAction<MysqlConnectionForm[Key]>,
+  ) => {
+    setConnectionForm((currentForm) => ({
+      ...currentForm,
+      [key]: typeof value === 'function'
+        ? (value as (currentValue: MysqlConnectionForm[Key]) => MysqlConnectionForm[Key])(currentForm[key])
+        : value,
+    }));
+  }, []);
+  const setHost = useCallback((value: SetStateAction<string>) => updateConnectionFormField('host', value), [updateConnectionFormField]);
+  const setPort = useCallback((value: SetStateAction<string>) => updateConnectionFormField('port', value), [updateConnectionFormField]);
+  const setUser = useCallback((value: SetStateAction<string>) => updateConnectionFormField('user', value), [updateConnectionFormField]);
+  const setPassword = useCallback((value: SetStateAction<string>) => updateConnectionFormField('password', value), [updateConnectionFormField]);
+  const setInitialDatabase = useCallback((value: SetStateAction<string>) => updateConnectionFormField('initialDatabase', value), [updateConnectionFormField]);
   const [databases, setDatabases] = useState<string[]>([]);
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set());
@@ -225,11 +252,13 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     void loadRemoteConnectionProfile(hostId, 'mysql').then((profile) => {
       if (disposed || !profile) return;
 
-      setHost(readProfileString(profile, 'host', '127.0.0.1'));
-      setPort(readProfileString(profile, 'port', String(defaultPort)));
-      setUser(readProfileString(profile, 'user', 'root'));
-      setPassword(readProfileString(profile, 'password', ''));
-      setInitialDatabase(readProfileString(profile, 'initialDatabase', ''));
+      setConnectionForm({
+        host: readProfileString(profile, 'host', '127.0.0.1'),
+        port: readProfileString(profile, 'port', String(defaultPort)),
+        user: readProfileString(profile, 'user', 'root'),
+        password: readProfileString(profile, 'password', ''),
+        initialDatabase: readProfileString(profile, 'initialDatabase', ''),
+      });
     });
 
     return () => {
@@ -393,18 +422,22 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         initialDatabase: initialDatabase.trim(),
       }).catch(() => undefined);
 
-      const dbs = await api.connections.mysqlDatabases(connectionId, result.mysqlId);
+      setSchemaLoading(true);
       const requestedDb = initialDatabase.trim();
+      const [dbs, requestedTables] = await Promise.all([
+        api.connections.mysqlDatabases(connectionId, result.mysqlId),
+        requestedDb
+          ? api.connections.mysqlTables(connectionId, result.mysqlId, requestedDb).catch(() => [])
+          : Promise.resolve(null),
+      ]);
       const nextActiveDb = requestedDb && dbs.includes(requestedDb) ? requestedDb : dbs[0] ?? '';
       const nextExpanded = nextActiveDb ? new Set([nextActiveDb]) : new Set<string>();
       const nextTables: Record<string, string[]> = {};
 
       if (nextActiveDb) {
-        try {
-          nextTables[nextActiveDb] = await api.connections.mysqlTables(connectionId, result.mysqlId, nextActiveDb);
-        } catch {
-          nextTables[nextActiveDb] = [];
-        }
+        nextTables[nextActiveDb] = requestedDb && nextActiveDb === requestedDb && requestedTables
+          ? requestedTables
+          : await api.connections.mysqlTables(connectionId, result.mysqlId, nextActiveDb).catch(() => []);
       }
 
       setDatabases(dbs);
@@ -418,6 +451,8 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     } catch (error) {
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
+    } finally {
+      setSchemaLoading(false);
     }
   }, [api, connectionId, host, hostId, initialDatabase, password, port, user]);
 

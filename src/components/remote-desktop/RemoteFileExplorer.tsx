@@ -16,7 +16,7 @@ import ContextMenuIcon from './ContextMenuIcon';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { isWindowsSystem, powershellCommand } from './remoteSystem';
-import { isTextFile } from './RemoteNotepad';
+import { isTextFile } from './textFileUtils';
 import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
 

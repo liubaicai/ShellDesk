@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, lazy, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, lazy, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
@@ -1216,6 +1216,163 @@ function parseTmuxLaunchCommand(command: string): TmuxLaunchRequest | null {
   return null;
 }
 
+interface DesktopWindowProps {
+  appLabel: string;
+  desktopWindow: DesktopWindowState;
+  isFocused: boolean;
+  isTerminalTitlebarMenuOpen: boolean;
+  language: ShellDeskAppSettings['language'];
+  livePointerFrame: DesktopWindowFrame | null;
+  renderSettings: ShellDeskAppSettings;
+  onBringToFront: (windowId: string) => void;
+  onClose: (windowId: string) => void;
+  onFinishInteraction: (event: ReactPointerEvent<HTMLElement>) => void;
+  onMinimize: (windowId: string) => void;
+  onOpenTerminalTitlebarMenu: (windowId: string, buttonRect: DOMRect) => void;
+  onResizePointerDown: (event: ReactPointerEvent<HTMLElement>, windowId: string) => void;
+  onTitlebarPointerDown: (event: ReactPointerEvent<HTMLElement>, windowId: string) => void;
+  onToggleMaximize: (windowId: string) => void;
+  onUpdateInteraction: (event: ReactPointerEvent<HTMLElement>) => void;
+  renderContent: (desktopWindow: DesktopWindowState) => ReactNode;
+}
+
+const DesktopWindow = memo(function DesktopWindow({
+  appLabel,
+  desktopWindow,
+  isFocused,
+  isTerminalTitlebarMenuOpen,
+  language,
+  livePointerFrame,
+  onBringToFront,
+  onClose,
+  onFinishInteraction,
+  onMinimize,
+  onOpenTerminalTitlebarMenu,
+  onResizePointerDown,
+  onTitlebarPointerDown,
+  onToggleMaximize,
+  onUpdateInteraction,
+  renderContent,
+}: DesktopWindowProps) {
+  const renderedFrame = livePointerFrame ?? desktopWindow.frame;
+  const desktopWindowStyle: CSSProperties = {
+    width: renderedFrame.width,
+    height: renderedFrame.height,
+    transform: `translate3d(${renderedFrame.x}px, ${renderedFrame.y}px, 0)`,
+    zIndex: 10 + desktopWindow.zIndex,
+  };
+
+  return (
+    <section
+      className={`desktop-window desktop-window-${desktopWindow.appKey} ${isFocused ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
+      aria-label={appLabel}
+      aria-hidden={desktopWindow.isMinimized}
+      style={desktopWindowStyle}
+      onPointerDownCapture={() => onBringToFront(desktopWindow.id)}
+    >
+      <header
+        className="desktop-window-titlebar"
+        onPointerDown={(event) => onTitlebarPointerDown(event, desktopWindow.id)}
+        onPointerMove={onUpdateInteraction}
+        onPointerUp={onFinishInteraction}
+        onPointerCancel={onFinishInteraction}
+      >
+        <div className="desktop-window-title">
+          <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
+            <DesktopAppIcon appKey={desktopWindow.appKey} />
+          </span>
+          {desktopWindow.appKey === 'browser' || desktopWindow.appKey === 'terminal' ? (
+            <>
+              <span className="desktop-window-kicker">{appLabel}</span>
+              {desktopWindow.chromeTitle ? (
+                <strong title={desktopWindow.chromeTitle}>
+                  {desktopWindow.chromeTitle}
+                </strong>
+              ) : null}
+              {desktopWindow.chromeStatus ? (
+                <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
+                  {desktopWindow.chromeStatus}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <strong>{appLabel}</strong>
+          )}
+        </div>
+        <div className="win-titlebar-controls" aria-label={t('desktop.window.controls', language)} onPointerDown={(event) => event.stopPropagation()}>
+          {desktopWindow.appKey === 'terminal' ? (
+            <button
+              type="button"
+              className={`win-btn terminal-tools ${isTerminalTitlebarMenuOpen ? 'active' : ''}`}
+              aria-label={t('terminal.titlebar.tools', language)}
+              aria-haspopup="menu"
+              aria-expanded={isTerminalTitlebarMenuOpen}
+              title={t('terminal.titlebar.tools', language)}
+              onClick={(event) => onOpenTerminalTitlebarMenu(desktopWindow.id, event.currentTarget.getBoundingClientRect())}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <circle cx="2" cy="6" r="1.2" fill="currentColor" />
+                <circle cx="6" cy="6" r="1.2" fill="currentColor" />
+                <circle cx="10" cy="6" r="1.2" fill="currentColor" />
+              </svg>
+            </button>
+          ) : null}
+          <button type="button" className="win-btn minimize" aria-label={t('desktop.window.minimize', language)} title={t('desktop.window.minimizeTitle', language)} onClick={() => onMinimize(desktopWindow.id)}>
+            <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
+          </button>
+          <button
+            type="button"
+            className="win-btn maximize"
+            aria-label={desktopWindow.isMaximized ? t('desktop.window.restoreWindow', language) : t('desktop.window.maximizeWindow', language)}
+            title={desktopWindow.isMaximized ? t('desktop.window.restoreTitle', language) : t('desktop.window.maximizeTitle', language)}
+            onClick={() => onToggleMaximize(desktopWindow.id)}
+          >
+            {desktopWindow.isMaximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                <rect x="0.5" y="2.5" width="7" height="7" rx="0.5" />
+                <path d="M2.5 2.5V0.5H9.5V7.5H7.5" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+                <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" />
+              </svg>
+            )}
+          </button>
+          <button type="button" className="win-btn close" aria-label={t('desktop.window.close', language)} title={t('desktop.window.closeTitle', language)} onClick={() => onClose(desktopWindow.id)}>
+            <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
+              <line x1="1" y1="1" x2="9" y2="9" />
+              <line x1="9" y1="1" x2="1" y2="9" />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <div className="desktop-window-body">
+        <Suspense fallback={<div className="desktop-window-loading">{t('desktop.window.loading', language)}</div>}>
+          {renderContent(desktopWindow)}
+        </Suspense>
+      </div>
+      {!desktopWindow.isMaximized ? (
+        <div
+          className="desktop-window-resize-handle"
+          onPointerDown={(event) => onResizePointerDown(event, desktopWindow.id)}
+          onPointerMove={onUpdateInteraction}
+          onPointerUp={onFinishInteraction}
+          onPointerCancel={onFinishInteraction}
+          aria-hidden="true"
+        />
+      ) : null}
+    </section>
+  );
+}, (previousProps, nextProps) => (
+  previousProps.desktopWindow === nextProps.desktopWindow &&
+  previousProps.isFocused === nextProps.isFocused &&
+  previousProps.isTerminalTitlebarMenuOpen === nextProps.isTerminalTitlebarMenuOpen &&
+  previousProps.language === nextProps.language &&
+  previousProps.livePointerFrame === nextProps.livePointerFrame &&
+  previousProps.renderSettings === nextProps.renderSettings &&
+  previousProps.appLabel === nextProps.appLabel
+));
+
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
@@ -1229,6 +1386,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const launchpadCloseTimerRef = useRef<number | null>(null);
   const folderCloseTimerRef = useRef<number | null>(null);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
+  const desktopWindowsRef = useRef(desktopWindows);
   const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
   const desktopLayoutRef = useRef(desktopLayout);
   const [focusedWindowId, setFocusedWindowId] = useState('');
@@ -1257,6 +1415,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const launchpadApps = [...desktopApps].sort((firstApp, secondApp) => (
     getAppLabel(firstApp, settings.language).localeCompare(getAppLabel(secondApp, settings.language), appLocale)
   ));
+
+  useEffect(() => {
+    desktopWindowsRef.current = desktopWindows;
+  }, [desktopWindows]);
 
   useEffect(() => {
     const logContext = {
@@ -1601,7 +1763,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     setRenameFolderDialog(null);
   };
 
-  const bringWindowToFront = (windowId: string) => {
+  const bringWindowToFront = useCallback((windowId: string) => {
     setFocusedWindowId(windowId);
     setDesktopWindows((currentWindows) => {
       const targetWindow = currentWindows.find((desktopWindow) => desktopWindow.id === windowId);
@@ -1623,7 +1785,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         desktopWindow.id === windowId ? { ...desktopWindow, isMinimized: false, zIndex: nextZIndex } : desktopWindow
       ));
     });
-  };
+  }, []);
 
   const appendDesktopWindow = (
     appKey: DesktopAppKey,
@@ -1655,7 +1817,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
-  const refreshTmuxSessions = async () => {
+  const refreshTmuxSessions = useCallback(async () => {
     const requestId = tmuxRefreshRequestRef.current + 1;
     tmuxRefreshRequestRef.current = requestId;
     setTmuxMenuState((currentState) => ({ ...currentState, status: 'loading', error: undefined }));
@@ -1720,7 +1882,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  };
+  }, [connection.host.systemType, connection.id, settings.language]);
 
   const rememberTmuxSession = (sessionName: string) => {
     setTmuxMenuState((currentState) => {
@@ -1883,7 +2045,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
-  const removeDesktopWindow = (windowId: string) => {
+  const removeDesktopWindow = useCallback((windowId: string) => {
     setDesktopWindows((currentWindows) => {
       const nextWindows = currentWindows.filter((desktopWindow) => desktopWindow.id !== windowId);
       const nextFocusedWindow = getTopDesktopWindow(nextWindows, (desktopWindow) => !desktopWindow.isMinimized);
@@ -1891,10 +2053,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       setFocusedWindowId(nextFocusedWindow?.id ?? '');
       return nextWindows;
     });
-  };
+  }, []);
 
-  const closeDesktopWindow = (windowId: string) => {
-    const desktopWindow = desktopWindows.find((currentWindow) => currentWindow.id === windowId);
+  const closeDesktopWindow = useCallback((windowId: string) => {
+    const desktopWindow = desktopWindowsRef.current.find((currentWindow) => currentWindow.id === windowId);
 
     if (
       desktopWindow?.appKey === 'terminal' &&
@@ -1906,9 +2068,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     removeDesktopWindow(windowId);
-  };
+  }, [removeDesktopWindow]);
 
-  const minimizeDesktopWindow = (windowId: string) => {
+  const minimizeDesktopWindow = useCallback((windowId: string) => {
     windowPointerStateRef.current = null;
     setDesktopWindows((currentWindows) => {
       const nextWindows = currentWindows.map((desktopWindow) => (
@@ -1919,7 +2081,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       setFocusedWindowId(nextFocusedWindow?.id ?? '');
       return nextWindows;
     });
-  };
+  }, []);
 
   const activateDockApp = (appKey: DesktopAppKey) => {
     const appWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === appKey);
@@ -1935,7 +2097,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     openDesktopWindow(appKey);
   };
 
-  const toggleWindowMaximize = (windowId: string) => {
+  const toggleWindowMaximize = useCallback((windowId: string) => {
     const surface = desktopSurfaceRef.current;
 
     if (!surface) {
@@ -1969,9 +2131,47 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         zIndex: nextZIndex,
       };
     }));
-  };
+  }, []);
 
-  const handleWindowTitlebarPointerDown = (event: ReactPointerEvent<HTMLElement>, windowId: string) => {
+  const startWindowInteraction = useCallback((event: ReactPointerEvent<HTMLElement>, windowId: string, mode: DesktopWindowInteractionMode) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const surface = desktopSurfaceRef.current;
+    const desktopWindow = desktopWindowsRef.current.find((currentWindow) => currentWindow.id === windowId);
+
+    if (!surface || !desktopWindow || desktopWindow.isMaximized || desktopWindow.isMinimized) {
+      return;
+    }
+
+    const surfaceRect = surface.getBoundingClientRect();
+    const startFrame = clampWindowFrame(desktopWindow.frame, surfaceRect.width, surfaceRect.height);
+    const windowElement = event.currentTarget.closest('.desktop-window') as HTMLElement | null;
+
+    if (!windowElement) {
+      return;
+    }
+
+    windowPointerStateRef.current = {
+      pointerId: event.pointerId,
+      windowId,
+      mode,
+      element: windowElement,
+      originX: event.clientX,
+      originY: event.clientY,
+      startFrame,
+      latestFrame: startFrame,
+      surfaceWidth: surfaceRect.width,
+      surfaceHeight: surfaceRect.height,
+    };
+
+    windowElement.classList.add('interacting', mode === 'move' ? 'moving' : 'resizing');
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }, []);
+
+  const handleWindowTitlebarPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, windowId: string) => {
     if (event.button !== 0) {
       return;
     }
@@ -2006,47 +2206,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     };
 
     startWindowInteraction(event, windowId, 'move');
-  };
+  }, [startWindowInteraction, toggleWindowMaximize]);
 
-  const startWindowInteraction = (event: ReactPointerEvent<HTMLElement>, windowId: string, mode: DesktopWindowInteractionMode) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const surface = desktopSurfaceRef.current;
-    const desktopWindow = desktopWindows.find((currentWindow) => currentWindow.id === windowId);
-
-    if (!surface || !desktopWindow || desktopWindow.isMaximized || desktopWindow.isMinimized) {
-      return;
-    }
-
-    const surfaceRect = surface.getBoundingClientRect();
-    const startFrame = clampWindowFrame(desktopWindow.frame, surfaceRect.width, surfaceRect.height);
-    const windowElement = event.currentTarget.closest('.desktop-window') as HTMLElement | null;
-
-    if (!windowElement) {
-      return;
-    }
-
-    windowPointerStateRef.current = {
-      pointerId: event.pointerId,
-      windowId,
-      mode,
-      element: windowElement,
-      originX: event.clientX,
-      originY: event.clientY,
-      startFrame,
-      latestFrame: startFrame,
-      surfaceWidth: surfaceRect.width,
-      surfaceHeight: surfaceRect.height,
-    };
-
-    windowElement.classList.add('interacting', mode === 'move' ? 'moving' : 'resizing');
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  };
-
-  const updateWindowInteraction = (event: ReactPointerEvent<HTMLElement>) => {
+  const updateWindowInteraction = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const pointerState = windowPointerStateRef.current;
 
     if (!pointerState || pointerState.pointerId !== event.pointerId) {
@@ -2076,9 +2238,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     pointerState.latestFrame = clampedFrame;
     applyWindowFrameToElement(pointerState.element, clampedFrame);
     event.preventDefault();
-  };
+  }, []);
 
-  const finishWindowInteraction = (event: ReactPointerEvent<HTMLElement>) => {
+  const finishWindowInteraction = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const pointerState = windowPointerStateRef.current;
 
     if (!pointerState || pointerState.pointerId !== event.pointerId) {
@@ -2106,7 +2268,31 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
       return didChangeFrame ? nextWindows : currentWindows;
     });
-  };
+  }, []);
+
+  const handleWindowResizePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, windowId: string) => {
+    startWindowInteraction(event, windowId, 'resize');
+  }, [startWindowInteraction]);
+
+  const openTerminalTitlebarMenu = useCallback((windowId: string, buttonRect: DOMRect) => {
+    if (terminalTitlebarMenu?.windowId === windowId) {
+      setTerminalTitlebarMenu(null);
+      return;
+    }
+
+    const menuWidth = 210;
+    const menuEdgePadding = 8;
+    setTerminalTitlebarMenu({
+      windowId,
+      x: Math.max(menuEdgePadding, Math.min(buttonRect.right - menuWidth, window.innerWidth - menuWidth - menuEdgePadding)),
+      y: buttonRect.bottom + 5,
+    });
+
+    const desktopWindow = desktopWindowsRef.current.find((currentWindow) => currentWindow.id === windowId);
+    if (desktopWindow?.terminalLaunchOptions?.mode !== 'tmux') {
+      void refreshTmuxSessions();
+    }
+  }, [refreshTmuxSessions, terminalTitlebarMenu]);
 
   const updateWindowChrome = (
     windowId: string,
@@ -2462,150 +2648,31 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
-          const appLabel = getAppLabel(appInfo, settings.language);
           const livePointerFrame = windowPointerStateRef.current?.windowId === desktopWindow.id
             ? windowPointerStateRef.current.latestFrame
             : null;
-          const renderedFrame = livePointerFrame ?? desktopWindow.frame;
-          const desktopWindowStyle: CSSProperties = {
-            width: renderedFrame.width,
-            height: renderedFrame.height,
-            transform: `translate3d(${renderedFrame.x}px, ${renderedFrame.y}px, 0)`,
-            zIndex: 10 + desktopWindow.zIndex,
-          };
 
           return (
-            <section
+            <DesktopWindow
               key={desktopWindow.id}
-              className={`desktop-window desktop-window-${desktopWindow.appKey} ${desktopWindow.id === focusedWindowId ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
-              aria-label={appLabel}
-              aria-hidden={desktopWindow.isMinimized}
-              style={desktopWindowStyle}
-              onPointerDownCapture={() => bringWindowToFront(desktopWindow.id)}
-            >
-              <header
-                className="desktop-window-titlebar"
-                onPointerDown={(event) => handleWindowTitlebarPointerDown(event, desktopWindow.id)}
-                onPointerMove={updateWindowInteraction}
-                onPointerUp={finishWindowInteraction}
-                onPointerCancel={finishWindowInteraction}
-              >
-                <div className="desktop-window-title">
-                  <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
-                    <DesktopAppIcon appKey={desktopWindow.appKey} />
-                  </span>
-                  {desktopWindow.appKey === 'browser' ? (
-                    <>
-                      <span className="desktop-window-kicker">{appLabel}</span>
-                      {desktopWindow.chromeTitle ? (
-                        <strong title={desktopWindow.chromeTitle}>
-                          {desktopWindow.chromeTitle}
-                        </strong>
-                      ) : null}
-                      {desktopWindow.chromeStatus ? (
-                        <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
-                          {desktopWindow.chromeStatus}
-                        </span>
-                      ) : null}
-                    </>
-                  ) : desktopWindow.appKey === 'terminal' ? (
-                    <>
-                      <span className="desktop-window-kicker">{appLabel}</span>
-                      {desktopWindow.chromeTitle ? (
-                        <strong title={desktopWindow.chromeTitle}>
-                          {desktopWindow.chromeTitle}
-                        </strong>
-                      ) : null}
-                      {desktopWindow.chromeStatus ? (
-                        <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
-                          {desktopWindow.chromeStatus}
-                        </span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <strong>{appLabel}</strong>
-                  )}
-                </div>
-                <div className="win-titlebar-controls" aria-label={t('desktop.window.controls', settings.language)} onPointerDown={(event) => event.stopPropagation()}>
-                  {desktopWindow.appKey === 'terminal' ? (
-                    <button
-                      type="button"
-                      className={`win-btn terminal-tools ${terminalTitlebarMenu?.windowId === desktopWindow.id ? 'active' : ''}`}
-                      aria-label={t('terminal.titlebar.tools', settings.language)}
-                      aria-haspopup="menu"
-                      aria-expanded={terminalTitlebarMenu?.windowId === desktopWindow.id}
-                      title={t('terminal.titlebar.tools', settings.language)}
-                      onClick={(event) => {
-                        if (terminalTitlebarMenu?.windowId === desktopWindow.id) {
-                          setTerminalTitlebarMenu(null);
-                          return;
-                        }
-
-                        const buttonRect = event.currentTarget.getBoundingClientRect();
-                        const menuWidth = 210;
-                        const menuEdgePadding = 8;
-                        setTerminalTitlebarMenu({
-                          windowId: desktopWindow.id,
-                          x: Math.max(menuEdgePadding, Math.min(buttonRect.right - menuWidth, window.innerWidth - menuWidth - menuEdgePadding)),
-                          y: buttonRect.bottom + 5,
-                        });
-                        if (desktopWindow.terminalLaunchOptions?.mode !== 'tmux') {
-                          void refreshTmuxSessions();
-                        }
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                        <circle cx="2" cy="6" r="1.2" fill="currentColor" />
-                        <circle cx="6" cy="6" r="1.2" fill="currentColor" />
-                        <circle cx="10" cy="6" r="1.2" fill="currentColor" />
-                      </svg>
-                    </button>
-                  ) : null}
-                  <button type="button" className="win-btn minimize" aria-label={t('desktop.window.minimize', settings.language)} title={t('desktop.window.minimizeTitle', settings.language)} onClick={() => minimizeDesktopWindow(desktopWindow.id)}>
-                    <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="win-btn maximize"
-                    aria-label={desktopWindow.isMaximized ? t('desktop.window.restoreWindow', settings.language) : t('desktop.window.maximizeWindow', settings.language)}
-                    title={desktopWindow.isMaximized ? t('desktop.window.restoreTitle', settings.language) : t('desktop.window.maximizeTitle', settings.language)}
-                    onClick={() => toggleWindowMaximize(desktopWindow.id)}
-                  >
-                    {desktopWindow.isMaximized ? (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
-                        <rect x="0.5" y="2.5" width="7" height="7" rx="0.5" />
-                        <path d="M2.5 2.5V0.5H9.5V7.5H7.5" />
-                      </svg>
-                    ) : (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
-                        <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" />
-                      </svg>
-                    )}
-                  </button>
-                  <button type="button" className="win-btn close" aria-label={t('desktop.window.close', settings.language)} title={t('desktop.window.closeTitle', settings.language)} onClick={() => closeDesktopWindow(desktopWindow.id)}>
-                    <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
-                      <line x1="1" y1="1" x2="9" y2="9" />
-                      <line x1="9" y1="1" x2="1" y2="9" />
-                    </svg>
-                  </button>
-                </div>
-              </header>
-              <div className="desktop-window-body">
-                <Suspense fallback={<div className="desktop-window-loading">{t('desktop.window.loading', settings.language)}</div>}>
-                  {renderWindowContent(desktopWindow)}
-                </Suspense>
-              </div>
-              {!desktopWindow.isMaximized ? (
-                <div
-                  className="desktop-window-resize-handle"
-                  onPointerDown={(event) => startWindowInteraction(event, desktopWindow.id, 'resize')}
-                  onPointerMove={updateWindowInteraction}
-                  onPointerUp={finishWindowInteraction}
-                  onPointerCancel={finishWindowInteraction}
-                  aria-hidden="true"
-                />
-              ) : null}
-            </section>
+              appLabel={getAppLabel(appInfo, settings.language)}
+              desktopWindow={desktopWindow}
+              isFocused={desktopWindow.id === focusedWindowId}
+              isTerminalTitlebarMenuOpen={terminalTitlebarMenu?.windowId === desktopWindow.id}
+              language={settings.language}
+              livePointerFrame={livePointerFrame}
+              renderSettings={settings}
+              onBringToFront={bringWindowToFront}
+              onClose={closeDesktopWindow}
+              onFinishInteraction={finishWindowInteraction}
+              onMinimize={minimizeDesktopWindow}
+              onOpenTerminalTitlebarMenu={openTerminalTitlebarMenu}
+              onResizePointerDown={handleWindowResizePointerDown}
+              onTitlebarPointerDown={handleWindowTitlebarPointerDown}
+              onToggleMaximize={toggleWindowMaximize}
+              onUpdateInteraction={updateWindowInteraction}
+              renderContent={renderWindowContent}
+            />
           );
         })}
 
