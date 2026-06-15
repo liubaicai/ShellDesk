@@ -1205,7 +1205,7 @@ function formatBytes(value) {
 function getLocalDiskInfo() {
   try {
     if (typeof fs.statfsSync !== 'function') {
-      return process.cwd();
+      return '未检测到';
     }
 
     const stats = fs.statfsSync(process.cwd());
@@ -1213,12 +1213,12 @@ function getLocalDiskInfo() {
     const free = Number(stats.bfree) * Number(stats.bsize);
 
     if (!Number.isFinite(total) || total <= 0) {
-      return process.cwd();
+      return '未检测到';
     }
 
     return `${process.cwd()} - Total: ${formatBytes(total)}, Free: ${formatBytes(free)}`;
   } catch {
-    return process.cwd();
+    return '未检测到';
   }
 }
 

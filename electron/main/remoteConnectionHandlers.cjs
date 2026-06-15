@@ -2096,7 +2096,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
     const code = error?.code;
 
     return (code === 4 || code === 'FAILURE') &&
-      /failure|failed|unable to open|open failed/i.test(message);
+      /permission denied|access denied|operation not permitted|not permitted|eacces|eperm/i.test(message);
   }
 
   function canAttemptPrivilegedUploadFallback(activeConnection, options, error) {
@@ -3872,6 +3872,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
   function createRemoteTempUploadPath(file) {
     const fileName = getRemoteFileName(file.remotePath, 'upload')
       .replace(/[\\/]/g, '_')
+      .replace(/[\x00-\x1f\x7f]/g, '_')
       .replace(/^\.+/u, '')
       .slice(0, 120) || 'upload';
     const token = crypto.randomUUID().replace(/-/g, '');

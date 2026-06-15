@@ -2307,22 +2307,12 @@ function App() {
 
   const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
   const selectedHost = useMemo(() => {
-    if (selectedHostId) {
-      const visibleHost = filteredHosts.find((host) => host.id === selectedHostId);
-
-      if (visibleHost) {
-        return visibleHost;
-      }
-
-      const storedHost = hosts.find((host) => host.id === selectedHostId);
-
-      if (storedHost && !searchQuery.trim()) {
-        return storedHost;
-      }
+    if (!selectedHostId) {
+      return null;
     }
 
-    return null;
-  }, [filteredHosts, hosts, searchQuery, selectedHostId]);
+    return filteredHosts.find((host) => host.id === selectedHostId) ?? null;
+  }, [filteredHosts, selectedHostId]);
   const hostInfoDialogHost = hostInfoDialogHostId
     ? hosts.find((host) => host.id === hostInfoDialogHostId) ?? null
     : null;
@@ -2872,6 +2862,12 @@ function App() {
   useEffect(() => {
     setHostPage(1);
   }, [activeGroupKey, hostListSortMode, hostViewMode, searchQuery]);
+
+  useEffect(() => {
+    if (selectedHostId && !filteredHosts.some((host) => host.id === selectedHostId)) {
+      setSelectedHostId(null);
+    }
+  }, [filteredHosts, selectedHostId]);
 
   useEffect(() => {
     if (hostPage > hostPageCount) {
