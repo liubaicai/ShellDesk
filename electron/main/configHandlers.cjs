@@ -460,7 +460,7 @@ function registerConfigHandlers(registerIpcHandler) {
       return '';
     }
 
-    fs.writeFileSync(result.filePath, content, {
+    await fs.promises.writeFile(result.filePath, content, {
       encoding: 'utf8',
       mode: 0o600,
     });
