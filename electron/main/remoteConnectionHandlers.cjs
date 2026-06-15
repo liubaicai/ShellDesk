@@ -3837,7 +3837,13 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
   function unlinkSftpPath(sftp, remotePath) {
     return new Promise((resolve) => {
-      sftp.unlink(remotePath, () => resolve(false));
+      sftp.unlink(remotePath, (error) => {
+        if (error) {
+          console.warn(`[shelldesk] Failed to clean up temp file ${remotePath}: ${error.message ?? error}`);
+        }
+
+        resolve(false);
+      });
     });
   }
 
