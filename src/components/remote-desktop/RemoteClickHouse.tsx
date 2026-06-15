@@ -4,6 +4,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { tCurrent } from '../../i18n';
 
 interface RemoteClickHouseProps {
   connectionId: string;
@@ -70,7 +71,7 @@ function createId(prefix: string): string {
 function createQueryTab(index: number, sql = 'SELECT version() AS version;'): ClickHouseQueryTab {
   return {
     id: createId('query'),
-    title: `查询 ${index}`,
+    title: tCurrent('clickhouse.query.tabTitle', { index }),
     sql,
     running: false,
   };
@@ -87,7 +88,7 @@ function quoteClickHouseIdentifier(identifier: string): string {
 
 function formatSqlPreview(sql: string, length = 56): string {
   const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return '空 SQL';
+  if (!compact) return tCurrent('clickhouse.query.emptySql');
   return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
 }
 
@@ -159,14 +160,14 @@ function isWriteStatement(sql: string): boolean {
 }
 
 function describeResult(result: ShellDeskClickHouseQueryResult): string {
-  if (result.columns.length === 0) return '已执行';
-  return `${formatCount(result.rowCount ?? result.rows.length)} 行`;
+  if (result.columns.length === 0) return tCurrent('clickhouse.query.executed');
+  return tCurrent('clickhouse.query.rows', { count: formatCount(result.rowCount ?? result.rows.length) });
 }
 
 function describeStatistics(statistics?: ShellDeskClickHouseQueryStatistics): string {
   if (!statistics) return '';
   const parts = [
-    statistics.rowsRead ? `读取 ${formatCount(statistics.rowsRead)} 行` : '',
+    statistics.rowsRead ? tCurrent('clickhouse.query.rowsRead', { count: formatCount(statistics.rowsRead) }) : '',
     statistics.bytesRead ? formatBytes(statistics.bytesRead) : '',
   ].filter(Boolean);
 
@@ -358,7 +359,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       setDatabases(dbs);
       setExpandedDbs(new Set(expanded));
       setDbTables(nextTables);
-      setMessage({ type: 'success', text: 'ClickHouse 元数据已刷新。' });
+      setMessage({ type: 'success', text: tCurrent('clickhouse.notice.metadataRefreshed') });
 
       if (activeDb && !dbs.includes(activeDb)) {
         setActiveDb(dbs[0] ?? '');
@@ -433,7 +434,14 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       setDbTables(nextTables);
       setMessage({
         type: 'success',
-        text: `已通过 ${result.transport === 'ssh-exec' ? '远程 TCP 代理' : 'SSH 隧道'} 连接 ${user || 'default'}@${host || '127.0.0.1'}:${displayPort}。`,
+        text: tCurrent('clickhouse.connection.success', {
+          transport: result.transport === 'ssh-exec'
+            ? tCurrent('clickhouse.connection.transportProxy')
+            : tCurrent('clickhouse.connection.transportTunnel'),
+          user: user || 'default',
+          host: host || '127.0.0.1',
+          port: displayPort,
+        }),
       });
     } catch (error) {
       setStatus('error');
@@ -610,8 +618,10 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
       addResultTab({
         id: createId('result'),
-        title: isWriteStatement(sqlText) ? '写入语句' : formatSqlPreview(sqlText, 28),
-        subtitle: database ? `数据库：${database}` : '未指定数据库',
+        title: isWriteStatement(sqlText) ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28),
+        subtitle: database
+          ? tCurrent('clickhouse.query.databaseSubtitle', { database })
+          : tCurrent('clickhouse.query.noDatabase'),
         sql: sqlText,
         database,
         status: 'success',
@@ -629,7 +639,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       });
 
       if (result.columns.length === 0) {
-        setMessage({ type: 'success', text: 'ClickHouse 语句已执行。' });
+        setMessage({ type: 'success', text: tCurrent('clickhouse.notice.statementExecuted') });
       }
     } catch (error) {
       const queryTime = Math.round(performance.now() - startTime);
@@ -637,8 +647,10 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
       addResultTab({
         id: createId('result'),
-        title: '查询失败',
-        subtitle: database ? `数据库：${database}` : '未指定数据库',
+        title: tCurrent('clickhouse.query.failed'),
+        subtitle: database
+          ? tCurrent('clickhouse.query.databaseSubtitle', { database })
+          : tCurrent('clickhouse.query.noDatabase'),
         sql: sqlText,
         database,
         status: 'error',
@@ -680,7 +692,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       });
 
       if (filePath) {
-        setMessage({ type: 'success', text: `查询结果已导出：${filePath}` });
+        setMessage({ type: 'success', text: tCurrent('clickhouse.notice.exported', { path: filePath }) });
       }
     } catch (error) {
       setMessage({ type: 'error', text: getErrorMessage(error) });
@@ -731,8 +743,8 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             <div className="mysql-connect-heading">
               <span className="mysql-connect-mark">CH</span>
               <div>
-                <h3>连接 ClickHouse</h3>
-                <p className="mysql-connect-hint">通过当前 SSH 会话转发到远程 ClickHouse HTTP 接口</p>
+                <h3>{tCurrent('clickhouse.connection.title')}</h3>
+                <p className="mysql-connect-hint">{tCurrent('clickhouse.connection.hint')}</p>
               </div>
             </div>
             {errorMessage ? (
@@ -742,7 +754,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             ) : null}
             <div className="mysql-connect-grid">
               <label className="mysql-field">
-                <span>主机</span>
+                <span>{tCurrent('clickhouse.connection.host')}</span>
                 <input
                   type="text"
                   value={host}
@@ -752,7 +764,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                 />
               </label>
               <label className="mysql-field">
-                <span>HTTP 端口</span>
+                <span>{tCurrent('clickhouse.connection.httpPort')}</span>
                 <input
                   type="text"
                   value={port}
@@ -764,7 +776,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             </div>
             <div className="mysql-connect-grid">
               <label className="mysql-field">
-                <span>用户名</span>
+                <span>{tCurrent('clickhouse.connection.user')}</span>
                 <input
                   type="text"
                   value={user}
@@ -774,7 +786,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                 />
               </label>
               <label className="mysql-field">
-                <span>默认数据库</span>
+                <span>{tCurrent('clickhouse.connection.defaultDatabase')}</span>
                 <input
                   type="text"
                   value={initialDatabase}
@@ -785,12 +797,12 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
               </label>
             </div>
             <label className="mysql-field">
-              <span>密码</span>
+              <span>{tCurrent('clickhouse.connection.password')}</span>
               <input
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="可留空"
+                placeholder={tCurrent('clickhouse.connection.optional')}
                 disabled={status === 'connecting'}
               />
             </label>
@@ -804,13 +816,13 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
               <span>HTTPS / TLS</span>
             </label>
             <div className="mysql-tunnel-note">
-              <span>远程目标</span>
+              <span>{tCurrent('clickhouse.connection.remoteTarget')}</span>
               <strong>{secure ? 'https' : 'http'}://{host || '127.0.0.1'}:{displayPort}</strong>
-              <em>通过当前 SSH 连接访问，不暴露到本机网络外</em>
+              <em>{tCurrent('clickhouse.connection.remoteTargetHint')}</em>
             </div>
             {isNativeTcpPort ? (
               <div className="clickhouse-port-warning" role="status">
-                9000 是 ClickHouse 原生 TCP 端口；本组件使用 HTTP 接口，请改用 8123，或开启 HTTPS / TLS 后使用 8443。
+                {tCurrent('clickhouse.connection.nativePortWarning')}
               </div>
             ) : null}
             <button
@@ -818,7 +830,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
               className="mysql-connect-btn"
               disabled={status === 'connecting'}
             >
-              {status === 'connecting' ? '连接中...' : '连接数据库'}
+              {status === 'connecting' ? tCurrent('clickhouse.connection.connecting') : tCurrent('clickhouse.connection.connect')}
             </button>
           </form>
         </div>
@@ -832,10 +844,10 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         <aside className="mysql-sidebar">
           <div className="mysql-sidebar-header">
             <div>
-              <strong>对象浏览</strong>
-              <span>{databases.length} 个数据库</span>
+              <strong>{tCurrent('clickhouse.ui.objectBrowser')}</strong>
+              <span>{tCurrent('clickhouse.ui.databaseCount', { count: databases.length })}</span>
             </div>
-            <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title="刷新数据库列表">
+            <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title={tCurrent('clickhouse.ui.refreshDatabasesTitle')}>
               {schemaLoading ? '...' : '↻'}
             </button>
           </div>
@@ -844,11 +856,11 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
               type="search"
               value={objectSearch}
               onChange={(event) => setObjectSearch(event.target.value)}
-              placeholder="搜索数据库、表或引擎"
+              placeholder={tCurrent('clickhouse.ui.searchPlaceholder')}
               spellCheck={false}
             />
             {objectSearch ? (
-              <button type="button" onClick={() => setObjectSearch('')} title="清空搜索">×</button>
+              <button type="button" onClick={() => setObjectSearch('')} title={tCurrent('clickhouse.ui.clearSearchTitle')}>×</button>
             ) : null}
           </div>
           <div className="mysql-tree">
@@ -872,7 +884,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                       role="button"
                       tabIndex={0}
                       className="mysql-tree-refresh"
-                      title="刷新此数据库"
+                      title={tCurrent('clickhouse.ui.refreshDatabaseTitle')}
                       onClick={(event) => handleRefreshDatabase(database, event)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -886,7 +898,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   </button>
                   {expanded ? (
                     <div className="mysql-tree-tables">
-                      {loading ? <div className="mysql-tree-loading">加载表...</div> : null}
+                      {loading ? <div className="mysql-tree-loading">{tCurrent('clickhouse.ui.loadingTables')}</div> : null}
                       {!loading && visibleTables.map((table) => {
                         const tableMeta = [table.engine, formatCount(table.totalRows)].filter((value) => value && value !== '-').join(' · ');
                         return (
@@ -919,23 +931,23 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                         );
                       })}
                       {!loading && dbTables[database] !== undefined && visibleTables.length === 0 ? (
-                        <div className="mysql-tree-empty">没有匹配的表</div>
+                        <div className="mysql-tree-empty">{tCurrent('clickhouse.ui.noMatchedTables')}</div>
                       ) : null}
                     </div>
                   ) : null}
                 </div>
               );
             })}
-            {filteredDatabases.length === 0 ? <div className="mysql-tree-empty">没有匹配的对象</div> : null}
+            {filteredDatabases.length === 0 ? <div className="mysql-tree-empty">{tCurrent('clickhouse.ui.noMatchedObjects')}</div> : null}
           </div>
           <div className="mysql-history">
             <div className="mysql-history-title">
-              <strong>执行历史</strong>
+              <strong>{tCurrent('clickhouse.ui.history')}</strong>
               <span>{history.length}</span>
             </div>
             <div className="mysql-history-list">
               {history.length === 0 ? (
-                <div className="mysql-history-empty">暂无历史</div>
+                <div className="mysql-history-empty">{tCurrent('clickhouse.ui.noHistory')}</div>
               ) : history.map((item) => (
                 <button
                   key={item.id}
@@ -947,7 +959,9 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   <span className="mysql-history-sql">{formatSqlPreview(item.sql, 34)}</span>
                   <span className="mysql-history-meta">
                     {formatTimestamp(item.createdAt)}
-                    {item.status === 'success' ? ` · ${formatCount(item.rowCount ?? 0)} 行` : ' · 失败'}
+                    {item.status === 'success'
+                      ? tCurrent('clickhouse.query.historyRows', { count: formatCount(item.rowCount ?? 0) })
+                      : tCurrent('clickhouse.query.historyFailed')}
                   </span>
                 </button>
               ))}
@@ -960,18 +974,18 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             <div className="mysql-connection-summary">
               <span className="mysql-status-dot" />
               <strong>{user || 'default'}@{host || '127.0.0.1'}:{displayPort}</strong>
-              <span>连接 {connectionId.slice(0, 8)}</span>
+              <span>{tCurrent('clickhouse.connection.id', { id: connectionId.slice(0, 8) })}</span>
             </div>
             <div className="mysql-topbar-actions">
-              <span className="mysql-active-db">当前数据库：{activeDb || '未选择'}</span>
-              <button type="button" className="mysql-disconnect-btn" onClick={() => void handleDisconnect()} title="断开 ClickHouse">
-                断开
+              <span className="mysql-active-db">{tCurrent('clickhouse.query.currentDatabase', { database: activeDb || tCurrent('clickhouse.query.noDatabaseSelected') })}</span>
+              <button type="button" className="mysql-disconnect-btn" onClick={() => void handleDisconnect()} title={tCurrent('clickhouse.connection.disconnectTitle')}>
+                {tCurrent('clickhouse.connection.disconnect')}
               </button>
             </div>
           </div>
 
           <section className="mysql-editor-area">
-            <div className="mysql-query-tabs" role="tablist" aria-label="ClickHouse 查询标签">
+            <div className="mysql-query-tabs" role="tablist" aria-label={tCurrent('clickhouse.query.tabsAria')}>
               {queryTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -982,7 +996,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   onClick={() => setActiveQueryId(tab.id)}
                 >
                   <span>{tab.title}</span>
-                  {tab.running ? <em>运行中</em> : null}
+                  {tab.running ? <em>{tCurrent('clickhouse.query.running')}</em> : null}
                   {queryTabs.length > 1 ? (
                     <span
                       role="button"
@@ -1001,7 +1015,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   ) : null}
                 </button>
               ))}
-              <button type="button" className="mysql-add-tab-btn" onClick={() => handleAddQueryTab()} title="新建查询">+</button>
+              <button type="button" className="mysql-add-tab-btn" onClick={() => handleAddQueryTab()} title={tCurrent('clickhouse.query.addTitle')}>+</button>
             </div>
             <div className="mysql-editor-toolbar">
               <button
@@ -1010,16 +1024,16 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                 onClick={() => void handleExecuteSql()}
                 disabled={!canRunActiveQuery}
               >
-                {activeQueryTab?.running ? '执行中...' : '运行'}
+                {activeQueryTab?.running ? tCurrent('clickhouse.query.runningButton') : tCurrent('clickhouse.query.run')}
               </button>
               <span className="mysql-editor-hint">Ctrl/⌘ + Enter</span>
               <select
                 className="mysql-db-select"
                 value={activeDb}
                 onChange={(event) => setActiveDb(event.target.value)}
-                title="选择查询默认数据库"
+                title={tCurrent('clickhouse.query.defaultDatabaseTitle')}
               >
-                <option value="">未选择数据库</option>
+                <option value="">{tCurrent('clickhouse.query.noDatabaseSelected')}</option>
                 {databases.map((database) => (
                   <option key={database} value={database}>{database}</option>
                 ))}
@@ -1049,7 +1063,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             ) : null}
             <div className="mysql-result-tabs">
               {resultTabs.length === 0 ? (
-                <span className="mysql-result-tabs-empty">结果会显示在这里</span>
+                <span className="mysql-result-tabs-empty">{tCurrent('clickhouse.query.resultPlaceholder')}</span>
               ) : resultTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -1059,7 +1073,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   title={tab.sql}
                 >
                   <span>{tab.title}</span>
-                  <em>{tab.status === 'success' && tab.result ? describeResult(tab.result) : '错误'}</em>
+                  <em>{tab.status === 'success' && tab.result ? describeResult(tab.result) : tCurrent('clickhouse.query.resultError')}</em>
                   <span
                     role="button"
                     tabIndex={0}
@@ -1080,12 +1094,12 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
             {!activeResultTab ? (
               <div className="mysql-result-placeholder">
-                <strong>选择表或运行 SQL</strong>
-                <span>表预览默认读取前 {tablePreviewLimit} 行</span>
+                <strong>{tCurrent('clickhouse.query.selectOrRun')}</strong>
+                <span>{tCurrent('clickhouse.query.previewLimit', { count: tablePreviewLimit })}</span>
               </div>
             ) : activeResultTab.status === 'error' ? (
               <div className="mysql-result-error-panel">
-                <strong>执行失败</strong>
+                <strong>{tCurrent('clickhouse.query.executionFailed')}</strong>
                 <code>{formatSqlPreview(activeResultTab.sql, 120)}</code>
                 <p>{activeResultTab.error}</p>
                 <span>{activeResultTab.queryTime}ms · {formatTimestamp(activeResultTab.createdAt)}</span>
@@ -1097,10 +1111,10 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   <span>{activeResultTab.queryTime}ms</span>
                   <span>{activeResultTab.subtitle}</span>
                   {describeStatistics(activeResult.statistics) ? <span>{describeStatistics(activeResult.statistics)}</span> : null}
-                  <span>{activeResultTab.table ? '表预览只读' : '结果集只读'}</span>
-                  <div className="database-export-actions" aria-label="导出查询结果">
-                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>导出 JSON</button>
-                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>导出 CSV</button>
+                  <span>{activeResultTab.table ? tCurrent('clickhouse.query.readonlyTable') : tCurrent('clickhouse.query.readonlyResult')}</span>
+                  <div className="database-export-actions" aria-label={tCurrent('clickhouse.query.exportAria')}>
+                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>{tCurrent('clickhouse.query.exportJson')}</button>
+                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>{tCurrent('clickhouse.query.exportCsv')}</button>
                   </div>
                 </div>
                 {activeResult.columns.length > 0 ? (
@@ -1151,18 +1165,18 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                     </div>
                     {totalPages > 1 ? (
                       <div className="mysql-pagination">
-                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>首页</button>
-                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(0)}>{tCurrent('clickhouse.query.firstPage')}</button>
+                        <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>{tCurrent('clickhouse.query.previousPage')}</button>
                         <span>{page + 1} / {totalPages}</span>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>下一页</button>
-                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>末页</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{tCurrent('clickhouse.query.nextPage')}</button>
+                        <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>{tCurrent('clickhouse.query.lastPage')}</button>
                       </div>
                     ) : null}
                   </>
                 ) : (
                   <div className="mysql-result-empty">
-                    <strong>没有结果集</strong>
-                    <span>ClickHouse 已返回空响应或语句不产生行数据</span>
+                    <strong>{tCurrent('clickhouse.query.noResultTitle')}</strong>
+                    <span>{tCurrent('clickhouse.query.noResultDescription')}</span>
                   </div>
                 )}
               </>

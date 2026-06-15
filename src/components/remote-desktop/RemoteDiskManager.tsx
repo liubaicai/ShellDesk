@@ -33,6 +33,7 @@ import {
 } from './diskManagerProviders';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
 import type { RemoteSystemType } from './types';
+import { tCurrent } from '../../i18n';
 
 interface RemoteDiskManagerProps {
   connectionId: string;
@@ -111,12 +112,12 @@ function isSudoPrivilegeFailure(error: unknown) {
 function DiskInfoList({ disk }: { disk: ManagedDisk }) {
   return (
     <dl className="disk-manager-facts">
-      <div><dt>容量</dt><dd>{disk.sizeText}</dd></div>
-      <div><dt>模型</dt><dd>{disk.model || '-'}</dd></div>
-      <div><dt>序列号</dt><dd>{disk.serial || '-'}</dd></div>
-      <div><dt>总线</dt><dd>{disk.transport || '-'}</dd></div>
-      <div><dt>分区表</dt><dd>{disk.partitionStyle || '-'}</dd></div>
-      <div><dt>状态</dt><dd>{disk.health || disk.state || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.capacity')}</dt><dd>{disk.sizeText}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.model')}</dt><dd>{disk.model || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.serial')}</dt><dd>{disk.serial || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.bus')}</dt><dd>{disk.transport || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.partitionTable')}</dt><dd>{disk.partitionStyle || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.status')}</dt><dd>{disk.health || disk.state || '-'}</dd></div>
     </dl>
   );
 }
@@ -124,11 +125,11 @@ function DiskInfoList({ disk }: { disk: ManagedDisk }) {
 function PartitionInfoList({ partition }: { partition: ManagedPartition }) {
   return (
     <dl className="disk-manager-facts">
-      <div><dt>设备</dt><dd>{partition.device || partition.path}</dd></div>
-      <div><dt>容量</dt><dd>{partition.sizeText}</dd></div>
-      <div><dt>文件系统</dt><dd>{partition.fsType || '-'}</dd></div>
-      <div><dt>挂载点</dt><dd>{formatMountTargets(partition)}</dd></div>
-      <div><dt>标签</dt><dd>{partition.label || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.device')}</dt><dd>{partition.device || partition.path}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.capacity')}</dt><dd>{partition.sizeText}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.fileSystem')}</dt><dd>{partition.fsType || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.mountPoint')}</dt><dd>{formatMountTargets(partition)}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.label')}</dt><dd>{partition.label || '-'}</dd></div>
       <div><dt>UUID</dt><dd>{partition.uuid || '-'}</dd></div>
     </dl>
   );
@@ -137,12 +138,12 @@ function PartitionInfoList({ partition }: { partition: ManagedPartition }) {
 function MountInfoList({ mount }: { mount: ManagedMount }) {
   return (
     <dl className="disk-manager-facts">
-      <div><dt>源</dt><dd>{mount.source || '-'}</dd></div>
-      <div><dt>挂载点</dt><dd>{mount.target || '-'}</dd></div>
-      <div><dt>文件系统</dt><dd>{mount.fsType || '-'}</dd></div>
-      <div><dt>容量</dt><dd>{mount.usedText} / {mount.sizeText}</dd></div>
-      <div><dt>可用</dt><dd>{mount.availableText}</dd></div>
-      <div><dt>选项</dt><dd>{mount.options || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.source')}</dt><dd>{mount.source || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.mountPoint')}</dt><dd>{mount.target || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.fileSystem')}</dt><dd>{mount.fsType || '-'}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.capacity')}</dt><dd>{mount.usedText} / {mount.sizeText}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.available')}</dt><dd>{mount.availableText}</dd></div>
+      <div><dt>{tCurrent('diskManager.field.options')}</dt><dd>{mount.options || '-'}</dd></div>
     </dl>
   );
 }
@@ -222,7 +223,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
     ?? selectedPartition?.name
     ?? selectedMount?.target
     ?? selectedLogicalVolume?.name
-    ?? '未选择';
+    ?? tCurrent('diskManager.status.notSelected');
 
   const refreshSnapshot = useCallback(async () => {
     setLoading(true);
@@ -234,7 +235,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       const result = await runCommand(command);
 
       if (result.code !== 0 && !result.stdout.trim()) {
-        throw new Error(result.stderr || '磁盘信息读取失败');
+        throw new Error(result.stderr || tCurrent('diskManager.error.readFailed'));
       }
 
       const nextSnapshot = isWindowsHost
@@ -302,16 +303,16 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       if (isWindowsHost) {
         const { diskNumber, partitionNumber } = getWindowsPartitionNumbers(selectedPartition);
         prepareAction(
-          `挂载 ${selectedPartition.name}`,
-          `为 ${selectedPartition.name} 分配 ${driveLetter.toUpperCase()}: 盘符。`,
+          tCurrent('diskManager.confirm.mountWindows.title', { name: selectedPartition.name }),
+          tCurrent('diskManager.confirm.mountWindows.detail', { name: selectedPartition.name, letter: driveLetter.toUpperCase() }),
           createWindowsMountCommand(diskNumber, partitionNumber, driveLetter),
         );
         return;
       }
 
       prepareAction(
-        `挂载 ${selectedPartition.device}`,
-        `将 ${selectedPartition.device} 挂载到 ${mountPoint}。`,
+        tCurrent('diskManager.confirm.mountLinux.title', { device: selectedPartition.device }),
+        tCurrent('diskManager.confirm.mountLinux.detail', { device: selectedPartition.device, mountPoint }),
         createLinuxMountCommand(selectedPartition.device, mountPoint),
       );
     } catch (error) {
@@ -327,8 +328,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
         const { diskNumber, partitionNumber } = getWindowsPartitionNumbers(selectedPartition);
         const accessPath = selectedPartition.mountPoints[0] ?? `${selectedPartition.driveLetter}:\\`;
         prepareAction(
-          `取消挂载 ${selectedPartition.name}`,
-          `移除 ${accessPath} 访问路径。`,
+          tCurrent('diskManager.confirm.unmountWindows.title', { name: selectedPartition.name }),
+          tCurrent('diskManager.confirm.unmountWindows.detail', { path: accessPath }),
           createWindowsUnmountCommand(diskNumber, partitionNumber, accessPath),
           true,
         );
@@ -337,8 +338,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
 
       const target = selectedMount?.target || selectedPartition?.mountPoints[0] || selectedPartition?.device || '';
       prepareAction(
-        `取消挂载 ${target}`,
-        `对 ${target} 执行 umount。`,
+        tCurrent('diskManager.confirm.unmountLinux.title', { target }),
+        tCurrent('diskManager.confirm.unmountLinux.detail', { target }),
         createLinuxUnmountCommand(target),
         true,
       );
@@ -354,8 +355,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       if (isWindowsHost) {
         const letter = selectedPartition.driveLetter || driveLetter;
         prepareAction(
-          `格式化 ${letter.toUpperCase()}:`,
-          `将 ${letter.toUpperCase()}: 格式化为 ${windowsFormatFs}，卷标为 ${formatLabel || '-' }。`,
+          tCurrent('diskManager.confirm.formatWindows.title', { letter: letter.toUpperCase() }),
+          tCurrent('diskManager.confirm.formatWindows.detail', { letter: letter.toUpperCase(), fs: windowsFormatFs, label: formatLabel || '-' }),
           createWindowsFormatCommand(letter, windowsFormatFs, formatLabel),
           true,
         );
@@ -363,8 +364,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       }
 
       prepareAction(
-        `格式化 ${selectedPartition.device}`,
-        `将 ${selectedPartition.device} 格式化为 ${linuxFormatFs}，现有数据会被清空。`,
+        tCurrent('diskManager.confirm.formatLinux.title', { device: selectedPartition.device }),
+        tCurrent('diskManager.confirm.formatLinux.detail', { device: selectedPartition.device, fs: linuxFormatFs }),
         createLinuxFormatCommand(selectedPartition.device, linuxFormatFs, formatLabel),
         true,
       );
@@ -379,10 +380,10 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
     try {
       if (isWindowsHost) {
         prepareAction(
-          `新建分区 Disk ${selectedDisk.path}`,
+          tCurrent('diskManager.confirm.createPartitionWindows.title', { disk: selectedDisk.path }),
           windowsPartitionSizeGb.trim()
-            ? `在 Disk ${selectedDisk.path} 上新建 ${windowsPartitionSizeGb} GB 分区。`
-            : `在 Disk ${selectedDisk.path} 上使用剩余空间新建分区。`,
+            ? tCurrent('diskManager.confirm.createPartitionWindows.detailSized', { disk: selectedDisk.path, size: windowsPartitionSizeGb })
+            : tCurrent('diskManager.confirm.createPartitionWindows.detailRemaining', { disk: selectedDisk.path }),
           createWindowsCreatePartitionCommand(selectedDisk.path, windowsPartitionSizeGb, windowsAssignDriveLetter),
           true,
         );
@@ -390,8 +391,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       }
 
       prepareAction(
-        `新建分区 ${selectedDisk.path}`,
-        `在 ${selectedDisk.path} 上创建 ${partitionStart} 到 ${partitionEnd} 的 primary 分区；如果磁盘没有可识别分区表，会先初始化 GPT 分区表。`,
+        tCurrent('diskManager.confirm.createPartitionLinux.title', { disk: selectedDisk.path }),
+        tCurrent('diskManager.confirm.createPartitionLinux.detail', { disk: selectedDisk.path, start: partitionStart, end: partitionEnd }),
         createLinuxCreatePartitionCommand(selectedDisk.path, partitionFsHint, partitionStart, partitionEnd),
         true,
       );
@@ -407,8 +408,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       if (isWindowsHost) {
         const { diskNumber, partitionNumber } = getWindowsPartitionNumbers(selectedPartition);
         prepareAction(
-          `删除 ${selectedPartition.name}`,
-          `删除 Disk ${diskNumber} Partition ${partitionNumber}，分区内数据会丢失。`,
+          tCurrent('diskManager.confirm.deletePartitionWindows.title', { name: selectedPartition.name }),
+          tCurrent('diskManager.confirm.deletePartitionWindows.detail', { diskNumber, partitionNumber }),
           createWindowsDeletePartitionCommand(diskNumber, partitionNumber),
           true,
         );
@@ -416,8 +417,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       }
 
       prepareAction(
-        `删除 ${selectedPartition.device}`,
-        `从所属磁盘的分区表中删除 ${selectedPartition.device}。`,
+        tCurrent('diskManager.confirm.deletePartitionLinux.title', { device: selectedPartition.device }),
+        tCurrent('diskManager.confirm.deletePartitionLinux.detail', { device: selectedPartition.device }),
         createLinuxDeletePartitionCommand(selectedPartition.device),
         true,
       );
@@ -431,8 +432,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
 
     try {
       prepareAction(
-        `初始化 PV ${selectedPartition.device}`,
-        `把 ${selectedPartition.device} 初始化为 LVM Physical Volume。`,
+        tCurrent('diskManager.confirm.pvCreate.title', { device: selectedPartition.device }),
+        tCurrent('diskManager.confirm.pvCreate.detail', { device: selectedPartition.device }),
         createLinuxPvCreateCommand(selectedPartition.device),
         true,
       );
@@ -444,8 +445,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
   const prepareVgCreate = () => {
     try {
       prepareAction(
-        `创建 VG ${lvmVgName}`,
-        `使用 ${lvmPvDevices} 创建 Volume Group。`,
+        tCurrent('diskManager.confirm.vgCreate.title', { name: lvmVgName }),
+        tCurrent('diskManager.confirm.vgCreate.detail', { devices: lvmPvDevices }),
         createLinuxVgCreateCommand(lvmVgName, lvmPvDevices),
         true,
       );
@@ -457,8 +458,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
   const prepareLvCreate = () => {
     try {
       prepareAction(
-        `创建 LV ${lvmLvName}`,
-        `在 ${lvmVgName} 中创建 ${lvmLvSize} 的 Logical Volume。`,
+        tCurrent('diskManager.confirm.lvCreate.title', { name: lvmLvName }),
+        tCurrent('diskManager.confirm.lvCreate.detail', { vg: lvmVgName, size: lvmLvSize }),
         createLinuxLvCreateCommand(lvmVgName, lvmLvName, lvmLvSize),
         true,
       );
@@ -470,8 +471,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
   const prepareLvExtend = () => {
     try {
       prepareAction(
-        `扩容 ${lvmLvPath}`,
-        `对 ${lvmLvPath} 增加 ${lvmLvSize}，并尝试在线扩展文件系统。`,
+        tCurrent('diskManager.confirm.lvExtend.title', { path: lvmLvPath }),
+        tCurrent('diskManager.confirm.lvExtend.detail', { path: lvmLvPath, size: lvmLvSize }),
         createLinuxLvExtendCommand(lvmLvPath, lvmLvSize),
         true,
       );
@@ -483,8 +484,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
   const prepareLvRemove = () => {
     try {
       prepareAction(
-        `删除 ${lvmLvPath}`,
-        `删除 Logical Volume ${lvmLvPath}，其中数据会丢失。`,
+        tCurrent('diskManager.confirm.lvRemove.title', { path: lvmLvPath }),
+        tCurrent('diskManager.confirm.lvRemove.detail', { path: lvmLvPath }),
         createLinuxLvRemoveCommand(lvmLvPath),
         true,
       );
@@ -505,10 +506,10 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
     try {
       const result = await runCommand(pendingAction.command);
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || '命令执行失败');
+        throw new Error(result.stderr || result.stdout || tCurrent('diskManager.error.commandFailed'));
       }
 
-      setNotice(result.stdout.trim() || result.stderr.trim() || '操作已执行');
+      setNotice(result.stdout.trim() || result.stderr.trim() || tCurrent('diskManager.notice.operationExecuted'));
       setPendingAction(null);
       await refreshSnapshot();
     } catch (error) {
@@ -524,20 +525,20 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
   const copyPendingCommand = async () => {
     if (!pendingAction) return;
     await navigator.clipboard.writeText(getCommandPreview(pendingAction.command));
-    setNotice('命令已复制');
+    setNotice(tCurrent('diskManager.notice.commandCopied'));
   };
 
   const copySelectedInfo = async () => {
     const lines = [
-      `选择项: ${selectedTitle}`,
-      selectedDisk ? `磁盘: ${selectedDisk.path} ${selectedDisk.sizeText} ${selectedDisk.model}` : '',
-      selectedPartition ? `分区: ${selectedPartition.device} ${selectedPartition.sizeText} ${selectedPartition.fsType} ${formatMountTargets(selectedPartition)}` : '',
-      selectedMount ? `挂载: ${selectedMount.source} -> ${selectedMount.target} ${selectedMount.usedText}/${selectedMount.sizeText}` : '',
+      tCurrent('diskManager.copy.selection', { value: selectedTitle }),
+      selectedDisk ? tCurrent('diskManager.copy.disk', { path: selectedDisk.path, size: selectedDisk.sizeText, model: selectedDisk.model }) : '',
+      selectedPartition ? tCurrent('diskManager.copy.partition', { device: selectedPartition.device, size: selectedPartition.sizeText, fs: selectedPartition.fsType, mounts: formatMountTargets(selectedPartition) }) : '',
+      selectedMount ? tCurrent('diskManager.copy.mount', { source: selectedMount.source, target: selectedMount.target, used: selectedMount.usedText, size: selectedMount.sizeText }) : '',
       selectedLogicalVolume ? `LV: ${selectedLogicalVolume.path} ${selectedLogicalVolume.sizeText}` : '',
     ].filter(Boolean).join('\n');
 
     await navigator.clipboard.writeText(lines);
-    setNotice('当前选择信息已复制');
+    setNotice(tCurrent('diskManager.notice.selectionCopied'));
   };
 
   const openSelectedMount = () => {
@@ -552,17 +553,17 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       <header className="disk-manager-toolbar">
         <div className="disk-manager-status">
           <span>Disk Manager</span>
-          <strong>{isWindowsHost ? 'Windows 存储管理' : 'Linux 磁盘与 LVM'}</strong>
-          <em>{lastRefreshedAt ? `刷新于 ${lastRefreshedAt}` : '等待读取磁盘信息'}</em>
+          <strong>{isWindowsHost ? tCurrent('diskManager.ui.windowsTitle') : tCurrent('diskManager.ui.linuxTitle')}</strong>
+          <em>{lastRefreshedAt ? tCurrent('diskManager.status.refreshedAt', { time: lastRefreshedAt }) : tCurrent('diskManager.status.waiting')}</em>
         </div>
         <div className="disk-manager-metrics">
-          <span><strong>{diskStats.diskCount}</strong> 磁盘</span>
-          <span><strong>{diskStats.partitionCount}</strong> 分区</span>
-          <span><strong>{diskStats.mountedCount}</strong> 已挂载</span>
-          <span><strong>{diskStats.diskText}</strong> 总容量</span>
+          <span><strong>{diskStats.diskCount}</strong> {tCurrent('diskManager.metric.disks')}</span>
+          <span><strong>{diskStats.partitionCount}</strong> {tCurrent('diskManager.metric.partitions')}</span>
+          <span><strong>{diskStats.mountedCount}</strong> {tCurrent('diskManager.metric.mounted')}</span>
+          <span><strong>{diskStats.diskText}</strong> {tCurrent('diskManager.metric.totalCapacity')}</span>
         </div>
         <button type="button" className="primary" onClick={refreshSnapshot} disabled={loading}>
-          {loading ? '读取中' : '刷新'}
+          {loading ? tCurrent('diskManager.ui.loading') : tCurrent('diskManager.ui.refresh')}
         </button>
       </header>
 
@@ -572,8 +573,8 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
       <div className="disk-manager-layout">
         <aside className="disk-manager-sidebar">
           <div className="disk-manager-panel-heading">
-            <span>设备树</span>
-            <strong>物理磁盘与分区</strong>
+            <span>{tCurrent('diskManager.ui.deviceTree')}</span>
+            <strong>{tCurrent('diskManager.ui.physicalDisks')}</strong>
           </div>
           <div className="disk-manager-tree" aria-busy={loading}>
             {snapshot?.disks.map((disk) => {
@@ -609,21 +610,21 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                         <small>{partition.sizeText} · {partition.fsType || '-'}</small>
                       </button>
                     ))}
-                    {!partitions.length ? <div className="disk-manager-empty-branch">暂无分区</div> : null}
+                    {!partitions.length ? <div className="disk-manager-empty-branch">{tCurrent('diskManager.empty.noPartitions')}</div> : null}
                   </div>
                 </div>
               );
             })}
-            {!loading && !snapshot?.disks.length ? <div className="disk-manager-empty">未读取到磁盘</div> : null}
+            {!loading && !snapshot?.disks.length ? <div className="disk-manager-empty">{tCurrent('diskManager.empty.noDisks')}</div> : null}
           </div>
         </aside>
 
         <main className="disk-manager-main">
           <div className="disk-manager-tabs">
-            <button type="button" className={activeTab === 'topology' ? 'active' : ''} onClick={() => setActiveTab('topology')}>拓扑</button>
-            <button type="button" className={activeTab === 'mounts' ? 'active' : ''} onClick={() => setActiveTab('mounts')}>挂载</button>
+            <button type="button" className={activeTab === 'topology' ? 'active' : ''} onClick={() => setActiveTab('topology')}>{tCurrent('diskManager.tab.topology')}</button>
+            <button type="button" className={activeTab === 'mounts' ? 'active' : ''} onClick={() => setActiveTab('mounts')}>{tCurrent('diskManager.tab.mounts')}</button>
             <button type="button" className={activeTab === 'lvm' ? 'active' : ''} onClick={() => setActiveTab('lvm')}>LVM</button>
-            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>原始输出</button>
+            <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('diskManager.tab.raw')}</button>
           </div>
 
           {activeTab === 'topology' ? (
@@ -631,12 +632,12 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
               <table className="disk-manager-table">
                 <thead>
                   <tr>
-                    <th>设备</th>
-                    <th>类型</th>
-                    <th>容量</th>
-                    <th>文件系统</th>
-                    <th>挂载点 / 盘符</th>
-                    <th>状态</th>
+                    <th>{tCurrent('diskManager.field.device')}</th>
+                    <th>{tCurrent('diskManager.field.type')}</th>
+                    <th>{tCurrent('diskManager.field.capacity')}</th>
+                    <th>{tCurrent('diskManager.field.fileSystem')}</th>
+                    <th>{tCurrent('diskManager.field.mountOrLetter')}</th>
+                    <th>{tCurrent('diskManager.field.status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -661,7 +662,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                               </span>
                             </span>
                           </td>
-                          <td>物理磁盘</td>
+                          <td>{tCurrent('diskManager.table.physicalDisk')}</td>
                           <td>{disk.sizeText}</td>
                           <td>{disk.partitionStyle || '-'}</td>
                           <td>{disk.transport || '-'}</td>
@@ -691,7 +692,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                               <td>{partition.sizeText}</td>
                               <td>{partition.fsType || '-'}</td>
                               <td>{formatMountTargets(partition)}</td>
-                              <td><span className={`disk-manager-status-pill ${partition.isMounted ? 'ready' : 'idle'}`}>{partition.isMounted ? '已挂载' : '未挂载'}</span></td>
+                              <td><span className={`disk-manager-status-pill ${partition.isMounted ? 'ready' : 'idle'}`}>{partition.isMounted ? tCurrent('diskManager.status.mounted') : tCurrent('diskManager.status.unmounted')}</span></td>
                             </tr>
                           );
                         })}
@@ -700,7 +701,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                             <td colSpan={6}>
                               <span className="disk-manager-device-cell child empty">
                                 <span className="disk-manager-tree-branch" aria-hidden="true" />
-                                <span>暂无分区</span>
+                                <span>{tCurrent('diskManager.empty.noPartitions')}</span>
                               </span>
                             </td>
                           </tr>
@@ -731,20 +732,20 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                   <mark>{mount.usePercent}%</mark>
                 </button>
               ))}
-              {!snapshot?.mounts.length ? <div className="disk-manager-empty">暂无挂载点</div> : null}
+              {!snapshot?.mounts.length ? <div className="disk-manager-empty">{tCurrent('diskManager.empty.noMounts')}</div> : null}
             </div>
           ) : null}
 
           {activeTab === 'lvm' ? (
             <div className="disk-manager-lvm">
               {isWindowsHost ? (
-                <div className="disk-manager-empty">Windows 主机不提供 LVM。请使用分区、盘符和卷格式化操作。</div>
+                <div className="disk-manager-empty">{tCurrent('diskManager.empty.windowsNoLvm')}</div>
               ) : (
                 <>
                   <section>
                     <div className="disk-manager-section-heading">
                       <span>Physical Volumes</span>
-                      <strong>{snapshot?.lvm.physicalVolumes.length ?? 0} 个 PV</strong>
+                      <strong>{tCurrent('diskManager.lvm.pvCount', { count: snapshot?.lvm.physicalVolumes.length ?? 0 })}</strong>
                     </div>
                     <div className="disk-manager-mini-table">
                       {snapshot?.lvm.physicalVolumes.map((pv) => (
@@ -760,7 +761,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                   <section>
                     <div className="disk-manager-section-heading">
                       <span>Volume Groups</span>
-                      <strong>{snapshot?.lvm.volumeGroups.length ?? 0} 个 VG</strong>
+                      <strong>{tCurrent('diskManager.lvm.vgCount', { count: snapshot?.lvm.volumeGroups.length ?? 0 })}</strong>
                     </div>
                     <div className="disk-manager-mini-table">
                       {snapshot?.lvm.volumeGroups.map((vg) => (
@@ -776,7 +777,7 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                   <section>
                     <div className="disk-manager-section-heading">
                       <span>Logical Volumes</span>
-                      <strong>{snapshot?.lvm.logicalVolumes.length ?? 0} 个 LV</strong>
+                      <strong>{tCurrent('diskManager.lvm.lvCount', { count: snapshot?.lvm.logicalVolumes.length ?? 0 })}</strong>
                     </div>
                     <div className="disk-manager-mini-table">
                       {snapshot?.lvm.logicalVolumes.map((lv) => (
@@ -795,13 +796,13 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
           ) : null}
 
           {activeTab === 'raw' ? (
-            <pre className="disk-manager-raw">{snapshot?.rawOutput || '暂无输出'}</pre>
+            <pre className="disk-manager-raw">{snapshot?.rawOutput || tCurrent('diskManager.empty.noOutput')}</pre>
           ) : null}
         </main>
 
         <aside className="disk-manager-action-panel">
           <div className="disk-manager-panel-heading">
-            <span>操作台</span>
+            <span>{tCurrent('diskManager.ui.console')}</span>
             <strong title={selectedTitle}>{selectedTitle}</strong>
           </div>
 
@@ -811,60 +812,60 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
             {selectedMount ? <MountInfoList mount={selectedMount} /> : null}
             {selectedLogicalVolume ? (
               <dl className="disk-manager-facts">
-                <div><dt>路径</dt><dd>{selectedLogicalVolume.path}</dd></div>
+                <div><dt>{tCurrent('diskManager.field.path')}</dt><dd>{selectedLogicalVolume.path}</dd></div>
                 <div><dt>VG</dt><dd>{selectedLogicalVolume.vgName}</dd></div>
-                <div><dt>容量</dt><dd>{selectedLogicalVolume.sizeText}</dd></div>
-                <div><dt>属性</dt><dd>{selectedLogicalVolume.attr || '-'}</dd></div>
+                <div><dt>{tCurrent('diskManager.field.capacity')}</dt><dd>{selectedLogicalVolume.sizeText}</dd></div>
+                <div><dt>{tCurrent('diskManager.field.attributes')}</dt><dd>{selectedLogicalVolume.attr || '-'}</dd></div>
               </dl>
             ) : null}
-            {!selectedDisk && !selectedPartition && !selectedMount && !selectedLogicalVolume ? <div className="disk-manager-empty detail">选择左侧磁盘或分区</div> : null}
+            {!selectedDisk && !selectedPartition && !selectedMount && !selectedLogicalVolume ? <div className="disk-manager-empty detail">{tCurrent('diskManager.empty.selectDiskOrPartition')}</div> : null}
             <div className="disk-manager-inline-actions">
-              <button type="button" onClick={copySelectedInfo} disabled={!selection}>复制信息</button>
-              <button type="button" onClick={openSelectedMount} disabled={!onOpenFileManager || (!selectedMount && !selectedPartition?.mountPoints.length)}>打开目录</button>
+              <button type="button" onClick={copySelectedInfo} disabled={!selection}>{tCurrent('diskManager.action.copyInfo')}</button>
+              <button type="button" onClick={openSelectedMount} disabled={!onOpenFileManager || (!selectedMount && !selectedPartition?.mountPoints.length)}>{tCurrent('diskManager.action.openDirectory')}</button>
             </div>
           </div>
 
           {selectedDisk ? (
             <div className="disk-manager-action-card">
-              <strong>新建分区</strong>
+              <strong>{tCurrent('diskManager.action.createPartition')}</strong>
               {isWindowsHost ? (
                 <>
-                  <label><span>容量 GB</span><input value={windowsPartitionSizeGb} onChange={(event) => setWindowsPartitionSizeGb(event.target.value)} placeholder="留空使用剩余空间" /></label>
-                  <label className="disk-manager-check"><input type="checkbox" checked={windowsAssignDriveLetter} onChange={(event) => setWindowsAssignDriveLetter(event.target.checked)} />自动分配盘符</label>
+                  <label><span>{tCurrent('diskManager.field.capacityGb')}</span><input value={windowsPartitionSizeGb} onChange={(event) => setWindowsPartitionSizeGb(event.target.value)} placeholder={tCurrent('diskManager.placeholder.remainingSpace')} /></label>
+                  <label className="disk-manager-check"><input type="checkbox" checked={windowsAssignDriveLetter} onChange={(event) => setWindowsAssignDriveLetter(event.target.checked)} />{tCurrent('diskManager.field.autoAssignDriveLetter')}</label>
                 </>
               ) : (
                 <>
-                  <label><span>文件系统提示</span><input value={partitionFsHint} onChange={(event) => setPartitionFsHint(event.target.value)} /></label>
+                  <label><span>{tCurrent('diskManager.field.fileSystemHint')}</span><input value={partitionFsHint} onChange={(event) => setPartitionFsHint(event.target.value)} /></label>
                   <div className="disk-manager-two-col">
-                    <label><span>开始</span><input value={partitionStart} onChange={(event) => setPartitionStart(event.target.value)} /></label>
-                    <label><span>结束</span><input value={partitionEnd} onChange={(event) => setPartitionEnd(event.target.value)} /></label>
+                    <label><span>{tCurrent('diskManager.field.start')}</span><input value={partitionStart} onChange={(event) => setPartitionStart(event.target.value)} /></label>
+                    <label><span>{tCurrent('diskManager.field.end')}</span><input value={partitionEnd} onChange={(event) => setPartitionEnd(event.target.value)} /></label>
                   </div>
                 </>
               )}
-              <button type="button" className="danger" onClick={prepareCreatePartition}>预览新建分区</button>
+              <button type="button" className="danger" onClick={prepareCreatePartition}>{tCurrent('diskManager.action.previewCreatePartition')}</button>
             </div>
           ) : null}
 
           {selectedPartition ? (
             <>
               <div className="disk-manager-action-card">
-                <strong>挂载 / 取消挂载</strong>
+                <strong>{tCurrent('diskManager.action.mountSection')}</strong>
                 {isWindowsHost ? (
-                  <label><span>盘符</span><input value={driveLetter} onChange={(event) => setDriveLetter(event.target.value)} /></label>
+                  <label><span>{tCurrent('diskManager.field.driveLetter')}</span><input value={driveLetter} onChange={(event) => setDriveLetter(event.target.value)} /></label>
                 ) : (
-                  <label><span>挂载目录</span><input value={mountPoint} onChange={(event) => setMountPoint(event.target.value)} /></label>
+                  <label><span>{tCurrent('diskManager.field.mountDirectory')}</span><input value={mountPoint} onChange={(event) => setMountPoint(event.target.value)} /></label>
                 )}
                 <div className="disk-manager-two-buttons">
-                  <button type="button" className="primary" onClick={prepareMount}>预览挂载</button>
-                  <button type="button" className="danger" onClick={prepareUnmount} disabled={!selectedPartition.isMounted}>预览卸载</button>
+                  <button type="button" className="primary" onClick={prepareMount}>{tCurrent('diskManager.action.previewMount')}</button>
+                  <button type="button" className="danger" onClick={prepareUnmount} disabled={!selectedPartition.isMounted}>{tCurrent('diskManager.action.previewUnmount')}</button>
                 </div>
               </div>
 
               <div className="disk-manager-action-card">
-                <strong>格式化</strong>
+                <strong>{tCurrent('diskManager.action.format')}</strong>
                 <div className="disk-manager-two-col">
                   <label>
-                    <span>文件系统</span>
+                    <span>{tCurrent('diskManager.field.fileSystem')}</span>
                     <select value={isWindowsHost ? windowsFormatFs : linuxFormatFs} onChange={(event) => {
                       if (isWindowsHost) {
                         setWindowsFormatFs(event.target.value as WindowsFormatFileSystem);
@@ -875,43 +876,43 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
                       {(isWindowsHost ? windowsFormatOptions : linuxFormatOptions).map((item) => <option key={item} value={item}>{item}</option>)}
                     </select>
                   </label>
-                  <label><span>卷标</span><input value={formatLabel} onChange={(event) => setFormatLabel(event.target.value)} /></label>
+                  <label><span>{tCurrent('diskManager.field.volumeLabel')}</span><input value={formatLabel} onChange={(event) => setFormatLabel(event.target.value)} /></label>
                 </div>
-                <button type="button" className="danger" onClick={prepareFormat}>预览格式化</button>
+                <button type="button" className="danger" onClick={prepareFormat}>{tCurrent('diskManager.action.previewFormat')}</button>
               </div>
 
               <div className="disk-manager-action-card">
-                <strong>分区维护</strong>
-                <button type="button" className="danger" onClick={prepareDeletePartition}>预览删除分区</button>
-                {!isWindowsHost ? <button type="button" onClick={preparePvCreate}>初始化为 LVM PV</button> : null}
+                <strong>{tCurrent('diskManager.action.partitionMaintenance')}</strong>
+                <button type="button" className="danger" onClick={prepareDeletePartition}>{tCurrent('diskManager.action.previewDeletePartition')}</button>
+                {!isWindowsHost ? <button type="button" onClick={preparePvCreate}>{tCurrent('diskManager.action.initLvmPv')}</button> : null}
               </div>
             </>
           ) : null}
 
           {selectedMount && !selectedPartition ? (
             <div className="disk-manager-action-card">
-              <strong>挂载点维护</strong>
-              <button type="button" className="danger" onClick={prepareUnmount}>预览取消挂载</button>
+              <strong>{tCurrent('diskManager.action.mountMaintenance')}</strong>
+              <button type="button" className="danger" onClick={prepareUnmount}>{tCurrent('diskManager.action.previewUnmount')}</button>
             </div>
           ) : null}
 
           {!isWindowsHost ? (
             <div className="disk-manager-action-card">
-              <strong>LVM 配置</strong>
-              <label><span>PV 设备</span><input value={lvmPvDevices} onChange={(event) => setLvmPvDevices(event.target.value)} placeholder="/dev/sdb1 /dev/sdc1" /></label>
+              <strong>{tCurrent('diskManager.action.lvmConfig')}</strong>
+              <label><span>{tCurrent('diskManager.field.pvDevices')}</span><input value={lvmPvDevices} onChange={(event) => setLvmPvDevices(event.target.value)} placeholder="/dev/sdb1 /dev/sdc1" /></label>
               <div className="disk-manager-two-col">
                 <label><span>VG</span><input value={lvmVgName} onChange={(event) => setLvmVgName(event.target.value)} /></label>
                 <label><span>LV</span><input value={lvmLvName} onChange={(event) => setLvmLvName(event.target.value)} /></label>
               </div>
               <div className="disk-manager-two-col">
-                <label><span>容量</span><input value={lvmLvSize} onChange={(event) => setLvmLvSize(event.target.value)} /></label>
-                <label><span>LV 路径</span><input value={lvmLvPath} onChange={(event) => setLvmLvPath(event.target.value)} /></label>
+                <label><span>{tCurrent('diskManager.field.capacity')}</span><input value={lvmLvSize} onChange={(event) => setLvmLvSize(event.target.value)} /></label>
+                <label><span>{tCurrent('diskManager.field.lvPath')}</span><input value={lvmLvPath} onChange={(event) => setLvmLvPath(event.target.value)} /></label>
               </div>
               <div className="disk-manager-grid-buttons">
-                <button type="button" onClick={prepareVgCreate}>创建 VG</button>
-                <button type="button" onClick={prepareLvCreate}>创建 LV</button>
-                <button type="button" onClick={prepareLvExtend}>扩容 LV</button>
-                <button type="button" className="danger" onClick={prepareLvRemove}>删除 LV</button>
+                <button type="button" onClick={prepareVgCreate}>{tCurrent('diskManager.action.createVg')}</button>
+                <button type="button" onClick={prepareLvCreate}>{tCurrent('diskManager.action.createLv')}</button>
+                <button type="button" onClick={prepareLvExtend}>{tCurrent('diskManager.action.extendLv')}</button>
+                <button type="button" className="danger" onClick={prepareLvRemove}>{tCurrent('diskManager.action.deleteLv')}</button>
               </div>
             </div>
           ) : null}
@@ -922,16 +923,16 @@ function RemoteDiskManager({ connectionId, systemType, onOpenFileManager }: Remo
         <div className="disk-manager-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !actionRunning) setPendingAction(null); }}>
           <section className="disk-manager-confirm" role="dialog" aria-modal="true" aria-label={pendingAction.title}>
             <div className="disk-manager-confirm-header">
-              <span>{pendingAction.danger ? '高风险操作确认' : '执行确认'}</span>
+              <span>{pendingAction.danger ? tCurrent('diskManager.confirm.highRisk') : tCurrent('diskManager.confirm.execute')}</span>
               <strong>{pendingAction.title}</strong>
             </div>
             <p>{pendingAction.detail}</p>
             <pre>{getCommandPreview(pendingAction.command)}</pre>
             <div className="disk-manager-confirm-actions">
-              <button type="button" onClick={copyPendingCommand}>复制命令</button>
-              <button type="button" onClick={() => setPendingAction(null)} disabled={actionRunning}>取消</button>
+              <button type="button" onClick={copyPendingCommand}>{tCurrent('diskManager.action.copyCommand')}</button>
+              <button type="button" onClick={() => setPendingAction(null)} disabled={actionRunning}>{tCurrent('diskManager.action.cancel')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>
-                {actionRunning ? '执行中' : '执行'}
+                {actionRunning ? tCurrent('diskManager.action.running') : tCurrent('diskManager.action.execute')}
               </button>
             </div>
           </section>
