@@ -2169,7 +2169,7 @@ function registerRemoteConnectionHandlers(registerIpcHandler) {
 
     return {
       ...result,
-      stdout: stripSuRootPasswordPrompt(result.stdout),
+      stdout: result.stdout,
       stderr: stripSuRootPasswordPrompt(result.stderr),
     };
   }

@@ -115,6 +115,10 @@ function stringifyCsvCell(value: unknown): string {
     text = String(normalized);
   }
 
+  if (/^[=+\-@\t\r]/u.test(text)) {
+    text = `'${text}`;
+  }
+
   if (/[",\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }

@@ -1332,9 +1332,9 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
     if (!view) return;
 
     const position = view.state.selection.main.head;
-    const cursorPosition = getLineColumnAtPosition(view.state.doc.toString(), position);
-    setCursorLine(cursorPosition.line);
-    setCursorCol(cursorPosition.column);
+    const line = view.state.doc.lineAt(position);
+    setCursorLine(line.number);
+    setCursorCol(position - line.from + 1);
   }, []);
 
   const handleEditorChange = useCallback((nextContent: string) => {
