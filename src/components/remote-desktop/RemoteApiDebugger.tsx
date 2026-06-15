@@ -250,7 +250,7 @@ function applyBodyContentType(headers: ApiDebugHeader[], bodyType: ApiDebugBodyT
   if (existingHeader) {
     return headers.map((header) => (
       header.id === existingHeader.id
-        ? { ...header, value: contentType, enabled: true }
+        ? { ...header, value: contentType, enabled: true, managedByBody: true }
         : header
     ));
   }

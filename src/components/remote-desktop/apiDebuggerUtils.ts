@@ -268,7 +268,12 @@ try {
   const bodyBase64 = base64EncodeUtf8(requestBody);
   const bodySetup = sendBody
     ? `request_body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-body.XXXXXX")
-echo ${shellSingleQuote(bodyBase64)} | base64 -d > "$request_body_file"
+if ! printf %s ${shellSingleQuote(bodyBase64)} | base64 -d > "$request_body_file" 2>/dev/null; then
+  if ! printf %s ${shellSingleQuote(bodyBase64)} | base64 -D > "$request_body_file"; then
+    printf 'base64 decode failed.\\n' >&2
+    exit 127
+  fi
+fi
 body_arg="--data-binary @$request_body_file"`
     : `request_body_file=""; body_arg=""`;
 

@@ -192,8 +192,12 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
   const copyConfig = async () => {
     if (!selectedSite) return;
 
-    await navigator.clipboard.writeText(selectedSite.rawConfig);
-    setNotice(tCurrent('auto.remoteWebServerManager.1owzfkn'));
+    try {
+      await navigator.clipboard.writeText(selectedSite.rawConfig);
+      setNotice(tCurrent('auto.remoteWebServerManager.1owzfkn'));
+    } catch (error) {
+      setError(tCurrent('auto.remoteWebServerManager.copyFailed', { value0: getErrorMessage(error) }));
+    }
   };
 
   const openConfigInNotepad = () => {
