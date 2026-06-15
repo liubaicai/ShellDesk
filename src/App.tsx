@@ -36,7 +36,7 @@ import { buildFontStack } from './fontUtils';
 import { getAppLocale, getCurrentAppLanguage, getSystemLanguage, loadFullMessageCatalog, preloadFullMessageCatalog, t, useShellDeskI18n, type AppLanguage, type MessageId } from './i18n';
 
 const RemoteDesktop = lazy(() =>
-  import('./RemoteDesktopShell'));
+  Promise.all([loadFullMessageCatalog(), import('./RemoteDesktopShell')]).then(([, module]) => module));
 const KeysPage = lazy(() =>
   Promise.all([loadFullMessageCatalog(), import('./pages/KeysPage')]).then(([, module]) => module));
 const SnippetsPage = lazy(() =>
