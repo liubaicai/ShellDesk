@@ -67,6 +67,7 @@ const bodyMarker = `__SHELLDESK_API_BODY_${markerToken}__`;
 const truncatedMarker = `__SHELLDESK_API_TRUNCATED_${markerToken}__`;
 const exitMarker = `__SHELLDESK_API_EXIT_${markerToken}__`;
 const apiDebugResponseMaxBytes = 2 * 1024 * 1024;
+const inlineCurlBodyMaxBytes = 4096;
 
 function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -207,6 +208,7 @@ export function createApiDebugCommand(request: ApiDebugRequest, isWindowsHost: b
   const headers = getEnabledHeaders(request);
   const requestBody = createRequestBody(request);
   const sendBody = shouldSendBody(request.method, requestBody);
+  const useStdinBody = sendBody && utf8ByteLength(requestBody) > inlineCurlBodyMaxBytes;
   const userAgent = getUserAgent(request);
 
   if (isWindowsHost) {
@@ -267,7 +269,9 @@ try {
   const userAgentArg = userAgent ? `-A ${shellSingleQuote(userAgent)}` : '';
   const bodyBase64 = base64EncodeUtf8(requestBody);
   const bodySetup = sendBody
-    ? `request_body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-body.XXXXXX")
+    ? useStdinBody
+      ? `body_arg="--data-binary @-"`
+      : `request_body_file=$(mktemp "\${TMPDIR:-/tmp}/shelldesk-api-body.XXXXXX")
 if ! printf %s ${shellSingleQuote(bodyBase64)} | base64 -d > "$request_body_file" 2>/dev/null; then
   if ! printf %s ${shellSingleQuote(bodyBase64)} | base64 -D > "$request_body_file"; then
     printf 'base64 decode failed.\\n' >&2
@@ -276,6 +280,12 @@ if ! printf %s ${shellSingleQuote(bodyBase64)} | base64 -d > "$request_body_file
 fi
 body_arg="--data-binary @$request_body_file"`
     : `request_body_file=""; body_arg=""`;
+  const curlCommand = `curl -sS ${redirectArg} ${sslArg} --max-time ${timeout} --max-filesize ${apiDebugResponseMaxBytes} -X ${request.method} -D "$headers_file" -o "$body_file" -w '\\n${metaMarker} http_code=%{http_code} time_total=%{time_total} remote_ip=%{remote_ip}\\n' ${userAgentArg} ${headerArgs} $body_arg ${shellSingleQuote(url)}`;
+  const curlInvocation = useStdinBody
+    ? `{ printf %s ${shellSingleQuote(bodyBase64)} | base64 -d 2>/dev/null || printf %s ${shellSingleQuote(bodyBase64)} | base64 -D; } | ${curlCommand}
+curl_code=$?`
+    : `${curlCommand}
+curl_code=$?`;
 
   return `
 if ! command -v curl >/dev/null 2>&1; then
@@ -298,8 +308,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'cleanup; exit 130' HUP INT TERM
 ${bodySetup}
-curl -sS ${redirectArg} ${sslArg} --max-time ${timeout} --max-filesize ${apiDebugResponseMaxBytes} -X ${request.method} -D "$headers_file" -o "$body_file" -w '\\n${metaMarker} http_code=%{http_code} time_total=%{time_total} remote_ip=%{remote_ip}\\n' ${userAgentArg} ${headerArgs} $body_arg ${shellSingleQuote(url)}
-curl_code=$?
+${curlInvocation}
 body_size=$(wc -c < "$body_file" 2>/dev/null || printf '0')
 body_truncated=0
 if [ "$body_size" -gt ${apiDebugResponseMaxBytes} ]; then
@@ -371,10 +380,13 @@ export function createCurlPreview(request: ApiDebugRequest) {
   const timeout = clampTimeout(request.timeoutSeconds);
   const headers = getEnabledHeaders(request).map((header) => `-H ${shellSingleQuote(`${header.key}: ${header.value}`)}`);
   const requestBody = createRequestBody(request);
-  const body = shouldSendBody(request.method, requestBody) ? [`--data-binary ${shellSingleQuote(requestBody)}`] : [];
+  const sendBody = shouldSendBody(request.method, requestBody);
+  const largeBody = utf8ByteLength(requestBody) > inlineCurlBodyMaxBytes;
+  const body = sendBody
+    ? [largeBody ? '--data-binary @-' : `--data-binary ${shellSingleQuote(requestBody)}`]
+    : [];
   const userAgent = getUserAgent(request);
-
-  return [
+  const command = [
     'curl',
     ...(shouldFollowRedirects(request) ? ['-L'] : []),
     ...(shouldIgnoreSslErrors(request) ? ['-k'] : []),
@@ -389,6 +401,10 @@ export function createCurlPreview(request: ApiDebugRequest) {
     ...body,
     shellSingleQuote(url),
   ].join(' ');
+
+  return sendBody && largeBody
+    ? `printf %s ${shellSingleQuote(base64EncodeUtf8(requestBody))} | base64 -d | ${command}`
+    : command;
 }
 
 function getLastHeaderBlock(headersText: string) {
@@ -613,12 +629,13 @@ export function parseCurlCommand(command: string): ApiDebugRequest {
       continue;
     }
 
-    if (token === '-d' || token === '--data' || token === '--data-raw' || token === '--data-binary' || token.startsWith('--data=') || token.startsWith('--data-raw=') || token.startsWith('--data-binary=')) {
+    if (token === '-d' || token === '--data' || token === '--data-urlencode' || token === '--data-raw' || token === '--data-binary' || token.startsWith('--data=') || token.startsWith('--data-urlencode=') || token.startsWith('--data-raw=') || token.startsWith('--data-binary=')) {
       const result = nextCurlValue(tokens, index, token);
       if (result.value.startsWith('@')) {
         throw new Error(tCurrent('auto.apiDebuggerUtils.curlDataFileUnsupported', { value0: result.value }));
       }
-      body = body ? `${body}&${result.value}` : result.value;
+      const joinsWithAmpersand = token === '-d' || token === '--data' || token === '--data-urlencode' || token.startsWith('--data=') || token.startsWith('--data-urlencode=');
+      body = body ? `${body}${joinsWithAmpersand ? '&' : ''}${result.value}` : result.value;
       bodyType = 'raw';
       if (method === 'GET' && !forceGetWithData) {
         method = 'POST';

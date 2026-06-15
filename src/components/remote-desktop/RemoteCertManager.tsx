@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
@@ -125,6 +126,7 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
   const [detailLoading, setDetailLoading] = useState(false);
   const [rootDetailLoading, setRootDetailLoading] = useState(false);
   const [actionRunning, setActionRunning] = useState(false);
+  const [uploadRunning, setUploadRunning] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [renewalStatus, setRenewalStatus] = useState<CertbotRenewalScheduleStatus | null>(null);
   const [renewalLoading, setRenewalLoading] = useState(false);
@@ -133,10 +135,12 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
+  const siteRequestIdRef = useRef(0);
   const trustedRootsRequestIdRef = useRef(0);
   const addTrustedRootRequestIdRef = useRef(0);
   const removeTrustedRootRequestIdRef = useRef(0);
   const trustedRootsAutoRefreshKeyRef = useRef('');
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const filteredCertificates = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -210,12 +214,15 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
   }, [isWindowsHost, runCommand]);
 
   const refresh = useCallback(async () => {
+    const requestId = siteRequestIdRef.current + 1;
+    siteRequestIdRef.current = requestId;
     setSiteLoading(true);
     setError('');
     setNotice('');
 
     try {
       const result = await runCommand(createCertScanCommand(isWindowsHost));
+      if (siteRequestIdRef.current !== requestId) return;
       const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n');
       const parsed = parseCertScanOutput(combinedOutput);
       setCertificates(parsed.certificates);
@@ -228,18 +235,21 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
       ));
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       await refreshCertbotList(parsed.certbotInstalled);
+      if (siteRequestIdRef.current !== requestId) return;
       await refreshRenewalStatus();
+      if (siteRequestIdRef.current !== requestId) return;
       setNotice(tCurrent('auto.remoteCertManager.scanComplete', { value0: parsed.certificates.length }));
       if (parsed.errors.length) {
         setError(parsed.errors.slice(0, 4).join('\n'));
       }
     } catch (error) {
+      if (siteRequestIdRef.current !== requestId) return;
       setCertificates([]);
       setCertbotCertificates([]);
       setSelectedDetail(null);
       setError(getErrorMessage(error));
     } finally {
-      setSiteLoading(false);
+      if (siteRequestIdRef.current === requestId) setSiteLoading(false);
     }
   }, [isWindowsHost, refreshCertbotList, refreshRenewalStatus, runCommand]);
 
@@ -425,7 +435,7 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
 
     try {
       const result = await runCommand(createCertbotRenewalLogCommand(isWindowsHost));
-      const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim() || '-- No entries --';
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim() || tCurrent('auto.remoteCertManager.noEntries');
       setRawOutput(output);
       if (result.code !== 0) throw new Error(output);
       setNotice(tCurrent('auto.remoteCertManager.renewal.notice.logLoaded'));
@@ -494,28 +504,27 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
       return;
     }
 
-    setActionRunning(true);
+    setUploadRunning(true);
     setError('');
     setNotice('');
 
     try {
       const uploadResult = await api.uploadFile(connectionId, '/tmp');
       if (uploadResult.canceled) {
-        setActionRunning(false);
         return;
       }
 
       const uploadedPath = uploadResult.remotePaths?.[0] ?? uploadResult.remotePath ?? '';
       if (!uploadedPath) {
         setError(tCurrent('auto.remoteCertManager.actionFailed'));
-        setActionRunning(false);
         return;
       }
 
       await addTrustedRoot(uploadedPath);
     } catch (error) {
       setError(getErrorMessage(error));
-      setActionRunning(false);
+    } finally {
+      setUploadRunning(false);
     }
   };
 
@@ -574,6 +583,36 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
     || (renewalStatus?.backend === 'cron' && renewalStatus.cronPath.includes('shelldesk-certbot-renew'));
   const canDeleteRenewalSchedule = renewalStatus?.timerName === 'shelldesk-certbot-renew.timer'
     || (renewalStatus?.backend === 'cron' && renewalStatus.cronPath.includes('shelldesk-certbot-renew'));
+  const modalOpen = Boolean(pendingAction || pendingRenewalAction || pendingRootRemoval);
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      if (pendingAction) setPendingAction(null);
+      if (pendingRenewalAction) setPendingRenewalAction(null);
+      if (pendingRootRemoval) setPendingRootRemoval(null);
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? []);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    window.setTimeout(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')?.focus();
+    }, 0);
+  }, [modalOpen]);
 
   return (
     <section className="cert-manager">
@@ -689,7 +728,7 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
                 </div>
                 <div>
                   <dt>{tCurrent('auto.remoteCertManager.renewal.lastResult')}</dt>
-                  <dd>{renewalStatus?.lastResult || '-- No entries --'}</dd>
+                  <dd>{renewalStatus?.lastResult || tCurrent('auto.remoteCertManager.noEntries')}</dd>
                 </div>
               </dl>
               <div className="cert-actions">
@@ -787,8 +826,8 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
               <button type="button" className="primary" onClick={() => addTrustedRoot()} disabled={actionRunning || !caPathDraft.trim()}>
                 {actionRunning ? tCurrent('auto.remoteCertManager.running') : tCurrent('auto.remoteCertManager.addTrust')}
               </button>
-              <button type="button" onClick={uploadAndAddTrustedRoot} disabled={actionRunning}>
-                {tCurrent('auto.remoteCertManager.uploadCa')}
+              <button type="button" onClick={uploadAndAddTrustedRoot} disabled={actionRunning || uploadRunning}>
+                {uploadRunning ? tCurrent('auto.remoteCertManager.running') : tCurrent('auto.remoteCertManager.uploadCa')}
               </button>
             </div>
             <pre className="cert-raw-output">{rawOutput || tCurrent('auto.remoteCertManager.noRawOutput')}</pre>
@@ -798,9 +837,9 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
 
       {pendingAction ? createPortal(
         <div className="cert-modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
-          <div className={`cert-confirm-dialog ${pendingAction === 'renew' ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div ref={dialogRef} className={`cert-confirm-dialog ${pendingAction === 'renew' ? 'danger' : ''}`} role="dialog" aria-modal="true" aria-labelledby="cert-action-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
             <div className="cert-confirm-header">
-              <span>{pendingAction === 'renew' ? tCurrent('auto.remoteCertManager.renewConfirmTitle') : tCurrent('auto.remoteCertManager.dryRunConfirmTitle')}</span>
+              <span id="cert-action-dialog-title">{pendingAction === 'renew' ? tCurrent('auto.remoteCertManager.renewConfirmTitle') : tCurrent('auto.remoteCertManager.dryRunConfirmTitle')}</span>
               <strong>{pendingAction === 'renew' ? tCurrent('auto.remoteCertManager.renew') : tCurrent('auto.remoteCertManager.dryRun')}</strong>
             </div>
             <p>{pendingAction === 'renew' ? tCurrent('auto.remoteCertManager.renewConfirmBody') : tCurrent('auto.remoteCertManager.dryRunConfirmBody')}</p>
@@ -817,9 +856,9 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
       ) : null}
       {pendingRenewalAction ? createPortal(
         <div className="cert-modal-backdrop" role="presentation" onClick={() => setPendingRenewalAction(null)}>
-          <div className={`cert-confirm-dialog ${pendingRenewalAction === 'delete' ? 'danger' : ''}`} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div ref={dialogRef} className={`cert-confirm-dialog ${pendingRenewalAction === 'delete' ? 'danger' : ''}`} role="dialog" aria-modal="true" aria-labelledby="cert-renewal-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
             <div className="cert-confirm-header">
-              <span>{tCurrent('auto.remoteCertManager.renewal.confirm.title')}</span>
+              <span id="cert-renewal-dialog-title">{tCurrent('auto.remoteCertManager.renewal.confirm.title')}</span>
               <strong>{getRenewalActionLabel(pendingRenewalAction)}</strong>
             </div>
             <p>{getRenewalActionBody(pendingRenewalAction)}</p>
@@ -840,9 +879,9 @@ function RemoteCertManager({ connectionId, systemType }: RemoteCertManagerProps)
       ) : null}
       {pendingRootRemoval ? createPortal(
         <div className="cert-modal-backdrop" role="presentation" onClick={() => setPendingRootRemoval(null)}>
-          <div className="cert-confirm-dialog danger" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div ref={dialogRef} className="cert-confirm-dialog danger" role="dialog" aria-modal="true" aria-labelledby="cert-root-removal-dialog-title" onClick={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
             <div className="cert-confirm-header">
-              <span>{tCurrent('auto.remoteCertManager.removeTrustConfirmTitle')}</span>
+              <span id="cert-root-removal-dialog-title">{tCurrent('auto.remoteCertManager.removeTrustConfirmTitle')}</span>
               <strong>{getTrustedRootTitle(pendingRootRemoval)}</strong>
             </div>
             <p>{tCurrent('auto.remoteCertManager.removeTrustConfirmBody', { value0: pendingRootRemoval.filePath })}</p>

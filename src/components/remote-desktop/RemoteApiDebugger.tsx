@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { KeyboardEvent, ReactElement } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import {
@@ -28,7 +28,7 @@ import {
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import type { RemoteSystemType } from './types';
-import { tCurrent } from '../../i18n';
+import { tCurrent, type MessageId } from '../../i18n';
 
 interface RemoteApiDebuggerProps {
   connectionId: string;
@@ -59,14 +59,15 @@ interface ApiRunRecord {
 }
 
 const methods: ApiDebugMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
-const bodyTypes: Array<{ value: ApiDebugBodyType; label: string }> = [
-  { value: 'none', label: 'None' },
-  { value: 'json', label: 'JSON' },
-  { value: 'form', label: 'Form URL-Encoded' },
-  { value: 'raw', label: 'Raw' },
+const bodyTypes: Array<{ value: ApiDebugBodyType; labelKey: MessageId }> = [
+  { value: 'none', labelKey: 'auto.remoteApiDebugger.bodyType.none' },
+  { value: 'json', labelKey: 'auto.remoteApiDebugger.bodyType.json' },
+  { value: 'form', labelKey: 'auto.remoteApiDebugger.bodyType.form' },
+  { value: 'raw', labelKey: 'auto.remoteApiDebugger.bodyType.raw' },
 ];
 const maxHistory = 20;
 const historyTextLimitBytes = 500 * 1024;
+const redactedValue = '••••';
 const defaultAuth: ApiDebugAuthConfig = {
   type: 'none',
   bearerToken: '',
@@ -272,7 +273,7 @@ function createVariableId() {
 }
 
 function createSavedRequestName(request: ApiDebugRequest) {
-  const urlLabel = request.url.trim() || 'Untitled';
+  const urlLabel = request.url.trim() || tCurrent('auto.remoteApiDebugger.untitled');
   return `${request.method} ${urlLabel}`.slice(0, 80);
 }
 
@@ -332,7 +333,39 @@ function getHeaderSummary(request: ApiDebugRequest, showSensitive: boolean) {
     .filter((header) => header.enabled && header.key.trim())
     .map((header) => `${header.key.trim()}: ${header.value || '-'}`);
 
-  return headers.length ? headers.join(' · ') : 'No headers';
+  return headers.length ? headers.join(' · ') : tCurrent('auto.remoteApiDebugger.noHeaders');
+}
+
+function redactCookieHeader(value: string) {
+  return value.split(';').map((part) => {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex < 0) return part.trim() ? redactedValue : part;
+    return `${part.slice(0, separatorIndex + 1)}${redactedValue}`;
+  }).join('; ');
+}
+
+function redactRequest(request: ApiDebugRequest): ApiDebugRequest {
+  const auth = { ...defaultAuth, ...request.auth };
+
+  return {
+    ...cloneRequest(request),
+    auth: {
+      ...auth,
+      bearerToken: auth.bearerToken ? redactedValue : '',
+      basicPassword: auth.basicPassword ? redactedValue : '',
+      apiKeyValue: auth.apiKeyValue ? redactedValue : '',
+    },
+    headers: request.headers.map((header) => {
+      const key = header.key.trim().toLowerCase();
+      if (key === 'cookie' || key === 'set-cookie') {
+        return { ...header, value: redactCookieHeader(header.value) };
+      }
+      return {
+        ...header,
+        value: isSensitiveHeaderName(header.key) ? redactedValue : header.value,
+      };
+    }),
+  };
 }
 
 function getFormatLabel(format: ApiDebugResponseFormat, contentType: string) {
@@ -549,6 +582,35 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
     return parseJsonResponseBody(activeRun.response.body);
   }, [activeRun, activeResponseFormat]);
+  const hasDroppedGetHeadBody = (request.method === 'GET' || request.method === 'HEAD')
+    && (request.bodyType ?? 'raw') !== 'none'
+    && (
+      (request.bodyType ?? 'raw') === 'form'
+        ? (request.formBody ?? []).some((param) => param.enabled && (param.key.trim() || param.value.trim()))
+        : request.body.trim().length > 0
+    );
+  const requestTabs: RequestTab[] = ['headers', 'params', 'body'];
+  const responseTabs: ResponseTab[] = ['body', 'headers', 'raw'];
+  const handleRequestTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tab: RequestTab) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    event.preventDefault();
+    const index = requestTabs.indexOf(tab);
+    const nextIndex = event.key === 'ArrowRight'
+      ? (index + 1) % requestTabs.length
+      : (index - 1 + requestTabs.length) % requestTabs.length;
+    setRequestTab(requestTabs[nextIndex]);
+    document.getElementById(`api-request-tab-${requestTabs[nextIndex]}`)?.focus();
+  };
+  const handleResponseTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tab: ResponseTab) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    event.preventDefault();
+    const index = responseTabs.indexOf(tab);
+    const nextIndex = event.key === 'ArrowRight'
+      ? (index + 1) % responseTabs.length
+      : (index - 1 + responseTabs.length) % responseTabs.length;
+    setResponseTab(responseTabs[nextIndex]);
+    document.getElementById(`api-response-tab-${responseTabs[nextIndex]}`)?.focus();
+  };
 
   const updateRequest = <Key extends keyof ApiDebugRequest>(key: Key, value: ApiDebugRequest[Key]) => {
     setRequest((currentRequest) => ({ ...currentRequest, [key]: value }));
@@ -740,7 +802,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
       const response = limitHistoryResponse(parseApiDebugResponse(result.stdout, result.stderr, Math.round(performance.now() - started)));
       const run: ApiRunRecord = {
         id: createRequestId(),
-        request: requestSnapshot,
+        request: redactRequest(requestSnapshot),
         response,
         startedAt: new Date().toLocaleTimeString(getShellDeskLocale()),
       };
@@ -980,10 +1042,10 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
         {notice ? <DismissibleAlert className="api-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
         <section className="api-request-panel">
-          <div className="api-tabs">
-            <button type="button" className={requestTab === 'headers' ? 'active' : ''} onClick={() => setRequestTab('headers')}>Headers</button>
-            <button type="button" className={requestTab === 'params' ? 'active' : ''} onClick={() => setRequestTab('params')}>Params</button>
-            <button type="button" className={requestTab === 'body' ? 'active' : ''} onClick={() => setRequestTab('body')}>Body</button>
+          <div className="api-tabs" role="tablist" aria-label={tCurrent('auto.remoteApiDebugger.requestTabs')}>
+            <button id="api-request-tab-headers" type="button" role="tab" aria-selected={requestTab === 'headers'} aria-controls="api-request-panel-headers" className={requestTab === 'headers' ? 'active' : ''} onClick={() => setRequestTab('headers')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'headers')}>{tCurrent('auto.remoteApiDebugger.headers')}</button>
+            <button id="api-request-tab-params" type="button" role="tab" aria-selected={requestTab === 'params'} aria-controls="api-request-panel-params" className={requestTab === 'params' ? 'active' : ''} onClick={() => setRequestTab('params')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'params')}>{tCurrent('auto.remoteApiDebugger.params')}</button>
+            <button id="api-request-tab-body" type="button" role="tab" aria-selected={requestTab === 'body'} aria-controls="api-request-panel-body" className={requestTab === 'body' ? 'active' : ''} onClick={() => setRequestTab('body')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'body')}>{tCurrent('auto.remoteApiDebugger.body')}</button>
             <button type="button" className={showSensitive ? 'active' : ''} onClick={() => { setShowSensitive((value) => !value); setPendingFullCurlCopy(false); }}>
               {showSensitive ? tCurrent('auto.remoteApiDebugger.hideSensitiveInfo') : tCurrent('auto.remoteApiDebugger.showSensitiveInfo')}
             </button>
@@ -991,25 +1053,25 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
           </div>
 
           {requestTab === 'headers' ? (
-            <div className="api-header-editor">
+            <div id="api-request-panel-headers" className="api-header-editor" role="tabpanel" aria-labelledby="api-request-tab-headers">
               <div className="api-request-line" style={{ minHeight: 42, borderBottom: '1px solid var(--api-border)', padding: '6px 10px' }}>
                 <select value={auth.type} onChange={(event) => updateAuth({ type: event.target.value as ApiDebugAuthConfig['type'] })} aria-label={tCurrent('auto.remoteApiDebugger.auth')}>
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer Token</option>
-                  <option value="basic">Basic Auth</option>
-                  <option value="apiKey">API Key</option>
+                  <option value="none">{tCurrent('auto.remoteApiDebugger.auth.none')}</option>
+                  <option value="bearer">{tCurrent('auto.remoteApiDebugger.auth.bearer')}</option>
+                  <option value="basic">{tCurrent('auto.remoteApiDebugger.auth.basic')}</option>
+                  <option value="apiKey">{tCurrent('auto.remoteApiDebugger.auth.apiKey')}</option>
                 </select>
                 {auth.type === 'bearer' ? (
-                  <input value={showSensitive ? auth.bearerToken : maskSensitiveValue(auth.bearerToken)} readOnly={!showSensitive && Boolean(auth.bearerToken)} onChange={(event) => updateAuth({ bearerToken: event.target.value })} placeholder="Token" />
+                  <input value={showSensitive ? auth.bearerToken : maskSensitiveValue(auth.bearerToken)} readOnly={!showSensitive && Boolean(auth.bearerToken)} onChange={(event) => updateAuth({ bearerToken: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.token')} />
                 ) : auth.type === 'basic' ? (
                   <>
-                    <input value={auth.basicUsername} onChange={(event) => updateAuth({ basicUsername: event.target.value })} placeholder="Username" />
-                    <input value={showSensitive ? auth.basicPassword : maskSensitiveValue(auth.basicPassword)} readOnly={!showSensitive && Boolean(auth.basicPassword)} onChange={(event) => updateAuth({ basicPassword: event.target.value })} placeholder="Password" />
+                    <input value={auth.basicUsername} onChange={(event) => updateAuth({ basicUsername: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.username')} />
+                    <input value={showSensitive ? auth.basicPassword : maskSensitiveValue(auth.basicPassword)} readOnly={!showSensitive && Boolean(auth.basicPassword)} onChange={(event) => updateAuth({ basicPassword: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.password')} />
                   </>
                 ) : auth.type === 'apiKey' ? (
                   <>
                     <input value={auth.apiKeyName} onChange={(event) => updateAuth({ apiKeyName: event.target.value })} placeholder="X-API-Key" />
-                    <input value={showSensitive ? auth.apiKeyValue : maskSensitiveValue(auth.apiKeyValue)} readOnly={!showSensitive && Boolean(auth.apiKeyValue)} onChange={(event) => updateAuth({ apiKeyValue: event.target.value })} placeholder="Value" />
+                    <input value={showSensitive ? auth.apiKeyValue : maskSensitiveValue(auth.apiKeyValue)} readOnly={!showSensitive && Boolean(auth.apiKeyValue)} onChange={(event) => updateAuth({ apiKeyValue: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.value')} />
                   </>
                 ) : null}
               </div>
@@ -1018,12 +1080,12 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
                   <label className="api-header-enabled">
                     <input type="checkbox" checked={header.enabled} disabled={header.managedByAuth} onChange={(event) => updateHeader(header.id, { enabled: event.target.checked })} />
                   </label>
-                  <input value={header.key} readOnly={header.managedByAuth} onChange={(event) => updateHeader(header.id, { key: event.target.value })} placeholder="Header" />
+                  <input value={header.key} readOnly={header.managedByAuth} onChange={(event) => updateHeader(header.id, { key: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.header')} />
                   <input
                     value={getHeaderDisplayValue(header, showSensitive)}
                     readOnly={header.managedByAuth || (!showSensitive && isSensitiveHeaderName(header.key))}
                     onChange={(event) => updateHeader(header.id, { value: event.target.value })}
-                    placeholder="Value"
+                    placeholder={tCurrent('auto.remoteApiDebugger.value')}
                   />
                   <button type="button" disabled={header.managedByAuth} onClick={() => removeHeader(header.id)}>{tCurrent('auto.remoteApiDebugger.1t2vi4h')}</button>
                 </div>
@@ -1031,24 +1093,24 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
               <button type="button" className="api-add-header" onClick={addHeader}>{tCurrent('auto.remoteApiDebugger.151vjqk')}</button>
             </div>
           ) : requestTab === 'params' ? (
-            <div className="api-header-editor">
+            <div id="api-request-panel-params" className="api-header-editor" role="tabpanel" aria-labelledby="api-request-tab-params">
               {(request.queryParams ?? []).map((param) => (
                 <div key={param.id} className="api-header-row">
                   <label className="api-header-enabled">
                     <input type="checkbox" checked={param.enabled} onChange={(event) => updateParam(param.id, { enabled: event.target.checked })} />
                   </label>
-                  <input value={param.key} onChange={(event) => updateParam(param.id, { key: event.target.value })} placeholder="Key" />
-                  <input value={param.value} onChange={(event) => updateParam(param.id, { value: event.target.value })} placeholder="Value" />
+                  <input value={param.key} onChange={(event) => updateParam(param.id, { key: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.key')} />
+                  <input value={param.value} onChange={(event) => updateParam(param.id, { value: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.value')} />
                   <button type="button" onClick={() => removeParam(param.id)}>{tCurrent('auto.remoteApiDebugger.1t2vi4h')}</button>
                 </div>
               ))}
               <button type="button" className="api-add-header" onClick={addParam}>{tCurrent('auto.remoteApiDebugger.addParam')}</button>
             </div>
           ) : (
-            <>
+            <div id="api-request-panel-body" role="tabpanel" aria-labelledby="api-request-tab-body">
               <div className="api-request-line" style={{ minHeight: 42 }}>
                 <select value={request.bodyType ?? 'raw'} onChange={(event) => updateBodyType(event.target.value as ApiDebugBodyType)} aria-label={tCurrent('auto.remoteApiDebugger.bodyType')}>
-                  {bodyTypes.map((bodyType) => <option key={bodyType.value} value={bodyType.value}>{bodyType.label}</option>)}
+                  {bodyTypes.map((bodyType) => <option key={bodyType.value} value={bodyType.value}>{tCurrent(bodyType.labelKey)}</option>)}
                 </select>
                 {(request.bodyType ?? 'raw') === 'json' ? (
                   <button type="button" onClick={formatJsonRequestBody}>{tCurrent('auto.remoteApiDebugger.format')}</button>
@@ -1064,8 +1126,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
                       <label className="api-header-enabled">
                         <input type="checkbox" checked={param.enabled} onChange={(event) => updateFormBodyParam(param.id, { enabled: event.target.checked })} />
                       </label>
-                      <input value={param.key} onChange={(event) => updateFormBodyParam(param.id, { key: event.target.value })} placeholder="Key" />
-                      <input value={param.value} onChange={(event) => updateFormBodyParam(param.id, { value: event.target.value })} placeholder="Value" />
+                      <input value={param.key} onChange={(event) => updateFormBodyParam(param.id, { key: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.key')} />
+                      <input value={param.value} onChange={(event) => updateFormBodyParam(param.id, { value: event.target.value })} placeholder={tCurrent('auto.remoteApiDebugger.value')} />
                       <button type="button" onClick={() => removeFormBodyParam(param.id)}>{tCurrent('auto.remoteApiDebugger.1t2vi4h')}</button>
                     </div>
                   ))}
@@ -1080,7 +1142,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
                   placeholder={request.method === 'GET' || request.method === 'HEAD' ? tCurrent('auto.remoteApiDebugger.1fcxvg1') : '{"hello":"world"}'}
                 />
               )}
-            </>
+              {hasDroppedGetHeadBody ? <span style={{ color: 'var(--api-warning)', fontSize: 12, fontWeight: 700 }}>{tCurrent('auto.remoteApiDebugger.getBodyWarning')}</span> : null}
+            </div>
           )}
           {curlPreview ? <pre className="api-curl-preview">{curlPreview}</pre> : null}
         </section>
@@ -1105,16 +1168,18 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
             </div>
           </div>
 
-          <div className="api-tabs response">
-            <button type="button" className={responseTab === 'body' ? 'active' : ''} onClick={() => setResponseTab('body')}>Body</button>
-            <button type="button" className={responseTab === 'headers' ? 'active' : ''} onClick={() => setResponseTab('headers')}>Headers</button>
-            <button type="button" className={responseTab === 'raw' ? 'active' : ''} onClick={() => setResponseTab('raw')}>Raw</button>
+          <div className="api-tabs response" role="tablist" aria-label={tCurrent('auto.remoteApiDebugger.responseTabs')}>
+            <button id="api-response-tab-body" type="button" role="tab" aria-selected={responseTab === 'body'} aria-controls="api-response-panel" className={responseTab === 'body' ? 'active' : ''} onClick={() => setResponseTab('body')} onKeyDown={(event) => handleResponseTabKeyDown(event, 'body')}>{tCurrent('auto.remoteApiDebugger.body')}</button>
+            <button id="api-response-tab-headers" type="button" role="tab" aria-selected={responseTab === 'headers'} aria-controls="api-response-panel" className={responseTab === 'headers' ? 'active' : ''} onClick={() => setResponseTab('headers')} onKeyDown={(event) => handleResponseTabKeyDown(event, 'headers')}>{tCurrent('auto.remoteApiDebugger.headers')}</button>
+            <button id="api-response-tab-raw" type="button" role="tab" aria-selected={responseTab === 'raw'} aria-controls="api-response-panel" className={responseTab === 'raw' ? 'active' : ''} onClick={() => setResponseTab('raw')} onKeyDown={(event) => handleResponseTabKeyDown(event, 'raw')}>{tCurrent('auto.remoteApiDebugger.raw')}</button>
           </div>
 
           {activeRun && responseTab === 'body' && activeResponseFormat === 'json' && parsedJsonResponse && !parsedJsonResponse.error ? (
-            <JsonTree key={activeRun.id} value={parsedJsonResponse.value} />
+            <div id="api-response-panel" role="tabpanel" aria-labelledby={`api-response-tab-${responseTab}`}>
+              <JsonTree key={activeRun.id} value={parsedJsonResponse.value} />
+            </div>
           ) : (
-            <pre className="api-response-output">
+            <pre id="api-response-panel" className="api-response-output" role="tabpanel" aria-labelledby={`api-response-tab-${responseTab}`}>
               {activeRun
                 ? responseTab === 'body'
                   ? activeRun.response.body || tCurrent('auto.remoteApiDebugger.35uav9')

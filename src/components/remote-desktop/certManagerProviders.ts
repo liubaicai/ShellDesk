@@ -217,22 +217,24 @@ function createTrustedRootEmitFunction(includeText: boolean, includePem: boolean
 emit_root_detail() {
   file="$1"
   tmp=""
+  # mktemp is preferred; the fallback keeps a random suffix for older minimal systems.
+  err_file="$(mktemp 2>/dev/null || printf "/tmp/shelldesk-root-cert-error-$$-$(date +%s%N 2>/dev/null || echo $RANDOM)")"
   if ${includeText ? 'true' : 'false'}; then
-    tmp="$(mktemp 2>/dev/null || printf "/tmp/shelldesk-root-cert-$$")"
-    if ! openssl x509 -in "$file" -text -noout >"$tmp" 2>/tmp/shelldesk-root-cert-error-$$; then
-      err="$(cat /tmp/shelldesk-root-cert-error-$$ 2>/dev/null)"
-      rm -f -- "$tmp" /tmp/shelldesk-root-cert-error-$$
+    tmp="$(mktemp 2>/dev/null || printf "/tmp/shelldesk-root-cert-$$-$(date +%s%N 2>/dev/null || echo $RANDOM)")"
+    if ! openssl x509 -in "$file" -text -noout >"$tmp" 2>"$err_file"; then
+      err="$(cat "$err_file" 2>/dev/null)"
+      rm -f -- "$tmp" "$err_file"
       printf '__SHELLDESK_ROOT_CERT_ERROR__|%s: %s\\n' "$file" "\${err:-openssl failed}"
       return 0
     fi
   fi
-  if ! fields="$(openssl x509 -in "$file" -noout -subject -issuer -enddate -serial -fingerprint -sha256 2>/tmp/shelldesk-root-cert-error-$$)"; then
-    err="$(cat /tmp/shelldesk-root-cert-error-$$ 2>/dev/null)"
-    rm -f -- "$tmp" /tmp/shelldesk-root-cert-error-$$
+  if ! fields="$(openssl x509 -in "$file" -noout -subject -issuer -enddate -serial -fingerprint -sha256 2>"$err_file")"; then
+    err="$(cat "$err_file" 2>/dev/null)"
+    rm -f -- "$tmp" "$err_file"
     printf '__SHELLDESK_ROOT_CERT_ERROR__|%s: %s\\n' "$file" "\${err:-openssl failed}"
     return 0
   fi
-  rm -f -- /tmp/shelldesk-root-cert-error-$$
+  rm -f -- "$err_file"
   printf '__SHELLDESK_ROOT_CERT_BEGIN__|%s\\n' "$file"
   printf '__SHELLDESK_CERT_FIELD__|path|%s\\n' "$file"
   printf '%s\\n' "$fields" | sed \\
@@ -245,7 +247,7 @@ emit_root_detail() {
   ${includeText ? 'cat "$tmp"' : ''}
   ${includePem ? 'printf \'\\n__SHELLDESK_CERT_PEM_BEGIN__\\n\'; openssl x509 -in "$file" -outform PEM 2>/dev/null; printf \'__SHELLDESK_CERT_PEM_END__\\n\'' : ''}
   printf '\\n__SHELLDESK_ROOT_CERT_END__\\n'
-  rm -f -- "$tmp"
+  rm -f -- "$tmp" "$err_file"
 }
 `.trim();
 }
@@ -471,6 +473,10 @@ export function createEnableCertbotRenewalCommand(isWindowsHost: boolean): Remot
 
   return {
     command: `
+if ! command -v certbot >/dev/null 2>&1; then
+  printf '%s\\n' ${shellSingleQuote(tCurrent('auto.certManagerProviders.certbotMissing'))}
+  exit 1
+fi
 set -eu
 timer_path=/etc/systemd/system/shelldesk-certbot-renew.timer
 service_path=/etc/systemd/system/shelldesk-certbot-renew.service
@@ -604,8 +610,8 @@ fi
 ${createTrustedRootEmitFunction(false, false)}
 for dir in /etc/ssl/certs /usr/local/share/ca-certificates /etc/pki/ca-trust/extracted/pem /etc/pki/ca-trust/source/anchors /etc/pki/tls/certs; do
   [ -d "$dir" ] || continue
-  find "$dir" -maxdepth 2 \\( -type f -o -type l \\) \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' -o -name '*.[0-9]' \\) 2>/dev/null | sort
-done | awk '!seen[$0]++' | while IFS= read -r file; do
+  find "$dir" -xdev -maxdepth 2 \\( -type f -o -type l \\) \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' -o -name '*.[0-9]' \\) 2>/dev/null | sort
+done | awk '!seen[$0]++' | head -n 300 | while IFS= read -r file; do
   [ -n "$file" ] && emit_root_detail "$file"
 done
 `.trim(),

@@ -120,8 +120,8 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
     try {
       const labels: Record<WebServerAction, string> = {
         test: tCurrent('auto.remoteWebServerManager.bakl0a'),
-        reload: 'Reload',
-        restart: 'Restart',
+        reload: tCurrent('auto.remoteWebServerManager.action.reload'),
+        restart: tCurrent('auto.remoteWebServerManager.action.restart'),
       };
 
       setPendingAction({
@@ -242,8 +242,8 @@ function RemoteWebServerManager({ connectionId, systemType, onOpenConfigFile }: 
         <div className="web-toolbar-actions">
           <button type="button" onClick={refresh} disabled={loading}>{loading ? tCurrent('auto.remoteWebServerManager.xr2jgj') : tCurrent('auto.remoteWebServerManager.1ot472x')}</button>
           <button type="button" className="primary" onClick={() => prepareAction('test')} disabled={!activeService}>{tCurrent('auto.remoteWebServerManager.bakl0a2')}</button>
-          <button type="button" onClick={() => prepareAction('reload')} disabled={!activeService}>Reload</button>
-          <button type="button" className="danger" onClick={() => prepareAction('restart')} disabled={!activeService}>Restart</button>
+          <button type="button" onClick={() => prepareAction('reload')} disabled={!activeService}>{tCurrent('auto.remoteWebServerManager.action.reload')}</button>
+          <button type="button" className="danger" onClick={() => prepareAction('restart')} disabled={!activeService}>{tCurrent('auto.remoteWebServerManager.action.restart')}</button>
         </div>
       </header>
 
