@@ -54,12 +54,16 @@ interface RemoteNginxManagerProps {
 }
 
 type NginxTab = 'sites' | 'templates' | 'config';
-type NginxSubTab = 'overview' | 'visual' | 'editor';
+type NginxSubTab = 'visual' | 'editor';
 type PendingAction =
   | { type: 'enable'; filePath: string }
   | { type: 'disable'; filePath: string }
   | { type: 'delete'; filePath: string }
   | { type: 'create-from-template'; template: NginxConfigTemplate; values: Record<string, string> };
+type SiteCardTestResult = {
+  success: boolean;
+  message: string;
+};
 
 function combineOutput(result: { stdout?: string; stderr?: string }) {
   return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
@@ -91,6 +95,10 @@ function getFilePorts(file: NginxConfigFile) {
 
 function hasSsl(file: NginxConfigFile) {
   return file.serverBlocks.some((block) => Boolean(block.sslConfig) || block.listenDirectives.some((listen) => listen.ssl || listen.port === 443));
+}
+
+function hasServerBlockSsl(serverBlock: NginxServerBlock | null) {
+  return Boolean(serverBlock?.sslConfig) || Boolean(serverBlock?.listenDirectives.some((listen) => listen.ssl || listen.port === 443));
 }
 
 function sanitizeSiteFilename(value: string) {
@@ -149,7 +157,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
   const [selectedFile, setSelectedFile] = useState<NginxConfigFile | null>(null);
   const [selectedServerBlock, setSelectedServerBlock] = useState<NginxServerBlock | null>(null);
   const [activeTab, setActiveTab] = useState<NginxTab>('sites');
-  const [activeSubTab, setActiveSubTab] = useState<NginxSubTab>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<NginxSubTab>('visual');
   const [editorContent, setEditorContent] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -160,6 +168,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
   const [searchQuery, setSearchQuery] = useState('');
   const [siteFilter, setSiteFilter] = useState<NginxSiteFilter>('all');
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [siteCardTestResults, setSiteCardTestResults] = useState<Record<string, SiteCardTestResult>>({});
   const [selectedTemplate, setSelectedTemplate] = useState<NginxConfigTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
@@ -168,6 +177,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
   const previousSelectedFilePathRef = useRef<string | null>(null);
   const previousRawContentRef = useRef<string>('');
   const modalOpenerRef = useRef<HTMLElement | null>(null);
+  const siteCardTestTimersRef = useRef<Map<string, number>>(new Map());
 
   const filteredFiles = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -188,6 +198,13 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
 
   const globalConfig = useMemo(() => configFiles.find((file) => file.fullPath === installation?.configPath) ?? null, [configFiles, installation?.configPath]);
   const selectedListenPorts = selectedServerBlock?.listenDirectives.map((listen) => listen.raw || `${listen.address}:${listen.port}`) ?? [];
+  const selectedDetailSummary = tCurrent('auto.remoteNginxManager.detailSummary', {
+    value0: formatValue(selectedServerBlock?.serverNames),
+    value1: formatValue(selectedListenPorts),
+    value2: hasServerBlockSsl(selectedServerBlock) ? '✓' : '-',
+    value3: selectedServerBlock?.locations.length ?? 0,
+    value4: formatValue(selectedServerBlock?.root),
+  });
   const modalOpen = Boolean(pendingAction || selectedTemplate);
   const visualServerForm = useMemo(() => (selectedServerBlock ? createNginxVisualServerForm(selectedServerBlock) : null), [selectedServerBlock]);
   const editorDiagnostics = useMemo(() => analyzeNginxConfig(editorContent), [editorContent]);
@@ -297,6 +314,49 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
       setActionRunning(false);
     }
   }, [runNginxTest]);
+
+  const showSiteCardTestResult = useCallback((filePath: string, result: SiteCardTestResult) => {
+    const existingTimer = siteCardTestTimersRef.current.get(filePath);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+
+    setSiteCardTestResults((current) => ({ ...current, [filePath]: result }));
+    const timerId = window.setTimeout(() => {
+      siteCardTestTimersRef.current.delete(filePath);
+      setSiteCardTestResults((current) => {
+        const next = { ...current };
+        delete next[filePath];
+        return next;
+      });
+    }, 3000);
+    siteCardTestTimersRef.current.set(filePath, timerId);
+  }, []);
+
+  const quickTestGlobalConfigForSiteCard = useCallback(async (filePath: string) => {
+    setActionRunning(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const parsed = await runNginxTest();
+      setTestResult(parsed);
+      showSiteCardTestResult(filePath, {
+        success: parsed.success,
+        message: `${tCurrent('auto.remoteNginxManager.globalConfigTest')}${parsed.output || (parsed.success ? tCurrent('auto.remoteNginxManager.testSuccess') : tCurrent('auto.remoteNginxManager.testFailed'))}`,
+      });
+    } catch (error) {
+      const output = getErrorMessage(error);
+      const parsed = parseNginxTestOutput(output);
+      setTestResult(parsed);
+      showSiteCardTestResult(filePath, {
+        success: false,
+        message: `${tCurrent('auto.remoteNginxManager.globalConfigTest')}${output || tCurrent('auto.remoteNginxManager.testFailed')}`,
+      });
+    } finally {
+      setActionRunning(false);
+    }
+  }, [runNginxTest, showSiteCardTestResult]);
 
   const toggleSite = useCallback(async (filePath: string, enable: boolean) => {
     if (!installation) return;
@@ -472,6 +532,11 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
     void refresh();
   }, [refresh]);
 
+  useEffect(() => () => {
+    siteCardTestTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    siteCardTestTimersRef.current.clear();
+  }, []);
+
   useEffect(() => {
     const file = configFiles.find((item) => item.fullPath === selectedFilePath) ?? configFiles[0] ?? null;
     const currentPath = file?.fullPath ?? null;
@@ -639,6 +704,9 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
 
     return (
       <div id="nginx-sub-panel-visual" className="nginx-visual-editor" role="tabpanel" aria-labelledby="nginx-sub-tab-visual">
+        <div className="nginx-detail-summary" aria-label={tCurrent('auto.remoteNginxManager.detailTabsLabel')}>
+          {selectedDetailSummary}
+        </div>
         <section className="nginx-visual-section">
           <div className="nginx-list-head">
             <strong>{tCurrent('auto.remoteNginxManager.siteStructure')}</strong>
@@ -863,15 +931,69 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
             <div className="nginx-site-scroll">
               {(() => {
                 const siteFiles = filteredFiles.filter((file) => file.fullPath !== installation?.configPath);
-                return siteFiles.length ? siteFiles.map((file) => (
-                <button key={file.fullPath} type="button" className={selectedFile?.fullPath === file.fullPath ? 'active' : ''} onClick={() => setSelectedFilePath(file.fullPath)}>
-                  <span className={`nginx-status-dot ${file.isEnabled ? 'enabled' : 'disabled'}`} />
-                  <strong title={getFileServerNames(file)}>{getFileServerNames(file)}</strong>
-                  <em>{file.isEnabled ? tCurrent('auto.remoteNginxManager.filter.enabled') : tCurrent('auto.remoteNginxManager.filter.disabled')}</em>
-                  {hasSsl(file) ? <small className="ssl">{tCurrent('auto.remoteNginxManager.filter.ssl')}</small> : <small>{tCurrent('auto.remoteNginxManager.portLabel', { value0: getFilePorts(file) })}</small>}
-                  <small title={file.fullPath}>{file.fullPath}</small>
-                </button>
-                )) : (
+                return siteFiles.length ? siteFiles.map((file) => {
+                  const cardTestResult = siteCardTestResults[file.fullPath];
+                  const cardActionsDisabled = actionRunning || loading || file.fullPath === installation?.configPath;
+                  return (
+                    <article
+                      key={file.fullPath}
+                      className={selectedFile?.fullPath === file.fullPath ? 'nginx-site-card active' : 'nginx-site-card'}
+                    >
+                      <button type="button" className="nginx-site-card-select" onClick={() => setSelectedFilePath(file.fullPath)}>
+                        <span className="nginx-site-card-main">
+                          <span className={`nginx-status-dot ${file.isEnabled ? 'enabled' : 'disabled'}`} />
+                          <strong title={getFileServerNames(file)}>{getFileServerNames(file)}</strong>
+                          {hasSsl(file) ? <span className="nginx-site-card-badge ssl">{tCurrent('auto.remoteNginxManager.filter.ssl')}</span> : null}
+                        </span>
+                        <span className="nginx-site-card-badges">
+                          <span>{tCurrent('auto.remoteNginxManager.portLabel', { value0: getFilePorts(file) })}</span>
+                          <span className={file.isEnabled ? 'enabled' : 'disabled'}>
+                            {file.isEnabled ? tCurrent('auto.remoteNginxManager.filter.enabled') : tCurrent('auto.remoteNginxManager.filter.disabled')}
+                          </span>
+                        </span>
+                      </button>
+                      <div className="nginx-site-card-actions">
+                        <button
+                          type="button"
+                          className={file.isEnabled ? '' : 'primary'}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void toggleSite(file.fullPath, !file.isEnabled);
+                          }}
+                          disabled={cardActionsDisabled}
+                        >
+                          {file.isEnabled ? tCurrent('auto.remoteNginxManager.quickDisable') : tCurrent('auto.remoteNginxManager.quickEnable')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void quickTestGlobalConfigForSiteCard(file.fullPath);
+                          }}
+                          disabled={!installation || actionRunning}
+                        >
+                          {tCurrent('auto.remoteNginxManager.quickTest')}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openPendingAction({ type: 'delete', filePath: file.fullPath });
+                          }}
+                          disabled={cardActionsDisabled}
+                        >
+                          {tCurrent('auto.remoteNginxManager.delete')}
+                        </button>
+                      </div>
+                      {cardTestResult ? (
+                        <div className={`nginx-site-card-test-result ${cardTestResult.success ? 'success' : 'danger'}`}>
+                          {cardTestResult.message}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                }) : (
                 <div className="nginx-empty-state">{loading ? tCurrent('auto.remoteNginxManager.loading') : tCurrent('auto.remoteNginxManager.noSites')}</div>
                 );
               })()}
@@ -886,7 +1008,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
             </div>
 
             <div className="nginx-sub-tabs" role="tablist" aria-label={tCurrent('auto.remoteNginxManager.detailTabsLabel')}>
-              {(['overview', 'visual', 'editor'] as NginxSubTab[]).map((tab) => (
+              {(['visual', 'editor'] as NginxSubTab[]).map((tab) => (
                 <button
                   key={tab}
                   id={`nginx-sub-tab-${tab}`}
@@ -897,7 +1019,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
                   aria-controls={`nginx-sub-panel-${tab}`}
                   tabIndex={activeSubTab === tab ? 0 : -1}
                   onClick={() => setActiveSubTab(tab)}
-                  onKeyDown={(event) => handleTabKeyDown(event, ['overview', 'visual', 'editor'] as const, activeSubTab, setActiveSubTab, 'nginx-sub-tab')}
+                  onKeyDown={(event) => handleTabKeyDown(event, ['visual', 'editor'] as const, activeSubTab, setActiveSubTab, 'nginx-sub-tab')}
                 >
                   {tCurrent(`auto.remoteNginxManager.${tab}`)}
                 </button>
@@ -905,18 +1027,6 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
             </div>
 
             {activeSubTab === 'visual' ? renderVisualEditor() : null}
-
-            {activeSubTab === 'overview' ? (
-              <dl id="nginx-sub-panel-overview" className="nginx-detail-list" role="tabpanel" aria-labelledby="nginx-sub-tab-overview">
-                <div><dt>{tCurrent('auto.remoteNginxManager.serverNames')}</dt><dd>{formatValue(selectedServerBlock?.serverNames)}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.listenPorts')}</dt><dd>{formatValue(selectedListenPorts)}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.documentRoot')}</dt><dd>{formatValue(selectedServerBlock?.root)}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.sslStatus')}</dt><dd>{selectedServerBlock?.sslConfig ? tCurrent('auto.remoteNginxManager.enabled') : tCurrent('auto.remoteNginxManager.disabled')}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.locations')}</dt><dd>{selectedServerBlock?.locations.length ?? 0}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.accessLog')}</dt><dd>{formatValue(selectedServerBlock?.accessLog)}</dd></div>
-                <div><dt>{tCurrent('auto.remoteNginxManager.errorLog')}</dt><dd>{formatValue(selectedServerBlock?.errorLog)}</dd></div>
-              </dl>
-            ) : null}
 
             {activeSubTab === 'editor' ? (
               <div id="nginx-sub-panel-editor" className="nginx-editor" role="tabpanel" aria-labelledby="nginx-sub-tab-editor">
