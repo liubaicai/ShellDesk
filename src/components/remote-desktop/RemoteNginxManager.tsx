@@ -263,7 +263,7 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
   }, [isWindowsHost, runCommand]);
 
   const getReloadWarning = useCallback((output: string) => (
-    `Nginx reload failed: ${output || tCurrent('auto.remoteNginxManager.actionFailed')}`
+    `${tCurrent('auto.remoteNginxManager.reloadFailed')} ${output || tCurrent('auto.remoteNginxManager.actionFailed')}`
   ), []);
 
   const appendNotice = useCallback((message: string) => {
@@ -308,13 +308,16 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
       const result = await runCommand(command);
       if (result.code !== 0) throw new Error(combineOutput(result) || tCurrent('auto.remoteNginxManager.actionFailed'));
 
-      const testResult = await runNginxTest();
-      setTestResult(testResult);
-      if (!testResult?.success) {
+      const parsedTest = await runNginxTest();
+      setTestResult(parsedTest);
+      if (!parsedTest.success) {
         const rollbackCommand = enable
           ? createNginxDisableSiteCommand(filePath, installation, isWindowsHost)
           : createNginxEnableSiteCommand(filePath, installation, isWindowsHost);
-        await runCommand(rollbackCommand);
+        const rollbackResult = await runCommand(rollbackCommand);
+        if (rollbackResult.code !== 0) {
+          throw new Error(`${tCurrent('auto.remoteNginxManager.testFailed')} ${combineOutput(rollbackResult) || tCurrent('auto.remoteNginxManager.actionFailed')}`);
+        }
         throw new Error(tCurrent('auto.remoteNginxManager.testFailed'));
       }
 
@@ -605,7 +608,9 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
               <span>{filteredFiles.length}</span>
             </div>
             <div className="nginx-site-scroll">
-              {filteredFiles.filter((file) => file.fullPath !== installation?.configPath).map((file) => (
+              {(() => {
+                const siteFiles = filteredFiles.filter((file) => file.fullPath !== installation?.configPath);
+                return siteFiles.length ? siteFiles.map((file) => (
                 <button key={file.fullPath} type="button" className={selectedFile?.fullPath === file.fullPath ? 'active' : ''} onClick={() => setSelectedFilePath(file.fullPath)}>
                   <span className={`nginx-status-dot ${file.isEnabled ? 'enabled' : 'disabled'}`} />
                   <strong title={getFileServerNames(file)}>{getFileServerNames(file)}</strong>
@@ -613,10 +618,10 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
                   {hasSsl(file) ? <small className="ssl">{tCurrent('auto.remoteNginxManager.filter.ssl')}</small> : <small>{tCurrent('auto.remoteNginxManager.portLabel', { value0: getFilePorts(file) })}</small>}
                   <small title={file.fullPath}>{file.fullPath}</small>
                 </button>
-              ))}
-              {!filteredFiles.filter((file) => file.fullPath !== installation?.configPath).length ? (
+                )) : (
                 <div className="nginx-empty-state">{loading ? tCurrent('auto.remoteNginxManager.loading') : tCurrent('auto.remoteNginxManager.noSites')}</div>
-              ) : null}
+                );
+              })()}
             </div>
           </aside>
 
