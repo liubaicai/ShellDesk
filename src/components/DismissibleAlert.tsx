@@ -94,7 +94,6 @@ function getAlertSource(className: string, source?: string) {
     [/\bsettings-success-banner\b/u, 'RemoteSettings'],
     [/\bsqlite-/u, 'RemoteSqlite'],
     [/\bvnc-error-banner\b/u, 'RemoteVncViewer'],
-    [/\bweb-alert\b/u, 'RemoteWebServerManager'],
     [/\berror-banner\b/u, 'ShellDesk'],
   ];
 

@@ -29,7 +29,6 @@ export { default as RemoteScheduledTasks } from './RemoteScheduledTasks';
 export { default as RemoteSecurityAudit } from './RemoteSecurityAudit';
 export { default as RemoteServiceManager } from './RemoteServiceManager';
 export { default as RemoteSqlite } from './RemoteSqlite';
-export { default as RemoteWebServerManager } from './RemoteWebServerManager';
 export { default as RemoteNotepad } from './RemoteNotepad';
 export { isTextFile } from './textFileUtils';
 export { default as RemoteProcessManager } from './RemoteProcessManager';

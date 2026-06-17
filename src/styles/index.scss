@@ -26,7 +26,6 @@
 @use "./remote-desktop/disk-manager" as *;
 @use "./remote-desktop/package-manager" as *;
 @use "./remote-desktop/git-manager" as *;
-@use "./remote-desktop/web-server-manager" as *;
 @use "./remote-desktop/cert-manager" as *;
 @use "./remote-desktop/nginx-manager" as *;
 @use "./remote-desktop/caddy-manager" as *;

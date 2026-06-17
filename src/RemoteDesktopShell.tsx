@@ -54,7 +54,6 @@ const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSett
 const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
 const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
 const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVncViewer'));
-const RemoteWebServerManager = lazy(() => import('./components/remote-desktop/RemoteWebServerManager'));
 
 const desktopApps = [
   { key: 'files', labelId: 'desktop.app.files.label', descriptionId: 'desktop.app.files.description' },
@@ -77,7 +76,6 @@ const desktopApps = [
   { key: 'disk-manager', labelId: 'desktop.app.diskManager.label', descriptionId: 'desktop.app.diskManager.description' },
   { key: 'package-manager', labelId: 'desktop.app.packageManager.label', descriptionId: 'desktop.app.packageManager.description' },
   { key: 'git-manager', labelId: 'desktop.app.gitManager.label', descriptionId: 'desktop.app.gitManager.description' },
-  { key: 'web-server-manager', labelId: 'desktop.app.webServerManager.label', descriptionId: 'desktop.app.webServerManager.description' },
   { key: 'cert-manager', labelId: 'desktop.app.certManager.label', descriptionId: 'desktop.app.certManager.description' },
   { key: 'nginx-manager', labelId: 'desktop.app.nginxManager.label', descriptionId: 'desktop.app.nginxManager.description' },
   { key: 'caddy-manager', labelId: 'desktop.app.caddyManager.label', descriptionId: 'desktop.app.caddyManager.description' },
@@ -123,7 +121,6 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'disk-manager': new URL('./assets/desktop-icons/disk-manager.png', import.meta.url).href,
   'package-manager': new URL('./assets/desktop-icons/package-manager.png', import.meta.url).href,
   'git-manager': new URL('./assets/desktop-icons/git-manager.png', import.meta.url).href,
-  'web-server-manager': new URL('./assets/desktop-icons/web-server-manager.png', import.meta.url).href,
   'cert-manager': new URL('./assets/desktop-icons/cert-manager.png', import.meta.url).href,
   'nginx-manager': new URL('./assets/desktop-icons/nginx-manager.png', import.meta.url).href,
   'caddy-manager': new URL('./assets/desktop-icons/caddy-manager.png', import.meta.url).href,
@@ -144,11 +141,10 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 8;
+const desktopAppCatalogVersion = 9;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
-  'web-server-manager',
   'cert-manager',
   'nginx-manager',
   'caddy-manager',
@@ -323,7 +319,6 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'disk-manager': { x: 96, y: 38, width: 1180, height: 680 },
   'package-manager': { x: 116, y: 48, width: 1080, height: 650 },
   'git-manager': { x: 112, y: 46, width: 1120, height: 660 },
-  'web-server-manager': { x: 112, y: 46, width: 1120, height: 660 },
   'cert-manager': { x: 120, y: 48, width: 1000, height: 620 },
   'nginx-manager': { x: 120, y: 48, width: 1100, height: 680 },
   'caddy-manager': { x: 120, y: 48, width: 1100, height: 680 },
@@ -2541,10 +2536,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'git-manager') {
       return <RemoteGitManager connectionId={connection.id} systemType={connection.host.systemType} />;
-    }
-
-    if (desktopWindow.appKey === 'web-server-manager') {
-      return <RemoteWebServerManager connectionId={connection.id} systemType={connection.host.systemType} onOpenConfigFile={openNotepadFile} />;
     }
 
     if (desktopWindow.appKey === 'cert-manager') {

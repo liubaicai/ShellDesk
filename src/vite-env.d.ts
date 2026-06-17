@@ -194,7 +194,6 @@ type ShellDeskDesktopAppKey =
   | 'disk-manager'
   | 'package-manager'
   | 'git-manager'
-  | 'web-server-manager'
   | 'cert-manager'
   | 'nginx-manager'
   | 'caddy-manager'
