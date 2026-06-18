@@ -14,7 +14,12 @@ use std::{
     time::Duration,
 };
 use tauri::Emitter;
-use tokio::{io::AsyncWriteExt, net::TcpStream, process::Command, time};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    process::Command,
+    time,
+};
 pub(crate) async fn run_connection_command(
     state: &AppState,
     args: Vec<Value>,
@@ -541,12 +546,9 @@ pub(crate) fn ssh_args(profile: &SshProfile) -> Vec<String> {
         "-o".to_string(),
         "ConnectTimeout=15".to_string(),
     ];
-    if profile.known_hosts_path.is_empty() {
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=accept-new".to_string());
-    } else {
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=yes".to_string());
+    args.push("-o".to_string());
+    args.push("StrictHostKeyChecking=yes".to_string());
+    if !profile.known_hosts_path.is_empty() {
         args.push("-o".to_string());
         args.push(format!("UserKnownHostsFile={}", profile.known_hosts_path));
     }
