@@ -3,7 +3,7 @@ use crate::vault::{read_store, write_store};
 use crate::{
     command_exists, error_string, https_url_origin, now, prevent_process_window,
     prevent_tokio_process_window, random_id, read_string_field, read_u16_field, remote_fs,
-    run_ssh_command_for_profile_with_window, sanitize_file_name, string_arg, terminal,
+    run_ssh_command_for_profile_with_window, sanitize_file_name, shell_quote, string_arg, terminal,
     unavailable_password_auth_error, whoami, ActiveConnection, AppState, ConnectionKind,
     PrivilegeConfig, SshProfile,
 };
@@ -448,9 +448,6 @@ async fn ensure_direct_ssh_host_key_trusted(
     window: &tauri::Window,
     profile: &mut SshProfile,
 ) -> Result<(), String> {
-    if profile.proxy.is_some() || profile.jump.is_some() {
-        return Ok(());
-    }
     let store = read_store(state)?;
     let known_hosts = store
         .get("knownHosts")
@@ -464,7 +461,7 @@ async fn ensure_direct_ssh_host_key_trusted(
             write_connection_known_hosts_from_public_key(state, profile, &public_key)?;
         return Ok(());
     }
-    let scanned = scan_ssh_host_key(profile).await?;
+    let scanned = scan_ssh_host_key(state, window, profile).await?;
     let decision =
         classify_scanned_host_key(&known_hosts, &profile.address, profile.port, &scanned);
     match decision
@@ -548,7 +545,14 @@ async fn request_host_key_decision(
     }
 }
 
-async fn scan_ssh_host_key(profile: &SshProfile) -> Result<Value, String> {
+async fn scan_ssh_host_key(
+    state: &AppState,
+    window: &tauri::Window,
+    profile: &SshProfile,
+) -> Result<Value, String> {
+    if let Some(jump) = profile.jump.as_deref() {
+        return scan_ssh_host_key_via_jump(state, window, jump, profile).await;
+    }
     if !command_exists("ssh-keyscan") {
         return Err("未找到 ssh-keyscan，无法执行 SSH 主机密钥预检。".to_string());
     }
@@ -576,6 +580,48 @@ async fn scan_ssh_host_key(profile: &SshProfile) -> Result<Value, String> {
             "未能扫描 SSH 主机密钥。".to_string()
         } else {
             format!("未能扫描 SSH 主机密钥：{stderr}")
+        });
+    };
+    let key_type = public_key.split_whitespace().next().unwrap_or("unknown");
+    let fingerprint = fingerprint_from_public_key(&public_key)?;
+    Ok(json!({
+        "keyType": key_type,
+        "publicKey": public_key,
+        "fingerprint": fingerprint
+    }))
+}
+
+async fn scan_ssh_host_key_via_jump(
+    state: &AppState,
+    window: &tauri::Window,
+    jump: &SshProfile,
+    profile: &SshProfile,
+) -> Result<Value, String> {
+    let command = format!(
+        "ssh-keyscan -T 3 -t ed25519,ecdsa,rsa -p {} {}",
+        profile.port,
+        shell_quote(&profile.address)
+    );
+    let output = run_ssh_command_for_profile_with_window(
+        state,
+        Some(window.clone()),
+        jump.clone(),
+        command,
+        String::new(),
+    )
+    .await?;
+    let stdout = output.get("stdout").and_then(Value::as_str).unwrap_or("");
+    let Some(public_key) = stdout.lines().find_map(parse_ssh_keyscan_line) else {
+        let stderr = output
+            .get("stderr")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        return Err(if stderr.is_empty() {
+            "未能通过跳板机读取目标主机 SSH 公钥。".to_string()
+        } else {
+            format!("未能通过跳板机读取目标主机 SSH 公钥：{stderr}")
         });
     };
     let key_type = public_key.split_whitespace().next().unwrap_or("unknown");
