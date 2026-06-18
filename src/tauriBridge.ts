@@ -181,8 +181,10 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
       return { available: false, supported: false, error: previewUnsupportedMessage } satisfies ShellDeskAutoUpdateCheckResult as T;
 
     case 'app:download-update':
-    case 'app:install-update':
       return { success: false, error: previewUnsupportedMessage } satisfies ShellDeskUpdateActionResult as T;
+
+    case 'app:install-update':
+      return false as T;
 
     case 'app:get-update-status':
       return createPreviewUpdateStatus() as T;
@@ -316,6 +318,8 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
 }
 
 async function ipc<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
+  // TODO: Replace free-form channel strings and unknown args with a typed channel map
+  // so each IPC channel carries its expected argument tuple and return type.
   if (!isTauriRuntime()) {
     return previewIpc<T>(channel, args);
   }
