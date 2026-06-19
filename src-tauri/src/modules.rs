@@ -30,6 +30,8 @@ pub(crate) mod proxy;
 pub(crate) mod remote_fs;
 #[path = "ssh_transport.rs"]
 pub(crate) mod ssh_transport;
+#[path = "ssh_tunnel.rs"]
+pub(crate) mod ssh_tunnel;
 #[path = "state.rs"]
 pub(crate) mod state;
 #[path = "sync_backend.rs"]
