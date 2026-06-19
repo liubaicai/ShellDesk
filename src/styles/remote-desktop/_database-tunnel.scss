@@ -1,0 +1,78 @@
+.database-tunnel-fields {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+}
+
+.database-tunnel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.database-tunnel-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.database-tunnel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.database-tunnel-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.database-tunnel-field span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-tunnel-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.database-tunnel-field input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.database-tunnel-field input[aria-invalid="true"] {
+  border-color: rgba(255, 100, 100, 0.62);
+  box-shadow: 0 0 0 2px rgba(255, 100, 100, 0.12);
+}
+
+@media (max-width: 720px) {
+  .database-tunnel-grid {
+    grid-template-columns: 1fr;
+  }
+}

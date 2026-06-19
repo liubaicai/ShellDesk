@@ -42,6 +42,7 @@
 @use "./remote-desktop/login-sessions" as *;
 @use "./remote-desktop/api-debugger" as *;
 @use "./themes/light" as *;
+@use "./remote-desktop/database-tunnel" as *;
 @use "./remote-desktop/notepad" as *;
 @use "./remote-desktop/mysql" as *;
 @use "./remote-desktop/clickhouse" as *;
