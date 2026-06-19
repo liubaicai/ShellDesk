@@ -9,6 +9,12 @@ use fred::{
     prelude::{Client as RedisClient, ClientLike, Config as RedisConfig, Value as RedisValue},
     types::{ClusterHash, CustomCommand},
 };
+use futures_util::TryStreamExt;
+use mongodb::{
+    bson::{doc, Bson, Document},
+    options::ClientOptions as MongoClientOptions,
+    Client as MongoClient,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::{
@@ -33,6 +39,14 @@ pub(crate) enum DbTunnelError {
     PostgresConnect(#[source] sqlx::Error),
     #[error("PostgreSQL 查询失败：{0}")]
     PostgresQuery(#[source] sqlx::Error),
+    #[error("ClickHouse 连接失败：{0}")]
+    ClickHouseConnect(String),
+    #[error("ClickHouse 查询失败：{0}")]
+    ClickHouseQuery(String),
+    #[error("MongoDB 连接失败：{0}")]
+    MongoConnect(String),
+    #[error("MongoDB 查询失败：{0}")]
+    MongoQuery(String),
     #[error("Redis 连接失败：{0}")]
     RedisConnect(String),
     #[error("Redis 命令失败：{0}")]
@@ -56,6 +70,8 @@ pub(crate) enum DatabaseTunnelSession {
     Mysql(MysqlTunnelSession),
     Postgres(PostgresTunnelSession),
     Redis(RedisTunnelSession),
+    ClickHouse(ClickHouseTunnelSession),
+    Mongo(MongoTunnelSession),
 }
 
 impl DatabaseTunnelSession {
@@ -64,6 +80,8 @@ impl DatabaseTunnelSession {
             Self::Mysql(_) => "mysql",
             Self::Postgres(_) => "postgres",
             Self::Redis(_) => "redis",
+            Self::ClickHouse(_) => "clickhouse",
+            Self::Mongo(_) => "mongo",
         }
     }
 
@@ -72,6 +90,8 @@ impl DatabaseTunnelSession {
             Self::Mysql(session) => session.shutdown().await,
             Self::Postgres(session) => session.shutdown().await,
             Self::Redis(session) => session.shutdown().await,
+            Self::ClickHouse(session) => session.shutdown().await,
+            Self::Mongo(session) => session.shutdown().await,
         }
     }
 }
@@ -89,6 +109,16 @@ pub(crate) struct PostgresTunnelSession {
 pub(crate) struct RedisTunnelSession {
     tunnel: Option<SshTunnel>,
     client: RedisClient,
+}
+
+pub(crate) struct ClickHouseTunnelSession {
+    tunnel: Option<SshTunnel>,
+    client: clickhouse::Client,
+}
+
+pub(crate) struct MongoTunnelSession {
+    tunnel: Option<SshTunnel>,
+    client: MongoClient,
 }
 
 impl MysqlTunnelSession {
@@ -112,6 +142,23 @@ impl PostgresTunnelSession {
 impl RedisTunnelSession {
     async fn shutdown(self) {
         let _ = self.client.quit().await;
+        if let Some(tunnel) = self.tunnel {
+            let _ = tunnel.shutdown().await;
+        }
+    }
+}
+
+impl ClickHouseTunnelSession {
+    async fn shutdown(self) {
+        if let Some(tunnel) = self.tunnel {
+            let _ = tunnel.shutdown().await;
+        }
+    }
+}
+
+impl MongoTunnelSession {
+    async fn shutdown(self) {
+        self.client.shutdown().await;
         if let Some(tunnel) = self.tunnel {
             let _ = tunnel.shutdown().await;
         }
@@ -213,6 +260,46 @@ struct RedisConnectConfig {
     tunnel: Option<TunnelOptions>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClickHouseConnectConfig {
+    #[serde(default = "default_mode")]
+    mode: String,
+    #[serde(default = "default_host")]
+    host: String,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default = "default_clickhouse_user")]
+    user: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default)]
+    database: String,
+    #[serde(default)]
+    secure: bool,
+    #[serde(default)]
+    tunnel: Option<TunnelOptions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MongoConnectConfig {
+    #[serde(default = "default_mode")]
+    mode: String,
+    #[serde(default = "default_host")]
+    host: String,
+    #[serde(default = "default_mongo_port")]
+    port: u16,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default = "default_mongo_auth_source")]
+    auth_source: String,
+    #[serde(default)]
+    tunnel: Option<TunnelOptions>,
+}
+
 fn default_mode() -> String {
     "cli".to_string()
 }
@@ -243,6 +330,18 @@ fn default_pg_database() -> String {
 
 fn default_redis_port() -> u16 {
     6379
+}
+
+fn default_clickhouse_user() -> String {
+    "default".to_string()
+}
+
+fn default_mongo_port() -> u16 {
+    27017
+}
+
+fn default_mongo_auth_source() -> String {
+    "admin".to_string()
 }
 
 fn session_key(kind: &str, connection_id: &str, session_id: &str) -> String {
@@ -715,6 +814,313 @@ pub(crate) async fn redis_connect(state: &AppState, args: Vec<Value>) -> Result<
     }))
 }
 
+pub(crate) async fn clickhouse_connect(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let connection_id = string_arg(&args, 0)?;
+    let config_value = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let config: ClickHouseConnectConfig = serde_json::from_value(config_value)
+        .map_err(|error| format!("ClickHouse 隧道配置无效：{error}"))?;
+    let remote_port = clickhouse_port(&config);
+    let tunnel_options = config
+        .tunnel
+        .clone()
+        .unwrap_or_else(|| TunnelOptions::for_database_endpoint(config.host.clone(), remote_port));
+    validate_database_endpoint(&tunnel_options.remote_host, tunnel_options.remote_port)?;
+    if config.user.trim().is_empty() {
+        return Err("ClickHouse 用户名不能为空。".to_string());
+    }
+
+    let connection = get_connection(state, &connection_id)?;
+    let (client, tunnel, transport) = if connection.kind == ConnectionKind::Local {
+        (
+            connect_clickhouse_direct(
+                &config,
+                &tunnel_options.remote_host,
+                tunnel_options.remote_port,
+            )
+            .await?,
+            None,
+            "direct",
+        )
+    } else {
+        let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
+        let tunnel = create_tunnel(tunnel_config)
+            .await
+            .map_err(|error| error.user_message())?;
+        let local_addr = tunnel.local_addr();
+        match connect_clickhouse_direct(&config, &local_addr.ip().to_string(), local_addr.port())
+            .await
+        {
+            Ok(client) => (client, Some(tunnel), "ssh-tunnel"),
+            Err(error) => {
+                let _ = tunnel.shutdown().await;
+                return Err(error);
+            }
+        }
+    };
+
+    let clickhouse_id = random_id("clickhouse-tunnel");
+    state
+        .database_tunnel_sessions
+        .lock()
+        .map_err(error_string)?
+        .insert(
+            session_key("clickhouse", &connection_id, &clickhouse_id),
+            DatabaseTunnelSession::ClickHouse(ClickHouseTunnelSession { tunnel, client }),
+        );
+    Ok(json!({
+        "clickhouseId": clickhouse_id,
+        "transport": transport,
+        "alreadyConnected": false
+    }))
+}
+
+pub(crate) async fn clickhouse_databases(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let result = clickhouse_query_sql(
+        state,
+        &args,
+        "SELECT name FROM system.databases ORDER BY name",
+        None,
+    )
+    .await?;
+    Ok(json!(result
+        .get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| row
+            .get("name")
+            .and_then(Value::as_str)
+            .map(ToString::to_string))
+        .collect::<Vec<_>>()))
+}
+
+pub(crate) async fn clickhouse_tables(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let database = string_arg(&args, 2)?;
+    let sql = format!(
+        "SELECT name, engine, total_rows AS totalRows, total_bytes AS totalBytes FROM system.tables WHERE database = {} ORDER BY name",
+        clickhouse_string_literal(&database)
+    );
+    let result = clickhouse_query_sql(state, &args, &sql, None).await?;
+    Ok(result.get("rows").cloned().unwrap_or_else(|| json!([])))
+}
+
+pub(crate) async fn clickhouse_columns(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let database = string_arg(&args, 2)?;
+    let table = string_arg(&args, 3)?;
+    let sql = format!(
+        "SELECT name, type, default_kind AS defaultKind, default_expression AS defaultExpression, comment, is_in_primary_key AS isPrimaryKey, is_in_sorting_key AS isSortingKey FROM system.columns WHERE database = {} AND table = {} ORDER BY position",
+        clickhouse_string_literal(&database),
+        clickhouse_string_literal(&table)
+    );
+    let result = clickhouse_query_sql(state, &args, &sql, None).await?;
+    Ok(result.get("rows").cloned().unwrap_or_else(|| json!([])))
+}
+
+pub(crate) async fn clickhouse_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let sql = string_arg(&args, 2)?;
+    let database = args.get(3).and_then(Value::as_str);
+    clickhouse_query_sql(state, &args, &sql, database).await
+}
+
+pub(crate) async fn mongo_connect(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let connection_id = string_arg(&args, 0)?;
+    let config_value = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let config: MongoConnectConfig = serde_json::from_value(config_value)
+        .map_err(|error| format!("MongoDB 隧道配置无效：{error}"))?;
+    let tunnel_options = config
+        .tunnel
+        .clone()
+        .unwrap_or_else(|| TunnelOptions::for_database_endpoint(config.host.clone(), config.port));
+    validate_database_endpoint(&tunnel_options.remote_host, tunnel_options.remote_port)?;
+
+    let connection = get_connection(state, &connection_id)?;
+    let (client, tunnel, transport) = if connection.kind == ConnectionKind::Local {
+        (
+            connect_mongo_direct(
+                &config,
+                &tunnel_options.remote_host,
+                tunnel_options.remote_port,
+            )
+            .await?,
+            None,
+            "direct",
+        )
+    } else {
+        let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
+        let tunnel = create_tunnel(tunnel_config)
+            .await
+            .map_err(|error| error.user_message())?;
+        let local_addr = tunnel.local_addr();
+        match connect_mongo_direct(&config, &local_addr.ip().to_string(), local_addr.port()).await {
+            Ok(client) => (client, Some(tunnel), "ssh-tunnel"),
+            Err(error) => {
+                let _ = tunnel.shutdown().await;
+                return Err(error);
+            }
+        }
+    };
+
+    let mongo_id = random_id("mongo-tunnel");
+    state
+        .database_tunnel_sessions
+        .lock()
+        .map_err(error_string)?
+        .insert(
+            session_key("mongo", &connection_id, &mongo_id),
+            DatabaseTunnelSession::Mongo(MongoTunnelSession { tunnel, client }),
+        );
+    Ok(json!({
+        "mongoId": mongo_id,
+        "transport": transport,
+        "alreadyConnected": false
+    }))
+}
+
+pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let client = mongo_client(state, &args)?;
+    let databases = client
+        .list_databases()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut rows = databases
+        .into_iter()
+        .map(|database| {
+            json!({
+                "name": database.name,
+                "sizeOnDisk": database.size_on_disk,
+                "empty": database.empty
+            })
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        left.get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(right.get("name").and_then(Value::as_str).unwrap_or(""))
+    });
+    Ok(json!(rows))
+}
+
+pub(crate) async fn mongo_collections(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let client = mongo_client(state, &args)?;
+    let database = string_arg(&args, 2)?;
+    let mut cursor = client
+        .database(&database)
+        .list_collections()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut rows = Vec::new();
+    while let Some(collection) = cursor
+        .try_next()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    {
+        let collection_type = serde_json::to_value(collection.collection_type)
+            .ok()
+            .and_then(|value| value.as_str().map(ToString::to_string))
+            .unwrap_or_else(|| "collection".to_string());
+        rows.push(json!({ "name": collection.name, "type": collection_type }));
+    }
+    rows.sort_by(|left, right| {
+        left.get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(right.get("name").and_then(Value::as_str).unwrap_or(""))
+    });
+    Ok(json!(rows))
+}
+
+pub(crate) async fn mongo_indexes(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let client = mongo_client(state, &args)?;
+    let database = string_arg(&args, 2)?;
+    let collection = string_arg(&args, 3)?;
+    let collection = client
+        .database(&database)
+        .collection::<Document>(&collection);
+    let mut cursor = collection
+        .list_indexes()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut indexes = Vec::new();
+    while let Some(index) = cursor
+        .try_next()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    {
+        let options = index.options.unwrap_or_default();
+        indexes.push(json!({
+            "name": options.name.unwrap_or_default(),
+            "key": bson_to_json(Bson::Document(index.keys)),
+            "unique": options.unique.unwrap_or(false),
+            "sparse": options.sparse.unwrap_or(false),
+            "expireAfterSeconds": options.expire_after.map(|duration| duration.as_secs())
+        }));
+    }
+    Ok(json!(indexes))
+}
+
+pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    let client = mongo_client(state, &args)?;
+    let request = args.get(2).cloned().unwrap_or_else(|| json!({}));
+    let database = request
+        .get("database")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let collection = request
+        .get("collection")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if database.trim().is_empty() || collection.trim().is_empty() {
+        return Err("MongoDB 数据库和集合不能为空。".to_string());
+    }
+    let filter = mongo_document_from_request(&request, "filter", "{}")?;
+    let projection = mongo_document_option_from_request(&request, "projection")?;
+    let sort = mongo_document_option_from_request(&request, "sort")?;
+    let limit = request
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(100)
+        .clamp(1, 1000);
+    let collection = client
+        .database(&database)
+        .collection::<Document>(&collection);
+    let mut find = collection.find(filter).limit(limit as i64);
+    if let Some(projection) = projection {
+        find = find.projection(projection);
+    }
+    if let Some(sort) = sort {
+        find = find.sort(sort);
+    }
+    let mut cursor = find
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut documents = Vec::new();
+    while let Some(document) = cursor
+        .try_next()
+        .await
+        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    {
+        documents.push(bson_to_json(Bson::Document(document)));
+    }
+    Ok(json!({
+        "documents": documents,
+        "count": documents.len(),
+        "limit": limit
+    }))
+}
+
 pub(crate) async fn redis_scan(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let options = args.get(2).cloned().unwrap_or_else(|| json!({}));
     let cursor = options
@@ -971,6 +1377,67 @@ async fn connect_redis_direct(
     Ok(client)
 }
 
+async fn connect_clickhouse_direct(
+    config: &ClickHouseConnectConfig,
+    host: &str,
+    port: u16,
+) -> Result<clickhouse::Client, String> {
+    let scheme = if config.secure { "https" } else { "http" };
+    let mut client = clickhouse::Client::default()
+        .with_url(format!("{scheme}://{host}:{port}"))
+        .with_user(config.user.clone());
+    if !config.password.is_empty() {
+        client = client.with_password(config.password.clone());
+    }
+    if !config.database.is_empty() {
+        client = client.with_database(config.database.clone());
+    }
+    let mut cursor = client
+        .query("SELECT 1 AS ok")
+        .fetch_bytes("JSON")
+        .map_err(|error| DbTunnelError::ClickHouseConnect(error.to_string()).user_message())?;
+    if let Err(error) = cursor.collect().await {
+        return Err(DbTunnelError::ClickHouseConnect(error.to_string()).user_message());
+    }
+    Ok(client)
+}
+
+async fn connect_mongo_direct(
+    config: &MongoConnectConfig,
+    host: &str,
+    port: u16,
+) -> Result<MongoClient, String> {
+    let uri = if config.username.trim().is_empty() {
+        format!("mongodb://{}:{}", host, port)
+    } else {
+        format!(
+            "mongodb://{}:{}@{}:{}/?authSource={}",
+            percent_encode(&config.username),
+            percent_encode(&config.password),
+            host,
+            port,
+            percent_encode(&config.auth_source)
+        )
+    };
+    let options = MongoClientOptions::parse(&uri)
+        .await
+        .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
+    let client = MongoClient::with_options(options)
+        .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
+    client
+        .database(&config.auth_source)
+        .run_command(doc! { "ping": 1 })
+        .await
+        .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
+    Ok(client)
+}
+
+fn clickhouse_port(config: &ClickHouseConnectConfig) -> u16 {
+    config
+        .port
+        .unwrap_or(if config.secure { 8443 } else { 8123 })
+}
+
 fn mysql_pool(state: &AppState, args: &[Value]) -> Result<MySqlPool, String> {
     let connection_id = string_arg(args, 0)?;
     let session_id = string_arg(args, 1)?;
@@ -989,6 +1456,70 @@ fn mysql_pool(state: &AppState, args: &[Value]) -> Result<MySqlPool, String> {
         }
         .user_message()),
     }
+}
+
+fn clickhouse_client(state: &AppState, args: &[Value]) -> Result<clickhouse::Client, String> {
+    let connection_id = string_arg(args, 0)?;
+    let session_id = string_arg(args, 1)?;
+    let guard = state
+        .database_tunnel_sessions
+        .lock()
+        .map_err(error_string)?;
+    let session = guard
+        .get(&session_key("clickhouse", &connection_id, &session_id))
+        .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    match session {
+        DatabaseTunnelSession::ClickHouse(session) => Ok(session.client.clone()),
+        other => Err(DbTunnelError::SessionKindMismatch {
+            expected: "clickhouse",
+            actual: other.kind(),
+        }
+        .user_message()),
+    }
+}
+
+fn mongo_client(state: &AppState, args: &[Value]) -> Result<MongoClient, String> {
+    let connection_id = string_arg(args, 0)?;
+    let session_id = string_arg(args, 1)?;
+    let guard = state
+        .database_tunnel_sessions
+        .lock()
+        .map_err(error_string)?;
+    let session = guard
+        .get(&session_key("mongo", &connection_id, &session_id))
+        .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    match session {
+        DatabaseTunnelSession::Mongo(session) => Ok(session.client.clone()),
+        other => Err(DbTunnelError::SessionKindMismatch {
+            expected: "mongo",
+            actual: other.kind(),
+        }
+        .user_message()),
+    }
+}
+
+async fn clickhouse_query_sql(
+    state: &AppState,
+    args: &[Value],
+    sql: &str,
+    database_override: Option<&str>,
+) -> Result<Value, String> {
+    let client = clickhouse_client(state, args)?;
+    let client = if let Some(database) = database_override.filter(|database| !database.is_empty()) {
+        client.with_database(database.to_string())
+    } else {
+        client
+    };
+    let mut cursor = client
+        .query(sql)
+        .fetch_bytes("JSON")
+        .map_err(|error| DbTunnelError::ClickHouseQuery(error.to_string()).user_message())?;
+    let bytes = cursor
+        .collect()
+        .await
+        .map_err(|error| DbTunnelError::ClickHouseQuery(error.to_string()).user_message())?;
+    let output = String::from_utf8_lossy(&bytes).to_string();
+    Ok(parse_clickhouse_response(&output))
 }
 
 fn postgres_pool(state: &AppState, args: &[Value]) -> Result<PgPool, String> {
@@ -1302,6 +1833,122 @@ fn redis_scan_result(value: RedisValue) -> (String, Vec<String>) {
         .unwrap_or_else(|| "0".to_string());
     let keys = values.next().map(redis_string_list).unwrap_or_default();
     (cursor, keys)
+}
+
+fn parse_clickhouse_response(output: &str) -> Value {
+    let text = output.trim();
+    if text.is_empty() {
+        return json!({
+            "columns": [],
+            "rows": [],
+            "rowCount": 0
+        });
+    }
+    let Ok(raw) = serde_json::from_str::<Value>(text) else {
+        return json!({
+            "columns": ["response"],
+            "rows": [{ "response": output }],
+            "rowCount": 1
+        });
+    };
+    let rows = raw
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    if item.is_object() {
+                        item.clone()
+                    } else {
+                        json!({ "value": item })
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let columns = raw
+        .get("meta")
+        .and_then(Value::as_array)
+        .map(|meta| {
+            meta.iter()
+                .filter_map(|item| {
+                    item.get("name")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|columns| !columns.is_empty())
+        .unwrap_or_else(|| {
+            rows.first()
+                .and_then(Value::as_object)
+                .map(|object| object.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default()
+        });
+    let row_count = raw
+        .get("rows")
+        .and_then(Value::as_u64)
+        .unwrap_or(rows.len() as u64);
+    let statistics = raw
+        .get("statistics")
+        .and_then(Value::as_object)
+        .map(|_| {
+            json!({
+                "elapsed": raw.pointer("/statistics/elapsed").cloned().unwrap_or(json!(0)),
+                "rowsRead": raw.pointer("/statistics/rows_read").cloned().unwrap_or(json!(0)),
+                "bytesRead": raw.pointer("/statistics/bytes_read").cloned().unwrap_or(json!(0))
+            })
+        })
+        .unwrap_or(Value::Null);
+    json!({
+        "columns": columns,
+        "rows": rows,
+        "rowCount": row_count,
+        "statistics": statistics
+    })
+}
+
+fn clickhouse_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn mongo_document_from_request(
+    request: &Value,
+    field: &str,
+    fallback_json: &str,
+) -> Result<Document, String> {
+    let raw = request
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback_json);
+    let value = serde_json::from_str::<Value>(raw)
+        .map_err(|error| format!("MongoDB {field} JSON 无效：{error}"))?;
+    let bson = Bson::try_from(value)
+        .map_err(|error| format!("MongoDB {field} Extended JSON 无效：{error}"))?;
+    match bson {
+        Bson::Document(document) => Ok(document),
+        _ => Err(format!("MongoDB {field} 必须是 JSON 对象。")),
+    }
+}
+
+fn mongo_document_option_from_request(
+    request: &Value,
+    field: &str,
+) -> Result<Option<Document>, String> {
+    let Some(raw) = request.get(field).and_then(Value::as_str).map(str::trim) else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    mongo_document_from_request(request, field, "{}").map(Some)
+}
+
+fn bson_to_json(value: Bson) -> Value {
+    value.into_relaxed_extjson()
 }
 
 fn redis_pairs_to_object(value: RedisValue) -> Value {

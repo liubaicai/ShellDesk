@@ -1216,6 +1216,9 @@ pub(crate) async fn clickhouse_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    if crate::database_tunnel::is_tunnel_mode(&config) {
+        return crate::database_tunnel::clickhouse_connect(state, args).await;
+    }
     let clickhouse_id = encode_config_id("clickhouse", &config)?;
     let _ = run_clickhouse_query(state, &connection_id, &config, "SELECT 1 AS ok", None).await?;
     register_db_session(state, "clickhouse", &connection_id, &clickhouse_id, config)?;
@@ -1226,6 +1229,9 @@ pub(crate) async fn clickhouse_databases(
     state: &AppState,
     args: Vec<Value>,
 ) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "clickhouse", &args)? {
+        return crate::database_tunnel::clickhouse_databases(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "clickhouse", &args, 0, 1)?;
     let result = run_clickhouse_query(
         state,
@@ -1249,6 +1255,9 @@ pub(crate) async fn clickhouse_databases(
 }
 
 pub(crate) async fn clickhouse_tables(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "clickhouse", &args)? {
+        return crate::database_tunnel::clickhouse_tables(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "clickhouse", &args, 0, 1)?;
     let database = string_arg(&args, 2)?;
     let sql = format!(
@@ -1263,6 +1272,9 @@ pub(crate) async fn clickhouse_columns(
     state: &AppState,
     args: Vec<Value>,
 ) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "clickhouse", &args)? {
+        return crate::database_tunnel::clickhouse_columns(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "clickhouse", &args, 0, 1)?;
     let database = string_arg(&args, 2)?;
     let table = string_arg(&args, 3)?;
@@ -1276,6 +1288,9 @@ pub(crate) async fn clickhouse_columns(
 }
 
 pub(crate) async fn clickhouse_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "clickhouse", &args)? {
+        return crate::database_tunnel::clickhouse_query(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "clickhouse", &args, 0, 1)?;
     let sql = string_arg(&args, 2)?;
     let database = args.get(3).and_then(Value::as_str);
@@ -1426,6 +1441,9 @@ fn parse_clickhouse_response(output: &str) -> Value {
 pub(crate) async fn mongo_connect(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    if crate::database_tunnel::is_tunnel_mode(&config) {
+        return crate::database_tunnel::mongo_connect(state, args).await;
+    }
     let mongo_id = encode_config_id("mongo", &config)?;
     let _ = run_mongo_eval(
         state,
@@ -1440,6 +1458,9 @@ pub(crate) async fn mongo_connect(state: &AppState, args: Vec<Value>) -> Result<
 }
 
 pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "mongo", &args)? {
+        return crate::database_tunnel::mongo_databases(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "mongo", &args, 0, 1)?;
     let output = run_mongo_eval(
         state,
@@ -1456,6 +1477,9 @@ pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Resul
 }
 
 pub(crate) async fn mongo_collections(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "mongo", &args)? {
+        return crate::database_tunnel::mongo_collections(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "mongo", &args, 0, 1)?;
     let database = string_arg(&args, 2)?;
     let script = format!(
@@ -1467,6 +1491,9 @@ pub(crate) async fn mongo_collections(state: &AppState, args: Vec<Value>) -> Res
 }
 
 pub(crate) async fn mongo_indexes(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "mongo", &args)? {
+        return crate::database_tunnel::mongo_indexes(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "mongo", &args, 0, 1)?;
     let database = string_arg(&args, 2)?;
     let collection = string_arg(&args, 3)?;
@@ -1480,6 +1507,9 @@ pub(crate) async fn mongo_indexes(state: &AppState, args: Vec<Value>) -> Result<
 }
 
 pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
+    if crate::database_tunnel::has_session(state, "mongo", &args)? {
+        return crate::database_tunnel::mongo_query(state, args).await;
+    }
     let (connection_id, config) = decode_active_db_session_args(state, "mongo", &args, 0, 1)?;
     let request = args.get(2).cloned().unwrap_or_else(|| json!({}));
     let database = read_string_field(&request, "database", "");

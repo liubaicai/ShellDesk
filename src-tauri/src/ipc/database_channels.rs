@@ -58,7 +58,7 @@ pub(crate) async fn dispatch(
 
         "connection:clickhouse-connect" => database::clickhouse_connect(state, args).await,
         "connection:clickhouse-disconnect" => {
-            database::disconnect_db_session(state, args, "clickhouse")
+            database::disconnect_db_session_any(state, args, "clickhouse").await
         }
         "connection:clickhouse-databases" => database::clickhouse_databases(state, args).await,
         "connection:clickhouse-tables" => database::clickhouse_tables(state, args).await,
@@ -66,7 +66,9 @@ pub(crate) async fn dispatch(
         "connection:clickhouse-query" => database::clickhouse_query(state, args).await,
 
         "connection:mongo-connect" => database::mongo_connect(state, args).await,
-        "connection:mongo-disconnect" => database::disconnect_db_session(state, args, "mongo"),
+        "connection:mongo-disconnect" => {
+            database::disconnect_db_session_any(state, args, "mongo").await
+        }
         "connection:mongo-databases" => database::mongo_databases(state, args).await,
         "connection:mongo-collections" => database::mongo_collections(state, args).await,
         "connection:mongo-indexes" => database::mongo_indexes(state, args).await,
