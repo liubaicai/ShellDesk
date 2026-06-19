@@ -107,7 +107,7 @@ assert.deepEqual(tauriConfig.build, {
 
 const [mainWindow] = tauriConfig.app.windows;
 assert.equal(mainWindow.title, backupPackageJson.productName);
-assert.equal(mainWindow.width, 1280);
+assert.equal(mainWindow.width, 1260);
 assert.equal(mainWindow.height, 820);
 assert.equal(mainWindow.minWidth, 960);
 assert.equal(mainWindow.minHeight, 640);

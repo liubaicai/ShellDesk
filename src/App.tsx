@@ -4071,6 +4071,16 @@ function App() {
 
       if (isConnectionWindow) {
         setConnection(nextConnection);
+      } else {
+        try {
+          if (!window.guiSSH.app?.openConnectionWindow) {
+            throw new Error(t('app.connection.windowUnsupported', appLanguage));
+          }
+          await window.guiSSH.app.openConnectionWindow(nextConnection.id);
+        } catch (windowError) {
+          setConnection(nextConnection);
+          console.error('[shelldesk] failed to open local connection window; falling back to current window:', windowError);
+        }
       }
 
       addLog('connection', 'success', t('app.connection.localOpenLog', appLanguage), nextConnection.host.systemName || nextConnection.host.address, getLogHostMeta(nextConnection.host));
