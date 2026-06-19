@@ -14,7 +14,12 @@ use std::{
     time::Duration,
 };
 use tauri::Emitter;
-use tokio::{io::AsyncWriteExt, net::TcpStream, process::Command, time};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    process::Command,
+    time,
+};
 pub(crate) async fn run_connection_command(
     state: &AppState,
     args: Vec<Value>,
@@ -472,26 +477,61 @@ async fn run_ssh_command_for_profile_with_broker(
     child
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     let mut child = child.spawn().map_err(error_string)?;
-    if !stdin.is_empty() {
-        if let Some(mut child_stdin) = child.stdin.take() {
+    if let Some(mut child_stdin) = child.stdin.take() {
+        if !stdin.is_empty() {
             child_stdin
                 .write_all(stdin.as_bytes())
                 .await
                 .map_err(error_string)?;
         }
     }
-    let output = time::timeout(Duration::from_secs(90), child.wait_with_output())
-        .await
-        .map_err(|_| "SSH command timed out.".to_string())?
-        .map_err(error_string)?;
-    let code = output.status.code().unwrap_or(-1);
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "SSH stdout is unavailable.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "SSH stderr is unavailable.".to_string())?;
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = stdout;
+        let mut output = Vec::new();
+        reader
+            .read_to_end(&mut output)
+            .await
+            .map_err(error_string)?;
+        Ok::<Vec<u8>, String>(output)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = stderr;
+        let mut output = Vec::new();
+        reader
+            .read_to_end(&mut output)
+            .await
+            .map_err(error_string)?;
+        Ok::<Vec<u8>, String>(output)
+    });
+    let status = match time::timeout(Duration::from_secs(90), child.wait()).await {
+        Ok(result) => result.map_err(error_string)?,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err("SSH command timed out.".to_string());
+        }
+    };
+    let stdout = stdout_task.await.map_err(error_string)??;
+    let stderr = stderr_task.await.map_err(error_string)??;
+    let code = status.code().unwrap_or(-1);
     Ok(json!({
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
+        "stdout": String::from_utf8_lossy(&stdout),
+        "stderr": String::from_utf8_lossy(&stderr),
         "code": code,
-        "success": output.status.success()
+        "success": status.success()
     }))
 }
 
@@ -541,12 +581,9 @@ pub(crate) fn ssh_args(profile: &SshProfile) -> Vec<String> {
         "-o".to_string(),
         "ConnectTimeout=15".to_string(),
     ];
-    if profile.known_hosts_path.is_empty() {
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=accept-new".to_string());
-    } else {
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=yes".to_string());
+    args.push("-o".to_string());
+    args.push("StrictHostKeyChecking=yes".to_string());
+    if !profile.known_hosts_path.is_empty() {
         args.push("-o".to_string());
         args.push(format!("UserKnownHostsFile={}", profile.known_hosts_path));
     }
@@ -611,12 +648,7 @@ pub(crate) fn ssh_destination(profile: &SshProfile) -> String {
 fn proxy_command_for_profile(profile: &SshProfile) -> Option<String> {
     if let Some(jump) = profile.jump.as_deref() {
         let mut parts = if should_use_sshpass(jump) {
-            vec![
-                "sshpass".to_string(),
-                "-p".to_string(),
-                shell_arg(&jump.password),
-                "ssh".to_string(),
-            ]
+            vec!["sshpass".to_string(), "-e".to_string(), "ssh".to_string()]
         } else {
             vec!["ssh".to_string()]
         };
@@ -684,11 +716,17 @@ fn apply_proxy_helper_env_tokio(command: &mut Command, profile: &SshProfile) {
     for (name, value) in proxy_helper_envs(profile) {
         command.env(name, value);
     }
+    if let Some(password) = jump_sshpass_password(profile) {
+        command.env("SSHPASS", password);
+    }
 }
 
 pub(crate) fn apply_proxy_helper_env_pty(command: &mut CommandBuilder, profile: &SshProfile) {
     for (name, value) in proxy_helper_envs(profile) {
         command.env(name, value);
+    }
+    if let Some(password) = jump_sshpass_password(profile) {
+        command.env("SSHPASS", password);
     }
 }
 
@@ -718,6 +756,15 @@ fn collect_proxy_helper_envs(profile: &SshProfile, envs: &mut Vec<(String, Strin
     }
     if let Some(jump) = profile.jump.as_deref() {
         collect_proxy_helper_envs(jump, envs);
+    }
+}
+
+fn jump_sshpass_password(profile: &SshProfile) -> Option<&str> {
+    let jump = profile.jump.as_deref()?;
+    if should_use_sshpass(jump) {
+        Some(jump.password.as_str())
+    } else {
+        jump_sshpass_password(jump)
     }
 }
 

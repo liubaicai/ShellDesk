@@ -85,6 +85,8 @@ pub(crate) async fn start_terminal(
     let startup_writer = writer.clone();
     let event_connection_id = connection_id.clone();
     let event_terminal_id = terminal_id.clone();
+    let terminals_clone = state.terminals.clone();
+    let key_clone = terminal_key.clone();
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
         let mut terminal_prompt_buffer = String::new();
@@ -130,6 +132,9 @@ pub(crate) async fn start_terminal(
                 "signal": null
             }),
         );
+        if let Ok(mut map) = terminals_clone.lock() {
+            map.remove(&key_clone);
+        }
     });
 
     if !startup_plan.initial_input.is_empty() {

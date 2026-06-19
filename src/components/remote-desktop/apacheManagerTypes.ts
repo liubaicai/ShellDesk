@@ -59,6 +59,20 @@ export interface ApacheTestResult {
   output: string;
 }
 
+export type ApacheTemplateValidationErrorId =
+  | 'required'
+  | 'unsupportedCharacters'
+  | 'spacesOrQuotes'
+  | 'invalidUrl'
+  | 'invalidPort'
+  | 'invalidNumber';
+
+export interface ApacheTemplateValidationResult {
+  valid: boolean;
+  errorId?: ApacheTemplateValidationErrorId;
+  value?: string;
+}
+
 export interface ApacheTemplateVariable {
   name: string;
   label: string;
@@ -67,6 +81,7 @@ export interface ApacheTemplateVariable {
   default: string;
   required: boolean;
   options?: string[];
+  validate?: (value: string) => ApacheTemplateValidationResult;
 }
 
 export interface ApacheConfigTemplate {

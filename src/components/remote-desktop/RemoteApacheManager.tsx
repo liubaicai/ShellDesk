@@ -26,8 +26,8 @@ import {
   parseApacheListConfigs,
   validateApacheConfigPath,
 } from './apacheManagerProviders';
-import { apacheConfigTemplates } from './apacheManagerTemplates';
-import type { ApacheConfigFile, ApacheConfigTemplate, ApacheInstallation, ApacheSiteFilter, ApacheTestResult, ApacheVirtualHost } from './apacheManagerTypes';
+import { apacheConfigTemplates, validateApacheTemplateValues } from './apacheManagerTemplates';
+import type { ApacheConfigFile, ApacheConfigTemplate, ApacheInstallation, ApacheSiteFilter, ApacheTemplateValidationResult, ApacheTemplateVariable, ApacheTestResult, ApacheVirtualHost } from './apacheManagerTypes';
 import { tCurrent, type MessageId } from '../../i18n';
 
 const NotepadEditor = lazy(() => import('./NotepadEditor'));
@@ -64,12 +64,33 @@ function getTemplateDefaults(template: ApacheConfigTemplate) {
   return Object.fromEntries(template.variables.map((variable) => [variable.name, variable.default]));
 }
 
-function renderTemplatePreview(template: ApacheConfigTemplate, values: Record<string, string>) {
-  try {
-    return template.render(values);
-  } catch (error) {
-    return getErrorMessage(error);
+function getTemplateValidationMessage(variable: ApacheTemplateVariable, result: ApacheTemplateValidationResult) {
+  const label = tCurrent(variable.label as MessageId);
+  switch (result.errorId) {
+    case 'required':
+      return tCurrent('auto.remoteApacheManager.templateRequired', { value0: label });
+    case 'unsupportedCharacters':
+      return tCurrent('auto.remoteApacheManager.templateUnsupportedCharacters', { value0: label });
+    case 'spacesOrQuotes':
+      return tCurrent('auto.remoteApacheManager.templateSpacesOrQuotes', { value0: label });
+    case 'invalidUrl':
+      return tCurrent('auto.remoteApacheManager.templateInvalidUrl', { value0: label });
+    case 'invalidPort':
+      return tCurrent('auto.remoteApacheManager.templateInvalidPort', { value0: label });
+    case 'invalidNumber':
+      return tCurrent('auto.remoteApacheManager.templateInvalidNumber', { value0: label });
+    default:
+      return tCurrent('auto.remoteApacheManager.actionFailed');
   }
+}
+
+function renderTemplatePreview(template: ApacheConfigTemplate, values: Record<string, string>) {
+  const validation = validateApacheTemplateValues(template, values);
+  if (!validation.valid) {
+    return getTemplateValidationMessage(validation.variable, validation);
+  }
+
+  return template.render(values);
 }
 
 function virtualHostTitle(virtualHost: ApacheVirtualHost | null) {
@@ -427,10 +448,9 @@ function RemoteApacheManager({ connectionId, systemType }: RemoteApacheManagerPr
     setError('');
     setNotice('');
     try {
-      for (const variable of template.variables) {
-        if (variable.required && !values[variable.name]?.trim()) {
-          throw new Error(tCurrent('auto.remoteApacheManager.templateRequired', { value0: tCurrent(variable.label as MessageId) }));
-        }
+      const validation = validateApacheTemplateValues(template, values);
+      if (!validation.valid) {
+        throw new Error(getTemplateValidationMessage(validation.variable, validation));
       }
       const targetPath = getCreateTargetPath(installation, template, values);
       const content = `${template.render(values).trim()}\n`;

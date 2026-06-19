@@ -35,11 +35,12 @@ pub(crate) async fn run_shell(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(error_string)?;
 
-    if !stdin.is_empty() {
-        if let Some(mut child_stdin) = child.stdin.take() {
+    if let Some(mut child_stdin) = child.stdin.take() {
+        if !stdin.is_empty() {
             child_stdin
                 .write_all(stdin.as_bytes())
                 .await
@@ -47,16 +48,51 @@ pub(crate) async fn run_shell(
         }
     }
 
-    let output = time::timeout(timeout, child.wait_with_output())
-        .await
-        .map_err(|_| "Command timed out.".to_string())?
-        .map_err(error_string)?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Process stdout is unavailable.".to_string())?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Process stderr is unavailable.".to_string())?;
+    let stdout_task = tokio::spawn(async move {
+        let mut output = Vec::new();
+        stdout
+            .read_to_end(&mut output)
+            .await
+            .map_err(error_string)?;
+        Ok::<Vec<u8>, String>(output)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut output = Vec::new();
+        stderr
+            .read_to_end(&mut output)
+            .await
+            .map_err(error_string)?;
+        Ok::<Vec<u8>, String>(output)
+    });
+    let status = match time::timeout(timeout, child.wait()).await {
+        Ok(result) => result.map_err(error_string)?,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(format!(
+                "Command timed out after {} seconds",
+                timeout.as_secs()
+            ));
+        }
+    };
+    let stdout = stdout_task.await.map_err(error_string)??;
+    let stderr = stderr_task.await.map_err(error_string)??;
     Ok(json!({
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
-        "code": output.status.code().unwrap_or(-1),
+        "stdout": String::from_utf8_lossy(&stdout),
+        "stderr": String::from_utf8_lossy(&stderr),
+        "code": status.code().unwrap_or(-1),
         "signal": null,
-        "success": output.status.success()
+        "success": status.success()
     }))
 }
 
@@ -88,6 +124,7 @@ pub(crate) async fn run_shell_stream(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(error_string)?;
 

@@ -1,45 +1,61 @@
-import type { ApacheConfigTemplate, ApacheTemplateVariable } from './apacheManagerTypes';
+import type { ApacheConfigTemplate, ApacheTemplateValidationResult, ApacheTemplateVariable } from './apacheManagerTypes';
 
 function valueOrDefault(values: Record<string, string>, name: string, fallback: string) {
   return values[name]?.trim() || fallback;
 }
 
-function sanitizeApacheTemplateValue(name: string, type: ApacheTemplateVariable['type'], value: string): string {
+function validateApacheTemplateValue(
+  name: string,
+  type: ApacheTemplateVariable['type'],
+  value: string,
+  options: { disallowSpacesOrQuotes?: boolean; validateUrl?: boolean } = {},
+): ApacheTemplateValidationResult {
   const stripped = value.trim();
-  if (!stripped) throw new Error(`${name} is required.`);
-  if (/[\r\n<>]/.test(stripped)) throw new Error(`${name} contains unsupported characters.`);
-  if (name === 'SERVER_NAME' && /[\s'"]/.test(stripped)) {
-    throw new Error(`${name} must not contain spaces or quotes.`);
+  if (!stripped) return { valid: false, errorId: 'required' };
+  if (/[\r\n<>]/.test(stripped)) return { valid: false, errorId: 'unsupportedCharacters' };
+  if (options.disallowSpacesOrQuotes && /[\s'"]/.test(stripped)) {
+    return { valid: false, errorId: 'spacesOrQuotes' };
   }
-  if ((name === 'DOCUMENT_ROOT' || name === 'SSL_CERT_FILE' || name === 'SSL_KEY_FILE') && /[\s'"]/.test(stripped)) {
-    throw new Error(`${name} must not contain spaces or quotes.`);
-  }
-  if (name === 'PROXY_TARGET') {
-    if (/[\s'"]/.test(stripped)) throw new Error(`${name} must not contain spaces or quotes.`);
+  if (options.validateUrl) {
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(stripped);
     } catch {
-      throw new Error(`${name} must be a valid URL.`);
+      return { valid: false, errorId: 'invalidUrl' };
     }
-    if (!parsedUrl.protocol || !parsedUrl.hostname) throw new Error(`${name} must be a valid URL.`);
+    if (!parsedUrl.protocol || !parsedUrl.hostname) return { valid: false, errorId: 'invalidUrl' };
   }
 
   if (type === 'port') {
-    if (!/^\d+$/.test(stripped)) throw new Error(`${name} must be a numeric port.`);
+    if (!/^\d+$/.test(stripped)) return { valid: false, errorId: 'invalidPort' };
     const port = Number(stripped);
-    if (port < 1 || port > 65535) throw new Error(`${name} must be between 1 and 65535.`);
+    if (port < 1 || port > 65535) return { valid: false, errorId: 'invalidPort' };
   }
 
   if (type === 'number' && !/^\d+$/.test(stripped)) {
-    throw new Error(`${name} must be numeric.`);
+    return { valid: false, errorId: 'invalidNumber' };
   }
 
-  return stripped;
+  void name;
+  return { valid: true, value: stripped };
 }
 
 function apacheValue(values: Record<string, string>, variable: ApacheTemplateVariable) {
-  return sanitizeApacheTemplateValue(variable.name, variable.type, valueOrDefault(values, variable.name, variable.default));
+  const rawValue = valueOrDefault(values, variable.name, variable.default);
+  const result = variable.validate?.(rawValue) ?? validateApacheTemplateValue(variable.name, variable.type, rawValue);
+  return result.value ?? rawValue.trim();
+}
+
+export function validateApacheTemplateValues(template: ApacheConfigTemplate, values: Record<string, string>) {
+  for (const variable of template.variables) {
+    const rawValue = valueOrDefault(values, variable.name, variable.default);
+    const result = variable.validate?.(rawValue) ?? validateApacheTemplateValue(variable.name, variable.type, rawValue);
+    if (!result.valid) {
+      return { ...result, variable };
+    }
+  }
+
+  return { valid: true as const };
 }
 
 const serverNameVariable: ApacheTemplateVariable = {
@@ -49,6 +65,7 @@ const serverNameVariable: ApacheTemplateVariable = {
   type: 'text',
   default: 'example.com',
   required: true,
+  validate: (value) => validateApacheTemplateValue('SERVER_NAME', 'text', value, { disallowSpacesOrQuotes: true }),
 };
 
 const documentRootVariable: ApacheTemplateVariable = {
@@ -58,6 +75,7 @@ const documentRootVariable: ApacheTemplateVariable = {
   type: 'text',
   default: '/var/www/html',
   required: true,
+  validate: (value) => validateApacheTemplateValue('DOCUMENT_ROOT', 'text', value, { disallowSpacesOrQuotes: true }),
 };
 
 const listenPortVariable: ApacheTemplateVariable = {
@@ -67,6 +85,7 @@ const listenPortVariable: ApacheTemplateVariable = {
   type: 'port',
   default: '80',
   required: true,
+  validate: (value) => validateApacheTemplateValue('LISTEN_PORT', 'port', value),
 };
 
 const proxyTargetVariable: ApacheTemplateVariable = {
@@ -76,6 +95,7 @@ const proxyTargetVariable: ApacheTemplateVariable = {
   type: 'text',
   default: 'http://127.0.0.1:3000',
   required: true,
+  validate: (value) => validateApacheTemplateValue('PROXY_TARGET', 'text', value, { disallowSpacesOrQuotes: true, validateUrl: true }),
 };
 
 const sslCertFileVariable: ApacheTemplateVariable = {
@@ -85,6 +105,7 @@ const sslCertFileVariable: ApacheTemplateVariable = {
   type: 'text',
   default: '/etc/letsencrypt/live/example.com/fullchain.pem',
   required: true,
+  validate: (value) => validateApacheTemplateValue('SSL_CERT_FILE', 'text', value, { disallowSpacesOrQuotes: true }),
 };
 
 const sslKeyFileVariable: ApacheTemplateVariable = {
@@ -94,6 +115,7 @@ const sslKeyFileVariable: ApacheTemplateVariable = {
   type: 'text',
   default: '/etc/letsencrypt/live/example.com/privkey.pem',
   required: true,
+  validate: (value) => validateApacheTemplateValue('SSL_KEY_FILE', 'text', value, { disallowSpacesOrQuotes: true }),
 };
 
 const phpFpmSocketVariable: ApacheTemplateVariable = {
@@ -103,6 +125,7 @@ const phpFpmSocketVariable: ApacheTemplateVariable = {
   type: 'text',
   default: 'unix:/run/php/php-fpm.sock',
   required: true,
+  validate: (value) => validateApacheTemplateValue('PHP_FPM_SOCKET', 'text', value, { disallowSpacesOrQuotes: true }),
 };
 
 export const apacheConfigTemplates: ApacheConfigTemplate[] = [

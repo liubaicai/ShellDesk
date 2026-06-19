@@ -869,8 +869,8 @@ async fn run_redis_cli_with_mode(
         db
     );
     if !password.is_empty() {
-        base.push_str(&format!(" -a {} --no-auth-warning", shell_quote(&password)));
-        ps_base.push_str(&format!(" -a {} --no-auth-warning", ps_quote(&password)));
+        base = format!("REDISCLI_AUTH={} {base}", shell_quote(&password));
+        ps_base = format!("$env:REDISCLI_AUTH = {}; {ps_base}", ps_quote(&password));
     }
     for arg in command_args {
         base.push(' ');
@@ -1506,36 +1506,53 @@ async fn run_mysql_cli(
     let database = database_override
         .map(ToString::to_string)
         .unwrap_or_else(|| read_string_field(config, "database", ""));
-    let mut command = format!(
+    let (posix_command, windows_command) =
+        mysql_cli_commands(&host, port, &user, &password, &database, sql);
+    run_cli_output(
+        state,
+        connection_id,
+        posix_command,
+        Some(windows_command),
+        "MySQL 命令执行失败。",
+    )
+    .await
+}
+
+fn mysql_cli_commands(
+    host: &str,
+    port: u64,
+    user: &str,
+    password: &str,
+    database: &str,
+    sql: &str,
+) -> (String, String) {
+    let mut posix = format!(
         "mysql --batch --raw --host={} --port={} --user={}",
         shell_quote(&host),
         port,
         shell_quote(&user)
     );
+    let mut windows = format!(
+        "mysql --batch --raw --host={} --port={} --user={}",
+        ps_quote(host),
+        port,
+        ps_quote(user)
+    );
     if !password.is_empty() {
-        command.push_str(&format!(" --password={}", shell_quote(&password)));
+        posix = format!("MYSQL_PWD={} {posix}", shell_quote(password));
+        windows = format!("$env:MYSQL_PWD = {}; {windows}", ps_quote(password));
     }
     if !database.is_empty() {
-        command.push(' ');
-        command.push_str(&shell_quote(&database));
+        posix.push(' ');
+        posix.push_str(&shell_quote(database));
+        windows.push(' ');
+        windows.push_str(&ps_quote(database));
     }
-    command.push_str(" --execute ");
-    command.push_str(&shell_quote(sql));
-    let output =
-        run_connection_command(state, vec![json!(connection_id), json!(command), json!("")])
-            .await?;
-    if output.get("code").and_then(Value::as_i64).unwrap_or(1) != 0 {
-        return Err(output
-            .get("stderr")
-            .and_then(Value::as_str)
-            .unwrap_or("MySQL 命令执行失败。")
-            .to_string());
-    }
-    Ok(output
-        .get("stdout")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string())
+    posix.push_str(" --execute ");
+    posix.push_str(&shell_quote(sql));
+    windows.push_str(" --execute ");
+    windows.push_str(&ps_quote(sql));
+    (posix, windows)
 }
 
 fn encode_config_id(prefix: &str, value: &Value) -> Result<String, String> {
@@ -2094,6 +2111,34 @@ mod tests {
             ConnectionKind::Ssh,
             "windows"
         )));
+    }
+
+    #[test]
+    fn mysql_cli_commands_use_shell_specific_password_env() {
+        let (posix, windows) = mysql_cli_commands(
+            "127.0.0.1",
+            3306,
+            "root",
+            "secret value",
+            "app_db",
+            "SELECT 1;",
+        );
+        assert!(posix.starts_with("MYSQL_PWD='secret value' mysql "));
+        assert!(windows.starts_with("$env:MYSQL_PWD = 'secret value'; mysql "));
+        assert!(posix.contains(" 'app_db' --execute 'SELECT 1;'"));
+        assert!(windows.contains(" 'app_db' --execute 'SELECT 1;'"));
+        assert!(!posix.contains("--password"));
+        assert!(!windows.contains("--password"));
+    }
+
+    #[test]
+    fn mysql_cli_commands_omit_password_env_when_empty() {
+        let (posix, windows) =
+            mysql_cli_commands("localhost", 3306, "root", "", "", "SHOW DATABASES;");
+        assert!(posix.starts_with("mysql --batch --raw "));
+        assert!(windows.starts_with("mysql --batch --raw "));
+        assert!(!posix.contains("MYSQL_PWD"));
+        assert!(!windows.contains("MYSQL_PWD"));
     }
 
     #[test]
