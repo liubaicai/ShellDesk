@@ -33,8 +33,6 @@ function runNode(args, env = {}) {
 try {
   write(path.join(artifactsDir, 'windows', 'ShellDesk_1.2.3_x64-setup.exe'), 'windows');
   write(path.join(artifactsDir, 'windows', 'ShellDesk_1.2.3_x64-setup.exe.sig'), 'windows-signature');
-  write(path.join(artifactsDir, 'windows-arm64', 'ShellDesk_1.2.3_arm64-setup.exe'), 'windows-arm64');
-  write(path.join(artifactsDir, 'windows-arm64', 'ShellDesk_1.2.3_arm64-setup.exe.sig'), 'windows-arm64-signature');
   write(path.join(artifactsDir, 'macos', 'ShellDesk_1.2.3_aarch64.app.tar.gz'), 'macos');
   write(path.join(artifactsDir, 'macos', 'ShellDesk_1.2.3_aarch64.app.tar.gz.sig'), 'macos-signature');
   write(path.join(artifactsDir, 'linux', 'ShellDesk_1.2.3_x86_64.AppImage'), 'linux');
@@ -57,13 +55,12 @@ try {
   assert.equal(manifest.version, '1.2.3');
   assert.equal(manifest.pub_date, '2026-06-18T00:00:00Z');
   assert.equal(manifest.platforms['windows-x86_64'].signature, 'windows-signature');
-  assert.equal(manifest.platforms['windows-aarch64'].signature, 'windows-arm64-signature');
   assert.equal(manifest.platforms['darwin-aarch64'].signature, 'macos-signature');
   assert.equal(manifest.platforms['linux-x86_64'].signature, 'linux-signature');
   assert.match(manifest.platforms['windows-x86_64'].url, /ShellDesk_1\.2\.3_x64-setup\.exe$/);
-  assert.match(manifest.platforms['windows-aarch64'].url, /ShellDesk_1\.2\.3_arm64-setup\.exe$/);
   assert.match(manifest.platforms['darwin-aarch64'].url, /ShellDesk_1\.2\.3_aarch64\.app\.tar\.gz$/);
   assert.match(manifest.platforms['linux-x86_64'].url, /ShellDesk_1\.2\.3_x86_64\.AppImage$/);
+  assert.ok(!manifest.platforms['windows-aarch64']);
   assert.ok(!manifest.platforms['linux-aarch64']);
 
   runNode(['.github/scripts/generate-release-note.js', artifactsDir], {
@@ -76,10 +73,10 @@ try {
   assert.match(releaseNotes, /\*\*macOS\*\*/);
   assert.match(releaseNotes, /\*\*Linux\*\*/);
   assert.match(releaseNotes, /ShellDesk_1\.2\.3_x64-setup\.exe/);
-  assert.match(releaseNotes, /ShellDesk_1\.2\.3_arm64-setup\.exe/);
   assert.match(releaseNotes, /ShellDesk_1\.2\.3_aarch64\.app\.tar\.gz/);
   assert.match(releaseNotes, /ShellDesk_1\.2\.3_x86_64\.AppImage\.tar\.gz/);
   assert.match(releaseNotes, /ShellDesk_1\.2\.3_x86_64\.AppImage/);
+  assert.doesNotMatch(releaseNotes, /ShellDesk_1\.2\.3_arm64-setup\.exe/);
   assert.doesNotMatch(releaseNotes, /\.sig/);
   assert.doesNotMatch(releaseNotes, /latest\.yml/);
   assert.doesNotMatch(releaseNotes, /\*\*Other\*\*/);
@@ -96,9 +93,9 @@ try {
   assert.doesNotMatch(releaseWorkflow, /^\s*artifacts\/\*\*\/\*\.tar\.gz\s*$/m);
   assert.doesNotMatch(releaseWorkflow, /^\s*artifacts\/\*\*\/\*\.app\.tar\.gz\.sig\s*$/m);
   assert.doesNotMatch(releaseWorkflow, /^\s*artifacts\/latest\.json\s*$/m);
-  assert.match(releaseWorkflow, /name: windows-arm64/);
-  assert.match(releaseWorkflow, /pack_script: pack:win-arm64/);
-  assert.match(releaseWorkflow, /rust_target: aarch64-pc-windows-msvc/);
+  assert.doesNotMatch(releaseWorkflow, /name: windows-arm64/);
+  assert.doesNotMatch(releaseWorkflow, /pack_script: pack:win-arm64/);
+  assert.doesNotMatch(releaseWorkflow, /rust_target: aarch64-pc-windows-msvc/);
   assert.match(releaseWorkflow, /TAURI_SIGNING_PRIVATE_KEY is required/);
   assert.match(releaseWorkflow, /TAURI_UPDATER_PUBLIC_KEY is required/);
   assert.match(releaseWorkflow, /TAURI_UPDATER_PUBLIC_KEY: \$\{\{ secrets\.TAURI_UPDATER_PUBLIC_KEY \}\}/);

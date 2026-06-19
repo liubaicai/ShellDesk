@@ -174,9 +174,7 @@ assert.match(testWorkflow, /run: pnpm test/);
 for (const expected of [
   'pack_script: pack:mac',
   'pack_script: pack:win-x64',
-  'pack_script: pack:win-arm64',
   'pack_script: pack:linux-x64',
-  'rust_target: aarch64-pc-windows-msvc',
   'TAURI_SIGNING_PRIVATE_KEY is required',
   'TAURI_UPDATER_PUBLIC_KEY is required',
   'node scripts/set-release-version.cjs "${VERSION}" --check',
@@ -188,6 +186,14 @@ for (const expected of [
   'artifacts/latest.json',
 ]) {
   assert.ok(releaseWorkflow.includes(expected), `release workflow must include ${expected}`);
+}
+
+for (const unexpected of [
+  'name: windows-arm64',
+  'pack_script: pack:win-arm64',
+  'rust_target: aarch64-pc-windows-msvc',
+]) {
+  assert.ok(!releaseWorkflow.includes(unexpected), `release workflow must not include ${unexpected}`);
 }
 
 assert.ok(

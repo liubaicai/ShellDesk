@@ -36,10 +36,6 @@ jobs:
             os: windows-latest
             pack_script: pack:win-x64
             rust_target: ""
-          - name: windows-arm64
-            os: windows-latest
-            pack_script: pack:win-arm64
-            rust_target: aarch64-pc-windows-msvc
           - name: linux-x64
             os: ubuntu-22.04
             pack_script: pack:linux-x64
