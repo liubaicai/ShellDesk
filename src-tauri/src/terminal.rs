@@ -1,6 +1,8 @@
+use crate::askpass::AskpassBroker;
 use crate::{
-    apply_proxy_helper_env_pty, error_string, get_connection, should_use_sshpass, ssh_args,
-    ssh_destination, string_arg, value_to_bytes, ActiveConnection, AppState, ConnectionKind,
+    apply_askpass_env_pty, apply_proxy_helper_env_pty, error_string, get_connection,
+    should_use_sshpass, ssh_args_with_askpass, ssh_destination, start_optional_askpass_broker,
+    string_arg, value_to_bytes, ActiveConnection, AppState, ConnectionKind,
 };
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};
@@ -17,6 +19,7 @@ pub(crate) struct TerminalSession {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
+    _askpass_broker: Option<AskpassBroker>,
 }
 
 impl TerminalSession {
@@ -75,7 +78,16 @@ pub(crate) async fn start_terminal(
         })
         .map_err(error_string)?;
 
-    let cmd = terminal_command_for_connection(&connection, &launch_options)?;
+    let askpass_broker = connection
+        .ssh
+        .as_ref()
+        .map(|profile| start_optional_askpass_broker(state, Some(window.clone()), profile));
+    let askpass_broker = match askpass_broker {
+        Some(future) => future.await?,
+        None => None,
+    };
+    let cmd =
+        terminal_command_for_connection(&connection, &launch_options, askpass_broker.as_ref())?;
     let child = pair.slave.spawn_command(cmd).map_err(error_string)?;
     let mut reader = pair.master.try_clone_reader().map_err(error_string)?;
     let writer = pair.master.take_writer().map_err(error_string)?;
@@ -151,6 +163,7 @@ pub(crate) async fn start_terminal(
             master,
             writer,
             child: Some(child),
+            _askpass_broker: askpass_broker,
         },
     );
 
@@ -160,6 +173,7 @@ pub(crate) async fn start_terminal(
 fn terminal_command_for_connection(
     connection: &ActiveConnection,
     launch_options: &TerminalLaunchOptions,
+    askpass_broker: Option<&AskpassBroker>,
 ) -> Result<CommandBuilder, String> {
     if connection.kind == ConnectionKind::Local {
         let mut cmd = local_terminal_command(launch_options);
@@ -184,10 +198,14 @@ fn terminal_command_for_connection(
     } else {
         CommandBuilder::new("ssh")
     };
-    cmd.args(ssh_args(&profile));
+    cmd.args(ssh_args_with_askpass(
+        &profile,
+        askpass_broker.is_some() || !profile.password.is_empty(),
+    ));
     cmd.arg("-tt");
     cmd.arg(ssh_destination(&profile));
     cmd.env("TERM", "xterm-256color");
+    apply_askpass_env_pty(&mut cmd, &profile, askpass_broker);
     apply_proxy_helper_env_pty(&mut cmd, &profile);
     Ok(cmd)
 }

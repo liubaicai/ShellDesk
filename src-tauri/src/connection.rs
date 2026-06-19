@@ -142,7 +142,11 @@ fn build_ssh_profile(
     let port = read_u16_field(&host, "port", 22);
     let username = read_string_field(&host, "username", "");
     let auth_method = read_string_field(&host, "authMethod", "password");
-    let password = read_string_field(&host, "password", "");
+    let password = if auth_method == "key" {
+        read_string_field(&host, "passphrase", "")
+    } else {
+        read_string_field(&host, "password", "")
+    };
     let key_id = read_string_field(&host, "keyId", "");
     let mut key_path = read_string_field(&host, "keyPath", "");
     if auth_method == "key" && key_path.is_empty() && !key_id.is_empty() {
@@ -1320,6 +1324,28 @@ mod tests {
             decision.get("expectedFingerprint").and_then(Value::as_str),
             Some("old")
         );
+    }
+
+    #[test]
+    fn key_auth_profile_uses_passphrase_as_ssh_secret() {
+        let state = AppState::new(
+            std::env::temp_dir().join(format!("shelldesk-key-auth-profile-{}", std::process::id())),
+        );
+        let raw_host = json!({
+            "address": "example.com",
+            "port": 22,
+            "username": "administrator",
+            "authMethod": "key",
+            "password": "windows-account-password",
+            "passphrase": "key-passphrase",
+            "keyPath": "C:\\Users\\me\\.ssh\\id_rsa"
+        });
+
+        let profile = build_ssh_profile(&state, &raw_host, false).unwrap();
+
+        assert_eq!(profile.auth_method, "key");
+        assert_eq!(profile.password, "key-passphrase");
+        assert_eq!(profile.key_path, "C:\\Users\\me\\.ssh\\id_rsa");
     }
 
     #[test]

@@ -535,12 +535,12 @@ async fn run_ssh_command_for_profile_with_broker(
     }))
 }
 
-async fn start_optional_askpass_broker(
+pub(crate) async fn start_optional_askpass_broker(
     state: &AppState,
     window: Option<tauri::Window>,
     profile: &SshProfile,
 ) -> Result<Option<AskpassBroker>, String> {
-    if profile.auth_method != "password" {
+    if !profile_can_use_askpass(profile) {
         return Ok(None);
     }
     let Some(window) = window else {
@@ -565,7 +565,10 @@ fn ssh_process_command(
     } else {
         Command::new("ssh")
     };
-    child.args(ssh_args(profile));
+    child.args(ssh_args_with_askpass(
+        profile,
+        askpass_broker.is_some() || askpass_secret(profile).is_some(),
+    ));
     child.arg(ssh_destination(profile));
     child.arg(command);
     prevent_tokio_process_window(&mut child);
@@ -575,6 +578,10 @@ fn ssh_process_command(
 }
 
 pub(crate) fn ssh_args(profile: &SshProfile) -> Vec<String> {
+    ssh_args_with_askpass(profile, false)
+}
+
+pub(crate) fn ssh_args_with_askpass(profile: &SshProfile, allow_askpass: bool) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
         profile.port.to_string(),
@@ -588,6 +595,16 @@ pub(crate) fn ssh_args(profile: &SshProfile) -> Vec<String> {
         args.push(format!("UserKnownHostsFile={}", profile.known_hosts_path));
     }
     if profile.auth_method != "password" {
+        args.push("-o".to_string());
+        args.push("PreferredAuthentications=publickey".to_string());
+        args.push("-o".to_string());
+        args.push("PasswordAuthentication=no".to_string());
+        args.push("-o".to_string());
+        args.push("KbdInteractiveAuthentication=no".to_string());
+        args.push("-o".to_string());
+        args.push("ChallengeResponseAuthentication=no".to_string());
+    }
+    if profile.auth_method != "password" && !allow_askpass {
         args.push("-o".to_string());
         args.push("BatchMode=yes".to_string());
     }
@@ -685,10 +702,11 @@ fn apply_askpass_env_tokio(
     profile: &SshProfile,
     askpass_broker: Option<&AskpassBroker>,
 ) {
-    if profile.auth_method != "password" {
+    if !profile_can_use_askpass(profile) {
         return;
     }
-    if profile.password.is_empty() && askpass_broker.is_none() {
+    let secret = askpass_secret(profile);
+    if secret.is_none() && askpass_broker.is_none() {
         return;
     }
     if profile.proxy_helper_exe.trim().is_empty() {
@@ -697,10 +715,10 @@ fn apply_askpass_env_tokio(
     command.env("SSH_ASKPASS", &profile.proxy_helper_exe);
     command.env("SSH_ASKPASS_REQUIRE", "force");
     command.env("SHELLDESK_ASKPASS_HELPER", "1");
-    if !profile.password.is_empty() {
+    if let Some(secret) = secret {
         command.env(
             "SHELLDESK_ASKPASS_PASSWORD",
-            base64::engine::general_purpose::STANDARD.encode(profile.password.as_bytes()),
+            base64::engine::general_purpose::STANDARD.encode(secret.as_bytes()),
         );
     }
     if let Some(broker) = askpass_broker {
@@ -710,6 +728,47 @@ fn apply_askpass_env_tokio(
     if std::env::var("DISPLAY").is_err() {
         command.env("DISPLAY", "shelldesk");
     }
+}
+
+pub(crate) fn apply_askpass_env_pty(
+    command: &mut CommandBuilder,
+    profile: &SshProfile,
+    askpass_broker: Option<&AskpassBroker>,
+) {
+    if !profile_can_use_askpass(profile) {
+        return;
+    }
+    let secret = askpass_secret(profile);
+    if secret.is_none() && askpass_broker.is_none() {
+        return;
+    }
+    if profile.proxy_helper_exe.trim().is_empty() {
+        return;
+    }
+    command.env("SSH_ASKPASS", &profile.proxy_helper_exe);
+    command.env("SSH_ASKPASS_REQUIRE", "force");
+    command.env("SHELLDESK_ASKPASS_HELPER", "1");
+    if let Some(secret) = secret {
+        command.env(
+            "SHELLDESK_ASKPASS_PASSWORD",
+            base64::engine::general_purpose::STANDARD.encode(secret.as_bytes()),
+        );
+    }
+    if let Some(broker) = askpass_broker {
+        command.env("SHELLDESK_ASKPASS_BROKER", &broker.address);
+        command.env("SHELLDESK_ASKPASS_TOKEN", &broker.token);
+    }
+    if std::env::var("DISPLAY").is_err() {
+        command.env("DISPLAY", "shelldesk");
+    }
+}
+
+fn profile_can_use_askpass(profile: &SshProfile) -> bool {
+    profile.auth_method == "password" || profile.auth_method != "agent"
+}
+
+fn askpass_secret(profile: &SshProfile) -> Option<&str> {
+    (!profile.password.is_empty()).then_some(profile.password.as_str())
 }
 
 fn apply_proxy_helper_env_tokio(command: &mut Command, profile: &SshProfile) {
@@ -965,6 +1024,31 @@ mod tests {
             "stderr": "Permission denied (publickey,password).",
             "stdout": ""
         })));
+    }
+
+    #[test]
+    fn key_auth_ssh_args_disable_password_fallback() {
+        let profile = SshProfile {
+            address: "example.com".to_string(),
+            port: 22,
+            username: "administrator".to_string(),
+            auth_method: "key".to_string(),
+            password: "key-passphrase".to_string(),
+            key_path: "C:\\Users\\me\\.ssh\\id_rsa".to_string(),
+            known_hosts_path: String::new(),
+            proxy_helper_exe: String::new(),
+            proxy: None,
+            jump: None,
+        };
+
+        let args = ssh_args_with_askpass(&profile, true);
+
+        assert!(args.contains(&"PreferredAuthentications=publickey".to_string()));
+        assert!(args.contains(&"PasswordAuthentication=no".to_string()));
+        assert!(args.contains(&"KbdInteractiveAuthentication=no".to_string()));
+        assert!(!args.contains(&"BatchMode=yes".to_string()));
+        assert!(args.contains(&"-i".to_string()));
+        assert!(args.contains(&"C:\\Users\\me\\.ssh\\id_rsa".to_string()));
     }
 
     #[test]
