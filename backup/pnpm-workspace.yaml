@@ -1,8 +1,0 @@
-onlyBuiltDependencies:
-  - '@parcel/watcher'
-  - cpu-features
-  - electron
-  - electron-winstaller
-  - esbuild
-  - ssh2
-

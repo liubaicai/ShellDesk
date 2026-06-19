@@ -44,20 +44,6 @@ function extractBridgeChannels(source) {
   ).sort();
 }
 
-function extractElectronPreloadChannels(source) {
-  return unique(
-    [...source.matchAll(/ipcRenderer\.invoke\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1]),
-  ).sort();
-}
-
-function extractElectronMainChannels(source) {
-  const directChannels = [...source.matchAll(/ipcMain\.handle\(\s*['"]([^'"]+)['"]/g)]
-    .map((match) => match[1]);
-  const wrappedChannels = [...source.matchAll(/registerIpcHandler\(\s*['"]([^'"]+)['"]/g)]
-    .map((match) => match[1]);
-  return unique([...directChannels, ...wrappedChannels]).sort();
-}
-
 function extractRustDispatcherChannels(source) {
   const channels = [...source.matchAll(/"([a-z][a-z0-9-]*:[^"]+)"\s*=>/g)].map((match) => match[1]);
   const alternateChannels = [...source.matchAll(/"([a-z][a-z0-9-]*:[^"]+)"\s*\|\s*"([a-z][a-z0-9-]*:[^"]+)"\s*=>/g)]
@@ -69,12 +55,6 @@ function extractBridgeEventChannels(source) {
   return unique(
     [...source.matchAll(/onTauriEvent(?:<[^>]+>)?\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1]),
   ).sort();
-}
-
-function extractElectronPreloadEventChannels(source) {
-  const wrappedChannels = [...source.matchAll(/onIpc\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
-  const directChannels = [...source.matchAll(/ipcRenderer\.on\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
-  return unique([...wrappedChannels, ...directChannels]).sort();
 }
 
 function extractRustEmittedEventChannels(source) {
@@ -158,32 +138,6 @@ function findTauriGuiSshObject(sourceFile) {
   return result;
 }
 
-function findElectronGuiSshObject(sourceFile) {
-  let result;
-
-  function visit(node) {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === 'exposeInMainWorld' &&
-      node.arguments.length >= 2 &&
-      ts.isStringLiteral(node.arguments[0]) &&
-      node.arguments[0].text === 'guiSSH' &&
-      ts.isObjectLiteralExpression(node.arguments[1])
-    ) {
-      result = node.arguments[1];
-      return;
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(sourceFile);
-  if (!result) {
-    throw new Error('Could not find guiSSH exposure in backup/electron/preload.cjs.');
-  }
-  return result;
-}
-
 function interfaceMap(sourceFile) {
   const interfaces = new Map();
 
@@ -260,7 +214,6 @@ function findDirectTauriApiUseOutsideBridge() {
 }
 
 const tauriBridgeSource = readWorkspaceFile('src/tauriBridge.ts');
-const electronPreloadSource = readWorkspaceFile('backup/electron/preload.cjs');
 const rustDispatcherSource = [
   readWorkspaceFile('src-tauri/src/ipc/app_channels.rs'),
   readWorkspaceFile('src-tauri/src/ipc/vault_channels.rs'),
@@ -272,30 +225,16 @@ const rustSource = readWorkspaceFiles('src-tauri/src', '.rs');
 
 const bridgeChannels = extractBridgeChannels(tauriBridgeSource);
 const rustChannels = extractRustDispatcherChannels(rustDispatcherSource);
-const electronChannels = extractElectronPreloadChannels(electronPreloadSource);
 const bridgeEventChannels = extractBridgeEventChannels(tauriBridgeSource);
-const electronEventChannels = extractElectronPreloadEventChannels(electronPreloadSource);
 const rustEmittedEventChannels = extractRustEmittedEventChannels(rustSource);
-const electronMainChannels = extractElectronMainChannels(
-  [
-    readWorkspaceFile('backup/electron/main.cjs'),
-    readWorkspaceFiles('backup/electron/main', '.cjs'),
-  ].join('\n'),
-);
 const bridgeApiPaths = unique(collectObjectPaths(findTauriGuiSshObject(readSourceFile('src/tauriBridge.ts')))).sort();
-const electronApiPaths = unique(collectObjectPaths(findElectronGuiSshObject(readSourceFile('backup/electron/preload.cjs')))).sort();
 const typeApiPaths = unique(
   collectInterfacePaths(interfaceMap(readSourceFile('src/vite-env.d.ts')), 'ShellDeskApi'),
 ).sort();
 
 const missingRustChannels = diff(bridgeChannels, rustChannels);
 const unbridgedRustChannels = diff(rustChannels, bridgeChannels);
-const missingMigratedChannels = diff(electronChannels, bridgeChannels);
-const missingMigratedMainChannels = diff(electronMainChannels, rustChannels);
-const missingMigratedMainBridgeChannels = diff(electronMainChannels, bridgeChannels);
-const missingMigratedEventChannels = diff(electronEventChannels, bridgeEventChannels);
 const missingRustEventEmitters = diff(bridgeEventChannels, rustEmittedEventChannels);
-const missingLegacyApiPaths = diff(electronApiPaths, bridgeApiPaths);
 const missingTypedApiPaths = diff(typeApiPaths, bridgeApiPaths);
 const untypedBridgeApiPaths = diff(bridgeApiPaths, typeApiPaths);
 const directTauriApiUseOutsideBridge = findDirectTauriApiUseOutsideBridge();
@@ -304,12 +243,7 @@ const failures = [];
 
 assertEmptyDiff('Bridge IPC channels missing from the Rust dispatcher:', missingRustChannels);
 assertEmptyDiff('Rust dispatcher channels missing from the Tauri bridge:', unbridgedRustChannels);
-assertEmptyDiff('Electron preload IPC channels missing from the Tauri bridge:', missingMigratedChannels);
-assertEmptyDiff('Electron main IPC handlers missing from the Rust dispatcher:', missingMigratedMainChannels);
-assertEmptyDiff('Electron main IPC handlers missing from the Tauri bridge:', missingMigratedMainBridgeChannels);
-assertEmptyDiff('Electron preload event channels missing from the Tauri bridge:', missingMigratedEventChannels);
 assertEmptyDiff('Tauri bridge event channels missing Rust emitters:', missingRustEventEmitters);
-assertEmptyDiff('Electron preload guiSSH API paths missing from the Tauri bridge:', missingLegacyApiPaths);
 assertEmptyDiff('vite-env ShellDeskApi paths missing from the Tauri bridge:', missingTypedApiPaths);
 assertEmptyDiff('Tauri bridge guiSSH API paths missing from vite-env ShellDeskApi:', untypedBridgeApiPaths);
 assertEmptyDiff('Renderer files must use window.guiSSH instead of direct Tauri API calls:', directTauriApiUseOutsideBridge);
@@ -320,8 +254,6 @@ if (failures.length) {
 }
 
 console.log(`IPC parity ok: ${bridgeChannels.length} bridged channels match the Rust dispatcher.`);
-console.log(`Electron preload migration ok: ${electronChannels.length} legacy channels are still bridged.`);
-console.log(`Electron main migration ok: ${electronMainChannels.length} legacy handlers are implemented by the Rust dispatcher and bridged.`);
-console.log(`Event migration ok: ${electronEventChannels.length} legacy event channels are still bridged and ${bridgeEventChannels.length} bridge event channels have Rust emitters.`);
-console.log(`guiSSH API parity ok: ${electronApiPaths.length} legacy API paths are still exposed and ${typeApiPaths.length} typed API paths match the Tauri bridge.`);
+console.log(`Event parity ok: ${bridgeEventChannels.length} bridge event channels have Rust emitters.`);
+console.log(`guiSSH API parity ok: ${typeApiPaths.length} typed API paths match the Tauri bridge.`);
 console.log('Renderer IPC boundary ok: no React source files bypass src/tauriBridge.ts.');

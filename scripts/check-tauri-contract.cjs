@@ -28,10 +28,8 @@ function assertScript(packageJson, name, expected) {
 }
 
 const packageJson = readJson('package.json');
-const backupPackageJson = readJson('backup/package.json');
 const tauriConfig = readJson('src-tauri/tauri.conf.json');
 const defaultCapability = readJson('src-tauri/capabilities/default.json');
-const electronBuilderConfig = readText('backup/electron-builder.config.cjs');
 const releaseWorkflow = readText('.github/workflows/release.yml');
 const testWorkflow = readText('.github/workflows/test.yml');
 const buildWrapper = readText('scripts/run-tauri-build.cjs');
@@ -39,13 +37,13 @@ const updaterSource = readText('src-tauri/src/updater.rs');
 const versionSyncScript = readText('scripts/set-release-version.cjs');
 const tauriMainSource = readText('src-tauri/src/main.rs');
 
-assert.equal(packageJson.name, backupPackageJson.name);
-assert.equal(packageJson.productName, backupPackageJson.productName);
-assert.equal(packageJson.version, backupPackageJson.version);
+assert.equal(packageJson.name, 'shelldesk');
+assert.equal(packageJson.productName, 'ShellDesk');
+assert.match(packageJson.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 assert.equal(packageJson.packageManager, 'pnpm@10.26.2');
-assert.equal(packageJson.homepage, backupPackageJson.homepage);
-assert.equal(packageJson.author, backupPackageJson.author);
-assert.equal(packageJson.license, backupPackageJson.license);
+assert.equal(packageJson.homepage, 'https://github.com/liubaicai/ShellDesk');
+assert.equal(packageJson.author, 'liubaicai <liushuai.baicai@hotmail.com>');
+assert.equal(packageJson.license, 'GPL-3.0-only');
 assert.ok(!Object.hasOwn(packageJson, 'main'), 'Tauri package.json must not expose an Electron main entry');
 
 assertScript(packageJson, 'dev', 'tauri dev');
@@ -94,9 +92,8 @@ for (const dependencyName of [
   assertNoDependency(packageJson, dependencyName);
 }
 
-assert.equal(tauriConfig.productName, backupPackageJson.productName);
+assert.equal(tauriConfig.productName, packageJson.productName);
 assert.equal(tauriConfig.version, packageJson.version);
-assert.match(electronBuilderConfig, /appId: 'com\.shelldesk\.app'/);
 assert.equal(tauriConfig.identifier, 'com.shelldesk.app');
 assert.deepEqual(tauriConfig.build, {
   beforeDevCommand: 'pnpm vite --host 127.0.0.1',
@@ -106,7 +103,7 @@ assert.deepEqual(tauriConfig.build, {
 });
 
 const [mainWindow] = tauriConfig.app.windows;
-assert.equal(mainWindow.title, backupPackageJson.productName);
+assert.equal(mainWindow.title, packageJson.productName);
 assert.equal(mainWindow.width, 1260);
 assert.equal(mainWindow.height, 820);
 assert.equal(mainWindow.minWidth, 960);
