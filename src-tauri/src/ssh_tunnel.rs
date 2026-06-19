@@ -192,8 +192,7 @@ pub(crate) async fn create_tunnel(config: SshTunnelConfig) -> Result<SshTunnel, 
         let passphrase = config.ssh_key_passphrase.as_deref();
         let key = russh::keys::load_secret_key(key_path, passphrase)
             .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?;
-        let key = PrivateKeyWithHashAlg::new(Arc::new(key), None)
-            .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?;
+        let key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
         let auth_result = session
             .authenticate_publickey(&config.ssh_user, key)
             .await
