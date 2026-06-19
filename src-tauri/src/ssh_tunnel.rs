@@ -833,6 +833,8 @@ mod tests {
             ssh_key_path: None,
             ssh_key_passphrase: None,
             known_hosts_path: None,
+            trust_state: None,
+            trust_window: None,
             proxy_helper_exe: String::new(),
             proxy: None,
             jump: None,
