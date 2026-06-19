@@ -191,7 +191,11 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       await loadSchemas(result.postgresId);
       setStatus('connected');
       setNotice(tCurrent(result.alreadyConnected ? 'postgres.connection.reused' : 'postgres.connection.success', {
-        transport: result.transport === 'ssh-exec' ? tCurrent('db.transport.remoteTcpProxy') : tCurrent('db.transport.sshTunnel'),
+        transport: result.transport === 'direct'
+          ? tCurrent('db.transport.direct')
+          : result.transport === 'ssh-exec'
+            ? tCurrent('db.transport.remoteTcpProxy')
+            : tCurrent('db.transport.sshTunnel'),
         user: user || 'postgres',
         host: host || '127.0.0.1',
         port: nextPort,

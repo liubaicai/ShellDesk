@@ -451,7 +451,16 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       setDbTables(nextTables);
       setMessage({
         type: 'success',
-        text: tCurrent('auto.remoteMySQL.1ltkkjj', { value0: result.transport === 'ssh-exec' ? tCurrent('mysql.transport.remoteTcpProxy') : tCurrent('mysql.transport.sshTunnel'), value1: user || 'root', value2: host || '127.0.0.1', value3: nextPort }),
+        text: tCurrent('auto.remoteMySQL.1ltkkjj', {
+          value0: result.transport === 'direct'
+            ? tCurrent('mysql.transport.direct')
+            : result.transport === 'ssh-exec'
+              ? tCurrent('mysql.transport.remoteTcpProxy')
+              : tCurrent('mysql.transport.sshTunnel'),
+          value1: user || 'root',
+          value2: host || '127.0.0.1',
+          value3: nextPort,
+        }),
       });
     } catch (error) {
       setStatus('error');

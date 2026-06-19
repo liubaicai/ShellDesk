@@ -384,7 +384,11 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
       setMessage({
         type: 'success',
         text: tCurrent('redis.connection.success', {
-          transport: result.transport === 'ssh-exec' ? tCurrent('db.transport.remoteTcpProxy') : tCurrent('db.transport.sshTunnel'),
+          transport: result.transport === 'direct'
+            ? tCurrent('db.transport.direct')
+            : result.transport === 'ssh-exec'
+              ? tCurrent('db.transport.remoteTcpProxy')
+              : tCurrent('db.transport.sshTunnel'),
           host: host || '127.0.0.1',
           port: nextPort,
           database: nextDb,

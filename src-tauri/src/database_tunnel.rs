@@ -1,9 +1,9 @@
 use crate::{
-    error_string, now, random_id,
+    error_string, get_connection, now, random_id,
     ssh_tunnel::{
         config_from_connection, create_tunnel, SshTunnel, SshTunnelConfig, SshTunnelError,
     },
-    string_arg, AppState,
+    string_arg, AppState, ConnectionKind,
 };
 use fred::{
     prelude::{Client as RedisClient, ClientLike, Config as RedisConfig, Value as RedisValue},
@@ -77,38 +77,44 @@ impl DatabaseTunnelSession {
 }
 
 pub(crate) struct MysqlTunnelSession {
-    tunnel: SshTunnel,
+    tunnel: Option<SshTunnel>,
     pool: MySqlPool,
 }
 
 pub(crate) struct PostgresTunnelSession {
-    tunnel: SshTunnel,
+    tunnel: Option<SshTunnel>,
     pool: PgPool,
 }
 
 pub(crate) struct RedisTunnelSession {
-    tunnel: SshTunnel,
+    tunnel: Option<SshTunnel>,
     client: RedisClient,
 }
 
 impl MysqlTunnelSession {
     async fn shutdown(self) {
         self.pool.close().await;
-        let _ = self.tunnel.shutdown().await;
+        if let Some(tunnel) = self.tunnel {
+            let _ = tunnel.shutdown().await;
+        }
     }
 }
 
 impl PostgresTunnelSession {
     async fn shutdown(self) {
         self.pool.close().await;
-        let _ = self.tunnel.shutdown().await;
+        if let Some(tunnel) = self.tunnel {
+            let _ = tunnel.shutdown().await;
+        }
     }
 }
 
 impl RedisTunnelSession {
     async fn shutdown(self) {
         let _ = self.client.quit().await;
-        let _ = self.tunnel.shutdown().await;
+        if let Some(tunnel) = self.tunnel {
+            let _ = tunnel.shutdown().await;
+        }
     }
 }
 
@@ -296,36 +302,32 @@ pub(crate) async fn mysql_connect(state: &AppState, args: Vec<Value>) -> Result<
         return Err("MySQL 用户名不能为空。".to_string());
     }
 
-    let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
-    let tunnel = create_tunnel(tunnel_config)
-        .await
-        .map_err(|error| error.user_message())?;
-    let local_addr = tunnel.local_addr();
-    let dsn = format!(
-        "mysql://{}:{}@{}:{}/{}",
-        percent_encode(&config.user),
-        percent_encode(&config.password),
-        local_addr.ip(),
-        local_addr.port(),
-        percent_encode(config.database.as_deref().unwrap_or(""))
-    );
-    let pool = match MySqlPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(10))
-        .connect(&dsn)
-        .await
-    {
-        Ok(pool) => pool,
-        Err(error) => {
-            let _ = tunnel.shutdown().await;
-            return Err(DbTunnelError::MysqlConnect(error).user_message());
+    let connection = get_connection(state, &connection_id)?;
+    let (pool, tunnel, transport) = if connection.kind == ConnectionKind::Local {
+        (
+            connect_mysql_direct(
+                &config,
+                &tunnel_options.remote_host,
+                tunnel_options.remote_port,
+            )
+            .await?,
+            None,
+            "direct",
+        )
+    } else {
+        let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
+        let tunnel = create_tunnel(tunnel_config)
+            .await
+            .map_err(|error| error.user_message())?;
+        let local_addr = tunnel.local_addr();
+        match connect_mysql_direct(&config, &local_addr.ip().to_string(), local_addr.port()).await {
+            Ok(pool) => (pool, Some(tunnel), "ssh-tunnel"),
+            Err(error) => {
+                let _ = tunnel.shutdown().await;
+                return Err(error);
+            }
         }
     };
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
-        pool.close().await;
-        let _ = tunnel.shutdown().await;
-        return Err(DbTunnelError::MysqlQuery(error).user_message());
-    }
 
     let mysql_id = random_id("mysql-tunnel");
     state
@@ -338,7 +340,7 @@ pub(crate) async fn mysql_connect(state: &AppState, args: Vec<Value>) -> Result<
         );
     Ok(json!({
         "mysqlId": mysql_id,
-        "transport": "ssh-tunnel",
+        "transport": transport,
         "alreadyConnected": false
     }))
 }
@@ -496,36 +498,34 @@ pub(crate) async fn postgres_connect(state: &AppState, args: Vec<Value>) -> Resu
         return Err("PostgreSQL 用户名不能为空。".to_string());
     }
 
-    let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
-    let tunnel = create_tunnel(tunnel_config)
-        .await
-        .map_err(|error| error.user_message())?;
-    let local_addr = tunnel.local_addr();
-    let dsn = format!(
-        "postgres://{}:{}@{}:{}/{}",
-        percent_encode(&config.user),
-        percent_encode(&config.password),
-        local_addr.ip(),
-        local_addr.port(),
-        percent_encode(&config.database)
-    );
-    let pool = match PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(10))
-        .connect(&dsn)
-        .await
-    {
-        Ok(pool) => pool,
-        Err(error) => {
-            let _ = tunnel.shutdown().await;
-            return Err(DbTunnelError::PostgresConnect(error).user_message());
+    let connection = get_connection(state, &connection_id)?;
+    let (pool, tunnel, transport) = if connection.kind == ConnectionKind::Local {
+        (
+            connect_postgres_direct(
+                &config,
+                &tunnel_options.remote_host,
+                tunnel_options.remote_port,
+            )
+            .await?,
+            None,
+            "direct",
+        )
+    } else {
+        let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
+        let tunnel = create_tunnel(tunnel_config)
+            .await
+            .map_err(|error| error.user_message())?;
+        let local_addr = tunnel.local_addr();
+        match connect_postgres_direct(&config, &local_addr.ip().to_string(), local_addr.port())
+            .await
+        {
+            Ok(pool) => (pool, Some(tunnel), "ssh-tunnel"),
+            Err(error) => {
+                let _ = tunnel.shutdown().await;
+                return Err(error);
+            }
         }
     };
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
-        pool.close().await;
-        let _ = tunnel.shutdown().await;
-        return Err(DbTunnelError::PostgresQuery(error).user_message());
-    }
 
     let postgres_id = random_id("postgres-tunnel");
     state
@@ -538,7 +538,7 @@ pub(crate) async fn postgres_connect(state: &AppState, args: Vec<Value>) -> Resu
         );
     Ok(json!({
         "postgresId": postgres_id,
-        "transport": "ssh-tunnel",
+        "transport": transport,
         "alreadyConnected": false
     }))
 }
@@ -672,46 +672,32 @@ pub(crate) async fn redis_connect(state: &AppState, args: Vec<Value>) -> Result<
         .unwrap_or_else(|| TunnelOptions::for_database_endpoint(config.host.clone(), config.port));
     validate_database_endpoint(&tunnel_options.remote_host, tunnel_options.remote_port)?;
 
-    let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
-    let tunnel = create_tunnel(tunnel_config)
-        .await
-        .map_err(|error| error.user_message())?;
-    let local_addr = tunnel.local_addr();
-    let redis_url = if config.password.is_empty() {
-        format!(
-            "redis://{}:{}/{}",
-            local_addr.ip(),
-            local_addr.port(),
-            config.database
+    let connection = get_connection(state, &connection_id)?;
+    let (client, tunnel, transport) = if connection.kind == ConnectionKind::Local {
+        (
+            connect_redis_direct(
+                &config,
+                &tunnel_options.remote_host,
+                tunnel_options.remote_port,
+            )
+            .await?,
+            None,
+            "direct",
         )
     } else {
-        format!(
-            "redis://:{}@{}:{}/{}",
-            percent_encode(&config.password),
-            local_addr.ip(),
-            local_addr.port(),
-            config.database
-        )
+        let tunnel_config = tunnel_config_from_options(state, &connection_id, &tunnel_options)?;
+        let tunnel = create_tunnel(tunnel_config)
+            .await
+            .map_err(|error| error.user_message())?;
+        let local_addr = tunnel.local_addr();
+        match connect_redis_direct(&config, &local_addr.ip().to_string(), local_addr.port()).await {
+            Ok(client) => (client, Some(tunnel), "ssh-tunnel"),
+            Err(error) => {
+                let _ = tunnel.shutdown().await;
+                return Err(error);
+            }
+        }
     };
-    let redis_config =
-        RedisConfig::from_url(&redis_url).map_err(|error| format!("Redis URL 无效：{error}"))?;
-    let client = RedisClient::new(redis_config, None, None, None);
-    client.connect();
-    if let Err(error) = client.wait_for_connect().await {
-        let _ = tunnel.shutdown().await;
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
-    }
-    let ping: Result<RedisValue, _> = client
-        .custom(
-            CustomCommand::new_static("PING", ClusterHash::FirstKey, false),
-            Vec::<String>::new(),
-        )
-        .await;
-    if let Err(error) = ping {
-        let _ = client.quit().await;
-        let _ = tunnel.shutdown().await;
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
-    }
 
     let redis_id = random_id("redis-tunnel");
     state
@@ -724,7 +710,7 @@ pub(crate) async fn redis_connect(state: &AppState, args: Vec<Value>) -> Result<
         );
     Ok(json!({
         "redisId": redis_id,
-        "transport": "ssh-tunnel",
+        "transport": transport,
         "alreadyConnected": false
     }))
 }
@@ -895,6 +881,94 @@ pub(crate) async fn redis_command(state: &AppState, args: Vec<Value>) -> Result<
         .collect::<Vec<_>>();
     let response = redis_command_values(state, &args, &command, values).await?;
     Ok(redis_value_to_json(response))
+}
+
+async fn connect_mysql_direct(
+    config: &MysqlConnectConfig,
+    host: &str,
+    port: u16,
+) -> Result<MySqlPool, String> {
+    let dsn = format!(
+        "mysql://{}:{}@{}:{}/{}",
+        percent_encode(&config.user),
+        percent_encode(&config.password),
+        host,
+        port,
+        percent_encode(config.database.as_deref().unwrap_or(""))
+    );
+    let pool = MySqlPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(10))
+        .connect(&dsn)
+        .await
+        .map_err(|error| DbTunnelError::MysqlConnect(error).user_message())?;
+    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+        pool.close().await;
+        return Err(DbTunnelError::MysqlQuery(error).user_message());
+    }
+    Ok(pool)
+}
+
+async fn connect_postgres_direct(
+    config: &PostgresConnectConfig,
+    host: &str,
+    port: u16,
+) -> Result<PgPool, String> {
+    let dsn = format!(
+        "postgres://{}:{}@{}:{}/{}",
+        percent_encode(&config.user),
+        percent_encode(&config.password),
+        host,
+        port,
+        percent_encode(&config.database)
+    );
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(10))
+        .connect(&dsn)
+        .await
+        .map_err(|error| DbTunnelError::PostgresConnect(error).user_message())?;
+    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+        pool.close().await;
+        return Err(DbTunnelError::PostgresQuery(error).user_message());
+    }
+    Ok(pool)
+}
+
+async fn connect_redis_direct(
+    config: &RedisConnectConfig,
+    host: &str,
+    port: u16,
+) -> Result<RedisClient, String> {
+    let redis_url = if config.password.is_empty() {
+        format!("redis://{}:{}/{}", host, port, config.database)
+    } else {
+        format!(
+            "redis://:{}@{}:{}/{}",
+            percent_encode(&config.password),
+            host,
+            port,
+            config.database
+        )
+    };
+    let redis_config =
+        RedisConfig::from_url(&redis_url).map_err(|error| format!("Redis URL 无效：{error}"))?;
+    let client = RedisClient::new(redis_config, None, None, None);
+    client.connect();
+    if let Err(error) = client.wait_for_connect().await {
+        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+    }
+    let ping: Result<RedisValue, _> = client
+        .custom(
+            CustomCommand::new_static("PING", ClusterHash::FirstKey, false),
+            Vec::<String>::new(),
+        )
+        .await;
+    if let Err(error) = ping {
+        let _ = client.quit().await;
+        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+    }
+    Ok(client)
 }
 
 fn mysql_pool(state: &AppState, args: &[Value]) -> Result<MySqlPool, String> {

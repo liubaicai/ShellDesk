@@ -819,7 +819,7 @@ interface ShellDeskConnectionControls {
 }
 
 type ShellDeskDatabaseTransportMode = 'cli' | 'tunnel';
-type ShellDeskDatabaseTransport = 'ssh-tunnel' | 'ssh-exec';
+type ShellDeskDatabaseTransport = 'ssh-tunnel' | 'ssh-exec' | 'direct';
 
 interface ShellDeskDatabaseTunnelConfig {
   remoteHost: string;

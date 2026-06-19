@@ -68,6 +68,7 @@ export const coreMessageCatalog = {
     "db.tunnel.remoteHost": "远程数据库主机",
     "db.tunnel.remotePort": "远程数据库端口",
     "db.tunnel.connectTimeout": "连接超时 (ms)",
+    "db.transport.direct": "直接连接",
     "app.key.validation.nameRequired": "请输入密钥名称。",
     "app.key.validation.tooLong": "密钥信息长度超出限制。",
     "app.key.validation.privateKeyRequired": "请选择私钥文件。",
@@ -640,5 +641,6 @@ export const coreMessageCatalog = {
     "db.tunnel.remoteHost": "Remote Database Host",
     "db.tunnel.remotePort": "Remote Database Port",
     "db.tunnel.connectTimeout": "Connect Timeout (ms)",
+    "db.transport.direct": "Direct connection",
   },
 } as const satisfies Record<'zh-CN' | 'en-US', CoreMessageDictionary>;
