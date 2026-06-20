@@ -10,7 +10,7 @@
 
 <p align="center">
   ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, and xterm.js.<br/>
-  It brings SSH host management, key management, remote terminals, SFTP, remote editing, browser access, databases, and operations tools into one desktop-style workspace.
+  It brings SSH and local host management, key management, terminals, SFTP, remote editing, browser and VNC access, databases, WebDAV sync, and operations tools into one desktop-style workspace.
 </p>
 
 <p align="center">
@@ -60,14 +60,15 @@
 
 ## Purpose
 
-ShellDesk is designed for developers, operations engineers, and anyone who maintains multiple servers over time. It is not just a terminal replacement; it is a remote workspace centered on an SSH connection. After connecting to a host, you can open terminals, file management, databases, system monitoring, logs, service management, network diagnostics, security auditing, and more in one window.
+ShellDesk is designed for developers, operations engineers, and anyone who maintains multiple servers over time. It is not just a terminal replacement; it is a desktop-style workspace centered on an SSH or local connection. After connecting, you can open terminals, file management, databases, VNC, private-network browser access, system monitoring, logs, service management, network diagnostics, security auditing, and more in one window.
 
 ShellDesk is useful for:
 
 - Maintaining an SSH host library with groups, tags, notes, system type detection, and authentication settings
+- Opening the same workspace against the local machine when you need local-mode tools without creating an SSH loopback host
 - Opening multiple remote tools side by side inside one connection window instead of switching between terminal, SFTP, database, and browser clients
 - Handling common server operations through a graphical interface while keeping a full terminal available as the fallback
-- Storing hosts, keys, app settings, bookmarks, and logs in a local vault for backup and migration
+- Storing hosts, keys, app settings, bookmarks, and logs in a local vault, with import/export and WebDAV sync for backup and migration
 
 ---
 
@@ -76,15 +77,15 @@ ShellDesk is useful for:
 ### Hosts and Credentials
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
-- Supports password login, private-key login, and credential prompts before connecting
+- Supports password login, private-key login, proxy/jump-host settings, local mode, and credential prompts before connecting
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint
-- Settings control whether SSH passwords and key passphrases are saved by default
+- Settings control whether SSH passwords and key passphrases are saved by default, and known-hosts trust decisions are handled by the Rust backend
 
 ### Connection Desktop
 
-- Each SSH connection opens in an independent connection window with the current host and local SOCKS port in the title bar
-- Built-in SOCKS proxy and Tauri-backed browser proxy for remote web access
+- Each SSH or local connection opens in an independent connection window with the current host and local SOCKS port in the title bar when available
+- Built-in SOCKS proxy, Tauri-backed browser proxy, and noVNC viewer cover remote web and desktop access
 - Remote desktop windows support drag, resize, maximize, minimize, z-order management, and a Dock
 - File Manager, Terminal, and Browser are pinned to the Dock; other apps join the Dock dynamically while open
 - Desktop icons support custom layout, folders, sorting modes, and custom wallpaper
@@ -94,13 +95,14 @@ ShellDesk is useful for:
 - xterm.js terminal supports multiple sessions, title synchronization, scrollback, copy/paste, and theme presets
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
 - Font selection reads the local system font list instead of bundling font files
-- SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, and copy path
+- SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
 - Remote Notepad supports tabs, remote read/write, find, go to line, syntax highlighting, language modes, and unsaved-change prompts
 - Notepad uses a binary extension blacklist to avoid opening images, archives, databases, executables, and other binary files by mistake
 
 ### Databases and System Tools
 
 - MySQL, PostgreSQL, ClickHouse, MongoDB, Redis, and SQLite tools cover connection, browsing, querying, and common editing actions where the backend supports them
+- Database access uses Rust-side SSH tunnels with request timeouts, cleanup for orphaned tunnels, bounded result previews, and sensitive-value redaction in diagnostic paths
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
 - System Monitor, Process Manager, Service Manager, Container Manager, Port Listener, and Disk Analyzer help with daily checks
@@ -108,7 +110,7 @@ ShellDesk is useful for:
 - Git Repository Manager shows remote branch trees, remote branches, changed files, diffs, recent commits, branch create/delete/track, stage/unstage, commit, fetch, pull, push, and checkout
 - Web Server Manager covers Nginx, Apache/httpd, and Caddy config discovery, Notepad handoff for config edits, config test, reload, and restart flows
 - MinIO / S3 Browser uses remote `mc` or `aws` CLI to browse buckets, prefixes, objects, delete objects, copy object URLs, and download to a remote directory
-- Firewall, Network Diagnostics, Package Manager, Scheduled Tasks, Login Sessions, and Security Audit support operations troubleshooting
+- Firewall, iptables, Network Diagnostics, Package Manager, Scheduled Tasks, Certificate Manager, Login Sessions, and Security Audit support operations troubleshooting
 - System Settings provides views for system information, network interfaces, DNS, mirrors, updates, Hosts, routes, disks, and mounts
 - Log Viewer supports journalctl, `/var/log`, Windows Event Log, and related sources
 - API Debugger sends HTTP requests from the remote host, which is useful for validating private-network services
@@ -120,6 +122,7 @@ ShellDesk is useful for:
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing
 - Config import/export covers hosts, keys, settings, and browser bookmarks
+- WebDAV sync can back up and restore the local vault across machines, and the updater checks GitHub releases through Tauri's update flow
 
 ---
 
@@ -187,8 +190,9 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 ### Requirements
 
 - Node.js 20 or later
-- pnpm 9 or later
-- Windows 10 or later
+- pnpm 10 or later; this repository currently pins `pnpm@10.26.2`
+- Rust stable and the Tauri 2 platform prerequisites for desktop development and packaging
+- Windows 10 or later, macOS, or Linux. Platform packaging requires the matching system toolchain.
 
 ### Install Dependencies
 
@@ -225,13 +229,29 @@ Stop-Process -Id <PID>
 | `pnpm dev` | Starts the Tauri development window with Vite |
 | `pnpm typecheck` | Runs TypeScript type checking |
 | `pnpm build` | Runs `tsc --noEmit` and then the Vite production build |
+| `pnpm test` | Runs IPC checks, release-script checks, frontend build, Rust fmt/test, and `cargo check` |
+| `pnpm check:ipc` | Checks parity between the Rust IPC dispatcher, bridge, and type surface |
+| `pnpm check:desktop-apps` | Checks remote desktop app catalog and layout contract coverage |
+| `pnpm check:i18n` | Checks translation key coverage |
+| `pnpm check:runtime-boundary` | Checks frontend/runtime boundary assumptions |
+| `pnpm check:tauri` | Checks Tauri config, package metadata, updater wiring, and contract consistency |
+| `pnpm check:release` | Checks release scripts and workflow expectations |
+| `pnpm check:rust` | Runs Rust format checks and tests |
+| `pnpm smoke:tauri-dev` | Runs a Tauri development smoke test |
+| `pnpm smoke:ssh-live` | Runs the live SSH smoke test when local test credentials are configured |
 | `pnpm start` | Starts the Tauri development window |
 | `pnpm preview` | Previews the Vite frontend build without Tauri backend capabilities |
 | `pnpm hooks:install` | Configures local Git hooks from `.githooks` |
 | `pnpm tag` | Creates and pushes a `v<package.json version>` Git tag |
+| `pnpm version:sync` | Synchronizes version metadata across release surfaces |
+| `pnpm release:updater-manifest` | Generates updater manifest assets |
 | `pnpm release:dir` | Builds and outputs a Tauri debug bundle directory |
 | `pnpm release` | Builds installer |
-| `pnpm pack` | Packages with Tauri without publishing |
+| `pnpm pack` | Packages with Tauri using the default target |
+| `pnpm pack:dir` | Builds the unpacked Tauri debug bundle |
+| `pnpm pack:win` / `pnpm pack:win-x64` | Builds Windows x64 packages |
+| `pnpm pack:mac` | Builds macOS packages |
+| `pnpm pack:linux` / `pnpm pack:linux-x64` / `pnpm pack:linux-arm64` | Builds Linux packages |
 
 More platform packaging scripts are available in [package.json](package.json).
 
@@ -252,7 +272,12 @@ ShellDesk/
 │       ├── ssh_transport.rs             # SSH commands, forwarding, proxy helpers, and terminal transport
 │       ├── remote_fs.rs                 # SFTP and remote file operations
 │       ├── database.rs                  # MySQL / PostgreSQL / ClickHouse / MongoDB / Redis / SQLite handlers
+│       ├── database_tunnel.rs           # SSH tunnel lifecycle, timeout, and cleanup helpers for database tools
+│       ├── browser_proxy.rs             # Remote browser URL parsing and local reverse proxy
+│       ├── vnc.rs                       # VNC probing, SSH tunnel, and noVNC WebSocket proxy
+│       ├── system.rs                    # System fonts and known_hosts helpers
 │       ├── vault.rs                     # Local vault, settings, bookmarks, and import/export normalization
+│       ├── vault/normalize.rs           # Vault settings, host, key, proxy, and known_hosts normalization
 │       ├── sync_backend.rs              # WebDAV sync backend
 │       └── updater.rs                   # GitHub release checks and Tauri updater install path
 ├── src/
