@@ -4405,9 +4405,9 @@ function App() {
               <span>{titlebarConnectionAddress}</span>
               {isLocalDesktopConnection ? (
                 <span>{t('app.connection.localBadge', appLanguage)}</span>
-              ) : (
+              ) : connection.proxyPort > 0 ? (
                 <span>SOCKS :{connection.proxyPort}</span>
-              )}
+              ) : null}
             </>
           ) : null}
         </div>
