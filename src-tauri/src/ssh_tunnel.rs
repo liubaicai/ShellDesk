@@ -500,10 +500,10 @@ async fn open_proxy_transport(
         "command" => (
             proxy
                 .command
-                .replace("{host}", &config.ssh_host)
-                .replace("%h", &config.ssh_host)
-                .replace("{port}", &config.ssh_port.to_string())
-                .replace("%p", &config.ssh_port.to_string()),
+                .replace("{host}", &shell_quote(&config.ssh_host))
+                .replace("%h", &shell_quote(&config.ssh_host))
+                .replace("{port}", &shell_quote(&config.ssh_port.to_string()))
+                .replace("%p", &shell_quote(&config.ssh_port.to_string())),
             Vec::new(),
         ),
         "http" | "socks5" => {

@@ -1193,7 +1193,11 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
     };
     for session in tunnel_sessions {
         tokio::spawn(async move {
-            session.shutdown().await;
+            if let Err(error) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), session.shutdown()).await
+            {
+                eprintln!("[database-tunnel] session shutdown timed out: {error}");
+            }
         });
     }
     Ok(())

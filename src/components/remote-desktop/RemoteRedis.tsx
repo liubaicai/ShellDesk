@@ -357,6 +357,7 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     setErrorMessage('');
     setMessage(null);
 
+    let createdRedisId = '';
     try {
       const nextPort = parseInt(port, 10) || defaultPort;
       const nextDb = parseInt(dbNum, 10) || 0;
@@ -368,6 +369,7 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
         db: nextDb,
       });
 
+      createdRedisId = result.redisId;
       redisIdRef.current = result.redisId;
       setRedisId(result.redisId);
       setStatus('connected');
@@ -392,6 +394,17 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
         }),
       });
     } catch (error) {
+      if (createdRedisId) {
+        try {
+          await api.connections.redisDisconnect(connectionId, createdRedisId);
+        } catch {
+          // ignore cleanup errors after partial connect failure
+        }
+      }
+      if (redisIdRef.current === createdRedisId) {
+        redisIdRef.current = '';
+      }
+      setRedisId((current) => (current === createdRedisId ? '' : current));
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     }
@@ -627,7 +640,7 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
           </div>
           <div className="redis-tunnel-note">
             <span>{tCurrent('auto.remoteRedis.xlvjn7')}</span>
-            <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort} · DB {parseInt(dbNum, 10) || 0}</strong>
+            <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort} · {tCurrent('redis.connection.databaseLabel')} {parseInt(dbNum, 10) || 0}</strong>
             <em>{tCurrent('auto.remoteRedis.1urpodq')}</em>
           </div>
           <button type="submit" className="redis-connect-btn" disabled={status === 'connecting'}>
@@ -723,7 +736,7 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
             <div className="redis-connection-summary">
               <span className="redis-status-dot" />
               <strong>{host || '127.0.0.1'}:{parseInt(port, 10) || defaultPort}</strong>
-              <span>DB {parseInt(dbNum, 10) || 0} · MATCH {lastScanPattern}</span>
+              <span>{tCurrent('redis.scan.summary', { database: parseInt(dbNum, 10) || 0, pattern: lastScanPattern })}</span>
             </div>
             <button type="button" className="redis-disconnect-btn" onClick={() => void handleDisconnect()} title={tCurrent('auto.remoteRedis.43dbsz')}>{tCurrent('auto.remoteRedis.a4u4dk')}</button>
           </div>

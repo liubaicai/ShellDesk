@@ -403,6 +403,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     setErrorMessage('');
     setMessage(null);
 
+    let createdMysqlId = '';
     try {
       const nextPort = parseInt(port, 10) || defaultPort;
       const result = await api.connections.mysqlConnect(connectionId, {
@@ -414,6 +415,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         database: initialDatabase.trim() || undefined,
       });
 
+      createdMysqlId = result.mysqlId;
       setMysqlId(result.mysqlId);
       setStatus('connected');
       void saveRemoteConnectionProfile(hostId, 'mysql', {
@@ -460,6 +462,17 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         }),
       });
     } catch (error) {
+      if (createdMysqlId) {
+        try {
+          await api.connections.mysqlDisconnect(connectionId, createdMysqlId);
+        } catch {
+          // ignore cleanup errors after partial connect failure
+        }
+      }
+      if (mysqlIdRef.current === createdMysqlId) {
+        mysqlIdRef.current = '';
+      }
+      setMysqlId((current) => (current === createdMysqlId ? '' : current));
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -1204,9 +1217,9 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                       ? tCurrent('auto.remoteMySQL.zacxkg', { value0: activeResultPrimaryKeys.join(', ') })
                       : activeResultTab.table ? tCurrent('auto.remoteMySQL.122vefz') : tCurrent('auto.remoteMySQL.g4u81i')}
                   </span>
-                  <div className="database-export-actions" aria-label="导出查询结果">
-                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>导出 JSON</button>
-                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>导出 CSV</button>
+                  <div className="database-export-actions" aria-label={tCurrent('db.query.exportAria')}>
+                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportJson')}</button>
+                    <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportCsv')}</button>
                   </div>
                 </div>
                 {activeResult.columns.length > 0 ? (

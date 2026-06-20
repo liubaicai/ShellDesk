@@ -165,6 +165,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setError('');
     setNotice('');
 
+    let createdPostgresId = '';
     try {
       const nextPort = Number.parseInt(port, 10) || defaultPort;
       const nextDb = database || 'postgres';
@@ -176,6 +177,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         password,
         database: nextDb,
       });
+      createdPostgresId = result.postgresId;
       postgresIdRef.current = result.postgresId;
       setPostgresId(result.postgresId);
       void saveRemoteConnectionProfile(hostId, 'postgres', {
@@ -199,6 +201,17 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         database: nextDb,
       }));
     } catch (error) {
+      if (createdPostgresId) {
+        try {
+          await api.postgresDisconnect(connectionId, createdPostgresId);
+        } catch {
+          // ignore cleanup errors after partial connect failure
+        }
+      }
+      if (postgresIdRef.current === createdPostgresId) {
+        postgresIdRef.current = '';
+      }
+      setPostgresId((current) => (current === createdPostgresId ? '' : current));
       setStatus('error');
       setError(getErrorMessage(error));
     }
@@ -450,9 +463,9 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
               <strong>{tCurrent('auto.remotePostgres.q9h21m')}</strong>
               <span>{queryResult ? tCurrent('auto.remotePostgres.18tehe0', { value0: queryResult.rows.length }) : tCurrent('auto.remotePostgres.t9y5o0')}</span>
             </div>
-            <div className="database-export-actions" aria-label="导出查询结果">
-              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('json')} disabled={!queryResult || queryResult.rows.length === 0}>导出 JSON</button>
-              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('csv')} disabled={!queryResult || queryResult.rows.length === 0}>导出 CSV</button>
+            <div className="database-export-actions" aria-label={tCurrent('db.query.exportAria')}>
+              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('json')} disabled={!queryResult || queryResult.rows.length === 0}>{tCurrent('db.query.exportJson')}</button>
+              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('csv')} disabled={!queryResult || queryResult.rows.length === 0}>{tCurrent('db.query.exportCsv')}</button>
             </div>
           </div>
           {queryResult ? (
