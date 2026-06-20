@@ -25,6 +25,7 @@ pub(crate) struct AppState {
     pub(crate) database_sessions: Arc<Mutex<HashMap<String, Value>>>,
     pub(crate) database_tunnel_sessions: Arc<Mutex<HashMap<String, DatabaseTunnelSession>>>,
     pub(crate) update_state: Arc<Mutex<Value>>,
+    pub(crate) pending_tauri_update: Arc<Mutex<Option<tauri_plugin_updater::Update>>>,
     pub(crate) sync_schedule_generation: Arc<Mutex<u64>>,
     pub(crate) ui_window: Arc<Mutex<Option<tauri::Window>>>,
     pub(crate) host_key_responses: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
@@ -35,6 +36,7 @@ impl AppState {
     pub(crate) fn new(data_dir: PathBuf) -> Self {
         Self {
             update_state: Arc::new(Mutex::new(update_status("idle", &data_dir, "1.0.0", None))),
+            pending_tauri_update: Arc::new(Mutex::new(None)),
             data_dir,
             connections: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),

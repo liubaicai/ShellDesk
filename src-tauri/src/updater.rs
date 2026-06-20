@@ -759,6 +759,7 @@ where
     };
 
     fs::write(&file_path, bytes).map_err(error_string)?;
+    *state.pending_tauri_update.lock().map_err(error_string)? = Some(update);
     let ready = update_status("ready", &state.data_dir, &current_version, None)
         .with_field("version", json!(version))
         .with_field("percent", json!(100))
@@ -792,11 +793,19 @@ pub(crate) async fn install_update(
         let Some(updater) = tauri_updater(app)? else {
             return Err("更新模块未配置公钥。".to_string());
         };
-        let update = updater
-            .check()
-            .await
+        let update = state
+            .pending_tauri_update
+            .lock()
             .map_err(error_string)?
-            .ok_or_else(|| "未找到可安装的更新。".to_string())?;
+            .clone();
+        let update = match update {
+            Some(update) => update,
+            None => updater
+                .check()
+                .await
+                .map_err(error_string)?
+                .ok_or_else(|| "未找到可安装的更新。".to_string())?,
+        };
         update.install(bytes).map_err(error_string)?;
         return Ok(json!(true));
     }
