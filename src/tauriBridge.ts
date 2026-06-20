@@ -201,6 +201,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
     case 'window:toggle-maximize':
       return false as T;
 
+    case 'window:show':
     case 'window:minimize':
     case 'window:close':
       return null as T;
@@ -454,6 +455,7 @@ window.guiSSH = {
     openConnectionWindow: (connectionId) => ipc('app:open-connection-window', connectionId),
   },
   window: {
+    show: () => ipc('window:show'),
     minimize: () => ipc('window:minimize'),
     toggleMaximize: () => ipc('window:toggle-maximize'),
     isMaximized: () => ipc('window:is-maximized'),

@@ -3,10 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Code,
   FileText,
   Folder,
@@ -17,7 +13,6 @@ import {
   MoreHorizontal,
   Network,
   PanelRightOpen,
-  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -25,11 +20,11 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Terminal,
-  Trash2,
 } from 'lucide-react';
 
 import appIconUrl from './assets/images/icon.png';
 import DismissibleAlert from './components/DismissibleAlert';
+import HostListPanel from './components/HostListPanel';
 import type { NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import { buildFontStack } from './fontUtils';
@@ -4874,193 +4869,34 @@ function App() {
                     ) : null}
                   </div>
 
-                  <div className={`host-table-frame ${hostViewMode === 'grid' ? 'card-mode' : 'table-mode'}`}>
-                    {!isVaultReady ? (
-                      <div className="empty-state">
-                        <span>LOADING</span>
-                        <h3>{t('app.host.loadingTitle', appLanguage)}</h3>
-                        <p>{t('app.host.loadingDescription', appLanguage)}</p>
-                      </div>
-                    ) : filteredHosts.length ? (
-                      <>
-                        {hostViewMode === 'grid' ? (
-                          <div className="host-card-scroll">
-                            <div className="host-card-grid" role="list">
-                              {pagedHosts.map((host) => {
-                                const connectionState = getHostConnectionStateView(host, appLanguage);
-                                const isHostConnecting = connectingHostId === host.id;
-                                const proxyProfile = host.proxyProfileId ? proxyProfileById.get(host.proxyProfileId) ?? null : null;
-                                const isSelected = selectedHost?.id === host.id;
-                                const hostTags = host.tags.length ? host.tags : [t('app.host.noTags', appLanguage)];
-
-                                return (
-                                  <article
-                                    key={host.id}
-                                    className={`host-list-card ${isSelected ? 'selected' : ''} ${isHostConnecting ? 'connecting' : ''}`}
-                                    role="listitem"
-                                    aria-selected={isSelected}
-                                    aria-busy={isHostConnecting}
-                                    onClick={() => setSelectedHostId(host.id)}
-                                    onDoubleClick={() => openHostFromList(host)}
-                                  >
-                                    {isHostConnecting ? (
-                                      <div className="host-card-loading" role="status">
-                                        <span className="host-card-spinner" aria-hidden="true" />
-                                        <strong>{t('app.host.connectingButton', appLanguage)}</strong>
-                                        <small>{host.username}@{host.address}:{host.port}</small>
-                                      </div>
-                                    ) : null}
-                                    <header className="host-list-card-header">
-                                      <div className="host-card-titleline">
-                                        <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
-                                        <div className="host-card-name">
-                                          <span className={`host-presence-dot ${connectionState.className}`} title={connectionState.title} aria-hidden="true" />
-                                          <strong>{host.name}</strong>
-                                        </div>
-                                      </div>
-                                      <div className="host-card-top-actions" onClick={(event) => event.stopPropagation()}>
-                                        <details className="host-card-menu host-card-top-menu">
-                                          <summary className="table-icon-button" aria-label={t('app.host.actions', appLanguage)}>
-                                            <MoreHorizontal aria-hidden="true" />
-                                          </summary>
-                                          <div className="host-card-menu-panel">
-                                            <button type="button" onClick={(event) => { closeHostCardMenu(event.currentTarget); startEditingHost(host); }}>{t('app.host.edit', appLanguage)}</button>
-                                            <button type="button" className="danger-text" onClick={(event) => { closeHostCardMenu(event.currentTarget); deleteHost(host); }}>{t('app.host.delete', appLanguage)}</button>
-                                          </div>
-                                        </details>
-                                      </div>
-                                    </header>
-
-                                    <div className="host-card-badges">
-                                      <span className={getHostChipClassName('group', host.group, Boolean(host.group))}>{host.group || t('app.host.group.ungrouped', appLanguage)}</span>
-                                      {hostTags.slice(0, 2).map((tag) => (
-                                        <span key={`${host.id}:card:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
-                                      ))}
-                                      {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
-                                      {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
-                                    </div>
-
-                                    <div className="host-card-meta">
-                                      <span className="mono-cell">{host.address}:{host.port}</span>
-                                    </div>
-
-                                    <div className="host-card-recent">
-                                      <span>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</span>
-                                    </div>
-                                  </article>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : (
-                        <div className="host-table-scroll">
-                          <table className="host-table">
-                            <thead>
-                              <tr>
-                                <th>{appLanguage === 'zh-CN' ? '主机名称' : 'Host name'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '分组' : 'Group'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '主机/IP' : 'Host/IP'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '用户' : 'User'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '端口' : 'Port'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '标签' : 'Tags'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '最近连接' : 'Last connection'}</th>
-                                <th>{appLanguage === 'zh-CN' ? '操作' : 'Actions'}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {pagedHosts.map((host) => {
-                                const connectionState = getHostConnectionStateView(host, appLanguage);
-                                const isHostConnecting = connectingHostId === host.id;
-                                const proxyProfile = host.proxyProfileId ? proxyProfileById.get(host.proxyProfileId) ?? null : null;
-                                const isSelected = selectedHost?.id === host.id;
-                                const hostTags = host.tags.length ? host.tags : [t('app.host.noTags', appLanguage)];
-
-                                return (
-                                  <tr
-                                    key={host.id}
-                                    className={`${isSelected ? 'selected' : ''} ${isHostConnecting ? 'connecting' : ''}`}
-                                    aria-selected={isSelected}
-                                    aria-busy={isHostConnecting}
-                                    onClick={() => setSelectedHostId(host.id)}
-                                    onDoubleClick={() => openHostFromList(host)}
-                                  >
-                                    <td className="host-name-cell">
-                                      <span className={`host-presence-dot ${connectionState.className}`} aria-hidden="true" />
-                                      <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
-                                      <span className="host-name-copy">
-                                        <strong>{host.name}</strong>
-                                        <small>{host.note || getHostSystemLabel(host, appLanguage)}</small>
-                                      </span>
-                                    </td>
-                                    <td>
-                                      <span className={getHostChipClassName('group', host.group, Boolean(host.group))}>{host.group || t('app.host.group.ungrouped', appLanguage)}</span>
-                                    </td>
-                                    <td className="mono-cell">{host.address}</td>
-                                    <td className="mono-cell">{host.username}</td>
-                                    <td className="mono-cell">{host.port}</td>
-                                    <td className="host-tag-cell">
-                                      {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
-                                      {hostTags.slice(0, 2).map((tag) => (
-                                        <span key={`${host.id}:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
-                                      ))}
-                                      {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
-                                    </td>
-                                    <td>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</td>
-                                    <td className="host-table-actions" onClick={(event) => event.stopPropagation()}>
-                                      <div className="host-table-action-buttons">
-                                        <button type="button" className="table-icon-button" onClick={() => startEditingHost(host)} aria-label={t('app.host.edit', appLanguage)}>
-                                          <Pencil aria-hidden="true" />
-                                        </button>
-                                        <button type="button" className="table-icon-button danger-action" onClick={() => deleteHost(host)} aria-label={t('app.host.delete', appLanguage)}>
-                                          <Trash2 aria-hidden="true" />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                        )}
-                        <div className="host-table-pagination">
-                          <span>{t('app.host.count', appLanguage, { count: String(filteredHosts.length) })}</span>
-                          <div className="host-pagination-controls">
-                            <span className="page-size-pill">{appLanguage === 'zh-CN' ? '20 条/页' : '20 / page'}</span>
-                            <button type="button" className="page-nav-button" onClick={() => goToHostPage(1)} disabled={currentHostPage === 1} aria-label={appLanguage === 'zh-CN' ? '第一页' : 'First page'}>
-                              <ChevronsLeft aria-hidden="true" />
-                            </button>
-                            <button type="button" className="page-nav-button" onClick={() => goToHostPage(currentHostPage - 1)} disabled={currentHostPage === 1} aria-label={appLanguage === 'zh-CN' ? '上一页' : 'Previous page'}>
-                              <ChevronLeft aria-hidden="true" />
-                            </button>
-                            {hostPageNumbers.map((pageNumber) => (
-                              <button
-                                key={pageNumber}
-                                type="button"
-                                className={`page-nav-button page-number ${pageNumber === currentHostPage ? 'active' : ''}`}
-                                onClick={() => goToHostPage(pageNumber)}
-                                aria-current={pageNumber === currentHostPage ? 'page' : undefined}
-                              >
-                                {pageNumber}
-                              </button>
-                            ))}
-                            <button type="button" className="page-nav-button" onClick={() => goToHostPage(currentHostPage + 1)} disabled={currentHostPage === hostPageCount} aria-label={appLanguage === 'zh-CN' ? '下一页' : 'Next page'}>
-                              <ChevronRight aria-hidden="true" />
-                            </button>
-                            <button type="button" className="page-nav-button" onClick={() => goToHostPage(hostPageCount)} disabled={currentHostPage === hostPageCount} aria-label={appLanguage === 'zh-CN' ? '最后一页' : 'Last page'}>
-                              <ChevronsRight aria-hidden="true" />
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="empty-state">
-                        <span>EMPTY</span>
-                        <h3>{t(hosts.length ? 'app.host.emptyNoMatchesTitle' : 'app.host.emptyNoHostsTitle', appLanguage)}</h3>
-                        <p>{t(hosts.length ? 'app.host.emptyNoMatchesDescription' : 'app.host.emptyNoHostsDescription', appLanguage)}</p>
-                      </div>
+                  <HostListPanel
+                    hosts={hosts}
+                    filteredHosts={filteredHosts}
+                    pagedHosts={pagedHosts}
+                    isVaultReady={isVaultReady}
+                    appLanguage={appLanguage}
+                    hostViewMode={hostViewMode}
+                    selectedHostId={selectedHost?.id ?? null}
+                    onSelectHost={setSelectedHostId}
+                    onOpenHost={openHostFromList}
+                    onDeleteHost={deleteHost}
+                    onEditHost={startEditingHost}
+                    hostPage={currentHostPage}
+                    hostPageCount={hostPageCount}
+                    hostPageNumbers={hostPageNumbers}
+                    onPageChange={goToHostPage}
+                    isHostConnecting={(hostId) => connectingHostId === hostId}
+                    proxyProfileById={proxyProfileById}
+                    closeHostCardMenu={closeHostCardMenu}
+                    formatRelativeTime={formatRelativeTime}
+                    getHostChipClassName={getHostChipClassName}
+                    getHostConnectionStateView={getHostConnectionStateView}
+                    getHostSystemLabel={getHostSystemLabel}
+                    getProxyConfigTypeLabel={getProxyConfigTypeLabel}
+                    renderHostSystemIcon={(host) => (
+                      <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
                     )}
-                  </div>
+                  />
                 </section>
 
                 <aside className="host-detail-panel" aria-label={appLanguage === 'zh-CN' ? '主机详情' : 'Host details'}>

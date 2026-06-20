@@ -25,6 +25,10 @@ pub(crate) async fn dispatch(
         "app:download-update" => download_update(state, window, app).await?,
         "app:install-update" => install_update(state, app).await?,
 
+        "window:show" => {
+            window.show().map_err(error_string)?;
+            Value::Null
+        }
         "window:minimize" => {
             window.minimize().map_err(error_string)?;
             Value::Null

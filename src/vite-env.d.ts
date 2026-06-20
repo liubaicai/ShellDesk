@@ -14,6 +14,7 @@ type WebviewProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, H
 
 declare global {
 interface ShellDeskWindowControls {
+  show: () => Promise<void>;
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<boolean>;
   isMaximized: () => Promise<boolean>;
