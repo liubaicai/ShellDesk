@@ -23,7 +23,7 @@ use sqlx::{
     postgres::{PgPoolOptions, PgRow},
     Column, Executor, MySql, MySqlPool, PgPool, Row, TypeInfo,
 };
-use std::time::Duration;
+use std::{future::IntoFuture, time::Duration};
 use thiserror::Error;
 
 const MAX_QUERY_ROWS: usize = 10_000;
@@ -456,10 +456,12 @@ pub(crate) async fn mysql_connect(
 
 pub(crate) async fn mysql_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = mysql_pool(state, &args)?;
-    let rows = sqlx::query("SHOW DATABASES")
-        .fetch_all(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SHOW DATABASES").fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>(0).ok())
@@ -470,10 +472,12 @@ pub(crate) async fn mysql_tables(state: &AppState, args: Vec<Value>) -> Result<V
     let pool = mysql_pool(state, &args)?;
     let database = string_arg(&args, 2)?;
     let sql = format!("SHOW TABLES FROM {}", mysql_identifier(&database));
-    let rows = sqlx::query(&sql)
-        .fetch_all(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(&sql).fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>(0).ok())
@@ -484,15 +488,18 @@ pub(crate) async fn mysql_columns(state: &AppState, args: Vec<Value>) -> Result<
     let pool = mysql_pool(state, &args)?;
     let database = string_arg(&args, 2)?;
     let table = string_arg(&args, 3)?;
-    let rows = sqlx::query(
-        "SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_KEY,COLUMN_DEFAULT,EXTRA,COLUMN_COMMENT \
-         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_KEY,COLUMN_DEFAULT,EXTRA,COLUMN_COMMENT \
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+        )
+        .bind(database)
+        .bind(table)
+        .fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
     )
-    .bind(database)
-    .bind(table)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -588,10 +595,10 @@ pub(crate) async fn mysql_update_cell(state: &AppState, args: Vec<Value>) -> Res
     for (_, value) in where_values {
         query = bind_mysql_value(query, value);
     }
-    let result = query
-        .execute(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let result = timeout_result(QUERY_TIMEOUT, query.execute(&pool), |error| {
+        DbTunnelError::MysqlQuery(error).user_message()
+    })
+    .await?;
     Ok(json!({ "affectedRows": result.rows_affected() }))
 }
 
@@ -664,11 +671,13 @@ pub(crate) async fn postgres_databases(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
-    let rows =
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
         sqlx::query("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
-            .fetch_all(&pool)
-            .await
-            .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+            .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>("datname").ok())
@@ -677,13 +686,16 @@ pub(crate) async fn postgres_databases(
 
 pub(crate) async fn postgres_schemas(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
-    let rows = sqlx::query(
-        "SELECT schema_name FROM information_schema.schemata \
-         WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT schema_name FROM information_schema.schemata \
+             WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name",
+        )
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>("schema_name").ok())
@@ -693,14 +705,17 @@ pub(crate) async fn postgres_schemas(state: &AppState, args: Vec<Value>) -> Resu
 pub(crate) async fn postgres_tables(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
     let schema = string_arg(&args, 2)?;
-    let rows = sqlx::query(
-        "SELECT table_schema, table_name, table_type FROM information_schema.tables \
-         WHERE table_schema = $1 ORDER BY table_name",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT table_schema, table_name, table_type FROM information_schema.tables \
+             WHERE table_schema = $1 ORDER BY table_name",
+        )
+        .bind(schema)
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .bind(schema)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -715,8 +730,10 @@ pub(crate) async fn postgres_columns(state: &AppState, args: Vec<Value>) -> Resu
     let pool = postgres_pool(state, &args)?;
     let schema = string_arg(&args, 2)?;
     let table = string_arg(&args, 3)?;
-    let rows = sqlx::query(
-        r#"
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            r#"
 SELECT
   c.column_name,
   c.data_type,
@@ -738,12 +755,13 @@ FROM information_schema.columns c
 WHERE c.table_schema = $1 AND c.table_name = $2
 ORDER BY c.ordinal_position
 "#,
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -1019,10 +1037,10 @@ pub(crate) async fn mongo_connect(
 
 pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let client = mongo_client(state, &args)?;
-    let databases = client
-        .list_databases()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let databases = timeout_result(METADATA_TIMEOUT, client.list_databases(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?;
     let mut rows = databases
         .into_iter()
         .map(|database| {
@@ -1045,16 +1063,17 @@ pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Resul
 pub(crate) async fn mongo_collections(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let client = mongo_client(state, &args)?;
     let database = string_arg(&args, 2)?;
-    let mut cursor = client
-        .database(&database)
-        .list_collections()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut cursor = timeout_result(
+        METADATA_TIMEOUT,
+        client.database(&database).list_collections(),
+        |error| DbTunnelError::MongoQuery(error.to_string()).user_message(),
+    )
+    .await?;
     let mut rows = Vec::new();
-    while let Some(collection) = cursor
-        .try_next()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    while let Some(collection) = timeout_result(METADATA_TIMEOUT, cursor.try_next(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?
     {
         let collection_type = serde_json::to_value(collection.collection_type)
             .ok()
@@ -1078,15 +1097,15 @@ pub(crate) async fn mongo_indexes(state: &AppState, args: Vec<Value>) -> Result<
     let collection = client
         .database(&database)
         .collection::<Document>(&collection);
-    let mut cursor = collection
-        .list_indexes()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut cursor = timeout_result(METADATA_TIMEOUT, collection.list_indexes(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?;
     let mut indexes = Vec::new();
-    while let Some(index) = cursor
-        .try_next()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    while let Some(index) = timeout_result(METADATA_TIMEOUT, cursor.try_next(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?
     {
         let options = index.options.unwrap_or_default();
         indexes.push(json!({
@@ -1339,9 +1358,15 @@ async fn connect_mysql_direct(
         .connect(&dsn)
         .await
         .map_err(|error| DbTunnelError::MysqlConnect(error).user_message())?;
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+    if let Err(error) = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SELECT 1").execute(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await
+    {
         pool.close().await;
-        return Err(DbTunnelError::MysqlQuery(error).user_message());
+        return Err(error);
     }
     Ok(pool)
 }
@@ -1365,9 +1390,15 @@ async fn connect_postgres_direct(
         .connect(&dsn)
         .await
         .map_err(|error| DbTunnelError::PostgresConnect(error).user_message())?;
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+    if let Err(error) = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SELECT 1").execute(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
+    )
+    .await
+    {
         pool.close().await;
-        return Err(DbTunnelError::PostgresQuery(error).user_message());
+        return Err(error);
     }
     Ok(pool)
 }
@@ -1392,18 +1423,25 @@ async fn connect_redis_direct(
         RedisConfig::from_url(&redis_url).map_err(|error| format!("Redis URL 无效：{error}"))?;
     let client = RedisClient::new(redis_config, None, None, None);
     client.connect();
-    if let Err(error) = client.wait_for_connect().await {
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+    if let Err(error) = timeout_result(METADATA_TIMEOUT, client.wait_for_connect(), |error| {
+        DbTunnelError::RedisConnect(error.to_string()).user_message()
+    })
+    .await
+    {
+        return Err(error);
     }
-    let ping: Result<RedisValue, _> = client
-        .custom(
+    let ping: Result<RedisValue, String> = timeout_result(
+        METADATA_TIMEOUT,
+        client.custom(
             CustomCommand::new_static("PING", ClusterHash::FirstKey, false),
             Vec::<String>::new(),
-        )
-        .await;
+        ),
+        |error| DbTunnelError::RedisConnect(error.to_string()).user_message(),
+    )
+    .await;
     if let Err(error) = ping {
         let _ = client.quit().await;
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+        return Err(error);
     }
     Ok(client)
 }
@@ -1612,13 +1650,30 @@ async fn redis_command_values(
     values: Vec<String>,
 ) -> Result<RedisValue, String> {
     let client = redis_client(state, args)?;
-    client
-        .custom(
+    timeout_result(
+        QUERY_TIMEOUT,
+        client.custom(
             CustomCommand::new(command.to_string(), ClusterHash::FirstKey, false),
             values,
-        )
+        ),
+        |error| DbTunnelError::RedisCommand(error.to_string()).user_message(),
+    )
+    .await
+}
+
+async fn timeout_result<T, E, F, M>(
+    duration: Duration,
+    future: F,
+    map_error: M,
+) -> Result<T, String>
+where
+    F: IntoFuture<Output = Result<T, E>>,
+    M: FnOnce(E) -> String,
+{
+    tokio::time::timeout(duration, future.into_future())
         .await
-        .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())
+        .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
+        .map_err(map_error)
 }
 
 async fn redis_key_summaries(
@@ -1648,10 +1703,10 @@ async fn redis_key_summaries(
             .await
             .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())?;
     }
-    let results: Vec<RedisValue> = pipeline
-        .all()
-        .await
-        .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())?;
+    let results: Vec<RedisValue> = timeout_result(QUERY_TIMEOUT, pipeline.all(), |error| {
+        DbTunnelError::RedisCommand(error.to_string()).user_message()
+    })
+    .await?;
 
     let mut summaries = Vec::with_capacity(names.len());
     for (index, key) in names.iter().enumerate() {
