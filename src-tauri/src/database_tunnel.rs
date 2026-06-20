@@ -23,10 +23,13 @@ use sqlx::{
     postgres::{PgPoolOptions, PgRow},
     Column, Executor, MySql, MySqlPool, PgPool, Row, TypeInfo,
 };
-use std::time::Duration;
+use std::{future::IntoFuture, time::Duration};
 use thiserror::Error;
 
 const MAX_QUERY_ROWS: usize = 10_000;
+const QUERY_TIMEOUT: Duration = Duration::from_secs(60);
+const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
 pub(crate) enum DbTunnelError {
@@ -53,6 +56,8 @@ pub(crate) enum DbTunnelError {
     RedisConnect(String),
     #[error("Redis 命令失败：{0}")]
     RedisCommand(String),
+    #[error("查询超时，请检查网络或优化查询")]
+    QueryTimeout,
     #[error("数据库连接已断开。")]
     SessionNotFound,
     #[error("会话类型不匹配，期望 {expected}，实际 {actual}。")]
@@ -382,9 +387,7 @@ pub(crate) async fn disconnect(
         .map_err(error_string)?
         .remove(&key);
     if let Some(session) = session {
-        tokio::spawn(async move {
-            session.shutdown().await;
-        });
+        let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, session.shutdown()).await;
     }
     Ok(json!(true))
 }
@@ -453,10 +456,12 @@ pub(crate) async fn mysql_connect(
 
 pub(crate) async fn mysql_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = mysql_pool(state, &args)?;
-    let rows = sqlx::query("SHOW DATABASES")
-        .fetch_all(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SHOW DATABASES").fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>(0).ok())
@@ -467,10 +472,12 @@ pub(crate) async fn mysql_tables(state: &AppState, args: Vec<Value>) -> Result<V
     let pool = mysql_pool(state, &args)?;
     let database = string_arg(&args, 2)?;
     let sql = format!("SHOW TABLES FROM {}", mysql_identifier(&database));
-    let rows = sqlx::query(&sql)
-        .fetch_all(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(&sql).fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>(0).ok())
@@ -481,15 +488,18 @@ pub(crate) async fn mysql_columns(state: &AppState, args: Vec<Value>) -> Result<
     let pool = mysql_pool(state, &args)?;
     let database = string_arg(&args, 2)?;
     let table = string_arg(&args, 3)?;
-    let rows = sqlx::query(
-        "SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_KEY,COLUMN_DEFAULT,EXTRA,COLUMN_COMMENT \
-         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_KEY,COLUMN_DEFAULT,EXTRA,COLUMN_COMMENT \
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+        )
+        .bind(database)
+        .bind(table)
+        .fetch_all(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
     )
-    .bind(database)
-    .bind(table)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -507,24 +517,28 @@ pub(crate) async fn mysql_columns(state: &AppState, args: Vec<Value>) -> Result<
 pub(crate) async fn mysql_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = mysql_pool(state, &args)?;
     let sql = string_arg(&args, 2)?;
-    if is_write_statement(&sql) && !has_returning_clause(&sql) {
-        let result = pool
-            .execute(sql.as_str())
-            .await
-            .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
-        let mut value = json!({
-            "columns": [],
-            "rows": [],
-            "affectedRows": result.rows_affected()
-        });
-        let insert_id = result.last_insert_id();
-        if insert_id != 0 {
-            value["insertId"] = json!(insert_id.to_string());
+    tokio::time::timeout(QUERY_TIMEOUT, async {
+        if is_write_statement(&sql) && !has_returning_clause(&sql) {
+            let result = pool
+                .execute(sql.as_str())
+                .await
+                .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+            let mut value = json!({
+                "columns": [],
+                "rows": [],
+                "affectedRows": result.rows_affected()
+            });
+            let insert_id = result.last_insert_id();
+            if insert_id != 0 {
+                value["insertId"] = json!(insert_id.to_string());
+            }
+            return Ok(value);
         }
-        return Ok(value);
-    }
-    let rows = fetch_mysql_rows_limited(&pool, &sql).await?;
-    Ok(rows_to_json_mysql(rows))
+        let rows = fetch_mysql_rows_limited(&pool, &sql).await?;
+        Ok(rows_to_json_mysql(rows))
+    })
+    .await
+    .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
 }
 
 pub(crate) async fn mysql_update_cell(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
@@ -581,10 +595,10 @@ pub(crate) async fn mysql_update_cell(state: &AppState, args: Vec<Value>) -> Res
     for (_, value) in where_values {
         query = bind_mysql_value(query, value);
     }
-    let result = query
-        .execute(&pool)
-        .await
-        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    let result = timeout_result(QUERY_TIMEOUT, query.execute(&pool), |error| {
+        DbTunnelError::MysqlQuery(error).user_message()
+    })
+    .await?;
     Ok(json!({ "affectedRows": result.rows_affected() }))
 }
 
@@ -657,11 +671,13 @@ pub(crate) async fn postgres_databases(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
-    let rows =
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
         sqlx::query("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
-            .fetch_all(&pool)
-            .await
-            .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+            .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
+    )
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>("datname").ok())
@@ -670,13 +686,16 @@ pub(crate) async fn postgres_databases(
 
 pub(crate) async fn postgres_schemas(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
-    let rows = sqlx::query(
-        "SELECT schema_name FROM information_schema.schemata \
-         WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT schema_name FROM information_schema.schemata \
+             WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name",
+        )
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .filter_map(|row| row.try_get::<String, _>("schema_name").ok())
@@ -686,14 +705,17 @@ pub(crate) async fn postgres_schemas(state: &AppState, args: Vec<Value>) -> Resu
 pub(crate) async fn postgres_tables(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
     let schema = string_arg(&args, 2)?;
-    let rows = sqlx::query(
-        "SELECT table_schema, table_name, table_type FROM information_schema.tables \
-         WHERE table_schema = $1 ORDER BY table_name",
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            "SELECT table_schema, table_name, table_type FROM information_schema.tables \
+             WHERE table_schema = $1 ORDER BY table_name",
+        )
+        .bind(schema)
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .bind(schema)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -708,8 +730,10 @@ pub(crate) async fn postgres_columns(state: &AppState, args: Vec<Value>) -> Resu
     let pool = postgres_pool(state, &args)?;
     let schema = string_arg(&args, 2)?;
     let table = string_arg(&args, 3)?;
-    let rows = sqlx::query(
-        r#"
+    let rows = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query(
+            r#"
 SELECT
   c.column_name,
   c.data_type,
@@ -731,12 +755,13 @@ FROM information_schema.columns c
 WHERE c.table_schema = $1 AND c.table_name = $2
 ORDER BY c.ordinal_position
 "#,
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
     )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+    .await?;
     Ok(json!(rows
         .into_iter()
         .map(|row| json!({
@@ -752,19 +777,23 @@ ORDER BY c.ordinal_position
 pub(crate) async fn postgres_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = postgres_pool(state, &args)?;
     let sql = string_arg(&args, 2)?;
-    if is_write_statement(&sql) && !has_returning_clause(&sql) {
-        let result = pool
-            .execute(sql.as_str())
-            .await
-            .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
-        return Ok(json!({
-            "columns": [],
-            "rows": [],
-            "rowCount": result.rows_affected()
-        }));
-    }
-    let rows = fetch_pg_rows_limited(&pool, &sql).await?;
-    Ok(rows_to_json_pg(rows))
+    tokio::time::timeout(QUERY_TIMEOUT, async {
+        if is_write_statement(&sql) && !has_returning_clause(&sql) {
+            let result = pool
+                .execute(sql.as_str())
+                .await
+                .map_err(|error| DbTunnelError::PostgresQuery(error).user_message())?;
+            return Ok(json!({
+                "columns": [],
+                "rows": [],
+                "rowCount": result.rows_affected()
+            }));
+        }
+        let rows = fetch_pg_rows_limited(&pool, &sql).await?;
+        Ok(rows_to_json_pg(rows))
+    })
+    .await
+    .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
 }
 
 pub(crate) async fn redis_connect(
@@ -900,6 +929,7 @@ pub(crate) async fn clickhouse_databases(
         &args,
         "SELECT name FROM system.databases ORDER BY name",
         None,
+        METADATA_TIMEOUT,
     )
     .await?;
     Ok(json!(result
@@ -921,7 +951,7 @@ pub(crate) async fn clickhouse_tables(state: &AppState, args: Vec<Value>) -> Res
         "SELECT name, engine, total_rows AS totalRows, total_bytes AS totalBytes FROM system.tables WHERE database = {} ORDER BY name",
         clickhouse_string_literal(&database)
     );
-    let result = clickhouse_query_sql(state, &args, &sql, None).await?;
+    let result = clickhouse_query_sql(state, &args, &sql, None, METADATA_TIMEOUT).await?;
     Ok(result.get("rows").cloned().unwrap_or_else(|| json!([])))
 }
 
@@ -936,14 +966,14 @@ pub(crate) async fn clickhouse_columns(
         clickhouse_string_literal(&database),
         clickhouse_string_literal(&table)
     );
-    let result = clickhouse_query_sql(state, &args, &sql, None).await?;
+    let result = clickhouse_query_sql(state, &args, &sql, None, METADATA_TIMEOUT).await?;
     Ok(result.get("rows").cloned().unwrap_or_else(|| json!([])))
 }
 
 pub(crate) async fn clickhouse_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let sql = string_arg(&args, 2)?;
     let database = args.get(3).and_then(Value::as_str);
-    clickhouse_query_sql(state, &args, &sql, database).await
+    clickhouse_query_sql(state, &args, &sql, database, QUERY_TIMEOUT).await
 }
 
 pub(crate) async fn mongo_connect(
@@ -1007,10 +1037,10 @@ pub(crate) async fn mongo_connect(
 
 pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let client = mongo_client(state, &args)?;
-    let databases = client
-        .list_databases()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let databases = timeout_result(METADATA_TIMEOUT, client.list_databases(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?;
     let mut rows = databases
         .into_iter()
         .map(|database| {
@@ -1033,16 +1063,17 @@ pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Resul
 pub(crate) async fn mongo_collections(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let client = mongo_client(state, &args)?;
     let database = string_arg(&args, 2)?;
-    let mut cursor = client
-        .database(&database)
-        .list_collections()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut cursor = timeout_result(
+        METADATA_TIMEOUT,
+        client.database(&database).list_collections(),
+        |error| DbTunnelError::MongoQuery(error.to_string()).user_message(),
+    )
+    .await?;
     let mut rows = Vec::new();
-    while let Some(collection) = cursor
-        .try_next()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    while let Some(collection) = timeout_result(METADATA_TIMEOUT, cursor.try_next(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?
     {
         let collection_type = serde_json::to_value(collection.collection_type)
             .ok()
@@ -1066,15 +1097,15 @@ pub(crate) async fn mongo_indexes(state: &AppState, args: Vec<Value>) -> Result<
     let collection = client
         .database(&database)
         .collection::<Document>(&collection);
-    let mut cursor = collection
-        .list_indexes()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+    let mut cursor = timeout_result(METADATA_TIMEOUT, collection.list_indexes(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?;
     let mut indexes = Vec::new();
-    while let Some(index) = cursor
-        .try_next()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+    while let Some(index) = timeout_result(METADATA_TIMEOUT, cursor.try_next(), |error| {
+        DbTunnelError::MongoQuery(error.to_string()).user_message()
+    })
+    .await?
     {
         let options = index.options.unwrap_or_default();
         indexes.push(json!({
@@ -1115,29 +1146,33 @@ pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Va
     let collection = client
         .database(&database)
         .collection::<Document>(&collection);
-    let mut find = collection.find(filter).limit(limit as i64);
-    if let Some(projection) = projection {
-        find = find.projection(projection);
-    }
-    if let Some(sort) = sort {
-        find = find.sort(sort);
-    }
-    let mut cursor = find
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
-    let mut documents = Vec::new();
-    while let Some(document) = cursor
-        .try_next()
-        .await
-        .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
-    {
-        documents.push(bson_to_json(Bson::Document(document)));
-    }
-    Ok(json!({
-        "documents": documents,
-        "count": documents.len(),
-        "limit": limit
-    }))
+    tokio::time::timeout(QUERY_TIMEOUT, async {
+        let mut find = collection.find(filter).limit(limit as i64);
+        if let Some(projection) = projection {
+            find = find.projection(projection);
+        }
+        if let Some(sort) = sort {
+            find = find.sort(sort);
+        }
+        let mut cursor = find
+            .await
+            .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+        let mut documents = Vec::new();
+        while let Some(document) = cursor
+            .try_next()
+            .await
+            .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+        {
+            documents.push(bson_to_json(Bson::Document(document)));
+        }
+        Ok(json!({
+            "documents": documents,
+            "count": documents.len(),
+            "limit": limit
+        }))
+    })
+    .await
+    .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
 }
 
 pub(crate) async fn redis_scan(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
@@ -1167,10 +1202,7 @@ pub(crate) async fn redis_scan(state: &AppState, args: Vec<Value>) -> Result<Val
     )
     .await?;
     let (next_cursor, names) = redis_scan_result(response);
-    let mut keys = Vec::new();
-    for key in names {
-        keys.push(redis_key_summary(state, &args, &key).await?);
-    }
+    let keys = redis_key_summaries(state, &args, &names).await?;
     Ok(json!({
         "cursor": next_cursor,
         "complete": next_cursor == "0",
@@ -1188,10 +1220,8 @@ pub(crate) async fn redis_keys(state: &AppState, args: Vec<Value>) -> Result<Val
         .to_string();
     // WARNING: KEYS can block large Redis instances. Prefer redis_scan for new callers.
     let response = redis_command_values(state, &args, "KEYS", vec![pattern]).await?;
-    let mut keys = Vec::new();
-    for key in redis_string_list(response) {
-        keys.push(redis_key_summary(state, &args, &key).await?);
-    }
+    let names = redis_string_list(response);
+    let keys = redis_key_summaries(state, &args, &names).await?;
     Ok(json!(keys))
 }
 
@@ -1328,9 +1358,15 @@ async fn connect_mysql_direct(
         .connect(&dsn)
         .await
         .map_err(|error| DbTunnelError::MysqlConnect(error).user_message())?;
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+    if let Err(error) = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SELECT 1").execute(&pool),
+        |error| DbTunnelError::MysqlQuery(error).user_message(),
+    )
+    .await
+    {
         pool.close().await;
-        return Err(DbTunnelError::MysqlQuery(error).user_message());
+        return Err(error);
     }
     Ok(pool)
 }
@@ -1354,9 +1390,15 @@ async fn connect_postgres_direct(
         .connect(&dsn)
         .await
         .map_err(|error| DbTunnelError::PostgresConnect(error).user_message())?;
-    if let Err(error) = sqlx::query("SELECT 1").execute(&pool).await {
+    if let Err(error) = timeout_result(
+        METADATA_TIMEOUT,
+        sqlx::query("SELECT 1").execute(&pool),
+        |error| DbTunnelError::PostgresQuery(error).user_message(),
+    )
+    .await
+    {
         pool.close().await;
-        return Err(DbTunnelError::PostgresQuery(error).user_message());
+        return Err(error);
     }
     Ok(pool)
 }
@@ -1381,18 +1423,25 @@ async fn connect_redis_direct(
         RedisConfig::from_url(&redis_url).map_err(|error| format!("Redis URL 无效：{error}"))?;
     let client = RedisClient::new(redis_config, None, None, None);
     client.connect();
-    if let Err(error) = client.wait_for_connect().await {
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+    if let Err(error) = timeout_result(METADATA_TIMEOUT, client.wait_for_connect(), |error| {
+        DbTunnelError::RedisConnect(error.to_string()).user_message()
+    })
+    .await
+    {
+        return Err(error);
     }
-    let ping: Result<RedisValue, _> = client
-        .custom(
+    let ping: Result<RedisValue, String> = timeout_result(
+        METADATA_TIMEOUT,
+        client.custom(
             CustomCommand::new_static("PING", ClusterHash::FirstKey, false),
             Vec::<String>::new(),
-        )
-        .await;
+        ),
+        |error| DbTunnelError::RedisConnect(error.to_string()).user_message(),
+    )
+    .await;
     if let Err(error) = ping {
         let _ = client.quit().await;
-        return Err(DbTunnelError::RedisConnect(error.to_string()).user_message());
+        return Err(error);
     }
     Ok(client)
 }
@@ -1416,7 +1465,10 @@ async fn connect_clickhouse_direct(
         .query("SELECT 1 AS ok")
         .fetch_bytes("JSON")
         .map_err(|error| DbTunnelError::ClickHouseConnect(error.to_string()).user_message())?;
-    if let Err(error) = cursor.collect().await {
+    let collect_result = tokio::time::timeout(METADATA_TIMEOUT, cursor.collect())
+        .await
+        .map_err(|_| DbTunnelError::QueryTimeout.user_message())?;
+    if let Err(error) = collect_result {
         return Err(DbTunnelError::ClickHouseConnect(error.to_string()).user_message());
     }
     Ok(client)
@@ -1439,16 +1491,21 @@ async fn connect_mongo_direct(
             percent_encode(&config.auth_source)
         )
     };
-    let options = MongoClientOptions::parse(&uri)
+    let options = tokio::time::timeout(METADATA_TIMEOUT, MongoClientOptions::parse(&uri))
         .await
+        .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
         .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
     let client = MongoClient::with_options(options)
         .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
-    client
-        .database(&config.auth_source)
-        .run_command(doc! { "ping": 1 })
-        .await
-        .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
+    tokio::time::timeout(
+        METADATA_TIMEOUT,
+        client
+            .database(&config.auth_source)
+            .run_command(doc! { "ping": 1 }),
+    )
+    .await
+    .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
+    .map_err(|error| DbTunnelError::MongoConnect(error.to_string()).user_message())?;
     Ok(client)
 }
 
@@ -1523,6 +1580,7 @@ async fn clickhouse_query_sql(
     args: &[Value],
     sql: &str,
     database_override: Option<&str>,
+    timeout: Duration,
 ) -> Result<Value, String> {
     let client = clickhouse_client(state, args)?;
     let client = if let Some(database) = database_override.filter(|database| !database.is_empty()) {
@@ -1532,11 +1590,14 @@ async fn clickhouse_query_sql(
     };
     let mut cursor = client
         .query(sql)
+        .with_option("max_execution_time", timeout.as_secs().to_string())
+        .with_option("max_result_rows", (MAX_QUERY_ROWS + 1).to_string())
+        .with_option("result_overflow_mode", "break")
         .fetch_bytes("JSON")
         .map_err(|error| DbTunnelError::ClickHouseQuery(error.to_string()).user_message())?;
-    let bytes = cursor
-        .collect()
+    let bytes = tokio::time::timeout(timeout, cursor.collect())
         .await
+        .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
         .map_err(|error| DbTunnelError::ClickHouseQuery(error.to_string()).user_message())?;
     let output = String::from_utf8_lossy(&bytes).to_string();
     Ok(parse_clickhouse_response(&output))
@@ -1589,23 +1650,82 @@ async fn redis_command_values(
     values: Vec<String>,
 ) -> Result<RedisValue, String> {
     let client = redis_client(state, args)?;
-    client
-        .custom(
+    timeout_result(
+        QUERY_TIMEOUT,
+        client.custom(
             CustomCommand::new(command.to_string(), ClusterHash::FirstKey, false),
             values,
-        )
-        .await
-        .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())
+        ),
+        |error| DbTunnelError::RedisCommand(error.to_string()).user_message(),
+    )
+    .await
 }
 
-async fn redis_key_summary(state: &AppState, args: &[Value], key: &str) -> Result<Value, String> {
-    let redis_type =
-        redis_string(redis_command_values(state, args, "TYPE", vec![key.to_string()]).await?)
+async fn timeout_result<T, E, F, M>(
+    duration: Duration,
+    future: F,
+    map_error: M,
+) -> Result<T, String>
+where
+    F: IntoFuture<Output = Result<T, E>>,
+    M: FnOnce(E) -> String,
+{
+    tokio::time::timeout(duration, future.into_future())
+        .await
+        .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
+        .map_err(map_error)
+}
+
+async fn redis_key_summaries(
+    state: &AppState,
+    args: &[Value],
+    names: &[String],
+) -> Result<Vec<Value>, String> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = redis_client(state, args)?;
+    let pipeline = client.pipeline();
+    for key in names {
+        let _: RedisValue = pipeline
+            .custom(
+                CustomCommand::new("TYPE", ClusterHash::FirstKey, false),
+                vec![key.clone()],
+            )
+            .await
+            .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())?;
+        let _: RedisValue = pipeline
+            .custom(
+                CustomCommand::new("TTL", ClusterHash::FirstKey, false),
+                vec![key.clone()],
+            )
+            .await
+            .map_err(|error| DbTunnelError::RedisCommand(error.to_string()).user_message())?;
+    }
+    let results: Vec<RedisValue> = timeout_result(QUERY_TIMEOUT, pipeline.all(), |error| {
+        DbTunnelError::RedisCommand(error.to_string()).user_message()
+    })
+    .await?;
+
+    let mut summaries = Vec::with_capacity(names.len());
+    for (index, key) in names.iter().enumerate() {
+        let redis_type = results
+            .get(index * 2)
+            .cloned()
+            .and_then(redis_string)
             .unwrap_or_else(|| "none".to_string());
-    let ttl = redis_i64(redis_command_values(state, args, "TTL", vec![key.to_string()]).await?)
-        .unwrap_or(-1);
-    let size = redis_size(state, args, &redis_type, key).await.unwrap_or(0);
-    Ok(json!({ "name": key, "type": redis_type, "ttl": ttl, "size": size, "scannedAt": now() }))
+        let ttl = results
+            .get(index * 2 + 1)
+            .cloned()
+            .and_then(redis_i64)
+            .unwrap_or(-1);
+        let size = redis_size(state, args, &redis_type, key).await.unwrap_or(0);
+        summaries.push(
+            json!({ "name": key, "type": redis_type, "ttl": ttl, "size": size, "scannedAt": now() }),
+        );
+    }
+    Ok(summaries)
 }
 
 async fn redis_size(
@@ -1851,7 +1971,14 @@ fn contains_sql_keyword(sql: &str, keyword: &str) -> bool {
 }
 
 fn redact_credentials(message: &str) -> String {
-    let schemes = ["mysql://", "postgres://", "postgresql://", "redis://"];
+    let schemes = [
+        "mysql://",
+        "postgres://",
+        "postgresql://",
+        "redis://",
+        "mongodb://",
+        "mongodb+srv://",
+    ];
     let mut output = String::with_capacity(message.len());
     let mut cursor = 0;
 
@@ -1981,7 +2108,7 @@ fn parse_clickhouse_response(output: &str) -> Value {
             "rowCount": 1
         });
     };
-    let rows = raw
+    let mut rows = raw
         .get("data")
         .and_then(Value::as_array)
         .map(|items| {
@@ -1997,6 +2124,10 @@ fn parse_clickhouse_response(output: &str) -> Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let truncated = rows.len() > MAX_QUERY_ROWS;
+    if truncated {
+        rows.truncate(MAX_QUERY_ROWS);
+    }
     let columns = raw
         .get("meta")
         .and_then(Value::as_array)
@@ -2035,6 +2166,7 @@ fn parse_clickhouse_response(output: &str) -> Value {
         "columns": columns,
         "rows": rows,
         "rowCount": row_count,
+        "truncated": truncated,
         "statistics": statistics
     })
 }
@@ -2269,6 +2401,27 @@ mod tests {
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 6379);
         assert_eq!(config.database, 0);
+    }
+
+    #[test]
+    fn parse_clickhouse_response_marks_and_limits_truncated_rows() {
+        let rows = (0..=MAX_QUERY_ROWS)
+            .map(|index| json!({ "value": index }))
+            .collect::<Vec<_>>();
+        let output = json!({
+            "meta": [{ "name": "value", "type": "UInt64" }],
+            "data": rows,
+            "rows": MAX_QUERY_ROWS + 1
+        })
+        .to_string();
+
+        let parsed = parse_clickhouse_response(&output);
+        assert_eq!(parsed["truncated"], json!(true));
+        assert_eq!(
+            parsed["rows"].as_array().map(Vec::len),
+            Some(MAX_QUERY_ROWS)
+        );
+        assert_eq!(parsed["rowCount"], json!(MAX_QUERY_ROWS + 1));
     }
 
     #[test]

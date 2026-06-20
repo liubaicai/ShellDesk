@@ -420,6 +420,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     setErrorMessage('');
     setMessage(null);
 
+    let createdClickhouseId = '';
     try {
       const result = await api.connections.clickhouseConnect(connectionId, {
         mode: 'auto',
@@ -431,6 +432,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         secure,
       });
 
+      createdClickhouseId = result.clickhouseId;
       setClickhouseId(result.clickhouseId);
       setStatus('connected');
       void saveRemoteConnectionProfile(hostId, 'clickhouse', {
@@ -482,6 +484,17 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         }),
       });
     } catch (error) {
+      if (createdClickhouseId) {
+        try {
+          await api.connections.clickhouseDisconnect(connectionId, createdClickhouseId);
+        } catch {
+          // ignore cleanup errors after partial connect failure
+        }
+      }
+      if (clickhouseIdRef.current === createdClickhouseId) {
+        clickhouseIdRef.current = '';
+      }
+      setClickhouseId((current) => (current === createdClickhouseId ? '' : current));
       setStatus('error');
       setErrorMessage(getErrorMessage(error));
     } finally {

@@ -910,6 +910,7 @@ interface ShellDeskClickHouseQueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
   rowCount?: number;
+  truncated?: boolean;
   statistics?: ShellDeskClickHouseQueryStatistics;
 }
 

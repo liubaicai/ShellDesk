@@ -498,12 +498,7 @@ async fn open_proxy_transport(
 ) -> Result<TunnelTransport, SshTunnelError> {
     let (command_line, envs) = match proxy.proxy_type.as_str() {
         "command" => (
-            proxy
-                .command
-                .replace("{host}", &config.ssh_host)
-                .replace("%h", &config.ssh_host)
-                .replace("{port}", &config.ssh_port.to_string())
-                .replace("%p", &config.ssh_port.to_string()),
+            proxy_command_template(&proxy.command, &config.ssh_host, config.ssh_port),
             Vec::new(),
         ),
         "http" | "socks5" => {
@@ -546,6 +541,14 @@ fn network_proxy_command(
             encoded,
         )],
     ))
+}
+
+fn proxy_command_template(command: &str, host: &str, port: u16) -> String {
+    command
+        .replace("{host}", &proxy_command_arg(host))
+        .replace("%h", &proxy_command_arg(host))
+        .replace("{port}", &proxy_command_arg(&port.to_string()))
+        .replace("%p", &proxy_command_arg(&port.to_string()))
 }
 
 fn proxy_command_arg(value: &str) -> String {
@@ -891,5 +894,19 @@ mod tests {
             config.validate(),
             Err(SshTunnelError::InvalidPort { field: "数据库" })
         ));
+    }
+
+    #[test]
+    fn proxy_command_template_quotes_placeholders_for_current_shell() {
+        let command = proxy_command_template("connect {host} %h {port} %p", "safe&echo bad", 22);
+
+        if cfg!(windows) {
+            assert_eq!(
+                command,
+                "connect \"safe^&echo bad\" \"safe^&echo bad\" 22 22"
+            );
+        } else {
+            assert_eq!(command, "connect 'safe&echo bad' 'safe&echo bad' 22 22");
+        }
     }
 }

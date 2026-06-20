@@ -200,6 +200,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
     setError('');
     setNotice('');
 
+    let createdMongoId = '';
     try {
       const nextPort = Number.parseInt(port, 10) || defaultMongoPort;
       const result = await api.mongoConnect(connectionId, {
@@ -211,6 +212,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
         authSource,
       });
 
+      createdMongoId = result.mongoId;
       mongoIdRef.current = result.mongoId;
       setMongoId(result.mongoId);
       void saveRemoteConnectionProfile(hostId, 'mongo', {
@@ -229,6 +231,17 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
           : tCurrent('db.transport.sshTunnel');
       setNotice(result.alreadyConnected ? tCurrent('auto.remoteMongo.ghif5z') : `${tCurrent('auto.remoteMongo.1jlva9o')} (${transport})`);
     } catch (error) {
+      if (createdMongoId) {
+        try {
+          await api.mongoDisconnect(connectionId, createdMongoId);
+        } catch {
+          // ignore cleanup errors after partial connect failure
+        }
+      }
+      if (mongoIdRef.current === createdMongoId) {
+        mongoIdRef.current = '';
+      }
+      setMongoId((current) => (current === createdMongoId ? '' : current));
       setStatus('error');
       setError(getErrorMessage(error));
     }
@@ -380,19 +393,19 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
 
             <div className="mongo-connect-grid">
               <label>
-                <span>Host</span>
+                <span>{tCurrent('db.field.host')}</span>
                 <input value={host} onChange={(event) => setHost(event.target.value)} />
               </label>
               <label>
-                <span>Port</span>
+                <span>{tCurrent('db.field.port')}</span>
                 <input value={port} onChange={(event) => setPort(event.target.value)} inputMode="numeric" />
               </label>
               <label>
-                <span>Username</span>
+                <span>{tCurrent('db.field.username')}</span>
                 <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder={tCurrent('auto.remoteMongo.zflkxh')} />
               </label>
               <label>
-                <span>Password</span>
+                <span>{tCurrent('db.field.password')}</span>
                 <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={tCurrent('auto.remoteMongo.zflkxh2')} />
               </label>
               <label className="wide">
@@ -503,11 +516,11 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
           <div className="mongo-result-head">
             <div className="database-result-title">
               <strong>{tCurrent('auto.remoteMongo.8g95y7')}</strong>
-              <span>{queryResult ? `${queryResult.count} / limit ${queryResult.limit}` : tCurrent('auto.remoteMongo.snxhdy')}</span>
+              <span>{queryResult ? tCurrent('mongo.query.countLimit', { count: queryResult.count, limit: queryResult.limit }) : tCurrent('auto.remoteMongo.snxhdy')}</span>
             </div>
-            <div className="database-export-actions" aria-label="导出查询结果">
-              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('json')} disabled={!queryResult || queryResult.documents.length === 0}>导出 JSON</button>
-              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('csv')} disabled={!queryResult || queryResult.documents.length === 0}>导出 CSV</button>
+            <div className="database-export-actions" aria-label={tCurrent('db.query.exportAria')}>
+              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('json')} disabled={!queryResult || queryResult.documents.length === 0}>{tCurrent('db.query.exportJson')}</button>
+              <button type="button" className="database-export-button" onClick={() => void exportQueryResult('csv')} disabled={!queryResult || queryResult.documents.length === 0}>{tCurrent('db.query.exportCsv')}</button>
             </div>
           </div>
           <div className="mongo-table-wrap">
