@@ -19,9 +19,14 @@ pub(crate) struct HttpTunnelClient {
 }
 
 impl HttpTunnelClient {
-    pub(crate) fn new(base_url: String, auth: Option<(String, String)>, ignore_ssl: bool) -> Self {
+    pub(crate) fn new(
+        base_url: String,
+        auth: Option<(String, String)>,
+        ignore_ssl: bool,
+        timeout: Duration,
+    ) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(HTTP_TIMEOUT)
+            .timeout(timeout)
             .danger_accept_invalid_certs(ignore_ssl)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -69,14 +74,7 @@ impl HttpTunnelClient {
     }
 
     fn url(&self, path: &str) -> String {
-        if path.starts_with("http://") || path.starts_with("https://") {
-            return path.to_string();
-        }
-        if path.starts_with('/') {
-            format!("{}{}", self.base_url, path)
-        } else {
-            format!("{}/{}", self.base_url, path)
-        }
+        format!("{}{}", self.base_url, path)
     }
 
     async fn send(
@@ -192,6 +190,8 @@ struct HttpTunnelRequest {
     ignore_ssl: bool,
     #[serde(default)]
     secure: Option<bool>,
+    #[serde(default)]
+    timeout_seconds: Option<u64>,
 }
 
 pub(crate) async fn get(
@@ -234,19 +234,30 @@ async fn execute(
 ) -> Result<Value, String> {
     let request = parse_request(args)?;
     validate_target(&request.target_host, request.target_port)?;
-    let local_port = acquire_tunnel(state, window, &request).await?;
+    validate_path(&request.path)?;
     let scheme = if request.secure.unwrap_or(request.target_port == 443) {
         "https"
     } else {
         "http"
     };
+    let connection = get_connection(state, &request.connection_id)?;
+    let local_kind = connection.kind == ConnectionKind::Local;
+    drop(connection);
+
+    let base_url = if local_kind {
+        format!("{scheme}://{}:{}", request.target_host, request.target_port)
+    } else {
+        let local_port = acquire_tunnel(state, window, &request).await?;
+        format!("{scheme}://127.0.0.1:{local_port}")
+    };
     let client = HttpTunnelClient::new(
-        format!("{scheme}://127.0.0.1:{local_port}"),
+        base_url,
         request
             .auth
             .as_ref()
             .map(|auth| (auth.username.clone(), auth.password.clone())),
         request.ignore_ssl,
+        request_timeout(&request),
     );
 
     let result = match method {
@@ -274,8 +285,10 @@ async fn execute(
     }
     .map_err(|error| error.user_message());
 
-    release_tunnel(state, &request);
-    schedule_idle_cleanup(state.clone(), session_key(&request));
+    if !local_kind {
+        release_tunnel(state, &request);
+        schedule_idle_cleanup(state.clone(), session_key(&request));
+    }
     result
 }
 
@@ -287,13 +300,6 @@ async fn acquire_tunnel(
     let key = session_key(request);
     if let Some(port) = try_reuse_tunnel(state, &key)? {
         return Ok(port);
-    }
-
-    let connection = get_connection(state, &request.connection_id)?;
-    let local_kind = connection.kind == ConnectionKind::Local;
-    drop(connection);
-    if local_kind {
-        return Err("本地连接暂不支持自动创建 HTTP SSH 隧道。".to_string());
     }
 
     let config = config_from_connection_with_window(
@@ -400,6 +406,7 @@ fn parse_request(args: Vec<Value>) -> Result<HttpTunnelRequest, String> {
     let body = args.get(5).cloned().filter(|value| !value.is_null());
     let ignore_ssl = args.get(6).and_then(Value::as_bool).unwrap_or(false);
     let secure = args.get(7).and_then(Value::as_bool);
+    let timeout_seconds = args.get(8).and_then(Value::as_u64);
 
     Ok(HttpTunnelRequest {
         connection_id,
@@ -411,6 +418,7 @@ fn parse_request(args: Vec<Value>) -> Result<HttpTunnelRequest, String> {
         body,
         ignore_ssl,
         secure,
+        timeout_seconds,
     })
 }
 
@@ -422,6 +430,25 @@ fn validate_target(host: &str, port: u16) -> Result<(), String> {
         return Err("HTTP 目标端口必须在 1-65535 范围内。".to_string());
     }
     Ok(())
+}
+
+fn validate_path(path: &str) -> Result<(), String> {
+    if !path.starts_with('/') || path.starts_with("//") {
+        return Err("HTTP 隧道路径必须是以 / 开头的相对路径。".to_string());
+    }
+    let lower_path = path.to_ascii_lowercase();
+    if lower_path.starts_with("http://") || lower_path.starts_with("https://") {
+        return Err("HTTP 隧道路径不能使用绝对 URL。".to_string());
+    }
+    Ok(())
+}
+
+fn request_timeout(request: &HttpTunnelRequest) -> Duration {
+    request
+        .timeout_seconds
+        .filter(|seconds| (1..=600).contains(seconds))
+        .map(Duration::from_secs)
+        .unwrap_or(HTTP_TIMEOUT)
 }
 
 fn session_key(request: &HttpTunnelRequest) -> String {

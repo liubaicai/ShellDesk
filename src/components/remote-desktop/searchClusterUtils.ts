@@ -113,6 +113,7 @@ export function createSearchClusterTunnelRequest(
     body,
     ignoreSsl: config.ignoreSslCertificate,
     secure: url.protocol === 'https:',
+    timeoutSeconds: config.timeoutSeconds,
   };
 }
 

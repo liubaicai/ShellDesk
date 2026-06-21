@@ -16,6 +16,28 @@ use crate::{
     string_arg, AppState, ConnectionKind, VncProxySession,
 };
 
+struct VncTunnelGuard {
+    tunnel: Option<SshTunnelHandle>,
+}
+
+impl VncTunnelGuard {
+    fn new(tunnel: Option<SshTunnelHandle>) -> Self {
+        Self { tunnel }
+    }
+
+    fn take(&mut self) -> Option<SshTunnelHandle> {
+        self.tunnel.take()
+    }
+}
+
+impl Drop for VncTunnelGuard {
+    fn drop(&mut self) {
+        if let Some(tunnel) = self.tunnel.take() {
+            spawn_tunnel_shutdown("vnc", tunnel);
+        }
+    }
+}
+
 pub(crate) async fn probe(
     state: &AppState,
     window: &tauri::Window,
@@ -107,6 +129,7 @@ pub(crate) async fn start(
         );
         (local_addr.ip().to_string(), forward_port, Some(tunnel))
     };
+    let mut tunnel_guard = VncTunnelGuard::new(ssh_tunnel);
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
@@ -159,7 +182,7 @@ pub(crate) async fn start(
         VncProxySession {
             connection_id: connection_id.clone(),
             shutdown: Some(shutdown_tx),
-            ssh_tunnel,
+            ssh_tunnel: tunnel_guard.take(),
         },
     );
 

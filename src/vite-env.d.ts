@@ -841,6 +841,7 @@ interface ShellDeskHttpTunnelRequest {
   body?: unknown;
   ignoreSsl?: boolean;
   secure?: boolean;
+  timeoutSeconds?: number;
 }
 
 interface ShellDeskDatabaseTunnelConfig {

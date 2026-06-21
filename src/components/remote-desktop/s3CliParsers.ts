@@ -392,29 +392,44 @@ function encodePathSegment(value: string) {
   return encodeURIComponent(value).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
-function createS3Path(bucket?: string, key?: string) {
+function createS3Path(config: S3ConnectionConfig, bucket?: string, key?: string) {
   const safeBucket = bucket ? validateBucket(bucket) : '';
   const safeKey = key ? validateObjectKey(key).split('/').map(encodePathSegment).join('/') : '';
 
   if (!safeBucket) return '/';
-  return `/${encodePathSegment(safeBucket)}${safeKey ? `/${safeKey}` : ''}`;
+  if (config.pathStyle) {
+    return `/${encodePathSegment(safeBucket)}${safeKey ? `/${safeKey}` : ''}`;
+  }
+  return safeKey ? `/${safeKey}` : '/';
 }
 
-function createTunnelBase(config: S3ConnectionConfig, path: string, search = ''): ShellDeskHttpTunnelRequest {
+function createS3TargetHost(config: S3ConnectionConfig, bucket?: string) {
+  const endpoint = new URL(normalizeEndpoint(config.endpoint));
+  const safeBucket = bucket ? validateBucket(bucket) : '';
+
+  if (safeBucket && !config.pathStyle) {
+    return `${safeBucket}.${endpoint.hostname}`;
+  }
+
+  return endpoint.hostname;
+}
+
+function createTunnelBase(config: S3ConnectionConfig, path: string, search = '', bucket?: string): ShellDeskHttpTunnelRequest {
   const endpoint = new URL(normalizeEndpoint(config.endpoint));
   return {
     connectionId: '',
-    targetHost: endpoint.hostname,
+    targetHost: createS3TargetHost(config, bucket),
     targetPort: Number(endpoint.port || (endpoint.protocol === 'https:' ? 443 : 80)),
     path: `${path}${search}`,
     secure: endpoint.protocol === 'https:',
   };
 }
 
-function getHostHeader(config: S3ConnectionConfig) {
+function getHostHeader(config: S3ConnectionConfig, bucket?: string) {
   const endpoint = new URL(normalizeEndpoint(config.endpoint));
   const defaultPort = endpoint.protocol === 'https:' ? '443' : '80';
-  return endpoint.port && endpoint.port !== defaultPort ? `${endpoint.hostname}:${endpoint.port}` : endpoint.hostname;
+  const host = createS3TargetHost(config, bucket);
+  return endpoint.port && endpoint.port !== defaultPort ? `${host}:${endpoint.port}` : host;
 }
 
 function toHex(buffer: ArrayBuffer) {
@@ -437,14 +452,14 @@ async function createSigningKey(secretKey: string, dateStamp: string, region: st
   return hmac(serviceKey, 'aws4_request');
 }
 
-async function createS3SignedHeaders(config: S3ConnectionConfig, method: 'GET' | 'DELETE', path: string, search = '') {
+async function createS3SignedHeaders(config: S3ConnectionConfig, method: 'GET' | 'DELETE', path: string, search = '', bucket?: string) {
   const accessKey = validateCredential(config.accessKey, 'Access Key');
   const secretKey = validateCredential(config.secretKey, 'Secret Key');
   const region = config.region.trim() || 'us-east-1';
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.slice(0, 8);
-  const host = getHostHeader(config);
+  const host = getHostHeader(config, bucket);
   const payloadHash = 'UNSIGNED-PAYLOAD';
   const canonicalQuery = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const canonicalQueryString = Array.from(canonicalQuery.entries())
@@ -485,17 +500,11 @@ async function createS3TunnelRequest(
   config: S3ConnectionConfig,
   path: string,
   search = '',
+  bucket?: string,
 ): Promise<ShellDeskHttpTunnelRequest> {
-  const request = createTunnelBase(config, path, search);
-
-  if (mode === 'aws') {
-    request.headers = await createS3SignedHeaders(config, method, path, search);
-  } else {
-    request.auth = {
-      username: validateCredential(config.accessKey, 'Access Key'),
-      password: validateCredential(config.secretKey, 'Secret Key'),
-    };
-  }
+  void mode;
+  const request = createTunnelBase(config, path, search, bucket);
+  request.headers = await createS3SignedHeaders(config, method, path, search, bucket);
 
   return request;
 }
@@ -515,11 +524,11 @@ export function createS3ListObjectsTunnelRequest(mode: S3CliMode, config: S3Conn
     search.set('prefix', normalizedPrefix);
   }
 
-  return createS3TunnelRequest('GET', mode, config, createS3Path(bucket), `?${search.toString()}`);
+  return createS3TunnelRequest('GET', mode, config, createS3Path(config, bucket), `?${search.toString()}`, bucket);
 }
 
 export function createS3DeleteObjectTunnelRequest(mode: S3CliMode, config: S3ConnectionConfig, bucket: string, key: string) {
-  return createS3TunnelRequest('DELETE', mode, config, createS3Path(bucket, key));
+  return createS3TunnelRequest('DELETE', mode, config, createS3Path(config, bucket, key), '', bucket);
 }
 
 export function createS3ObjectUrl(config: S3ConnectionConfig, bucket: string, key: string) {
