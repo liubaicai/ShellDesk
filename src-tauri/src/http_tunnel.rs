@@ -6,7 +6,12 @@ use crate::{
 use reqwest::{header::CONTENT_TYPE, StatusCode};
 use serde::Deserialize;
 use serde_json::Value;
-use std::{collections::HashMap, time::Duration, time::Instant};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
+    time::Instant,
+};
 use thiserror::Error;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,10 +29,18 @@ impl HttpTunnelClient {
         auth: Option<(String, String)>,
         ignore_ssl: bool,
         timeout: Duration,
+        resolve_to_localhost: Option<(String, u16)>,
     ) -> Self {
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .timeout(timeout)
-            .danger_accept_invalid_certs(ignore_ssl)
+            .danger_accept_invalid_certs(ignore_ssl);
+        if let Some((host, port)) = resolve_to_localhost {
+            client_builder = client_builder.resolve_to_addrs(
+                &host,
+                &[SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)],
+            );
+        }
+        let client = client_builder
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
@@ -244,11 +257,17 @@ async fn execute(
     let local_kind = connection.kind == ConnectionKind::Local;
     drop(connection);
 
-    let base_url = if local_kind {
-        format!("{scheme}://{}:{}", request.target_host, request.target_port)
+    let (base_url, resolve_to_localhost) = if local_kind {
+        (
+            format!("{scheme}://{}:{}", request.target_host, request.target_port),
+            None,
+        )
     } else {
         let local_port = acquire_tunnel(state, window, &request).await?;
-        format!("{scheme}://127.0.0.1:{local_port}")
+        (
+            format!("{scheme}://{}:{}", request.target_host, request.target_port),
+            Some((request.target_host.clone(), local_port)),
+        )
     };
     let client = HttpTunnelClient::new(
         base_url,
@@ -258,6 +277,7 @@ async fn execute(
             .map(|auth| (auth.username.clone(), auth.password.clone())),
         request.ignore_ssl,
         request_timeout(&request),
+        resolve_to_localhost,
     );
 
     let result = match method {

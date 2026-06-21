@@ -122,12 +122,13 @@ export function createRabbitManagementTunnelRequest(config: { url: string; usern
   const normalizedUrl = normalizeUrl(config.url);
   const url = new URL(normalizedUrl);
   const username = config.username.trim() || 'guest';
+  const basePath = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
 
   return {
     connectionId: '',
     targetHost: url.hostname,
     targetPort: Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
-    path: '/api/queues',
+    path: `${basePath}/api/queues`,
     auth: { username, password: config.password || 'guest' },
     secure: url.protocol === 'https:',
   };
