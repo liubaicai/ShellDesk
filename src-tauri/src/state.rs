@@ -1,13 +1,12 @@
 use crate::{
-    browser_proxy, database_tunnel::DatabaseTunnelSession, proxy::SshProxyConfig, terminal,
-    updater::update_status, zmodem,
+    browser_proxy, database_tunnel::DatabaseTunnelSession, proxy::SshProxyConfig,
+    ssh_tunnel::SshTunnel, terminal, updater::update_status, zmodem,
 };
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
     path::PathBuf,
-    process::Child as StdChild,
     sync::{Arc, Mutex},
 };
 use tokio::sync::oneshot;
@@ -115,7 +114,7 @@ pub(crate) enum ConnectionKind {
 pub(crate) struct VncProxySession {
     pub(crate) connection_id: String,
     pub(crate) shutdown: Option<oneshot::Sender<()>>,
-    pub(crate) ssh_forward: Option<StdChild>,
+    pub(crate) ssh_tunnel: Option<SshTunnel>,
 }
 
 #[derive(Clone)]

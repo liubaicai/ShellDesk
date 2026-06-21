@@ -1,12 +1,13 @@
 use crate::{
-    error_string, get_connection, https_url_origin, pick_free_local_port, start_ssh_local_forward,
+    error_string, get_connection, https_url_origin,
+    ssh_tunnel::{config_from_connection_with_window, create_tunnel, SshTunnel},
     string_arg, wait_for_tcp, AppState, ConnectionKind, SshProfile,
 };
 use crate::{run_ssh_command_for_profile_with_window, shell_quote};
 use base64::Engine;
 use reqwest::header::HOST;
 use serde_json::{json, Value};
-use std::{net::SocketAddr, process::Child as StdChild, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -18,7 +19,7 @@ pub(crate) struct BrowserProxySession {
     pub(crate) connection_id: String,
     pub(crate) local_port: u16,
     pub(crate) shutdown: Option<oneshot::Sender<()>>,
-    pub(crate) ssh_forward: Option<StdChild>,
+    pub(crate) ssh_tunnel: Option<SshTunnel>,
 }
 
 #[derive(Clone)]
@@ -126,10 +127,18 @@ pub(crate) async fn browser_resolve_url(
         .ssh
         .clone()
         .ok_or_else(|| "SSH profile is unavailable.".to_string())?;
-    let local_port = pick_free_local_port()?;
-    let mut child = start_ssh_local_forward(&profile, local_port, &target_host, target_port)?;
-    if let Err(error) = wait_for_tcp("127.0.0.1", local_port, Duration::from_secs(8)).await {
-        let _ = child.kill();
+    let tunnel =
+        open_browser_ssh_tunnel(state, window, &connection_id, &target_host, target_port).await?;
+    let local_addr = tunnel.local_addr();
+    let tunnel_port = local_addr.port();
+    if let Err(error) = wait_for_tcp(
+        &local_addr.ip().to_string(),
+        tunnel_port,
+        Duration::from_secs(8),
+    )
+    .await
+    {
+        let _ = tunnel.shutdown().await;
         return Err(format!("远程浏览器 SSH 转发启动失败：{error}"));
     }
 
@@ -140,7 +149,7 @@ pub(crate) async fn browser_resolve_url(
     });
     let proxy_port = match start_browser_reverse_proxy(
         parsed.clone(),
-        Some(local_port),
+        Some(tunnel_port),
         trusted_certificate,
         remote_fallback,
     )
@@ -148,7 +157,7 @@ pub(crate) async fn browser_resolve_url(
     {
         Ok(proxy_port) => proxy_port,
         Err(error) => {
-            let _ = child.kill();
+            let _ = tunnel.shutdown().await;
             return Err(error);
         }
     };
@@ -161,7 +170,7 @@ pub(crate) async fn browser_resolve_url(
             connection_id: connection_id.clone(),
             local_port: browser_port,
             shutdown,
-            ssh_forward: Some(child),
+            ssh_tunnel: Some(tunnel),
         },
     );
 
@@ -233,10 +242,24 @@ async fn ensure_browser_reverse_proxy(
             connection_id,
             local_port: proxy_port,
             shutdown: Some(shutdown),
-            ssh_forward: None,
+            ssh_tunnel: None,
         },
     );
     Ok(proxy_port)
+}
+
+async fn open_browser_ssh_tunnel(
+    state: &AppState,
+    window: &tauri::Window,
+    connection_id: &str,
+    host: &str,
+    port: u16,
+) -> Result<SshTunnel, String> {
+    let config =
+        config_from_connection_with_window(state, window, connection_id, host, port, None).await?;
+    create_tunnel(config)
+        .await
+        .map_err(|error| error.user_message())
 }
 
 async fn start_browser_reverse_proxy(

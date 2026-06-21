@@ -1166,8 +1166,10 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
             if let Some(shutdown) = proxy.shutdown.take() {
                 let _ = shutdown.send(());
             }
-            if let Some(mut child) = proxy.ssh_forward.take() {
-                let _ = child.kill();
+            if let Some(tunnel) = proxy.ssh_tunnel.take() {
+                tauri::async_runtime::spawn(async move {
+                    let _ = tunnel.shutdown().await;
+                });
             }
         }
     }
@@ -1188,8 +1190,10 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
             if let Some(shutdown) = proxy.shutdown.take() {
                 let _ = shutdown.send(());
             }
-            if let Some(mut child) = proxy.ssh_forward.take() {
-                let _ = child.kill();
+            if let Some(tunnel) = proxy.ssh_tunnel.take() {
+                tauri::async_runtime::spawn(async move {
+                    let _ = tunnel.shutdown().await;
+                });
             }
         }
     }
