@@ -190,7 +190,7 @@ This table tracks the planned compatibility matrix for ShellDesk remote system t
 ### Requirements
 
 - Node.js 20 or later
-- pnpm 10 or later; this repository currently pins `pnpm@10.26.2`
+- pnpm 11 or later; this repository currently pins `pnpm@11.8.0`
 - Rust stable and the Tauri 2 platform prerequisites for desktop development and packaging
 - Windows 10 or later, macOS, or Linux. Platform packaging requires the matching system toolchain.
 

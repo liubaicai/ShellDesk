@@ -13,7 +13,7 @@ ShellDesk is a Tauri 2 + Rust + React 19 + TypeScript + Vite desktop SSH client.
 
 ## Development Setup
 
-ShellDesk uses pnpm. The current expected package manager is `pnpm@10.26.2`.
+ShellDesk uses pnpm. The current expected package manager is `pnpm@11.8.0`.
 
 ```bash
 pnpm install

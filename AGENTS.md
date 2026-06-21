@@ -1,6 +1,6 @@
 # ShellDesk — AI Agent Instructions
 
-Tauri 2 + Rust + React 19 + TypeScript + Vite 图形化 SSH 客户端。pnpm（当前 `pnpm@10.26.2`）为包管理器。
+Tauri 2 + Rust + React 19 + TypeScript + Vite 图形化 SSH 客户端。pnpm（当前 `pnpm@11.8.0`）为包管理器。
 
 ## 构建与运行
 

@@ -40,7 +40,7 @@ const tauriMainSource = readText('src-tauri/src/main.rs');
 assert.equal(packageJson.name, 'shelldesk');
 assert.equal(packageJson.productName, 'ShellDesk');
 assert.match(packageJson.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
-assert.equal(packageJson.packageManager, 'pnpm@10.26.2');
+assert.equal(packageJson.packageManager, 'pnpm@11.8.0');
 assert.equal(packageJson.homepage, 'https://github.com/liubaicai/ShellDesk');
 assert.equal(packageJson.author, 'liubaicai <liushuai.baicai@hotmail.com>');
 assert.equal(packageJson.license, 'GPL-3.0-only');
@@ -160,7 +160,7 @@ assert.match(updaterSource, /\.endpoints\(vec!\[endpoint\]\)/);
 
 for (const workflow of [testWorkflow, releaseWorkflow]) {
   assert.match(workflow, /uses: pnpm\/action-setup@v6/);
-  assert.match(workflow, /version: 10\.26\.2/);
+  assert.match(workflow, /version: 11\.8\.0/);
   assert.match(workflow, /uses: actions\/setup-node@v6/);
   assert.match(workflow, /node-version: 22/);
   assert.match(workflow, /uses: dtolnay\/rust-toolchain@stable/);

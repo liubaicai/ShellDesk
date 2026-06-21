@@ -190,7 +190,7 @@ ShellDesk 的本地数据存放在 Tauri 应用数据目录中，设置页会显
 ### 环境要求
 
 - Node.js 20 或更高版本
-- pnpm 10 或更高版本；当前仓库固定为 `pnpm@10.26.2`
+- pnpm 11 或更高版本；当前仓库固定为 `pnpm@11.8.0`
 - Rust stable，以及 Tauri 2 桌面开发和打包所需的平台依赖
 - Windows 10 或更高版本、macOS 或 Linux。平台打包需要对应系统工具链。
 
