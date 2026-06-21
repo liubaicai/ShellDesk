@@ -3,8 +3,6 @@ use crate::askpass::remember_ui_window;
 mod app_channels;
 #[path = "ipc/connection_channels.rs"]
 mod connection_channels;
-#[path = "ipc/http_tunnel_channels.rs"]
-mod http_tunnel_channels;
 #[path = "ipc/utility_channels.rs"]
 mod utility_channels;
 #[path = "ipc/vault_channels.rs"]
@@ -33,12 +31,6 @@ pub(crate) async fn dispatch(
     {
         return Ok(value);
     }
-    if let Some(value) =
-        http_tunnel_channels::dispatch(&state, &window, channel.as_str(), &args).await?
-    {
-        return Ok(value);
-    }
-
     match channel.as_str() {
         channel if channel.starts_with("connection:") => {
             connection_channels::dispatch(&state, window, channel, args)

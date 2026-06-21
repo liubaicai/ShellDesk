@@ -3,7 +3,10 @@ use crate::{
     ssh_tunnel::{config_from_connection_with_window, create_tunnel, SshTunnel, SshTunnelError},
     string_arg, AppState, ConnectionKind,
 };
-use reqwest::{header::CONTENT_TYPE, StatusCode};
+use reqwest::{
+    header::{CONTENT_TYPE, HOST},
+    StatusCode,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
@@ -21,6 +24,7 @@ pub(crate) struct HttpTunnelClient {
     client: reqwest::Client,
     base_url: String,
     auth: Option<(String, String)>,
+    host_header: Option<String>,
 }
 
 impl HttpTunnelClient {
@@ -30,6 +34,7 @@ impl HttpTunnelClient {
         ignore_ssl: bool,
         timeout: Duration,
         resolve_to_localhost: Option<(String, u16)>,
+        host_header: Option<String>,
     ) -> Self {
         let mut client_builder = reqwest::Client::builder()
             .timeout(timeout)
@@ -47,6 +52,7 @@ impl HttpTunnelClient {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
             auth,
+            host_header,
         }
     }
 
@@ -97,6 +103,15 @@ impl HttpTunnelClient {
     ) -> Result<Value, HttpTunnelError> {
         if let Some((username, password)) = &self.auth {
             request = request.basic_auth(username, Some(password));
+        }
+        let has_explicit_host_header = headers
+            .is_some_and(|headers| headers.keys().any(|name| name.eq_ignore_ascii_case("host")));
+        if let Some(host_header) = self
+            .host_header
+            .as_ref()
+            .filter(|_| !has_explicit_host_header)
+        {
+            request = request.header(HOST, host_header);
         }
         if let Some(headers) = headers {
             for (name, value) in headers {
@@ -257,16 +272,22 @@ async fn execute(
     let local_kind = connection.kind == ConnectionKind::Local;
     drop(connection);
 
-    let (base_url, resolve_to_localhost) = if local_kind {
+    let (base_url, resolve_to_localhost, host_header) = if local_kind {
         (
             format!("{scheme}://{}:{}", request.target_host, request.target_port),
+            None,
             None,
         )
     } else {
         let local_port = acquire_tunnel(state, window, &request).await?;
         (
-            format!("{scheme}://{}:{}", request.target_host, request.target_port),
+            format!("{scheme}://{}:{local_port}", request.target_host),
             Some((request.target_host.clone(), local_port)),
+            Some(target_host_header(
+                &request.target_host,
+                request.target_port,
+                scheme,
+            )),
         )
     };
     let client = HttpTunnelClient::new(
@@ -278,6 +299,7 @@ async fn execute(
         request.ignore_ssl,
         request_timeout(&request),
         resolve_to_localhost,
+        host_header,
     );
 
     let result = match method {
@@ -469,6 +491,18 @@ fn request_timeout(request: &HttpTunnelRequest) -> Duration {
         .filter(|seconds| (1..=600).contains(seconds))
         .map(Duration::from_secs)
         .unwrap_or(HTTP_TIMEOUT)
+}
+
+fn target_host_header(host: &str, port: u16, scheme: &str) -> String {
+    let default_port = match scheme {
+        "https" => 443,
+        _ => 80,
+    };
+    if port == default_port {
+        host.to_string()
+    } else {
+        format!("{host}:{port}")
+    }
 }
 
 fn session_key(request: &HttpTunnelRequest) -> String {
