@@ -129,6 +129,20 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
+function describeClickHouseTransport(transport?: ShellDeskClickHouseTransport): string {
+  switch (transport) {
+    case 'direct':
+      return tCurrent('db.transport.direct');
+    case 'ssh-exec':
+      return tCurrent('db.transport.sshExec');
+    case 'ssh-forward':
+      return tCurrent('db.transport.sshForward');
+    case 'ssh-tunnel':
+    default:
+      return tCurrent('db.transport.sshTunnel');
+  }
+}
+
 function formatTimestamp(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString(getShellDeskLocale(), {
     hour: '2-digit',
@@ -489,16 +503,20 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       setDbTables(nextTables);
       setMessage({
         type: 'success',
-        text: tCurrent('clickhouse.connection.success', {
-          transport: result.transport === 'direct'
-            ? tCurrent('db.transport.direct')
-            : result.transport === 'ssh-exec'
-              ? tCurrent('clickhouse.connection.transportProxy')
-              : tCurrent('clickhouse.connection.transportTunnel'),
-          user: user || 'default',
-          host: host || '127.0.0.1',
-          port: displayPort,
-        }),
+        text: result.fallbackReason && result.transport === 'ssh-exec'
+          ? tCurrent('clickhouse.connection.successWithFallback', {
+              transport: describeClickHouseTransport(result.transport),
+              user: user || 'default',
+              host: host || '127.0.0.1',
+              port: displayPort,
+              reason: result.fallbackReason,
+            })
+          : tCurrent('clickhouse.connection.success', {
+              transport: describeClickHouseTransport(result.transport),
+              user: user || 'default',
+              host: host || '127.0.0.1',
+              port: displayPort,
+            }),
       });
     } catch (error) {
       if (createdClickhouseId) {

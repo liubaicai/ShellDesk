@@ -824,7 +824,7 @@ interface ShellDeskConnectionControls {
 }
 
 type ShellDeskDatabaseTransportMode = 'auto' | 'cli' | 'tunnel';
-type ShellDeskDatabaseTransport = 'ssh-tunnel' | 'ssh-exec' | 'direct';
+type ShellDeskDatabaseTransport = 'ssh-tunnel' | 'ssh-forward' | 'ssh-exec' | 'direct';
 
 interface ShellDeskHttpTunnelAuth {
   username: string;
@@ -904,6 +904,7 @@ interface ShellDeskClickHouseConnectResult {
   clickhouseId: string;
   alreadyConnected?: boolean;
   transport?: ShellDeskClickHouseTransport;
+  fallbackReason?: string | null;
 }
 
 interface ShellDeskClickHouseTable {

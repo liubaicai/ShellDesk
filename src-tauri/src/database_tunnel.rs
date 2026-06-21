@@ -1851,6 +1851,9 @@ fn mysql_value_to_json(row: &MySqlRow, index: usize, type_name: &str) -> Value {
     if let Ok(value) = row.try_get::<Option<i64>, _>(index) {
         return value.map_or(Value::Null, |value| json!(value));
     }
+    if let Ok(value) = row.try_get::<Option<u64>, _>(index) {
+        return value.map_or(Value::Null, mysql_unsigned_integer_to_json);
+    }
     if let Ok(value) = row.try_get::<Option<f64>, _>(index) {
         return value.map_or(Value::Null, |value| json!(value));
     }
@@ -1870,6 +1873,10 @@ fn mysql_value_to_json(row: &MySqlRow, index: usize, type_name: &str) -> Value {
         return mysql_bytes_to_json(value);
     }
     json!(format!("<unsupported:{type_name}>"))
+}
+
+fn mysql_unsigned_integer_to_json(value: u64) -> Value {
+    json!(value)
 }
 
 fn mysql_text_value(row: &MySqlRow, index: usize) -> Option<String> {
@@ -2538,6 +2545,15 @@ mod tests {
         assert_eq!(
             mysql_bytes_to_display_string(vec![0xff, 0x00, 0x41]),
             "0xFF0041"
+        );
+    }
+
+    #[test]
+    fn mysql_unsigned_integer_values_stay_numeric() {
+        assert_eq!(mysql_unsigned_integer_to_json(1), json!(1_u64));
+        assert_eq!(
+            mysql_unsigned_integer_to_json(u32::MAX as u64),
+            json!(u32::MAX)
         );
     }
 

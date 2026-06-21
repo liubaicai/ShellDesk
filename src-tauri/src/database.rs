@@ -1295,6 +1295,7 @@ pub(crate) async fn clickhouse_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let mut fallback_reason = None;
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match crate::database_tunnel::clickhouse_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
@@ -1302,6 +1303,7 @@ pub(crate) async fn clickhouse_connect(
                 eprintln!(
                     "[database] ClickHouse SSH tunnel unavailable, falling back to CLI: {error}"
                 );
+                fallback_reason = Some(error);
             }
             Err(error) => return Err(error),
         }
@@ -1309,7 +1311,11 @@ pub(crate) async fn clickhouse_connect(
     let clickhouse_id = encode_config_id("clickhouse", &config)?;
     let _ = run_clickhouse_query(state, &connection_id, &config, "SELECT 1 AS ok", None).await?;
     register_db_session(state, "clickhouse", &connection_id, &clickhouse_id, config)?;
-    Ok(json!({ "clickhouseId": clickhouse_id, "transport": "ssh-exec" }))
+    Ok(json!({
+        "clickhouseId": clickhouse_id,
+        "transport": "ssh-exec",
+        "fallbackReason": fallback_reason,
+    }))
 }
 
 pub(crate) async fn clickhouse_databases(
@@ -1411,11 +1417,7 @@ async fn run_clickhouse_query(
         url.push_str("&database=");
         url.push_str(&url_encode(&database));
     }
-    let sql_with_format = if sql.to_ascii_lowercase().contains(" format ") {
-        sql.to_string()
-    } else {
-        format!("{sql} FORMAT JSON")
-    };
+    let sql_with_format = clickhouse_query_with_json_format(sql);
     let mut posix = format!(
         "curl -fsS -u {} --data-binary {} {}",
         shell_quote(&format!("{user}:{password}")),
@@ -1855,6 +1857,20 @@ fn mysql_value_literal(value: &Value) -> String {
         Value::String(value) => sql_string(value),
         other => sql_string(&other.to_string()),
     }
+}
+
+fn clickhouse_query_with_json_format(sql: &str) -> String {
+    let trimmed = sql.trim_end();
+    if clickhouse_query_has_format_clause(trimmed) {
+        return sql.to_string();
+    }
+    let without_trailing_semicolon = trimmed.trim_end_matches(';').trim_end();
+    format!("{without_trailing_semicolon} FORMAT JSON")
+}
+
+fn clickhouse_query_has_format_clause(sql: &str) -> bool {
+    sql.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .any(|token| token.eq_ignore_ascii_case("format"))
 }
 
 fn pg_literal(value: &str) -> String {
@@ -2420,6 +2436,30 @@ mod tests {
                 "rows": [{ "response": "Ok.\n" }],
                 "rowCount": 1
             })
+        );
+    }
+
+    #[test]
+    fn clickhouse_query_format_removes_trailing_semicolon_before_json_format() {
+        assert_eq!(
+            clickhouse_query_with_json_format("SELECT * FROM `soc`.`normalized_events` LIMIT 50;"),
+            "SELECT * FROM `soc`.`normalized_events` LIMIT 50 FORMAT JSON"
+        );
+        assert_eq!(
+            clickhouse_query_with_json_format("SELECT * FROM events LIMIT 50   ;  "),
+            "SELECT * FROM events LIMIT 50 FORMAT JSON"
+        );
+    }
+
+    #[test]
+    fn clickhouse_query_format_preserves_existing_format_clause() {
+        assert_eq!(
+            clickhouse_query_with_json_format("SELECT * FROM events FORMAT JSONEachRow"),
+            "SELECT * FROM events FORMAT JSONEachRow"
+        );
+        assert_eq!(
+            clickhouse_query_with_json_format("SELECT * FROM events\nFORMAT JSON;"),
+            "SELECT * FROM events\nFORMAT JSON;"
         );
     }
 
