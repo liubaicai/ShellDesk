@@ -42,6 +42,7 @@ pub(crate) async fn mysql_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let mut fallback_reason = None;
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match crate::database_tunnel::mysql_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
@@ -49,6 +50,7 @@ pub(crate) async fn mysql_connect(
                 eprintln!(
                     "[database] MySQL TCP tunnel unavailable, using SSH command fallback: {error}"
                 );
+                fallback_reason = Some(error);
             }
             Err(error) => return Err(error),
         }
@@ -58,7 +60,8 @@ pub(crate) async fn mysql_connect(
     register_db_session(state, "mysql", &connection_id, &mysql_id, config)?;
     Ok(json!({
         "mysqlId": mysql_id,
-        "transport": "ssh-exec"
+        "transport": "ssh-exec",
+        "fallbackReason": fallback_reason,
     }))
 }
 
@@ -367,6 +370,7 @@ pub(crate) async fn postgres_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let mut fallback_reason = None;
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match crate::database_tunnel::postgres_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
@@ -374,6 +378,7 @@ pub(crate) async fn postgres_connect(
                 eprintln!(
                     "[database] PostgreSQL SSH tunnel unavailable, falling back to CLI: {error}"
                 );
+                fallback_reason = Some(error);
             }
             Err(error) => return Err(error),
         }
@@ -381,7 +386,11 @@ pub(crate) async fn postgres_connect(
     let postgres_id = encode_config_id("postgres", &config)?;
     let _ = run_postgres_cli(state, &connection_id, &config, "SELECT 1 AS ok;").await?;
     register_db_session(state, "postgres", &connection_id, &postgres_id, config)?;
-    Ok(json!({ "postgresId": postgres_id, "transport": "ssh-exec" }))
+    Ok(json!({
+        "postgresId": postgres_id,
+        "transport": "ssh-exec",
+        "fallbackReason": fallback_reason,
+    }))
 }
 
 pub(crate) async fn postgres_databases(
@@ -574,11 +583,13 @@ pub(crate) async fn redis_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let mut fallback_reason = None;
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match crate::database_tunnel::redis_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
             Err(error) if should_fallback_to_database_cli(&config) => {
                 eprintln!("[database] Redis SSH tunnel unavailable, falling back to CLI: {error}");
+                fallback_reason = Some(error);
             }
             Err(error) => return Err(error),
         }
@@ -586,7 +597,11 @@ pub(crate) async fn redis_connect(
     let redis_id = encode_config_id("redis", &config)?;
     let _ = run_redis_cli(state, &connection_id, &config, &["PING".to_string()]).await?;
     register_db_session(state, "redis", &connection_id, &redis_id, config)?;
-    Ok(json!({ "redisId": redis_id }))
+    Ok(json!({
+        "redisId": redis_id,
+        "transport": "ssh-exec",
+        "fallbackReason": fallback_reason,
+    }))
 }
 
 pub(crate) async fn redis_scan(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
@@ -1534,6 +1549,7 @@ pub(crate) async fn mongo_connect(
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let config = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let mut fallback_reason = None;
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match crate::database_tunnel::mongo_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
@@ -1541,6 +1557,7 @@ pub(crate) async fn mongo_connect(
                 eprintln!(
                     "[database] MongoDB SSH tunnel unavailable, falling back to CLI: {error}"
                 );
+                fallback_reason = Some(error);
             }
             Err(error) => return Err(error),
         }
@@ -1555,7 +1572,11 @@ pub(crate) async fn mongo_connect(
     )
     .await?;
     register_db_session(state, "mongo", &connection_id, &mongo_id, config)?;
-    Ok(json!({ "mongoId": mongo_id, "transport": "ssh-exec" }))
+    Ok(json!({
+        "mongoId": mongo_id,
+        "transport": "ssh-exec",
+        "fallbackReason": fallback_reason,
+    }))
 }
 
 pub(crate) async fn mongo_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {

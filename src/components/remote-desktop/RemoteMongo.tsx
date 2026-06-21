@@ -52,6 +52,26 @@ function formatCellValue(value: unknown) {
   return String(value);
 }
 
+function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
+  switch (transport) {
+    case 'direct':
+      return tCurrent('db.transport.direct');
+    case 'ssh-exec':
+      return tCurrent('db.transport.sshExec');
+    case 'ssh-forward':
+      return tCurrent('db.transport.sshForward');
+    case 'ssh-tunnel':
+    default:
+      return tCurrent('db.transport.sshTunnel');
+  }
+}
+
+function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
+  return reason
+    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
+    : message;
+}
+
 function getDocumentId(document: Record<string, unknown>, index: number) {
   const id = document._id;
 
@@ -236,12 +256,11 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       }).catch(() => undefined);
       await loadDatabases(result.mongoId);
       setStatus('connected');
-      const transport = result.transport === 'direct'
-        ? tCurrent('db.transport.direct')
-        : result.transport === 'ssh-exec'
-          ? tCurrent('db.transport.remoteTcpProxy')
-          : tCurrent('db.transport.sshTunnel');
-      setNotice(result.alreadyConnected ? tCurrent('auto.remoteMongo.ghif5z') : `${tCurrent('auto.remoteMongo.1jlva9o')} (${transport})`);
+      const transport = describeDatabaseTransport(result.transport);
+      const notice = result.alreadyConnected
+        ? tCurrent('auto.remoteMongo.ghif5z')
+        : `${tCurrent('auto.remoteMongo.1jlva9o')} (${transport})`;
+      setNotice(appendDatabaseFallbackReason(notice, result.fallbackReason));
     } catch (error) {
       if (createdMongoId) {
         try {

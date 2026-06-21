@@ -119,6 +119,26 @@ function createInitialQueryState(): { tabs: MysqlQueryTab[]; activeId: string } 
   return { tabs: [tab], activeId: tab.id };
 }
 
+function describeMysqlTransport(transport?: ShellDeskMysqlTransport): string {
+  switch (transport) {
+    case 'direct':
+      return tCurrent('db.transport.direct');
+    case 'ssh-exec':
+      return tCurrent('db.transport.sshExec');
+    case 'ssh-forward':
+      return tCurrent('db.transport.sshForward');
+    case 'ssh-tunnel':
+    default:
+      return tCurrent('db.transport.sshTunnel');
+  }
+}
+
+function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
+  return reason
+    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
+    : message;
+}
+
 function quoteMysqlIdentifier(identifier: string): string {
   return `\`${identifier.replace(/`/g, '``')}\``;
 }
@@ -464,18 +484,15 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       setActiveDb(nextActiveDb);
       setExpandedDbs(nextExpanded);
       setDbTables(nextTables);
+      const successMessage = tCurrent('auto.remoteMySQL.1ltkkjj', {
+        value0: describeMysqlTransport(result.transport),
+        value1: user || 'root',
+        value2: host || '127.0.0.1',
+        value3: nextPort,
+      });
       setMessage({
         type: 'success',
-        text: tCurrent('auto.remoteMySQL.1ltkkjj', {
-          value0: result.transport === 'direct'
-            ? tCurrent('mysql.transport.direct')
-            : result.transport === 'ssh-exec'
-              ? tCurrent('mysql.transport.remoteTcpProxy')
-              : tCurrent('mysql.transport.sshTunnel'),
-          value1: user || 'root',
-          value2: host || '127.0.0.1',
-          value3: nextPort,
-        }),
+        text: appendDatabaseFallbackReason(successMessage, result.fallbackReason),
       });
     } catch (error) {
       if (createdMysqlId) {

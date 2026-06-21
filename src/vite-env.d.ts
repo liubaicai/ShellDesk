@@ -867,6 +867,7 @@ interface ShellDeskMysqlConnectResult {
   mysqlId: string;
   alreadyConnected?: boolean;
   transport?: ShellDeskMysqlTransport;
+  fallbackReason?: string | null;
 }
 
 interface ShellDeskMysqlColumn {
@@ -953,6 +954,7 @@ interface ShellDeskPostgresConnectResult {
   postgresId: string;
   alreadyConnected?: boolean;
   transport?: ShellDeskDatabaseTransport;
+  fallbackReason?: string | null;
 }
 
 interface ShellDeskPostgresTable {
@@ -990,6 +992,7 @@ interface ShellDeskMongoConnectResult {
   mongoId: string;
   alreadyConnected?: boolean;
   transport?: ShellDeskDatabaseTransport;
+  fallbackReason?: string | null;
 }
 
 interface ShellDeskMongoDatabase {
@@ -1067,6 +1070,7 @@ interface ShellDeskRedisConnectResult {
   redisId: string;
   alreadyConnected?: boolean;
   transport?: ShellDeskDatabaseTransport;
+  fallbackReason?: string | null;
 }
 
 interface ShellDeskRedisScanOptions {

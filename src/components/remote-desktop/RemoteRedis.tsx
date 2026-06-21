@@ -98,6 +98,26 @@ function getKeyTypeMark(type: string): string {
   }
 }
 
+function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
+  switch (transport) {
+    case 'direct':
+      return tCurrent('db.transport.direct');
+    case 'ssh-exec':
+      return tCurrent('db.transport.sshExec');
+    case 'ssh-forward':
+      return tCurrent('db.transport.sshForward');
+    case 'ssh-tunnel':
+    default:
+      return tCurrent('db.transport.sshTunnel');
+  }
+}
+
+function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
+  return reason
+    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
+    : message;
+}
+
 function formatSizeHint(type: string, size?: number): string {
   if (size === undefined || Number.isNaN(size)) return tCurrent('auto.remoteRedis.1ng00oy');
   if (type === 'string') return `${size} B`;
@@ -380,18 +400,15 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
         dbNum: String(nextDb),
       }).catch(() => undefined);
       await scanKeys({ reset: true, redisIdOverride: result.redisId });
+      const successMessage = tCurrent('redis.connection.success', {
+        transport: describeDatabaseTransport(result.transport),
+        host: host || '127.0.0.1',
+        port: nextPort,
+        database: nextDb,
+      });
       setMessage({
         type: 'success',
-        text: tCurrent('redis.connection.success', {
-          transport: result.transport === 'direct'
-            ? tCurrent('db.transport.direct')
-            : result.transport === 'ssh-exec'
-              ? tCurrent('db.transport.remoteTcpProxy')
-              : tCurrent('db.transport.sshTunnel'),
-          host: host || '127.0.0.1',
-          port: nextPort,
-          database: nextDb,
-        }),
+        text: appendDatabaseFallbackReason(successMessage, result.fallbackReason),
       });
     } catch (error) {
       if (createdRedisId) {

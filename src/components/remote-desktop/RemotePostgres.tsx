@@ -80,6 +80,26 @@ function createGenericColumns(names: string[]): ShellDeskPostgresColumn[] {
   }));
 }
 
+function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
+  switch (transport) {
+    case 'direct':
+      return tCurrent('db.transport.direct');
+    case 'ssh-exec':
+      return tCurrent('db.transport.sshExec');
+    case 'ssh-forward':
+      return tCurrent('db.transport.sshForward');
+    case 'ssh-tunnel':
+    default:
+      return tCurrent('db.transport.sshTunnel');
+  }
+}
+
+function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
+  return reason
+    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
+    : message;
+}
+
 function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const api = window.guiSSH?.connections;
   const postgresIdRef = useRef('');
@@ -221,17 +241,17 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         await api.postgresDisconnect(connectionId, previousPostgresId).catch(() => false);
       }
       setStatus('connected');
-      setNotice(tCurrent(result.alreadyConnected ? 'postgres.connection.reused' : 'postgres.connection.success', {
-        transport: result.transport === 'direct'
-          ? tCurrent('db.transport.direct')
-          : result.transport === 'ssh-exec'
-            ? tCurrent('db.transport.remoteTcpProxy')
-            : tCurrent('db.transport.sshTunnel'),
-        user: user || 'postgres',
-        host: host || '127.0.0.1',
-        port: nextPort,
-        database: targetDb,
-      }));
+      const notice = tCurrent(
+        result.alreadyConnected ? 'postgres.connection.reused' : 'postgres.connection.success',
+        {
+          transport: describeDatabaseTransport(result.transport),
+          user: user || 'postgres',
+          host: host || '127.0.0.1',
+          port: nextPort,
+          database: targetDb,
+        },
+      );
+      setNotice(appendDatabaseFallbackReason(notice, result.fallbackReason));
     } catch (error) {
       if (createdPostgresId) {
         try {
