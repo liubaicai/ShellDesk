@@ -11,7 +11,7 @@
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  grid-template-columns: 300px minmax(0, 1fr);
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(15, 27, 42, 0.98), rgba(7, 12, 18, 0.98)),
@@ -168,29 +168,21 @@
 }
 
 .postgres-sidebar,
-.postgres-main,
-.postgres-detail {
+.postgres-main {
   min-height: 0;
   overflow: hidden;
 }
 
-.postgres-sidebar,
-.postgres-detail {
+.postgres-sidebar {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--pg-border);
   background: rgba(5, 10, 16, 0.22);
 }
 
-.postgres-detail {
-  border-right: 0;
-  border-left: 1px solid var(--pg-border);
-}
-
 .postgres-sidebar-head,
 .postgres-topbar,
-.postgres-result-head,
-.postgres-detail-section {
+.postgres-result-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -200,21 +192,18 @@
 }
 
 .postgres-sidebar-head div,
-.postgres-connection-summary,
-.postgres-detail-section {
+.postgres-connection-summary {
   min-width: 0;
 }
 
 .postgres-sidebar-head strong,
-.postgres-result-head strong,
-.postgres-detail-section strong {
+.postgres-result-head strong {
   font-size: 13px;
   font-weight: 850;
 }
 
 .postgres-sidebar-head span,
-.postgres-result-head span,
-.postgres-detail-section span {
+.postgres-result-head span {
   overflow: hidden;
   color: var(--pg-muted);
   font-size: 11px;
@@ -266,10 +255,13 @@
 }
 
 .postgres-object-tree,
-.postgres-column-list,
 .postgres-history-list {
   min-height: 0;
   overflow: auto;
+}
+
+.postgres-object-tree {
+  flex: 1 1 auto;
 }
 
 .postgres-schema-btn {
@@ -447,38 +439,44 @@
   font-variant-numeric: tabular-nums;
 }
 
-.postgres-column-list {
-  padding: 10px;
+.postgres-history {
+  display: flex;
+  min-height: 150px;
+  max-height: 34%;
+  flex: 0 0 190px;
+  flex-direction: column;
+  border-top: 1px solid var(--pg-border);
 }
 
-.postgres-column-item {
-  display: grid;
-  gap: 3px;
-  border-bottom: 1px solid rgba(148, 170, 204, 0.09);
-  padding: 8px 0;
+.postgres-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 0;
 }
 
-.postgres-column-item strong,
-.postgres-column-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.postgres-column-item strong {
+.postgres-history-title strong {
   font-size: 12px;
+  font-weight: 850;
 }
 
-.postgres-column-item span {
+.postgres-history-title span,
+.postgres-history-empty {
   color: var(--pg-muted);
-  font-size: 10.5px;
-  font-weight: 680;
+  font-size: 11px;
+  font-weight: 720;
 }
 
 .postgres-history-list {
   display: grid;
+  align-content: start;
   gap: 6px;
   padding: 10px;
+}
+
+.postgres-history-empty {
+  padding: 8px 0;
 }
 
 .postgres-history-list button {
@@ -527,10 +525,6 @@
 @media (max-width: 1080px) {
   .postgres-manager {
     grid-template-columns: 240px minmax(0, 1fr);
-  }
-
-  .postgres-detail {
-    display: none;
   }
 }
 

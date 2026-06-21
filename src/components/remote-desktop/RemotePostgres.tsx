@@ -99,7 +99,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const [tablesBySchema, setTablesBySchema] = useState<Record<string, ShellDeskPostgresTable[]>>({});
   const [objectSearch, setObjectSearch] = useState('');
   const [selectedTable, setSelectedTable] = useState<TableInfo | null>(null);
-  const [columns, setColumns] = useState<ShellDeskPostgresColumn[]>([]);
   const [sql, setSql] = useState('SELECT current_database(), now();');
   const [queryResult, setQueryResult] = useState<ShellDeskPostgresQueryResult | null>(null);
   const [queryColumns, setQueryColumns] = useState<ShellDeskPostgresColumn[]>([]);
@@ -159,7 +158,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
 
     setTablesBySchema({});
     setSelectedTable(null);
-    setColumns([]);
     const [nextDatabases, nextSchemas] = await Promise.all([
       api.postgresDatabases(connectionId, nextPostgresId),
       api.postgresSchemas(connectionId, nextPostgresId),
@@ -267,7 +265,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setSchemas([]);
     setTablesBySchema({});
     setSelectedTable(null);
-    setColumns([]);
     setQueryResult(null);
     setContextMenu(null);
     setNotice(tCurrent('auto.remotePostgres.tn34oa'));
@@ -377,7 +374,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     const tableInfo = { schema: table.schema, name: table.name, type: table.type };
     const previewSql = `SELECT * FROM ${quotePgIdentifier(table.schema)}.${quotePgIdentifier(table.name)} LIMIT ${tablePreviewLimit};`;
     setSelectedTable(tableInfo);
-    setColumns([]);
     setSql(previewSql);
 
     await runQuery(previewSql, tableInfo);
@@ -395,7 +391,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     ].join('\n');
     setContextMenu(null);
     setSelectedTable(null);
-    setColumns([]);
     setSql(infoSql);
     void runQuery(infoSql);
   }, [runQuery]);
@@ -434,7 +429,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         })),
         rowCount: nextColumns.length,
       };
-      setColumns(nextColumns);
       setQueryResult(result);
       setQueryColumns(createGenericColumns(result.columns));
       const historyItem: QueryHistoryItem = {
@@ -626,6 +620,22 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
             </div>
           ))}
         </div>
+        <div className="postgres-history">
+          <div className="postgres-history-title">
+            <strong>{tCurrent('auto.remotePostgres.air9hy')}</strong>
+            <span>{history.length}</span>
+          </div>
+          <div className="postgres-history-list">
+            {history.length === 0 ? (
+              <div className="postgres-history-empty">{tCurrent('auto.remotePostgres.mkpr6n')}</div>
+            ) : history.map((item) => (
+              <button key={item.id} type="button" className={item.status} onClick={() => setSql(item.sql)} title={item.sql}>
+                <strong>{item.sql.replace(/\s+/g, ' ').slice(0, 80)}</strong>
+                <span>{item.createdAt} · {item.durationMs} ms{item.rowCount !== undefined ? tCurrent('auto.remotePostgres.b3e9gx', { value0: item.rowCount }) : ''}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </aside>
 
       <main className="postgres-main">
@@ -697,34 +707,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
           )}
         </section>
       </main>
-
-      <aside className="postgres-detail">
-        <div className="postgres-detail-section">
-          <strong>{tCurrent('auto.remotePostgres.19ma7vc')}</strong>
-          {selectedTable ? <span>{selectedTable.schema}.{selectedTable.name}</span> : <span>{tCurrent('auto.remotePostgres.1u9unt1')}</span>}
-        </div>
-        <div className="postgres-column-list">
-          {columns.map((column) => (
-            <div key={column.name} className="postgres-column-item">
-              <strong>{column.name}</strong>
-              <span>{column.dataType}{column.nullable ? '' : ' · NOT NULL'}{column.isPrimaryKey ? ' · PK' : ''}</span>
-            </div>
-          ))}
-          {!columns.length ? <div className="postgres-placeholder small">{tCurrent('auto.remotePostgres.4k9mre')}</div> : null}
-        </div>
-        <div className="postgres-detail-section">
-          <strong>{tCurrent('auto.remotePostgres.air9hy')}</strong>
-          <span>{history.length} {tCurrent('auto.remotePostgres.1rfm5gs')}</span>
-        </div>
-        <div className="postgres-history-list">
-          {history.map((item) => (
-            <button key={item.id} type="button" className={item.status} onClick={() => setSql(item.sql)}>
-              <strong>{item.sql.replace(/\s+/g, ' ').slice(0, 80)}</strong>
-              <span>{item.createdAt} · {item.durationMs} ms{item.rowCount !== undefined ? tCurrent('auto.remotePostgres.b3e9gx', { value0: item.rowCount }) : ''}</span>
-            </button>
-          ))}
-        </div>
-      </aside>
 
       {contextMenu ? createPortal(
         <div
