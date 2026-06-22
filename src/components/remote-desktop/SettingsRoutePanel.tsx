@@ -154,4 +154,3 @@ export default function SettingsRoutePanel() {
     </div>
   );
 }
-

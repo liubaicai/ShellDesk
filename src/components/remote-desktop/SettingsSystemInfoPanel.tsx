@@ -147,4 +147,3 @@ export default function SettingsSystemInfoPanel({ connectionId }: { connectionId
     </div>
   );
 }
-
