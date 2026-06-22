@@ -1,7 +1,17 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { getErrorMessage } from './desktopUtils';
+import {
+  createGenericColumns,
+  createId,
+  formatCellValue,
+  formatSqlPreview,
+  formatTimestamp,
+  isWriteStatement,
+  quoteIdentifier,
+  useContextMenu,
+} from './databaseUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import DismissibleAlert from './DismissibleAlert';
 import RemoteFilePicker from './RemoteFilePicker';
@@ -90,61 +100,8 @@ const elevationErrorPrefixes = [
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
 ];
 
-function createId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function quoteSqliteIdentifier(identifier: string): string {
-  return `"${identifier.replace(/"/g, '""')}"`;
-}
-
 function quoteSqliteString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
-}
-
-function formatSqlPreview(sql: string, length = 56): string {
-  const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return tCurrent('auto.remoteSqlite.18ivnwu');
-  return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
-}
-
-function formatCellValue(value: unknown): string {
-  if (value === null) return 'NULL';
-  if (value === undefined) return '';
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(getShellDeskLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function createGenericColumns(names: string[]): ShellDeskSqliteColumn[] {
-  return names.map((name) => ({
-    name,
-    type: '',
-    nullable: true,
-    pk: false,
-    defaultValue: null,
-  }));
-}
-
-function isSqliteWriteStatement(sql: string): boolean {
-  if (/^\s*pragma\b/i.test(sql)) {
-    return /^\s*pragma\s+[^;=]+=/i.test(sql);
-  }
-
-  return /^\s*(insert|update|delete|replace|alter|drop|create|vacuum|reindex|attach|detach)\b/i.test(sql);
 }
 
 function getObjectTypeLabel(type: string): string {
@@ -452,9 +409,9 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     if (!api?.connections || !sqliteId) return;
 
     const isDataObject = object.type === 'table' || object.type === 'view';
-    const fallbackSql = `SELECT * FROM ${quoteSqliteIdentifier(object.name)} LIMIT ${tablePreviewLimit};`;
+    const fallbackSql = `SELECT * FROM ${quoteIdentifier(object.name, 'sqlite')} LIMIT ${tablePreviewLimit};`;
     const preferredSql = object.type === 'table'
-      ? `SELECT rowid AS ${quoteSqliteIdentifier(rowidColumn)}, * FROM ${quoteSqliteIdentifier(object.name)} LIMIT ${tablePreviewLimit};`
+      ? `SELECT rowid AS ${quoteIdentifier(rowidColumn, 'sqlite')}, * FROM ${quoteIdentifier(object.name, 'sqlite')} LIMIT ${tablePreviewLimit};`
       : fallbackSql;
     const startTime = performance.now();
 
@@ -603,7 +560,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     if (!api?.connections || !sqliteId || !sqlText.trim()) return;
 
     const statement = sqlText.trim();
-    const writeStatement = isSqliteWriteStatement(statement);
+    const writeStatement = isWriteStatement(statement, 'sqlite');
     const startTime = performance.now();
 
     setQueryRunning(true);
@@ -620,11 +577,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       const queryTime = Math.round(performance.now() - startTime);
 
       setQueryResult(result);
-      setColumns(createGenericColumns(result.columns));
+      setColumns(createGenericColumns(result.columns, 'sqlite'));
       setResultMeta({
         sql: statement,
         source: 'query',
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'sqlite'),
         queryTime,
         createdAt: Date.now(),
         rowidAvailable: false,
@@ -683,7 +640,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const handleExecuteSql = useCallback(() => {
     if (!sql.trim()) return;
 
-    if (isSqliteWriteStatement(sql)) {
+    if (isWriteStatement(sql, 'sqlite')) {
       setPendingWrite({ sql: sql.trim() });
       return;
     }
@@ -877,28 +834,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     };
   }, [api, connectionId]);
 
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('contextmenu', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [contextMenu]);
+  useContextMenu(contextMenu, setContextMenu);
 
   const sudoPromptPortal = sudoPrompt ? createPortal(
     <div className="notepad-modal-overlay" role="presentation" onClick={() => resolveSudoPrompt(null)}>

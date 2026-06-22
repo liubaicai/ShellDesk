@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import {
+  appendDatabaseFallbackReason,
+  describeDatabaseTransport,
+  formatCellValue,
+  useContextMenu,
+} from './databaseUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
@@ -45,33 +51,6 @@ function stringifyJson(value: unknown) {
   return text === undefined ? '' : text;
 }
 
-function formatCellValue(value: unknown) {
-  if (value === null) return 'null';
-  if (value === undefined) return '';
-  if (typeof value === 'object') return stringifyJson(value).replace(/\s+/g, ' ').slice(0, 160);
-  return String(value);
-}
-
-function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
-  switch (transport) {
-    case 'direct':
-      return tCurrent('db.transport.direct');
-    case 'ssh-exec':
-      return tCurrent('db.transport.sshExec');
-    case 'ssh-forward':
-      return tCurrent('db.transport.sshForward');
-    case 'ssh-tunnel':
-    default:
-      return tCurrent('db.transport.sshTunnel');
-  }
-}
-
-function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
-  return reason
-    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
-    : message;
-}
-
 function getDocumentId(document: Record<string, unknown>, index: number) {
   const id = document._id;
 
@@ -80,7 +59,7 @@ function getDocumentId(document: Record<string, unknown>, index: number) {
   }
 
   if (id !== undefined && id !== null) {
-    return formatCellValue(id);
+    return formatCellValue(id, { nullText: 'null', compactObjects: true, maxLength: 160 });
   }
 
   return tCurrent('auto.remoteMongo.b4ahkk', { value0: index + 1 });
@@ -470,28 +449,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
     }
   }, [contextMenu, handleQueryCollection, showCollectionStructure, showDatabaseInfo]);
 
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('contextmenu', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [contextMenu]);
+  useContextMenu(contextMenu, setContextMenu);
 
   const formatDraft = (field: 'filter' | 'projection' | 'sort') => {
     try {
@@ -703,7 +661,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
               <tbody>
                 {documents.map((document, index) => (
                   <tr key={`${getDocumentId(document, index)}-${index}`} className={index === selectedDocumentIndex ? 'selected' : ''} onClick={() => setSelectedDocumentIndex(index)}>
-                    {documentColumns.map((column) => <td key={column}>{formatCellValue(document[column])}</td>)}
+                    {documentColumns.map((column) => <td key={column}>{formatCellValue(document[column], { nullText: 'null', compactObjects: true, maxLength: 160 })}</td>)}
                   </tr>
                 ))}
               </tbody>

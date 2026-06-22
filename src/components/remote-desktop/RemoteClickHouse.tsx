@@ -3,6 +3,17 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
+import {
+  createGenericColumns,
+  createId,
+  describeDatabaseTransport,
+  formatCellValue,
+  formatSqlPreview,
+  formatTimestamp,
+  isWriteStatement,
+  quoteIdentifier,
+  useContextMenu,
+} from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
@@ -84,10 +95,6 @@ const tablePreviewLimit = 50;
 const maxResultTabs = 10;
 const maxHistoryItems = 12;
 
-function createId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function createQueryTab(index: number, sql = 'SELECT version() AS version;'): ClickHouseQueryTab {
   return {
     id: createId('query'),
@@ -102,53 +109,8 @@ function createInitialQueryState(): { tabs: ClickHouseQueryTab[]; activeId: stri
   return { tabs: [tab], activeId: tab.id };
 }
 
-function quoteClickHouseIdentifier(identifier: string): string {
-  return `\`${identifier.replace(/`/g, '``')}\``;
-}
-
 function quoteClickHouseString(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-}
-
-function formatSqlPreview(sql: string, length = 56): string {
-  const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return tCurrent('clickhouse.query.emptySql');
-  return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
-}
-
-function formatCellValue(value: unknown): string {
-  if (value === null) return 'NULL';
-  if (value === undefined) return '';
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
-
-function describeClickHouseTransport(transport?: ShellDeskClickHouseTransport): string {
-  switch (transport) {
-    case 'direct':
-      return tCurrent('db.transport.direct');
-    case 'ssh-exec':
-      return tCurrent('db.transport.sshExec');
-    case 'ssh-forward':
-      return tCurrent('db.transport.sshForward');
-    case 'ssh-tunnel':
-    default:
-      return tCurrent('db.transport.sshTunnel');
-  }
-}
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(getShellDeskLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -170,18 +132,6 @@ function formatBytes(value: number | null | undefined): string {
   return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function createGenericColumns(names: string[]): ShellDeskClickHouseColumn[] {
-  return names.map((name) => ({
-    name,
-    type: '',
-    defaultKind: '',
-    defaultExpression: '',
-    comment: '',
-    isPrimaryKey: false,
-    isSortingKey: false,
-  }));
-}
-
 function getColumnMeta(columns: ShellDeskClickHouseColumn[], name: string): ShellDeskClickHouseColumn | undefined {
   return columns.find((column) => column.name === name);
 }
@@ -191,10 +141,6 @@ function getColumnBadge(column?: ShellDeskClickHouseColumn): string {
   if (column.isPrimaryKey) return 'PK';
   if (column.isSortingKey) return 'SORT';
   return '';
-}
-
-function isWriteStatement(sql: string): boolean {
-  return /^\s*(insert|alter|drop|truncate|create|rename|attach|detach|optimize|kill|exchange)\b/i.test(sql);
 }
 
 function describeResult(result: ShellDeskClickHouseQueryResult): string {
@@ -505,14 +451,14 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         type: 'success',
         text: result.fallbackReason && result.transport === 'ssh-exec'
           ? tCurrent('clickhouse.connection.successWithFallback', {
-              transport: describeClickHouseTransport(result.transport),
+              transport: describeDatabaseTransport(result.transport),
               user: user || 'default',
               host: host || '127.0.0.1',
               port: displayPort,
               reason: result.fallbackReason,
             })
           : tCurrent('clickhouse.connection.success', {
-              transport: describeClickHouseTransport(result.transport),
+              transport: describeDatabaseTransport(result.transport),
               user: user || 'default',
               host: host || '127.0.0.1',
               port: displayPort,
@@ -654,7 +600,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     if (!api?.connections || !clickhouseId) return;
 
     const tableInfo: TableInfo = { ...table, database };
-    const previewSql = `SELECT * FROM ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(table.name)} LIMIT ${tablePreviewLimit};`;
+    const previewSql = `SELECT * FROM ${quoteIdentifier(database, 'clickhouse')}.${quoteIdentifier(table.name, 'clickhouse')} LIMIT ${tablePreviewLimit};`;
     const startTime = performance.now();
 
     setSelectedTable(tableInfo);
@@ -679,7 +625,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         queryTime,
         createdAt: Date.now(),
         table: tableInfo,
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'clickhouse'),
       });
       addHistoryItem({
         sql: previewSql,
@@ -741,7 +687,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         result,
         queryTime,
         createdAt: Date.now(),
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'clickhouse'),
       });
       addHistoryItem({
         sql: sqlText,
@@ -772,7 +718,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     if (!api?.connections || !clickhouseId) return;
 
     const tableInfo: TableInfo = { ...table, database };
-    const sqlText = `DESCRIBE TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(table.name)};`;
+    const sqlText = `DESCRIBE TABLE ${quoteIdentifier(database, 'clickhouse')}.${quoteIdentifier(table.name, 'clickhouse')};`;
     const startTime = performance.now();
 
     setSelectedTable(tableInfo);
@@ -809,7 +755,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         queryTime,
         createdAt: Date.now(),
         table: tableInfo,
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'clickhouse'),
       });
       addHistoryItem({
         sql: sqlText,
@@ -873,7 +819,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
       addResultTab({
         id: createId('result'),
-        title: isWriteStatement(sqlText) ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28),
+        title: isWriteStatement(sqlText, 'clickhouse') ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28),
         subtitle: database
           ? tCurrent('clickhouse.query.databaseSubtitle', { database })
           : tCurrent('clickhouse.query.noDatabase'),
@@ -883,7 +829,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         result,
         queryTime,
         createdAt: Date.now(),
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'clickhouse'),
       });
       addHistoryItem({
         sql: sqlText,
@@ -975,28 +921,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     }
   }, [activeQueryId, isReady]);
 
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('contextmenu', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [contextMenu]);
+  useContextMenu(contextMenu, setContextMenu);
 
   useEffect(() => {
     return () => {

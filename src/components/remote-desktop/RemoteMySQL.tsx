@@ -1,8 +1,20 @@
 import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { getErrorMessage } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
+import {
+  appendDatabaseFallbackReason,
+  createGenericColumns,
+  createId,
+  describeDatabaseTransport,
+  formatCellValue,
+  formatSqlPreview,
+  formatTimestamp,
+  isWriteStatement,
+  quoteIdentifier,
+  useContextMenu,
+} from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
@@ -101,10 +113,6 @@ const tablePreviewLimit = 50;
 const maxResultTabs = 10;
 const maxHistoryItems = 12;
 
-function createId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function createQueryTab(index: number, sql = 'SELECT 1;'): MysqlQueryTab {
   return {
     id: createId('query'),
@@ -119,71 +127,8 @@ function createInitialQueryState(): { tabs: MysqlQueryTab[]; activeId: string } 
   return { tabs: [tab], activeId: tab.id };
 }
 
-function describeMysqlTransport(transport?: ShellDeskMysqlTransport): string {
-  switch (transport) {
-    case 'direct':
-      return tCurrent('db.transport.direct');
-    case 'ssh-exec':
-      return tCurrent('db.transport.sshExec');
-    case 'ssh-forward':
-      return tCurrent('db.transport.sshForward');
-    case 'ssh-tunnel':
-    default:
-      return tCurrent('db.transport.sshTunnel');
-  }
-}
-
-function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
-  return reason
-    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
-    : message;
-}
-
-function quoteMysqlIdentifier(identifier: string): string {
-  return `\`${identifier.replace(/`/g, '``')}\``;
-}
-
 function quoteMysqlString(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
-}
-
-function formatSqlPreview(sql: string, length = 56): string {
-  const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return tCurrent('auto.remoteMySQL.18ivnwu');
-  return compact.length > length ? `${compact.slice(0, length - 1)}...` : compact;
-}
-
-function formatCellValue(value: unknown): string {
-  if (value === null) return 'NULL';
-  if (value === undefined) return '';
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(getShellDeskLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function createGenericColumns(names: string[]): ShellDeskMysqlColumn[] {
-  return names.map((name) => ({
-    name,
-    type: '',
-    nullable: false,
-    key: '',
-    default: null,
-    extra: '',
-    comment: '',
-  }));
 }
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -194,10 +139,6 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 
 function getColumnMeta(columns: ShellDeskMysqlColumn[], name: string): ShellDeskMysqlColumn | undefined {
   return columns.find((column) => column.name === name);
-}
-
-function isWriteStatement(sql: string): boolean {
-  return /^\s*(insert|update|delete|replace|alter|drop|truncate|create|rename|grant|revoke)\b/i.test(sql);
 }
 
 function describeResult(result: ShellDeskMysqlQueryResult): string {
@@ -485,7 +426,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       setExpandedDbs(nextExpanded);
       setDbTables(nextTables);
       const successMessage = tCurrent('auto.remoteMySQL.1ltkkjj', {
-        value0: describeMysqlTransport(result.transport),
+        value0: describeDatabaseTransport(result.transport),
         value1: user || 'root',
         value2: host || '127.0.0.1',
         value3: nextPort,
@@ -623,7 +564,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const handleSelectTable = useCallback(async (database: string, table: string) => {
     if (!api?.connections || !mysqlId) return;
 
-    const previewSql = `SELECT * FROM ${quoteMysqlIdentifier(database)}.${quoteMysqlIdentifier(table)} LIMIT ${tablePreviewLimit};`;
+    const previewSql = `SELECT * FROM ${quoteIdentifier(database, 'mysql')}.${quoteIdentifier(table, 'mysql')} LIMIT ${tablePreviewLimit};`;
     const startTime = performance.now();
 
     setSelectedTable({ database, name: table });
@@ -717,7 +658,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         result,
         queryTime,
         createdAt: Date.now(),
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'mysql'),
       });
       addHistoryItem({
         sql: sqlText,
@@ -748,7 +689,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const handleShowTableStructure = useCallback(async (database: string, table: string) => {
     if (!api?.connections || !mysqlId) return;
 
-    const sqlText = `SHOW FULL COLUMNS FROM ${quoteMysqlIdentifier(database)}.${quoteMysqlIdentifier(table)};`;
+    const sqlText = `SHOW FULL COLUMNS FROM ${quoteIdentifier(database, 'mysql')}.${quoteIdentifier(table, 'mysql')};`;
     const startTime = performance.now();
 
     setSelectedTable({ database, name: table });
@@ -785,7 +726,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         queryTime,
         createdAt: Date.now(),
         table: { database, name: table },
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'mysql'),
       });
       addHistoryItem({
         sql: sqlText,
@@ -847,7 +788,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       const queryTime = Math.round(performance.now() - startTime);
       const resultTab: MysqlResultTab = {
         id: createId('result'),
-        title: isWriteStatement(sqlText) ? tCurrent('auto.remoteMySQL.11b0x22') : formatSqlPreview(sqlText, 28),
+        title: isWriteStatement(sqlText, 'mysql') ? tCurrent('auto.remoteMySQL.11b0x22') : formatSqlPreview(sqlText, 28),
         subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx'),
         sql: sqlText,
         database,
@@ -855,7 +796,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         result,
         queryTime,
         createdAt: Date.now(),
-        columns: createGenericColumns(result.columns),
+        columns: createGenericColumns(result.columns, 'mysql'),
       };
 
       addResultTab(resultTab);
@@ -1059,30 +1000,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     }
   }, [activeQueryId, isReady]);
 
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        close();
-      }
-    };
-
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('contextmenu', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [contextMenu]);
+  useContextMenu(contextMenu, setContextMenu);
 
   useEffect(() => {
     return () => {

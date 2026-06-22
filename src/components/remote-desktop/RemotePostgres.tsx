@@ -3,6 +3,15 @@ import { createPortal } from 'react-dom';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
+import {
+  appendDatabaseFallbackReason,
+  createGenericColumns,
+  createId,
+  describeDatabaseTransport,
+  formatCellValue,
+  quoteIdentifier,
+  useContextMenu,
+} from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
@@ -44,60 +53,8 @@ const tablePreviewLimit = 50;
 const maxHistoryItems = 12;
 const defaultPort = 5432;
 
-function createId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function quotePgIdentifier(identifier: string) {
-  return `"${identifier.replace(/"/g, '""')}"`;
-}
-
 function quotePgString(value: string) {
   return `'${value.replace(/'/g, "''")}'`;
-}
-
-function formatCellValue(value: unknown) {
-  if (value === null) return 'NULL';
-  if (value === undefined) return '';
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-
-  return String(value);
-}
-
-function createGenericColumns(names: string[]): ShellDeskPostgresColumn[] {
-  return names.map((name) => ({
-    name,
-    dataType: '',
-    nullable: true,
-    defaultValue: null,
-    isPrimaryKey: false,
-  }));
-}
-
-function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
-  switch (transport) {
-    case 'direct':
-      return tCurrent('db.transport.direct');
-    case 'ssh-exec':
-      return tCurrent('db.transport.sshExec');
-    case 'ssh-forward':
-      return tCurrent('db.transport.sshForward');
-    case 'ssh-tunnel':
-    default:
-      return tCurrent('db.transport.sshTunnel');
-  }
-}
-
-function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
-  return reason
-    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
-    : message;
 }
 
 function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
@@ -328,7 +285,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       const durationMs = Math.round(performance.now() - startedAt);
       const nextColumns = table
         ? await api.postgresColumns(connectionId, postgresId, table.schema, table.name)
-        : createGenericColumns(result.columns);
+        : createGenericColumns(result.columns, 'postgres');
       const historyItem: QueryHistoryItem = {
         id: createId('pg-history'),
         sql: statement,
@@ -392,7 +349,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     if (!api || !postgresId) return;
 
     const tableInfo = { schema: table.schema, name: table.name, type: table.type };
-    const previewSql = `SELECT * FROM ${quotePgIdentifier(table.schema)}.${quotePgIdentifier(table.name)} LIMIT ${tablePreviewLimit};`;
+    const previewSql = `SELECT * FROM ${quoteIdentifier(table.schema, 'postgres')}.${quoteIdentifier(table.name, 'postgres')} LIMIT ${tablePreviewLimit};`;
     setSelectedTable(tableInfo);
     setSql(previewSql);
 
@@ -450,7 +407,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         rowCount: nextColumns.length,
       };
       setQueryResult(result);
-      setQueryColumns(createGenericColumns(result.columns));
+      setQueryColumns(createGenericColumns(result.columns, 'postgres'));
       const historyItem: QueryHistoryItem = {
         id: createId('pg-history'),
         sql: structureSql,
@@ -518,28 +475,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     }
   }, [contextMenu, showDatabaseInfo, showTableStructure]);
 
-  useEffect(() => {
-    if (!contextMenu) return undefined;
-
-    const close = () => setContextMenu(null);
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('contextmenu', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [contextMenu]);
+  useContextMenu(contextMenu, setContextMenu);
 
   const handleSqlKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {

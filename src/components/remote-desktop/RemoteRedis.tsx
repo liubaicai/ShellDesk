@@ -1,7 +1,12 @@
 import { type KeyboardEvent, useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import { getErrorMessage } from './desktopUtils';
+import {
+  appendDatabaseFallbackReason,
+  describeDatabaseTransport,
+  formatTimestamp,
+} from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
@@ -98,40 +103,11 @@ function getKeyTypeMark(type: string): string {
   }
 }
 
-function describeDatabaseTransport(transport?: ShellDeskDatabaseTransport): string {
-  switch (transport) {
-    case 'direct':
-      return tCurrent('db.transport.direct');
-    case 'ssh-exec':
-      return tCurrent('db.transport.sshExec');
-    case 'ssh-forward':
-      return tCurrent('db.transport.sshForward');
-    case 'ssh-tunnel':
-    default:
-      return tCurrent('db.transport.sshTunnel');
-  }
-}
-
-function appendDatabaseFallbackReason(message: string, reason?: string | null): string {
-  return reason
-    ? `${message} ${tCurrent('db.connection.fallbackReason', { reason })}`
-    : message;
-}
-
 function formatSizeHint(type: string, size?: number): string {
   if (size === undefined || Number.isNaN(size)) return tCurrent('auto.remoteRedis.1ng00oy');
   if (type === 'string') return `${size} B`;
   if (type === 'stream') return tCurrent('auto.remoteRedis.1h15ve7', { value0: size });
   return tCurrent('auto.remoteRedis.1eo5imv', { value0: size });
-}
-
-function formatTimestamp(value?: string): string {
-  if (!value) return '';
-  return new Date(value).toLocaleTimeString(getShellDeskLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
 }
 
 function stringifyJson(value: unknown): string {
