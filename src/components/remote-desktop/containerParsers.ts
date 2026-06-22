@@ -1,0 +1,338 @@
+import { t, type AppLanguage } from '../../i18n';
+import { readNumber, readString } from './parseUtils';
+import type { ContainerDetail, ContainerRuntimeConfig, ContainerState, ContainerStats, ContainerSummary, ImageSummary, RestartPolicy } from './containerTypes';
+const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
+const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
+const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
+export function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+export function formatInspectValue(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return '-';
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter(Boolean).join(' ') || '-';
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+export function formatByteLimit(value: number | undefined) {
+  if (!value || value <= 0) {
+    return '';
+  }
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let nextValue = value;
+  let unitIndex = 0;
+  while (nextValue >= 1024 && unitIndex < units.length - 1) {
+    nextValue /= 1024;
+    unitIndex += 1;
+  }
+  const digits = nextValue >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${nextValue.toFixed(digits)} ${units[unitIndex]}`;
+}
+export function normalizeRestartPolicy(value: string): RestartPolicy {
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue === 'always') return 'always';
+  if (normalizedValue === 'unless-stopped') return 'unless-stopped';
+  if (normalizedValue.startsWith('on-failure')) return 'on-failure';
+  return 'no';
+}
+export function parseJsonDocument(text: string): unknown[] {
+  const trimmedText = text.trim();
+  if (!trimmedText) {
+    return [];
+  }
+  const parsedJson = JSON.parse(trimmedText) as unknown;
+  return Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+}
+export function parseJsonLines(stdout: string) {
+  const text = stdout.trim();
+  if (!text) {
+    return [] as Record<string, unknown>[];
+  }
+  if (text.startsWith('[')) {
+    try {
+      return parseJsonDocument(text).map(toRecord).filter((record): record is Record<string, unknown> => Boolean(record));
+    } catch {
+      return [];
+    }
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return toRecord(JSON.parse(line) as unknown);
+      } catch {
+        return undefined;
+      }
+    })
+    .filter((record): record is Record<string, unknown> => Boolean(record));
+}
+export function normalizeContainerName(name: string) {
+  return name.replace(/^\//, '').trim();
+}
+export function normalizeContainerState(value: string): ContainerState {
+  const normalizedValue = value.trim().toLowerCase();
+  if (!normalizedValue) {
+    return 'unknown';
+  }
+  if (normalizedValue === 'running' || normalizedValue.startsWith('up ') || normalizedValue === 'up') {
+    return 'running';
+  }
+  if (
+    normalizedValue === 'exited' ||
+    normalizedValue === 'stopped' ||
+    normalizedValue === 'dead' ||
+    normalizedValue.startsWith('exited ') ||
+    normalizedValue.includes('exited')
+  ) {
+    return 'exited';
+  }
+  if (normalizedValue === 'paused' || normalizedValue.includes('paused')) {
+    return 'paused';
+  }
+  if (normalizedValue === 'created' || normalizedValue.includes('created')) {
+    return 'created';
+  }
+  return 'unknown';
+}
+export function getStateLabel(state: ContainerState, language: AppLanguage) {
+  if (state === 'running') return t('container.state.running', language);
+  if (state === 'exited') return t('container.state.exited', language);
+  if (state === 'paused') return t('container.state.paused', language);
+  if (state === 'created') return t('container.state.created', language);
+  return t('container.state.unknown', language);
+}
+export function formatShortId(id: string) {
+  return id.replace(/^sha256:/, '').slice(0, 12) || '-';
+}
+export function parseContainerSummary(record: Record<string, unknown>): ContainerSummary | null {
+  const id = readString(record, 'ID', 'Id', 'IDShort', 'ContainerID', 'ContainerId').replace(/^sha256:/, '');
+  const rawName = readString(record, 'Names', 'Name', 'names', 'name');
+  const name = normalizeContainerName(rawName) || formatShortId(id);
+  const image = readString(record, 'Image', 'image') || '-';
+  const status = readString(record, 'Status', 'status') || readString(record, 'State', 'state') || '-';
+  const state = normalizeContainerState(readString(record, 'State', 'state') || status);
+  if (!id && !name) {
+    return null;
+  }
+  return {
+    id: id || name,
+    name,
+    image,
+    command: readString(record, 'Command', 'command') || undefined,
+    status,
+    state,
+    ports: readString(record, 'Ports', 'ports') || '-',
+    createdAt: readString(record, 'CreatedAt', 'Created', 'createdAt', 'created') || undefined,
+    runningFor: readString(record, 'RunningFor', 'RunningForHuman', 'runningFor') || undefined,
+  };
+}
+export function parseImageSummary(record: Record<string, unknown>): ImageSummary | null {
+  const id = readString(record, 'ID', 'Id', 'id').replace(/^sha256:/, '');
+  const repository = readString(record, 'Repository', 'repository', 'RepoTags') || '<none>';
+  const tag = readString(record, 'Tag', 'tag') || '<none>';
+  if (!id && repository === '<none>') {
+    return null;
+  }
+  return {
+    id: id || `${repository}:${tag}`,
+    repository,
+    tag,
+    size: readString(record, 'Size', 'size', 'VirtualSize') || '-',
+    createdAt: readString(record, 'CreatedAt', 'CreatedSince', 'Created', 'createdAt') || undefined,
+  };
+}
+export function splitContainerDetailSections(stdout: string) {
+  const sections = {
+    inspect: [] as string[],
+    stats: [] as string[],
+    logs: [] as string[],
+  };
+  let section: keyof typeof sections | null = null;
+  stdout.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trimEnd();
+    if (line.trim() === CONTAINER_INSPECT_MARKER) {
+      section = 'inspect';
+      return;
+    }
+    if (line.trim() === CONTAINER_STATS_MARKER) {
+      section = 'stats';
+      return;
+    }
+    if (line.trim() === CONTAINER_LOGS_MARKER) {
+      section = 'logs';
+      return;
+    }
+    if (section) {
+      sections[section].push(line);
+    }
+  });
+  return {
+    inspect: sections.inspect.join('\n').trim(),
+    stats: sections.stats.join('\n').trim(),
+    logs: sections.logs.join('\n').trim(),
+  };
+}
+export function extractPorts(inspectRecord: Record<string, unknown> | undefined, fallbackPorts: string, language: AppLanguage) {
+  const networkSettings = toRecord(inspectRecord?.NetworkSettings);
+  const portsRecord = toRecord(networkSettings?.Ports);
+  if (!portsRecord) {
+    return fallbackPorts && fallbackPorts !== '-' ? [fallbackPorts] : [];
+  }
+  const ports = Object.entries(portsRecord).flatMap(([containerPort, bindings]) => {
+    if (Array.isArray(bindings) && bindings.length > 0) {
+      return bindings
+        .map((binding) => {
+          const bindingRecord = toRecord(binding);
+          const hostIp = readString(bindingRecord, 'HostIp') || '0.0.0.0';
+          const hostPort = readString(bindingRecord, 'HostPort');
+          return hostPort ? `${hostIp}:${hostPort} -> ${containerPort}` : containerPort;
+        })
+        .filter(Boolean);
+    }
+    return [`${containerPort} -> ${t('container.port.unpublished', language)}`];
+  });
+  return ports.filter(Boolean);
+}
+export function extractMounts(inspectRecord: Record<string, unknown> | undefined) {
+  const mounts = inspectRecord?.Mounts;
+  if (!Array.isArray(mounts)) {
+    return [];
+  }
+  return mounts
+    .map((mount) => {
+      const mountRecord = toRecord(mount);
+      const type = readString(mountRecord, 'Type') || 'mount';
+      const source = readString(mountRecord, 'Source', 'Name') || '-';
+      const destination = readString(mountRecord, 'Destination') || '-';
+      const rw = readString(mountRecord, 'RW') === 'false' ? 'ro' : 'rw';
+      return `${type}: ${source} -> ${destination} (${rw})`;
+    })
+    .filter(Boolean);
+}
+export function extractEnv(inspectRecord: Record<string, unknown> | undefined) {
+  const config = toRecord(inspectRecord?.Config);
+  const env = config?.Env;
+  if (!Array.isArray(env)) {
+    return [];
+  }
+  return env
+    .map((item) => (typeof item === 'string' ? item : ''))
+    .filter(Boolean);
+}
+export function extractContainerRuntimeConfig(inspectRecord: Record<string, unknown> | undefined): ContainerRuntimeConfig {
+  const config = toRecord(inspectRecord?.Config);
+  const hostConfig = toRecord(inspectRecord?.HostConfig);
+  const restartPolicyRecord = toRecord(hostConfig?.RestartPolicy);
+  const restartPolicyName = normalizeRestartPolicy(readString(restartPolicyRecord, 'Name'));
+  const restartPolicyRetryCount = readNumber(restartPolicyRecord, 'MaximumRetryCount');
+  const labelsRecord = toRecord(config?.Labels);
+  const labels = labelsRecord
+    ? Object.entries(labelsRecord).map(([key, value]) => `${key}=${formatInspectValue(value)}`)
+    : [];
+  const resources: Array<{ label: string; value: string }> = [];
+  const nanoCpus = readNumber(hostConfig, 'NanoCpus');
+  const cpuQuota = readNumber(hostConfig, 'CpuQuota');
+  const cpuPeriod = readNumber(hostConfig, 'CpuPeriod');
+  const memory = readNumber(hostConfig, 'Memory');
+  const memorySwap = readNumber(hostConfig, 'MemorySwap');
+  if (nanoCpus && nanoCpus > 0) {
+    resources.push({ label: 'CPU', value: `${Number((nanoCpus / 1_000_000_000).toFixed(3))}` });
+  } else if (cpuQuota && cpuQuota > 0 && cpuPeriod && cpuPeriod > 0) {
+    resources.push({ label: 'CPU', value: `${Number((cpuQuota / cpuPeriod).toFixed(3))}` });
+  }
+  if (memory && memory > 0) {
+    resources.push({ label: 'Memory', value: formatByteLimit(memory) });
+  }
+  if (memorySwap && memorySwap > 0) {
+    resources.push({ label: 'Swap', value: formatByteLimit(memorySwap) });
+  }
+  return {
+    restartPolicy: restartPolicyName,
+    restartPolicyText: restartPolicyRetryCount && restartPolicyRetryCount > 0
+      ? `${restartPolicyName}:${restartPolicyRetryCount}`
+      : restartPolicyName,
+    networkMode: readString(hostConfig, 'NetworkMode') || '-',
+    privileged: readString(hostConfig, 'Privileged') || '-',
+    hostname: readString(config, 'Hostname') || '-',
+    user: readString(config, 'User') || '-',
+    workingDir: readString(config, 'WorkingDir') || '-',
+    entrypoint: formatInspectValue(config?.Entrypoint),
+    command: formatInspectValue(config?.Cmd),
+    labels,
+    resources,
+  };
+}
+export function parseContainerStats(statsText: string): ContainerStats | undefined {
+  if (!statsText) {
+    return undefined;
+  }
+  const record = parseJsonLines(statsText)[0];
+  if (!record) {
+    return {
+      cpu: '-',
+      memory: '-',
+      memoryPercent: '-',
+      netIO: '-',
+      blockIO: '-',
+      pids: '-',
+      raw: statsText,
+      error: statsText,
+    };
+  }
+  return {
+    cpu: readString(record, 'CPUPerc', 'CPU%', 'CPU') || '-',
+    memory: readString(record, 'MemUsage', 'MEM USAGE', 'Mem') || '-',
+    memoryPercent: readString(record, 'MemPerc', 'MEM %', 'MemPercent') || '-',
+    netIO: readString(record, 'NetIO', 'NET IO') || '-',
+    blockIO: readString(record, 'BlockIO', 'BLOCK IO') || '-',
+    pids: readString(record, 'PIDs', 'PIDS') || '-',
+    raw: statsText,
+  };
+}
+export function parseContainerDetailOutput(stdout: string, fallback: ContainerSummary, language: AppLanguage): ContainerDetail {
+  const sections = splitContainerDetailSections(stdout);
+  let inspectRecord: Record<string, unknown> | undefined;
+  let inspectError = '';
+  try {
+    inspectRecord = parseJsonDocument(sections.inspect).map(toRecord).find(Boolean);
+  } catch {
+    inspectError = sections.inspect;
+  }
+  const config = toRecord(inspectRecord?.Config);
+  const stateRecord = toRecord(inspectRecord?.State);
+  const name = normalizeContainerName(readString(inspectRecord, 'Name')) || fallback.name;
+  const image = readString(config, 'Image') || fallback.image;
+  const status = readString(stateRecord, 'Status') || fallback.status;
+  const state = normalizeContainerState(status || fallback.state);
+  return {
+    id: fallback.id,
+    name,
+    image,
+    status,
+    state,
+    createdAt: readString(inspectRecord, 'Created') || fallback.createdAt,
+    ports: extractPorts(inspectRecord, fallback.ports, language),
+    mounts: extractMounts(inspectRecord),
+    env: extractEnv(inspectRecord),
+    logs: sections.logs,
+    inspectText: sections.inspect,
+    statsText: sections.stats,
+    stats: parseContainerStats(sections.stats),
+    config: extractContainerRuntimeConfig(inspectRecord),
+    inspectError: inspectError || undefined,
+  };
+}
