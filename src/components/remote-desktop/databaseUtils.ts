@@ -38,9 +38,9 @@ export function appendDatabaseFallbackReason(message: string, reason?: string | 
     : message;
 }
 
-export function formatSqlPreview(sql: string, maxLength = 56): string {
+export function formatSqlPreview(sql: string, maxLength = 56, emptyText?: string): string {
   const compact = sql.replace(/\s+/g, ' ').trim();
-  if (!compact) return tCurrent('auto.remoteMySQL.18ivnwu');
+  if (!compact) return emptyText ?? tCurrent('auto.remoteMySQL.18ivnwu');
   return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}...` : compact;
 }
 
@@ -138,7 +138,7 @@ export function isWriteStatement(sql: string, dialect?: DatabaseDialect): boolea
     return /^\s*(insert|update|delete|replace|alter|drop|create|vacuum|reindex|attach|detach)\b/i.test(sql);
   }
 
-  return /^\s*(insert|update|delete|replace|alter|drop|truncate|create|rename|grant|revoke|attach|detach|optimize|kill|exchange|vacuum|reindex)\b/i.test(sql);
+  return /^\s*(insert|update|delete|replace|alter|drop|truncate|create|rename|grant|revoke)\b/i.test(sql);
 }
 
 export function quoteIdentifier(name: string, dialect: DatabaseDialect): string {

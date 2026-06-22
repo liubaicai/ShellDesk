@@ -819,7 +819,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
       addResultTab({
         id: createId('result'),
-        title: isWriteStatement(sqlText, 'clickhouse') ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28),
+        title: isWriteStatement(sqlText, 'clickhouse') ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28, tCurrent('clickhouse.query.emptySql')),
         subtitle: database
           ? tCurrent('clickhouse.query.databaseSubtitle', { database })
           : tCurrent('clickhouse.query.noDatabase'),
@@ -1147,7 +1147,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   onClick={() => handleUseHistory(item)}
                   title={item.sql}
                 >
-                  <span className="mysql-history-sql">{formatSqlPreview(item.sql, 34)}</span>
+                  <span className="mysql-history-sql">{formatSqlPreview(item.sql, 34, tCurrent('clickhouse.query.emptySql'))}</span>
                   <span className="mysql-history-meta">
                     {formatTimestamp(item.createdAt)}
                     {item.status === 'success'
@@ -1291,7 +1291,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
             ) : activeResultTab.status === 'error' ? (
               <div className="mysql-result-error-panel">
                 <strong>{tCurrent('clickhouse.query.executionFailed')}</strong>
-                <code>{formatSqlPreview(activeResultTab.sql, 120)}</code>
+                <code>{formatSqlPreview(activeResultTab.sql, 120, tCurrent('clickhouse.query.emptySql'))}</code>
                 <p>{activeResultTab.error}</p>
                 <span>{activeResultTab.queryTime}ms · {formatTimestamp(activeResultTab.createdAt)}</span>
               </div>

@@ -1010,7 +1010,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                   onClick={() => handleUseHistory(item)}
                   title={item.error ?? item.sql}
                 >
-                  <span className="sqlite-history-sql">{formatSqlPreview(item.sql, 34)}</span>
+                  <span className="sqlite-history-sql">{formatSqlPreview(item.sql, 34, tCurrent('auto.remoteSqlite.18ivnwu'))}</span>
                   <span className="sqlite-history-meta">
                     {formatTimestamp(item.createdAt)} · {item.status === 'success' ? tCurrent('auto.remoteSqlite.18tehe0', { value0: item.rowCount ?? 0 }) : tCurrent('auto.remoteSqlite.v9pftt')} · {item.queryTime}ms
                   </span>
@@ -1252,7 +1252,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               <strong id="sqlite-write-title">{tCurrent('auto.remoteSqlite.1nifixi')}</strong>
               <span>{getFileName(filePath)}</span>
             </div>
-            <p className="sqlite-write-sql">{formatSqlPreview(pendingWrite.sql, 180)}</p>
+            <p className="sqlite-write-sql">{formatSqlPreview(pendingWrite.sql, 180, tCurrent('auto.remoteSqlite.18ivnwu'))}</p>
             <p className="sqlite-edit-warning">{tCurrent('auto.remoteSqlite.18e5rud')}</p>
             <div className="sqlite-edit-actions">
               <button type="button" onClick={() => setPendingWrite(null)} disabled={queryRunning}>{tCurrent('auto.remoteSqlite.1589w372')}</button>
