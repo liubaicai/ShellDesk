@@ -11,118 +11,70 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import { t, useCurrentAppLanguage, type AppLanguage, type MessageId } from '../../i18n';
+import { t, useCurrentAppLanguage, type AppLanguage } from '../../i18n';
+import FilePermissionDialog, { formatMode, formatOctalMode, parseOctalModeDraft } from './FilePermissionDialog';
 import ContextMenuIcon from './ContextMenuIcon';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
-import { formatBytes as formatSharedBytes } from './parseUtils';
-import { isWindowsSystem, powershellCommand } from './remoteSystem';
+import { isWindowsSystem } from './remoteSystem';
 import { isTextFile } from './textFileUtils';
 import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
-import type { RemoteSystemType } from './types';
+import {
+  DEFAULT_REMOTE_PATH,
+  getExplicitInitialPath,
+  getParentRemotePath,
+  isRemoteHomeAlias,
+  joinRemotePath,
+  normalizeRemotePath,
+  resolveRemoteHomeDirectory,
+} from './fileExplorerPaths';
+import {
+  getEffectiveEntryType,
+  getFileIcon,
+  getFileIconClass,
+  getFileTypeLabel,
+  getOpenActionLabel,
+  isArchiveFile,
+  isDirectoryEntry,
+  isFileEntry,
+  isSqliteFile,
+} from './fileExplorerIcons';
+import {
+  formatBytes,
+  getDeleteEntriesLabel,
+  getDownloadTaskLabel,
+  getSortValue,
+  getTransferTaskStatusLabel,
+  getUploadTaskLabel,
+  isEditableShortcutTarget,
+  isHiddenEntry,
+  isRemotePathMissingError,
+  isValidFileName,
+  splitFileNameForDuplicate,
+} from './fileExplorerUtils';
+import type {
+  ContextMenuState,
+  ExplorerSudoPrompt,
+  ExplorerTransferTask,
+  ExplorerUploadConflictDialog,
+  RemoteDirectoryResult,
+  RemoteFileEntry,
+  RemoteFileExplorerProps,
+  RemotePathStat,
+  SortDirection,
+  SortField,
+} from './fileExplorerTypes';
 
-interface RemoteFileExplorerProps {
-  connectionId: string;
-  systemType?: RemoteSystemType;
-  initialPath?: string;
-  onOpenFile?: (filePath: string) => void;
-  onOpenSqliteFile?: (filePath: string) => void;
-  onOpenTerminal?: (directoryPath: string) => void;
-}
-
-type RemoteFileEntryType = 'directory' | 'file' | 'symlink';
-type RemoteSymlinkTargetType = RemoteFileEntryType | 'unknown';
-
-interface RemoteFileEntry {
-  name: string;
-  longname: string;
-  type: RemoteFileEntryType;
-  targetType?: RemoteSymlinkTargetType;
-  targetPath?: string;
-  size: number;
-  modifiedAt: string;
-}
-
-interface RemoteDirectoryResult {
-  path: string;
-  entries: RemoteFileEntry[];
-}
-
-interface RemotePathStat {
-  type: string;
-  size: number;
-  mode: number;
-  owner: number;
-  group: number;
-  modifiedAt: string;
-  accessedAt: string;
-}
-
-type SortField = 'name' | 'modifiedAt' | 'type' | 'size';
-type SortDirection = 'asc' | 'desc';
-
-interface ContextMenuState {
-  x: number;
-  y: number;
-  targetEntry: RemoteFileEntry | null;
-}
-
-interface ExplorerSudoPrompt {
-  operation: string;
-  target: string;
-  error: string;
-  password: string;
-}
-
-type ExplorerTransferTaskStatus = 'queued' | 'running' | 'success' | 'error' | 'canceled' | 'skipped';
-type ExplorerTransferTaskType = 'upload' | 'download';
-
-interface ExplorerTransferTask {
-  id: string;
-  type: ExplorerTransferTaskType;
-  label: string;
-  detail: string;
-  status: ExplorerTransferTaskStatus;
-  createdAt: number;
-  progress?: ShellDeskTransferProgress;
-  error?: string;
-  remotePaths?: string[];
-  downloadFilePath?: string;
-  uploadItems?: ShellDeskLocalUploadItem[];
-  uploadTarget?: string;
-}
-
-interface ExplorerUploadConflictDialog {
-  items: ShellDeskSelectedUploadItem[];
-  conflicts: Array<{
-    item: ShellDeskSelectedUploadItem;
-    remotePath: string;
-  }>;
-}
-
-type PermissionGroupKey = 'owner' | 'group' | 'others';
-type PermissionActionKey = 'read' | 'write' | 'execute';
-
-const PERMISSION_GROUPS: Array<{
-  key: PermissionGroupKey;
-  labelId: MessageId;
-  bits: Record<PermissionActionKey, number>;
-}> = [
-  { key: 'owner', labelId: 'fileExplorer.permission.owner', bits: { read: 0o400, write: 0o200, execute: 0o100 } },
-  { key: 'group', labelId: 'fileExplorer.permission.group', bits: { read: 0o040, write: 0o020, execute: 0o010 } },
-  { key: 'others', labelId: 'fileExplorer.permission.others', bits: { read: 0o004, write: 0o002, execute: 0o001 } },
-];
-
-const PERMISSION_ACTIONS: Array<{ key: PermissionActionKey; labelId: MessageId }> = [
-  { key: 'read', labelId: 'fileExplorer.permission.read' },
-  { key: 'write', labelId: 'fileExplorer.permission.write' },
-  { key: 'execute', labelId: 'fileExplorer.permission.execute' },
-];
+export {
+  getParentRemotePath,
+  joinRemotePath,
+  normalizeRemotePath,
+  resolveRemoteHomeDirectory,
+} from './fileExplorerPaths';
 
 const EXPLORER_HEADER_HEIGHT = 44;
 const EXPLORER_ROW_HEIGHT = 42;
 const EXPLORER_ROW_OVERSCAN = 12;
-const DEFAULT_REMOTE_PATH = '.';
 const elevationErrorPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
@@ -144,28 +96,6 @@ function getPrivilegeErrorMessage(error: unknown) {
 
   return prefix ? message.slice(prefix.length).trim() || message : message;
 }
-
-const UNIX_HOME_DIRECTORY_COMMAND = `
-home=\${HOME:-}
-if [ -z "$home" ]; then
-  user=$(id -un 2>/dev/null || whoami 2>/dev/null || printf '')
-  if [ -n "$user" ] && command -v getent >/dev/null 2>&1; then
-    home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6 | head -n 1)
-  fi
-fi
-if [ -z "$home" ]; then
-  home=$(pwd 2>/dev/null || printf '')
-fi
-printf '%s\\n' "$home"
-`;
-
-const WINDOWS_HOME_DIRECTORY_COMMAND = powershellCommand(`
-$homePath = [Environment]::GetFolderPath('UserProfile')
-if ([string]::IsNullOrWhiteSpace($homePath)) {
-  $homePath = $env:USERPROFILE
-}
-$homePath
-`);
 
 type ExplorerSidebarIconType = 'home' | 'root' | 'folder' | 'drive' | 'favorite';
 
@@ -261,356 +191,6 @@ function ExplorerSidebarIcon({ icon }: { icon: ExplorerSidebarIconType }) {
       </svg>
     </span>
   );
-}
-
-export function normalizeWindowsRemotePath(remotePath: string) {
-  return remotePath.replace(/\\/g, '/');
-}
-
-export function isWindowsDriveRoot(remotePath: string) {
-  return /^\/?[a-z]:\/?$/i.test(remotePath.trim());
-}
-
-export function normalizeRemotePath(remotePath: string, isWindowsHost: boolean) {
-  const trimmed = remotePath.trim() || DEFAULT_REMOTE_PATH;
-  return isWindowsHost ? normalizeWindowsRemotePath(trimmed) : trimmed;
-}
-
-export async function resolveRemoteHomeDirectory(connectionId: string, isWindowsHost: boolean) {
-  if (!window.guiSSH?.connections) {
-    return '';
-  }
-
-  const command = isWindowsHost ? WINDOWS_HOME_DIRECTORY_COMMAND : UNIX_HOME_DIRECTORY_COMMAND;
-  const result = await window.guiSSH.connections.runCommand(connectionId, command);
-  const homePath = result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-
-  return homePath ? normalizeRemotePath(homePath, isWindowsHost) : '';
-}
-
-function isRemoteHomeAlias(remotePath: string) {
-  return remotePath === DEFAULT_REMOTE_PATH || remotePath === '~';
-}
-
-function getExplicitInitialPath(initialPath: string | undefined, isWindowsHost: boolean) {
-  const explicitPath = initialPath?.trim();
-  return explicitPath ? normalizeRemotePath(explicitPath, isWindowsHost) : '';
-}
-
-export function joinRemotePath(basePath: string, entryName: string, isWindowsHost = false) {
-  const base = normalizeRemotePath(basePath, isWindowsHost);
-
-  if (isWindowsHost) {
-    if (base === '/') {
-      return /^[a-z]:$/i.test(entryName) ? `${entryName}/` : `/${entryName}`;
-    }
-
-    if (base === '.') {
-      return entryName;
-    }
-
-    if (isWindowsDriveRoot(base)) {
-      return `${base.replace(/\/?$/, '/')}${entryName}`;
-    }
-
-    return `${base.replace(/\/+$/, '')}/${entryName}`;
-  }
-
-  if (base === '/') {
-    return `/${entryName}`;
-  }
-
-  if (base === '.') {
-    return entryName;
-  }
-
-  return `${base.replace(/\/+$/, '')}/${entryName}`;
-}
-
-export function getParentRemotePath(remotePath: string, isWindowsHost = false) {
-  const p = normalizeRemotePath(remotePath, isWindowsHost);
-
-  if (p === '/') {
-    return '/';
-  }
-
-  if (p === '.') {
-    return '..';
-  }
-
-  if (isWindowsHost && isWindowsDriveRoot(p)) {
-    return '/';
-  }
-
-  const normalized = p.replace(/\/+$/, '');
-
-  if (isWindowsHost) {
-    const driveChildMatch = normalized.match(/^(\/?[a-z]:)\/[^/]+$/i);
-
-    if (driveChildMatch) {
-      return `${driveChildMatch[1]}/`;
-    }
-  }
-
-  const slashIndex = normalized.lastIndexOf('/');
-
-  if (slashIndex < 0) {
-    return '.';
-  }
-
-  if (slashIndex === 0) {
-    return '/';
-  }
-
-  return normalized.slice(0, slashIndex);
-}
-
-const formatBytes = (size: number) => formatSharedBytes(size, { invalidText: '-', maxUnit: 'TB', fixedDecimal: true });
-
-function getFileExtension(name: string) {
-  const dotIndex = name.lastIndexOf('.');
-  return dotIndex > 0 ? name.slice(dotIndex + 1).toLowerCase() : '';
-}
-
-function isArchiveFile(name: string) {
-  const lower = name.toLowerCase();
-  return lower.endsWith('.zip') || lower.endsWith('.tar') || lower.endsWith('.tar.gz') ||
-    lower.endsWith('.tgz') || lower.endsWith('.tar.bz2') || lower.endsWith('.tbz2') ||
-    lower.endsWith('.tar.xz') || lower.endsWith('.txz') || lower.endsWith('.7z') ||
-    lower.endsWith('.gz') || lower.endsWith('.rar');
-}
-
-const SQLITE_EXTENSIONS = new Set(['db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb']);
-
-function isSqliteFile(name: string): boolean {
-  return SQLITE_EXTENSIONS.has(getFileExtension(name));
-}
-
-function getDeleteEntryTypeLabel(entry: RemoteFileEntry, language: AppLanguage) {
-  if (entry.type === 'directory') {
-    return t('fileExplorer.type.directory', language);
-  }
-
-  if (entry.type === 'symlink') {
-    return t('fileExplorer.type.symlink', language);
-  }
-
-  return t('fileExplorer.type.file', language);
-}
-
-function getDeleteEntriesLabel(entries: RemoteFileEntry[], language: AppLanguage) {
-  const names = entries.map((entry) => entry.name).join(language === 'zh-CN' ? '\u3001' : ', ');
-
-  return entries.length === 1
-    ? t('fileExplorer.delete.single', language, { type: getDeleteEntryTypeLabel(entries[0], language), name: names })
-    : t('fileExplorer.delete.multiple', language, { count: entries.length, names });
-}
-
-function getEffectiveEntryType(entry: RemoteFileEntry): RemoteFileEntryType {
-  if (entry.type !== 'symlink') {
-    return entry.type;
-  }
-
-  return entry.targetType === 'directory' || entry.targetType === 'file'
-    ? entry.targetType
-    : 'symlink';
-}
-
-function isDirectoryEntry(entry: RemoteFileEntry) {
-  return getEffectiveEntryType(entry) === 'directory';
-}
-
-function isFileEntry(entry: RemoteFileEntry) {
-  return getEffectiveEntryType(entry) === 'file';
-}
-
-function getFileIconClass(entry: RemoteFileEntry) {
-  const effectiveType = getEffectiveEntryType(entry);
-  return effectiveType === 'directory' ? 'directory' : effectiveType === 'file' ? 'file' : 'symlink';
-}
-
-function getFileIcon(entry: RemoteFileEntry) {
-  if (isDirectoryEntry(entry)) {
-    return '\u{1F4C1}';
-  }
-
-  if (entry.type === 'symlink') {
-    return '\u{1F517}';
-  }
-
-  const ext = getFileExtension(entry.name);
-
-  const iconMap: Record<string, string> = {
-    js: '\u{1F4DC}', ts: '\u{1F4D8}', tsx: '\u{1F4D8}', jsx: '\u{1F4DC}',
-    py: '\u{1F40D}', rb: '\u{1F48E}', go: '\u{1F535}', rs: '\u{1F980}',
-    java: '\u2615', c: '\u{1F527}', cpp: '\u{1F527}', h: '\u{1F527}',
-    html: '\u{1F310}', htm: '\u{1F310}', css: '\u{1F3A8}', scss: '\u{1F3A8}',
-    json: '\u{1F4CB}', xml: '\u{1F4CB}', yaml: '\u{1F4CB}', yml: '\u{1F4CB}', toml: '\u{1F4CB}',
-    md: '\u{1F4DD}', txt: '\u{1F4DD}', log: '\u{1F4DD}', csv: '\u{1F4CA}',
-    sh: '\u2699\uFE0F', bash: '\u2699\uFE0F', zsh: '\u2699\uFE0F',
-    png: '\u{1F5BC}\uFE0F', jpg: '\u{1F5BC}\uFE0F', jpeg: '\u{1F5BC}\uFE0F', gif: '\u{1F5BC}\uFE0F', svg: '\u{1F5BC}\uFE0F', webp: '\u{1F5BC}\uFE0F',
-    mp3: '\u{1F3B5}', wav: '\u{1F3B5}', flac: '\u{1F3B5}',
-    mp4: '\u{1F3AC}', avi: '\u{1F3AC}', mkv: '\u{1F3AC}', mov: '\u{1F3AC}',
-    zip: '\u{1F4E6}', tar: '\u{1F4E6}', gz: '\u{1F4E6}', '7z': '\u{1F4E6}', rar: '\u{1F4E6}',
-    pdf: '\u{1F4D5}', doc: '\u{1F4D8}', docx: '\u{1F4D8}',
-    conf: '\u2699\uFE0F', cfg: '\u2699\uFE0F', ini: '\u2699\uFE0F', env: '\u2699\uFE0F',
-    pem: '\u{1F511}', key: '\u{1F511}',
-    sql: '\u{1F5C3}\uFE0F', db: '\u{1F5C3}\uFE0F',
-  };
-
-  return iconMap[ext] ?? '\u{1F4C4}';
-}
-
-function getFileTypeLabel(entry: RemoteFileEntry, language: AppLanguage) {
-  if (entry.type === 'symlink') {
-    if (entry.targetType === 'directory') {
-      return t('fileExplorer.type.symlinkDirectory', language);
-    }
-
-    if (entry.targetType === 'file') {
-      return t('fileExplorer.type.symlinkFile', language);
-    }
-
-    return t('fileExplorer.type.symlink', language);
-  }
-
-  if (entry.type === 'directory') {
-    return t('fileExplorer.type.folder', language);
-  }
-
-  const ext = getFileExtension(entry.name);
-  return ext ? t('fileExplorer.type.extFile', language, { ext }) : t('fileExplorer.type.file', language);
-}
-
-function isHiddenEntry(entry: RemoteFileEntry) {
-  return entry.name.startsWith('.') && entry.name !== '.' && entry.name !== '..';
-}
-
-function getOpenActionLabel(entry: RemoteFileEntry, language: AppLanguage) {
-  if (isDirectoryEntry(entry)) {
-    return t('fileExplorer.open.directory', language);
-  }
-
-  if (isFileEntry(entry) && isSqliteFile(entry.name)) {
-    return t('fileExplorer.open.sqlite', language);
-  }
-
-  if (isFileEntry(entry) && isTextFile(entry.name)) {
-    return t('fileExplorer.open.notepad', language);
-  }
-
-  if (entry.type === 'symlink') {
-    return t('fileExplorer.open.symlink', language);
-  }
-
-  return '';
-}
-
-function formatMode(mode: number) {
-  const permissionMode = mode & 0o777;
-  const perms = [
-    (permissionMode & 0o400) ? 'r' : '-',
-    (permissionMode & 0o200) ? 'w' : '-',
-    (permissionMode & 0o100) ? 'x' : '-',
-    (permissionMode & 0o040) ? 'r' : '-',
-    (permissionMode & 0o020) ? 'w' : '-',
-    (permissionMode & 0o010) ? 'x' : '-',
-    (permissionMode & 0o004) ? 'r' : '-',
-    (permissionMode & 0o002) ? 'w' : '-',
-    (permissionMode & 0o001) ? 'x' : '-',
-  ];
-  return perms.join('');
-}
-
-function formatOctalMode(mode: number) {
-  return (mode & 0o777).toString(8).padStart(3, '0');
-}
-
-function parseOctalModeDraft(draft: string) {
-  return /^[0-7]{3}$/.test(draft) ? Number.parseInt(draft, 8) : null;
-}
-
-function isValidFileName(name: string, isWindowsHost = false) {
-  if (!name.trim()) return false;
-  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false;
-  if (isWindowsHost && /[<>:"|?*]/.test(name)) return false;
-  if (name === '.' || name === '..') return false;
-  return name.length <= 255;
-}
-
-function isRemotePathMissingError(error: unknown) {
-  const message = getErrorMessage(error);
-  return /no such file|not found|cannot find|does not exist|不存在|找不到/i.test(message);
-}
-
-function splitFileNameForDuplicate(name: string) {
-  const dotIndex = name.lastIndexOf('.');
-
-  if (dotIndex <= 0) {
-    return { base: name, ext: '' };
-  }
-
-  return {
-    base: name.slice(0, dotIndex),
-    ext: name.slice(dotIndex),
-  };
-}
-
-function getUploadTaskLabel(items: ShellDeskSelectedUploadItem[], language: AppLanguage) {
-  if (items.length === 1) {
-    return items[0].name;
-  }
-
-  return language === 'zh-CN' ? `${items.length} 个上传项目` : `${items.length} upload items`;
-}
-
-function getDownloadTaskLabel(entries: RemoteFileEntry[], language: AppLanguage) {
-  if (entries.length === 1) {
-    return entries[0].name;
-  }
-
-  return language === 'zh-CN' ? `${entries.length} 个下载项目` : `${entries.length} download items`;
-}
-
-function getTransferTaskStatusLabel(status: ExplorerTransferTaskStatus, language: AppLanguage) {
-  if (language !== 'zh-CN') {
-    return {
-      queued: 'Queued',
-      running: 'Running',
-      success: 'Done',
-      error: 'Failed',
-      canceled: 'Canceled',
-      skipped: 'Skipped',
-    }[status];
-  }
-
-  return {
-    queued: '排队中',
-    running: '传输中',
-    success: '已完成',
-    error: '失败',
-    canceled: '已取消',
-    skipped: '已跳过',
-  }[status];
-}
-
-function getSortValue(entry: RemoteFileEntry, field: SortField): string | number {
-  switch (field) {
-    case 'name': return entry.name;
-    case 'modifiedAt': return entry.modifiedAt || '';
-    case 'type': return isDirectoryEntry(entry) ? 0 : entry.type === 'symlink' ? 1 : 2;
-    case 'size': return isDirectoryEntry(entry) ? -1 : entry.size;
-    default: return '';
-  }
-}
-
-function isEditableShortcutTarget(target: EventTarget | null) {
-  return target instanceof HTMLElement && Boolean(target.closest(
-    'input, textarea, select, button, [contenteditable="true"], [contenteditable=""]',
-  ));
 }
 
 function getTrackedTableScrollTop(scrollTop: number) {
@@ -2892,125 +2472,24 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         document.body,
       ) : null}
 
-      {propertiesEntry ? createPortal(
-        <div className="notepad-modal-overlay" role="presentation" onClick={closePropertiesDialog}>
-          <form
-            className="properties-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="explorer-properties-title"
-            onSubmit={submitPropertiesPermissions}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="properties-header">
-              <strong id="explorer-properties-title">{propertiesEntry.name}</strong>
-              <button type="button" onClick={closePropertiesDialog} disabled={propertiesSaving}>&times;</button>
-            </div>
-            <div className="properties-body">
-              {propertiesLoading ? (
-                <div className="properties-loading">{t('fileExplorer.properties.loading', language)}</div>
-              ) : (
-                <>
-                  <table className="properties-table">
-                    <tbody>
-                      <tr><td>{t('fileExplorer.properties.name', language)}</td><td>{propertiesEntry.name}</td></tr>
-                      <tr><td>{t('fileExplorer.table.type', language)}</td><td>{getFileTypeLabel(propertiesEntry, language)}</td></tr>
-                      <tr><td>{t('fileExplorer.table.size', language)}</td><td>{isDirectoryEntry(propertiesEntry) ? '-' : formatBytes(propertiesEntry.size)}</td></tr>
-                      <tr><td>{t('fileExplorer.details.modifiedAt', language)}</td><td>{formatDateTime(propertiesEntry.modifiedAt)}</td></tr>
-                      {propertiesData ? (
-                        <>
-                          <tr><td>{t('fileExplorer.details.permissions', language)}</td><td><code>{formatMode(propertiesData.mode)} ({formatOctalMode(propertiesData.mode)})</code></td></tr>
-                          <tr><td>{t('fileExplorer.details.owner', language)}</td><td>UID {propertiesData.owner} / GID {propertiesData.group}</td></tr>
-                          <tr><td>{t('fileExplorer.details.accessedAt', language)}</td><td>{formatDateTime(propertiesData.accessedAt)}</td></tr>
-                        </>
-                      ) : null}
-                    </tbody>
-                  </table>
-
-                  {propertiesData ? (
-                    <div className="properties-permission-editor">
-                      <div className="properties-section-title">{t('fileExplorer.details.permissions', language)}</div>
-                      <label className="permission-mode-field">
-                        <span>{t('fileExplorer.properties.octal', language)}</span>
-                        <input
-                          value={permissionDraft}
-                          maxLength={3}
-                          inputMode="numeric"
-                          pattern="[0-7]{3}"
-                          onChange={(event) => setPermissionDraft(event.target.value.replace(/[^0-7]/g, '').slice(0, 3))}
-                          disabled={propertiesSaving}
-                          spellCheck={false}
-                        />
-                        <code>{permissionDraftMode !== null ? formatMode(permissionDraftMode) : '---------'}</code>
-                      </label>
-                      <div className="permission-grid" role="group" aria-label={t('fileExplorer.properties.bitsAria', language)}>
-                        <span />
-                        {PERMISSION_ACTIONS.map((action) => (
-                          <span key={action.key}>{t(action.labelId, language)}</span>
-                        ))}
-                        {PERMISSION_GROUPS.map((group) => (
-                          <div className="permission-grid-row" key={group.key}>
-                            <strong>{t(group.labelId, language)}</strong>
-                            {PERMISSION_ACTIONS.map((action) => {
-                              const bit = group.bits[action.key];
-                              const checked = permissionDraftMode !== null
-                                ? Boolean(permissionDraftMode & bit)
-                                : Boolean(propertiesData.mode & bit);
-
-                              return (
-                                <label
-                                  key={action.key}
-                                  className="permission-checkbox"
-                                  aria-label={`${t(group.labelId, language)} ${t(action.labelId, language)}`}
-                                  title={`${t(group.labelId, language)} ${t(action.labelId, language)}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(event) => updatePermissionBit(bit, event.target.checked)}
-                                    disabled={propertiesSaving}
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                      <label className="properties-toggle-row">
-                        <input
-                          type="checkbox"
-                          checked={executableDraftChecked}
-                          onChange={(event) => toggleExecutableDraft(event.target.checked)}
-                          disabled={propertiesSaving}
-                        />
-                        <span>{t('fileExplorer.properties.executable', language)}</span>
-                      </label>
-                      {propertiesEntry.type === 'directory' ? (
-                        <label className="properties-toggle-row">
-                          <input
-                            type="checkbox"
-                            checked={permissionRecursive}
-                            onChange={(event) => setPermissionRecursive(event.target.checked)}
-                            disabled={propertiesSaving}
-                          />
-                          <span>{t('fileExplorer.properties.recursive', language)}</span>
-                        </label>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {propertiesError ? <div className="properties-error">{propertiesError}</div> : null}
-                </>
-              )}
-            </div>
-            <div className="properties-footer">
-              <button type="button" className="properties-close-btn" onClick={closePropertiesDialog} disabled={propertiesSaving}>{t('common.cancel', language)}</button>
-              <button type="submit" className="properties-save-btn" disabled={!canSaveProperties}>
-                {propertiesSaving ? t('fileExplorer.properties.saving', language) : t('fileExplorer.properties.savePermissions', language)}
-              </button>
-            </div>
-          </form>
-        </div>,
-        document.body,
+      {propertiesEntry ? (
+        <FilePermissionDialog
+          entry={propertiesEntry}
+          data={propertiesData}
+          draft={permissionDraft}
+          recursive={permissionRecursive}
+          loading={propertiesLoading}
+          saving={propertiesSaving}
+          error={propertiesError}
+          language={language}
+          canSave={canSaveProperties}
+          onClose={closePropertiesDialog}
+          onDraftChange={setPermissionDraft}
+          onRecursiveChange={setPermissionRecursive}
+          onPermissionBitChange={updatePermissionBit}
+          onExecutableChange={toggleExecutableDraft}
+          onSubmit={submitPropertiesPermissions}
+        />
       ) : null}
 
     </div>
