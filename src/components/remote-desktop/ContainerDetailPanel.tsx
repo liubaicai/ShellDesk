@@ -10,6 +10,7 @@ const restartPolicyOptions: Array<{ value: RestartPolicy; labelId: MessageId }> 
   { value: 'unless-stopped', labelId: 'container.restartPolicy.unlessStopped' },
   { value: 'always', labelId: 'container.restartPolicy.always' },
 ];
+const CONTAINER_LOG_TAIL_LINES = 240;
 
 function createDefaultConfigForm(): ContainerConfigForm {
   return { name: '', restartPolicy: 'no', cpuLimit: '', memoryLimit: '' };
@@ -33,6 +34,7 @@ interface ContainerDetailPanelProps {
 function ContainerDetailPanel({ container, detail, detailLoading, containersLoading, actingKey, savingConfig, onAction, onReload, onCopy, onConfigSubmit, onExec, onReadLogs }: ContainerDetailPanelProps) {
   const language = useCurrentAppLanguage();
   const liveLogRequestRef = useRef(0);
+  const logsOutputRef = useRef<HTMLPreElement | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('summary');
   const [configForm, setConfigForm] = useState<ContainerConfigForm>(() => createDefaultConfigForm());
   const [execCommand, setExecCommand] = useState('id && uname -a');
@@ -43,6 +45,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState('');
   const selectedDetail = detail?.id === container?.id ? detail : null;
+  const displayedLogs = liveLogs || selectedDetail?.logs || t('container.ui.noRecentLogs', language);
 
   useEffect(() => {
     setDetailTab('summary');
@@ -64,7 +67,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
       if (disposed || liveLogRequestRef.current !== requestId) return;
       setLogsLoading(true);
       try {
-        const output = await onReadLogs(container.id, { tail: 240, sinceSeconds: 8 });
+        const output = await onReadLogs(container.id, { tail: CONTAINER_LOG_TAIL_LINES });
         if (disposed || liveLogRequestRef.current !== requestId) return;
         setLiveLogs(output || t('container.ui.noRecentLogs', language));
         setLogsError('');
@@ -83,6 +86,17 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
       disposed = true;
     };
   }, [container, language, logsStreaming, onReadLogs]);
+
+  useEffect(() => {
+    if (detailTab !== 'logs') return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      const output = logsOutputRef.current;
+      if (output) {
+        output.scrollTop = output.scrollHeight;
+      }
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [detailTab, displayedLogs]);
 
   useEffect(() => {
     if (!selectedDetail) {
@@ -142,7 +156,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
     setLogsLoading(true);
     setLogsError('');
     try {
-      const output = await onReadLogs(container.id, { tail: 240 });
+      const output = await onReadLogs(container.id, { tail: CONTAINER_LOG_TAIL_LINES });
       setLiveLogs(output || t('container.ui.noRecentLogs', language));
     } catch (error) {
       setLogsError(error instanceof Error ? error.message : String(error));
@@ -218,7 +232,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
         </div>
       </div>
       {logsError ? <div className="container-inline-warning">{logsError}</div> : null}
-      <pre>{liveLogs || selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre>
+      <pre ref={logsOutputRef}>{displayedLogs}</pre>
     </div>
   );
 
