@@ -115,7 +115,7 @@ function createTreemapRects(entries: DirectorySizeEntry[], width: number, height
   return rects;
 }
 
-function drawTreemap(canvas: HTMLCanvasElement, entries: DirectorySizeEntry[], selectedPath: string, size: { width: number; height: number }) {
+function drawTreemap(canvas: HTMLCanvasElement, entries: DirectorySizeEntry[], selectedPath: string, size: { width: number; height: number }, emptyLabel: string) {
   const dpr = window.devicePixelRatio || 1;
   const width = Math.max(1, size.width);
   const height = Math.max(1, size.height);
@@ -157,13 +157,13 @@ function drawTreemap(canvas: HTMLCanvasElement, entries: DirectorySizeEntry[], s
   if (rects.length === 0) {
     ctx.fillStyle = 'rgba(142, 160, 184, 0.86)';
     ctx.textAlign = 'center';
-    ctx.fillText('No scan data', width / 2, height / 2);
+    ctx.fillText(emptyLabel, width / 2, height / 2);
     ctx.textAlign = 'left';
   }
   return rects;
 }
 
-function DiskTreemap({ entries, selectedPath, onSelect, onOpenDirectory }: { entries: DirectorySizeEntry[]; selectedPath: string; onSelect: (path: string) => void; onOpenDirectory: (entry: DirectorySizeEntry) => void }) {
+function DiskTreemap({ entries, selectedPath, emptyLabel, onSelect, onOpenDirectory }: { entries: DirectorySizeEntry[]; selectedPath: string; emptyLabel: string; onSelect: (path: string) => void; onOpenDirectory: (entry: DirectorySizeEntry) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rectsRef = useRef<TreemapRect[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -185,8 +185,8 @@ function DiskTreemap({ entries, selectedPath, onSelect, onOpenDirectory }: { ent
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || canvasSize.width <= 0 || canvasSize.height <= 0) return;
-    rectsRef.current = drawTreemap(canvas, entries, selectedPath, canvasSize);
-  }, [canvasSize, entries, selectedPath]);
+    rectsRef.current = drawTreemap(canvas, entries, selectedPath, canvasSize, emptyLabel);
+  }, [canvasSize, emptyLabel, entries, selectedPath]);
 
   const findEntryAtPoint = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -704,6 +704,7 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
           <DiskTreemap
             entries={visibleEntries}
             selectedPath={selectedEntry?.path ?? ''}
+            emptyLabel={tCurrent('auto.remoteDiskAnalyzer.fgatcs')}
             onSelect={setSelectedPath}
             onOpenDirectory={(entry) => void scanPath(entry.path)}
           />
