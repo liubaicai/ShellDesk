@@ -233,6 +233,28 @@ aws --endpoint-url $endpoint s3 cp ${powershellSingleQuote(`s3://${safeBucket}/$
   return { command: `${createMcPrefix(config, false)} cp ${shellSingleQuote(aliasPath)} ${shellSingleQuote(destination)}` };
 }
 
+export function createS3UploadObjectCommand(mode: S3CliMode, config: S3ConnectionConfig, bucket: string, key: string, remoteFilePath: string, isWindowsHost: boolean): RemoteCommandInput {
+  const safeBucket = validateBucket(bucket);
+  const safeKey = validateObjectKey(key);
+  const safeRemoteFilePath = validateRemoteDirectory(remoteFilePath);
+
+  if (mode === 'aws') {
+    if (isWindowsHost) {
+      return powershellStdinCommand(`${createAwsPrefix(config, true)}
+aws --endpoint-url $endpoint s3 cp ${powershellSingleQuote(safeRemoteFilePath)} ${powershellSingleQuote(`s3://${safeBucket}/${safeKey}`)}`);
+    }
+
+    return { command: `${createAwsPrefix(config, false)} s3 cp ${shellSingleQuote(safeRemoteFilePath)} ${shellSingleQuote(`s3://${safeBucket}/${safeKey}`)}` };
+  }
+
+  const aliasPath = `shelldesk/${safeBucket}/${safeKey}`;
+  if (isWindowsHost) {
+    return powershellStdinCommand(`${createMcPrefix(config, true)}\nmc cp ${powershellSingleQuote(safeRemoteFilePath)} ${powershellSingleQuote(aliasPath)}`);
+  }
+
+  return { command: `${createMcPrefix(config, false)} cp ${shellSingleQuote(safeRemoteFilePath)} ${shellSingleQuote(aliasPath)}` };
+}
+
 export function parseS3Buckets(mode: S3CliMode, stdout: string): S3BucketEntry[] {
   if (mode === 'aws') {
     const payload = JSON.parse(stdout) as { Buckets?: Array<{ Name?: string; CreationDate?: string }> };

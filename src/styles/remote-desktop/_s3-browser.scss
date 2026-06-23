@@ -93,6 +93,7 @@
 }
 
 .s3-toolbar button.primary,
+.s3-tabs button.primary,
 .s3-confirm-actions button.primary {
   border-color: rgba(114, 183, 255, 0.36);
   background: rgba(114, 183, 255, 0.14);
@@ -324,6 +325,63 @@
   overflow: auto;
 }
 
+.s3-table-wrap.drag-active {
+  outline: 2px solid rgba(114, 183, 255, 0.42);
+  outline-offset: -2px;
+}
+
+.s3-upload-strip {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--s3-border);
+  padding: 8px 10px;
+  background: rgba(12, 17, 26, 0.96);
+}
+
+.s3-upload-strip div,
+.s3-upload-strip label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.s3-upload-strip strong {
+  color: var(--s3-muted-strong);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.s3-upload-strip span {
+  overflow: hidden;
+  color: var(--s3-muted);
+  font-size: 10.5px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s3-upload-strip label {
+  width: min(280px, 42%);
+}
+
+.s3-upload-strip input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--s3-border);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(5, 9, 14, 0.38);
+  color: var(--s3-text);
+  font: inherit;
+  font-size: 11.5px;
+  outline: none;
+}
+
 .s3-table {
   width: 100%;
   min-width: 780px;
@@ -527,6 +585,7 @@
 }
 
 [data-theme="light"] .s3-toolbar button.primary,
+[data-theme="light"] .s3-tabs button.primary,
 [data-theme="light"] .s3-confirm-actions button.primary {
   border-color: rgba(21, 101, 148, 0.3);
   background: rgba(21, 101, 148, 0.1);
@@ -535,8 +594,13 @@
 
 [data-theme="light"] .s3-config input,
 [data-theme="light"] .s3-addressbar input,
+[data-theme="light"] .s3-upload-strip input,
 [data-theme="light"] .s3-raw-output {
   background: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="light"] .s3-upload-strip {
+  background: rgba(247, 250, 254, 0.96);
 }
 
 [data-theme="light"] .s3-table th {

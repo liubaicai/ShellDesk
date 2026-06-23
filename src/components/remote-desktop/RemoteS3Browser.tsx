@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
@@ -11,6 +11,7 @@ import {
   createS3ListBucketsTunnelRequest,
   createS3ListObjectsTunnelRequest,
   createS3ObjectUrl,
+  createS3UploadObjectCommand,
   parseS3BucketsResponse,
   parseS3ObjectsResponse,
   type S3BucketEntry,
@@ -37,6 +38,11 @@ interface PendingS3Action {
   object: S3ObjectEntry;
   command?: RemoteCommandInput;
   danger?: boolean;
+}
+
+interface S3UploadItem {
+  path: string;
+  name: string;
 }
 
 const defaultConfig: S3ConnectionConfig = {
@@ -100,6 +106,19 @@ function createBreadcrumb(prefix: string) {
   }));
 }
 
+function sanitizeUploadName(name: string) {
+  return name.trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_') || 'object.bin';
+}
+
+function joinRemotePath(directory: string, name: string, isWindowsHost: boolean) {
+  const separator = isWindowsHost ? '\\' : '/';
+  return `${directory.replace(/[\\/]+$/, '')}${separator}${name}`;
+}
+
+function getS3UploadTempDirectory(isWindowsHost: boolean) {
+  return isWindowsHost ? 'C:\\Windows\\Temp\\shelldesk-s3-upload' : '/tmp/shelldesk-s3-upload';
+}
+
 function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [mode, setMode] = useState<S3CliMode>('mc');
@@ -117,10 +136,13 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   const [loading, setLoading] = useState(false);
   const [objectLoading, setObjectLoading] = useState(false);
   const [actionRunning, setActionRunning] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState('');
+  const [uploadPrefix, setUploadPrefix] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingS3Action | null>(null);
 
   const selectedBucket = useMemo(() => {
@@ -296,6 +318,95 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
     }
   };
 
+  const uploadItemsToBucket = useCallback(async (items: S3UploadItem[]) => {
+    if (!selectedBucket) {
+      throw new Error('请先选择 bucket');
+    }
+
+    if (!items.length) {
+      return;
+    }
+
+    const api = window.guiSSH?.connections;
+    if (!api) {
+      throw new Error(tCurrent('auto.remoteS3Browser.g77vf3'));
+    }
+
+    setUploading(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const targetPrefix = ensurePrefix(uploadPrefix || prefix);
+      const tempDirectory = getS3UploadTempDirectory(isWindowsHost);
+      const localItems = items.map((item) => ({
+        path: item.path,
+        remoteName: sanitizeUploadName(item.name),
+      }));
+
+      await api.createDirectory(connectionId, tempDirectory).catch(() => undefined);
+      const uploadResult = await api.uploadLocalPaths(connectionId, tempDirectory, localItems);
+      if (uploadResult.canceled) {
+        setNotice('已取消上传');
+        return;
+      }
+
+      const remotePaths = uploadResult.remotePaths?.length === localItems.length
+        ? uploadResult.remotePaths
+        : localItems.map((item) => joinRemotePath(tempDirectory, item.remoteName ?? 'object.bin', isWindowsHost));
+
+      for (let index = 0; index < localItems.length; index += 1) {
+        const remotePath = remotePaths[index];
+        const objectKey = `${targetPrefix}${localItems[index].remoteName ?? 'object.bin'}`;
+        const command = createS3UploadObjectCommand(mode, config, selectedBucket.name, objectKey, remotePath, isWindowsHost);
+        const result = await runCmd(connectionId, command);
+        if (result.code !== 0) {
+          throw new Error(result.stderr || result.stdout || `上传 ${objectKey} 失败`);
+        }
+        await api.deletePath(connectionId, remotePath, 'file').catch(() => undefined);
+      }
+
+      setNotice(`已上传 ${localItems.length} 个对象到 ${selectedBucket.name}/${targetPrefix}`);
+      await loadObjects(selectedBucket.name, targetPrefix);
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  }, [config, connectionId, isWindowsHost, loadObjects, mode, prefix, selectedBucket, uploadPrefix]);
+
+  const selectUploadFiles = async () => {
+    try {
+      const result = await window.guiSSH?.connections.selectUploadFiles();
+      if (!result || result.canceled) return;
+      await uploadItemsToBucket(result.items.filter((item) => item.type === 'file').map((item) => ({
+        path: item.path,
+        name: item.name,
+      })));
+    } catch (error) {
+      setError(getErrorMessage(error));
+    }
+  };
+
+  const dropUploadFiles = async (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+
+    const files = Array.from(event.dataTransfer.files)
+      .map((file) => ({
+        path: (file as File & { path?: string }).path ?? '',
+        name: file.name,
+      }))
+      .filter((item) => item.path);
+
+    if (!files.length) {
+      setError('当前 WebView 未暴露拖拽文件路径，请使用“选择文件”上传。');
+      return;
+    }
+
+    await uploadItemsToBucket(files);
+  };
+
   const executePendingAction = async () => {
     if (!pendingAction) return;
 
@@ -438,10 +549,29 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
             <button type="button" className={activeTab === 'objects' ? 'active' : ''} onClick={() => setActiveTab('objects')}>{tCurrent('auto.remoteS3Browser.1hptjin')}</button>
             <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteS3Browser.1sxtwbe')}</button>
             <button type="button" onClick={() => copyObjectUrl(selectedObject)} disabled={!selectedObject || selectedObject.type !== 'object'}>{tCurrent('auto.remoteS3Browser.19gy30v')}</button>
+            <button type="button" className="primary" onClick={selectUploadFiles} disabled={!selectedBucket || uploading}>{uploading ? '上传中' : '上传'}</button>
           </nav>
 
           {activeTab === 'objects' ? (
-            <section className="s3-table-wrap">
+            <section
+              className={`s3-table-wrap ${dragActive ? 'drag-active' : ''}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={dropUploadFiles}
+            >
+              <div className="s3-upload-strip">
+                <div>
+                  <strong>{dragActive ? '松开以上传对象' : '拖拽文件上传到当前目录'}</strong>
+                  <span>{selectedBucket ? `${selectedBucket.name}/${ensurePrefix(uploadPrefix || prefix)}` : '请选择 bucket'}</span>
+                </div>
+                <label>
+                  <span>目标前缀</span>
+                  <input value={uploadPrefix} onChange={(event) => setUploadPrefix(event.target.value)} placeholder={prefix || '例如 logs/'} />
+                </label>
+              </div>
               <table className="s3-table">
                 <thead>
                   <tr>
