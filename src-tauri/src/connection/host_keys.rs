@@ -45,6 +45,22 @@ pub(super) fn ensure_ssh_host_key_trusted<'a>(
     })
 }
 
+pub(super) fn prepare_ssh_host_key_trust<'a>(
+    state: &'a AppState,
+    window: &'a tauri::Window,
+    profile: &'a mut SshProfile,
+) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+    Box::pin(async move {
+        if let Some(jump) = profile.jump.as_deref_mut() {
+            prepare_ssh_host_key_trust(state, window, jump).await?;
+        }
+        if prepare_direct_ssh_host_key_trust_from_store(state, profile)? {
+            return Ok(());
+        }
+        ensure_direct_ssh_host_key_trusted(state, window, profile).await
+    })
+}
+
 pub(crate) async fn ensure_ssh_profile_host_key_trusted(
     state: &AppState,
     window: &tauri::Window,
@@ -158,6 +174,26 @@ async fn ensure_direct_ssh_host_key_trusted(
         }
         _ => Err("SSH 主机密钥校验失败。".to_string()),
     }
+}
+
+fn prepare_direct_ssh_host_key_trust_from_store(
+    state: &AppState,
+    profile: &mut SshProfile,
+) -> Result<bool, String> {
+    let store = read_store(state)?;
+    let known_hosts = store
+        .get("knownHosts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let Some(public_key) =
+        trusted_known_host_public_key(&known_hosts, &profile.address, profile.port)
+    else {
+        return Ok(false);
+    };
+    profile.known_hosts_path =
+        write_connection_known_hosts_from_public_key(state, profile, &public_key)?;
+    Ok(true)
 }
 
 async fn request_host_key_decision(
@@ -495,6 +531,26 @@ fn known_host_fingerprint(known_host: &Value) -> String {
         .and_then(Value::as_str)
         .and_then(|public_key| fingerprint_from_public_key(public_key).ok())
         .unwrap_or_default()
+}
+
+fn trusted_known_host_public_key(
+    known_hosts: &[Value],
+    hostname: &str,
+    port: u16,
+) -> Option<String> {
+    known_hosts
+        .iter()
+        .find(|known_host| {
+            known_host_matches_host(known_host, hostname, port)
+                && known_host
+                    .get("publicKey")
+                    .and_then(Value::as_str)
+                    .is_some_and(|public_key| scanned_host_key_from_public_key(public_key).is_ok())
+        })
+        .and_then(|known_host| known_host.get("publicKey").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|public_key| !public_key.is_empty())
+        .map(ToString::to_string)
 }
 
 pub(super) fn classify_scanned_host_key(

@@ -3,10 +3,11 @@ use crate::ssh_tunnel::spawn_tunnel_shutdown;
 use crate::vault::read_store;
 use crate::{
     error_string, https_url_origin, now, prevent_process_window, random_id, read_string_field,
-    read_u16_field, remote_fs, run_ssh_command_for_profile_with_window, sanitize_file_name,
-    string_arg, terminal, unavailable_password_auth_error, whoami, ActiveConnection, AppState,
-    ConnectionKind, PrivilegeConfig, SshProfile,
+    read_u16_field, remote_fs, sanitize_file_name, string_arg, terminal,
+    unavailable_password_auth_error, whoami, ActiveConnection, AppState, ConnectionKind,
+    PrivilegeConfig, SshProfile,
 };
+use host_keys::prepare_ssh_host_key_trust;
 use serde_json::{json, Value};
 #[cfg(windows)]
 use std::process::Command as StdCommand;
@@ -16,7 +17,6 @@ use tauri::Emitter;
 #[path = "connection/host_keys.rs"]
 mod host_keys;
 
-use host_keys::ensure_ssh_host_key_trusted;
 #[cfg(test)]
 use host_keys::{
     classify_scanned_host_key, known_host_matches_host, known_hosts_host_pattern,
@@ -436,27 +436,8 @@ pub(crate) async fn connect_ssh(
     if let Some(error) = unavailable_password_auth_error(&profile) {
         return Ok(json!({ "ok": false, "error": error }));
     }
-    if let Err(error) = ensure_ssh_host_key_trusted(state, window, &mut profile).await {
+    if let Err(error) = prepare_ssh_host_key_trust(state, window, &mut profile).await {
         return Ok(json!({ "ok": false, "error": error }));
-    }
-
-    let probe = run_ssh_command_for_profile_with_window(
-        state,
-        Some(window.clone()),
-        profile.clone(),
-        "printf shelldesk-ready".to_string(),
-        String::new(),
-    )
-    .await;
-    match probe {
-        Ok(output) => {
-            if let Err(error) = assert_ssh_connection_probe(&output) {
-                return Ok(json!({ "ok": false, "error": error }));
-            }
-        }
-        Err(error) => {
-            return Ok(json!({ "ok": false, "error": error }));
-        }
     }
 
     let id = random_id("ssh");
@@ -495,32 +476,6 @@ pub(crate) async fn connect_ssh(
         "ok": true,
         "connection": info
     }))
-}
-
-fn assert_ssh_connection_probe(output: &Value) -> Result<(), String> {
-    let success = output
-        .get("success")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let stdout = output.get("stdout").and_then(Value::as_str).unwrap_or("");
-    if success && stdout.contains("shelldesk-ready") {
-        return Ok(());
-    }
-
-    let stderr = output
-        .get("stderr")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    let stdout = stdout.trim();
-    let detail = if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "SSH 连接验证失败。"
-    };
-    Err(detail.to_string())
 }
 
 fn connection_info(connection: &ActiveConnection) -> Value {
@@ -755,48 +710,6 @@ mod tests {
         assert_eq!(
             known_hosts_host_pattern("192.168.100.23", 2222),
             "[192.168.100.23]:2222"
-        );
-    }
-
-    #[test]
-    fn ssh_connection_probe_requires_ready_marker_and_success() {
-        let output = json!({
-            "stdout": "shelldesk-ready",
-            "stderr": "",
-            "code": 0,
-            "success": true
-        });
-
-        assert!(assert_ssh_connection_probe(&output).is_ok());
-    }
-
-    #[test]
-    fn ssh_connection_probe_rejects_ssh_exit_failure() {
-        let output = json!({
-            "stdout": "",
-            "stderr": "ssh: connect to host 192.168.100.18 port 22: Connection timed out",
-            "code": 255,
-            "success": false
-        });
-
-        assert_eq!(
-            assert_ssh_connection_probe(&output),
-            Err("ssh: connect to host 192.168.100.18 port 22: Connection timed out".to_string())
-        );
-    }
-
-    #[test]
-    fn ssh_connection_probe_rejects_missing_ready_marker() {
-        let output = json!({
-            "stdout": "unexpected output",
-            "stderr": "",
-            "code": 0,
-            "success": true
-        });
-
-        assert_eq!(
-            assert_ssh_connection_probe(&output),
-            Err("unexpected output".to_string())
         );
     }
 

@@ -1,9 +1,9 @@
 use crate::askpass::{current_ui_window, start_askpass_broker, AskpassBroker};
 use crate::command_runner::{run_shell, run_shell_stream, run_spawned_command_stream};
 use crate::{
-    error_string, get_connection, now, prevent_process_window, prevent_tokio_process_window,
-    read_string_field, string_arg, ActiveConnection, AppState, ConnectionKind, PrivilegeConfig,
-    SshProfile,
+    connection, error_string, get_connection, now, prevent_process_window,
+    prevent_tokio_process_window, read_string_field, string_arg, ActiveConnection, AppState,
+    ConnectionKind, PrivilegeConfig, SshProfile,
 };
 use serde_json::{json, Value};
 use std::{
@@ -400,6 +400,87 @@ fn is_recoverable_ssh_message(message: &str) -> bool {
     .any(|needle| message.contains(needle))
 }
 
+fn ssh_result_is_host_key_verification_failure(result: &Result<Value, String>) -> bool {
+    match result {
+        Ok(output) => ssh_output_is_host_key_verification_failure(output),
+        Err(error) => is_host_key_verification_message(error),
+    }
+}
+
+fn ssh_output_is_host_key_verification_failure(output: &Value) -> bool {
+    if output
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let code = output.get("code").and_then(Value::as_i64).unwrap_or(0);
+    if code != 255 && code != -1 {
+        return false;
+    }
+    is_host_key_verification_message(&output_message(output))
+}
+
+fn is_host_key_verification_message(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("host key verification failed")
+        || message.contains("remote host identification has changed")
+        || message.contains("possible dns spoofing detected")
+        || (message.contains("offending") && message.contains("known_hosts"))
+        || (message.contains("no ") && message.contains("host key is known"))
+}
+
+async fn refresh_profile_after_host_key_verification_failure(
+    state: &AppState,
+    window: Option<tauri::Window>,
+    profile: &SshProfile,
+) -> Result<Option<SshProfile>, String> {
+    let Some(window) = window else {
+        return Ok(None);
+    };
+    let mut refreshed = profile.clone();
+    connection::ensure_ssh_profile_host_key_trusted(state, &window, &mut refreshed).await?;
+    update_active_connection_profile(state, profile, &refreshed)?;
+    Ok(Some(refreshed))
+}
+
+fn update_active_connection_profile(
+    state: &AppState,
+    previous: &SshProfile,
+    refreshed: &SshProfile,
+) -> Result<(), String> {
+    let mut connections = state.connections.lock().map_err(error_string)?;
+    for connection in connections.values_mut() {
+        let Some(profile) = connection.ssh.as_mut() else {
+            continue;
+        };
+        update_profile_if_matches(profile, previous, refreshed);
+    }
+    Ok(())
+}
+
+fn update_profile_if_matches(
+    current: &mut SshProfile,
+    previous: &SshProfile,
+    refreshed: &SshProfile,
+) -> bool {
+    if ssh_profile_endpoint_matches(current, previous) {
+        *current = refreshed.clone();
+        return true;
+    }
+    if let Some(jump) = current.jump.as_deref_mut() {
+        return update_profile_if_matches(jump, previous, refreshed);
+    }
+    false
+}
+
+fn ssh_profile_endpoint_matches(left: &SshProfile, right: &SshProfile) -> bool {
+    left.address.eq_ignore_ascii_case(&right.address)
+        && left.port == right.port
+        && left.username == right.username
+}
+
 fn emit_connection_closed(window: Option<&tauri::Window>, connection_id: &str, reason: &str) {
     emit_connection_event(
         window,
@@ -440,6 +521,33 @@ pub(crate) async fn run_ssh_command_stream_for_profile(
 ) -> Result<Value, String> {
     let _askpass_broker =
         start_optional_askpass_broker(state, Some(window.clone()), &profile).await?;
+    let mut child = ssh_process_command(&profile, command.clone(), _askpass_broker.as_ref())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(error_string)?;
+    let first = run_spawned_command_stream(
+        &mut child,
+        stdin.clone(),
+        Duration::from_secs(90),
+        window.clone(),
+        stream_id.clone(),
+        "SSH command timed out.",
+    )
+    .await;
+    if !ssh_result_is_host_key_verification_failure(&first) {
+        return first;
+    }
+
+    let Some(profile) =
+        refresh_profile_after_host_key_verification_failure(state, Some(window.clone()), &profile)
+            .await?
+    else {
+        return first;
+    };
+    let _askpass_broker =
+        start_optional_askpass_broker(state, Some(window.clone()), &profile).await?;
     let mut child = ssh_process_command(&profile, command, _askpass_broker.as_ref())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -474,6 +582,24 @@ pub(crate) async fn run_ssh_command_for_profile_with_window(
     command: String,
     stdin: String,
 ) -> Result<Value, String> {
+    let _askpass_broker = start_optional_askpass_broker(state, window.clone(), &profile).await?;
+    let first = run_ssh_command_for_profile_with_broker(
+        profile.clone(),
+        command.clone(),
+        stdin.clone(),
+        _askpass_broker.as_ref(),
+    )
+    .await;
+    if !ssh_result_is_host_key_verification_failure(&first) {
+        return first;
+    }
+
+    let Some(profile) =
+        refresh_profile_after_host_key_verification_failure(state, window.clone(), &profile)
+            .await?
+    else {
+        return first;
+    };
     let _askpass_broker = start_optional_askpass_broker(state, window, &profile).await?;
     run_ssh_command_for_profile_with_broker(profile, command, stdin, _askpass_broker.as_ref()).await
 }
@@ -758,6 +884,37 @@ mod tests {
             "Permission denied, please try again."
         ));
         assert!(!ssh_output_is_recoverable(&json!({
+            "success": false,
+            "code": 255,
+            "stderr": "Permission denied (publickey,password).",
+            "stdout": ""
+        })));
+    }
+
+    #[test]
+    fn host_key_verification_messages_trigger_trust_refresh() {
+        assert!(is_host_key_verification_message(
+            "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\
+             @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n\
+             @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        ));
+        assert!(is_host_key_verification_message(
+            "Host key verification failed."
+        ));
+        assert!(ssh_output_is_host_key_verification_failure(&json!({
+            "success": false,
+            "code": 255,
+            "stderr": "Offending ECDSA key in C:\\Users\\me\\.ssh\\known_hosts:12\r\nHost key verification failed.",
+            "stdout": ""
+        })));
+    }
+
+    #[test]
+    fn auth_failures_do_not_trigger_host_key_refresh() {
+        assert!(!is_host_key_verification_message(
+            "Permission denied (publickey,password)."
+        ));
+        assert!(!ssh_output_is_host_key_verification_failure(&json!({
             "success": false,
             "code": 255,
             "stderr": "Permission denied (publickey,password).",
