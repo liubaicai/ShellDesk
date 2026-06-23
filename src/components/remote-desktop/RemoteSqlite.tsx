@@ -1,3 +1,8 @@
+import { indentWithTab } from '@codemirror/commands';
+import { sql as sqlLanguage } from '@codemirror/lang-sql';
+import type { Extension } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -55,10 +60,26 @@ interface SqliteHistoryItem {
   createdAt: number;
 }
 
+interface SqliteQueryTab {
+  id: string;
+  title: string;
+  sql: string;
+}
+
+interface SqliteResultTab {
+  id: string;
+  title: string;
+  status: 'success' | 'error';
+  result?: ShellDeskSqliteQueryResult;
+  meta?: SqliteResultMeta;
+  error?: string;
+}
+
 interface EditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface PendingCellEdit {
@@ -93,12 +114,44 @@ interface SqliteContextMenuState {
 
 const pageSize = 100;
 const tablePreviewLimit = 50;
+const maxResultTabs = 10;
 const maxHistoryItems = 12;
 const rowidColumn = '__shelldesk_rowid';
 const elevationErrorPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
 ];
+
+function getShellDeskEditorTheme(): 'light' | 'dark' {
+  if (typeof document === 'undefined') {
+    return 'dark';
+  }
+
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+function createQueryTab(index: number, sql = ''): SqliteQueryTab {
+  return {
+    id: createId('sqlite-query'),
+    title: `查询 ${index}`,
+    sql,
+  };
+}
+
+function createInitialQueryState(): { tabs: SqliteQueryTab[]; activeId: string } {
+  const tab = createQueryTab(1);
+  return { tabs: [tab], activeId: tab.id };
+}
+
+function createExplainSql(sqlText: string): string {
+  const statement = sqlText.trim().replace(/;+\s*$/, '');
+
+  if (/^explain\b/i.test(statement)) {
+    return statement;
+  }
+
+  return `EXPLAIN QUERY PLAN ${statement}`;
+}
 
 function quoteSqliteString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -151,9 +204,10 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 
 function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqliteProps) {
   const api = window.guiSSH;
+  const initialQueryStateRef = useRef(createInitialQueryState());
   const sqliteIdRef = useRef('');
   const autoOpenRef = useRef(false);
-  const sqlRef = useRef<HTMLTextAreaElement | null>(null);
+  const sqlEditorRef = useRef<ReactCodeMirrorRef>(null);
   const sudoPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const sudoPromptResolverRef = useRef<((password: string | null) => void) | null>(null);
 
@@ -170,7 +224,10 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const [columns, setColumns] = useState<ShellDeskSqliteColumn[]>([]);
   const [schemaSql, setSchemaSql] = useState('');
   const [activePanel, setActivePanel] = useState<SqlitePanel>('data');
-  const [sql, setSql] = useState('');
+  const [queryTabs, setQueryTabs] = useState<SqliteQueryTab[]>(initialQueryStateRef.current.tabs);
+  const [activeQueryId, setActiveQueryId] = useState(initialQueryStateRef.current.activeId);
+  const [resultTabs, setResultTabs] = useState<SqliteResultTab[]>([]);
+  const [activeResultId, setActiveResultId] = useState('');
   const [queryResult, setQueryResult] = useState<ShellDeskSqliteQueryResult | null>(null);
   const [resultMeta, setResultMeta] = useState<SqliteResultMeta | null>(null);
   const [queryRunning, setQueryRunning] = useState(false);
@@ -180,11 +237,26 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const [pendingWrite, setPendingWrite] = useState<PendingWriteSql | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
+  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [filePickerVisible, setFilePickerVisible] = useState(false);
   const [sudoPrompt, setSudoPrompt] = useState<SqliteSudoPrompt | null>(null);
   const [contextMenu, setContextMenu] = useState<SqliteContextMenuState | null>(null);
 
   const isReady = status === 'connected';
+
+  const activeQueryTab = useMemo(() => {
+    return queryTabs.find((tab) => tab.id === activeQueryId) ?? queryTabs[0];
+  }, [activeQueryId, queryTabs]);
+
+  const sql = activeQueryTab?.sql ?? '';
+
+  const setSql = useCallback((nextSql: string) => {
+    setQueryTabs((prev) => prev.map((tab) => (tab.id === activeQueryId ? { ...tab, sql: nextSql } : tab)));
+  }, [activeQueryId]);
+
+  const activeResultTab = useMemo(() => {
+    return resultTabs.find((tab) => tab.id === activeResultId) ?? null;
+  }, [activeResultId, resultTabs]);
 
   const filteredGroups = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -222,6 +294,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   );
 
   const resetWorkspace = useCallback(() => {
+    const nextQueryState = createInitialQueryState();
     setObjects([]);
     setObjectsLoading(false);
     setObjectSearch('');
@@ -229,7 +302,10 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setColumns([]);
     setSchemaSql('');
     setActivePanel('data');
-    setSql('');
+    setQueryTabs(nextQueryState.tabs);
+    setActiveQueryId(nextQueryState.activeId);
+    setResultTabs([]);
+    setActiveResultId('');
     setQueryResult(null);
     setResultMeta(null);
     setMessage(null);
@@ -250,6 +326,61 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       ...prev,
     ].slice(0, maxHistoryItems));
   }, []);
+
+  const addResultTab = useCallback((tab: SqliteResultTab) => {
+    setResultTabs((prev) => [...prev, tab].slice(-maxResultTabs));
+    setActiveResultId(tab.id);
+    setQueryResult(tab.result ?? null);
+    setResultMeta(tab.meta ?? null);
+    setPage(0);
+  }, []);
+
+  const handleAddQueryTab = useCallback((seedSql = '') => {
+    setQueryTabs((prev) => {
+      const tab = createQueryTab(prev.length + 1, seedSql);
+      setActiveQueryId(tab.id);
+      return [...prev, tab];
+    });
+  }, []);
+
+  const closeQueryTab = useCallback((queryId: string) => {
+    setQueryTabs((prev) => {
+      if (prev.length <= 1) return prev;
+
+      const removedIndex = prev.findIndex((tab) => tab.id === queryId);
+      const next = prev.filter((tab) => tab.id !== queryId);
+      if (activeQueryId === queryId) {
+        const fallback = next[Math.max(0, removedIndex - 1)] ?? next[0];
+        setActiveQueryId(fallback.id);
+      }
+      return next;
+    });
+  }, [activeQueryId]);
+
+  const handleCloseQueryTab = useCallback((queryId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    closeQueryTab(queryId);
+  }, [closeQueryTab]);
+
+  const closeResultTab = useCallback((resultId: string) => {
+    setResultTabs((prev) => {
+      const removedIndex = prev.findIndex((tab) => tab.id === resultId);
+      const next = prev.filter((tab) => tab.id !== resultId);
+      if (activeResultId === resultId) {
+        const fallback = next[Math.max(0, removedIndex - 1)] ?? next[0] ?? null;
+        setActiveResultId(fallback?.id ?? '');
+        setQueryResult(fallback?.result ?? null);
+        setResultMeta(fallback?.meta ?? null);
+        setColumns(fallback?.meta?.columns ?? []);
+      }
+      return next;
+    });
+  }, [activeResultId]);
+
+  const handleCloseResultTab = useCallback((resultId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    closeResultTab(resultId);
+  }, [closeResultTab]);
 
   const requestSudoPassword = useCallback((
     operation: string,
@@ -468,10 +599,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       }
 
       const queryTime = Math.round(performance.now() - startTime);
-
-      setColumns(nextColumns);
-      setQueryResult(nextResult);
-      setResultMeta({
+      const meta: SqliteResultMeta = {
         sql: executedSql,
         source: 'object',
         object,
@@ -480,6 +608,17 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         createdAt: Date.now(),
         rowidAvailable,
         writeStatement: false,
+      };
+
+      setColumns(nextColumns);
+      setQueryResult(nextResult);
+      setResultMeta(meta);
+      addResultTab({
+        id: createId('sqlite-result'),
+        title: object.name,
+        status: 'success',
+        result: nextResult,
+        meta,
       });
       setSql(executedSql);
       addHistoryItem({
@@ -499,7 +638,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         queryTime,
       });
     }
-  }, [addHistoryItem, api, connectionId, filePath, runWithSudoRetry, sqliteId]);
+  }, [addHistoryItem, addResultTab, api, connectionId, filePath, runWithSudoRetry, setSql, sqliteId]);
 
   const handleShowObjectStructure = useCallback(async (object: ShellDeskSqliteObject) => {
     if (!api?.connections || !sqliteId) return;
@@ -575,17 +714,26 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
         (options) => api.connections.sqliteQuery(connectionId, sqliteId, statement, options),
       );
       const queryTime = Math.round(performance.now() - startTime);
-
-      setQueryResult(result);
-      setColumns(createGenericColumns(result.columns, 'sqlite'));
-      setResultMeta({
+      const columns = createGenericColumns(result.columns, 'sqlite');
+      const meta: SqliteResultMeta = {
         sql: statement,
         source: 'query',
-        columns: createGenericColumns(result.columns, 'sqlite'),
+        columns,
         queryTime,
         createdAt: Date.now(),
         rowidAvailable: false,
         writeStatement,
+      };
+
+      setQueryResult(result);
+      setColumns(columns);
+      setResultMeta(meta);
+      addResultTab({
+        id: createId('sqlite-result'),
+        title: writeStatement ? '写入结果' : formatSqlPreview(statement, 28, tCurrent('auto.remoteSqlite.18ivnwu')),
+        status: 'success',
+        result,
+        meta,
       });
       setActivePanel('data');
       setMessage({
@@ -608,6 +756,12 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       setQueryResult(null);
       setResultMeta(null);
       setMessage({ type: 'error', text });
+      addResultTab({
+        id: createId('sqlite-result'),
+        title: '执行失败',
+        status: 'error',
+        error: text,
+      });
       addHistoryItem({
         sql: statement,
         status: 'error',
@@ -617,7 +771,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     } finally {
       setQueryRunning(false);
     }
-  }, [addHistoryItem, api, connectionId, filePath, refreshObjects, runWithSudoRetry, sqliteId]);
+  }, [addHistoryItem, addResultTab, api, connectionId, filePath, refreshObjects, runWithSudoRetry, sqliteId]);
 
   const handleContextMenuAction = useCallback((action: 'database-info' | 'query-object' | 'object-structure') => {
     const target = contextMenu?.target;
@@ -647,6 +801,72 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
 
     void executeSql(sql);
   }, [executeSql, sql]);
+
+  const handleExplainSql = useCallback(() => {
+    if (!sql.trim()) return;
+
+    if (isWriteStatement(sql, 'sqlite')) {
+      setMessage({ type: 'info', text: 'EXPLAIN 仅用于查询语句，请先选择 SELECT/PRAGMA 等只读 SQL。' });
+      return;
+    }
+
+    void executeSql(createExplainSql(sql));
+  }, [executeSql, sql]);
+
+  const sqliteEditorExtensions = useMemo<Extension[]>(() => [
+    keymap.of([
+      indentWithTab,
+      {
+        key: 'Mod-Enter',
+        run: () => {
+          handleExecuteSql();
+          return true;
+        },
+      },
+    ]),
+    sqlLanguage(),
+    EditorView.theme({
+      '&': {
+        height: '100%',
+        minHeight: '0',
+        backgroundColor: 'var(--surface-elevated)',
+        color: 'var(--text)',
+        fontSize: '13px',
+      },
+      '.cm-scroller': {
+        backgroundColor: 'var(--surface-elevated)',
+        fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
+        lineHeight: '20px',
+      },
+      '.cm-content': {
+        padding: '10px 0',
+        caretColor: 'var(--text)',
+      },
+      '.cm-line': {
+        padding: '0 12px',
+      },
+      '.cm-gutters': {
+        borderRight: '1px solid var(--border)',
+        backgroundColor: 'var(--surface)',
+        color: 'var(--text-muted)',
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+        color: 'var(--accent)',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+      },
+      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'rgba(67, 199, 255, 0.25)',
+      },
+      '&.cm-focused': {
+        outline: 'none',
+      },
+    }, {
+      dark: editorTheme === 'dark',
+    }),
+  ], [editorTheme, handleExecuteSql]);
 
   const handleExportResult = useCallback(async (format: DatabaseExportFormat) => {
     if (!queryResult || queryResult.rows.length === 0) return;
@@ -683,17 +903,10 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     }
   }, [filePath, queryResult, resultMeta, visibleColumns]);
 
-  const handleSqlKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      handleExecuteSql();
-    }
-  }, [handleExecuteSql]);
-
   const handleUseHistory = useCallback((item: SqliteHistoryItem) => {
     setSql(item.sql);
-    sqlRef.current?.focus();
-  }, []);
+    sqlEditorRef.current?.view?.focus();
+  }, [setSql]);
 
   const createUpdateTarget = useCallback((row: Record<string, unknown>): ShellDeskSqliteUpdateTarget | null => {
     if (primaryKeys.length > 0 && primaryKeys.every((column) => row[column] !== undefined)) {
@@ -725,6 +938,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [isResultEditable, primaryKeys, resultMeta]);
 
@@ -734,7 +948,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     const row = queryResult.rows[editingCell.rowIndex];
     const target = row ? createUpdateTarget(row) : null;
     const oldValue = row?.[editingCell.column];
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     setEditingCell(null);
 
@@ -790,7 +1004,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       if (result.affectedRows <= 0) {
         setMessage({ type: 'warning', text: tCurrent('auto.remoteSqlite.1hypi28') });
       } else {
-        setQueryResult((prev) => {
+        const updateResultRows = (prev: ShellDeskSqliteQueryResult | null) => {
           if (!prev) return prev;
           const nextRows = [...prev.rows];
           nextRows[pendingEdit.rowIndex] = {
@@ -798,7 +1012,14 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
             [pendingEdit.column]: pendingEdit.newValue,
           };
           return { ...prev, rows: nextRows };
+        };
+        setQueryResult((prev) => {
+          return updateResultRows(prev);
         });
+        setResultTabs((prev) => prev.map((tab) => {
+          if (tab.id !== activeResultId || !tab.result) return tab;
+          return { ...tab, result: updateResultRows(tab.result) ?? tab.result };
+        }));
         setMessage({ type: 'success', text: tCurrent('auto.remoteSqlite.1n0fqgo', { value0: pendingEdit.column }) });
       }
       setPendingEdit(null);
@@ -807,7 +1028,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     } finally {
       setEditSaving(false);
     }
-  }, [api, connectionId, filePath, pendingEdit, queryResult, runWithSudoRetry, sqliteId]);
+  }, [activeResultId, api, connectionId, filePath, pendingEdit, queryResult, runWithSudoRetry, sqliteId]);
 
   const handleConfirmWriteSql = useCallback(async () => {
     if (!pendingWrite) return;
@@ -816,6 +1037,26 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     setPendingWrite(null);
     await executeSql(statement);
   }, [executeSql, pendingWrite]);
+
+  useEffect(() => {
+    if (isReady) {
+      sqlEditorRef.current?.view?.focus();
+    }
+  }, [activeQueryId, isReady]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!initialFilePath || autoOpenRef.current) return;
@@ -1031,9 +1272,43 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
           </div>
 
           <section className="sqlite-editor-area">
+            <div className="mysql-query-tabs sqlite-query-tabs" role="tablist" aria-label="SQLite 查询标签">
+              {queryTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeQueryId === tab.id}
+                  className={`mysql-query-tab ${activeQueryId === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveQueryId(tab.id)}
+                >
+                  <span>{tab.title}</span>
+                  {queryTabs.length > 1 ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="mysql-tab-close"
+                      onClick={(event) => handleCloseQueryTab(tab.id, event)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.stopPropagation();
+                          closeQueryTab(tab.id);
+                        }
+                      }}
+                    >
+                      ×
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+              <button type="button" className="mysql-add-tab-btn" onClick={() => handleAddQueryTab()} title="新增查询">+</button>
+            </div>
             <div className="sqlite-editor-toolbar">
               <button type="button" className="sqlite-run-btn" onClick={handleExecuteSql} disabled={queryRunning || !sql.trim()}>
                 {queryRunning ? tCurrent('auto.remoteSqlite.e2byz1') : tCurrent('auto.remoteSqlite.6azgji')}
+              </button>
+              <button type="button" className="sqlite-run-btn secondary" onClick={handleExplainSql} disabled={queryRunning || !sql.trim() || isWriteStatement(sql, 'sqlite')}>
+                EXPLAIN
               </button>
               <span className="sqlite-editor-hint">{tCurrent('auto.remoteSqlite.cj2ebw')}</span>
               {selectedObject ? (
@@ -1042,14 +1317,28 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                 </span>
               ) : null}
             </div>
-            <textarea
-              ref={sqlRef}
+            <CodeMirror
+              ref={sqlEditorRef}
               className="sqlite-sql-editor"
               value={sql}
-              onChange={(event) => setSql(event.target.value)}
-              onKeyDown={handleSqlKeyDown}
+              height="100%"
+              basicSetup={{
+                lineNumbers: true,
+                foldGutter: true,
+                highlightActiveLine: true,
+                highlightActiveLineGutter: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                autocompletion: true,
+                searchKeymap: true,
+                defaultKeymap: true,
+                history: true,
+              }}
+              theme={editorTheme}
+              extensions={sqliteEditorExtensions}
+              onChange={setSql}
               placeholder={tCurrent('auto.remoteSqlite.1bvo5bt')}
-              spellCheck={false}
+              aria-label={tCurrent('auto.remoteSqlite.1bvo5bt')}
             />
           </section>
 
@@ -1067,6 +1356,43 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                 {message.text}
               </DismissibleAlert>
             ) : null}
+            <div className="mysql-result-tabs sqlite-result-tabs">
+              {resultTabs.length === 0 ? (
+                <span className="mysql-result-tabs-empty">暂无结果</span>
+              ) : resultTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`mysql-result-tab ${activeResultId === tab.id ? 'active' : ''} ${tab.status}`}
+                  onClick={() => {
+                    setActiveResultId(tab.id);
+                    setQueryResult(tab.result ?? null);
+                    setResultMeta(tab.meta ?? null);
+                    setColumns(tab.meta?.columns ?? []);
+                    setPage(0);
+                    setActivePanel('data');
+                  }}
+                  title={tab.meta?.sql ?? tab.error}
+                >
+                  <span>{tab.title}</span>
+                  <em>{tab.status === 'success' && tab.result ? `${tab.result.rows.length} 行` : '失败'}</em>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="mysql-tab-close"
+                    onClick={(event) => handleCloseResultTab(tab.id, event)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.stopPropagation();
+                        closeResultTab(tab.id);
+                      }
+                    }}
+                  >
+                    ×
+                  </span>
+                </button>
+              ))}
+            </div>
 
             {activePanel === 'schema' ? (
               <div className="sqlite-schema-panel">
@@ -1096,6 +1422,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                     <span>{tCurrent('auto.remoteSqlite.oodm6h')}</span>
                   </div>
                 )}
+              </div>
+            ) : activeResultTab?.status === 'error' ? (
+              <div className="sqlite-result-error">
+                <strong>执行失败</strong>
+                <p>{activeResultTab.error}</p>
               </div>
             ) : queryResult ? (
               <>
@@ -1147,15 +1478,26 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                                   if (isEditing) {
                                     return (
                                       <td key={column} className="sqlite-cell-editing">
-                                        <input
-                                          type="text"
-                                          value={editingCell.value}
-                                          onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
-                                          onKeyDown={handleCellKeyDown}
-                                          onBlur={prepareCellSave}
-                                          autoFocus
-                                          className="sqlite-cell-input"
-                                        />
+                                        <div className="sqlite-cell-editbox">
+                                          <input
+                                            type="text"
+                                            value={editingCell.isNull ? '' : editingCell.value}
+                                            onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value, isNull: false })}
+                                            onKeyDown={handleCellKeyDown}
+                                            onBlur={prepareCellSave}
+                                            autoFocus
+                                            className="sqlite-cell-input"
+                                            readOnly={editingCell.isNull}
+                                          />
+                                          <button
+                                            type="button"
+                                            className={`sqlite-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => setEditingCell({ ...editingCell, isNull: !editingCell.isNull })}
+                                          >
+                                            NULL
+                                          </button>
+                                        </div>
                                       </td>
                                     );
                                   }

@@ -65,6 +65,26 @@ pub(super) fn pg_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+pub(super) fn pg_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+pub(super) fn pg_value_literal(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(value) => {
+            if *value {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }
+        }
+        Value::Number(number) => number.to_string(),
+        Value::String(value) => pg_literal(value),
+        other => pg_literal(&other.to_string()),
+    }
+}
+
 pub(super) fn sqlite_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }

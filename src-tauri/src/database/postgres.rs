@@ -5,7 +5,7 @@ use super::{
     parse::{parse_csv_objects, parse_csv_query, parse_postgres_command_tag_row_count},
     session::{decode_active_db_session_args, register_db_session},
     should_fallback_to_database_cli, should_try_database_tunnel,
-    sql::pg_literal,
+    sql::{pg_identifier, pg_literal, pg_value_literal},
     tunnel,
 };
 use crate::{ps_quote, read_string_field, run_cli_output, shell_quote, string_arg, AppState};
@@ -182,6 +182,61 @@ pub(crate) async fn postgres_query(state: &AppState, args: Vec<Value>) -> Result
     }
     let (columns, rows) = parse_csv_query(&output)?;
     Ok(json!({ "columns": columns, "rows": rows, "rowCount": rows.len() }))
+}
+
+pub(crate) async fn postgres_update_cell(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    if tunnel::has_session(state, "postgres", &args)? {
+        return tunnel::postgres_update_cell(state, args).await;
+    }
+    let (connection_id, config) = decode_active_db_session_args(state, "postgres", &args, 0, 1)?;
+    let schema = string_arg(&args, 2)?;
+    let table = string_arg(&args, 3)?;
+    let column = string_arg(&args, 4)?;
+    let new_value = args.get(5).cloned().unwrap_or(Value::Null);
+    let pk_columns = args
+        .get(6)
+        .and_then(Value::as_array)
+        .ok_or_else(|| "PostgreSQL 主键列参数无效。".to_string())?;
+    let pk_values = args
+        .get(7)
+        .and_then(Value::as_array)
+        .ok_or_else(|| "PostgreSQL 主键值参数无效。".to_string())?;
+
+    if pk_columns.is_empty() || pk_columns.len() != pk_values.len() {
+        return Err("PostgreSQL 主键条件不完整，无法更新单元格。".to_string());
+    }
+
+    let where_clause = pk_columns
+        .iter()
+        .zip(pk_values.iter())
+        .map(|(pk_column, pk_value)| {
+            let pk_column = pk_column
+                .as_str()
+                .ok_or_else(|| "PostgreSQL 主键列参数无效。".to_string())?;
+            Ok(format!(
+                "{} IS NOT DISTINCT FROM {}",
+                pg_identifier(pk_column),
+                pg_value_literal(pk_value)
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?
+        .join(" AND ");
+    let sql = format!(
+        "UPDATE {}.{} SET {} = {} WHERE {};",
+        pg_identifier(&schema),
+        pg_identifier(&table),
+        pg_identifier(&column),
+        pg_value_literal(&new_value),
+        where_clause
+    );
+    let output = run_postgres_cli(state, &connection_id, &config, &sql).await?;
+    let affected_rows = parse_postgres_command_tag_row_count(&output)
+        .flatten()
+        .unwrap_or(0);
+    Ok(json!({ "affectedRows": affected_rows }))
 }
 
 async fn run_postgres_cli(

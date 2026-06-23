@@ -558,10 +558,76 @@
   gap: 6px;
 }
 
+.redis-ttl-editor {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.redis-ttl-editor label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.redis-ttl-editor input {
+  width: 78px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-size: 11px;
+  outline: none;
+}
+
+.redis-ttl-editor input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
 .redis-value-actions button {
   padding: 5px 9px;
   border-radius: 6px;
   font-size: 11px;
+}
+
+.redis-ttl-editor button,
+.redis-element-toolbar button,
+.redis-element-form-title button,
+.redis-element-form-actions button,
+.redis-element-row-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.redis-ttl-editor button {
+  padding: 4px 8px;
+}
+
+.redis-ttl-editor button:hover:not(:disabled),
+.redis-element-toolbar button:hover:not(:disabled),
+.redis-element-form-title button:hover:not(:disabled),
+.redis-element-form-actions button:hover:not(:disabled),
+.redis-element-row-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.redis-ttl-editor button:disabled,
+.redis-element-toolbar button:disabled,
+.redis-element-form-title button:disabled,
+.redis-element-form-actions button:disabled,
+.redis-element-row-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .redis-delete-key-btn {
@@ -569,9 +635,13 @@
   color: #ff9f9f !important;
 }
 
-.redis-value-editor {
+.redis-value-editor,
+.redis-value-codemirror {
   flex: 1;
   min-height: 0;
+}
+
+.redis-value-editor {
   padding: 11px 12px;
   border: none;
   background: var(--surface-elevated);
@@ -587,6 +657,203 @@
 .redis-value-editor:disabled {
   color: var(--text-muted);
   cursor: default;
+}
+
+.redis-value-codemirror {
+  background: var(--surface-elevated);
+}
+
+.redis-value-codemirror .cm-editor {
+  height: 100%;
+  background: transparent;
+}
+
+.redis-value-codemirror .cm-scroller {
+  background: transparent;
+}
+
+.redis-element-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface-elevated);
+}
+
+.redis-element-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.redis-element-toolbar div,
+.redis-element-form-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.redis-element-toolbar strong,
+.redis-element-form-title strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.redis-element-toolbar span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.redis-element-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.32fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.redis-element-form-title {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+}
+
+.redis-element-form label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.redis-element-form input,
+.redis-element-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  outline: none;
+}
+
+.redis-element-form input {
+  padding: 6px 8px;
+}
+
+.redis-element-form textarea {
+  min-height: 54px;
+  padding: 7px 8px;
+  resize: vertical;
+}
+
+.redis-element-form input:focus,
+.redis-element-form textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.redis-element-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.redis-element-form-actions button {
+  padding: 6px 12px;
+}
+
+.redis-element-table {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.redis-element-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.22fr) minmax(0, 1fr) auto;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+
+.redis-element-index {
+  min-width: 0;
+  overflow: hidden;
+  padding: 8px 10px;
+  border-right: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.redis-element-row pre {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.redis-element-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-left: 1px solid var(--border);
+}
+
+.redis-element-row-actions button {
+  padding: 5px 8px;
+}
+
+.redis-element-row-actions button.danger {
+  border-color: rgba(255, 100, 100, 0.28);
+  color: #ff9f9f;
+}
+
+.redis-element-row-actions button.danger:hover:not(:disabled) {
+  border-color: #ff6b6b;
+  color: #ffb3b3;
+}
+
+.redis-element-empty {
+  padding: 22px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.redis-raw-json-panel {
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.redis-raw-json-panel summary {
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.redis-raw-json-panel .redis-value-editor,
+.redis-raw-json-panel .redis-value-codemirror {
+  width: 100%;
+  min-height: 180px;
+  border-top: 1px solid var(--border);
 }
 
 .redis-cmd-area {
@@ -743,6 +1010,25 @@
   .redis-value-meta {
     flex-wrap: wrap;
   }
+
+  .redis-ttl-editor {
+    flex-wrap: wrap;
+  }
+
+  .redis-element-form {
+    grid-template-columns: 1fr;
+  }
+
+  .redis-element-row {
+    grid-template-columns: minmax(58px, 0.24fr) minmax(0, 1fr);
+  }
+
+  .redis-element-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* ─── Redis Light Theme ───────────────────────────────────────────────────── */
@@ -779,7 +1065,9 @@
 }
 
 [data-theme="light"] .redis-value-editor,
-[data-theme="light"] .redis-cmd-result {
+[data-theme="light"] .redis-value-codemirror,
+[data-theme="light"] .redis-cmd-result,
+[data-theme="light"] .redis-element-editor {
   background: #f7f9fc;
 }
 

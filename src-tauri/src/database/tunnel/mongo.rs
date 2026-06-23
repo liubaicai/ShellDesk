@@ -172,8 +172,10 @@ pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Va
         return Err("MongoDB 数据库和集合不能为空。".to_string());
     }
     let filter = mongo_document_from_request(&request, "filter", "{}")?;
-    let projection = mongo_document_option_from_request(&request, "projection")?;
-    let sort = mongo_document_option_from_request(&request, "sort")?;
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .unwrap_or("find");
     let limit = request
         .get("limit")
         .and_then(Value::as_u64)
@@ -183,10 +185,102 @@ pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Va
         .database(&database)
         .collection::<Document>(&collection);
     tokio::time::timeout(QUERY_TIMEOUT, async {
+        if operation == "aggregate" {
+            let pipeline = mongo_pipeline_from_request(&request)?;
+            let mut cursor = collection
+                .aggregate(pipeline)
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+            let mut documents = Vec::new();
+            while let Some(document) = cursor
+                .try_next()
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?
+            {
+                documents.push(bson_to_json(Bson::Document(document)));
+                if documents.len() >= limit as usize {
+                    break;
+                }
+            }
+            return Ok(json!({
+                "documents": documents,
+                "count": documents.len(),
+                "limit": limit,
+                "operation": operation
+            }));
+        }
+
+        if operation == "insertOne" {
+            let document = mongo_document_from_request(&request, "document", "{}")?;
+            let result = collection
+                .insert_one(document)
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+            let inserted_id = bson_to_json(result.inserted_id);
+            return Ok(json!({
+                "documents": [{ "insertedId": inserted_id.clone() }],
+                "count": 1,
+                "limit": 1,
+                "operation": operation,
+                "insertedCount": 1,
+                "insertedId": inserted_id
+            }));
+        }
+
+        if operation == "replaceOne" {
+            let replacement = mongo_document_from_request(&request, "document", "{}")?;
+            let result = collection
+                .replace_one(filter, replacement)
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+            return Ok(json!({
+                "documents": [{ "matchedCount": result.matched_count, "modifiedCount": result.modified_count }],
+                "count": 1,
+                "limit": 1,
+                "operation": operation,
+                "matchedCount": result.matched_count,
+                "modifiedCount": result.modified_count
+            }));
+        }
+
+        if operation == "updateOne" {
+            let update = mongo_document_from_request(&request, "update", "{}")?;
+            let result = collection
+                .update_one(filter, update)
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+            let upserted_id = result.upserted_id.map(bson_to_json);
+            return Ok(json!({
+                "documents": [{ "matchedCount": result.matched_count, "modifiedCount": result.modified_count, "upsertedId": upserted_id }],
+                "count": 1,
+                "limit": 1,
+                "operation": operation,
+                "matchedCount": result.matched_count,
+                "modifiedCount": result.modified_count,
+                "upsertedId": upserted_id
+            }));
+        }
+
+        if operation == "deleteOne" {
+            let result = collection
+                .delete_one(filter)
+                .await
+                .map_err(|error| DbTunnelError::MongoQuery(error.to_string()).user_message())?;
+            return Ok(json!({
+                "documents": [{ "deletedCount": result.deleted_count }],
+                "count": 1,
+                "limit": 1,
+                "operation": operation,
+                "deletedCount": result.deleted_count
+            }));
+        }
+
         let mut find = collection.find(filter).limit(limit as i64);
+        let projection = mongo_document_option_from_request(&request, "projection")?;
         if let Some(projection) = projection {
             find = find.projection(projection);
         }
+        let sort = mongo_document_option_from_request(&request, "sort")?;
         if let Some(sort) = sort {
             find = find.sort(sort);
         }
@@ -298,6 +392,30 @@ fn mongo_document_option_from_request(
         return Ok(None);
     }
     mongo_document_from_request(request, field, "{}").map(Some)
+}
+
+fn mongo_pipeline_from_request(request: &Value) -> Result<Vec<Document>, String> {
+    let raw = request
+        .get("pipeline")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("[]");
+    let value = serde_json::from_str::<Value>(raw)
+        .map_err(|error| format!("MongoDB pipeline JSON 无效：{error}"))?;
+    let bson = Bson::try_from(value)
+        .map_err(|error| format!("MongoDB pipeline Extended JSON 无效：{error}"))?;
+    let Bson::Array(stages) = bson else {
+        return Err("MongoDB pipeline 必须是 JSON 数组。".to_string());
+    };
+
+    stages
+        .into_iter()
+        .map(|stage| match stage {
+            Bson::Document(document) => Ok(document),
+            _ => Err("MongoDB pipeline 每个阶段都必须是 JSON 对象。".to_string()),
+        })
+        .collect()
 }
 
 fn bson_to_json(value: Bson) -> Value {

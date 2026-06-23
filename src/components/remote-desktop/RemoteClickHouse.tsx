@@ -1,3 +1,8 @@
+import { indentWithTab } from '@codemirror/commands';
+import { MySQL, sql } from '@codemirror/lang-sql';
+import type { Extension } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -78,6 +83,35 @@ interface ClickHouseHistoryItem {
   createdAt: number;
 }
 
+interface ClickHouseRowEntry {
+  row: Record<string, unknown>;
+  sourceIndex: number;
+}
+
+interface ClickHouseSortState {
+  resultId: string;
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+interface ClickHouseEditingCell {
+  rowIndex: number;
+  column: string;
+  value: string;
+  isNull: boolean;
+}
+
+interface ClickHousePendingEdit {
+  resultId: string;
+  table: TableInfo;
+  rowIndex: number;
+  column: string;
+  oldValue: unknown;
+  newValue: unknown;
+  pkColumns: string[];
+  pkValues: unknown[];
+}
+
 type ClickHouseContextMenuTarget =
   | { type: 'database'; database: string }
   | { type: 'table'; database: string; table: ShellDeskClickHouseTable };
@@ -95,6 +129,14 @@ const tablePreviewLimit = 50;
 const maxResultTabs = 10;
 const maxHistoryItems = 12;
 
+function getShellDeskEditorTheme(): 'light' | 'dark' {
+  if (typeof document === 'undefined') {
+    return 'dark';
+  }
+
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
 function createQueryTab(index: number, sql = 'SELECT version() AS version;'): ClickHouseQueryTab {
   return {
     id: createId('query'),
@@ -111,6 +153,29 @@ function createInitialQueryState(): { tabs: ClickHouseQueryTab[]; activeId: stri
 
 function quoteClickHouseString(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function toClickHouseLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  return quoteClickHouseString(String(value));
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  if (left === null || left === undefined) return right === null || right === undefined;
+  if (right === null || right === undefined) return false;
+  return String(left) === String(right);
+}
+
+function createExplainSql(sqlText: string): string {
+  const statement = sqlText.trim().replace(/;+\s*$/, '');
+
+  if (/^explain\b/i.test(statement)) {
+    return statement;
+  }
+
+  return `EXPLAIN ${statement}`;
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -158,11 +223,28 @@ function describeStatistics(statistics?: ShellDeskClickHouseQueryStatistics): st
   return parts.join(' · ');
 }
 
+function compareClickHouseCellValues(left: unknown, right: unknown): number {
+  if (left === null || left === undefined) return right === null || right === undefined ? 0 : 1;
+  if (right === null || right === undefined) return -1;
+
+  const leftNumber = typeof left === 'number' ? left : typeof left === 'string' && left.trim() ? Number(left) : Number.NaN;
+  const rightNumber = typeof right === 'number' ? right : typeof right === 'string' && right.trim() ? Number(right) : Number.NaN;
+
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+
+  return String(left).localeCompare(String(right), getShellDeskLocale(), {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
 function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   const api = window.guiSSH;
   const initialQueryStateRef = useRef(createInitialQueryState());
   const clickhouseIdRef = useRef('');
-  const sqlRef = useRef<HTMLTextAreaElement | null>(null);
+  const sqlEditorRef = useRef<ReactCodeMirrorRef>(null);
 
   const [status, setStatus] = useState<ClickHouseStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -208,7 +290,12 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   const [resultTabs, setResultTabs] = useState<ClickHouseResultTab[]>([]);
   const [activeResultId, setActiveResultId] = useState('');
   const [history, setHistory] = useState<ClickHouseHistoryItem[]>([]);
+  const [editingCell, setEditingCell] = useState<ClickHouseEditingCell | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<ClickHousePendingEdit | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
+  const [sortState, setSortState] = useState<ClickHouseSortState | null>(null);
+  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [contextMenu, setContextMenu] = useState<ClickHouseContextMenuState | null>(null);
 
   const isReady = status === 'connected';
@@ -222,7 +309,12 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
   const activeResult = activeResultTab?.result ?? null;
   const activeResultColumns = activeResultTab?.columns ?? [];
+  const activeResultPrimaryKeys = useMemo(() => {
+    return activeResultColumns.filter((column) => column.isPrimaryKey).map((column) => column.name);
+  }, [activeResultColumns]);
+  const isActiveResultEditable = Boolean(activeResultTab?.table && activeResultPrimaryKeys.length > 0);
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
+  const canExplainActiveQuery = canRunActiveQuery && !isWriteStatement(activeQueryTab?.sql.trim() ?? '', 'clickhouse');
   const displayPort = parseInt(port, 10) || (secure ? defaultHttpsPort : defaultHttpPort);
   const isNativeTcpPort = displayPort === 9000;
 
@@ -274,15 +366,27 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       .filter((entry) => entry.databaseMatched || entry.tables.length > 0);
   }, [databases, dbTables, objectSearch]);
 
-  const pagedRows = useMemo(() => {
+  const sortedRowEntries = useMemo<ClickHouseRowEntry[]>(() => {
     if (!activeResult) return [];
-    return activeResult.rows.slice(page * pageSize, (page + 1) * pageSize);
-  }, [activeResult, page]);
+    const entries = activeResult.rows.map((row, sourceIndex) => ({ row, sourceIndex }));
+
+    if (!sortState || sortState.resultId !== activeResultTab?.id) {
+      return entries;
+    }
+
+    const direction = sortState.direction === 'asc' ? 1 : -1;
+    return entries.sort((left, right) => (
+      compareClickHouseCellValues(left.row[sortState.column], right.row[sortState.column]) * direction
+    ));
+  }, [activeResult, activeResultTab?.id, sortState]);
+
+  const pagedRows = useMemo(() => {
+    return sortedRowEntries.slice(page * pageSize, (page + 1) * pageSize);
+  }, [page, sortedRowEntries]);
 
   const totalPages = useMemo(() => {
-    if (!activeResult) return 0;
-    return Math.ceil(activeResult.rows.length / pageSize);
-  }, [activeResult]);
+    return Math.ceil(sortedRowEntries.length / pageSize);
+  }, [sortedRowEntries.length]);
 
   const resetWorkspaceState = useCallback(() => {
     const nextQueryState = createInitialQueryState();
@@ -299,7 +403,10 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     setResultTabs([]);
     setActiveResultId('');
     setHistory([]);
+    setEditingCell(null);
+    setPendingEdit(null);
     setPage(0);
+    setSortState(null);
     setMessage(null);
     setContextMenu(null);
   }, []);
@@ -801,10 +908,11 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     }
   }, [contextMenu, handleSelectTable, handleShowDatabaseInfo, handleShowTableStructure]);
 
-  const handleExecuteSql = useCallback(async () => {
-    if (!api?.connections || !clickhouseId || !activeQueryTab?.sql.trim()) return;
+  const handleExecuteSql = useCallback(async (sqlOverride?: string, options: { title?: string } = {}) => {
+    const sourceSql = sqlOverride ?? activeQueryTab?.sql ?? '';
+    if (!api?.connections || !clickhouseId || !sourceSql.trim()) return;
 
-    const sqlText = activeQueryTab.sql.trim();
+    const sqlText = sourceSql.trim();
     const database = activeDb || undefined;
     const startTime = performance.now();
 
@@ -819,7 +927,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
       addResultTab({
         id: createId('result'),
-        title: isWriteStatement(sqlText, 'clickhouse') ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28, tCurrent('clickhouse.query.emptySql')),
+        title: options.title ?? (isWriteStatement(sqlText, 'clickhouse') ? tCurrent('clickhouse.query.writeStatement') : formatSqlPreview(sqlText, 28, tCurrent('clickhouse.query.emptySql'))),
         subtitle: database
           ? tCurrent('clickhouse.query.databaseSubtitle', { database })
           : tCurrent('clickhouse.query.noDatabase'),
@@ -872,6 +980,74 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     }
   }, [activeDb, activeQueryTab, addHistoryItem, addResultTab, api, clickhouseId, connectionId, setQueryRunning]);
 
+  const handleExplainSql = useCallback(() => {
+    if (!activeQueryTab?.sql.trim()) return;
+    const sourceSql = activeQueryTab.sql.trim();
+    if (isWriteStatement(sourceSql, 'clickhouse')) {
+      setMessage({ type: 'info', text: 'EXPLAIN 仅用于查询语句，请先选择 SELECT 等只读 SQL。' });
+      return;
+    }
+
+    void handleExecuteSql(createExplainSql(sourceSql), {
+      title: `EXPLAIN ${formatSqlPreview(sourceSql, 20)}`,
+    });
+  }, [activeQueryTab, handleExecuteSql]);
+
+  const clickHouseEditorExtensions = useMemo<Extension[]>(() => [
+    keymap.of([
+      indentWithTab,
+      {
+        key: 'Mod-Enter',
+        run: () => {
+          void handleExecuteSql();
+          return true;
+        },
+      },
+    ]),
+    sql({ dialect: MySQL }),
+    EditorView.theme({
+      '&': {
+        height: '100%',
+        minHeight: '0',
+        backgroundColor: 'var(--surface-elevated)',
+        color: 'var(--text)',
+        fontSize: '13px',
+      },
+      '.cm-scroller': {
+        backgroundColor: 'var(--surface-elevated)',
+        fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
+        lineHeight: '20px',
+      },
+      '.cm-content': {
+        padding: '10px 0',
+        caretColor: 'var(--text)',
+      },
+      '.cm-line': {
+        padding: '0 12px',
+      },
+      '.cm-gutters': {
+        borderRight: '1px solid var(--border)',
+        backgroundColor: 'var(--surface)',
+        color: 'var(--text-muted)',
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+        color: 'var(--accent)',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+      },
+      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'rgba(67, 199, 255, 0.25)',
+      },
+      '&.cm-focused': {
+        outline: 'none',
+      },
+    }, {
+      dark: editorTheme === 'dark',
+    }),
+  ], [editorTheme, handleExecuteSql]);
+
   const handleExportActiveResult = useCallback(async (format: DatabaseExportFormat) => {
     if (!activeResult || activeResult.rows.length === 0) return;
 
@@ -900,12 +1076,102 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     }
   }, [activeResult, activeResultTab]);
 
-  const handleSqlKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      void handleExecuteSql();
+  const handleCellEdit = useCallback((rowIndex: number, column: string, currentValue: unknown) => {
+    if (!activeResult || !activeResultTab?.table || !isActiveResultEditable) return;
+
+    if (activeResultPrimaryKeys.includes(column)) {
+      setMessage({ type: 'info', text: '主键列不能直接编辑。' });
+      return;
     }
-  }, [handleExecuteSql]);
+
+    setEditingCell({
+      rowIndex,
+      column,
+      value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
+    });
+  }, [activeResult, activeResultPrimaryKeys, activeResultTab, isActiveResultEditable]);
+
+  const prepareCellSave = useCallback(() => {
+    if (!editingCell || !activeResultTab?.result || !activeResultTab.table) return;
+
+    const row = activeResultTab.result.rows[editingCell.rowIndex];
+    if (!row) {
+      setEditingCell(null);
+      return;
+    }
+
+    const newValue = editingCell.isNull ? null : editingCell.value;
+
+    if (valuesEqual(row[editingCell.column], newValue)) {
+      setEditingCell(null);
+      return;
+    }
+
+    setPendingEdit({
+      resultId: activeResultTab.id,
+      table: activeResultTab.table,
+      rowIndex: editingCell.rowIndex,
+      column: editingCell.column,
+      oldValue: row[editingCell.column],
+      newValue,
+      pkColumns: activeResultPrimaryKeys,
+      pkValues: activeResultPrimaryKeys.map((pkColumn) => row[pkColumn]),
+    });
+    setEditingCell(null);
+  }, [activeResultPrimaryKeys, activeResultTab, editingCell]);
+
+  const handleConfirmCellSave = useCallback(async () => {
+    if (!pendingEdit || !api?.connections || !clickhouseId) return;
+
+    const whereClause = pendingEdit.pkColumns
+      .map((pkColumn, index) => `${quoteIdentifier(pkColumn, 'clickhouse')} = ${toClickHouseLiteral(pendingEdit.pkValues[index])}`)
+      .join(' AND ');
+    const updateSql = [
+      `ALTER TABLE ${quoteIdentifier(pendingEdit.table.database, 'clickhouse')}.${quoteIdentifier(pendingEdit.table.name, 'clickhouse')}`,
+      `UPDATE ${quoteIdentifier(pendingEdit.column, 'clickhouse')} = ${toClickHouseLiteral(pendingEdit.newValue)}`,
+      `WHERE ${whereClause};`,
+    ].join('\n');
+
+    setEditSaving(true);
+    setMessage(null);
+
+    try {
+      await api.connections.clickhouseQuery(connectionId, clickhouseId, updateSql, pendingEdit.table.database);
+      setResultTabs((prev) => prev.map((tab) => {
+        if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
+
+        const nextRows = [...tab.result.rows];
+        nextRows[pendingEdit.rowIndex] = {
+          ...nextRows[pendingEdit.rowIndex],
+          [pendingEdit.column]: pendingEdit.newValue,
+        };
+
+        return {
+          ...tab,
+          result: {
+            ...tab.result,
+            rows: nextRows,
+          },
+        };
+      }));
+      setMessage({ type: 'success', text: '已提交 ClickHouse 单元格更新。' });
+      setPendingEdit(null);
+    } catch (error) {
+      setMessage({ type: 'error', text: getErrorMessage(error) });
+    } finally {
+      setEditSaving(false);
+    }
+  }, [api, clickhouseId, connectionId, pendingEdit]);
+
+  const handleCellKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      prepareCellSave();
+    } else if (event.key === 'Escape') {
+      setEditingCell(null);
+    }
+  }, [prepareCellSave]);
 
   useEffect(() => {
     clickhouseIdRef.current = clickhouseId;
@@ -917,9 +1183,23 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
   useEffect(() => {
     if (isReady) {
-      sqlRef.current?.focus();
+      sqlEditorRef.current?.view?.focus();
     }
   }, [activeQueryId, isReady]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useContextMenu(contextMenu, setContextMenu);
 
@@ -1217,6 +1497,14 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
               >
                 {activeQueryTab?.running ? tCurrent('clickhouse.query.runningButton') : tCurrent('clickhouse.query.run')}
               </button>
+              <button
+                type="button"
+                className="mysql-explain-btn"
+                onClick={handleExplainSql}
+                disabled={!canExplainActiveQuery}
+              >
+                EXPLAIN
+              </button>
               <span className="mysql-editor-hint">Ctrl/⌘ + Enter</span>
               <select
                 className="mysql-db-select"
@@ -1230,14 +1518,28 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                 ))}
               </select>
             </div>
-            <textarea
-              ref={sqlRef}
+            <CodeMirror
+              ref={sqlEditorRef}
               className="mysql-sql-editor"
               value={activeQueryTab?.sql ?? ''}
-              onChange={(event) => updateActiveQuerySql(event.target.value)}
-              onKeyDown={handleSqlKeyDown}
+              height="100%"
+              basicSetup={{
+                lineNumbers: true,
+                foldGutter: true,
+                highlightActiveLine: true,
+                highlightActiveLineGutter: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                autocompletion: true,
+                searchKeymap: true,
+                defaultKeymap: true,
+                history: true,
+              }}
+              theme={editorTheme}
+              extensions={clickHouseEditorExtensions}
+              onChange={updateActiveQuerySql}
               placeholder="SELECT * FROM system.tables LIMIT 20;"
-              spellCheck={false}
+              aria-label="ClickHouse SQL"
             />
           </section>
 
@@ -1302,7 +1604,9 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                   <span>{activeResultTab.queryTime}ms</span>
                   <span>{activeResultTab.subtitle}</span>
                   {describeStatistics(activeResult.statistics) ? <span>{describeStatistics(activeResult.statistics)}</span> : null}
-                  <span>{activeResultTab.table ? tCurrent('clickhouse.query.readonlyTable') : tCurrent('clickhouse.query.readonlyResult')}</span>
+                  <span>{activeResultTab.table
+                    ? isActiveResultEditable ? `双击单元格编辑 · 主键 ${activeResultPrimaryKeys.join(', ')}` : tCurrent('clickhouse.query.readonlyTable')
+                    : tCurrent('clickhouse.query.readonlyResult')}</span>
                   <div className="database-export-actions" aria-label={tCurrent('clickhouse.query.exportAria')}>
                     <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>{tCurrent('clickhouse.query.exportJson')}</button>
                     <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>{tCurrent('clickhouse.query.exportCsv')}</button>
@@ -1318,9 +1622,25 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                             {activeResult.columns.map((column) => {
                               const meta = getColumnMeta(activeResultColumns, column);
                               const badge = getColumnBadge(meta);
+                              const activeSort = sortState?.resultId === activeResultTab.id && sortState.column === column ? sortState.direction : null;
                               return (
                                 <th key={column}>
-                                  <span className="mysql-col-name">{column}</span>
+                                  <button
+                                    type="button"
+                                    className={`mysql-sort-btn ${activeSort ?? ''}`}
+                                    onClick={() => {
+                                      setSortState((current) => (
+                                        current?.resultId === activeResultTab.id && current.column === column && current.direction === 'asc'
+                                          ? { resultId: activeResultTab.id, column, direction: 'desc' }
+                                          : { resultId: activeResultTab.id, column, direction: 'asc' }
+                                      ));
+                                      setPage(0);
+                                    }}
+                                    title="排序"
+                                  >
+                                    <span className="mysql-col-name">{column}</span>
+                                    <span className="mysql-sort-indicator">{activeSort === 'asc' ? '▲' : activeSort === 'desc' ? '▼' : '↕'}</span>
+                                  </button>
                                   {badge ? <span className="mysql-col-key">{badge}</span> : null}
                                   {meta?.type ? <small>{meta.type}</small> : null}
                                 </th>
@@ -1329,19 +1649,45 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {pagedRows.map((row, rowIdx) => {
+                          {pagedRows.map(({ row, sourceIndex }, rowIdx) => {
                             const globalRowIdx = page * pageSize + rowIdx;
 
                             return (
-                              <tr key={globalRowIdx}>
+                              <tr key={sourceIndex}>
                                 <td className="mysql-row-num">{globalRowIdx + 1}</td>
                                 {activeResult.columns.map((column) => {
                                   const cellValue = row[column];
+                                  const isEditing = editingCell?.rowIndex === sourceIndex && editingCell.column === column;
+                                  const isEditableColumn = isActiveResultEditable && !activeResultPrimaryKeys.includes(column);
 
-                                  return (
+                                  return isEditing ? (
+                                    <td key={column} className="mysql-cell-editing">
+                                      <div className="mysql-cell-editbox">
+                                        <input
+                                          type="text"
+                                          value={editingCell.isNull ? '' : editingCell.value}
+                                          onChange={(event) => setEditingCell((current) => current ? { ...current, value: event.target.value, isNull: false } : current)}
+                                          onBlur={prepareCellSave}
+                                          onKeyDown={handleCellKeyDown}
+                                          autoFocus
+                                          className="mysql-cell-input"
+                                          readOnly={editingCell.isNull}
+                                        />
+                                        <button
+                                          type="button"
+                                          className={`mysql-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => setEditingCell((current) => current ? { ...current, isNull: !current.isNull } : current)}
+                                        >
+                                          NULL
+                                        </button>
+                                      </div>
+                                    </td>
+                                  ) : (
                                     <td
                                       key={column}
-                                      className={cellValue === null ? 'mysql-cell-null' : ''}
+                                      className={`${cellValue === null ? 'mysql-cell-null' : ''} ${isEditableColumn ? 'mysql-cell-editable' : ''}`}
+                                      onDoubleClick={() => handleCellEdit(sourceIndex, column, cellValue)}
                                       title={cellValue === null ? 'NULL' : formatCellValue(cellValue)}
                                     >
                                       {cellValue === null ? <em>NULL</em> : formatCellValue(cellValue)}
@@ -1375,6 +1721,43 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
           </section>
         </main>
       </div>
+      {pendingEdit ? createPortal(
+        <div className="mysql-modal-backdrop" role="presentation">
+          <div className="mysql-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="clickhouse-edit-title">
+            <div className="mysql-edit-dialog-header">
+              <strong id="clickhouse-edit-title">确认更新单元格</strong>
+              <span>{pendingEdit.table.database}.{pendingEdit.table.name}</span>
+            </div>
+            <div className="mysql-edit-summary">
+              <div>
+                <span>列</span>
+                <strong>{pendingEdit.column}</strong>
+              </div>
+              <div>
+                <span>原值</span>
+                <code>{formatCellValue(pendingEdit.oldValue)}</code>
+              </div>
+              <div>
+                <span>新值</span>
+                <code>{formatCellValue(pendingEdit.newValue)}</code>
+              </div>
+              <div>
+                <span>条件</span>
+                <code>{pendingEdit.pkColumns.map((pkColumn, index) => `${pkColumn}=${formatCellValue(pendingEdit.pkValues[index])}`).join(' AND ')}</code>
+              </div>
+            </div>
+            <p className="mysql-edit-warning">ClickHouse 更新会异步 mutation，实际落盘和查询可见时间由服务端决定。</p>
+            <div className="mysql-edit-actions">
+              <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>取消</button>
+              <button type="button" className="primary" onClick={() => void handleConfirmCellSave()} disabled={editSaving}>
+                {editSaving ? '保存中...' : '确认保存'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
       {contextMenu ? createPortal(
         <div
           className="mysql-context-menu"

@@ -8,6 +8,7 @@ import {
   formatTimestamp,
 } from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
+import NotepadEditor from './NotepadEditor';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
@@ -34,6 +35,18 @@ interface PendingRedisAction {
   onConfirm: () => Promise<void>;
 }
 
+type RedisElementEditorType = 'hash' | 'list' | 'set';
+
+interface RedisElementDraft {
+  mode: 'add' | 'edit';
+  type: RedisElementEditorType;
+  field: string;
+  value: string;
+  index?: number;
+  previousField?: string;
+  previousValue?: string;
+}
+
 const defaultPort = 6379;
 const keyPageSize = 200;
 const scanCount = 300;
@@ -51,6 +64,8 @@ const mutableRedisCommands = new Set([
   'HSET',
   'INCR',
   'INCRBY',
+  'LSET',
+  'LREM',
   'LPUSH',
   'LPOP',
   'PERSIST',
@@ -60,12 +75,21 @@ const mutableRedisCommands = new Set([
   'RPOP',
   'RPUSH',
   'SADD',
+  'SREM',
   'SET',
   'SETEX',
   'UNLINK',
   'ZADD',
   'ZREM',
 ]);
+
+function getShellDeskEditorTheme(): 'light' | 'dark' {
+  if (typeof document === 'undefined') {
+    return 'dark';
+  }
+
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
 
 function formatTtl(ttl?: number): string {
   if (ttl === undefined || Number.isNaN(ttl)) return tCurrent('auto.remoteRedis.1lpnuh4');
@@ -227,6 +251,48 @@ function formatCommandResult(result: unknown): string {
   return stringifyJson(result);
 }
 
+function stringifyRedisElementValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return stringifyJson(value);
+}
+
+function getRedisElementEditorType(result: ShellDeskRedisValueResult | null): RedisElementEditorType | null {
+  if (!result || result.truncated) return null;
+  return result.type === 'hash' || result.type === 'list' || result.type === 'set' ? result.type : null;
+}
+
+function RedisValueEditor({
+  ariaLabel,
+  value,
+  language,
+  readOnly,
+  theme,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  language: string;
+  readOnly: boolean;
+  theme: 'light' | 'dark';
+  onChange: (value: string) => void;
+}) {
+  return (
+    <NotepadEditor
+      ariaLabel={ariaLabel}
+      className="redis-value-codemirror"
+      content={value}
+      language={language}
+      readOnly={readOnly}
+      theme={theme}
+      wrapEnabled
+      onChange={onChange}
+      onCursorChange={() => undefined}
+    />
+  );
+}
+
 function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
   const api = window.guiSSH;
   const redisIdRef = useRef('');
@@ -250,11 +316,16 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
   const [keyValue, setKeyValue] = useState<ShellDeskRedisValueResult | null>(null);
   const [keyLoading, setKeyLoading] = useState(false);
   const [keyEditorValue, setKeyEditorValue] = useState('');
+  const [ttlDraft, setTtlDraft] = useState('');
+  const [ttlSaving, setTtlSaving] = useState(false);
+  const [elementDraft, setElementDraft] = useState<RedisElementDraft | null>(null);
+  const [elementSaving, setElementSaving] = useState(false);
   const [cmdLine, setCmdLine] = useState('');
   const [cmdResult, setCmdResult] = useState<string | null>(null);
   const [cmdRunning, setCmdRunning] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingRedisAction | null>(null);
   const [pendingRunning, setPendingRunning] = useState(false);
+  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
 
   const isReady = status === 'connected';
 
@@ -288,8 +359,24 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
   }, [keys.length]);
 
   const valueEditable = isRedisValueEditable(keyValue);
+  const elementEditorType = getRedisElementEditorType(keyValue);
+  const hashEntries = useMemo(() => {
+    if (elementEditorType !== 'hash' || !keyValue || !keyValue.value || Array.isArray(keyValue.value) || typeof keyValue.value !== 'object') {
+      return [];
+    }
 
-  const scanKeys = useCallback(async (options: { reset?: boolean; redisIdOverride?: string; patternOverride?: string } = {}) => {
+    return Object.entries(keyValue.value as Record<string, unknown>);
+  }, [elementEditorType, keyValue]);
+  const listItems = useMemo(() => {
+    if (elementEditorType !== 'list' || !keyValue || !Array.isArray(keyValue.value)) return [];
+    return keyValue.value;
+  }, [elementEditorType, keyValue]);
+  const setMembers = useMemo(() => {
+    if (elementEditorType !== 'set' || !keyValue || !Array.isArray(keyValue.value)) return [];
+    return keyValue.value;
+  }, [elementEditorType, keyValue]);
+
+  const scanKeys = useCallback(async (options: { reset?: boolean; redisIdOverride?: string; patternOverride?: string; preserveSelection?: boolean; silent?: boolean } = {}) => {
     const activeRedisId = options.redisIdOverride ?? redisId;
 
     if (!api?.connections || !activeRedisId) return;
@@ -299,13 +386,19 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     const cursor = reset ? '0' : scanCursor;
 
     setKeysLoading(true);
-    setMessage(null);
+    if (!options.silent) {
+      setMessage(null);
+    }
 
     if (reset) {
       setKeysPage(0);
-      setSelectedKey('');
-      setKeyValue(null);
-      setKeyEditorValue('');
+      if (!options.preserveSelection) {
+        setSelectedKey('');
+        setKeyValue(null);
+        setKeyEditorValue('');
+        setTtlDraft('');
+        setElementDraft(null);
+      }
     }
 
     try {
@@ -315,22 +408,32 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
         count: scanCount,
       });
 
-      setKeys((prev) => (reset ? result.keys : mergeRedisKeyEntries(prev, result.keys)));
+      setKeys((prev) => {
+        if (!reset) return mergeRedisKeyEntries(prev, result.keys);
+        if (!options.preserveSelection || !selectedKey || result.keys.some((entry) => entry.name === selectedKey)) {
+          return result.keys;
+        }
+
+        const selectedEntry = prev.find((entry) => entry.name === selectedKey);
+        return selectedEntry ? mergeRedisKeyEntries(result.keys, [selectedEntry]) : result.keys;
+      });
       setScanCursor(result.cursor);
       setScanComplete(result.complete);
       setLastScanPattern(pattern);
-      setMessage({
-        type: 'success',
-        text: result.complete
-          ? tCurrent('auto.remoteRedis.11ex6ku', { value0: result.keys.length })
-          : tCurrent('auto.remoteRedis.tatd7g', { value0: result.keys.length }),
-      });
+      if (!options.silent) {
+        setMessage({
+          type: 'success',
+          text: result.complete
+            ? tCurrent('auto.remoteRedis.11ex6ku', { value0: result.keys.length })
+            : tCurrent('auto.remoteRedis.tatd7g', { value0: result.keys.length }),
+        });
+      }
     } catch (error) {
       setMessage({ type: 'error', text: getErrorMessage(error) });
     } finally {
       setKeysLoading(false);
     }
-  }, [api, connectionId, keyPattern, redisId, scanCursor]);
+  }, [api, connectionId, keyPattern, redisId, scanCursor, selectedKey]);
 
   const resetWorkspace = useCallback(() => {
     setKeys([]);
@@ -341,6 +444,8 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     setSelectedKey('');
     setKeyValue(null);
     setKeyEditorValue('');
+    setTtlDraft('');
+    setElementDraft(null);
     setCmdResult(null);
     setCmdLine('');
     setMessage(null);
@@ -425,11 +530,13 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     setKeyLoading(true);
     setMessage(null);
     setKeyEditorValue('');
+    setElementDraft(null);
 
     try {
       const result = await api.connections.redisGetValue(connectionId, redisId, key);
       setKeyValue(result);
       setKeyEditorValue(createValueDraft(result));
+      setTtlDraft(result.ttl !== undefined && result.ttl > 0 ? String(result.ttl) : '');
     } catch (error) {
       setKeyValue(null);
       setMessage({ type: 'error', text: getErrorMessage(error) });
@@ -437,6 +544,127 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
       setKeyLoading(false);
     }
   }, [api, connectionId, redisId]);
+
+  const refreshSelectedKey = useCallback(async () => {
+    if (!selectedKey) return;
+
+    await handleSelectKey(selectedKey);
+    await scanKeys({ reset: true, preserveSelection: true, silent: true });
+  }, [handleSelectKey, scanKeys, selectedKey]);
+
+  const runRedisMutation = useCallback(async (command: string, args: string[]) => {
+    if (!api?.connections || !redisId) return;
+
+    await api.connections.redisCommand(connectionId, redisId, command, args);
+  }, [api, connectionId, redisId]);
+
+  const handleSaveTtl = useCallback(async (persist = false) => {
+    if (!selectedKey || ttlSaving) return;
+
+    const draft = ttlDraft.trim();
+    const seconds = Number.parseInt(draft, 10);
+
+    if (!persist && (!/^\d+$/.test(draft) || !Number.isFinite(seconds) || seconds <= 0)) {
+      setMessage({ type: 'error', text: tCurrent('redis.ttl.invalid') });
+      return;
+    }
+
+    setTtlSaving(true);
+    setMessage(null);
+
+    try {
+      if (persist) {
+        await runRedisMutation('PERSIST', [selectedKey]);
+      } else {
+        await runRedisMutation('EXPIRE', [selectedKey, String(seconds)]);
+      }
+
+      setMessage({
+        type: 'success',
+        text: persist
+          ? tCurrent('redis.ttl.persisted', { value0: selectedKey })
+          : tCurrent('redis.ttl.saved', { value0: selectedKey, value1: seconds }),
+      });
+      await refreshSelectedKey();
+    } catch (error) {
+      setMessage({ type: 'error', text: getErrorMessage(error) });
+    } finally {
+      setTtlSaving(false);
+    }
+  }, [refreshSelectedKey, runRedisMutation, selectedKey, ttlDraft, ttlSaving]);
+
+  const requestDeleteRedisElement = useCallback((draft: RedisElementDraft) => {
+    if (!selectedKey) return;
+
+    setPendingAction({
+      title: tCurrent('redis.element.deleteTitle'),
+      message: tCurrent('redis.element.deleteMessage', {
+        value0: draft.type === 'list' ? `#${draft.index}` : (draft.previousField ?? draft.previousValue ?? draft.field),
+        value1: selectedKey,
+      }),
+      confirmText: tCurrent('auto.remoteRedis.1t2vi4h'),
+      danger: true,
+      onConfirm: async () => {
+        if (draft.type === 'hash') {
+          await runRedisMutation('HDEL', [selectedKey, draft.previousField ?? draft.field]);
+        } else if (draft.type === 'list') {
+          if (!api?.connections || !redisId) return;
+          await api.connections.redisRemoveListItem(connectionId, redisId, selectedKey, draft.index ?? 0);
+        } else {
+          await runRedisMutation('SREM', [selectedKey, draft.previousValue ?? draft.value]);
+        }
+
+        setMessage({ type: 'success', text: tCurrent('redis.element.deleted') });
+        await refreshSelectedKey();
+      },
+    });
+  }, [api, connectionId, redisId, refreshSelectedKey, runRedisMutation, selectedKey]);
+
+  const handleSaveRedisElement = useCallback(async () => {
+    if (!elementDraft || !selectedKey || elementSaving) return;
+
+    const field = elementDraft.field.trim();
+    const value = elementDraft.value;
+
+    if (elementDraft.type === 'hash' && !field) {
+      setMessage({ type: 'error', text: tCurrent('redis.element.fieldRequired') });
+      return;
+    }
+
+    setElementSaving(true);
+    setMessage(null);
+
+    try {
+      if (elementDraft.type === 'hash') {
+        if (elementDraft.mode === 'edit' && elementDraft.previousField && elementDraft.previousField !== field) {
+          await runRedisMutation('HDEL', [selectedKey, elementDraft.previousField]);
+        }
+        await runRedisMutation('HSET', [selectedKey, field, value]);
+      } else if (elementDraft.type === 'list') {
+        if (elementDraft.mode === 'add') {
+          await runRedisMutation('RPUSH', [selectedKey, value]);
+        } else {
+          await runRedisMutation('LSET', [selectedKey, String(elementDraft.index ?? 0), value]);
+        }
+      } else if (elementDraft.mode === 'add') {
+        await runRedisMutation('SADD', [selectedKey, value]);
+      } else {
+        const previousValue = elementDraft.previousValue ?? value;
+        if (previousValue !== value) {
+          await runRedisMutation('SREM', [selectedKey, previousValue]);
+          await runRedisMutation('SADD', [selectedKey, value]);
+        }
+      }
+
+      setElementDraft(null);
+      setMessage({ type: 'success', text: tCurrent('redis.element.saved') });
+      await refreshSelectedKey();
+    } catch (error) {
+      setMessage({ type: 'error', text: getErrorMessage(error) });
+    } finally {
+      setElementSaving(false);
+    }
+  }, [elementDraft, elementSaving, refreshSelectedKey, runRedisMutation, selectedKey]);
 
   const executeSaveKeyValue = useCallback(async () => {
     if (!api?.connections || !redisId || !selectedKey || !keyValue || !valueEditable) return;
@@ -454,8 +682,8 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
 
     await api.connections.redisSetValue(connectionId, redisId, selectedKey, parsedValue, keyValue.type);
     setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.18xg1s5', { value0: selectedKey }) });
-    await handleSelectKey(selectedKey);
-  }, [api, connectionId, handleSelectKey, keyEditorValue, keyValue, redisId, selectedKey, valueEditable]);
+    await refreshSelectedKey();
+  }, [api, connectionId, keyEditorValue, keyValue, redisId, refreshSelectedKey, selectedKey, valueEditable]);
 
   const requestSaveKeyValue = useCallback(() => {
     if (!selectedKey || !keyValue || !valueEditable) return;
@@ -478,6 +706,8 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     setSelectedKey('');
     setKeyValue(null);
     setKeyEditorValue('');
+    setTtlDraft('');
+    setElementDraft(null);
     setMessage({ type: 'success', text: tCurrent('auto.remoteRedis.1rox8rk', { value0: selectedKey }) });
   }, [api, connectionId, redisId, selectedKey]);
 
@@ -579,6 +809,196 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     }
   }, [pendingAction]);
 
+  const renderRedisElementEditor = () => {
+    if (!elementEditorType || !keyValue) return null;
+
+    const elementCount = elementEditorType === 'hash'
+      ? hashEntries.length
+      : elementEditorType === 'list'
+        ? listItems.length
+        : setMembers.length;
+
+    return (
+      <div className="redis-element-editor">
+        <div className="redis-element-toolbar">
+          <div>
+            <strong>{tCurrent('redis.element.title', { value0: getKeyTypeLabel(elementEditorType) })}</strong>
+            <span>{tCurrent('redis.element.count', { value0: elementCount })}</span>
+          </div>
+          <button
+            type="button"
+            className="redis-save-btn"
+            onClick={() => setElementDraft({
+              mode: 'add',
+              type: elementEditorType,
+              field: '',
+              value: '',
+            })}
+          >
+            {tCurrent('redis.element.add')}
+          </button>
+        </div>
+
+        {elementDraft ? (
+          <div className="redis-element-form">
+            <div className="redis-element-form-title">
+              <strong>{elementDraft.mode === 'add' ? tCurrent('redis.element.addTitle') : tCurrent('redis.element.editTitle')}</strong>
+              <button type="button" onClick={() => setElementDraft(null)} disabled={elementSaving}>{tCurrent('auto.remoteRedis.1589w37')}</button>
+            </div>
+            {elementDraft.type === 'hash' ? (
+              <label>
+                <span>{tCurrent('redis.element.field')}</span>
+                <input
+                  type="text"
+                  value={elementDraft.field}
+                  onChange={(event) => setElementDraft((current) => current ? { ...current, field: event.target.value } : current)}
+                  disabled={elementSaving}
+                  spellCheck={false}
+                />
+              </label>
+            ) : null}
+            <label>
+              <span>{elementDraft.type === 'set' ? tCurrent('redis.element.member') : tCurrent('redis.element.value')}</span>
+              <textarea
+                value={elementDraft.value}
+                onChange={(event) => setElementDraft((current) => current ? { ...current, value: event.target.value } : current)}
+                disabled={elementSaving}
+                spellCheck={false}
+              />
+            </label>
+            <div className="redis-element-form-actions">
+              <button type="button" className="redis-save-btn" onClick={() => void handleSaveRedisElement()} disabled={elementSaving}>
+                {elementSaving ? tCurrent('auto.remoteRedis.1j4vco4') : tCurrent('auto.remoteRedis.1c3mapc')}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="redis-element-table" role="table" aria-label={tCurrent('redis.element.title', { value0: getKeyTypeLabel(elementEditorType) })}>
+          {elementEditorType === 'hash' ? hashEntries.map(([field, value]) => (
+            <div className="redis-element-row" role="row" key={field}>
+              <span className="redis-element-index" role="cell">{field}</span>
+              <pre role="cell">{stringifyRedisElementValue(value)}</pre>
+              <span className="redis-element-row-actions" role="cell">
+                <button
+                  type="button"
+                  onClick={() => setElementDraft({
+                    mode: 'edit',
+                    type: 'hash',
+                    field,
+                    value: stringifyRedisElementValue(value),
+                    previousField: field,
+                  })}
+                >
+                  {tCurrent('redis.element.edit')}
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => requestDeleteRedisElement({
+                    mode: 'edit',
+                    type: 'hash',
+                    field,
+                    value: stringifyRedisElementValue(value),
+                    previousField: field,
+                  })}
+                >
+                  {tCurrent('auto.remoteRedis.1t2vi4h2')}
+                </button>
+              </span>
+            </div>
+          )) : null}
+
+          {elementEditorType === 'list' ? listItems.map((value, index) => (
+            <div className="redis-element-row" role="row" key={`${index}:${stringifyRedisElementValue(value)}`}>
+              <span className="redis-element-index" role="cell">#{index}</span>
+              <pre role="cell">{stringifyRedisElementValue(value)}</pre>
+              <span className="redis-element-row-actions" role="cell">
+                <button
+                  type="button"
+                  onClick={() => setElementDraft({
+                    mode: 'edit',
+                    type: 'list',
+                    field: '',
+                    value: stringifyRedisElementValue(value),
+                    index,
+                  })}
+                >
+                  {tCurrent('redis.element.edit')}
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => requestDeleteRedisElement({
+                    mode: 'edit',
+                    type: 'list',
+                    field: '',
+                    value: stringifyRedisElementValue(value),
+                    index,
+                  })}
+                >
+                  {tCurrent('auto.remoteRedis.1t2vi4h2')}
+                </button>
+              </span>
+            </div>
+          )) : null}
+
+          {elementEditorType === 'set' ? setMembers.map((value, index) => {
+            const member = stringifyRedisElementValue(value);
+
+            return (
+              <div className="redis-element-row" role="row" key={`${index}:${member}`}>
+                <span className="redis-element-index" role="cell">{index + 1}</span>
+                <pre role="cell">{member}</pre>
+                <span className="redis-element-row-actions" role="cell">
+                  <button
+                    type="button"
+                    onClick={() => setElementDraft({
+                      mode: 'edit',
+                      type: 'set',
+                      field: '',
+                      value: member,
+                      previousValue: member,
+                    })}
+                  >
+                    {tCurrent('redis.element.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => requestDeleteRedisElement({
+                      mode: 'edit',
+                      type: 'set',
+                      field: '',
+                      value: member,
+                      previousValue: member,
+                    })}
+                  >
+                    {tCurrent('auto.remoteRedis.1t2vi4h2')}
+                  </button>
+                </span>
+              </div>
+            );
+          }) : null}
+
+          {elementCount === 0 ? <div className="redis-element-empty">{tCurrent('redis.element.empty')}</div> : null}
+        </div>
+
+        <details className="redis-raw-json-panel">
+          <summary>{tCurrent('redis.element.rawJson')}</summary>
+          <RedisValueEditor
+            ariaLabel="Redis raw JSON"
+            value={keyEditorValue}
+            language="json"
+            readOnly={!valueEditable}
+            theme={editorTheme}
+            onChange={setKeyEditorValue}
+          />
+        </details>
+      </div>
+    );
+  };
+
   useEffect(() => {
     return () => {
       const activeRedisId = redisIdRef.current;
@@ -588,6 +1008,12 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
       }
     };
   }, [api, connectionId]);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   if (!isReady) {
     return (
@@ -754,6 +1180,26 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
                     <span>{formatSizeHint(keyValue.type, keyValue.size ?? selectedKeyEntry?.size)}</span>
                     {selectedKeyEntry?.scannedAt ? <span>{tCurrent('auto.remoteRedis.1myljr3')}{formatTimestamp(selectedKeyEntry.scannedAt)}</span> : null}
                   </div>
+                  <div className="redis-ttl-editor">
+                    <label>
+                      <span>{tCurrent('redis.ttl.label')}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={ttlDraft}
+                        onChange={(event) => setTtlDraft(event.target.value)}
+                        placeholder={tCurrent('redis.ttl.forever')}
+                        disabled={ttlSaving}
+                      />
+                    </label>
+                    <button type="button" onClick={() => void handleSaveTtl(false)} disabled={ttlSaving || !ttlDraft.trim()}>
+                      {ttlSaving ? tCurrent('auto.remoteRedis.1j4vco4') : tCurrent('redis.ttl.save')}
+                    </button>
+                    <button type="button" onClick={() => void handleSaveTtl(true)} disabled={ttlSaving}>
+                      {tCurrent('redis.ttl.persist')}
+                    </button>
+                  </div>
                   <div className="redis-value-actions">
                     {keyValue.type === 'string' ? (
                       <button type="button" onClick={handleFormatJson}>{tCurrent('auto.remoteRedis.1i126as')}</button>
@@ -766,13 +1212,16 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
                   <div className="redis-warning-banner">
                     {tCurrent('auto.remoteRedis.fqkypg')}{keyValue.previewLimit ?? 200} {tCurrent('auto.remoteRedis.1m53fin')}</div>
                 ) : null}
-                <textarea
-                  className="redis-value-editor"
-                  value={keyEditorValue}
-                  onChange={(event) => setKeyEditorValue(event.target.value)}
-                  disabled={!valueEditable}
-                  spellCheck={false}
-                />
+                {elementEditorType ? renderRedisElementEditor() : (
+                  <RedisValueEditor
+                    ariaLabel="Redis value"
+                    value={keyEditorValue}
+                    language={keyValue.type === 'string' ? '' : 'json'}
+                    readOnly={!valueEditable}
+                    theme={editorTheme}
+                    onChange={setKeyEditorValue}
+                  />
+                )}
               </>
             ) : (
               <div className="redis-value-placeholder">{tCurrent('auto.remoteRedis.nnyi58')}</div>

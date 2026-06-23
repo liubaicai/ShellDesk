@@ -102,7 +102,8 @@
 .mongo-connect-grid input,
 .mongo-object-search,
 .mongo-query-actions input,
-.mongo-editor textarea {
+.mongo-editor textarea,
+.mongo-editor .mongo-json-codemirror {
   min-width: 0;
   border: 1px solid var(--mongo-border);
   border-radius: 7px;
@@ -121,19 +122,23 @@
   font-weight: 680;
 }
 
-.mongo-editor textarea {
+.mongo-editor textarea,
+.mongo-editor .mongo-json-codemirror {
   height: 76px;
-  resize: none;
-  padding: 9px;
-  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
-  line-height: 1.45;
+}
+
+.mongo-json-codemirror .cm-editor {
+  height: 100%;
+  min-height: 0;
+  background: transparent;
 }
 
 .mongo-connect-grid input:focus,
 .mongo-object-search:focus,
 .mongo-query-actions input:focus,
-.mongo-editor textarea:focus {
+.mongo-editor textarea:focus,
+.mongo-editor .mongo-json-codemirror:focus-within {
   border-color: rgba(97, 211, 148, 0.5);
   box-shadow: 0 0 0 3px rgba(97, 211, 148, 0.12);
 }
@@ -143,7 +148,11 @@
 .mongo-topbar button,
 .mongo-editor button,
 .mongo-query-actions button,
-.mongo-detail-section button {
+.mongo-detail-section button,
+.mongo-query-mode button,
+.mongo-document-actions button,
+.mongo-create-panel button,
+.mongo-confirm-actions button {
   height: 30px;
   border: 1px solid var(--mongo-border);
   border-radius: 6px;
@@ -157,17 +166,30 @@
 }
 
 .mongo-connect-btn,
-.mongo-query-actions button.primary {
+.mongo-query-actions button.primary,
+.mongo-document-actions button.primary,
+.mongo-create-panel button.primary {
   border-color: rgba(97, 211, 148, 0.34);
   background: rgba(97, 211, 148, 0.13);
   color: #e4ffed;
+}
+
+.mongo-document-actions button.danger,
+.mongo-confirm-actions button.danger {
+  border-color: rgba(255, 143, 163, 0.34);
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--mongo-danger);
 }
 
 .mongo-sidebar button:hover,
 .mongo-topbar button:hover,
 .mongo-editor button:hover,
 .mongo-query-actions button:hover:not(:disabled),
-.mongo-detail-section button:hover:not(:disabled) {
+.mongo-detail-section button:hover:not(:disabled),
+.mongo-query-mode button:hover:not(:disabled),
+.mongo-document-actions button:hover:not(:disabled),
+.mongo-create-panel button:hover:not(:disabled),
+.mongo-confirm-actions button:hover:not(:disabled) {
   border-color: rgba(97, 211, 148, 0.34);
   background: rgba(97, 211, 148, 0.1);
   color: var(--mongo-text);
@@ -175,7 +197,10 @@
 
 .mongo-connect-btn:disabled,
 .mongo-query-actions button:disabled,
-.mongo-detail-section button:disabled {
+.mongo-detail-section button:disabled,
+.mongo-document-actions button:disabled,
+.mongo-create-panel button:disabled,
+.mongo-confirm-actions button:disabled {
   opacity: 0.52;
   cursor: not-allowed;
 }
@@ -242,6 +267,13 @@
   font-weight: 720;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mongo-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
 }
 
 .mongo-object-search {
@@ -340,8 +372,33 @@
   background: rgba(255, 255, 255, 0.026);
 }
 
+.mongo-query-mode {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  width: max-content;
+  overflow: hidden;
+  border: 1px solid var(--mongo-border);
+  border-radius: 7px;
+}
+
+.mongo-query-mode button {
+  height: 28px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mongo-query-mode button.active {
+  background: rgba(97, 211, 148, 0.14);
+  color: var(--mongo-text);
+}
+
 .mongo-editor button {
   justify-self: end;
+}
+
+.mongo-pipeline-editor textarea {
+  min-height: 150px;
 }
 
 .mongo-query-actions {
@@ -423,13 +480,80 @@
   min-height: 90px;
 }
 
-.mongo-json-view,
+.mongo-document-editor textarea,
+.mongo-create-panel textarea,
+.mongo-document-editor .mongo-json-codemirror,
+.mongo-create-panel .mongo-json-codemirror,
 .mongo-index-card code {
   font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.mongo-document-editor {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 36%;
+  flex-direction: column;
+  border-bottom: 1px solid var(--mongo-border);
+}
+
+.mongo-document-editor textarea,
+.mongo-create-panel textarea,
+.mongo-document-editor .mongo-json-codemirror,
+.mongo-create-panel .mongo-json-codemirror {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+  border: 0;
+  background: rgba(5, 12, 10, 0.28);
+  color: var(--mongo-muted-strong);
+  outline: none;
+  resize: none;
+}
+
+.mongo-document-editor textarea,
+.mongo-document-editor .mongo-json-codemirror {
+  flex: 1 1 auto;
+}
+
+.mongo-document-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 8px 10px;
+  border-top: 1px solid var(--mongo-border);
+}
+
+.mongo-create-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--mongo-border);
+}
+
+.mongo-create-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mongo-create-title strong {
+  font-size: 12px;
+}
+
+.mongo-create-panel textarea,
+.mongo-create-panel .mongo-json-codemirror {
+  height: 96px;
+  border: 1px solid var(--mongo-border);
+  border-radius: 7px;
+}
+
+.mongo-create-panel button.primary {
+  justify-self: end;
 }
 
 .mongo-json-view {
@@ -472,6 +596,63 @@
   font-weight: 720;
 }
 
+.mongo-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mongo-confirm-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(460px, 100%);
+  border: 1px solid var(--mongo-border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--mongo-panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.mongo-confirm-header {
+  display: grid;
+  gap: 3px;
+}
+
+.mongo-confirm-header strong {
+  color: var(--mongo-text);
+  font-size: 14px;
+}
+
+.mongo-confirm-header span,
+.mongo-confirm-dialog p {
+  margin: 0;
+  color: var(--mongo-muted);
+  font-size: 12px;
+}
+
+.mongo-confirm-dialog code {
+  overflow: hidden;
+  padding: 7px;
+  border-radius: 6px;
+  background: rgba(5, 12, 10, 0.36);
+  color: var(--mongo-muted-strong);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mongo-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 [data-theme="light"] .mongo-manager {
   --mongo-bg: #f5fbf7;
   --mongo-panel: rgba(255, 255, 255, 0.9);
@@ -482,8 +663,22 @@
 }
 
 [data-theme="light"] .mongo-connect-btn,
-[data-theme="light"] .mongo-query-actions button.primary {
+[data-theme="light"] .mongo-query-actions button.primary,
+[data-theme="light"] .mongo-document-actions button.primary,
+[data-theme="light"] .mongo-create-panel button.primary {
   border-color: rgba(23, 100, 59, 0.3);
   background: rgba(23, 100, 59, 0.1);
   color: #17643b;
+}
+
+[data-theme="light"] .mongo-document-editor textarea,
+[data-theme="light"] .mongo-create-panel textarea,
+[data-theme="light"] .mongo-document-editor .mongo-json-codemirror,
+[data-theme="light"] .mongo-create-panel .mongo-json-codemirror {
+  background: rgba(255, 255, 255, 0.82);
+  color: #12251b;
+}
+
+[data-theme="light"] .mongo-modal-backdrop {
+  background: rgba(16, 24, 32, 0.28);
 }

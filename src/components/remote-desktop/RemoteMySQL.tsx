@@ -1,7 +1,13 @@
 import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getErrorMessage } from './desktopUtils';
+import { indentWithTab } from '@codemirror/commands';
+import { MySQL, sql } from '@codemirror/lang-sql';
+import type { Extension } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
+
+import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import {
   appendDatabaseFallbackReason,
@@ -84,6 +90,7 @@ interface EditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface PendingEdit {
@@ -95,6 +102,17 @@ interface PendingEdit {
   newValue: unknown;
   pkColumns: string[];
   pkValues: unknown[];
+}
+
+interface MysqlSortState {
+  resultId: string;
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+interface MysqlRowEntry {
+  row: Record<string, unknown>;
+  index: number;
 }
 
 type MysqlContextMenuTarget =
@@ -112,6 +130,14 @@ const pageSize = 100;
 const tablePreviewLimit = 50;
 const maxResultTabs = 10;
 const maxHistoryItems = 12;
+
+function getShellDeskEditorTheme(): 'light' | 'dark' {
+  if (typeof document === 'undefined') {
+    return 'dark';
+  }
+
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
 
 function createQueryTab(index: number, sql = 'SELECT 1;'): MysqlQueryTab {
   return {
@@ -149,11 +175,38 @@ function describeResult(result: ShellDeskMysqlQueryResult): string {
   return tCurrent('auto.remoteMySQL.18tehe0', { value0: result.rows.length });
 }
 
+function createExplainSql(sqlText: string): string {
+  const statement = sqlText.trim().replace(/;+\s*$/, '');
+
+  if (/^explain\b/i.test(statement)) {
+    return statement;
+  }
+
+  return `EXPLAIN ${statement}`;
+}
+
+function compareMysqlCellValues(left: unknown, right: unknown): number {
+  if (left === null || left === undefined) return right === null || right === undefined ? 0 : 1;
+  if (right === null || right === undefined) return -1;
+
+  const leftNumber = typeof left === 'number' ? left : typeof left === 'string' && left.trim() ? Number(left) : Number.NaN;
+  const rightNumber = typeof right === 'number' ? right : typeof right === 'string' && right.trim() ? Number(right) : Number.NaN;
+
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+
+  return String(left).localeCompare(String(right), getShellDeskLocale(), {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
 function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const api = window.guiSSH;
   const initialQueryStateRef = useRef(createInitialQueryState());
   const mysqlIdRef = useRef('');
-  const sqlRef = useRef<HTMLTextAreaElement | null>(null);
+  const sqlEditorRef = useRef<ReactCodeMirrorRef>(null);
 
   const [status, setStatus] = useState<MysqlStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -201,6 +254,8 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
+  const [sortState, setSortState] = useState<MysqlSortState | null>(null);
+  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [contextMenu, setContextMenu] = useState<MysqlContextMenuState | null>(null);
 
   const isReady = status === 'connected';
@@ -221,6 +276,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
 
   const isActiveResultEditable = Boolean(activeResultTab?.table && activeResultPrimaryKeys.length > 0);
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
+  const canExplainActiveQuery = canRunActiveQuery && !isWriteStatement(activeQueryTab?.sql.trim() ?? '', 'mysql');
 
   useEffect(() => {
     let disposed = false;
@@ -266,10 +322,25 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       .filter((entry) => entry.databaseMatched || entry.tables.length > 0);
   }, [databases, dbTables, objectSearch]);
 
+  const sortedRowEntries = useMemo<MysqlRowEntry[]>(() => {
+    if (!activeResult) return [];
+    const entries = activeResult.rows.map((row, index) => ({ row, index }));
+
+    if (!sortState || sortState.resultId !== activeResultTab?.id) {
+      return entries;
+    }
+
+    const direction = sortState.direction === 'asc' ? 1 : -1;
+    return entries.sort((left, right) => {
+      const result = compareMysqlCellValues(left.row[sortState.column], right.row[sortState.column]);
+      return result === 0 ? left.index - right.index : result * direction;
+    });
+  }, [activeResult, activeResultTab?.id, sortState]);
+
   const pagedRows = useMemo(() => {
     if (!activeResult) return [];
-    return activeResult.rows.slice(page * pageSize, (page + 1) * pageSize);
-  }, [activeResult, page]);
+    return sortedRowEntries.slice(page * pageSize, (page + 1) * pageSize);
+  }, [activeResult, page, sortedRowEntries]);
 
   const totalPages = useMemo(() => {
     if (!activeResult) return 0;
@@ -294,6 +365,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     setEditingCell(null);
     setPendingEdit(null);
     setPage(0);
+    setSortState(null);
     setMessage(null);
     setContextMenu(null);
   }, []);
@@ -322,6 +394,24 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const updateActiveQuerySql = useCallback((sql: string) => {
     setQueryTabs((prev) => prev.map((tab) => (tab.id === activeQueryId ? { ...tab, sql } : tab)));
   }, [activeQueryId]);
+
+  const toggleResultSort = useCallback((column: string) => {
+    if (!activeResultTab) return;
+
+    setEditingCell(null);
+    setPage(0);
+    setSortState((current) => {
+      if (!current || current.resultId !== activeResultTab.id || current.column !== column) {
+        return { resultId: activeResultTab.id, column, direction: 'asc' };
+      }
+
+      if (current.direction === 'asc') {
+        return { ...current, direction: 'desc' };
+      }
+
+      return null;
+    });
+  }, [activeResultTab]);
 
   const loadTables = useCallback(async (database: string, force = false) => {
     if (!api?.connections || !mysqlId) return;
@@ -840,6 +930,130 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     }
   }, [activeDb, activeQueryTab, addHistoryItem, addResultTab, api, connectionId, mysqlId, setQueryRunning]);
 
+  const handleExplainSql = useCallback(async () => {
+    if (!api?.connections || !mysqlId || !activeQueryTab?.sql.trim()) return;
+
+    const sourceSql = activeQueryTab.sql.trim();
+    if (isWriteStatement(sourceSql, 'mysql')) {
+      setMessage({ type: 'info', text: 'EXPLAIN 仅用于查询语句，请先选择 SELECT/SHOW 等只读 SQL。' });
+      return;
+    }
+
+    const sqlText = createExplainSql(sourceSql);
+    const database = activeDb || undefined;
+    const startTime = performance.now();
+
+    setMessage(null);
+    setPage(0);
+    setQueryRunning(activeQueryTab.id, true);
+
+    try {
+      const result = await api.connections.mysqlQuery(connectionId, mysqlId, sqlText, database);
+      const queryTime = Math.round(performance.now() - startTime);
+      const resultTab: MysqlResultTab = {
+        id: createId('result'),
+        title: `EXPLAIN ${formatSqlPreview(sourceSql, 20)}`,
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx'),
+        sql: sqlText,
+        database,
+        status: 'success',
+        result,
+        queryTime,
+        createdAt: Date.now(),
+        columns: createGenericColumns(result.columns, 'mysql'),
+      };
+
+      addResultTab(resultTab);
+      addHistoryItem({
+        sql: sqlText,
+        database,
+        status: 'success',
+        queryTime,
+        rowCount: result.rows.length,
+      });
+    } catch (error) {
+      const queryTime = Math.round(performance.now() - startTime);
+      const text = getErrorMessage(error);
+
+      addResultTab({
+        id: createId('result'),
+        title: 'EXPLAIN 失败',
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr2', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx2'),
+        sql: sqlText,
+        database,
+        status: 'error',
+        error: text,
+        queryTime,
+        createdAt: Date.now(),
+        columns: [],
+      });
+      addHistoryItem({
+        sql: sqlText,
+        database,
+        status: 'error',
+        queryTime,
+        error: text,
+      });
+    } finally {
+      setQueryRunning(activeQueryTab.id, false);
+    }
+  }, [activeDb, activeQueryTab, addHistoryItem, addResultTab, api, connectionId, mysqlId, setQueryRunning]);
+
+  const mysqlEditorExtensions = useMemo<Extension[]>(() => [
+    keymap.of([
+      indentWithTab,
+      {
+        key: 'Mod-Enter',
+        run: () => {
+          void handleExecuteSql();
+          return true;
+        },
+      },
+    ]),
+    sql({ dialect: MySQL }),
+    EditorView.theme({
+      '&': {
+        height: '100%',
+        minHeight: '0',
+        backgroundColor: 'var(--surface-elevated)',
+        color: 'var(--text)',
+        fontSize: '13px',
+      },
+      '.cm-scroller': {
+        backgroundColor: 'var(--surface-elevated)',
+        fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
+        lineHeight: '20px',
+      },
+      '.cm-content': {
+        padding: '10px 0',
+        caretColor: 'var(--text)',
+      },
+      '.cm-line': {
+        padding: '0 12px',
+      },
+      '.cm-gutters': {
+        borderRight: '1px solid var(--border)',
+        backgroundColor: 'var(--surface)',
+        color: 'var(--text-muted)',
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+        color: 'var(--accent)',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+      },
+      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'rgba(67, 199, 255, 0.25)',
+      },
+      '&.cm-focused': {
+        outline: 'none',
+      },
+    }, {
+      dark: editorTheme === 'dark',
+    }),
+  ], [editorTheme, handleExecuteSql]);
+
   const handleExportActiveResult = useCallback(async (format: DatabaseExportFormat) => {
     if (!activeResult || activeResult.rows.length === 0) return;
 
@@ -850,7 +1064,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         sourceName: 'MySQL',
         format,
         columns: activeResult.columns,
-        rows: activeResult.rows,
+        rows: sortedRowEntries.map((entry) => entry.row),
         fileBaseName: activeResultTab?.title,
         metadata: {
           database: activeResultTab?.database ?? '',
@@ -865,7 +1079,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     } catch (error) {
       setMessage({ type: 'error', text: getErrorMessage(error) });
     }
-  }, [activeResult, activeResultTab]);
+  }, [activeResult, activeResultTab, sortedRowEntries]);
 
   const handleCellEdit = useCallback((rowIndex: number, column: string, currentValue: unknown) => {
     if (!activeResultTab || !activeResult || !activeResultTab.table) {
@@ -887,6 +1101,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [activeResult, activeResultPrimaryKeys, activeResultTab]);
 
@@ -899,7 +1114,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       return;
     }
 
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     if (valuesEqual(row[editingCell.column], newValue)) {
       setEditingCell(null);
@@ -939,23 +1154,25 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         pendingEdit.pkColumns.length > 1 ? pendingEdit.pkValues : undefined,
       );
 
-      setResultTabs((prev) => prev.map((tab) => {
-        if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
+      if (result.affectedRows > 0) {
+        setResultTabs((prev) => prev.map((tab) => {
+          if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
 
-        const nextRows = [...tab.result.rows];
-        nextRows[pendingEdit.rowIndex] = {
-          ...nextRows[pendingEdit.rowIndex],
-          [pendingEdit.column]: pendingEdit.newValue,
-        };
+          const nextRows = [...tab.result.rows];
+          nextRows[pendingEdit.rowIndex] = {
+            ...nextRows[pendingEdit.rowIndex],
+            [pendingEdit.column]: pendingEdit.newValue,
+          };
 
-        return {
-          ...tab,
-          result: {
-            ...tab.result,
-            rows: nextRows,
-          },
-        };
-      }));
+          return {
+            ...tab,
+            result: {
+              ...tab.result,
+              rows: nextRows,
+            },
+          };
+        }));
+      }
 
       setMessage({
         type: result.affectedRows === 1 ? 'success' : 'info',
@@ -978,13 +1195,6 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     }
   }, [prepareCellSave]);
 
-  const handleSqlKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      void handleExecuteSql();
-    }
-  }, [handleExecuteSql]);
-
   useEffect(() => {
     mysqlIdRef.current = mysqlId;
   }, [mysqlId]);
@@ -996,9 +1206,23 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
 
   useEffect(() => {
     if (isReady) {
-      sqlRef.current?.focus();
+      sqlEditorRef.current?.view?.focus();
     }
   }, [activeQueryId, isReady]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useContextMenu(contextMenu, setContextMenu);
 
@@ -1269,6 +1493,14 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
               >
                 {activeQueryTab?.running ? tCurrent('auto.remoteMySQL.e2byz1') : tCurrent('auto.remoteMySQL.6azgji')}
               </button>
+              <button
+                type="button"
+                className="mysql-explain-btn"
+                onClick={() => void handleExplainSql()}
+                disabled={!canExplainActiveQuery}
+              >
+                EXPLAIN
+              </button>
               <span className="mysql-editor-hint">{tCurrent('auto.remoteMySQL.cj2ebw')}</span>
               <select
                 className="mysql-db-select"
@@ -1282,14 +1514,28 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                 ))}
               </select>
             </div>
-            <textarea
-              ref={sqlRef}
+            <CodeMirror
+              ref={sqlEditorRef}
               className="mysql-sql-editor"
               value={activeQueryTab?.sql ?? ''}
-              onChange={(event) => updateActiveQuerySql(event.target.value)}
-              onKeyDown={handleSqlKeyDown}
+              height="100%"
+              basicSetup={{
+                lineNumbers: true,
+                foldGutter: true,
+                highlightActiveLine: true,
+                highlightActiveLineGutter: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                autocompletion: true,
+                searchKeymap: true,
+                defaultKeymap: true,
+                history: true,
+              }}
+              theme={editorTheme}
+              extensions={mysqlEditorExtensions}
+              onChange={updateActiveQuerySql}
               placeholder={tCurrent('auto.remoteMySQL.1bvo5bt')}
-              spellCheck={false}
+              aria-label={tCurrent('auto.remoteMySQL.1bvo5bt')}
             />
           </section>
 
@@ -1370,10 +1616,21 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                             <th className="mysql-row-num">#</th>
                             {activeResult.columns.map((column) => {
                               const meta = getColumnMeta(activeResultColumns, column);
+                              const activeSort = sortState?.resultId === activeResultTab.id && sortState.column === column ? sortState.direction : null;
                               return (
                                 <th key={column}>
-                                  <span className="mysql-col-name">{column}</span>
-                                  {meta?.key ? <span className="mysql-col-key">{meta.key}</span> : null}
+                                  <button
+                                    type="button"
+                                    className={`mysql-sort-button ${activeSort ? 'active' : ''}`}
+                                    onClick={() => toggleResultSort(column)}
+                                    title={`按 ${column} 排序`}
+                                  >
+                                    <span>
+                                      <span className="mysql-col-name">{column}</span>
+                                      {meta?.key ? <span className="mysql-col-key">{meta.key}</span> : null}
+                                    </span>
+                                    <span className="mysql-sort-icon" aria-hidden="true">{activeSort === 'asc' ? '▲' : activeSort === 'desc' ? '▼' : ''}</span>
+                                  </button>
                                   {meta?.type ? <small>{meta.type}</small> : null}
                                 </th>
                               );
@@ -1381,29 +1638,40 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {pagedRows.map((row, rowIdx) => {
-                            const globalRowIdx = page * pageSize + rowIdx;
+                          {pagedRows.map(({ row, index: sourceRowIndex }, rowIdx) => {
+                            const displayRowIndex = page * pageSize + rowIdx;
 
                             return (
-                              <tr key={globalRowIdx}>
-                                <td className="mysql-row-num">{globalRowIdx + 1}</td>
+                              <tr key={`${sourceRowIndex}-${displayRowIndex}`}>
+                                <td className="mysql-row-num">{displayRowIndex + 1}</td>
                                 {activeResult.columns.map((column) => {
                                   const cellValue = row[column];
-                                  const isEditing = editingCell?.rowIndex === globalRowIdx && editingCell.column === column;
+                                  const isEditing = editingCell?.rowIndex === sourceRowIndex && editingCell.column === column;
                                   const isEditableColumn = isActiveResultEditable && !activeResultPrimaryKeys.includes(column);
 
                                   if (isEditing) {
                                     return (
                                       <td key={column} className="mysql-cell-editing">
-                                        <input
-                                          type="text"
-                                          value={editingCell.value}
-                                          onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
-                                          onKeyDown={handleCellKeyDown}
-                                          onBlur={prepareCellSave}
-                                          autoFocus
-                                          className="mysql-cell-input"
-                                        />
+                                        <div className="mysql-cell-editbox">
+                                          <input
+                                            type="text"
+                                            value={editingCell.isNull ? '' : editingCell.value}
+                                            onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value, isNull: false })}
+                                            onKeyDown={handleCellKeyDown}
+                                            onBlur={prepareCellSave}
+                                            autoFocus
+                                            className="mysql-cell-input"
+                                            readOnly={editingCell.isNull}
+                                          />
+                                          <button
+                                            type="button"
+                                            className={`mysql-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => setEditingCell({ ...editingCell, isNull: !editingCell.isNull })}
+                                          >
+                                            NULL
+                                          </button>
+                                        </div>
                                       </td>
                                     );
                                   }
@@ -1412,7 +1680,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                                     <td
                                       key={column}
                                       className={`${cellValue === null ? 'mysql-cell-null' : ''} ${isEditableColumn ? 'mysql-cell-editable' : ''}`}
-                                      onDoubleClick={() => handleCellEdit(globalRowIdx, column, cellValue)}
+                                      onDoubleClick={() => handleCellEdit(sourceRowIndex, column, cellValue)}
                                       title={cellValue === null ? 'NULL' : formatCellValue(cellValue)}
                                     >
                                       {cellValue === null ? <em>NULL</em> : formatCellValue(cellValue)}

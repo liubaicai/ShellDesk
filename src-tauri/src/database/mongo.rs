@@ -106,6 +106,10 @@ pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Va
     let filter = read_string_field(&request, "filter", "{}");
     let projection = read_string_field(&request, "projection", "");
     let sort = read_string_field(&request, "sort", "");
+    let operation = read_string_field(&request, "operation", "find");
+    let pipeline = read_string_field(&request, "pipeline", "[]");
+    let document = read_string_field(&request, "document", "{}");
+    let update = read_string_field(&request, "update", "{}");
     let limit = request
         .get("limit")
         .and_then(Value::as_u64)
@@ -114,18 +118,59 @@ pub(crate) async fn mongo_query(state: &AppState, args: Vec<Value>) -> Result<Va
     let filter_expr = mongo_ejson_value_expression(&filter, "{}");
     let projection_expr = mongo_ejson_value_expression(&projection, "undefined");
     let sort_expr = mongo_ejson_value_expression(&sort, "undefined");
-    let mut script = format!(
-        "{} const filter = {}; const projection = {}; const sort = {}; let cursor = db.getCollection({}).find(filter, projection === undefined ? undefined : {{ projection }});",
-        mongo_ejson_prelude(),
-        filter_expr,
-        projection_expr,
-        sort_expr,
-        js_string(&collection),
-    );
-    script.push_str(" if (sort !== undefined) { cursor = cursor.sort(sort); }");
-    script.push_str(&format!(
-        " const docs = cursor.limit({limit}).toArray(); __shelldeskStringify({{ documents: docs, count: docs.length, limit: {limit} }})"
-    ));
+    let pipeline_expr = mongo_ejson_value_expression(&pipeline, "[]");
+    let document_expr = mongo_ejson_value_expression(&document, "{}");
+    let update_expr = mongo_ejson_value_expression(&update, "{}");
+    let collection_expr = js_string(&collection);
+    let script = match operation.as_str() {
+        "aggregate" => format!(
+            "{} const pipeline = {}; const cursor = db.getCollection({}).aggregate(pipeline); const docs = cursor.limit({limit}).toArray(); __shelldeskStringify({{ documents: docs, count: docs.length, limit: {limit}, operation: 'aggregate' }})",
+            mongo_ejson_prelude(),
+            pipeline_expr,
+            collection_expr,
+        ),
+        "insertOne" => format!(
+            "{} const document = {}; const result = db.getCollection({}).insertOne(document); __shelldeskStringify({{ documents: [{{ insertedId: result.insertedId }}], count: 1, limit: 1, operation: 'insertOne', insertedCount: result.acknowledged ? 1 : 0, insertedId: result.insertedId }})",
+            mongo_ejson_prelude(),
+            document_expr,
+            collection_expr,
+        ),
+        "replaceOne" => format!(
+            "{} const filter = {}; const document = {}; const result = db.getCollection({}).replaceOne(filter, document); __shelldeskStringify({{ documents: [{{ matchedCount: result.matchedCount, modifiedCount: result.modifiedCount }}], count: 1, limit: 1, operation: 'replaceOne', matchedCount: result.matchedCount, modifiedCount: result.modifiedCount }})",
+            mongo_ejson_prelude(),
+            filter_expr,
+            document_expr,
+            collection_expr,
+        ),
+        "updateOne" => format!(
+            "{} const filter = {}; const update = {}; const result = db.getCollection({}).updateOne(filter, update); __shelldeskStringify({{ documents: [{{ matchedCount: result.matchedCount, modifiedCount: result.modifiedCount, upsertedId: result.upsertedId }}], count: 1, limit: 1, operation: 'updateOne', matchedCount: result.matchedCount, modifiedCount: result.modifiedCount, upsertedId: result.upsertedId }})",
+            mongo_ejson_prelude(),
+            filter_expr,
+            update_expr,
+            collection_expr,
+        ),
+        "deleteOne" => format!(
+            "{} const filter = {}; const result = db.getCollection({}).deleteOne(filter); __shelldeskStringify({{ documents: [{{ deletedCount: result.deletedCount }}], count: 1, limit: 1, operation: 'deleteOne', deletedCount: result.deletedCount }})",
+            mongo_ejson_prelude(),
+            filter_expr,
+            collection_expr,
+        ),
+        _ => {
+            let mut script = format!(
+                "{} const filter = {}; const projection = {}; const sort = {}; let cursor = db.getCollection({}).find(filter, projection === undefined ? undefined : {{ projection }});",
+                mongo_ejson_prelude(),
+                filter_expr,
+                projection_expr,
+                sort_expr,
+                collection_expr,
+            );
+            script.push_str(" if (sort !== undefined) { cursor = cursor.sort(sort); }");
+            script.push_str(&format!(
+                " const docs = cursor.limit({limit}).toArray(); __shelldeskStringify({{ documents: docs, count: docs.length, limit: {limit}, operation: 'find' }})"
+            ));
+            script
+        }
+    };
     let output = run_mongo_eval(state, &connection_id, &config, &script, Some(&database)).await?;
     serde_json::from_str(&output).map_err(error_string)
 }

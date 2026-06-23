@@ -31,11 +31,11 @@ pub(crate) use mysql::{
 };
 pub(crate) use postgres::{
     postgres_columns, postgres_connect, postgres_databases, postgres_query, postgres_schemas,
-    postgres_tables,
+    postgres_tables, postgres_update_cell,
 };
 pub(crate) use redis::{
-    redis_command, redis_connect, redis_delete_key, redis_get_value, redis_keys, redis_scan,
-    redis_set_value,
+    redis_command, redis_connect, redis_delete_key, redis_get_value, redis_keys,
+    redis_remove_list_item, redis_scan, redis_set_value,
 };
 #[cfg(test)]
 use rows::{mysql_bytes_to_display_string, mysql_bytes_to_json, mysql_unsigned_integer_to_json};

@@ -537,16 +537,15 @@
 .sqlite-sql-editor {
   flex: 1;
   min-height: 0;
-  padding: 11px 12px;
   border: none;
   background: var(--surface-elevated);
   color: var(--text);
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  outline: none;
-  resize: none;
-  tab-size: 2;
+}
+
+.sqlite-sql-editor .cm-editor {
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-elevated);
 }
 
 .sqlite-result-area {
@@ -578,6 +577,33 @@
 
 .sqlite-message-banner {
   margin: 8px 10px 0;
+}
+
+.sqlite-query-tabs,
+.sqlite-result-tabs {
+  flex-shrink: 0;
+}
+
+.sqlite-result-error {
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 100, 100, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 100, 100, 0.08);
+  color: #ffb3b3;
+}
+
+.sqlite-result-error strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #ff9f9f;
+}
+
+.sqlite-result-error p {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .sqlite-result-info {
@@ -694,6 +720,13 @@
   padding: 0 !important;
 }
 
+.sqlite-cell-editbox {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto;
+  width: 100%;
+  min-width: 150px;
+}
+
 .sqlite-cell-input {
   width: 100%;
   box-sizing: border-box;
@@ -703,6 +736,26 @@
   color: var(--text);
   font: inherit;
   outline: none;
+}
+
+.sqlite-cell-input:read-only {
+  color: var(--text-muted);
+}
+
+.sqlite-cell-null-toggle {
+  padding: 0 7px;
+  border: 2px solid var(--accent-border);
+  border-left: 0;
+  background: var(--surface-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sqlite-cell-null-toggle.active {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface-control));
+  color: var(--text);
 }
 
 .sqlite-pagination {
@@ -1022,6 +1075,17 @@
 [data-theme="light"] .sqlite-schema-sql,
 [data-theme="light"] .sqlite-column-card {
   background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .sqlite-cell-null-toggle {
+  border-color: var(--focus-border);
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+[data-theme="light"] .sqlite-cell-null-toggle.active {
+  background: #dbeafe;
   color: #1f2328;
 }
 

@@ -74,8 +74,7 @@
   gap: 10px;
 }
 
-.postgres-connect-grid label,
-.postgres-editor {
+.postgres-connect-grid label {
   display: grid;
   min-width: 0;
   gap: 6px;
@@ -94,7 +93,7 @@
 
 .postgres-connect-grid input,
 .postgres-object-search,
-.postgres-editor textarea {
+.postgres-sql-editor {
   min-width: 0;
   border: 1px solid var(--pg-border);
   border-radius: 7px;
@@ -112,18 +111,25 @@
   font-weight: 680;
 }
 
-.postgres-editor textarea {
-  height: 120px;
-  resize: none;
-  padding: 10px;
+.postgres-sql-editor {
+  flex: 1 1 auto;
+  min-height: 0;
   font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
   line-height: 1.5;
 }
 
+.postgres-sql-editor .cm-editor {
+  height: 100%;
+}
+
+.postgres-sql-editor .cm-placeholder {
+  color: var(--pg-muted);
+}
+
 .postgres-connect-grid input:focus,
 .postgres-object-search:focus,
-.postgres-editor textarea:focus {
+.postgres-sql-editor:focus-within {
   border-color: rgba(115, 183, 255, 0.5);
   box-shadow: 0 0 0 3px rgba(115, 183, 255, 0.12);
 }
@@ -132,7 +138,13 @@
 .postgres-sidebar button,
 .postgres-topbar button,
 .postgres-editor-toolbar button,
-.postgres-history-list button {
+.postgres-history-list button,
+.postgres-query-tab,
+.postgres-result-tab,
+.postgres-add-tab-btn,
+.postgres-tab-close,
+.postgres-pagination button,
+.postgres-edit-actions button {
   height: 30px;
   border: 1px solid var(--pg-border);
   border-radius: 6px;
@@ -155,14 +167,21 @@
 .postgres-sidebar button:hover,
 .postgres-topbar button:hover,
 .postgres-editor-toolbar button:hover:not(:disabled),
-.postgres-history-list button:hover {
+.postgres-history-list button:hover,
+.postgres-query-tab:hover,
+.postgres-result-tab:hover,
+.postgres-add-tab-btn:hover,
+.postgres-pagination button:hover:not(:disabled),
+.postgres-edit-actions button:hover:not(:disabled) {
   border-color: rgba(115, 183, 255, 0.34);
   background: rgba(115, 183, 255, 0.1);
   color: var(--pg-text);
 }
 
 .postgres-connect-btn:disabled,
-.postgres-editor-toolbar button:disabled {
+.postgres-editor-toolbar button:disabled,
+.postgres-pagination button:disabled,
+.postgres-edit-actions button:disabled {
   opacity: 0.52;
   cursor: not-allowed;
 }
@@ -372,8 +391,11 @@
 }
 
 .postgres-editor {
+  display: flex;
+  min-height: 190px;
+  max-height: 44%;
+  flex-direction: column;
   border-bottom: 1px solid var(--pg-border);
-  padding: 10px;
 }
 
 .postgres-editor-toolbar {
@@ -381,6 +403,95 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pg-border);
+}
+
+.postgres-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.postgres-query-tabs,
+.postgres-result-tabs {
+  display: flex;
+  min-height: 32px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--pg-border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.postgres-query-tab,
+.postgres-result-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  border-width: 0 1px 0 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.postgres-query-tab.active,
+.postgres-result-tab.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--pg-text);
+}
+
+.postgres-query-tab span:first-child,
+.postgres-result-tab span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-query-tab em,
+.postgres-result-tab em {
+  color: var(--pg-muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.postgres-result-tab.error {
+  color: var(--pg-danger);
+}
+
+.postgres-add-tab-btn {
+  flex: 0 0 auto;
+  width: 25px;
+  height: 24px;
+  margin: 4px 0 0 6px;
+  padding: 0;
+}
+
+.postgres-tab-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.postgres-tab-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--pg-text);
+}
+
+.postgres-result-tabs-empty {
+  align-self: center;
+  padding: 0 12px;
+  color: var(--pg-muted);
+  font-size: 11px;
 }
 
 .postgres-result {
@@ -395,9 +506,8 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  margin: 10px;
-  border: 1px solid var(--pg-border);
-  border-radius: 8px;
+  margin: 0;
+  border-top: 1px solid var(--pg-border);
 }
 
 .postgres-data-table {
@@ -434,9 +544,254 @@
   font-size: 9px;
 }
 
+.postgres-sort-button {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.postgres-sort-button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-sort-button em {
+  color: var(--pg-accent);
+  font-size: 9px;
+  font-style: normal;
+  text-align: right;
+}
+
+.postgres-sort-button:hover,
+.postgres-sort-button.active {
+  color: var(--pg-text);
+}
+
 .postgres-row-num {
   color: var(--pg-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.postgres-cell-editable {
+  cursor: cell;
+}
+
+.postgres-cell-editable:hover {
+  color: var(--pg-accent);
+}
+
+.postgres-cell-null {
+  color: var(--pg-muted);
+  font-style: italic;
+}
+
+.postgres-cell-null em {
+  opacity: 0.62;
+  font-style: normal;
+}
+
+.postgres-cell-editing {
+  padding: 0 !important;
+}
+
+.postgres-cell-editing .mysql-cell-editbox {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto;
+  width: 100%;
+  min-width: 150px;
+}
+
+.postgres-cell-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 2px solid rgba(115, 183, 255, 0.58);
+  background: rgba(5, 10, 16, 0.72);
+  color: var(--pg-text);
+  font: inherit;
+  outline: none;
+}
+
+.postgres-cell-input:read-only {
+  color: var(--pg-muted);
+}
+
+.postgres-cell-editing .mysql-cell-null-toggle {
+  padding: 0 7px;
+  border: 2px solid rgba(115, 183, 255, 0.58);
+  border-left: 0;
+  background: rgba(16, 24, 34, 0.92);
+  color: var(--pg-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.postgres-cell-editing .mysql-cell-null-toggle.active {
+  background: rgba(81, 150, 255, 0.24);
+  color: var(--pg-text);
+}
+
+.postgres-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--pg-border);
+  color: var(--pg-muted);
+  font-size: 12px;
+}
+
+.postgres-pagination button {
+  height: 25px;
+  padding: 0 10px;
+}
+
+.postgres-result-error-panel {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+  margin: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 143, 163, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 143, 163, 0.08);
+}
+
+.postgres-result-error-panel strong {
+  color: var(--pg-danger);
+}
+
+.postgres-result-error-panel code {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--pg-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-result-error-panel p {
+  margin: 0;
+  color: var(--pg-danger);
+  font-size: 12px;
+}
+
+.postgres-result-error-panel span {
+  color: var(--pg-muted);
+  font-size: 11px;
+}
+
+.postgres-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.postgres-edit-dialog {
+  width: min(460px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: 8px;
+  background: var(--pg-panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.postgres-edit-dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--pg-border);
+}
+
+.postgres-edit-dialog-header strong {
+  color: var(--pg-text);
+  font-size: 14px;
+}
+
+.postgres-edit-dialog-header span {
+  color: var(--pg-muted);
+  font-size: 11px;
+}
+
+.postgres-edit-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 14px;
+}
+
+.postgres-edit-summary div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.postgres-edit-summary span {
+  color: var(--pg-muted);
+  font-size: 11px;
+}
+
+.postgres-edit-summary strong,
+.postgres-edit-summary code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-edit-summary code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(5, 10, 16, 0.36);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 11px;
+}
+
+.postgres-edit-warning {
+  margin: 0 14px 12px;
+  color: #f8ca6f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.postgres-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--pg-border);
+  background: rgba(5, 10, 16, 0.24);
+}
+
+.postgres-edit-actions button.primary {
+  border-color: rgba(115, 183, 255, 0.34);
+  background: rgba(115, 183, 255, 0.13);
+  color: #e1f1ff;
 }
 
 .postgres-history {
@@ -547,10 +902,32 @@
 
 [data-theme="light"] .postgres-connect-grid input,
 [data-theme="light"] .postgres-object-search,
-[data-theme="light"] .postgres-editor textarea {
+[data-theme="light"] .postgres-sql-editor,
+[data-theme="light"] .postgres-sql-editor .cm-editor,
+[data-theme="light"] .postgres-sql-editor .cm-scroller {
   background: rgba(255, 255, 255, 0.82);
+  color: #172033;
 }
 
 [data-theme="light"] .postgres-data-table th {
   background: rgba(246, 248, 252, 0.98);
+}
+
+[data-theme="light"] .postgres-cell-input {
+  background: #fff;
+  color: #172033;
+}
+
+[data-theme="light"] .postgres-cell-editing .mysql-cell-null-toggle {
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+[data-theme="light"] .postgres-cell-editing .mysql-cell-null-toggle.active {
+  background: #dbeafe;
+  color: #172033;
+}
+
+[data-theme="light"] .postgres-modal-backdrop {
+  background: rgba(16, 24, 32, 0.28);
 }

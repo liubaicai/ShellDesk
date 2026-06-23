@@ -576,6 +576,8 @@ window.guiSSH = {
     postgresTables: (connectionId, postgresId, schema) => ipc('connection:postgres-tables', connectionId, postgresId, schema),
     postgresColumns: (connectionId, postgresId, schema, table) => ipc('connection:postgres-columns', connectionId, postgresId, schema, table),
     postgresQuery: (connectionId, postgresId, sql) => ipc('connection:postgres-query', connectionId, postgresId, sql),
+    postgresUpdateCell: (connectionId, postgresId, schema, table, column, newValue, pkColumns, pkValues) =>
+      ipc('connection:postgres-update-cell', connectionId, postgresId, schema, table, column, newValue, pkColumns, pkValues),
     mongoConnect: (connectionId, config) => ipc('connection:mongo-connect', connectionId, config),
     mongoDisconnect: (connectionId, mongoId) => ipc('connection:mongo-disconnect', connectionId, mongoId),
     mongoDatabases: (connectionId, mongoId) => ipc('connection:mongo-databases', connectionId, mongoId),
@@ -589,6 +591,7 @@ window.guiSSH = {
     redisGetValue: (connectionId, redisId, key) => ipc('connection:redis-get-value', connectionId, redisId, key),
     redisSetValue: (connectionId, redisId, key, value, type) => ipc('connection:redis-set-value', connectionId, redisId, key, value, type),
     redisDeleteKey: (connectionId, redisId, key) => ipc('connection:redis-delete-key', connectionId, redisId, key),
+    redisRemoveListItem: (connectionId, redisId, key, index) => ipc('connection:redis-remove-list-item', connectionId, redisId, key, index),
     redisCommand: (connectionId, redisId, command, args) => ipc('connection:redis-command', connectionId, redisId, command, args),
     vncProbe: (connectionId, config) => ipc('connection:vnc-probe', connectionId, config),
     vncStart: (connectionId, config) => ipc('connection:vnc-start', connectionId, config),

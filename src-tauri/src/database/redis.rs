@@ -331,6 +331,52 @@ pub(crate) async fn redis_delete_key(state: &AppState, args: Vec<Value>) -> Resu
     Ok(json!(true))
 }
 
+pub(crate) async fn redis_remove_list_item(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    if tunnel::has_session(state, "redis", &args)? {
+        return tunnel::redis_remove_list_item(state, args).await;
+    }
+    let (connection_id, config) = decode_active_db_session_args(state, "redis", &args, 0, 1)?;
+    let key = string_arg(&args, 2)?;
+    let index = args.get(3).and_then(Value::as_i64).unwrap_or(0);
+    let len_output = run_redis_cli(
+        state,
+        &connection_id,
+        &config,
+        &["LLEN".to_string(), key.clone()],
+    )
+    .await?;
+    let len = len_output.trim().parse::<i64>().unwrap_or(0);
+    let normalized_index = if index < 0 { len + index } else { index };
+    if normalized_index < 0 || normalized_index >= len {
+        return Ok(json!({ "removed": 0 }));
+    }
+    let marker = format!("__shelldesk_delete__:{}", crate::random_id("redis-list"));
+    let _ = run_redis_cli(
+        state,
+        &connection_id,
+        &config,
+        &[
+            "LSET".to_string(),
+            key.clone(),
+            normalized_index.to_string(),
+            marker.clone(),
+        ],
+    )
+    .await?;
+    let output = run_redis_cli(
+        state,
+        &connection_id,
+        &config,
+        &["LREM".to_string(), key, "1".to_string(), marker],
+    )
+    .await?;
+    let removed = output.trim().parse::<i64>().unwrap_or(0);
+    Ok(json!({ "removed": removed }))
+}
+
 pub(crate) async fn redis_command(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     if tunnel::has_session(state, "redis", &args)? {
         return tunnel::redis_command(state, args).await;

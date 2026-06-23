@@ -34,11 +34,11 @@ use parse::{
 };
 pub(crate) use postgres::{
     postgres_columns, postgres_connect, postgres_databases, postgres_query, postgres_schemas,
-    postgres_tables,
+    postgres_tables, postgres_update_cell,
 };
 pub(crate) use redis::{
-    redis_command, redis_connect, redis_delete_key, redis_get_value, redis_keys, redis_scan,
-    redis_set_value,
+    redis_command, redis_connect, redis_delete_key, redis_get_value, redis_keys,
+    redis_remove_list_item, redis_scan, redis_set_value,
 };
 #[cfg(test)]
 use redis::{redis_set_value_commands, redis_zset_cli_args};

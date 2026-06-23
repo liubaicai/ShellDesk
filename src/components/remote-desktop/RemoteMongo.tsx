@@ -10,6 +10,7 @@ import {
   useContextMenu,
 } from './databaseUtils';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
+import NotepadEditor from './NotepadEditor';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { tCurrent } from '../../i18n';
 
@@ -25,6 +26,9 @@ interface SelectedMongoCollection {
   collection: string;
 }
 
+type MongoQueryMode = 'find' | 'aggregate';
+type MongoWriteOperation = 'insertOne' | 'replaceOne' | 'updateOne' | 'deleteOne';
+
 type MongoContextMenuTarget =
   | { type: 'database'; database: ShellDeskMongoDatabase }
   | { type: 'collection'; database: string; collection: ShellDeskMongoCollection };
@@ -37,6 +41,14 @@ interface MongoContextMenuState {
 
 const defaultLimit = 100;
 const defaultMongoPort = 27017;
+
+function getShellDeskEditorTheme(): 'light' | 'dark' {
+  if (typeof document === 'undefined') {
+    return 'dark';
+  }
+
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
 
 function formatBytes(value?: number) {
   if (!value || value < 0) return '0 B';
@@ -84,6 +96,53 @@ function tryFormatJsonDraft(value: string) {
   return stringifyJson(JSON.parse(trimmed));
 }
 
+function MongoJsonEditor({
+  ariaLabel,
+  value,
+  theme,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  theme: 'light' | 'dark';
+  onChange: (value: string) => void;
+}) {
+  return (
+    <NotepadEditor
+      ariaLabel={ariaLabel}
+      className="mongo-json-codemirror"
+      content={value}
+      language="json"
+      readOnly={false}
+      theme={theme}
+      wrapEnabled
+      onChange={onChange}
+      onCursorChange={() => undefined}
+    />
+  );
+}
+
+function createDocumentFilter(document: Record<string, unknown> | null): string {
+  if (!document || document._id === undefined || document._id === null) {
+    return '';
+  }
+
+  return stringifyJson({ _id: document._id });
+}
+
+function removeDocumentId(document: Record<string, unknown>) {
+  const { _id: _id, ...rest } = document;
+  return rest;
+}
+
+function describeWriteResult(result: ShellDeskMongoQueryResult) {
+  if (result.operation === 'insertOne') return `已新增 ${result.insertedCount ?? result.count} 个文档`;
+  if (result.operation === 'replaceOne') return `已保存，匹配 ${result.matchedCount ?? 0} 个，修改 ${result.modifiedCount ?? 0} 个`;
+  if (result.operation === 'updateOne') return `已局部更新，匹配 ${result.matchedCount ?? 0} 个，修改 ${result.modifiedCount ?? 0} 个`;
+  if (result.operation === 'deleteOne') return `已删除 ${result.deletedCount ?? 0} 个文档`;
+  return `已执行 ${result.operation ?? 'MongoDB'} 操作`;
+}
+
 function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const api = window.guiSSH?.connections;
   const mongoIdRef = useRef('');
@@ -104,19 +163,29 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const [filter, setFilter] = useState('{}');
   const [projection, setProjection] = useState('');
   const [sort, setSort] = useState('');
+  const [pipeline, setPipeline] = useState('[\n  { "$match": {} }\n]');
+  const [queryMode, setQueryMode] = useState<MongoQueryMode>('find');
+  const [newDocumentDraft, setNewDocumentDraft] = useState('{\n  \n}');
+  const [updateDraft, setUpdateDraft] = useState('{\n  "$set": {\n    \n  }\n}');
+  const [selectedDocumentDraft, setSelectedDocumentDraft] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [limit, setLimit] = useState(String(defaultLimit));
   const [queryResult, setQueryResult] = useState<ShellDeskMongoQueryResult | null>(null);
   const [indexes, setIndexes] = useState<ShellDeskMongoIndex[]>([]);
   const [selectedDocumentIndex, setSelectedDocumentIndex] = useState(0);
   const [loadingObjects, setLoadingObjects] = useState(false);
   const [queryRunning, setQueryRunning] = useState(false);
+  const [writeRunning, setWriteRunning] = useState<MongoWriteOperation | null>(null);
   const [lastQueryAt, setLastQueryAt] = useState('');
+  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [contextMenu, setContextMenu] = useState<MongoContextMenuState | null>(null);
 
   const isConnected = status === 'connected';
   const documents = queryResult?.documents ?? [];
   const documentColumns = useMemo(() => getDocumentColumns(documents), [documents]);
   const selectedDocument = documents[selectedDocumentIndex] ?? documents[0] ?? null;
+  const selectedDocumentFilter = useMemo(() => createDocumentFilter(selectedDocument), [selectedDocument]);
+  const canWriteSelectedDocument = Boolean(selectedCollection && selectedDocumentFilter);
 
   useEffect(() => {
     let disposed = false;
@@ -135,6 +204,15 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       disposed = true;
     };
   }, [hostId]);
+
+  useEffect(() => {
+    if (!selectedDocument) {
+      setSelectedDocumentDraft('');
+      return;
+    }
+
+    setSelectedDocumentDraft(stringifyJson(selectedDocument));
+  }, [selectedDocument]);
 
   const filteredDatabases = useMemo(() => {
     const keyword = objectSearch.trim().toLowerCase();
@@ -167,6 +245,20 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   useEffect(() => () => {
     void disconnect();
   }, [disconnect]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const loadCollections = useCallback(async (nextMongoId: string, database: string) => {
     if (!api) return [];
@@ -294,6 +386,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
     setSelectedCollection({ database, collection });
     setSelectedDocumentIndex(0);
     setQueryResult(null);
+    setDeleteConfirmOpen(false);
     setError('');
     setNotice('');
 
@@ -325,9 +418,11 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       const result = await api.mongoQuery(connectionId, mongoId, {
         database: nextCollection.database,
         collection: nextCollection.collection,
+        operation: queryMode === 'aggregate' ? 'aggregate' : 'find',
         filter,
         projection,
         sort,
+        pipeline,
         limit: Number.parseInt(limit, 10) || defaultLimit,
       });
       const durationMs = Math.round(performance.now() - startedAt);
@@ -340,7 +435,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
     } finally {
       setQueryRunning(false);
     }
-  }, [api, connectionId, filter, limit, mongoId, projection, selectedCollection, sort]);
+  }, [api, connectionId, filter, limit, mongoId, pipeline, projection, queryMode, selectedCollection, sort]);
 
   const handleQueryCollection = useCallback(async (database: string, collection: string) => {
     await selectCollection(database, collection);
@@ -451,17 +546,64 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
 
   useContextMenu(contextMenu, setContextMenu);
 
-  const formatDraft = (field: 'filter' | 'projection' | 'sort') => {
+  const formatDraft = (field: 'filter' | 'projection' | 'sort' | 'pipeline' | 'newDocument' | 'update' | 'selectedDocument') => {
     try {
       if (field === 'filter') setFilter(tryFormatJsonDraft(filter));
       if (field === 'projection') setProjection(projection.trim() ? tryFormatJsonDraft(projection) : '');
       if (field === 'sort') setSort(sort.trim() ? tryFormatJsonDraft(sort) : '');
+      if (field === 'pipeline') setPipeline(stringifyJson(JSON.parse(pipeline.trim() || '[]')));
+      if (field === 'newDocument') setNewDocumentDraft(tryFormatJsonDraft(newDocumentDraft));
+      if (field === 'update') setUpdateDraft(tryFormatJsonDraft(updateDraft));
+      if (field === 'selectedDocument') setSelectedDocumentDraft(tryFormatJsonDraft(selectedDocumentDraft));
       setNotice(tCurrent('auto.remoteMongo.ed12q0'));
       setError('');
     } catch (error) {
       setError(tCurrent('auto.remoteMongo.usdhbr', { value0: getErrorMessage(error) }));
     }
   };
+
+  const runWriteOperation = useCallback(async (operation: MongoWriteOperation) => {
+    if (!api || !mongoId || !selectedCollection) {
+      setError(tCurrent('auto.remoteMongo.1muzwis'));
+      return;
+    }
+
+    if ((operation === 'replaceOne' || operation === 'updateOne' || operation === 'deleteOne') && !selectedDocumentFilter) {
+      setError('选中文档缺少 _id，无法安全执行写入操作。');
+      return;
+    }
+
+    setWriteRunning(operation);
+    setError('');
+    setNotice('');
+
+    try {
+      const nextDocumentDraft = operation === 'replaceOne'
+        ? stringifyJson(removeDocumentId(JSON.parse(selectedDocumentDraft || '{}') as Record<string, unknown>))
+        : newDocumentDraft;
+      const result = await api.mongoQuery(connectionId, mongoId, {
+        database: selectedCollection.database,
+        collection: selectedCollection.collection,
+        operation,
+        filter: selectedDocumentFilter || '{}',
+        document: nextDocumentDraft,
+        update: updateDraft,
+        limit: Number.parseInt(limit, 10) || defaultLimit,
+      });
+      setNotice(describeWriteResult(result));
+      if (operation === 'insertOne') {
+        setNewDocumentDraft('{\n  \n}');
+      }
+      if (operation === 'deleteOne') {
+        setDeleteConfirmOpen(false);
+      }
+      await runCollectionQuery();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setWriteRunning(null);
+    }
+  }, [api, connectionId, limit, mongoId, newDocumentDraft, runCollectionQuery, selectedCollection, selectedDocumentDraft, selectedDocumentFilter, updateDraft]);
 
   const copySelectedDocument = async () => {
     if (!selectedDocument) return;
@@ -614,28 +756,42 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
         {notice ? <DismissibleAlert className="mongo-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
 
         <section className="mongo-query-panel">
-          <label className="mongo-editor wide">
-            <span>Filter</span>
-            <textarea value={filter} onChange={(event) => setFilter(event.target.value)} spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('filter')}>{tCurrent('auto.remoteMongo.1hlpjge')}</button>
-          </label>
-          <label className="mongo-editor">
-            <span>Projection</span>
-            <textarea value={projection} onChange={(event) => setProjection(event.target.value)} placeholder='{"name": 1}' spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('projection')}>{tCurrent('auto.remoteMongo.1hlpjge2')}</button>
-          </label>
-          <label className="mongo-editor">
-            <span>Sort</span>
-            <textarea value={sort} onChange={(event) => setSort(event.target.value)} placeholder='{"createdAt": -1}' spellCheck={false} />
-            <button type="button" onClick={() => formatDraft('sort')}>{tCurrent('auto.remoteMongo.1hlpjge3')}</button>
-          </label>
+          <div className="mongo-query-mode" role="tablist" aria-label="MongoDB 查询模式">
+            <button type="button" className={queryMode === 'find' ? 'active' : ''} onClick={() => setQueryMode('find')}>查找</button>
+            <button type="button" className={queryMode === 'aggregate' ? 'active' : ''} onClick={() => setQueryMode('aggregate')}>聚合</button>
+          </div>
+          {queryMode === 'find' ? (
+            <>
+              <label className="mongo-editor wide">
+                <span>Filter</span>
+                <MongoJsonEditor ariaLabel="MongoDB filter" value={filter} theme={editorTheme} onChange={setFilter} />
+                <button type="button" onClick={() => formatDraft('filter')}>{tCurrent('auto.remoteMongo.1hlpjge')}</button>
+              </label>
+              <label className="mongo-editor">
+                <span>Projection</span>
+                <MongoJsonEditor ariaLabel="MongoDB projection" value={projection} theme={editorTheme} onChange={setProjection} />
+                <button type="button" onClick={() => formatDraft('projection')}>{tCurrent('auto.remoteMongo.1hlpjge2')}</button>
+              </label>
+              <label className="mongo-editor">
+                <span>Sort</span>
+                <MongoJsonEditor ariaLabel="MongoDB sort" value={sort} theme={editorTheme} onChange={setSort} />
+                <button type="button" onClick={() => formatDraft('sort')}>{tCurrent('auto.remoteMongo.1hlpjge3')}</button>
+              </label>
+            </>
+          ) : (
+            <label className="mongo-editor wide mongo-pipeline-editor">
+              <span>Aggregation Pipeline</span>
+              <MongoJsonEditor ariaLabel="MongoDB aggregation pipeline" value={pipeline} theme={editorTheme} onChange={setPipeline} />
+              <button type="button" onClick={() => formatDraft('pipeline')}>格式化 Pipeline</button>
+            </label>
+          )}
           <div className="mongo-query-actions">
             <label>
               <span>Limit</span>
               <input value={limit} onChange={(event) => setLimit(event.target.value)} inputMode="numeric" />
             </label>
             <button type="button" className="primary" onClick={runQuery} disabled={queryRunning || !selectedCollection}>
-              {queryRunning ? tCurrent('auto.remoteMongo.q3j9w1') : tCurrent('auto.remoteMongo.vlqe6x')}
+              {queryRunning ? tCurrent('auto.remoteMongo.q3j9w1') : queryMode === 'aggregate' ? '运行聚合' : tCurrent('auto.remoteMongo.vlqe6x')}
             </button>
           </div>
         </section>
@@ -677,9 +833,52 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
             <strong>{tCurrent('auto.remoteMongo.51a57e')}</strong>
             <span>{selectedDocument ? getDocumentId(selectedDocument, selectedDocumentIndex) : tCurrent('auto.remoteMongo.1mhzgbz')}</span>
           </div>
-          <button type="button" onClick={copySelectedDocument} disabled={!selectedDocument}>{tCurrent('auto.remoteMongo.1xbipwq')}</button>
+          <div className="mongo-detail-actions">
+            <button type="button" onClick={copySelectedDocument} disabled={!selectedDocument}>{tCurrent('auto.remoteMongo.1xbipwq')}</button>
+            <button type="button" onClick={() => formatDraft('selectedDocument')} disabled={!selectedDocument}>格式化</button>
+          </div>
         </section>
-        <pre className="mongo-json-view">{selectedDocument ? stringifyJson(selectedDocument) : tCurrent('auto.remoteMongo.1el0ut6')}</pre>
+        <div className="mongo-document-editor">
+          <NotepadEditor
+            ariaLabel="MongoDB document"
+            className="mongo-json-codemirror"
+            content={selectedDocument ? selectedDocumentDraft : tCurrent('auto.remoteMongo.1el0ut6')}
+            language="json"
+            readOnly={!selectedDocument}
+            theme={editorTheme}
+            wrapEnabled
+            onChange={setSelectedDocumentDraft}
+            onCursorChange={() => undefined}
+          />
+          <div className="mongo-document-actions">
+            <button type="button" className="primary" onClick={() => void runWriteOperation('replaceOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+              {writeRunning === 'replaceOne' ? '保存中...' : '保存文档'}
+            </button>
+            <button type="button" className="danger" onClick={() => setDeleteConfirmOpen(true)} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+              删除文档
+            </button>
+          </div>
+        </div>
+        <section className="mongo-create-panel mongo-update-panel">
+          <div className="mongo-create-title">
+            <strong>局部更新</strong>
+            <button type="button" onClick={() => formatDraft('update')}>格式化</button>
+          </div>
+          <MongoJsonEditor ariaLabel="MongoDB update document" value={updateDraft} theme={editorTheme} onChange={setUpdateDraft} />
+          <button type="button" className="primary" onClick={() => void runWriteOperation('updateOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+            {writeRunning === 'updateOne' ? '更新中...' : '应用 updateOne'}
+          </button>
+        </section>
+        <section className="mongo-create-panel">
+          <div className="mongo-create-title">
+            <strong>新增文档</strong>
+            <button type="button" onClick={() => formatDraft('newDocument')}>格式化</button>
+          </div>
+          <MongoJsonEditor ariaLabel="MongoDB new document" value={newDocumentDraft} theme={editorTheme} onChange={setNewDocumentDraft} />
+          <button type="button" className="primary" onClick={() => void runWriteOperation('insertOne')} disabled={!selectedCollection || writeRunning !== null}>
+            {writeRunning === 'insertOne' ? '新增中...' : '新增文档'}
+          </button>
+        </section>
         <section className="mongo-detail-section">
           <div>
             <strong>{tCurrent('auto.remoteMongo.1lig4k0')}</strong>
@@ -701,6 +900,25 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
           {!indexes.length ? <div className="mongo-empty-state compact">{tCurrent('auto.remoteMongo.1mioadg')}</div> : null}
         </div>
       </aside>
+      {deleteConfirmOpen ? createPortal(
+        <div className="mongo-modal-backdrop" role="presentation">
+          <div className="mongo-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mongo-delete-title">
+            <div className="mongo-confirm-header">
+              <strong id="mongo-delete-title">删除文档</strong>
+              <span>{selectedCollection ? `${selectedCollection.database}.${selectedCollection.collection}` : ''}</span>
+            </div>
+            <p>将按当前文档的 `_id` 删除 1 条记录，此操作不可撤销。</p>
+            <code>{selectedDocumentFilter || '缺少 _id'}</code>
+            <div className="mongo-confirm-actions">
+              <button type="button" onClick={() => setDeleteConfirmOpen(false)} disabled={writeRunning !== null}>取消</button>
+              <button type="button" className="danger" onClick={() => void runWriteOperation('deleteOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+                {writeRunning === 'deleteOne' ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
       {contextMenu ? createPortal(
         <div
           className="mysql-context-menu"

@@ -219,6 +219,33 @@ pub(crate) async fn redis_delete_key(state: &AppState, args: Vec<Value>) -> Resu
     Ok(json!(true))
 }
 
+pub(crate) async fn redis_remove_list_item(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let key = string_arg(&args, 2)?;
+    let index = args.get(3).and_then(Value::as_i64).unwrap_or(0);
+    let len = redis_i64(redis_command_values(state, &args, "LLEN", vec![key.clone()]).await?)
+        .unwrap_or(0);
+    let normalized_index = if index < 0 { len + index } else { index };
+    if normalized_index < 0 || normalized_index >= len {
+        return Ok(json!({ "removed": 0 }));
+    }
+    let marker = format!("__shelldesk_delete__:{}", random_id("redis-list"));
+    let _ = redis_command_values(
+        state,
+        &args,
+        "LSET",
+        vec![key.clone(), normalized_index.to_string(), marker.clone()],
+    )
+    .await?;
+    let removed = redis_i64(
+        redis_command_values(state, &args, "LREM", vec![key, "1".to_string(), marker]).await?,
+    )
+    .unwrap_or(0);
+    Ok(json!({ "removed": removed }))
+}
+
 pub(crate) async fn redis_command(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let command = string_arg(&args, 2)?;
     let values = args

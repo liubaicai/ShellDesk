@@ -36,6 +36,7 @@ pub(crate) async fn dispatch(
         "connection:postgres-tables" => database::postgres_tables(state, args).await,
         "connection:postgres-columns" => database::postgres_columns(state, args).await,
         "connection:postgres-query" => database::postgres_query(state, args).await,
+        "connection:postgres-update-cell" => database::postgres_update_cell(state, args).await,
 
         "connection:redis-connect" => database::redis_connect(state, window, args).await,
         "connection:redis-disconnect" => {
@@ -46,6 +47,7 @@ pub(crate) async fn dispatch(
         "connection:redis-get-value" => database::redis_get_value(state, args).await,
         "connection:redis-set-value" => database::redis_set_value(state, args).await,
         "connection:redis-delete-key" => database::redis_delete_key(state, args).await,
+        "connection:redis-remove-list-item" => database::redis_remove_list_item(state, args).await,
         "connection:redis-command" => database::redis_command(state, args).await,
 
         "connection:sqlite-open" => database::sqlite_open(state, args).await,
