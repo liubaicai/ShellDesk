@@ -31,7 +31,8 @@
 .api-request-line,
 .api-tabs,
 .api-response-head,
-.api-response-actions {
+.api-response-actions,
+.api-mode-switch {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -184,6 +185,7 @@
 }
 
 .api-request-line button,
+.api-mode-switch button,
 .api-tabs button,
 .api-header-row button,
 .api-add-header,
@@ -201,6 +203,8 @@
 }
 
 .api-request-line button:hover:not(:disabled),
+.api-mode-switch button:hover:not(:disabled),
+.api-mode-switch button.active,
 .api-tabs button:hover:not(:disabled),
 .api-tabs button.active,
 .api-header-row button:hover,
@@ -215,6 +219,24 @@
   border-color: rgba(143, 224, 113, 0.36);
   background: rgba(143, 224, 113, 0.14);
   color: #eaffdf;
+}
+
+.api-mode-switch {
+  flex: 0 0 auto;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--api-border);
+  border-radius: 7px;
+}
+
+.api-mode-switch button {
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.api-mode-switch button + button {
+  border-left: 1px solid var(--api-border);
 }
 
 .api-request-line button:disabled,
@@ -319,6 +341,85 @@
   line-height: 1.5;
 }
 
+.api-graphql-editor {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-graphql-meta {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--api-border);
+  padding: 7px 10px;
+}
+
+.api-graphql-meta label,
+.api-graphql-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.api-graphql-meta label {
+  flex: 0 1 280px;
+}
+
+.api-graphql-meta span,
+.api-graphql-grid span {
+  color: var(--api-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.api-graphql-meta input {
+  height: 30px;
+  min-width: 0;
+  border: 1px solid var(--api-border);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: rgba(5, 10, 16, 0.36);
+  color: var(--api-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.api-graphql-error {
+  color: var(--api-danger) !important;
+}
+
+.api-graphql-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.62fr);
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.api-graphql-grid label {
+  min-height: 0;
+}
+
+.api-codemirror {
+  min-width: 0;
+  min-height: 0;
+}
+
+.api-codemirror .cm-editor {
+  height: 100%;
+}
+
+.api-codemirror .cm-scroller {
+  overflow: auto;
+}
+
 .api-response-head {
   min-height: 48px;
   justify-content: space-between;
@@ -414,6 +515,7 @@
 
 [data-theme="light"] .api-request-line select,
 [data-theme="light"] .api-request-line input,
+[data-theme="light"] .api-graphql-meta input,
 [data-theme="light"] .api-header-row input,
 [data-theme="light"] .api-body-editor,
 [data-theme="light"] .api-response-output,

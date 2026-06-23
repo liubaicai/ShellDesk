@@ -1,4 +1,9 @@
 import { useMemo, useState } from 'react';
+import { json } from '@codemirror/lang-json';
+import { indentWithTab } from '@codemirror/commands';
+import type { Extension } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import CodeMirror from '@uiw/react-codemirror';
 import type { KeyboardEvent, ReactElement } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
@@ -35,7 +40,8 @@ interface RemoteApiDebuggerProps {
   systemType?: RemoteSystemType;
 }
 
-type RequestTab = 'headers' | 'params' | 'body';
+type RequestMode = 'http' | 'graphql';
+type RequestTab = 'headers' | 'params' | 'body' | 'graphql';
 type ResponseTab = 'body' | 'headers' | 'raw';
 
 interface ApiSavedRequest {
@@ -76,6 +82,9 @@ const defaultAuth: ApiDebugAuthConfig = {
   apiKeyName: 'X-API-Key',
   apiKeyValue: '',
 };
+const defaultGraphqlQuery = `query Health {
+  __typename
+}`;
 
 function runCmd(connectionId: string, command: string) {
   const api = window.guiSSH?.connections;
@@ -265,6 +274,23 @@ function applyBodyContentType(headers: ApiDebugHeader[], bodyType: ApiDebugBodyT
       enabled: true,
       managedByBody: true,
     },
+  ];
+}
+
+function upsertHeader(headers: ApiDebugHeader[], key: string, value: string, managedByBody = false) {
+  const existingHeader = headers.find((header) => header.key.trim().toLowerCase() === key.toLowerCase());
+
+  if (existingHeader) {
+    return headers.map((header) => (
+      header.id === existingHeader.id
+        ? { ...header, key, value, enabled: true, managedByBody: header.managedByBody || managedByBody }
+        : header
+    ));
+  }
+
+  return [
+    ...headers,
+    { id: createHeaderId(), key, value, enabled: true, managedByBody },
   ];
 }
 
@@ -530,6 +556,7 @@ function JsonTree({ value }: { value: unknown }) {
 function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const [request, setRequest] = useState<ApiDebugRequest>(() => createDefaultRequest());
+  const [requestMode, setRequestMode] = useState<RequestMode>('http');
   const [requestTab, setRequestTab] = useState<RequestTab>('headers');
   const [responseTab, setResponseTab] = useState<ResponseTab>('body');
   const [history, setHistory] = useState<ApiRunRecord[]>([]);
@@ -547,6 +574,50 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
   const [showCurlImport, setShowCurlImport] = useState(false);
   const [curlImportText, setCurlImportText] = useState('');
   const [showNetworkOptions, setShowNetworkOptions] = useState(false);
+  const [graphqlQuery, setGraphqlQuery] = useState(defaultGraphqlQuery);
+  const [graphqlVariables, setGraphqlVariables] = useState('{}');
+  const [graphqlOperationName, setGraphqlOperationName] = useState('');
+  const codeMirrorExtensions = useMemo<Extension[]>(() => [
+    keymap.of([indentWithTab]),
+    EditorView.theme({
+      '&': {
+        height: '100%',
+        minHeight: '0',
+        border: '1px solid var(--api-border)',
+        borderRadius: '8px',
+        backgroundColor: 'rgba(5, 10, 16, 0.36)',
+        color: 'var(--api-text)',
+        fontSize: '12px',
+      },
+      '.cm-scroller': {
+        fontFamily: 'var(--font-mono, "Cascadia Mono", Consolas, monospace)',
+        lineHeight: '20px',
+      },
+      '.cm-content': {
+        padding: '10px 0',
+      },
+      '.cm-line': {
+        padding: '0 10px',
+      },
+      '.cm-gutters': {
+        borderRight: '1px solid var(--api-border)',
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        color: 'var(--api-muted)',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'rgba(143, 224, 113, 0.08)',
+      },
+      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'rgba(143, 224, 113, 0.24)',
+      },
+      '&.cm-focused': {
+        outline: 'none',
+        borderColor: 'rgba(143, 224, 113, 0.5)',
+        boxShadow: '0 0 0 3px rgba(143, 224, 113, 0.12)',
+      },
+    }),
+  ], []);
+  const jsonEditorExtensions = useMemo<Extension[]>(() => [...codeMirrorExtensions, json()], [codeMirrorExtensions]);
 
   const activeRun = useMemo(() => history.find((run) => run.id === activeRunId) ?? history[0] ?? null, [activeRunId, history]);
   const jsonBodyError = useMemo(() => {
@@ -561,14 +632,53 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
       return getErrorMessage(error);
     }
   }, [request.body, request.bodyType]);
+  const graphqlVariablesError = useMemo(() => {
+    if (requestMode !== 'graphql' || !graphqlVariables.trim()) {
+      return '';
+    }
+
+    try {
+      const parsedValue = JSON.parse(graphqlVariables);
+      return parsedValue && typeof parsedValue === 'object' && !Array.isArray(parsedValue)
+        ? ''
+        : 'Variables 必须是 JSON 对象';
+    } catch (error) {
+      return getErrorMessage(error);
+    }
+  }, [graphqlVariables, requestMode]);
+  const createGraphqlRequest = () => {
+    const query = graphqlQuery.trim();
+
+    if (!query) {
+      throw new Error('GraphQL query 不能为空');
+    }
+
+    const variables = graphqlVariables.trim() ? JSON.parse(graphqlVariables) as unknown : undefined;
+    if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) {
+      throw new Error('Variables 必须是 JSON 对象');
+    }
+
+    const payload: Record<string, unknown> = { query };
+    if (variables !== undefined) payload.variables = variables;
+    if (graphqlOperationName.trim()) payload.operationName = graphqlOperationName.trim();
+
+    return {
+      ...cloneRequest(request),
+      method: 'POST' as ApiDebugMethod,
+      headers: upsertHeader(upsertHeader(request.headers, 'Accept', 'application/json'), 'Content-Type', 'application/json', true),
+      bodyType: 'json' as ApiDebugBodyType,
+      body: JSON.stringify(payload, null, 2),
+    };
+  };
   const curlPreview = useMemo(() => {
     try {
-      const previewRequest = materializeRequest(request, environmentVariables);
+      const activeRequest = requestMode === 'graphql' ? createGraphqlRequest() : request;
+      const previewRequest = materializeRequest(activeRequest, environmentVariables);
       return createCurlPreview(showSensitive ? previewRequest : maskSensitiveHeaders(previewRequest));
     } catch {
       return '';
     }
-  }, [environmentVariables, request, showSensitive]);
+  }, [environmentVariables, graphqlOperationName, graphqlQuery, graphqlVariables, request, requestMode, showSensitive]);
   const activeResponseFormat = useMemo(() => (
     activeRun ? detectApiResponseFormat(activeRun.response.headersText, activeRun.response.body) : null
   ), [activeRun]);
@@ -589,7 +699,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
         ? (request.formBody ?? []).some((param) => param.enabled && (param.key.trim() || param.value.trim()))
         : request.body.trim().length > 0
     );
-  const requestTabs: RequestTab[] = ['headers', 'params', 'body'];
+  const requestTabs: RequestTab[] = requestMode === 'graphql' ? ['graphql', 'headers', 'params'] : ['headers', 'params', 'body'];
   const responseTabs: ResponseTab[] = ['body', 'headers', 'raw'];
   const handleRequestTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tab: RequestTab) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
@@ -614,6 +724,18 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
   const updateRequest = <Key extends keyof ApiDebugRequest>(key: Key, value: ApiDebugRequest[Key]) => {
     setRequest((currentRequest) => ({ ...currentRequest, [key]: value }));
+  };
+
+  const switchRequestMode = (mode: RequestMode) => {
+    setRequestMode(mode);
+    setRequestTab(mode === 'graphql' ? 'graphql' : 'headers');
+    if (mode === 'graphql') {
+      setRequest((currentRequest) => ({
+        ...currentRequest,
+        method: 'POST',
+        headers: upsertHeader(upsertHeader(currentRequest.headers, 'Accept', 'application/json'), 'Content-Type', 'application/json', true),
+      }));
+    }
   };
 
   const updateUrl = (url: string) => {
@@ -722,6 +844,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
     try {
       const importedRequest = parseCurlCommand(curlImportText);
       setRequest(importedRequest);
+      setRequestMode('http');
       setShowCurlImport(false);
       setCurlImportText('');
       setRequestTab('headers');
@@ -796,7 +919,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
     const started = performance.now();
 
     try {
-      const requestSnapshot = materializeRequest(request, environmentVariables);
+      const activeRequest = requestMode === 'graphql' ? createGraphqlRequest() : request;
+      const requestSnapshot = materializeRequest(activeRequest, environmentVariables);
       const command = createApiDebugCommand(requestSnapshot, isWindowsHost);
       const result = await runCmd(connectionId, command);
       const response = limitHistoryResponse(parseApiDebugResponse(result.stdout, result.stderr, Math.round(performance.now() - started)));
@@ -823,6 +947,7 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
   const loadHistoryRun = (run: ApiRunRecord) => {
     setRequest(cloneRequest(run.request));
+    setRequestMode('http');
     setActiveRunId(run.id);
     setError('');
     setNotice('');
@@ -836,7 +961,8 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
     }
 
     try {
-      const materializedRequest = materializeRequest(request, environmentVariables);
+      const activeRequest = requestMode === 'graphql' ? createGraphqlRequest() : request;
+      const materializedRequest = materializeRequest(activeRequest, environmentVariables);
       const text = createCurlPreview(showSensitive && pendingFullCurlCopy ? materializedRequest : maskSensitiveHeaders(materializedRequest));
       await navigator.clipboard.writeText(text);
       setPendingFullCurlCopy(false);
@@ -944,9 +1070,13 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
       <main className="api-main">
         <header className="api-request-line">
-          <select value={request.method} onChange={(event) => updateRequest('method', event.target.value as ApiDebugMethod)} aria-label={tCurrent('auto.remoteApiDebugger.jv69fp')}>
+          <select value={requestMode === 'graphql' ? 'POST' : request.method} onChange={(event) => updateRequest('method', event.target.value as ApiDebugMethod)} aria-label={tCurrent('auto.remoteApiDebugger.jv69fp')} disabled={requestMode === 'graphql'}>
             {methods.map((method) => <option key={method} value={method}>{method}</option>)}
           </select>
+          <div className="api-mode-switch">
+            <button type="button" className={requestMode === 'http' ? 'active' : ''} onClick={() => switchRequestMode('http')}>HTTP</button>
+            <button type="button" className={requestMode === 'graphql' ? 'active' : ''} onClick={() => switchRequestMode('graphql')}>GraphQL</button>
+          </div>
           <input value={request.url} onChange={(event) => updateUrl(event.target.value)} placeholder="http://127.0.0.1:8080/health" />
           <input
             className="api-timeout"
@@ -1043,16 +1173,55 @@ function RemoteApiDebugger({ connectionId, systemType }: RemoteApiDebuggerProps)
 
         <section className="api-request-panel">
           <div className="api-tabs" role="tablist" aria-label={tCurrent('auto.remoteApiDebugger.requestTabs')}>
+            {requestMode === 'graphql' ? (
+              <button id="api-request-tab-graphql" type="button" role="tab" aria-selected={requestTab === 'graphql'} aria-controls="api-request-panel-graphql" className={requestTab === 'graphql' ? 'active' : ''} onClick={() => setRequestTab('graphql')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'graphql')}>GraphQL</button>
+            ) : null}
             <button id="api-request-tab-headers" type="button" role="tab" aria-selected={requestTab === 'headers'} aria-controls="api-request-panel-headers" className={requestTab === 'headers' ? 'active' : ''} onClick={() => setRequestTab('headers')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'headers')}>{tCurrent('auto.remoteApiDebugger.headers')}</button>
             <button id="api-request-tab-params" type="button" role="tab" aria-selected={requestTab === 'params'} aria-controls="api-request-panel-params" className={requestTab === 'params' ? 'active' : ''} onClick={() => setRequestTab('params')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'params')}>{tCurrent('auto.remoteApiDebugger.params')}</button>
-            <button id="api-request-tab-body" type="button" role="tab" aria-selected={requestTab === 'body'} aria-controls="api-request-panel-body" className={requestTab === 'body' ? 'active' : ''} onClick={() => setRequestTab('body')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'body')}>{tCurrent('auto.remoteApiDebugger.body')}</button>
+            {requestMode === 'http' ? (
+              <button id="api-request-tab-body" type="button" role="tab" aria-selected={requestTab === 'body'} aria-controls="api-request-panel-body" className={requestTab === 'body' ? 'active' : ''} onClick={() => setRequestTab('body')} onKeyDown={(event) => handleRequestTabKeyDown(event, 'body')}>{tCurrent('auto.remoteApiDebugger.body')}</button>
+            ) : null}
             <button type="button" className={showSensitive ? 'active' : ''} onClick={() => { setShowSensitive((value) => !value); setPendingFullCurlCopy(false); }}>
               {showSensitive ? tCurrent('auto.remoteApiDebugger.hideSensitiveInfo') : tCurrent('auto.remoteApiDebugger.showSensitiveInfo')}
             </button>
             <button type="button" onClick={copyCurl} disabled={!curlPreview}>{tCurrent('auto.remoteApiDebugger.up9ow0')}</button>
           </div>
 
-          {requestTab === 'headers' ? (
+          {requestTab === 'graphql' ? (
+            <div id="api-request-panel-graphql" className="api-graphql-editor" role="tabpanel" aria-labelledby="api-request-tab-graphql">
+              <div className="api-graphql-meta">
+                <label>
+                  <span>Operation Name</span>
+                  <input value={graphqlOperationName} onChange={(event) => setGraphqlOperationName(event.target.value)} placeholder="Health" />
+                </label>
+                {graphqlVariablesError ? <span className="api-graphql-error">{graphqlVariablesError}</span> : <span>POST JSON body will be generated automatically.</span>}
+              </div>
+              <div className="api-graphql-grid">
+                <label>
+                  <span>Query</span>
+                  <CodeMirror
+                    className="api-codemirror"
+                    value={graphqlQuery}
+                    height="100%"
+                    basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, bracketMatching: true, closeBrackets: true, searchKeymap: true, defaultKeymap: true, history: true }}
+                    extensions={codeMirrorExtensions}
+                    onChange={setGraphqlQuery}
+                  />
+                </label>
+                <label>
+                  <span>Variables JSON</span>
+                  <CodeMirror
+                    className="api-codemirror"
+                    value={graphqlVariables}
+                    height="100%"
+                    basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, bracketMatching: true, closeBrackets: true, searchKeymap: true, defaultKeymap: true, history: true }}
+                    extensions={jsonEditorExtensions}
+                    onChange={setGraphqlVariables}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : requestTab === 'headers' ? (
             <div id="api-request-panel-headers" className="api-header-editor" role="tabpanel" aria-labelledby="api-request-tab-headers">
               <div className="api-request-line" style={{ minHeight: 42, borderBottom: '1px solid var(--api-border)', padding: '6px 10px' }}>
                 <select value={auth.type} onChange={(event) => updateAuth({ type: event.target.value as ApiDebugAuthConfig['type'] })} aria-label={tCurrent('auto.remoteApiDebugger.auth')}>
