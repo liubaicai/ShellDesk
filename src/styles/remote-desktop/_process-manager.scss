@@ -456,6 +456,11 @@
   text-align: center;
 }
 
+.proc-spacer-row td {
+  border-bottom: 0 !important;
+  padding: 0 !important;
+}
+
 /* Details */
 
 .proc-detail-panel {
@@ -650,6 +655,82 @@
 
 .proc-path-list span {
   white-space: nowrap;
+}
+
+.proc-io-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.proc-io-grid div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid var(--proc-border);
+  border-radius: 7px;
+  padding: 7px;
+  background: var(--proc-panel-soft);
+}
+
+.proc-io-grid span {
+  overflow: hidden;
+  color: var(--proc-muted);
+  font-size: 10.5px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.proc-io-grid strong {
+  overflow: hidden;
+  color: var(--proc-text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proc-thread-list {
+  display: grid;
+  gap: 5px;
+}
+
+.proc-thread-list div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 72px 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--proc-border);
+  border-radius: 7px;
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.proc-thread-list strong {
+  color: var(--proc-accent);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 820;
+}
+
+.proc-thread-list span,
+.proc-thread-list em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--proc-muted-strong);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proc-thread-list > span {
+  color: var(--proc-muted);
 }
 
 .proc-relation-list {

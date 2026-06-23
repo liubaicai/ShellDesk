@@ -152,6 +152,39 @@ exit $exitCode
   }
   return `${runtime} images --format '{{json .}}' 2>&1`;
 }
+export function getComposeListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    return powershellCommand(`
+$runtime = ${powershellSingleQuote(runtime)}
+& $runtime compose ls --format json 2>&1 | ForEach-Object { $_.ToString() }
+$exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+exit $exitCode
+`);
+  }
+  return `${runtime} compose ls --format json 2>&1`;
+}
+export function getNetworkListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    return powershellCommand(`
+$runtime = ${powershellSingleQuote(runtime)}
+& $runtime network ls --format '{{json .}}' 2>&1 | ForEach-Object { $_.ToString() }
+$exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+exit $exitCode
+`);
+  }
+  return `${runtime} network ls --format '{{json .}}' 2>&1`;
+}
+export function getVolumeListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
+  if (isWindowsHost) {
+    return powershellCommand(`
+$runtime = ${powershellSingleQuote(runtime)}
+& $runtime volume ls --format '{{json .}}' 2>&1 | ForEach-Object { $_.ToString() }
+$exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+exit $exitCode
+`);
+  }
+  return `${runtime} volume ls --format '{{json .}}' 2>&1`;
+}
 export function getContainerDetailCommand(runtime: ContainerRuntime, containerId: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
     return powershellCommand(`
@@ -175,6 +208,14 @@ ${runtime} stats --no-stream --format '{{json .}}' "$target" 2>&1 || true
 printf '${CONTAINER_LOGS_MARKER}\\n'
 ${runtime} logs --tail 200 "$target" 2>&1 || true
 `;
+}
+export function getContainerLogsCommand(runtime: ContainerRuntime, containerId: string, isWindowsHost: boolean, tail = 200, sinceSeconds?: number) {
+  const args = ['logs', '--tail', String(Math.max(1, Math.min(tail, 1000)))];
+  if (sinceSeconds && sinceSeconds > 0) {
+    args.push('--since', `${Math.max(1, Math.min(sinceSeconds, 3600))}s`);
+  }
+  args.push(containerId);
+  return getRuntimeCliCommand(runtime, args, isWindowsHost);
 }
 export function getContainerActionCommand(runtime: ContainerRuntime, action: ContainerAction, containerId: string, isWindowsHost: boolean) {
   const runtimeAction = action === 'remove' ? 'rm' : action;

@@ -12,7 +12,7 @@ interface RemoteNetworkDiagnosticsProps {
   systemType?: RemoteSystemType;
 }
 
-type NetworkToolKey = 'ping' | 'dns' | 'trace' | 'curl' | 'tcp' | 'routes';
+type NetworkToolKey = 'ping' | 'dns' | 'trace' | 'curl' | 'tcp' | 'mtr' | 'iperf3' | 'whois' | 'ssl' | 'routes';
 type RunStatus = 'running' | 'success' | 'error';
 
 interface NetworkDiagnosticRun {
@@ -46,6 +46,10 @@ const toolDefinitions: Array<{ key: NetworkToolKey; label: string; description: 
   { key: 'trace', label: tCurrent('auto.remoteNetworkDiagnostics.1h9kdix'), description: tCurrent('auto.remoteNetworkDiagnostics.k7mqil') },
   { key: 'curl', label: tCurrent('auto.remoteNetworkDiagnostics.18g7zaq'), description: tCurrent('auto.remoteNetworkDiagnostics.expaj0') },
   { key: 'tcp', label: tCurrent('auto.remoteNetworkDiagnostics.uhg353'), description: tCurrent('auto.remoteNetworkDiagnostics.orxu46') },
+  { key: 'mtr', label: 'MTR', description: tCurrent('network.tool.mtr.description') },
+  { key: 'iperf3', label: 'iperf3', description: tCurrent('network.tool.iperf3.description') },
+  { key: 'whois', label: 'Whois', description: tCurrent('network.tool.whois.description') },
+  { key: 'ssl', label: 'SSL', description: tCurrent('network.tool.ssl.description') },
   { key: 'routes', label: tCurrent('auto.remoteNetworkDiagnostics.g3ahzj'), description: tCurrent('auto.remoteNetworkDiagnostics.fv1041') },
 ];
 
@@ -187,6 +191,70 @@ function buildTcpCommand(form: NetworkFormState, isWindowsHost: boolean) {
     : tCurrent('auto.remoteNetworkDiagnostics.1wr64u8', { value0: shellSingleQuote(host), value1: port, value2: shellSingleQuote(`cat < /dev/null > /dev/tcp/${host}/${port}`) });
 }
 
+function buildMtrCommand(form: NetworkFormState, isWindowsHost: boolean) {
+  const host = validateHost(form.host, 'Host');
+  const count = clampInteger(form.count, 6, 2, 20);
+  return isWindowsHost
+    ? powershellCommand(`pathping -q ${count} ${powershellSingleQuote(host)}`)
+    : `if command -v mtr >/dev/null 2>&1; then mtr -rwzc ${count} ${shellSingleQuote(host)}; elif command -v traceroute >/dev/null 2>&1; then traceroute ${shellSingleQuote(host)}; else ping -c ${count} ${shellSingleQuote(host)}; fi`;
+}
+
+function buildIperfCommand(form: NetworkFormState, isWindowsHost: boolean) {
+  const host = validateHost(form.host, 'Host');
+  const port = clampInteger(form.port, 5201, 1, 65535);
+  const timeout = clampInteger(form.timeout, 5, 1, 60);
+  if (isWindowsHost) {
+    return powershellCommand(`
+if (-not (Get-Command iperf3 -ErrorAction SilentlyContinue)) {
+  Write-Error "iperf3 CLI not found on remote host."
+  exit 127
+}
+iperf3 -c ${powershellSingleQuote(host)} -p ${port} -t ${timeout}
+`);
+  }
+  return `if command -v iperf3 >/dev/null 2>&1; then iperf3 -c ${shellSingleQuote(host)} -p ${port} -t ${timeout}; else printf 'iperf3 CLI not found on remote host.\\n' >&2; exit 127; fi`;
+}
+
+function buildWhoisCommand(form: NetworkFormState, isWindowsHost: boolean) {
+  const domain = validateHost(form.domain, 'Domain/IP');
+  if (isWindowsHost) {
+    return powershellCommand(`
+if (Get-Command whois -ErrorAction SilentlyContinue) {
+  whois ${powershellSingleQuote(domain)}
+} else {
+  Write-Error "whois CLI not found on remote host."
+  exit 127
+}
+`);
+  }
+  return `if command -v whois >/dev/null 2>&1; then whois ${shellSingleQuote(domain)}; else printf 'whois CLI not found on remote host.\\n' >&2; exit 127; fi`;
+}
+
+function buildSslCommand(form: NetworkFormState, isWindowsHost: boolean) {
+  const host = validateHost(form.host, 'Host');
+  const port = clampInteger(form.port, 443, 1, 65535);
+  if (isWindowsHost) {
+    return powershellCommand(`
+$hostName = ${powershellSingleQuote(host)}
+$port = ${port}
+$tcp = [Net.Sockets.TcpClient]::new()
+$tcp.Connect($hostName, $port)
+$ssl = [Net.Security.SslStream]::new($tcp.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
+$ssl.AuthenticateAsClient($hostName)
+$cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($ssl.RemoteCertificate)
+"Subject: $($cert.Subject)"
+"Issuer: $($cert.Issuer)"
+"NotBefore: $($cert.NotBefore)"
+"NotAfter: $($cert.NotAfter)"
+"Thumbprint: $($cert.Thumbprint)"
+"Protocol: $($ssl.SslProtocol)"
+$ssl.Dispose()
+$tcp.Dispose()
+`);
+  }
+  return `if command -v openssl >/dev/null 2>&1; then printf '' | openssl s_client -connect ${shellSingleQuote(`${host}:${port}`)} -servername ${shellSingleQuote(host)} 2>/dev/null | openssl x509 -noout -subject -issuer -dates -fingerprint -sha256; else printf 'openssl CLI not found on remote host.\\n' >&2; exit 127; fi`;
+}
+
 function buildRoutesCommand(isWindowsHost: boolean) {
   return isWindowsHost
     ? powershellCommand('Get-NetRoute | Sort-Object RouteMetric, DestinationPrefix | Format-Table -AutoSize | Out-String -Width 240')
@@ -200,6 +268,10 @@ function buildCommand(tool: NetworkToolKey, form: NetworkFormState, isWindowsHos
     case 'trace': return buildTraceCommand(form, isWindowsHost);
     case 'curl': return buildCurlCommand(form, isWindowsHost);
     case 'tcp': return buildTcpCommand(form, isWindowsHost);
+    case 'mtr': return buildMtrCommand(form, isWindowsHost);
+    case 'iperf3': return buildIperfCommand(form, isWindowsHost);
+    case 'whois': return buildWhoisCommand(form, isWindowsHost);
+    case 'ssl': return buildSslCommand(form, isWindowsHost);
     case 'routes': return buildRoutesCommand(isWindowsHost);
     default: return '';
   }
@@ -208,11 +280,20 @@ function buildCommand(tool: NetworkToolKey, form: NetworkFormState, isWindowsHos
 function getToolTarget(tool: NetworkToolKey, form: NetworkFormState) {
   switch (tool) {
     case 'dns': return form.domain.trim();
+    case 'whois': return form.domain.trim();
     case 'curl': return form.url.trim();
+    case 'iperf3':
+    case 'ssl':
     case 'tcp': return `${form.host.trim()}:${form.port.trim()}`;
     case 'routes': return tCurrent('auto.remoteNetworkDiagnostics.g3ahzj2');
     default: return form.host.trim();
   }
+}
+
+function getDefaultPortForTool(tool: NetworkToolKey) {
+  if (tool === 'ssl') return '443';
+  if (tool === 'iperf3') return '5201';
+  return tool === 'tcp' ? '80' : '';
 }
 
 function extractSummary(tool: NetworkToolKey, stdout: string, stderr: string, exitCode: number, durationMs: number) {
@@ -250,6 +331,34 @@ function extractSummary(tool: NetworkToolKey, stdout: string, stderr: string, ex
   if (tool === 'trace') {
     const hopCount = text.split(/\r?\n/).filter((line) => /^\s*\d+/.test(line)).length;
     summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1spkigm'), value: hopCount ? String(hopCount) : '-' });
+  }
+
+  if (tool === 'mtr') {
+    const hopCount = text.split(/\r?\n/).filter((line) => /^\s*(?:\d+\.|\d+\s+)/.test(line)).length;
+    const lossMatch = text.match(/(\d+(?:\.\d+)?)%\s+Snt/i);
+    summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.1spkigm'), value: hopCount ? String(hopCount) : '-' });
+    if (lossMatch) summary.push({ label: tCurrent('auto.remoteNetworkDiagnostics.183h3vk'), value: `${lossMatch[1]}%` });
+  }
+
+  if (tool === 'iperf3') {
+    const senderMatch = text.match(/([\d.]+)\s+([KMG]bits\/sec)\s+sender/i);
+    const receiverMatch = text.match(/([\d.]+)\s+([KMG]bits\/sec)\s+receiver/i);
+    if (senderMatch) summary.push({ label: 'Sender', value: `${senderMatch[1]} ${senderMatch[2]}` });
+    if (receiverMatch) summary.push({ label: 'Receiver', value: `${receiverMatch[1]} ${receiverMatch[2]}` });
+  }
+
+  if (tool === 'whois') {
+    const registrar = text.match(/Registrar:\s*(.+)/i)?.[1]?.trim();
+    const organization = text.match(/(?:OrgName|Organization):\s*(.+)/i)?.[1]?.trim();
+    if (registrar) summary.push({ label: 'Registrar', value: registrar });
+    if (organization) summary.push({ label: 'Org', value: organization });
+  }
+
+  if (tool === 'ssl') {
+    const notAfter = text.match(/(?:notAfter=|NotAfter:\s*)(.+)/i)?.[1]?.trim();
+    const issuer = text.match(/(?:issuer=|Issuer:\s*)(.+)/i)?.[1]?.trim();
+    if (notAfter) summary.push({ label: 'Expires', value: notAfter });
+    if (issuer) summary.push({ label: 'Issuer', value: issuer });
   }
 
   if (tool === 'routes') {
@@ -313,6 +422,13 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
 
   const updateForm = (key: keyof NetworkFormState, value: string) => {
     setForm((currentForm) => ({ ...currentForm, [key]: value }));
+  };
+
+  const selectTool = (tool: NetworkToolKey) => {
+    setActiveTool(tool);
+    const defaultPort = getDefaultPortForTool(tool);
+    if (!defaultPort) return;
+    setForm((currentForm) => ({ ...currentForm, port: defaultPort }));
   };
 
   const executeTool = async () => {
@@ -435,7 +551,7 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
               key={tool.key}
               type="button"
               className={activeTool === tool.key ? 'active' : ''}
-              onClick={() => setActiveTool(tool.key)}
+              onClick={() => selectTool(tool.key)}
             >
               <span>
                 <strong>{tool.label}</strong>
@@ -461,14 +577,14 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
         {error ? <DismissibleAlert className="network-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
 
         <section className="network-form">
-          {activeTool === 'ping' || activeTool === 'trace' || activeTool === 'tcp' ? (
+          {activeTool === 'ping' || activeTool === 'trace' || activeTool === 'tcp' || activeTool === 'mtr' || activeTool === 'iperf3' || activeTool === 'ssl' ? (
             <label>
               <span>{tCurrent('auto.remoteNetworkDiagnostics.h6x85v4')}</span>
               <input value={form.host} onChange={(event) => updateForm('host', event.target.value)} />
             </label>
           ) : null}
 
-          {activeTool === 'dns' ? (
+          {activeTool === 'dns' || activeTool === 'whois' ? (
             <label>
               <span>{tCurrent('auto.remoteNetworkDiagnostics.57pmxl2')}</span>
               <input value={form.domain} onChange={(event) => updateForm('domain', event.target.value)} />
@@ -482,21 +598,21 @@ function RemoteNetworkDiagnostics({ connectionId, systemType }: RemoteNetworkDia
             </label>
           ) : null}
 
-          {activeTool === 'tcp' ? (
+          {activeTool === 'tcp' || activeTool === 'iperf3' || activeTool === 'ssl' ? (
             <label>
               <span>{tCurrent('auto.remoteNetworkDiagnostics.19ijc5j')}</span>
               <input inputMode="numeric" value={form.port} onChange={(event) => updateForm('port', event.target.value)} />
             </label>
           ) : null}
 
-          {activeTool === 'ping' ? (
+          {activeTool === 'ping' || activeTool === 'mtr' ? (
             <label>
               <span>{tCurrent('auto.remoteNetworkDiagnostics.fotggk')}</span>
               <input inputMode="numeric" value={form.count} onChange={(event) => updateForm('count', event.target.value)} />
             </label>
           ) : null}
 
-          {activeTool === 'curl' ? (
+          {activeTool === 'curl' || activeTool === 'iperf3' ? (
             <label>
               <span>{tCurrent('auto.remoteNetworkDiagnostics.tabbi8')}</span>
               <input inputMode="numeric" value={form.timeout} onChange={(event) => updateForm('timeout', event.target.value)} />

@@ -92,6 +92,12 @@ function createSecurityCheckListGroups(definitions: SecurityCheckDefinition[], l
     },
     createSingleGroup('file-permissions'),
     createSingleGroup('updates'),
+    {
+      id: 'cis-baseline',
+      title: language === 'zh-CN' ? 'CIS 基线' : 'CIS baseline',
+      description: language === 'zh-CN' ? '轻量核查 SSH、账户策略、防火墙、审计和系统安全基线。' : 'Lightweight checks for SSH, account policy, firewall, audit, and system hardening baselines.',
+      definitionIds: ['cis-baseline'],
+    },
   ]
     .filter((group): group is SecurityCheckListGroup => Boolean(group))
     .map((group) => ({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t, useCurrentAppLanguage, type MessageId } from '../../i18n';
 import { buildContainerDiagnostics } from './containerCommands';
 import { formatShortId, getStateLabel } from './containerParsers';
@@ -27,21 +27,62 @@ interface ContainerDetailPanelProps {
   onCopy: (value: string, label: string) => void | Promise<void>;
   onConfigSubmit: (form: ContainerConfigForm) => void | Promise<void>;
   onExec: (command: string) => Promise<{ output: string; code: number }>;
+  onReadLogs: (containerId: string, options?: { tail?: number; sinceSeconds?: number }) => Promise<string>;
 }
 
-function ContainerDetailPanel({ container, detail, detailLoading, containersLoading, actingKey, savingConfig, onAction, onReload, onCopy, onConfigSubmit, onExec }: ContainerDetailPanelProps) {
+function ContainerDetailPanel({ container, detail, detailLoading, containersLoading, actingKey, savingConfig, onAction, onReload, onCopy, onConfigSubmit, onExec, onReadLogs }: ContainerDetailPanelProps) {
   const language = useCurrentAppLanguage();
+  const liveLogRequestRef = useRef(0);
   const [detailTab, setDetailTab] = useState<DetailTab>('summary');
   const [configForm, setConfigForm] = useState<ContainerConfigForm>(() => createDefaultConfigForm());
   const [execCommand, setExecCommand] = useState('id && uname -a');
   const [execOutput, setExecOutput] = useState('');
   const [execRunning, setExecRunning] = useState(false);
+  const [liveLogs, setLiveLogs] = useState('');
+  const [logsStreaming, setLogsStreaming] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState('');
   const selectedDetail = detail?.id === container?.id ? detail : null;
 
   useEffect(() => {
     setDetailTab('summary');
     setExecOutput('');
+    setLiveLogs('');
+    setLogsStreaming(false);
+    setLogsError('');
+    liveLogRequestRef.current += 1;
   }, [container?.id]);
+
+  useEffect(() => {
+    if (!logsStreaming || !container || container.state !== 'running') {
+      return undefined;
+    }
+    let disposed = false;
+    const requestId = liveLogRequestRef.current + 1;
+    liveLogRequestRef.current = requestId;
+    const pollLogs = async () => {
+      if (disposed || liveLogRequestRef.current !== requestId) return;
+      setLogsLoading(true);
+      try {
+        const output = await onReadLogs(container.id, { tail: 240, sinceSeconds: 8 });
+        if (disposed || liveLogRequestRef.current !== requestId) return;
+        setLiveLogs(output || t('container.ui.noRecentLogs', language));
+        setLogsError('');
+      } catch (error) {
+        if (disposed || liveLogRequestRef.current !== requestId) return;
+        setLogsError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!disposed && liveLogRequestRef.current === requestId) {
+          setLogsLoading(false);
+          window.setTimeout(pollLogs, 3000);
+        }
+      }
+    };
+    void pollLogs();
+    return () => {
+      disposed = true;
+    };
+  }, [container, language, logsStreaming, onReadLogs]);
 
   useEffect(() => {
     if (!selectedDetail) {
@@ -93,6 +134,20 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
       // Global command errors are surfaced by the manager alert.
     } finally {
       setExecRunning(false);
+    }
+  };
+
+  const refreshLogsOnce = async () => {
+    if (!container) return;
+    setLogsLoading(true);
+    setLogsError('');
+    try {
+      const output = await onReadLogs(container.id, { tail: 240 });
+      setLiveLogs(output || t('container.ui.noRecentLogs', language));
+    } catch (error) {
+      setLogsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLogsLoading(false);
     }
   };
 
@@ -151,6 +206,22 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
     </>
   );
 
+  const renderLogsPanel = () => (
+    <div className="container-live-logs">
+      <div className="container-live-logs-toolbar">
+        <span>{logsStreaming ? t('container.ui.logsLive', language) : t('container.ui.logsSnapshot', language)}</span>
+        <div>
+          <button type="button" className="container-action-btn" onClick={() => void refreshLogsOnce()} disabled={logsLoading}>{logsLoading ? t('container.ui.reading', language) : t('container.ui.refresh', language)}</button>
+          <button type="button" className={logsStreaming ? 'container-action-btn danger' : 'container-action-btn primary'} onClick={() => setLogsStreaming((current) => !current)} disabled={container?.state !== 'running'}>
+            {logsStreaming ? t('container.ui.stopLiveLogs', language) : t('container.ui.startLiveLogs', language)}
+          </button>
+        </div>
+      </div>
+      {logsError ? <div className="container-inline-warning">{logsError}</div> : null}
+      <pre>{liveLogs || selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre>
+    </div>
+  );
+
   return (
     <section className="container-detail-panel" aria-label={t('container.ui.detailAria', language)}>
       {container ? (
@@ -161,7 +232,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
           <div className="container-detail-tabs" role="tablist" aria-label={t('container.ui.detailTabsAria', language)}><button type="button" role="tab" className={detailTab === 'summary' ? 'active' : ''} onClick={() => setDetailTab('summary')}>{t('container.ui.summary', language)}</button><button type="button" role="tab" className={detailTab === 'config' ? 'active' : ''} onClick={() => setDetailTab('config')}>{t('container.ui.config', language)}</button><button type="button" role="tab" className={detailTab === 'logs' ? 'active' : ''} onClick={() => setDetailTab('logs')}>{t('container.ui.logs', language)}</button><button type="button" role="tab" className={detailTab === 'inspect' ? 'active' : ''} onClick={() => setDetailTab('inspect')}>Inspect</button><button type="button" role="tab" className={detailTab === 'exec' ? 'active' : ''} onClick={() => setDetailTab('exec')}>Exec</button></div>
           <div className="container-detail-body">
             {detailLoading && !selectedDetail ? <div className="container-empty">{t('container.ui.loadingDetail', language)}</div> : null}
-            {selectedDetail || !detailLoading ? <>{detailTab === 'summary' ? renderDetailSummary() : null}{detailTab === 'config' ? renderContainerConfig() : null}{detailTab === 'logs' ? <pre>{selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre> : null}{detailTab === 'inspect' ? <pre>{selectedDetail?.inspectText || t('container.ui.noInspect', language)}</pre> : null}{detailTab === 'exec' ? <div className="container-exec-panel"><form onSubmit={(event) => { event.preventDefault(); void executeContainerExec(); }}><input type="text" value={execCommand} onChange={(event) => setExecCommand(event.target.value)} placeholder={t('container.ui.execPlaceholder', language)} aria-label={t('container.ui.execAria', language)} /><button type="submit" className="container-action-btn primary" disabled={execRunning || container.state !== 'running'}>{execRunning ? t('container.ui.execRunning', language) : t('container.ui.run', language)}</button></form><pre>{execOutput || (container.state !== 'running' ? t('container.ui.execNotRunning', language) : t('container.ui.execPrompt', language))}</pre></div> : null}</> : null}
+            {selectedDetail || !detailLoading ? <>{detailTab === 'summary' ? renderDetailSummary() : null}{detailTab === 'config' ? renderContainerConfig() : null}{detailTab === 'logs' ? renderLogsPanel() : null}{detailTab === 'inspect' ? <pre>{selectedDetail?.inspectText || t('container.ui.noInspect', language)}</pre> : null}{detailTab === 'exec' ? <div className="container-exec-panel"><form onSubmit={(event) => { event.preventDefault(); void executeContainerExec(); }}><input type="text" value={execCommand} onChange={(event) => setExecCommand(event.target.value)} placeholder={t('container.ui.execPlaceholder', language)} aria-label={t('container.ui.execAria', language)} /><button type="submit" className="container-action-btn primary" disabled={execRunning || container.state !== 'running'}>{execRunning ? t('container.ui.execRunning', language) : t('container.ui.run', language)}</button></form><pre>{execOutput || (container.state !== 'running' ? t('container.ui.execNotRunning', language) : t('container.ui.execPrompt', language))}</pre></div> : null}</> : null}
           </div>
         </>
       ) : (

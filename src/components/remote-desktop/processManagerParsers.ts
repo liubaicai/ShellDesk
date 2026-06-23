@@ -51,6 +51,25 @@ export function compactAiField(value: string | number | undefined | null, maxLen
   return `${normalizedValue.slice(0, maxLength)}...`;
 }
 
+function formatIoValue(label: string, value: string) {
+  const numericValue = Number.parseInt(value, 10);
+  if (!Number.isFinite(numericValue)) {
+    return value || '-';
+  }
+  if (/bytes|char/i.test(label)) {
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    let nextValue = numericValue;
+    let unitIndex = 0;
+    while (nextValue >= 1024 && unitIndex < units.length - 1) {
+      nextValue /= 1024;
+      unitIndex += 1;
+    }
+    const digits = nextValue >= 10 || unitIndex === 0 ? 0 : 1;
+    return `${nextValue.toFixed(digits)} ${units[unitIndex]}`;
+  }
+  return numericValue.toLocaleString();
+}
+
 export function parseLinuxProcessLine(line: string, language: AppLanguage): RemoteProcessEntry | null {
   const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/);
 
@@ -274,6 +293,8 @@ export function parseWindowsProcessOutput(stdout: string): RemoteProcessEntry[] 
 export function parseProcessDetailOutput(stdout: string, pid: number): ProcessDetail {
   const detail: ProcessDetail = {
     pid,
+    ioStats: [],
+    threads: [],
     ports: [],
     loadedAt: Date.now(),
   };
@@ -290,6 +311,24 @@ export function parseProcessDetailOutput(stdout: string, pid: number): ProcessDe
       detail.cwd = value;
     } else if (kind === 'PATH') {
       detail.executablePath = value;
+    } else if (kind === 'IO') {
+      const [label = '', rawValue = ''] = rest;
+      if (label) {
+        detail.ioStats.push({ label, value: formatIoValue(label, rawValue) });
+      }
+    } else if (kind === 'THREAD') {
+      const [idText = '', state = '', cpuTime = '', priority = '', waitReason = '', ...nameParts] = rest;
+      const id = readInteger(idText);
+      if (id !== undefined) {
+        detail.threads.push({
+          id,
+          state: state || undefined,
+          cpuTime: cpuTime || undefined,
+          priority: priority || undefined,
+          waitReason: waitReason || undefined,
+          name: nameParts.join('\t').trim() || undefined,
+        });
+      }
     } else if (kind === 'PORT') {
       detail.ports.push(value);
     }

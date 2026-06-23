@@ -1,6 +1,6 @@
 import { t, type AppLanguage } from '../../i18n';
 import { readNumber, readString } from './parseUtils';
-import type { ContainerDetail, ContainerRuntimeConfig, ContainerState, ContainerStats, ContainerSummary, ImageSummary, RestartPolicy } from './containerTypes';
+import type { ComposeProjectSummary, ContainerDetail, ContainerNetworkSummary, ContainerRuntimeConfig, ContainerState, ContainerStats, ContainerSummary, ContainerVolumeSummary, ImageSummary, RestartPolicy } from './containerTypes';
 const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
 const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
 const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
@@ -153,6 +153,48 @@ export function parseImageSummary(record: Record<string, unknown>): ImageSummary
     tag,
     size: readString(record, 'Size', 'size', 'VirtualSize') || '-',
     createdAt: readString(record, 'CreatedAt', 'CreatedSince', 'Created', 'createdAt') || undefined,
+  };
+}
+export function parseComposeProjectSummary(record: Record<string, unknown>, index: number): ComposeProjectSummary | null {
+  const name = readString(record, 'Name', 'name');
+  if (!name) {
+    return null;
+  }
+  return {
+    id: name || `compose-${index}`,
+    name,
+    status: readString(record, 'Status', 'status') || '-',
+    configFiles: readString(record, 'ConfigFiles', 'ConfigFilesList', 'config_files', 'Config') || '-',
+    workingDir: readString(record, 'WorkingDir', 'working_dir', 'ProjectDirectory') || '-',
+  };
+}
+export function parseContainerNetworkSummary(record: Record<string, unknown>): ContainerNetworkSummary | null {
+  const id = readString(record, 'ID', 'Id', 'id').replace(/^sha256:/, '');
+  const name = readString(record, 'Name', 'name');
+  if (!id && !name) {
+    return null;
+  }
+  return {
+    id: id || name,
+    name: name || formatShortId(id),
+    driver: readString(record, 'Driver', 'driver') || '-',
+    scope: readString(record, 'Scope', 'scope') || '-',
+    internal: readString(record, 'Internal', 'internal') || '-',
+    ipv6: readString(record, 'IPv6', 'EnableIPv6', 'ipv6') || '-',
+    labels: readString(record, 'Labels', 'labels') || '-',
+  };
+}
+export function parseContainerVolumeSummary(record: Record<string, unknown>): ContainerVolumeSummary | null {
+  const name = readString(record, 'Name', 'name');
+  if (!name) {
+    return null;
+  }
+  return {
+    name,
+    driver: readString(record, 'Driver', 'driver') || '-',
+    mountpoint: readString(record, 'Mountpoint', 'MountPoint', 'mountpoint') || '-',
+    scope: readString(record, 'Scope', 'scope') || '-',
+    labels: readString(record, 'Labels', 'labels') || '-',
   };
 }
 export function splitContainerDetailSections(stdout: string) {

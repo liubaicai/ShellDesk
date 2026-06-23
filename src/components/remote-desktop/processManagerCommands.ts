@@ -324,6 +324,27 @@ if ($rowCount -eq 0) {
 export function getLinuxProcessDetailCommand(pid: number) {
   return `
 { pwdx ${pid} 2>/dev/null | sed 's/^[^:]*:[[:space:]]*/CWD\\t/'; } || true
+if [ -r /proc/${pid}/io ]; then
+  awk '
+    /^(read_bytes|write_bytes|syscr|syscw|rchar|wchar):/ {
+      key = $1
+      gsub(":", "", key)
+      print "IO\\t" key "\\t" $2
+    }
+  ' /proc/${pid}/io 2>/dev/null || true
+fi
+if [ -d /proc/${pid}/task ]; then
+  count=0
+  for task in /proc/${pid}/task/[0-9]*; do
+    [ -d "$task" ] || continue
+    tid="\${task##*/}"
+    state="$(awk '/^State:/ { print $2; exit }' "$task/status" 2>/dev/null)"
+    name="$(cat "$task/comm" 2>/dev/null | head -n 1)"
+    printf 'THREAD\\t%s\\t%s\\t\\t\\t%s\\n' "$tid" "\${state:-"-"}" "$name"
+    count=$((count + 1))
+    [ "$count" -ge 120 ] && break
+  done
+fi
 if command -v ss >/dev/null 2>&1; then
   ss -Htunlp 2>/dev/null | awk -v pid='pid=${pid},' 'index($0, pid) { print "PORT\\t" $0 }'
 elif command -v netstat >/dev/null 2>&1; then
@@ -348,6 +369,26 @@ if ($proc -and $proc.ExecutablePath) {
     if ($psProc.Path) { "PATH" + $tab + $psProc.Path }
   } catch {}
 }
+try {
+  $psProc = Get-Process -Id ${pid} -ErrorAction Stop
+  $ioRows = @(
+    @('Read bytes', $psProc.IOReadBytes),
+    @('Write bytes', $psProc.IOWriteBytes),
+    @('Read ops', $psProc.IOReadOperations),
+    @('Write ops', $psProc.IOWriteOperations)
+  )
+  foreach ($row in $ioRows) {
+    if ($null -ne $row[1]) { "IO" + $tab + $row[0] + $tab + $row[1] }
+  }
+  $threadCount = 0
+  foreach ($thread in @($psProc.Threads)) {
+    if ($threadCount -ge 120) { break }
+    $threadCount += 1
+    $cpu = ''
+    try { if ($thread.TotalProcessorTime) { $cpu = $thread.TotalProcessorTime.ToString() } } catch {}
+    "THREAD" + $tab + $thread.Id + $tab + $thread.ThreadState + $tab + $cpu + $tab + $thread.PriorityLevel + $tab + $thread.WaitReason
+  }
+} catch {}
 try {
   if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
     Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction Stop | ForEach-Object {

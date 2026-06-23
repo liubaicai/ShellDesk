@@ -23,6 +23,32 @@ export interface ImageSummary {
   createdAt?: string;
 }
 
+export interface ComposeProjectSummary {
+  id: string;
+  name: string;
+  status: string;
+  configFiles: string;
+  workingDir: string;
+}
+
+export interface ContainerNetworkSummary {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  internal: string;
+  ipv6: string;
+  labels: string;
+}
+
+export interface ContainerVolumeSummary {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  scope: string;
+  labels: string;
+}
+
 export interface RemoteContainerManagerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
@@ -106,7 +132,7 @@ export interface ContainerConfigForm {
   memoryLimit: string;
 }
 
-export type ManagerTab = 'containers' | 'images';
+export type ManagerTab = 'containers' | 'images' | 'compose' | 'networks' | 'volumes';
 export type ContainerFilter = 'all' | ContainerState;
 export type DetailTab = 'summary' | 'config' | 'logs' | 'inspect' | 'exec';
 export type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'kill' | 'remove';

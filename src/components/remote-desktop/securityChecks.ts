@@ -524,6 +524,33 @@ function evaluateUpdates(result: SecurityCommandResult, language: AppLanguage): 
   );
 }
 
+function evaluateCisBaseline(result: SecurityCommandResult, language: AppLanguage): SecurityCheckResult {
+  const outputLines = lines(raw(result));
+  const itemLines = outputLines.filter((line) => line.startsWith('CIS:')).map((line) => line.slice(4));
+  const failedItems = itemLines.filter((line) => /:fail:/i.test(line));
+  const warningItems = itemLines.filter((line) => /:warn:/i.test(line));
+  const passedItems = itemLines.filter((line) => /:pass:/i.test(line));
+  const unknownItems = itemLines.filter((line) => /:unknown:/i.test(line));
+  const status: SecurityStatus = failedItems.length ? 'failed' : warningItems.length || unknownItems.length ? 'warning' : 'passed';
+  const severity: SecuritySeverity = failedItems.length >= 3 ? 'high' : failedItems.length ? 'medium' : warningItems.length ? 'low' : 'info';
+  const title = language === 'zh-CN' ? 'CIS 基线检查' : 'CIS baseline checks';
+
+  return createResult(
+    'cis-baseline',
+    title,
+    severity,
+    status,
+    language === 'zh-CN'
+      ? `通过 ${passedItems.length} 项，失败 ${failedItems.length} 项，需关注 ${warningItems.length + unknownItems.length} 项。`
+      : `${passedItems.length} passed, ${failedItems.length} failed, ${warningItems.length + unknownItems.length} need attention.`,
+    itemLines.length ? itemLines : [language === 'zh-CN' ? '未返回 CIS 基线数据。' : 'No CIS baseline data was returned.'],
+    status === 'passed'
+      ? [language === 'zh-CN' ? '保持当前基线，并定期使用发行版或企业安全工具复核完整 CIS Benchmark。' : 'Keep this baseline and periodically verify the full CIS Benchmark with distro or enterprise security tooling.']
+      : [language === 'zh-CN' ? '优先修复 fail 项；warn/unknown 项需要结合业务策略和主机角色复核。' : 'Prioritize failed items; review warning/unknown items against business policy and host role.'],
+    result,
+  );
+}
+
 function linuxSshCommand(language: AppLanguage) {
   const notFound = t('securityCheck.command.sshConfigNotFound', language);
 
@@ -682,6 +709,40 @@ fi
 `;
 }
 
+function linuxCisBaselineCommand() {
+  return `
+emit() { printf 'CIS:%s:%s:%s\\n' "$1" "$2" "$3"; }
+if command -v sshd >/dev/null 2>&1; then
+  sshd_config="$(sshd -T 2>/dev/null || true)"
+elif [ -f /etc/ssh/sshd_config ]; then
+  sshd_config="$(grep -Ei '^\\s*(PermitRootLogin|PasswordAuthentication|PermitEmptyPasswords|X11Forwarding)\\s+' /etc/ssh/sshd_config 2>/dev/null || true)"
+else
+  sshd_config=""
+fi
+printf '%s\\n' "$sshd_config" | grep -Eiq '^permitrootlogin\\s+(no|prohibit-password)' && emit '5.2.8 PermitRootLogin disabled' pass 'root SSH login is restricted' || emit '5.2.8 PermitRootLogin disabled' fail 'root SSH login is not clearly disabled'
+printf '%s\\n' "$sshd_config" | grep -Eiq '^passwordauthentication\\s+no' && emit '5.2.10 PasswordAuthentication disabled' pass 'SSH password login is disabled' || emit '5.2.10 PasswordAuthentication disabled' warn 'SSH password login is enabled or unknown'
+printf '%s\\n' "$sshd_config" | grep -Eiq '^permitemptypasswords\\s+no' && emit '5.2.11 PermitEmptyPasswords disabled' pass 'empty SSH passwords are disabled' || emit '5.2.11 PermitEmptyPasswords disabled' fail 'empty SSH password setting is unsafe or unknown'
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -Eiq 'Status:\\s+active'; then
+  emit '3.5 Firewall active' pass 'ufw is active'
+elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state 2>/dev/null | grep -qi running; then
+  emit '3.5 Firewall active' pass 'firewalld is running'
+elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'chain'; then
+  emit '3.5 Firewall active' pass 'nftables rules are present'
+else
+  emit '3.5 Firewall active' warn 'no active firewall provider was detected'
+fi
+pass_max="$(awk '/^\\s*PASS_MAX_DAYS/ { print $2; exit }' /etc/login.defs 2>/dev/null)"
+case "$pass_max" in ''|*[!0-9]*) emit '5.4.1.1 Password max days' unknown 'PASS_MAX_DAYS is unavailable' ;; *) [ "$pass_max" -le 365 ] && emit '5.4.1.1 Password max days' pass "PASS_MAX_DAYS=$pass_max" || emit '5.4.1.1 Password max days' warn "PASS_MAX_DAYS=$pass_max" ;; esac
+pass_min="$(awk '/^\\s*PASS_MIN_DAYS/ { print $2; exit }' /etc/login.defs 2>/dev/null)"
+case "$pass_min" in ''|*[!0-9]*) emit '5.4.1.2 Password min days' unknown 'PASS_MIN_DAYS is unavailable' ;; *) [ "$pass_min" -ge 1 ] && emit '5.4.1.2 Password min days' pass "PASS_MIN_DAYS=$pass_min" || emit '5.4.1.2 Password min days' warn "PASS_MIN_DAYS=$pass_min" ;; esac
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl is-active auditd >/dev/null 2>&1 && emit '4.1 auditd active' pass 'auditd is active' || emit '4.1 auditd active' warn 'auditd is not active'
+else
+  emit '4.1 auditd active' unknown 'systemctl unavailable'
+fi
+`;
+}
+
 function windowsSshCommand(language: AppLanguage) {
   const notFound = t('securityCheck.command.sshConfigNotFound', language);
 
@@ -799,6 +860,37 @@ function windowsUpdatesCommand(language: AppLanguage) {
 `);
 }
 
+function windowsCisBaselineCommand() {
+  return powershellCommand(`
+function Emit-Cis($name, $status, $detail) { "CIS:" + $name + ":" + $status + ":" + $detail }
+try {
+  $profiles = Get-NetFirewallProfile -ErrorAction Stop
+  if (($profiles | Where-Object { -not $_.Enabled }).Count -eq 0) { Emit-Cis '9.1 Firewall profiles enabled' 'pass' 'all firewall profiles enabled' } else { Emit-Cis '9.1 Firewall profiles enabled' 'fail' 'one or more firewall profiles disabled' }
+} catch { Emit-Cis '9.1 Firewall profiles enabled' 'unknown' $_.Exception.Message }
+try {
+  $enableLua = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name EnableLUA -ErrorAction Stop).EnableLUA
+  if ($enableLua -eq 1) { Emit-Cis '2.3.17 UAC enabled' 'pass' 'EnableLUA=1' } else { Emit-Cis '2.3.17 UAC enabled' 'fail' "EnableLUA=$enableLua" }
+} catch { Emit-Cis '2.3.17 UAC enabled' 'unknown' $_.Exception.Message }
+try {
+  $smb1 = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop
+  if ($smb1.State -eq 'Disabled') { Emit-Cis '18.3 SMBv1 disabled' 'pass' 'SMB1Protocol disabled' } else { Emit-Cis '18.3 SMBv1 disabled' 'warn' "SMB1Protocol=$($smb1.State)" }
+} catch { Emit-Cis '18.3 SMBv1 disabled' 'unknown' $_.Exception.Message }
+try {
+  $mp = Get-MpComputerStatus -ErrorAction Stop
+  if ($mp.RealTimeProtectionEnabled) { Emit-Cis '18.9 Defender real-time protection' 'pass' 'real-time protection enabled' } else { Emit-Cis '18.9 Defender real-time protection' 'warn' 'real-time protection disabled' }
+} catch { Emit-Cis '18.9 Defender real-time protection' 'unknown' $_.Exception.Message }
+try {
+  $nla = (Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name UserAuthentication -ErrorAction Stop).UserAuthentication
+  if ($nla -eq 1) { Emit-Cis '18.9 RDP NLA required' 'pass' 'NLA enabled' } else { Emit-Cis '18.9 RDP NLA required' 'warn' "UserAuthentication=$nla" }
+} catch { Emit-Cis '18.9 RDP NLA required' 'unknown' $_.Exception.Message }
+try {
+  $netAccounts = net accounts
+  $lockout = ($netAccounts | Select-String -Pattern 'Lockout threshold').ToString()
+  if ($lockout -match '\\d+' -and [int]$Matches[0] -gt 0) { Emit-Cis '1.2 Account lockout threshold' 'pass' $lockout.Trim() } else { Emit-Cis '1.2 Account lockout threshold' 'warn' ($lockout.Trim()) }
+} catch { Emit-Cis '1.2 Account lockout threshold' 'unknown' $_.Exception.Message }
+`);
+}
+
 export function createSecurityCheckDefinitions(isWindowsHost: boolean, language: AppLanguage): SecurityCheckDefinition[] {
   return [
     {
@@ -870,6 +962,13 @@ export function createSecurityCheckDefinitions(isWindowsHost: boolean, language:
       description: t('securityCheck.definition.updates.description', language),
       createCommand: () => (isWindowsHost ? windowsUpdatesCommand(language) : linuxUpdatesCommand(language)),
       evaluate: (result) => evaluateUpdates(result, language),
+    },
+    {
+      id: 'cis-baseline',
+      title: language === 'zh-CN' ? 'CIS 基线检查' : 'CIS baseline checks',
+      description: language === 'zh-CN' ? '按主机类型执行轻量 CIS Benchmark 基线核查。' : 'Runs lightweight CIS Benchmark baseline checks for this host type.',
+      createCommand: isWindowsHost ? windowsCisBaselineCommand : linuxCisBaselineCommand,
+      evaluate: (result) => evaluateCisBaseline(result, language),
     },
   ];
 }

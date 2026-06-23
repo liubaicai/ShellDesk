@@ -137,6 +137,44 @@
   font-weight: 860;
 }
 
+.port-state-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.port-state-summary span {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--port-border);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 840;
+}
+
+.port-state-summary strong {
+  color: currentcolor;
+  font-variant-numeric: tabular-nums;
+}
+
+.port-state-summary .listen {
+  background: rgba(103, 212, 178, 0.1);
+  color: var(--port-accent);
+}
+
+.port-state-summary .established {
+  background: rgba(107, 184, 255, 0.1);
+  color: var(--port-blue);
+}
+
+.port-state-summary .udp {
+  background: rgba(255, 211, 107, 0.1);
+  color: var(--port-warning);
+}
+
 .port-alert {
   margin: 8px 10px 0;
   border: 1px solid;
@@ -224,6 +262,22 @@
 
 .port-table tbody tr.selected td:first-child {
   box-shadow: inset 3px 0 0 rgba(103, 212, 178, 0.72);
+}
+
+.port-table tbody tr.state-listen td:first-child {
+  box-shadow: inset 3px 0 0 rgba(103, 212, 178, 0.58);
+}
+
+.port-table tbody tr.state-established td:first-child {
+  box-shadow: inset 3px 0 0 rgba(107, 184, 255, 0.58);
+}
+
+.port-table tbody tr.state-udp td:first-child {
+  box-shadow: inset 3px 0 0 rgba(255, 211, 107, 0.58);
+}
+
+.port-table tbody tr.selected td:first-child {
+  box-shadow: inset 4px 0 0 var(--port-text);
 }
 
 .port-number {

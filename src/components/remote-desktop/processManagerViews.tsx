@@ -175,6 +175,39 @@ export function ProcessDetailPanel({
 
       <section className="proc-detail-section">
         <div className="proc-section-title">
+          <strong>{t('process.ui.ioStats', language)}</strong>
+          <span>{processDetail?.ioStats.length ?? 0}</span>
+        </div>
+        {processDetail?.ioStats.length ? (
+          <div className="proc-io-grid">
+            {processDetail.ioStats.slice(0, 8).map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
+          </div>
+        ) : <div className="proc-relation-empty">{detailLoading ? t('process.ui.reading', language) : t('process.ui.noIoStats', language)}</div>}
+      </section>
+
+      <section className="proc-detail-section">
+        <div className="proc-section-title">
+          <strong>{t('process.ui.threads', language)}</strong>
+          <span>{processDetail?.threads.length ?? 0}</span>
+        </div>
+        {processDetail?.threads.length ? (
+          <div className="proc-thread-list">
+            {processDetail.threads.slice(0, 12).map((thread) => (
+              <div key={thread.id}>
+                <strong>{thread.id}</strong>
+                <span>{thread.state || '-'}</span>
+                <em title={[thread.name, thread.cpuTime, thread.priority, thread.waitReason].filter(Boolean).join(' · ')}>
+                  {[thread.name, thread.cpuTime, thread.priority, thread.waitReason].filter(Boolean).join(' · ') || '-'}
+                </em>
+              </div>
+            ))}
+            {processDetail.threads.length > 12 ? <span>{t('process.ui.moreThreads', language, { count: processDetail.threads.length - 12 })}</span> : null}
+          </div>
+        ) : <div className="proc-relation-empty">{detailLoading ? t('process.ui.reading', language) : t('process.ui.noThreads', language)}</div>}
+      </section>
+
+      <section className="proc-detail-section">
+        <div className="proc-section-title">
           <strong>{t('process.ui.parentChild', language)}</strong>
           <span>{t('process.ui.childCount', language, { count: selectedChildren.length })}</span>
         </div>

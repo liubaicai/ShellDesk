@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
 
 import { getErrorMessage } from './desktopUtils';
@@ -31,6 +31,15 @@ interface DirectorySizeEntry {
   sizeBytes: number;
   sizeText: string;
   modifiedAt?: string;
+}
+
+interface TreemapRect {
+  entry: DirectorySizeEntry;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  colorIndex: number;
 }
 
 type DiskPanel = 'children' | 'large';
@@ -68,6 +77,142 @@ function getParentPath(path: string, isWindowsHost: boolean) {
 function parsePercent(value: string) {
   const parsedValue = Number.parseFloat(value.replace('%', ''));
   return Number.isFinite(parsedValue) ? Math.min(Math.max(parsedValue, 0), 100) : 0;
+}
+
+function createTreemapRects(entries: DirectorySizeEntry[], width: number, height: number) {
+  const source = entries
+    .filter((entry) => entry.sizeBytes > 0)
+    .sort((first, second) => second.sizeBytes - first.sizeBytes)
+    .slice(0, 28);
+  const rects: TreemapRect[] = [];
+  const walk = (items: DirectorySizeEntry[], x: number, y: number, rectWidth: number, rectHeight: number, depth: number) => {
+    if (!items.length || rectWidth <= 2 || rectHeight <= 2) return;
+    if (items.length === 1) {
+      rects.push({ entry: items[0], x, y, width: rectWidth, height: rectHeight, colorIndex: depth + rects.length });
+      return;
+    }
+    const total = items.reduce((sum, item) => sum + item.sizeBytes, 0);
+    let splitIndex = 0;
+    let runningTotal = 0;
+    while (splitIndex < items.length - 1 && runningTotal < total / 2) {
+      runningTotal += items[splitIndex].sizeBytes;
+      splitIndex += 1;
+    }
+    const firstItems = items.slice(0, splitIndex);
+    const secondItems = items.slice(splitIndex);
+    const firstRatio = total > 0 ? runningTotal / total : 0.5;
+    if (rectWidth >= rectHeight) {
+      const firstWidth = Math.max(1, rectWidth * firstRatio);
+      walk(firstItems, x, y, firstWidth, rectHeight, depth + 1);
+      walk(secondItems, x + firstWidth, y, rectWidth - firstWidth, rectHeight, depth + 1);
+    } else {
+      const firstHeight = Math.max(1, rectHeight * firstRatio);
+      walk(firstItems, x, y, rectWidth, firstHeight, depth + 1);
+      walk(secondItems, x, y + firstHeight, rectWidth, rectHeight - firstHeight, depth + 1);
+    }
+  };
+  walk(source, 0, 0, width, height, 0);
+  return rects;
+}
+
+function drawTreemap(canvas: HTMLCanvasElement, entries: DirectorySizeEntry[], selectedPath: string, size: { width: number; height: number }) {
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, size.width);
+  const height = Math.max(1, size.height);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return [] as TreemapRect[];
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const rects = createTreemapRects(entries, width, height);
+  const colors = ['#4cc49a', '#67b7ff', '#f08cc8', '#ffcf5a', '#a78bfa', '#f97316', '#22d3ee', '#70e3a2'];
+  const fontFamily = getComputedStyle(canvas).getPropertyValue('--interface-font-family') || 'system-ui, sans-serif';
+  ctx.font = `600 11px ${fontFamily}`;
+  rects.forEach((rect) => {
+    const padding = 2;
+    const x = rect.x + padding;
+    const y = rect.y + padding;
+    const rectWidth = Math.max(0, rect.width - padding * 2);
+    const rectHeight = Math.max(0, rect.height - padding * 2);
+    const isSelected = rect.entry.path === selectedPath;
+    ctx.fillStyle = colors[rect.colorIndex % colors.length];
+    ctx.globalAlpha = isSelected ? 0.88 : 0.58;
+    ctx.fillRect(x, y, rectWidth, rectHeight);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = isSelected ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, rectWidth - 1), Math.max(0, rectHeight - 1));
+    if (rectWidth > 72 && rectHeight > 34) {
+      ctx.fillStyle = 'rgba(4, 8, 13, 0.82)';
+      ctx.fillRect(x + 5, y + 5, Math.min(rectWidth - 10, 160), 32);
+      ctx.fillStyle = '#eef4ff';
+      ctx.fillText(rect.entry.name || getBaseName(rect.entry.path), x + 9, y + 18, rectWidth - 18);
+      ctx.fillStyle = 'rgba(238, 244, 255, 0.72)';
+      ctx.fillText(rect.entry.sizeText, x + 9, y + 32, rectWidth - 18);
+    }
+  });
+  if (rects.length === 0) {
+    ctx.fillStyle = 'rgba(142, 160, 184, 0.86)';
+    ctx.textAlign = 'center';
+    ctx.fillText('No scan data', width / 2, height / 2);
+    ctx.textAlign = 'left';
+  }
+  return rects;
+}
+
+function DiskTreemap({ entries, selectedPath, onSelect, onOpenDirectory }: { entries: DirectorySizeEntry[]; selectedPath: string; onSelect: (path: string) => void; onOpenDirectory: (entry: DirectorySizeEntry) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rectsRef = useRef<TreemapRect[]>([]);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const updateSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      setCanvasSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvasSize.width <= 0 || canvasSize.height <= 0) return;
+    rectsRef.current = drawTreemap(canvas, entries, selectedPath, canvasSize);
+  }, [canvasSize, entries, selectedPath]);
+
+  const findEntryAtPoint = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const bounds = canvas.getBoundingClientRect();
+    const x = clientX - bounds.left;
+    const y = clientY - bounds.top;
+    return rectsRef.current.find((rect) => x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height)?.entry ?? null;
+  };
+
+  return (
+    <div className="disk-treemap-panel">
+      <canvas
+        ref={canvasRef}
+        className="disk-treemap-canvas"
+        onClick={(event) => {
+          const entry = findEntryAtPoint(event.clientX, event.clientY);
+          if (entry) onSelect(entry.path);
+        }}
+        onDoubleClick={(event) => {
+          const entry = findEntryAtPoint(event.clientX, event.clientY);
+          if (entry?.type === 'directory') onOpenDirectory(entry);
+        }}
+      />
+    </div>
+  );
 }
 
 function parseUnixMounts(stdout: string): DiskUsageMount[] {
@@ -556,6 +701,12 @@ function RemoteDiskAnalyzer({ connectionId, systemType, onOpenFileManager }: Rem
         </aside>
 
         <main className="disk-main">
+          <DiskTreemap
+            entries={visibleEntries}
+            selectedPath={selectedEntry?.path ?? ''}
+            onSelect={setSelectedPath}
+            onOpenDirectory={(entry) => void scanPath(entry.path)}
+          />
           <div className="disk-tabs">
             <button type="button" className={activePanel === 'children' ? 'active' : ''} onClick={() => setActivePanel('children')}>{tCurrent('auto.remoteDiskAnalyzer.65vdry')}</button>
             <button type="button" className={activePanel === 'large' ? 'active' : ''} onClick={() => setActivePanel('large')}>{tCurrent('auto.remoteDiskAnalyzer.bdfoan2')}</button>

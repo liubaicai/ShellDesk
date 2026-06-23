@@ -57,6 +57,8 @@ export type { RemoteProcessEntry } from './processManagerTypes';
 
 const AUTO_REFRESH_OPTIONS = [3000, 5000, 10000] as const;
 const DEFAULT_AUTO_REFRESH_MS = 5000;
+const PROCESS_ROW_HEIGHT = 33;
+const PROCESS_ROW_OVERSCAN = 8;
 
 function compareProcesses(
   first: RemoteProcessEntry,
@@ -167,6 +169,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
   const isMountedRef = useRef(true);
   const isRefreshingRef = useRef(false);
   const missingPidNoticeRef = useRef<number | null>(null);
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const [processes, setProcesses] = useState<RemoteProcessEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -186,6 +189,8 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
   const [processDetail, setProcessDetail] = useState<ProcessDetail | null>(null);
   const [pendingSignal, setPendingSignal] = useState<PendingSignal | null>(null);
   const [contextMenu, setContextMenu] = useState<ProcessContextMenuState | null>(null);
+  const [tableScrollTop, setTableScrollTop] = useState(0);
+  const [tableViewportHeight, setTableViewportHeight] = useState(0);
   const selectedSignal = getSignalByValue(selectedSignalValue);
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -254,6 +259,8 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
       if (isMountedRef.current) {
         setProcessDetail({
           pid,
+          ioStats: [],
+          threads: [],
           ports: [],
           loadedAt: Date.now(),
           error: getErrorMessage(err),
@@ -429,6 +436,21 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
   const maxCpuValue = useMemo(() => Math.max(1, ...processes.map((process) => getCpuValue(process, isWindowsHost))), [isWindowsHost, processes]);
   const maxMemoryValue = useMemo(() => Math.max(1, ...processes.map((process) => getMemoryValue(process, isWindowsHost))), [isWindowsHost, processes]);
+  const virtualRows = useMemo(() => {
+    if (processRows.length === 0) {
+      return { rows: [] as ProcessRow[], startIndex: 0, endIndex: 0, topHeight: 0, bottomHeight: 0 };
+    }
+    const visibleCount = Math.max(1, Math.ceil(tableViewportHeight / PROCESS_ROW_HEIGHT));
+    const startIndex = Math.max(0, Math.floor(tableScrollTop / PROCESS_ROW_HEIGHT) - PROCESS_ROW_OVERSCAN);
+    const endIndex = Math.min(processRows.length, startIndex + visibleCount + PROCESS_ROW_OVERSCAN * 2);
+    return {
+      rows: processRows.slice(startIndex, endIndex),
+      startIndex,
+      endIndex,
+      topHeight: startIndex * PROCESS_ROW_HEIGHT,
+      bottomHeight: Math.max(0, (processRows.length - endIndex) * PROCESS_ROW_HEIGHT),
+    };
+  }, [processRows, tableScrollTop, tableViewportHeight]);
 
   const {
     aiReportOpen,
@@ -492,6 +514,31 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
     return <span className="proc-sort-icon" aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>;
   };
+
+  const syncTableViewport = useCallback(() => {
+    const element = tableWrapRef.current;
+    if (!element) return;
+    setTableScrollTop(element.scrollTop);
+    setTableViewportHeight(element.clientHeight);
+  }, []);
+
+  useEffect(() => {
+    syncTableViewport();
+    const element = tableWrapRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(syncTableViewport);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [syncTableViewport]);
+
+  useEffect(() => {
+    const element = tableWrapRef.current;
+    if (!element) return;
+    element.scrollTop = 0;
+    setTableScrollTop(0);
+  }, [search, sortDir, sortKey, userFilter, viewMode]);
 
   const closeContextMenu = () => setContextMenu(null);
 
@@ -670,7 +717,7 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
 
       <div className="proc-content">
         <section className="proc-table-panel" aria-label={t('process.ui.listAria', language)}>
-          <div className="proc-table-wrap">
+          <div className="proc-table-wrap" ref={tableWrapRef} onScroll={syncTableViewport}>
             <table className="proc-table">
               <thead>
                 <tr>
@@ -689,7 +736,13 @@ function ProcessManager({ connectionId, settings, systemType, launchOptions }: R
                       {loading ? t('process.ui.loadingList', language) : t('process.ui.noMatches', language)}
                     </td>
                   </tr>
-                ) : processRows.map(renderProcessRow)}
+                ) : (
+                  <>
+                    {virtualRows.topHeight > 0 ? <tr className="proc-spacer-row" aria-hidden="true"><td colSpan={6} style={{ height: virtualRows.topHeight }} /></tr> : null}
+                    {virtualRows.rows.map(renderProcessRow)}
+                    {virtualRows.bottomHeight > 0 ? <tr className="proc-spacer-row" aria-hidden="true"><td colSpan={6} style={{ height: virtualRows.bottomHeight }} /></tr> : null}
+                  </>
+                )}
               </tbody>
             </table>
           </div>

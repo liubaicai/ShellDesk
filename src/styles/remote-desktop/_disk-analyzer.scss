@@ -313,6 +313,25 @@
   flex-direction: column;
 }
 
+.disk-treemap-panel {
+  flex: 0 0 190px;
+  min-height: 150px;
+  border-bottom: 1px solid var(--disk-border);
+  padding: 8px;
+}
+
+.disk-treemap-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--disk-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+}
+
 .disk-tabs {
   display: flex;
   gap: 8px;
@@ -583,6 +602,10 @@
 
   .disk-layout {
     grid-template-columns: 1fr;
+  }
+
+  .disk-treemap-panel {
+    flex-basis: 150px;
   }
 
   .disk-entry-list > button {

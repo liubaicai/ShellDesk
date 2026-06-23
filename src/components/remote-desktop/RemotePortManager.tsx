@@ -709,6 +709,8 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
 
   const filteredEntries = useMemo(() => {
     const keyword = search.trim().toLowerCase();
+    const exactPortMatch = keyword.match(/^:(\d{1,5})$/);
+    const numericKeyword = /^\d{1,8}$/.test(keyword) ? Number.parseInt(keyword, 10) : null;
 
     return entries.filter((entry) => {
       if (listenOnly && getStateFilter(entry) !== 'listen' && !entry.protocol.startsWith('udp')) {
@@ -724,6 +726,15 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
       }
 
       if (!keyword) {
+        return true;
+      }
+
+      if (exactPortMatch) {
+        const port = Number.parseInt(exactPortMatch[1], 10);
+        return entry.localPort === port || entry.remotePort === port;
+      }
+
+      if (numericKeyword !== null && (entry.localPort === numericKeyword || entry.remotePort === numericKeyword || entry.pid === numericKeyword)) {
         return true;
       }
 
@@ -744,6 +755,13 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
   const listeningCount = useMemo(() => {
     return entries.filter((entry) => getStateFilter(entry) === 'listen' || entry.protocol.startsWith('udp')).length;
   }, [entries]);
+
+  const stateCounts = useMemo(() => ({
+    listen: entries.filter((entry) => getStateFilter(entry) === 'listen').length,
+    established: entries.filter((entry) => getStateFilter(entry) === 'established').length,
+    udp: entries.filter((entry) => getStateFilter(entry) === 'udp').length,
+    other: entries.filter((entry) => getStateFilter(entry) === 'other').length,
+  }), [entries]);
 
   const refreshPorts = useCallback(async () => {
     setLoading(true);
@@ -860,6 +878,11 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
             {tCurrent('auto.remotePortManager.jiaghp')}</label>
         </div>
         <div className="port-toolbar-right">
+          <div className="port-state-summary" aria-label="Port state summary">
+            <span className="listen">LISTEN <strong>{stateCounts.listen}</strong></span>
+            <span className="established">ESTAB <strong>{stateCounts.established}</strong></span>
+            <span className="udp">UDP <strong>{stateCounts.udp}</strong></span>
+          </div>
           <span className="port-summary">
             <strong>{filteredEntries.length}</strong> / {entries.length} {tCurrent('auto.remotePortManager.1tt8iva')}{listeningCount}
             {refreshedAt ? ` · ${refreshedAt}` : ''}
@@ -889,7 +912,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
                 {filteredEntries.map((entry) => (
                   <tr
                     key={entry.id}
-                    className={selectedEntry?.id === entry.id ? 'selected' : ''}
+                    className={`${selectedEntry?.id === entry.id ? 'selected' : ''} state-${getStateTone(entry)}`}
                     onClick={() => setSelectedId(entry.id)}
                   >
                     <td><span className={`port-protocol ${entry.protocol.startsWith('udp') ? 'udp' : 'tcp'}`}>{entry.protocol.toUpperCase()}</span></td>

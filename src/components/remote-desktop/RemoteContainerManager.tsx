@@ -19,27 +19,34 @@ import {
   getContainerConfigUpdateCommand,
   getContainerDetailCommand,
   getContainerExecCommand,
+  getContainerLogsCommand,
   getContainerListCommand,
+  getComposeListCommand,
   getDetectRuntimeCommand,
   getImageListCommand,
   getImagePullCommand,
   getImageReference,
   getImageRemoveCommand,
+  getNetworkListCommand,
   getRuntimeCliCommand,
   getRuntimeLabel,
+  getVolumeListCommand,
   isDockerNetworkTrouble,
   matchesContainerQuery,
   matchesImageQuery,
 } from './containerCommands';
-import { formatShortId, getStateLabel, parseContainerDetailOutput, parseContainerSummary, parseImageSummary, parseJsonLines } from './containerParsers';
+import { formatShortId, getStateLabel, parseComposeProjectSummary, parseContainerDetailOutput, parseContainerNetworkSummary, parseContainerSummary, parseContainerVolumeSummary, parseImageSummary, parseJsonLines } from './containerParsers';
 import type {
+  ComposeProjectSummary,
   ContainerAction,
   ContainerConfigForm,
   ContainerFilter,
+  ContainerNetworkSummary,
   ContainerRuntime,
   ContainerRunForm as ContainerRunFormState,
   ContainerSummary,
   ContainerTroubleshooting,
+  ContainerVolumeSummary,
   ImagePruneMode,
   ImageSummary,
   ManagerTab,
@@ -50,6 +57,9 @@ import type {
 const managerTabs: Array<{ key: ManagerTab; labelId: MessageId }> = [
   { key: 'containers', labelId: 'container.tab.containers' },
   { key: 'images', labelId: 'container.tab.images' },
+  { key: 'compose', labelId: 'container.tab.compose' },
+  { key: 'networks', labelId: 'container.tab.networks' },
+  { key: 'volumes', labelId: 'container.tab.volumes' },
 ];
 
 const containerFilters: Array<{ key: ContainerFilter; labelId: MessageId }> = [
@@ -88,11 +98,17 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [activeTab, setActiveTab] = useState<ManagerTab>('containers');
   const [containers, setContainers] = useState<ContainerSummary[]>([]);
   const [images, setImages] = useState<ImageSummary[]>([]);
+  const [composeProjects, setComposeProjects] = useState<ComposeProjectSummary[]>([]);
+  const [networks, setNetworks] = useState<ContainerNetworkSummary[]>([]);
+  const [volumes, setVolumes] = useState<ContainerVolumeSummary[]>([]);
   const [selectedContainerId, setSelectedContainerId] = useState('');
   const [detail, setDetail] = useState<ReturnType<typeof parseContainerDetailOutput> | null>(null);
   const [containerSearch, setContainerSearch] = useState('');
   const [containerFilter, setContainerFilter] = useState<ContainerFilter>('all');
   const [imageSearch, setImageSearch] = useState('');
+  const [composeSearch, setComposeSearch] = useState('');
+  const [networkSearch, setNetworkSearch] = useState('');
+  const [volumeSearch, setVolumeSearch] = useState('');
   const [pullImageName, setPullImageName] = useState('');
   const [imagePruneMode, setImagePruneMode] = useState<ImagePruneMode>('dangling');
   const [imagePruneDialogOpen, setImagePruneDialogOpen] = useState(false);
@@ -103,6 +119,12 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [containersLoading, setContainersLoading] = useState(false);
   const [imagesLoading, setImagesLoading] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [composeLoading, setComposeLoading] = useState(false);
+  const [composeLoaded, setComposeLoaded] = useState(false);
+  const [networksLoading, setNetworksLoading] = useState(false);
+  const [networksLoaded, setNetworksLoaded] = useState(false);
+  const [volumesLoading, setVolumesLoading] = useState(false);
+  const [volumesLoaded, setVolumesLoaded] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actingKey, setActingKey] = useState('');
   const [pulling, setPulling] = useState(false);
@@ -213,6 +235,87 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     }
   }, [detectRuntime, isWindowsHost, language, runCommand]);
 
+  const refreshComposeProjects = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean }) => {
+    if (!options?.silent) setComposeLoading(true);
+    setError('');
+    setNotice('');
+    setTroubleshooting(null);
+    try {
+      const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
+      const result = await runCommand(getComposeListCommand(activeRuntime, isWindowsHost));
+      const nextProjects = parseJsonLines(result.stdout || '')
+        .map(parseComposeProjectSummary)
+        .filter((project): project is ComposeProjectSummary => Boolean(project))
+        .sort((first, second) => first.name.localeCompare(second.name, getShellDeskLocale()));
+      if (result.code !== 0 && nextProjects.length === 0) throw new Error(result.stderr || result.stdout || t('container.error.listCompose', language));
+      if (!isMountedRef.current) return;
+      setComposeProjects(nextProjects);
+      setComposeLoaded(true);
+      if (result.code !== 0) setNotice(result.stderr || t('container.notice.partialCompose', language));
+    } catch (err) {
+      if (isMountedRef.current) {
+        setComposeLoaded(true);
+        setError(getErrorMessage(err));
+      }
+    } finally {
+      if (isMountedRef.current && !options?.silent) setComposeLoading(false);
+    }
+  }, [detectRuntime, isWindowsHost, language, runCommand]);
+
+  const refreshNetworks = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean }) => {
+    if (!options?.silent) setNetworksLoading(true);
+    setError('');
+    setNotice('');
+    setTroubleshooting(null);
+    try {
+      const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
+      const result = await runCommand(getNetworkListCommand(activeRuntime, isWindowsHost));
+      const nextNetworks = parseJsonLines(result.stdout || '')
+        .map(parseContainerNetworkSummary)
+        .filter((network): network is ContainerNetworkSummary => Boolean(network))
+        .sort((first, second) => first.name.localeCompare(second.name, getShellDeskLocale()));
+      if (result.code !== 0 && nextNetworks.length === 0) throw new Error(result.stderr || result.stdout || t('container.error.listNetworks', language));
+      if (!isMountedRef.current) return;
+      setNetworks(nextNetworks);
+      setNetworksLoaded(true);
+      if (result.code !== 0) setNotice(result.stderr || t('container.notice.partialNetworks', language));
+    } catch (err) {
+      if (isMountedRef.current) {
+        setNetworksLoaded(true);
+        setError(getErrorMessage(err));
+      }
+    } finally {
+      if (isMountedRef.current && !options?.silent) setNetworksLoading(false);
+    }
+  }, [detectRuntime, isWindowsHost, language, runCommand]);
+
+  const refreshVolumes = useCallback(async (options?: { runtimeOverride?: ContainerRuntime; silent?: boolean }) => {
+    if (!options?.silent) setVolumesLoading(true);
+    setError('');
+    setNotice('');
+    setTroubleshooting(null);
+    try {
+      const activeRuntime = options?.runtimeOverride ?? await detectRuntime();
+      const result = await runCommand(getVolumeListCommand(activeRuntime, isWindowsHost));
+      const nextVolumes = parseJsonLines(result.stdout || '')
+        .map(parseContainerVolumeSummary)
+        .filter((volume): volume is ContainerVolumeSummary => Boolean(volume))
+        .sort((first, second) => first.name.localeCompare(second.name, getShellDeskLocale()));
+      if (result.code !== 0 && nextVolumes.length === 0) throw new Error(result.stderr || result.stdout || t('container.error.listVolumes', language));
+      if (!isMountedRef.current) return;
+      setVolumes(nextVolumes);
+      setVolumesLoaded(true);
+      if (result.code !== 0) setNotice(result.stderr || t('container.notice.partialVolumes', language));
+    } catch (err) {
+      if (isMountedRef.current) {
+        setVolumesLoaded(true);
+        setError(getErrorMessage(err));
+      }
+    } finally {
+      if (isMountedRef.current && !options?.silent) setVolumesLoading(false);
+    }
+  }, [detectRuntime, isWindowsHost, language, runCommand]);
+
   const loadContainerDetail = useCallback(async (containerId: string) => {
     const fallback = containers.find((container) => container.id === containerId);
     if (!fallback) {
@@ -243,6 +346,12 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setContainers([]);
     setImages([]);
     setImagesLoaded(false);
+    setComposeProjects([]);
+    setComposeLoaded(false);
+    setNetworks([]);
+    setNetworksLoaded(false);
+    setVolumes([]);
+    setVolumesLoaded(false);
     setDetail(null);
     setSelectedContainerId('');
     setRunError('');
@@ -270,6 +379,18 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     if (activeTab === 'images' && !imagesLoaded && !imagesLoading) void refreshImages();
   }, [activeTab, imagesLoaded, imagesLoading, refreshImages]);
 
+  useEffect(() => {
+    if (activeTab === 'compose' && !composeLoaded && !composeLoading) void refreshComposeProjects();
+  }, [activeTab, composeLoaded, composeLoading, refreshComposeProjects]);
+
+  useEffect(() => {
+    if (activeTab === 'networks' && !networksLoaded && !networksLoading) void refreshNetworks();
+  }, [activeTab, networksLoaded, networksLoading, refreshNetworks]);
+
+  useEffect(() => {
+    if (activeTab === 'volumes' && !volumesLoaded && !volumesLoading) void refreshVolumes();
+  }, [activeTab, volumesLoaded, volumesLoading, refreshVolumes]);
+
   const selectedContainer = useMemo(() => containers.find((container) => container.id === selectedContainerId) ?? null, [containers, selectedContainerId]);
   const selectedDetail = detail?.id === selectedContainerId ? detail : null;
   const visibleContainers = useMemo(() => {
@@ -277,6 +398,21 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     return containers.filter((container) => (containerFilter === 'all' || container.state === containerFilter) && matchesContainerQuery(container, query));
   }, [containerFilter, containerSearch, containers]);
   const visibleImages = useMemo(() => images.filter((image) => matchesImageQuery(image, imageSearch.trim())), [imageSearch, images]);
+  const visibleComposeProjects = useMemo(() => {
+    const query = composeSearch.trim().toLowerCase();
+    if (!query) return composeProjects;
+    return composeProjects.filter((project) => [project.name, project.status, project.configFiles, project.workingDir].join(' ').toLowerCase().includes(query));
+  }, [composeProjects, composeSearch]);
+  const visibleNetworks = useMemo(() => {
+    const query = networkSearch.trim().toLowerCase();
+    if (!query) return networks;
+    return networks.filter((network) => [network.id, network.name, network.driver, network.scope, network.labels].join(' ').toLowerCase().includes(query));
+  }, [networkSearch, networks]);
+  const visibleVolumes = useMemo(() => {
+    const query = volumeSearch.trim().toLowerCase();
+    if (!query) return volumes;
+    return volumes.filter((volume) => [volume.name, volume.driver, volume.mountpoint, volume.scope, volume.labels].join(' ').toLowerCase().includes(query));
+  }, [volumeSearch, volumes]);
   const containerStats = useMemo(() => ({
     running: containers.filter((container) => container.state === 'running').length,
     exited: containers.filter((container) => container.state === 'exited').length,
@@ -520,36 +656,85 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     }
   };
 
+  const readContainerLogs = useCallback(async (containerId: string, options?: { tail?: number; sinceSeconds?: number }) => {
+    const activeRuntime = await detectRuntime();
+    const result = await runCommand(getContainerLogsCommand(activeRuntime, containerId, isWindowsHost, options?.tail ?? 200, options?.sinceSeconds));
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    if (result.code !== 0) throw new Error(output || t('container.error.logsFailed', language));
+    return output;
+  }, [detectRuntime, isWindowsHost, language, runCommand]);
+
   const refreshCurrentContainer = async () => {
     const nextSelectedContainerId = await refreshContainers({ silent: true, preferredContainerId: selectedContainerId });
     if (nextSelectedContainerId) await loadContainerDetail(nextSelectedContainerId);
   };
 
-  const renderToolbarRight = () => activeTab === 'images' ? (
-    <>
-      <input type="search" className="container-search" placeholder={t('container.ui.searchImages', language)} value={imageSearch} onChange={(event) => setImageSearch(event.target.value)} />
-      <input type="text" className="container-pull-input" placeholder="nginx:latest" value={pullImageName} onChange={(event) => setPullImageName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void executeImagePull(); }} aria-label={t('container.ui.pullImageAria', language)} />
-      <button type="button" className="container-tool-button primary" onClick={() => void executeImagePull()} disabled={pulling}>{pulling ? t('container.ui.pulling', language) : 'Pull'}</button>
-      <button type="button" className="container-tool-button danger" onClick={() => { setImagePruneError(''); setPendingAction(null); setImagePruneDialogOpen(true); }} disabled={pruningImages}>{pruningImages ? t('container.ui.pruning', language) : t('container.ui.pruneImages', language)}</button>
-    </>
-  ) : (
-    <>
-      <select className="container-select" value={containerFilter} onChange={(event) => setContainerFilter(event.target.value as ContainerFilter)} aria-label={t('container.ui.filterAria', language)}>{containerFilters.map((item) => <option key={item.key} value={item.key}>{t(item.labelId, language)}</option>)}</select>
-      <input type="search" className="container-search" placeholder={t('container.ui.searchContainers', language)} value={containerSearch} onChange={(event) => setContainerSearch(event.target.value)} />
-    </>
-  );
+  const refreshActiveTab = () => {
+    if (activeTab === 'images') return refreshImages();
+    if (activeTab === 'compose') return refreshComposeProjects();
+    if (activeTab === 'networks') return refreshNetworks();
+    if (activeTab === 'volumes') return refreshVolumes();
+    return refreshContainers();
+  };
+
+  const renderToolbarRight = () => {
+    if (activeTab === 'images') {
+      return (
+        <>
+          <input type="search" className="container-search" placeholder={t('container.ui.searchImages', language)} value={imageSearch} onChange={(event) => setImageSearch(event.target.value)} />
+          <input type="text" className="container-pull-input" placeholder="nginx:latest" value={pullImageName} onChange={(event) => setPullImageName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void executeImagePull(); }} aria-label={t('container.ui.pullImageAria', language)} />
+          <button type="button" className="container-tool-button primary" onClick={() => void executeImagePull()} disabled={pulling}>{pulling ? t('container.ui.pulling', language) : 'Pull'}</button>
+          <button type="button" className="container-tool-button danger" onClick={() => { setImagePruneError(''); setPendingAction(null); setImagePruneDialogOpen(true); }} disabled={pruningImages}>{pruningImages ? t('container.ui.pruning', language) : t('container.ui.pruneImages', language)}</button>
+        </>
+      );
+    }
+    if (activeTab === 'compose') {
+      return <input type="search" className="container-search" placeholder={t('container.ui.searchCompose', language)} value={composeSearch} onChange={(event) => setComposeSearch(event.target.value)} />;
+    }
+    if (activeTab === 'networks') {
+      return <input type="search" className="container-search" placeholder={t('container.ui.searchNetworks', language)} value={networkSearch} onChange={(event) => setNetworkSearch(event.target.value)} />;
+    }
+    if (activeTab === 'volumes') {
+      return <input type="search" className="container-search" placeholder={t('container.ui.searchVolumes', language)} value={volumeSearch} onChange={(event) => setVolumeSearch(event.target.value)} />;
+    }
+    return (
+      <>
+        <select className="container-select" value={containerFilter} onChange={(event) => setContainerFilter(event.target.value as ContainerFilter)} aria-label={t('container.ui.filterAria', language)}>{containerFilters.map((item) => <option key={item.key} value={item.key}>{t(item.labelId, language)}</option>)}</select>
+        <input type="search" className="container-search" placeholder={t('container.ui.searchContainers', language)} value={containerSearch} onChange={(event) => setContainerSearch(event.target.value)} />
+      </>
+    );
+  };
 
   const imagePruneCommandPreview = formatRuntimeCommand(runtime ?? 'docker', buildImagePruneArgs(imagePruneMode));
+  const activeLoading = runtimeLoading || containersLoading || imagesLoading || composeLoading || networksLoading || volumesLoading;
+  const activeVisibleCount = activeTab === 'images'
+    ? visibleImages.length
+    : activeTab === 'compose'
+      ? visibleComposeProjects.length
+      : activeTab === 'networks'
+        ? visibleNetworks.length
+        : activeTab === 'volumes'
+          ? visibleVolumes.length
+          : visibleContainers.length;
+  const activeTotalCount = activeTab === 'images'
+    ? images.length
+    : activeTab === 'compose'
+      ? composeProjects.length
+      : activeTab === 'networks'
+        ? networks.length
+        : activeTab === 'volumes'
+          ? volumes.length
+          : containers.length;
 
   return (
     <div className="container-manager">
       <div className="container-toolbar">
         <div className="container-toolbar-left">
-          <button type="button" className="container-tool-button primary" onClick={() => activeTab === 'images' ? void refreshImages() : void refreshContainers()} disabled={runtimeLoading || containersLoading || imagesLoading}>{runtimeLoading || containersLoading || imagesLoading ? t('container.ui.refreshing', language) : t('container.ui.refresh', language)}</button>
+          <button type="button" className="container-tool-button primary" onClick={() => void refreshActiveTab()} disabled={activeLoading}>{activeLoading ? t('container.ui.refreshing', language) : t('container.ui.refresh', language)}</button>
           <button type="button" className="container-tool-button" onClick={() => void refreshCurrentContainer()} disabled={!selectedContainer || detailLoading}>{detailLoading ? t('container.ui.reading', language) : t('container.ui.refreshCurrent', language)}</button>
           <button type="button" className="container-tool-button primary" onClick={openRunDialog}>{t('container.ui.newContainer', language)}</button>
           <span className="container-runtime-pill">{getRuntimeLabel(runtime, language)}</span>
-          <span className="container-summary"><strong>{activeTab === 'images' ? visibleImages.length : visibleContainers.length}</strong> / {activeTab === 'images' ? images.length : containers.length}</span>
+          <span className="container-summary"><strong>{activeVisibleCount}</strong> / {activeTotalCount}</span>
         </div>
         <div className="container-tabs" role="tablist" aria-label={t('container.ui.tabsAria', language)}>{managerTabs.map((tab) => <button key={tab.key} type="button" role="tab" className={activeTab === tab.key ? 'active' : ''} title={t(tab.labelId, language)} onClick={() => setActiveTab(tab.key)}>{t(tab.labelId, language)}</button>)}</div>
         <div className="container-toolbar-right">{renderToolbarRight()}</div>
@@ -567,13 +752,31 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
             <div className="container-stats"><span><strong>{containerStats.running}</strong> {t('container.ui.runningCount', language)}</span><span><strong>{containerStats.exited}</strong> {t('container.ui.exitedCount', language)}</span><span><strong>{containerStats.paused}</strong> {t('container.ui.pausedCount', language)}</span><span><strong>{containerStats.created}</strong> {t('container.ui.createdCount', language)}</span></div>
             <div className="container-list">{visibleContainers.length === 0 ? <div className="container-empty">{containersLoading ? t('container.ui.loadingContainers', language) : t('container.ui.noContainers', language)}</div> : visibleContainers.map((container) => <button key={container.id} type="button" className={`container-list-item ${container.id === selectedContainerId ? 'selected' : ''}`} onClick={() => setSelectedContainerId(container.id)}><span className={`container-state-dot ${container.state}`} /><span className="container-list-main"><strong title={container.name}>{container.name}</strong><small title={container.image}>{container.image}</small></span><span className={`container-state-tag ${container.state}`}>{getStateLabel(container.state, language)}</span></button>)}</div>
           </aside>
-          <ContainerDetailPanel container={selectedContainer} detail={selectedDetail} detailLoading={detailLoading} containersLoading={containersLoading} actingKey={actingKey} savingConfig={savingConfig} onAction={requestContainerAction} onReload={loadContainerDetail} onCopy={copyToClipboard} onConfigSubmit={executeConfigUpdate} onExec={executeContainerExec} />
+          <ContainerDetailPanel container={selectedContainer} detail={selectedDetail} detailLoading={detailLoading} containersLoading={containersLoading} actingKey={actingKey} savingConfig={savingConfig} onAction={requestContainerAction} onReload={loadContainerDetail} onCopy={copyToClipboard} onConfigSubmit={executeConfigUpdate} onExec={executeContainerExec} onReadLogs={readContainerLogs} />
         </div>
       ) : null}
 
       {activeTab === 'images' ? (
         <div className="container-images-panel" aria-label={t('container.ui.imageListAria', language)}>
           <div className="container-image-table-wrap"><table className="container-image-table"><thead><tr><th className="container-image-repo">{t('container.ui.repository', language)}</th><th className="container-image-tag">{t('container.ui.tag', language)}</th><th className="container-image-id">ID</th><th className="container-image-size">{t('container.ui.size', language)}</th><th className="container-image-created">{t('container.ui.createdAt', language)}</th><th className="container-image-actions">{t('container.ui.operations', language)}</th></tr></thead><tbody>{visibleImages.length === 0 ? <tr><td colSpan={6} className="container-table-empty">{imagesLoading ? t('container.ui.loadingImages', language) : t('container.ui.noImages', language)}</td></tr> : visibleImages.map((image) => <tr key={`${image.id}:${image.repository}:${image.tag}`}><td title={image.repository}>{image.repository}</td><td title={image.tag}>{image.tag}</td><td title={image.id}><code>{formatShortId(image.id)}</code></td><td>{image.size}</td><td title={image.createdAt}>{image.createdAt || '-'}</td><td><div className="container-image-actions-cell"><button type="button" className="container-table-action" onClick={() => prepareRunFromImage(image)}>{t('container.ui.run', language)}</button><button type="button" className="container-table-danger" disabled={Boolean(actingKey)} onClick={() => setPendingAction({ kind: 'image', action: 'remove', image })}>{actingKey === `image-remove:${image.id}` ? t('container.ui.removing', language) : t('container.action.remove', language)}</button></div></td></tr>)}</tbody></table></div>
+        </div>
+      ) : null}
+
+      {activeTab === 'compose' ? (
+        <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.composeListAria', language)}>
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.project', language)}</th><th>{t('container.ui.status', language)}</th><th>{t('container.ui.configFiles', language)}</th><th>{t('container.ui.workingDir', language)}</th></tr></thead><tbody>{visibleComposeProjects.length === 0 ? <tr><td colSpan={4} className="container-table-empty">{composeLoading ? t('container.ui.loadingCompose', language) : t('container.ui.noCompose', language)}</td></tr> : visibleComposeProjects.map((project) => <tr key={project.id}><td title={project.name}><strong>{project.name}</strong></td><td title={project.status}>{project.status}</td><td title={project.configFiles}>{project.configFiles}</td><td title={project.workingDir}>{project.workingDir}</td></tr>)}</tbody></table></div>
+        </div>
+      ) : null}
+
+      {activeTab === 'networks' ? (
+        <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.networkListAria', language)}>
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>ID</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.scope', language)}</th><th>IPv6</th><th>Labels</th></tr></thead><tbody>{visibleNetworks.length === 0 ? <tr><td colSpan={6} className="container-table-empty">{networksLoading ? t('container.ui.loadingNetworks', language) : t('container.ui.noNetworks', language)}</td></tr> : visibleNetworks.map((network) => <tr key={network.id}><td title={network.name}><strong>{network.name}</strong></td><td title={network.id}><code>{formatShortId(network.id)}</code></td><td>{network.driver}</td><td>{network.scope}</td><td>{network.ipv6}</td><td title={network.labels}>{network.labels}</td></tr>)}</tbody></table></div>
+        </div>
+      ) : null}
+
+      {activeTab === 'volumes' ? (
+        <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.volumeListAria', language)}>
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.mountpoint', language)}</th><th>{t('container.ui.scope', language)}</th><th>Labels</th></tr></thead><tbody>{visibleVolumes.length === 0 ? <tr><td colSpan={5} className="container-table-empty">{volumesLoading ? t('container.ui.loadingVolumes', language) : t('container.ui.noVolumes', language)}</td></tr> : visibleVolumes.map((volume) => <tr key={volume.name}><td title={volume.name}><strong>{volume.name}</strong></td><td>{volume.driver}</td><td title={volume.mountpoint}>{volume.mountpoint}</td><td>{volume.scope}</td><td title={volume.labels}>{volume.labels}</td></tr>)}</tbody></table></div>
         </div>
       ) : null}
 

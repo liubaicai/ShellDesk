@@ -55,6 +55,8 @@ export interface ProcessDetail {
   pid: number;
   cwd?: string;
   executablePath?: string;
+  ioStats: Array<{ label: string; value: string }>;
+  threads: Array<{ id: number; state?: string; cpuTime?: string; priority?: string; waitReason?: string; name?: string }>;
   ports: string[];
   loadedAt: number;
   error?: string;
