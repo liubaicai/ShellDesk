@@ -98,6 +98,7 @@ interface ClickHouseEditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface ClickHousePendingEdit {
@@ -1087,6 +1088,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [activeResult, activeResultPrimaryKeys, activeResultTab, isActiveResultEditable]);
 
@@ -1099,7 +1101,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
       return;
     }
 
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     if (valuesEqual(row[editingCell.column], newValue)) {
       setEditingCell(null);
@@ -1660,15 +1662,26 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
 
                                   return isEditing ? (
                                     <td key={column} className="mysql-cell-editing">
-                                      <input
-                                        type="text"
-                                        value={editingCell.value}
-                                        onChange={(event) => setEditingCell((current) => current ? { ...current, value: event.target.value } : current)}
-                                        onBlur={prepareCellSave}
-                                        onKeyDown={handleCellKeyDown}
-                                        autoFocus
-                                        className="mysql-cell-input"
-                                      />
+                                      <div className="mysql-cell-editbox">
+                                        <input
+                                          type="text"
+                                          value={editingCell.isNull ? '' : editingCell.value}
+                                          onChange={(event) => setEditingCell((current) => current ? { ...current, value: event.target.value, isNull: false } : current)}
+                                          onBlur={prepareCellSave}
+                                          onKeyDown={handleCellKeyDown}
+                                          autoFocus
+                                          className="mysql-cell-input"
+                                          readOnly={editingCell.isNull}
+                                        />
+                                        <button
+                                          type="button"
+                                          className={`mysql-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => setEditingCell((current) => current ? { ...current, isNull: !current.isNull } : current)}
+                                        >
+                                          NULL
+                                        </button>
+                                      </div>
                                     </td>
                                   ) : (
                                     <td

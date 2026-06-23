@@ -605,6 +605,13 @@
   padding: 0 !important;
 }
 
+.postgres-cell-editing .mysql-cell-editbox {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto;
+  width: 100%;
+  min-width: 150px;
+}
+
 .postgres-cell-input {
   width: 100%;
   box-sizing: border-box;
@@ -614,6 +621,26 @@
   color: var(--pg-text);
   font: inherit;
   outline: none;
+}
+
+.postgres-cell-input:read-only {
+  color: var(--pg-muted);
+}
+
+.postgres-cell-editing .mysql-cell-null-toggle {
+  padding: 0 7px;
+  border: 2px solid rgba(115, 183, 255, 0.58);
+  border-left: 0;
+  background: rgba(16, 24, 34, 0.92);
+  color: var(--pg-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.postgres-cell-editing .mysql-cell-null-toggle.active {
+  background: rgba(81, 150, 255, 0.24);
+  color: var(--pg-text);
 }
 
 .postgres-pagination {
@@ -888,6 +915,16 @@
 
 [data-theme="light"] .postgres-cell-input {
   background: #fff;
+  color: #172033;
+}
+
+[data-theme="light"] .postgres-cell-editing .mysql-cell-null-toggle {
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+[data-theme="light"] .postgres-cell-editing .mysql-cell-null-toggle.active {
+  background: #dbeafe;
   color: #172033;
 }
 

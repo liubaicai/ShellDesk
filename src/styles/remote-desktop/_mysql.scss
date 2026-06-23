@@ -960,6 +960,13 @@
   padding: 0 !important;
 }
 
+.mysql-cell-editbox {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto;
+  width: 100%;
+  min-width: 150px;
+}
+
 .mysql-cell-input {
   width: 100%;
   box-sizing: border-box;
@@ -969,6 +976,26 @@
   color: var(--text);
   font: inherit;
   outline: none;
+}
+
+.mysql-cell-input:read-only {
+  color: var(--text-muted);
+}
+
+.mysql-cell-null-toggle {
+  padding: 0 7px;
+  border: 2px solid var(--accent-border);
+  border-left: 0;
+  background: var(--surface-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mysql-cell-null-toggle.active {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface-control));
+  color: var(--text);
 }
 
 .mysql-pagination {
@@ -1266,6 +1293,17 @@
 [data-theme="light"] .mysql-cell-input {
   border-color: var(--focus-border);
   background: #fff;
+  color: #1f2328;
+}
+
+[data-theme="light"] .mysql-cell-null-toggle {
+  border-color: var(--focus-border);
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+[data-theme="light"] .mysql-cell-null-toggle.active {
+  background: #dbeafe;
   color: #1f2328;
 }
 

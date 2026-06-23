@@ -90,6 +90,7 @@ interface EditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface PendingEdit {
@@ -780,6 +781,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [activeResult, activeResultPrimaryKeys, activeResultTab]);
 
@@ -792,7 +794,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       return;
     }
 
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     if (valuesEqual(row[editingCell.column], newValue)) {
       setEditingCell(null);
@@ -831,23 +833,25 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         pendingEdit.pkValues,
       );
 
-      setResultTabs((items) => items.map((tab) => {
-        if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
+      if (result.affectedRows > 0) {
+        setResultTabs((items) => items.map((tab) => {
+          if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
 
-        const nextRows = [...tab.result.rows];
-        nextRows[pendingEdit.rowIndex] = {
-          ...nextRows[pendingEdit.rowIndex],
-          [pendingEdit.column]: pendingEdit.newValue,
-        };
+          const nextRows = [...tab.result.rows];
+          nextRows[pendingEdit.rowIndex] = {
+            ...nextRows[pendingEdit.rowIndex],
+            [pendingEdit.column]: pendingEdit.newValue,
+          };
 
-        return {
-          ...tab,
-          result: {
-            ...tab.result,
-            rows: nextRows,
-          },
-        };
-      }));
+          return {
+            ...tab,
+            result: {
+              ...tab.result,
+              rows: nextRows,
+            },
+          };
+        }));
+      }
 
       setMessage({ type: result.affectedRows === 1 ? 'success' : 'info', text: `已更新 ${result.affectedRows ?? 0} 行` });
       setPendingEdit(null);
@@ -1294,15 +1298,26 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                                 if (isEditing) {
                                   return (
                                     <td key={column} className="postgres-cell-editing">
-                                      <input
-                                        type="text"
-                                        value={editingCell.value}
-                                        onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
-                                        onKeyDown={handleCellKeyDown}
-                                        onBlur={prepareCellSave}
-                                        autoFocus
-                                        className="postgres-cell-input"
-                                      />
+                                      <div className="mysql-cell-editbox">
+                                        <input
+                                          type="text"
+                                          value={editingCell.isNull ? '' : editingCell.value}
+                                          onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value, isNull: false })}
+                                          onKeyDown={handleCellKeyDown}
+                                          onBlur={prepareCellSave}
+                                          autoFocus
+                                          className="postgres-cell-input"
+                                          readOnly={editingCell.isNull}
+                                        />
+                                        <button
+                                          type="button"
+                                          className={`mysql-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => setEditingCell({ ...editingCell, isNull: !editingCell.isNull })}
+                                        >
+                                          NULL
+                                        </button>
+                                      </div>
                                     </td>
                                   );
                                 }

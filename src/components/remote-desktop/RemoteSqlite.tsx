@@ -79,6 +79,7 @@ interface EditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface PendingCellEdit {
@@ -937,6 +938,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [isResultEditable, primaryKeys, resultMeta]);
 
@@ -946,7 +948,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     const row = queryResult.rows[editingCell.rowIndex];
     const target = row ? createUpdateTarget(row) : null;
     const oldValue = row?.[editingCell.column];
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     setEditingCell(null);
 
@@ -1476,15 +1478,26 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
                                   if (isEditing) {
                                     return (
                                       <td key={column} className="sqlite-cell-editing">
-                                        <input
-                                          type="text"
-                                          value={editingCell.value}
-                                          onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
-                                          onKeyDown={handleCellKeyDown}
-                                          onBlur={prepareCellSave}
-                                          autoFocus
-                                          className="sqlite-cell-input"
-                                        />
+                                        <div className="sqlite-cell-editbox">
+                                          <input
+                                            type="text"
+                                            value={editingCell.isNull ? '' : editingCell.value}
+                                            onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value, isNull: false })}
+                                            onKeyDown={handleCellKeyDown}
+                                            onBlur={prepareCellSave}
+                                            autoFocus
+                                            className="sqlite-cell-input"
+                                            readOnly={editingCell.isNull}
+                                          />
+                                          <button
+                                            type="button"
+                                            className={`sqlite-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => setEditingCell({ ...editingCell, isNull: !editingCell.isNull })}
+                                          >
+                                            NULL
+                                          </button>
+                                        </div>
                                       </td>
                                     );
                                   }

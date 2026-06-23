@@ -90,6 +90,7 @@ interface EditingCell {
   rowIndex: number;
   column: string;
   value: string;
+  isNull: boolean;
 }
 
 interface PendingEdit {
@@ -1100,6 +1101,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       rowIndex,
       column,
       value: currentValue === null || currentValue === undefined ? '' : String(currentValue),
+      isNull: currentValue === null || currentValue === undefined,
     });
   }, [activeResult, activeResultPrimaryKeys, activeResultTab]);
 
@@ -1112,7 +1114,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       return;
     }
 
-    const newValue = editingCell.value === '' ? null : editingCell.value;
+    const newValue = editingCell.isNull ? null : editingCell.value;
 
     if (valuesEqual(row[editingCell.column], newValue)) {
       setEditingCell(null);
@@ -1152,23 +1154,25 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         pendingEdit.pkColumns.length > 1 ? pendingEdit.pkValues : undefined,
       );
 
-      setResultTabs((prev) => prev.map((tab) => {
-        if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
+      if (result.affectedRows > 0) {
+        setResultTabs((prev) => prev.map((tab) => {
+          if (tab.id !== pendingEdit.resultId || !tab.result) return tab;
 
-        const nextRows = [...tab.result.rows];
-        nextRows[pendingEdit.rowIndex] = {
-          ...nextRows[pendingEdit.rowIndex],
-          [pendingEdit.column]: pendingEdit.newValue,
-        };
+          const nextRows = [...tab.result.rows];
+          nextRows[pendingEdit.rowIndex] = {
+            ...nextRows[pendingEdit.rowIndex],
+            [pendingEdit.column]: pendingEdit.newValue,
+          };
 
-        return {
-          ...tab,
-          result: {
-            ...tab.result,
-            rows: nextRows,
-          },
-        };
-      }));
+          return {
+            ...tab,
+            result: {
+              ...tab.result,
+              rows: nextRows,
+            },
+          };
+        }));
+      }
 
       setMessage({
         type: result.affectedRows === 1 ? 'success' : 'info',
@@ -1648,15 +1652,26 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                                   if (isEditing) {
                                     return (
                                       <td key={column} className="mysql-cell-editing">
-                                        <input
-                                          type="text"
-                                          value={editingCell.value}
-                                          onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
-                                          onKeyDown={handleCellKeyDown}
-                                          onBlur={prepareCellSave}
-                                          autoFocus
-                                          className="mysql-cell-input"
-                                        />
+                                        <div className="mysql-cell-editbox">
+                                          <input
+                                            type="text"
+                                            value={editingCell.isNull ? '' : editingCell.value}
+                                            onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value, isNull: false })}
+                                            onKeyDown={handleCellKeyDown}
+                                            onBlur={prepareCellSave}
+                                            autoFocus
+                                            className="mysql-cell-input"
+                                            readOnly={editingCell.isNull}
+                                          />
+                                          <button
+                                            type="button"
+                                            className={`mysql-cell-null-toggle ${editingCell.isNull ? 'active' : ''}`}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => setEditingCell({ ...editingCell, isNull: !editingCell.isNull })}
+                                          >
+                                            NULL
+                                          </button>
+                                        </div>
                                       </td>
                                     );
                                   }

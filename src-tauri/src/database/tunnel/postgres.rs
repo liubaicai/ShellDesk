@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, Executor, PgPool, Row};
 
-use super::super::sql::pg_identifier;
+use super::super::sql::{pg_identifier, pg_value_literal};
 use super::{
     config::PostgresConnectConfig,
     core::{
@@ -240,32 +240,28 @@ pub(crate) async fn postgres_update_cell(
 
     let where_clause = pk_columns
         .iter()
-        .enumerate()
-        .map(|(index, pk_column)| {
+        .zip(pk_values.iter())
+        .map(|(pk_column, pk_value)| {
             let pk_column = pk_column
                 .as_str()
                 .ok_or_else(|| "PostgreSQL 主键列参数无效。".to_string())?;
             Ok(format!(
-                "{} IS NOT DISTINCT FROM ${}",
+                "{} IS NOT DISTINCT FROM {}",
                 pg_identifier(pk_column),
-                index + 2
+                pg_value_literal(pk_value)
             ))
         })
         .collect::<Result<Vec<_>, String>>()?
         .join(" AND ");
     let sql = format!(
-        "UPDATE {}.{} SET {} = $1 WHERE {}",
+        "UPDATE {}.{} SET {} = {} WHERE {}",
         pg_identifier(&schema),
         pg_identifier(&table),
         pg_identifier(&column),
+        pg_value_literal(&new_value),
         where_clause
     );
-    let mut query = sqlx::query(&sql);
-    query = bind_json_value(query, &new_value);
-    for value in pk_values {
-        query = bind_json_value(query, value);
-    }
-    let result = timeout_result(QUERY_TIMEOUT, query.execute(&pool), |error| {
+    let result = timeout_result(QUERY_TIMEOUT, sqlx::query(&sql).execute(&pool), |error| {
         DbTunnelError::PostgresQuery(error).user_message()
     })
     .await?;
@@ -302,33 +298,6 @@ async fn connect_postgres_direct(
         return Err(error);
     }
     Ok(pool)
-}
-
-fn bind_json_value<'q>(
-    query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
-    value: &Value,
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-    match value {
-        Value::Null => query.bind(Option::<String>::None),
-        Value::Bool(value) => query.bind(*value),
-        Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                query.bind(value)
-            } else if let Some(value) = number.as_u64() {
-                if let Ok(value) = i64::try_from(value) {
-                    query.bind(value)
-                } else {
-                    query.bind(value.to_string())
-                }
-            } else if let Some(value) = number.as_f64() {
-                query.bind(value)
-            } else {
-                query.bind(number.to_string())
-            }
-        }
-        Value::String(value) => query.bind(value.clone()),
-        other => query.bind(other.to_string()),
-    }
 }
 
 fn postgres_pool(state: &AppState, args: &[Value]) -> Result<PgPool, String> {

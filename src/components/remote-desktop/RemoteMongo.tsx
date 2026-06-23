@@ -27,7 +27,7 @@ interface SelectedMongoCollection {
 }
 
 type MongoQueryMode = 'find' | 'aggregate';
-type MongoWriteOperation = 'insertOne' | 'replaceOne' | 'deleteOne';
+type MongoWriteOperation = 'insertOne' | 'replaceOne' | 'updateOne' | 'deleteOne';
 
 type MongoContextMenuTarget =
   | { type: 'database'; database: ShellDeskMongoDatabase }
@@ -138,6 +138,7 @@ function removeDocumentId(document: Record<string, unknown>) {
 function describeWriteResult(result: ShellDeskMongoQueryResult) {
   if (result.operation === 'insertOne') return `已新增 ${result.insertedCount ?? result.count} 个文档`;
   if (result.operation === 'replaceOne') return `已保存，匹配 ${result.matchedCount ?? 0} 个，修改 ${result.modifiedCount ?? 0} 个`;
+  if (result.operation === 'updateOne') return `已局部更新，匹配 ${result.matchedCount ?? 0} 个，修改 ${result.modifiedCount ?? 0} 个`;
   if (result.operation === 'deleteOne') return `已删除 ${result.deletedCount ?? 0} 个文档`;
   return `已执行 ${result.operation ?? 'MongoDB'} 操作`;
 }
@@ -165,6 +166,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const [pipeline, setPipeline] = useState('[\n  { "$match": {} }\n]');
   const [queryMode, setQueryMode] = useState<MongoQueryMode>('find');
   const [newDocumentDraft, setNewDocumentDraft] = useState('{\n  \n}');
+  const [updateDraft, setUpdateDraft] = useState('{\n  "$set": {\n    \n  }\n}');
   const [selectedDocumentDraft, setSelectedDocumentDraft] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [limit, setLimit] = useState(String(defaultLimit));
@@ -544,13 +546,14 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
 
   useContextMenu(contextMenu, setContextMenu);
 
-  const formatDraft = (field: 'filter' | 'projection' | 'sort' | 'pipeline' | 'newDocument' | 'selectedDocument') => {
+  const formatDraft = (field: 'filter' | 'projection' | 'sort' | 'pipeline' | 'newDocument' | 'update' | 'selectedDocument') => {
     try {
       if (field === 'filter') setFilter(tryFormatJsonDraft(filter));
       if (field === 'projection') setProjection(projection.trim() ? tryFormatJsonDraft(projection) : '');
       if (field === 'sort') setSort(sort.trim() ? tryFormatJsonDraft(sort) : '');
       if (field === 'pipeline') setPipeline(stringifyJson(JSON.parse(pipeline.trim() || '[]')));
       if (field === 'newDocument') setNewDocumentDraft(tryFormatJsonDraft(newDocumentDraft));
+      if (field === 'update') setUpdateDraft(tryFormatJsonDraft(updateDraft));
       if (field === 'selectedDocument') setSelectedDocumentDraft(tryFormatJsonDraft(selectedDocumentDraft));
       setNotice(tCurrent('auto.remoteMongo.ed12q0'));
       setError('');
@@ -565,7 +568,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       return;
     }
 
-    if ((operation === 'replaceOne' || operation === 'deleteOne') && !selectedDocumentFilter) {
+    if ((operation === 'replaceOne' || operation === 'updateOne' || operation === 'deleteOne') && !selectedDocumentFilter) {
       setError('选中文档缺少 _id，无法安全执行写入操作。');
       return;
     }
@@ -584,6 +587,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
         operation,
         filter: selectedDocumentFilter || '{}',
         document: nextDocumentDraft,
+        update: updateDraft,
         limit: Number.parseInt(limit, 10) || defaultLimit,
       });
       setNotice(describeWriteResult(result));
@@ -599,7 +603,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
     } finally {
       setWriteRunning(null);
     }
-  }, [api, connectionId, limit, mongoId, newDocumentDraft, runCollectionQuery, selectedCollection, selectedDocumentDraft, selectedDocumentFilter]);
+  }, [api, connectionId, limit, mongoId, newDocumentDraft, runCollectionQuery, selectedCollection, selectedDocumentDraft, selectedDocumentFilter, updateDraft]);
 
   const copySelectedDocument = async () => {
     if (!selectedDocument) return;
@@ -855,6 +859,16 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
             </button>
           </div>
         </div>
+        <section className="mongo-create-panel mongo-update-panel">
+          <div className="mongo-create-title">
+            <strong>局部更新</strong>
+            <button type="button" onClick={() => formatDraft('update')}>格式化</button>
+          </div>
+          <MongoJsonEditor ariaLabel="MongoDB update document" value={updateDraft} theme={editorTheme} onChange={setUpdateDraft} />
+          <button type="button" className="primary" onClick={() => void runWriteOperation('updateOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+            {writeRunning === 'updateOne' ? '更新中...' : '应用 updateOne'}
+          </button>
+        </section>
         <section className="mongo-create-panel">
           <div className="mongo-create-title">
             <strong>新增文档</strong>
