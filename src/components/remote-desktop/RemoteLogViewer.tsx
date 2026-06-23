@@ -653,6 +653,8 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   const queryRequestIdRef = useRef(0);
   const liveRequestIdRef = useRef(0);
   const initialQueryKeyRef = useRef('');
+  const logLinesRef = useRef<HTMLDivElement | null>(null);
+  const shouldScrollToLatestRef = useRef(false);
   const [logFiles, setLogFiles] = useState<LogSource[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState(defaultSourceId);
   const [serviceName, setServiceName] = useState('nginx.service');
@@ -769,6 +771,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   const pageCount = Math.max(1, Math.ceil(logLines.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const pageLines = logLines.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
+  const latestLineId = logLines.at(-1)?.id ?? '';
   const selectedText = useMemo(() => getSelectedLineText(logLines, selectedLineIds), [logLines, selectedLineIds]);
   const stats = useMemo(() => ({
     error: logLines.filter((line) => line.level === 'error').length,
@@ -850,8 +853,9 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
         return;
       }
 
+      shouldScrollToLatestRef.current = nextLines.length > 0;
       setLogLines(nextLines);
-      setPage(0);
+      setPage(Math.max(0, Math.ceil(nextLines.length / pageSize) - 1));
       setLoadedAt(Date.now());
       setLoadedSourceLabel(querySource.label);
 
@@ -901,13 +905,19 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           setLogLines((currentLines) => {
             const seen = new Set(currentLines.map((line) => line.raw));
             const merged = [...currentLines];
+            let hasNewLine = false;
             nextLines.forEach((line) => {
               if (!seen.has(line.raw)) {
                 seen.add(line.raw);
+                hasNewLine = true;
                 merged.push({ ...line, id: `live-${Date.now()}-${merged.length}-${line.id}` });
               }
             });
-            return merged.slice(-maxLines);
+            const nextMergedLines = merged.slice(-maxLines);
+            if (hasNewLine) {
+              shouldScrollToLatestRef.current = true;
+            }
+            return nextMergedLines;
           });
           setLoadedAt(Date.now());
           setLoadedSourceLabel(resolvedSource.label);
@@ -976,8 +986,31 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   }, [connectionId, defaultSourceId, executeQuery, selectedSourceId]);
 
   useEffect(() => {
-    setPage(0);
-  }, [logLines.length]);
+    if (shouldScrollToLatestRef.current) {
+      setPage(Math.max(0, Math.ceil(logLines.length / pageSize) - 1));
+    }
+  }, [latestLineId, logLines.length]);
+
+  useEffect(() => {
+    if (!shouldScrollToLatestRef.current || loading) {
+      return undefined;
+    }
+
+    const latestPage = Math.max(0, Math.ceil(logLines.length / pageSize) - 1);
+    if (logLines.length > 0 && currentPage !== latestPage) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const container = logLinesRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+      shouldScrollToLatestRef.current = false;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [currentPage, latestLineId, loading, logLines.length, pageLines.length]);
 
   const selectSource = (source: LogSource) => {
     setSelectedSourceId(source.id);
@@ -1237,7 +1270,7 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
             <span><strong>{stats.debug}</strong> {tCurrent('auto.remoteLogViewer.14582sl2')}</span>
           </div>
 
-          <div className="log-lines" role="list">
+          <div ref={logLinesRef} className="log-lines" role="list">
             {loading ? (
               <div className="log-empty">{tCurrent('auto.remoteLogViewer.1bxngjg')}</div>
             ) : pageLines.length ? (

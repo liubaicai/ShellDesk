@@ -10,6 +10,7 @@ const restartPolicyOptions: Array<{ value: RestartPolicy; labelId: MessageId }> 
   { value: 'unless-stopped', labelId: 'container.restartPolicy.unlessStopped' },
   { value: 'always', labelId: 'container.restartPolicy.always' },
 ];
+const CONTAINER_LOG_TAIL_LINES = 240;
 
 function createDefaultConfigForm(): ContainerConfigForm {
   return { name: '', restartPolicy: 'no', cpuLimit: '', memoryLimit: '' };
@@ -33,6 +34,8 @@ interface ContainerDetailPanelProps {
 function ContainerDetailPanel({ container, detail, detailLoading, containersLoading, actingKey, savingConfig, onAction, onReload, onCopy, onConfigSubmit, onExec, onReadLogs }: ContainerDetailPanelProps) {
   const language = useCurrentAppLanguage();
   const liveLogRequestRef = useRef(0);
+  const detailBodyRef = useRef<HTMLDivElement | null>(null);
+  const logsOutputRef = useRef<HTMLPreElement | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('summary');
   const [configForm, setConfigForm] = useState<ContainerConfigForm>(() => createDefaultConfigForm());
   const [execCommand, setExecCommand] = useState('id && uname -a');
@@ -43,6 +46,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState('');
   const selectedDetail = detail?.id === container?.id ? detail : null;
+  const displayedLogs = liveLogs || selectedDetail?.logs || t('container.ui.noRecentLogs', language);
 
   useEffect(() => {
     setDetailTab('summary');
@@ -64,7 +68,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
       if (disposed || liveLogRequestRef.current !== requestId) return;
       setLogsLoading(true);
       try {
-        const output = await onReadLogs(container.id, { tail: 240, sinceSeconds: 8 });
+        const output = await onReadLogs(container.id, { tail: CONTAINER_LOG_TAIL_LINES });
         if (disposed || liveLogRequestRef.current !== requestId) return;
         setLiveLogs(output || t('container.ui.noRecentLogs', language));
         setLogsError('');
@@ -83,6 +87,21 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
       disposed = true;
     };
   }, [container, language, logsStreaming, onReadLogs]);
+
+  useEffect(() => {
+    if (detailTab !== 'logs') return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      const detailBody = detailBodyRef.current;
+      const output = logsOutputRef.current;
+      if (detailBody) {
+        detailBody.scrollTop = detailBody.scrollHeight;
+      }
+      if (output) {
+        output.scrollTop = output.scrollHeight;
+      }
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [detailTab, displayedLogs]);
 
   useEffect(() => {
     if (!selectedDetail) {
@@ -142,7 +161,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
     setLogsLoading(true);
     setLogsError('');
     try {
-      const output = await onReadLogs(container.id, { tail: 240 });
+      const output = await onReadLogs(container.id, { tail: CONTAINER_LOG_TAIL_LINES });
       setLiveLogs(output || t('container.ui.noRecentLogs', language));
     } catch (error) {
       setLogsError(error instanceof Error ? error.message : String(error));
@@ -218,7 +237,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
         </div>
       </div>
       {logsError ? <div className="container-inline-warning">{logsError}</div> : null}
-      <pre>{liveLogs || selectedDetail?.logs || t('container.ui.noRecentLogs', language)}</pre>
+      <pre ref={logsOutputRef}>{displayedLogs}</pre>
     </div>
   );
 
@@ -230,7 +249,7 @@ function ContainerDetailPanel({ container, detail, detailLoading, containersLoad
           <div className="container-status-row"><span className={`container-state-tag ${selectedDetail?.state || container.state}`}>{getStateLabel(selectedDetail?.state || container.state, language)}</span><strong title={selectedDetail?.status || container.status}>{selectedDetail?.status || container.status}</strong><small title={container.ports}>{container.ports}</small></div>
           <div className="container-action-bar" aria-label={t('container.ui.actionsAria', language)}>{(['start', 'stop', 'restart', 'pause', 'unpause', 'kill', 'remove'] as ContainerAction[]).map(renderActionButton)}<button type="button" className="container-action-btn" onClick={() => { setDetailTab('logs'); void onReload(container.id); }}>{t('container.ui.viewLogs', language)}</button><button type="button" className="container-action-btn" onClick={() => setDetailTab('exec')}>Exec</button></div>
           <div className="container-detail-tabs" role="tablist" aria-label={t('container.ui.detailTabsAria', language)}><button type="button" role="tab" className={detailTab === 'summary' ? 'active' : ''} onClick={() => setDetailTab('summary')}>{t('container.ui.summary', language)}</button><button type="button" role="tab" className={detailTab === 'config' ? 'active' : ''} onClick={() => setDetailTab('config')}>{t('container.ui.config', language)}</button><button type="button" role="tab" className={detailTab === 'logs' ? 'active' : ''} onClick={() => setDetailTab('logs')}>{t('container.ui.logs', language)}</button><button type="button" role="tab" className={detailTab === 'inspect' ? 'active' : ''} onClick={() => setDetailTab('inspect')}>Inspect</button><button type="button" role="tab" className={detailTab === 'exec' ? 'active' : ''} onClick={() => setDetailTab('exec')}>Exec</button></div>
-          <div className="container-detail-body">
+          <div className="container-detail-body" ref={detailBodyRef}>
             {detailLoading && !selectedDetail ? <div className="container-empty">{t('container.ui.loadingDetail', language)}</div> : null}
             {selectedDetail || !detailLoading ? <>{detailTab === 'summary' ? renderDetailSummary() : null}{detailTab === 'config' ? renderContainerConfig() : null}{detailTab === 'logs' ? renderLogsPanel() : null}{detailTab === 'inspect' ? <pre>{selectedDetail?.inspectText || t('container.ui.noInspect', language)}</pre> : null}{detailTab === 'exec' ? <div className="container-exec-panel"><form onSubmit={(event) => { event.preventDefault(); void executeContainerExec(); }}><input type="text" value={execCommand} onChange={(event) => setExecCommand(event.target.value)} placeholder={t('container.ui.execPlaceholder', language)} aria-label={t('container.ui.execAria', language)} /><button type="submit" className="container-action-btn primary" disabled={execRunning || container.state !== 'running'}>{execRunning ? t('container.ui.execRunning', language) : t('container.ui.run', language)}</button></form><pre>{execOutput || (container.state !== 'running' ? t('container.ui.execNotRunning', language) : t('container.ui.execPrompt', language))}</pre></div> : null}</> : null}
           </div>
