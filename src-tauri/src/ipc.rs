@@ -33,7 +33,7 @@ pub(crate) async fn dispatch(
     }
     match channel.as_str() {
         channel if channel.starts_with("connection:") => {
-            connection_channels::dispatch(&state, window, channel, args)
+            connection_channels::dispatch(&app, &state, window, channel, args)
                 .await
                 .unwrap_or_else(|| {
                     Err(format!(

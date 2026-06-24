@@ -3114,10 +3114,23 @@ function App() {
       setHostKeyVerificationRequest(payload);
       setIsHostKeyVerificationPending(false);
     });
+    const removeHostKeyTrusted = window.guiSSH.events.onHostKeyTrusted((payload) => {
+      setHostKeyVerificationRequest((currentRequest) => {
+        if (!currentRequest) return null;
+        if (
+          currentRequest.hostname === payload.hostname &&
+          currentRequest.port === payload.port
+        ) {
+          return null;
+        }
+        return currentRequest;
+      });
+    });
 
     return () => {
       removeKeyboardInteractive();
       removeHostKeyVerification();
+      removeHostKeyTrusted();
     };
   }, []);
 

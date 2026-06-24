@@ -11,6 +11,7 @@ use tauri::Emitter;
 use tokio::{process::Command, sync::oneshot, time};
 
 pub(crate) fn respond_host_key_verification(
+    app: &tauri::AppHandle,
     state: &AppState,
     args: Vec<Value>,
 ) -> Result<Value, String> {
@@ -26,6 +27,26 @@ pub(crate) fn respond_host_key_verification(
         .map_err(error_string)?
         .remove(&request_id)
         .ok_or_else(|| "主机密钥确认请求已过期。".to_string())?;
+
+    // 如果信任被接受，广播事件给所有窗口
+    if payload
+        .get("accept")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let hostname = payload
+            .get("hostname")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let port = payload.get("port").and_then(Value::as_u64).unwrap_or(22) as u16;
+        let broadcast_payload = json!({
+            "hostname": hostname,
+            "port": port,
+            "requestId": request_id
+        });
+        let _ = app.emit("connection:host-key-trusted", broadcast_payload);
+    }
+
     sender
         .send(payload)
         .map_err(|_| "主机密钥确认请求已关闭。".to_string())?;
@@ -104,6 +125,29 @@ pub(crate) async fn confirm_ssh_host_public_key_trusted(
                 proxy: None,
                 jump: None,
             };
+
+            // 先检查 store，如果指纹已被其他窗口信任，直接采用
+            let fresh_store = read_store(state)?;
+            let fresh_known_hosts = fresh_store
+                .get("knownHosts")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let fresh_decision = classify_scanned_host_key(
+                &fresh_known_hosts,
+                hostname,
+                port,
+                &scanned,
+            );
+            if fresh_decision
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                == "trusted"
+            {
+                return Ok(true);
+            }
+
             let response =
                 request_host_key_decision(state, window, &profile, &scanned, &decision).await?;
             let accept = response
@@ -153,6 +197,30 @@ async fn ensure_direct_ssh_host_key_trusted(
             Ok(())
         }
         "unknown" | "changed" => {
+            // 先检查 store，如果指纹已被其他窗口信任，直接采用
+            let fresh_store = read_store(state)?;
+            let fresh_known_hosts = fresh_store
+                .get("knownHosts")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let fresh_decision = classify_scanned_host_key(
+                &fresh_known_hosts,
+                &profile.address,
+                profile.port,
+                &scanned,
+            );
+            if fresh_decision
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                == "trusted"
+            {
+                profile.known_hosts_path =
+                    write_connection_known_hosts(state, profile, &scanned)?;
+                return Ok(());
+            }
+
             let response =
                 request_host_key_decision(state, window, profile, &scanned, &decision).await?;
             if !response

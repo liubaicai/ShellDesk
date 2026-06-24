@@ -8,6 +8,7 @@ use crate::{
 use serde_json::{json, Value};
 
 pub(crate) async fn dispatch(
+    app: &tauri::AppHandle,
     state: &AppState,
     window: tauri::Window,
     channel: &str,
@@ -20,7 +21,9 @@ pub(crate) async fn dispatch(
     let result = match channel {
         "connection:connect" => connection::connect_ssh(state, &window, args).await,
         "connection:open-local" => connection::open_local_connection(state),
-        "connection:host-key-response" => connection::respond_host_key_verification(state, args),
+        "connection:host-key-response" => {
+            connection::respond_host_key_verification(app, state, args)
+        }
         "connection:keyboard-interactive-response" => {
             connection::respond_keyboard_interactive(state, args)
         }
