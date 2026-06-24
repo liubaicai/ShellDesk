@@ -28,8 +28,7 @@ pub(crate) struct AppState {
     pub(crate) pending_tauri_update: Arc<Mutex<Option<tauri_plugin_updater::Update>>>,
     pub(crate) sync_schedule_generation: Arc<Mutex<u64>>,
     pub(crate) ui_window: Arc<Mutex<Option<tauri::Window>>>,
-    pub(crate) host_key_responses:
-        Arc<Mutex<HashMap<String, HostKeyRequest>>>,
+    pub(crate) host_key_responses: Arc<Mutex<HashMap<String, HostKeyRequest>>>,
     pub(crate) keyboard_interactive_responses: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
     pub(crate) store_lock: Arc<Mutex<()>>,
 }

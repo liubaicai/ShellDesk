@@ -68,9 +68,7 @@ pub(crate) async fn dispatch(
         "preferences:set" => {
             let key = string_arg(args, 0)?;
             let value = args.get(1).cloned().unwrap_or(Value::Null);
-            let value = with_store_mut(state, |store| {
-                set_preference_to_store(store, &key, value)
-            })?;
+            let value = with_store_mut(state, |store| set_preference_to_store(store, &key, value))?;
             let _ = window.emit("vault:changed", json!({ "kind": "preference", "key": key }));
             value
         }

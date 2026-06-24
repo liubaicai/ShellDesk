@@ -21,7 +21,10 @@ pub(crate) fn respond_host_key_verification(
         .and_then(Value::as_str)
         .ok_or_else(|| "主机密钥确认请求无效。".to_string())?
         .to_string();
-    let accept = payload.get("accept").and_then(Value::as_bool).unwrap_or(false);
+    let accept = payload
+        .get("accept")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let add_to_known_hosts = payload
         .get("addToKnownHosts")
         .and_then(Value::as_bool)
@@ -32,7 +35,11 @@ pub(crate) fn respond_host_key_verification(
         .map_err(error_string)?
         .remove(&request_id)
         .ok_or_else(|| "主机密钥确认请求已过期。".to_string())?;
-    let HostKeyRequest { hostname, port, sender } = entry;
+    let HostKeyRequest {
+        hostname,
+        port,
+        sender,
+    } = entry;
     sender
         .send(payload.clone())
         .map_err(|_| "主机密钥确认请求已关闭。".to_string())?;
@@ -302,11 +309,7 @@ async fn request_host_key_decision(
     }
 }
 
-fn host_key_already_trusted(
-    state: &AppState,
-    profile: &SshProfile,
-    scanned: &Value,
-) -> bool {
+fn host_key_already_trusted(state: &AppState, profile: &SshProfile, scanned: &Value) -> bool {
     let Ok(store) = read_store(state) else {
         return false;
     };
