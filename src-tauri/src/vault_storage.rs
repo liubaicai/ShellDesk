@@ -69,13 +69,16 @@ pub(crate) fn read_store(state: &AppState, default_store: Value) -> Result<(Valu
 }
 
 pub(crate) fn write_store(state: &AppState, store: &Value) -> Result<(), String> {
+    let config_path = config_store_path(state);
+    let vault_path = vault_store_path(state);
+
     let config_wrapper = json!({
         "format": CONFIG_STORE_FORMAT,
         "version": VAULT_SCHEMA_VERSION,
         "updatedAt": now(),
         "payload": create_config_payload(store)
     });
-    write_json_file_private(&config_store_path(state), &config_wrapper)?;
+    write_json_file_private(&config_path, &config_wrapper)?;
 
     let vault_payload = store_without_runtime_fields(store);
     let vault_wrapper = if vault_protection_available() {
@@ -95,7 +98,12 @@ pub(crate) fn write_store(state: &AppState, store: &Value) -> Result<(), String>
             "payload": vault_payload
         })
     };
-    write_json_file_private(&vault_store_path(state), &vault_wrapper)
+    write_json_file_private(&vault_path, &vault_wrapper)?;
+
+    eprintln!("[DEBUG] write_store - config_path: {:?}, vault_path: {:?}", config_path, vault_path);
+    eprintln!("[DEBUG] write_store - knownHosts in config: {:?}", config_wrapper.pointer("/payload/knownHosts").map(|v| v.as_array().map(|arr| arr.len())));
+
+    Ok(())
 }
 
 fn config_store_path(state: &AppState) -> PathBuf {
