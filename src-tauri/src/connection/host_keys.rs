@@ -1,17 +1,18 @@
-use crate::vault::{read_store, write_store};
+use crate::vault::{read_store, with_store_mut};
 use crate::{
     command_exists, error_string, now, prevent_tokio_process_window, random_id,
-    run_ssh_command_for_profile_with_window, shell_quote, AppState, SshProfile,
+    run_ssh_command_for_profile_with_window, shell_quote, AppState, HostKeyRequest, SshProfile,
 };
 use base64::Engine;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, future::Future, pin::Pin, process::Stdio, time::Duration};
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
 use tokio::{process::Command, sync::oneshot, time};
 
 pub(crate) fn respond_host_key_verification(
     state: &AppState,
+    app: &AppHandle,
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let payload = args.first().cloned().unwrap_or_else(|| json!({}));
@@ -20,16 +21,61 @@ pub(crate) fn respond_host_key_verification(
         .and_then(Value::as_str)
         .ok_or_else(|| "主机密钥确认请求无效。".to_string())?
         .to_string();
-    let sender = state
+    let accept = payload.get("accept").and_then(Value::as_bool).unwrap_or(false);
+    let add_to_known_hosts = payload
+        .get("addToKnownHosts")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let entry = state
         .host_key_responses
         .lock()
         .map_err(error_string)?
         .remove(&request_id)
         .ok_or_else(|| "主机密钥确认请求已过期。".to_string())?;
+    let HostKeyRequest { hostname, port, sender } = entry;
     sender
-        .send(payload)
+        .send(payload.clone())
         .map_err(|_| "主机密钥确认请求已关闭。".to_string())?;
+    if accept && add_to_known_hosts {
+        resolve_sibling_host_key_requests(state, &hostname, port);
+        let _ = app.emit(
+            "connection:host-key-trusted",
+            json!({ "hostname": hostname, "port": port }),
+        );
+    }
     Ok(json!(true))
+}
+
+fn resolve_sibling_host_key_requests(state: &AppState, hostname: &str, port: u16) {
+    let target_key = host_key_match_key(hostname, port);
+    let siblings = state
+        .host_key_responses
+        .lock()
+        .map(|mut requests| {
+            let target_key = target_key.clone();
+            let matching_ids: Vec<String> = requests
+                .iter()
+                .filter(|(_, request)| {
+                    host_key_match_key(&request.hostname, request.port) == target_key
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            matching_ids
+                .into_iter()
+                .filter_map(|id| requests.remove(&id))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for sibling in siblings {
+        let _ = sibling.sender.send(json!({
+            "accept": true,
+            "addToKnownHosts": false
+        }));
+    }
+}
+
+fn host_key_match_key(hostname: &str, port: u16) -> String {
+    format!("{}:{}", normalize_hostname(hostname), port)
 }
 
 pub(super) fn ensure_ssh_host_key_trusted<'a>(
@@ -117,6 +163,7 @@ pub(crate) async fn confirm_ssh_host_public_key_trusted(
                     .unwrap_or(false)
             {
                 upsert_known_host_from_scan(state, &profile, &scanned, &decision)?;
+                let _ = window.emit("vault:changed", json!({ "kind": "hostKeyTrust" }));
             }
             Ok(accept)
         }
@@ -168,6 +215,7 @@ async fn ensure_direct_ssh_host_key_trusted(
                 .unwrap_or(false)
             {
                 upsert_known_host_from_scan(state, profile, &scanned, &decision)?;
+                let _ = window.emit("vault:changed", json!({ "kind": "hostKeyTrust" }));
             }
             profile.known_hosts_path = write_connection_known_hosts(state, profile, &scanned)?;
             Ok(())
@@ -203,13 +251,23 @@ async fn request_host_key_decision(
     scanned: &Value,
     decision: &Value,
 ) -> Result<Value, String> {
+    if host_key_already_trusted(state, profile, scanned) {
+        return Ok(json!({ "accept": true, "addToKnownHosts": false }));
+    }
     let request_id = random_id("hostkey");
     let (sender, receiver) = oneshot::channel();
     state
         .host_key_responses
         .lock()
         .map_err(error_string)?
-        .insert(request_id.clone(), sender);
+        .insert(
+            request_id.clone(),
+            HostKeyRequest {
+                sender,
+                hostname: profile.address.clone(),
+                port: profile.port,
+            },
+        );
     let payload = json!({
         "requestId": request_id,
         "hostname": profile.address,
@@ -242,6 +300,26 @@ async fn request_host_key_decision(
             Err("主机密钥确认超时。".to_string())
         }
     }
+}
+
+fn host_key_already_trusted(
+    state: &AppState,
+    profile: &SshProfile,
+    scanned: &Value,
+) -> bool {
+    let Ok(store) = read_store(state) else {
+        return false;
+    };
+    let known_hosts = store
+        .get("knownHosts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    classify_scanned_host_key(&known_hosts, &profile.address, profile.port, scanned)
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        == "trusted"
 }
 
 async fn scan_ssh_host_keys(
@@ -637,16 +715,17 @@ fn upsert_known_host_from_scan(
     scanned: &Value,
     decision: &Value,
 ) -> Result<(), String> {
-    let mut store = read_store(state)?;
-    let current = store
-        .get("knownHosts")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let now_value = now();
-    let next = merge_known_hosts_from_scan(current, profile, scanned, decision, &now_value);
-    store["knownHosts"] = json!(next);
-    write_store(state, &store)
+    with_store_mut(state, |store| {
+        let current = store
+            .get("knownHosts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let now_value = now();
+        let next = merge_known_hosts_from_scan(current, profile, scanned, decision, &now_value);
+        store["knownHosts"] = json!(next);
+        Ok(())
+    })
 }
 
 pub(super) fn merge_known_hosts_from_scan(

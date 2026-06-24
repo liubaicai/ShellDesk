@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 use crate::{error_string, now, prevent_tokio_process_window, random_id, AppState};
 
-use super::{read_store, to_snapshot, write_store, MAX_PRIVATE_KEY_BYTES, MAX_PUBLIC_KEY_BYTES};
+use super::{to_snapshot, with_store_mut, MAX_PRIVATE_KEY_BYTES, MAX_PUBLIC_KEY_BYTES};
 
 pub(super) fn renderer_key_record(mut key: Value) -> Value {
     if let Some(object) = key.as_object_mut() {
@@ -111,14 +111,15 @@ pub(crate) async fn import_key_pair(
         "createdAt": now(),
         "updatedAt": now()
     });
-    let mut store = read_store(state)?;
-    ensure_unique_ssh_key(store.get("sshKeys"), &key)?;
-    if let Some(keys) = store.get_mut("sshKeys").and_then(Value::as_array_mut) {
-        keys.push(key.clone());
-    }
-    write_store(state, &store)?;
+    let snapshot = with_store_mut(state, |store| {
+        ensure_unique_ssh_key(store.get("sshKeys"), &key)?;
+        if let Some(keys) = store.get_mut("sshKeys").and_then(Value::as_array_mut) {
+            keys.push(key.clone());
+        }
+        Ok(to_snapshot(state, store.clone()))
+    })?;
     let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
-    Ok(json!({ "snapshot": to_snapshot(state, store), "key": renderer_key_record(key) }))
+    Ok(json!({ "snapshot": snapshot, "key": renderer_key_record(key) }))
 }
 
 pub(crate) async fn generate_key_pair(
@@ -196,13 +197,14 @@ pub(crate) async fn generate_key_pair(
         "createdAt": now(),
         "updatedAt": now()
     });
-    let mut store = read_store(state)?;
-    if let Some(keys) = store.get_mut("sshKeys").and_then(Value::as_array_mut) {
-        keys.push(key.clone());
-    }
-    write_store(state, &store)?;
+    let snapshot = with_store_mut(state, |store| {
+        if let Some(keys) = store.get_mut("sshKeys").and_then(Value::as_array_mut) {
+            keys.push(key.clone());
+        }
+        Ok(to_snapshot(state, store.clone()))
+    })?;
     let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
-    Ok(json!({ "snapshot": to_snapshot(state, store), "key": renderer_key_record(key) }))
+    Ok(json!({ "snapshot": snapshot, "key": renderer_key_record(key) }))
 }
 
 fn read_local_text_file(path: &str, label: &str, max_bytes: u64) -> Result<String, String> {

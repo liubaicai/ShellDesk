@@ -1,6 +1,6 @@
 use crate::vault::{
     normalize_app_settings, normalize_hosts, normalize_known_hosts, normalize_proxy_profiles,
-    normalize_ssh_keys_for_import, read_store, to_snapshot, write_store,
+    normalize_ssh_keys_for_import, read_store, to_snapshot, with_store_mut,
 };
 use crate::{error_string, read_json_file, sanitize_file_name, AppState};
 use base64::Engine;
@@ -301,23 +301,24 @@ pub(crate) async fn import_config(
     };
     validate_config_import_file(&path, language)?;
     let imported = read_config_import_payload(read_json_file(&path, json!({}))?)?;
-    let mut store = current_store;
-    for key in [
-        "hosts",
-        "sshKeys",
-        "proxyProfiles",
-        "knownHosts",
-        "settings",
-        "browserBookmarks",
-        "remoteConnectionProfiles",
-    ] {
-        if let Some(value) = imported.get(key) {
-            store[key] = value.clone();
+    let snapshot = with_store_mut(state, |store| {
+        for key in [
+            "hosts",
+            "sshKeys",
+            "proxyProfiles",
+            "knownHosts",
+            "settings",
+            "browserBookmarks",
+            "remoteConnectionProfiles",
+        ] {
+            if let Some(value) = imported.get(key) {
+                store[key] = value.clone();
+            }
         }
-    }
-    write_store(state, &store)?;
+        Ok(to_snapshot(state, store.clone()))
+    })?;
     let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
-    Ok(to_snapshot(state, store))
+    Ok(snapshot)
 }
 
 fn validate_config_import_file(path: &Path, language: DialogLanguage) -> Result<(), String> {

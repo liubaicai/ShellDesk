@@ -1,7 +1,18 @@
 use serde_json::{json, Value};
 use std::env;
 
-use crate::{now, random_id, vault_storage, AppState};
+use crate::{error_string, now, random_id, vault_storage, AppState};
+
+pub(crate) fn with_store_mut<R, F>(state: &AppState, mutate: F) -> Result<R, String>
+where
+    F: FnOnce(&mut Value) -> Result<R, String>,
+{
+    let _guard = state.store_lock.lock().map_err(error_string)?;
+    let mut store = read_store(state)?;
+    let result = mutate(&mut store)?;
+    write_store(state, &store)?;
+    Ok(result)
+}
 
 const MAX_PRIVATE_KEY_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_PUBLIC_KEY_BYTES: u64 = 128 * 1024;

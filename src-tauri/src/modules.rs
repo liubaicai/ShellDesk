@@ -65,8 +65,8 @@ pub(crate) use ssh_transport::{
     unavailable_password_auth_error, value_to_bytes, wait_for_tcp,
 };
 pub(crate) use state::{
-    ActiveConnection, ActiveTransfer, AppState, ConnectionKind, PrivilegeConfig, SshProfile,
-    VncProxySession,
+    ActiveConnection, ActiveTransfer, AppState, ConnectionKind, HostKeyRequest, PrivilegeConfig,
+    SshProfile, VncProxySession,
 };
 pub(crate) use util::{
     app_data_dir, error_string, escape_pointer, https_url_origin, node_platform, now,

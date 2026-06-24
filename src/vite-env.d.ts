@@ -1358,8 +1358,9 @@ interface ShellDeskEventControls {
   onConnectionRestored: (callback: (payload: { connectionId: string; restoredAt?: string }) => void) => () => void;
   onKeyboardInteractive: (callback: (payload: ShellDeskKeyboardInteractiveRequest) => void) => () => void;
   onHostKeyVerification: (callback: (payload: ShellDeskHostKeyVerificationRequest) => void) => () => void;
+  onHostKeyTrusted: (callback: (payload: { hostname: string; port: number }) => void) => () => void;
   onWindowMaximizedChange: (callback: (payload: { maximized: boolean }) => void) => () => void;
-  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference'; scope?: string; key?: string }) => void) => () => void;
+  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference' | 'hostKeyTrust'; scope?: string; key?: string }) => void) => () => void;
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;

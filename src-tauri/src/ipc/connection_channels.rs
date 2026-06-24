@@ -6,6 +6,7 @@ use crate::{
     run_connection_command_stream, terminal, vnc, zmodem, AppState,
 };
 use serde_json::{json, Value};
+use tauri::Manager;
 
 pub(crate) async fn dispatch(
     state: &AppState,
@@ -20,7 +21,9 @@ pub(crate) async fn dispatch(
     let result = match channel {
         "connection:connect" => connection::connect_ssh(state, &window, args).await,
         "connection:open-local" => connection::open_local_connection(state),
-        "connection:host-key-response" => connection::respond_host_key_verification(state, args),
+        "connection:host-key-response" => {
+            connection::respond_host_key_verification(state, window.app_handle(), args)
+        }
         "connection:keyboard-interactive-response" => {
             connection::respond_keyboard_interactive(state, args)
         }

@@ -2,7 +2,7 @@ use crate::vault::{
     generate_key_pair, get_bookmarks, get_preference, get_remote_connection_profile,
     import_key_pair, public_snapshot, read_store, save_bookmarks_to_store,
     save_remote_connection_profile_to_store, set_preference_to_store, snapshot, to_snapshot,
-    upsert_vault_collections, write_store,
+    upsert_vault_collections, with_store_mut,
 };
 use crate::{string_arg, AppState};
 use serde_json::{json, Value};
@@ -19,11 +19,12 @@ pub(crate) async fn dispatch(
         "vault:get-snapshot" => snapshot(state)?,
         "vault:save-collections" => {
             let payload = args.first().cloned().unwrap_or(Value::Null);
-            let mut store = read_store(state)?;
-            upsert_vault_collections(&mut store, payload)?;
-            write_store(state, &store)?;
+            let snapshot = with_store_mut(state, |store| {
+                upsert_vault_collections(store, payload)?;
+                Ok(to_snapshot(state, store.clone()))
+            })?;
             let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
-            to_snapshot(state, store)
+            snapshot
         }
         "vault:get-bookmarks" => {
             let scope = string_arg(args, 0)?;
@@ -33,9 +34,9 @@ pub(crate) async fn dispatch(
         "vault:save-bookmarks" => {
             let scope = string_arg(args, 0)?;
             let bookmarks = args.get(1).cloned().unwrap_or_else(|| json!([]));
-            let mut store = read_store(state)?;
-            let bookmarks = save_bookmarks_to_store(&mut store, &scope, bookmarks)?;
-            write_store(state, &store)?;
+            let bookmarks = with_store_mut(state, |store| {
+                save_bookmarks_to_store(store, &scope, bookmarks)
+            })?;
             let _ = window.emit(
                 "vault:changed",
                 json!({ "kind": "bookmarks", "scope": scope }),
@@ -52,11 +53,9 @@ pub(crate) async fn dispatch(
             let host_id = string_arg(args, 0)?;
             let app_key = string_arg(args, 1)?;
             let values = args.get(2).cloned().unwrap_or_else(|| json!({}));
-            let mut store = read_store(state)?;
-            let values =
-                save_remote_connection_profile_to_store(&mut store, &host_id, &app_key, values)?;
-            write_store(state, &store)?;
-            values
+            with_store_mut(state, |store| {
+                save_remote_connection_profile_to_store(store, &host_id, &app_key, values)
+            })?
         }
         "vault:import-key-pair" => import_key_pair(state, window, args.to_vec()).await?,
         "vault:generate-rsa-key-pair" => generate_key_pair(state, window, args.to_vec()).await?,
@@ -69,9 +68,9 @@ pub(crate) async fn dispatch(
         "preferences:set" => {
             let key = string_arg(args, 0)?;
             let value = args.get(1).cloned().unwrap_or(Value::Null);
-            let mut store = read_store(state)?;
-            let value = set_preference_to_store(&mut store, &key, value)?;
-            write_store(state, &store)?;
+            let value = with_store_mut(state, |store| {
+                set_preference_to_store(store, &key, value)
+            })?;
             let _ = window.emit("vault:changed", json!({ "kind": "preference", "key": key }));
             value
         }

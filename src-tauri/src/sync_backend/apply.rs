@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 use crate::vault::{default_settings, read_store, to_snapshot, write_store};
-use crate::{now, AppState};
+use crate::{error_string, now, AppState};
 
 fn records_array(document: &Value, record_type: &str) -> Vec<Value> {
     document
@@ -29,6 +29,7 @@ pub(super) fn apply_sync_document_to_vault(
     state: &AppState,
     document: &Value,
 ) -> Result<Value, String> {
+    let _store_guard = state.store_lock.lock().map_err(error_string)?;
     let current = read_store(state)?;
     let current_hosts = current
         .get("hosts")

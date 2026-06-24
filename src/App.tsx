@@ -3168,6 +3168,21 @@ function App() {
     }
 
     return window.guiSSH.events.onVaultChanged((payload) => {
+      if (payload.kind === 'hostKeyTrust') {
+        void vaultControls.getSnapshot().then((snapshot) => {
+          knownHostsRef.current = snapshot.knownHosts;
+          lastPersistedCollectionsRef.current = JSON.stringify({
+            hosts: hostsRef.current,
+            sshKeys: sshKeysRef.current,
+            proxyProfiles: proxyProfilesRef.current,
+            knownHosts: snapshot.knownHosts,
+            settings: settingsRef.current,
+          });
+          setKnownHosts(snapshot.knownHosts);
+        }).catch(() => undefined);
+        return;
+      }
+
       if (payload.kind !== 'vault' && payload.kind !== 'bookmarks' && !isConnectionWindow) {
         return;
       }
@@ -3181,6 +3196,26 @@ function App() {
       }).catch(() => undefined);
     });
   }, [isConnectionWindow, vaultControls]);
+
+  useEffect(() => {
+    if (!window.guiSSH?.events.onHostKeyTrusted) {
+      return;
+    }
+
+    return window.guiSSH.events.onHostKeyTrusted((payload) => {
+      setHostKeyVerificationRequest((current) => {
+        if (
+          current &&
+          current.hostname === payload.hostname &&
+          current.port === payload.port
+        ) {
+          setIsHostKeyVerificationPending(false);
+          return null;
+        }
+        return current;
+      });
+    });
+  }, []);
 
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
