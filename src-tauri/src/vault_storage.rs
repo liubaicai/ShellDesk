@@ -100,6 +100,14 @@ pub(crate) fn write_store(state: &AppState, store: &Value) -> Result<(), String>
     };
     write_json_file_private(&vault_path, &vault_wrapper)?;
 
+    // 强制同步文件到磁盘
+    if let Ok(file) = fs::OpenOptions::new().read(true).open(&config_path) {
+        let _ = file.sync_all();
+    }
+    if let Ok(file) = fs::OpenOptions::new().read(true).open(&vault_path) {
+        let _ = file.sync_all();
+    }
+
     eprintln!("[DEBUG] write_store - config_path: {:?}, vault_path: {:?}", config_path, vault_path);
     eprintln!("[DEBUG] write_store - knownHosts in config: {:?}", config_wrapper.pointer("/payload/knownHosts").map(|v| v.as_array().map(|arr| arr.len())));
 

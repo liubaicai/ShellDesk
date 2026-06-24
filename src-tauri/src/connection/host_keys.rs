@@ -713,7 +713,7 @@ pub(super) fn classify_scanned_host_key(
         .filter(|known_host| known_host_matches_host(known_host, hostname, port))
         .collect::<Vec<_>>();
 
-    eprintln!("[DEBUG] classify_scanned_host_key - hostname: {}, port: {}, scanned_fingerprint: {}, candidates count: {}", hostname, port, scanned_fingerprint, candidates.len());
+    eprintln!("[DEBUG] classify_scanned_host_key - hostname: {}, port: {}, scanned_fingerprint: {}, candidates count: {}, stack: {:?}", hostname, port, scanned_fingerprint, candidates.len(), std::backtrace::Backtrace::capture());
 
     if candidates.is_empty() {
         return json!({ "status": "unknown" });
@@ -793,6 +793,10 @@ fn upsert_known_host_from_scan(
     decision: &Value,
 ) -> Result<(), String> {
     eprintln!("[DEBUG] upsert_known_host_from_scan - data_dir: {:?}", state.data_dir);
+
+    // 使用 store_lock 来保护读写操作
+    let _lock = state.store_lock.lock().map_err(error_string)?;
+
     let mut store = read_store(state)?;
     let current = store
         .get("knownHosts")
@@ -820,7 +824,8 @@ fn upsert_known_host_from_scan(
         }
     }
 
-    write_store(state, &store)
+    write_store(state, &store)?;
+    Ok(())
 }
 
 pub(super) fn merge_known_hosts_from_scan(
