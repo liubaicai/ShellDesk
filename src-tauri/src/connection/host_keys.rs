@@ -788,6 +788,14 @@ fn upsert_known_host_from_scan(
     let now_value = now();
     let next = merge_known_hosts_from_scan(current, profile, scanned, decision, &now_value);
     store["knownHosts"] = json!(next);
+
+    // 打印更新后的 knownHosts 中匹配的记录
+    let updated_record = next.iter().find(|record| {
+        record.get("hostname").and_then(Value::as_str) == Some(&profile.address)
+            && record.get("port").and_then(Value::as_u64) == Some(profile.port as u64)
+    });
+    eprintln!("[DEBUG] upsert_known_host_from_scan - hostname: {}, port: {}, updated record: {:?}", profile.address, profile.port, updated_record);
+
     write_store(state, &store)
 }
 
