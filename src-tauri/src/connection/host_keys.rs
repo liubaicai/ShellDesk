@@ -67,6 +67,8 @@ pub(crate) fn respond_host_key_verification(
             .and_then(Value::as_str)
             .unwrap_or("");
 
+        eprintln!("[DEBUG] respond_host_key_verification - hostname: {}, port: {}, decision: {:?}, scanned: {:?}", hostname, port, decision, scanned);
+
         let profile = SshProfile {
             address: hostname.to_string(),
             port,
@@ -81,8 +83,13 @@ pub(crate) fn respond_host_key_verification(
         };
 
         // 先落盘
-        if let Err(err) = upsert_known_host_from_scan(state, &profile, &scanned, &decision) {
-            eprintln!("Failed to upsert known host: {}", err);
+        match upsert_known_host_from_scan(state, &profile, &scanned, &decision) {
+            Ok(()) => {
+                eprintln!("[DEBUG] upsert_known_host_from_scan succeeded");
+            }
+            Err(err) => {
+                eprintln!("[DEBUG] upsert_known_host_from_scan failed: {}", err);
+            }
         }
 
         // 再广播事件给所有窗口
