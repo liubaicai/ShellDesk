@@ -227,20 +227,39 @@ async fn ensure_direct_ssh_host_key_trusted(
     window: &tauri::Window,
     profile: &mut SshProfile,
 ) -> Result<(), String> {
-    let store = read_store(state)?;
-    let known_hosts = store
-        .get("knownHosts")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    // 第一步：在锁保护下读取 store
+    let known_hosts = {
+        let _lock = state.store_lock.lock().map_err(error_string)?;
+        let store = read_store(state)?;
+        store
+            .get("knownHosts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    // 第二步：扫描（不在锁内）
     let scanned_keys = scan_ssh_host_keys(state, window, profile).await?;
-    let (scanned, decision) = select_scanned_host_key_decision(
-        &known_hosts,
-        &profile.address,
-        profile.port,
-        &scanned_keys,
-    )
-    .ok_or_else(|| "未能扫描 SSH 主机密钥。".to_string())?;
+
+    // 第三步：再次在锁保护下做决策
+    let (scanned, decision) = {
+        let _lock = state.store_lock.lock().map_err(error_string)?;
+        // 重新读取最新 store
+        let fresh_store = read_store(state)?;
+        let fresh_known_hosts = fresh_store
+            .get("knownHosts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        select_scanned_host_key_decision(
+            &fresh_known_hosts,
+            &profile.address,
+            profile.port,
+            &scanned_keys,
+        )
+        .ok_or_else(|| "未能扫描 SSH 主机密钥。".to_string())?
+    };
+
     match decision
         .get("status")
         .and_then(Value::as_str)
@@ -251,19 +270,23 @@ async fn ensure_direct_ssh_host_key_trusted(
             Ok(())
         }
         "unknown" | "changed" => {
-            // 先检查 store，如果指纹已被其他窗口信任，直接采用
-            let fresh_store = read_store(state)?;
-            let fresh_known_hosts = fresh_store
-                .get("knownHosts")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let fresh_decision = classify_scanned_host_key(
-                &fresh_known_hosts,
-                &profile.address,
-                profile.port,
-                &scanned,
-            );
+            // 再次检查 store，看是否已被其他窗口信任
+            let fresh_decision = {
+                let _lock = state.store_lock.lock().map_err(error_string)?;
+                let fresh_store = read_store(state)?;
+                let fresh_known_hosts = fresh_store
+                    .get("knownHosts")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                classify_scanned_host_key(
+                    &fresh_known_hosts,
+                    &profile.address,
+                    profile.port,
+                    &scanned,
+                )
+            };
+
             if fresh_decision
                 .get("status")
                 .and_then(Value::as_str)
@@ -275,6 +298,7 @@ async fn ensure_direct_ssh_host_key_trusted(
                 return Ok(());
             }
 
+            // 这里需要等待用户响应，不能持有锁
             let response =
                 request_host_key_decision(state, window, profile, &scanned, &decision).await?;
             if !response
