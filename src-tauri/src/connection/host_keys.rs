@@ -712,11 +712,16 @@ pub(super) fn classify_scanned_host_key(
         .iter()
         .filter(|known_host| known_host_matches_host(known_host, hostname, port))
         .collect::<Vec<_>>();
+
+    eprintln!("[DEBUG] classify_scanned_host_key - hostname: {}, port: {}, scanned_fingerprint: {}, candidates count: {}", hostname, port, scanned_fingerprint, candidates.len());
+
     if candidates.is_empty() {
         return json!({ "status": "unknown" });
     }
     for known_host in &candidates {
-        if known_host_fingerprint(known_host) == scanned_fingerprint {
+        let known_fp = known_host_fingerprint(known_host);
+        eprintln!("[DEBUG] classify_scanned_host_key - comparing known_fp: {} with scanned_fp: {}", known_fp, scanned_fingerprint);
+        if known_fp == scanned_fingerprint {
             return json!({
                 "status": "trusted",
                 "knownHostId": known_host.get("id").and_then(Value::as_str).unwrap_or("")
