@@ -38,28 +38,39 @@ pub(crate) fn respond_host_key_verification(
             .and_then(Value::as_bool)
             .unwrap_or(false)
     {
-        let hostname = payload
+        // 从 state 中取出完整的请求信息
+        let request_info = state
+            .host_key_requests
+            .lock()
+            .map_err(error_string)?
+            .remove(&request_id)
+            .ok_or_else(|| "主机密钥确认请求信息不存在。".to_string())?;
+
+        let hostname = request_info
             .get("hostname")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let port = payload.get("port").and_then(Value::as_u64).unwrap_or(22) as u16;
-        let scanned = payload.get("scanned").cloned().unwrap_or_else(|| {
-            json!({
-                "keyType": payload.get("keyType").and_then(Value::as_str).unwrap_or("unknown"),
-                "fingerprint": payload.get("fingerprint").and_then(Value::as_str).unwrap_or(""),
-                "publicKey": payload.get("publicKey").and_then(Value::as_str).unwrap_or("")
-            })
-        });
-        let decision = json!({
-            "status": "changed",
-            "knownHostId": payload.get("knownHostId").and_then(Value::as_str).unwrap_or(""),
-            "expectedFingerprint": payload.get("knownFingerprint").and_then(Value::as_str).unwrap_or("")
-        });
+        let port = request_info
+            .get("port")
+            .and_then(Value::as_u64)
+            .unwrap_or(22) as u16;
+        let scanned = request_info
+            .get("scanned")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let decision = request_info
+            .get("decision")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let username = request_info
+            .get("username")
+            .and_then(Value::as_str)
+            .unwrap_or("");
 
         let profile = SshProfile {
             address: hostname.to_string(),
             port,
-            username: payload.get("username").and_then(Value::as_str).unwrap_or("").to_string(),
+            username: username.to_string(),
             auth_method: String::new(),
             password: String::new(),
             key_path: String::new(),
@@ -81,6 +92,13 @@ pub(crate) fn respond_host_key_verification(
             "requestId": request_id
         });
         let _ = app.emit("connection:host-key-trusted", broadcast_payload);
+    } else {
+        // 如果不落盘，也要清理请求信息
+        let _ = state
+            .host_key_requests
+            .lock()
+            .map_err(error_string)?
+            .remove(&request_id);
     }
 
     sender
@@ -301,6 +319,7 @@ async fn request_host_key_decision(
         .lock()
         .map_err(error_string)?
         .insert(request_id.clone(), sender);
+
     let payload = json!({
         "requestId": request_id,
         "hostname": profile.address,
@@ -313,9 +332,29 @@ async fn request_host_key_decision(
         "knownHostId": decision.get("knownHostId").and_then(Value::as_str).unwrap_or(""),
         "knownFingerprint": decision.get("expectedFingerprint").and_then(Value::as_str).unwrap_or("")
     });
+
+    // 存储完整的请求信息，用于在响应时落盘和广播
+    let request_info = json!({
+        "hostname": profile.address,
+        "port": profile.port,
+        "username": profile.username,
+        "scanned": scanned,
+        "decision": decision
+    });
+    state
+        .host_key_requests
+        .lock()
+        .map_err(error_string)?
+        .insert(request_id.clone(), request_info);
+
     if let Err(error) = window.emit("connection:host-key-verification", payload) {
         let _ = state
             .host_key_responses
+            .lock()
+            .map_err(error_string)?
+            .remove(&request_id);
+        let _ = state
+            .host_key_requests
             .lock()
             .map_err(error_string)?
             .remove(&request_id);
@@ -327,6 +366,11 @@ async fn request_host_key_decision(
         Err(_) => {
             let _ = state
                 .host_key_responses
+                .lock()
+                .map_err(error_string)?
+                .remove(&request_id);
+            let _ = state
+                .host_key_requests
                 .lock()
                 .map_err(error_string)?
                 .remove(&request_id);

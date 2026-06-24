@@ -29,6 +29,7 @@ pub(crate) struct AppState {
     pub(crate) sync_schedule_generation: Arc<Mutex<u64>>,
     pub(crate) ui_window: Arc<Mutex<Option<tauri::Window>>>,
     pub(crate) host_key_responses: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
+    pub(crate) host_key_requests: Arc<Mutex<HashMap<String, Value>>>,
     pub(crate) keyboard_interactive_responses: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
 }
 
@@ -51,6 +52,7 @@ impl AppState {
             sync_schedule_generation: Arc::new(Mutex::new(0)),
             ui_window: Arc::new(Mutex::new(None)),
             host_key_responses: Arc::new(Mutex::new(HashMap::new())),
+            host_key_requests: Arc::new(Mutex::new(HashMap::new())),
             keyboard_interactive_responses: Arc::new(Mutex::new(HashMap::new())),
         }
     }
