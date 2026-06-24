@@ -718,6 +718,14 @@ pub(super) fn classify_scanned_host_key(
     if candidates.is_empty() {
         return json!({ "status": "unknown" });
     }
+
+    // 打印所有候选记录的 fingerprint
+    for candidate in &candidates {
+        eprintln!("[DEBUG] classify_scanned_host_key - candidate id: {}, fingerprint in store: {:?}",
+            candidate.get("id").and_then(Value::as_str).unwrap_or(""),
+            candidate.get("fingerprint").and_then(Value::as_str).unwrap_or(""));
+    }
+
     for known_host in &candidates {
         let known_fp = known_host_fingerprint(known_host);
         eprintln!("[DEBUG] classify_scanned_host_key - comparing known_fp: {} with scanned_fp: {}", known_fp, scanned_fingerprint);
@@ -784,6 +792,7 @@ fn upsert_known_host_from_scan(
     scanned: &Value,
     decision: &Value,
 ) -> Result<(), String> {
+    eprintln!("[DEBUG] upsert_known_host_from_scan - data_dir: {:?}", state.data_dir);
     let mut store = read_store(state)?;
     let current = store
         .get("knownHosts")
@@ -800,6 +809,16 @@ fn upsert_known_host_from_scan(
             && record.get("port").and_then(Value::as_u64) == Some(profile.port as u64)
     });
     eprintln!("[DEBUG] upsert_known_host_from_scan - hostname: {}, port: {}, updated record: {:?}", profile.address, profile.port, updated_record);
+
+    // 打印 store 中所有 knownHosts 的 fingerprint
+    eprintln!("[DEBUG] upsert_known_host_from_scan - all knownHosts fingerprints:");
+    for record in &next {
+        if record.get("hostname").and_then(Value::as_str) == Some(&profile.address) {
+            eprintln!("[DEBUG]   - id: {}, fingerprint: {:?}",
+                record.get("id").and_then(Value::as_str).unwrap_or(""),
+                record.get("fingerprint").and_then(Value::as_str).unwrap_or(""));
+        }
+    }
 
     write_store(state, &store)
 }
