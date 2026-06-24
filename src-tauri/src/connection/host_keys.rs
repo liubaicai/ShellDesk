@@ -28,17 +28,53 @@ pub(crate) fn respond_host_key_verification(
         .remove(&request_id)
         .ok_or_else(|| "主机密钥确认请求已过期。".to_string())?;
 
-    // 如果信任被接受，广播事件给所有窗口
+    // 如果信任被接受且用户选择加入 knownHosts，先落盘，再广播
     if payload
         .get("accept")
         .and_then(Value::as_bool)
         .unwrap_or(false)
+        && payload
+            .get("addToKnownHosts")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
     {
         let hostname = payload
             .get("hostname")
             .and_then(Value::as_str)
             .unwrap_or("");
         let port = payload.get("port").and_then(Value::as_u64).unwrap_or(22) as u16;
+        let scanned = payload.get("scanned").cloned().unwrap_or_else(|| {
+            json!({
+                "keyType": payload.get("keyType").and_then(Value::as_str).unwrap_or("unknown"),
+                "fingerprint": payload.get("fingerprint").and_then(Value::as_str).unwrap_or(""),
+                "publicKey": payload.get("publicKey").and_then(Value::as_str).unwrap_or("")
+            })
+        });
+        let decision = json!({
+            "status": "changed",
+            "knownHostId": payload.get("knownHostId").and_then(Value::as_str).unwrap_or(""),
+            "expectedFingerprint": payload.get("knownFingerprint").and_then(Value::as_str).unwrap_or("")
+        });
+
+        let profile = SshProfile {
+            address: hostname.to_string(),
+            port,
+            username: payload.get("username").and_then(Value::as_str).unwrap_or("").to_string(),
+            auth_method: String::new(),
+            password: String::new(),
+            key_path: String::new(),
+            known_hosts_path: String::new(),
+            proxy_helper_exe: String::new(),
+            proxy: None,
+            jump: None,
+        };
+
+        // 先落盘
+        if let Err(err) = upsert_known_host_from_scan(state, &profile, &scanned, &decision) {
+            eprintln!("Failed to upsert known host: {}", err);
+        }
+
+        // 再广播事件给所有窗口
         let broadcast_payload = json!({
             "hostname": hostname,
             "port": port,
@@ -154,14 +190,7 @@ pub(crate) async fn confirm_ssh_host_public_key_trusted(
                 .get("accept")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            if accept
-                && response
-                    .get("addToKnownHosts")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            {
-                upsert_known_host_from_scan(state, &profile, &scanned, &decision)?;
-            }
+            // 落盘已在 respond_host_key_verification 中处理
             Ok(accept)
         }
         _ => Ok(false),
@@ -230,13 +259,7 @@ async fn ensure_direct_ssh_host_key_trusted(
             {
                 return Err("已取消 SSH 主机密钥确认。".to_string());
             }
-            if response
-                .get("addToKnownHosts")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                upsert_known_host_from_scan(state, profile, &scanned, &decision)?;
-            }
+            // 落盘已在 respond_host_key_verification 中处理
             profile.known_hosts_path = write_connection_known_hosts(state, profile, &scanned)?;
             Ok(())
         }
