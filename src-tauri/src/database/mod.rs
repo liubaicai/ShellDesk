@@ -113,6 +113,7 @@ mod tests {
             host: json!({ "systemType": system_type }),
             ssh: None,
             privilege: None,
+            temporary_key_paths: Vec::new(),
         }
     }
 

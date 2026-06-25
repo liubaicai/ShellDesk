@@ -12,7 +12,7 @@ use crate::{error_string, prevent_tokio_process_window};
 pub(crate) async fn run_shell(
     command: String,
     stdin: &str,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<Value, String> {
     let mut child = if cfg!(windows) {
         let mut cmd = Command::new("powershell");
@@ -72,18 +72,22 @@ pub(crate) async fn run_shell(
             .map_err(error_string)?;
         Ok::<Vec<u8>, String>(output)
     });
-    let status = match time::timeout(timeout, child.wait()).await {
-        Ok(result) => result.map_err(error_string)?,
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
-            return Err(format!(
-                "Command timed out after {} seconds",
-                timeout.as_secs()
-            ));
+    let status = if let Some(timeout) = timeout {
+        match time::timeout(timeout, child.wait()).await {
+            Ok(result) => result.map_err(error_string)?,
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                let _ = stdout_task.await;
+                let _ = stderr_task.await;
+                return Err(format!(
+                    "Command timed out after {} seconds",
+                    timeout.as_secs()
+                ));
+            }
         }
+    } else {
+        child.wait().await.map_err(error_string)?
     };
     let stdout = stdout_task.await.map_err(error_string)??;
     let stderr = stderr_task.await.map_err(error_string)??;
@@ -99,7 +103,7 @@ pub(crate) async fn run_shell(
 pub(crate) async fn run_shell_stream(
     command: String,
     stdin: String,
-    timeout: Duration,
+    timeout: Option<Duration>,
     window: tauri::Window,
     stream_id: String,
 ) -> Result<Value, String> {
@@ -142,7 +146,7 @@ pub(crate) async fn run_shell_stream(
 pub(crate) async fn run_spawned_command_stream(
     child: &mut tokio::process::Child,
     stdin: String,
-    timeout: Duration,
+    timeout: Option<Duration>,
     window: tauri::Window,
     stream_id: String,
     timeout_message: &str,
@@ -177,16 +181,20 @@ pub(crate) async fn run_spawned_command_stream(
         }
     }
 
-    let status = match time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(error)) => return Err(error_string(error)),
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
-            return Err(timeout_message.to_string());
+    let status = if let Some(timeout) = timeout {
+        match time::timeout(timeout, child.wait()).await {
+            Ok(Ok(status)) => status,
+            Ok(Err(error)) => return Err(error_string(error)),
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                let _ = stdout_task.await;
+                let _ = stderr_task.await;
+                return Err(timeout_message.to_string());
+            }
         }
+    } else {
+        child.wait().await.map_err(error_string)?
     };
 
     let stdout = stdout_task.await.map_err(error_string)??;

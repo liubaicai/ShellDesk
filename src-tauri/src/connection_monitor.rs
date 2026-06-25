@@ -52,7 +52,7 @@ pub(crate) async fn get_connection_metrics(
         create_unix_metrics_command()
     };
     let output = if connection.kind == ConnectionKind::Local {
-        run_shell(command, "", Duration::from_secs(15)).await?
+        run_shell(command, "", Some(Duration::from_secs(15))).await?
     } else {
         run_ssh_command_for_profile_interactive(
             state,
@@ -129,7 +129,7 @@ async fn run_monitor_command(
     timeout: Duration,
 ) -> Result<Value, String> {
     if connection.kind == ConnectionKind::Local {
-        return run_shell(command, "", timeout).await;
+        return run_shell(command, "", Some(timeout)).await;
     }
     run_ssh_command_for_profile_interactive(
         state,
