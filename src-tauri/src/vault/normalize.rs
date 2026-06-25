@@ -181,6 +181,7 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalFontWeight": read_i64_range(settings.get("terminalFontWeight"), 300, 600, defaults["terminalFontWeight"].as_i64().unwrap_or(400)),
         "terminalFontWeightBold": read_i64_range(settings.get("terminalFontWeightBold"), 600, 800, defaults["terminalFontWeightBold"].as_i64().unwrap_or(700)),
         "terminalFontLigatures": read_bool(settings.get("terminalFontLigatures"), defaults["terminalFontLigatures"].as_bool().unwrap_or(true)),
+        "terminalLigatures": read_bool(settings.get("terminalLigatures"), defaults["terminalLigatures"].as_bool().unwrap_or(true)),
         "terminalLineHeight": read_f64_range(settings.get("terminalLineHeight"), 1.0, 1.5, defaults["terminalLineHeight"].as_f64().unwrap_or(1.2)),
         "terminalTheme": read_choice(settings.get("terminalTheme"), TERMINAL_THEME_CHOICES, defaults["terminalTheme"].as_str().unwrap_or("shelldesk-dark")),
         "terminalCursorBlink": read_bool(settings.get("terminalCursorBlink"), defaults["terminalCursorBlink"].as_bool().unwrap_or(true)),

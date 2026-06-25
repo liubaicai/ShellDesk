@@ -203,7 +203,8 @@ function createInitialAppSettings(): ShellDeskAppSettings {
 
 async function fetchBackendDefaults(): Promise<Partial<ShellDeskAppSettings>> {
   try {
-    return (await window.guiSSH?.vault.getDefaultSettings()) ?? {};
+    const result = await window.guiSSH?.vault.getDefaultSettings();
+    return result && typeof result === 'object' && !Array.isArray(result) ? result : {};
   } catch {
     return {};
   }

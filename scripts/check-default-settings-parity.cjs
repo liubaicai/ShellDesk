@@ -332,7 +332,17 @@ for (const frontendDefaults of [appDefaults, previewDefaults]) {
   }
 
   for (const key of checkedKeys) {
-    if (!rustDefaults.entries.has(key) || !frontendDefaults.entries.has(key)) {
+    const rustHasEntry = rustDefaults.entries.has(key);
+    const frontendHasEntry = frontendDefaults.entries.has(key);
+
+    if (!rustHasEntry && !frontendHasEntry) {
+      // Both sides have the key but neither could parse a literal value (e.g. variable references).
+      // This is expected for dynamic defaults like `language` — skip comparison.
+      continue;
+    }
+
+    if (!rustHasEntry || !frontendHasEntry) {
+      // One side parsed a literal, the other didn't — potential drift.
       continue;
     }
 
