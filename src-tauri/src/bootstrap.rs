@@ -3,8 +3,10 @@ use crate::{
     state::AppState,
 };
 use serde_json::Value;
-use std::fs;
+use std::{fs, time::Duration};
 use tauri::Manager;
+
+const STALE_TEMP_KEY_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[tauri::command]
 async fn ipc_dispatch(
@@ -39,7 +41,17 @@ pub(crate) fn run() {
             if key_dir.exists() {
                 if let Ok(entries) = fs::read_dir(&key_dir) {
                     for entry in entries.flatten() {
-                        let _ = fs::remove_file(entry.path());
+                        let path = entry.path();
+                        let should_remove = entry
+                            .metadata()
+                            .ok()
+                            .filter(|metadata| metadata.is_file())
+                            .and_then(|metadata| metadata.modified().ok())
+                            .and_then(|modified| modified.elapsed().ok())
+                            .is_some_and(|age| age > STALE_TEMP_KEY_AGE);
+                        if should_remove {
+                            let _ = fs::remove_file(path);
+                        }
                     }
                 }
             }

@@ -272,16 +272,64 @@ fn materialize_private_key(
 ) -> Result<String, String> {
     let key_dir = state.data_dir.join("ssh-keys");
     fs::create_dir_all(&key_dir).map_err(error_string)?;
-    let path = key_dir.join(format!("{}.pem", sanitize_file_name(key_id)));
+    let key_name = sanitize_file_name(key_id);
+    let key_name = if key_name.is_empty() {
+        "stored-key".to_string()
+    } else {
+        key_name
+    };
+    let path = key_dir.join(format!("{}-{}.pem", key_name, random_id("attempt")));
     fs::write(&path, private_key).map_err(error_string)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(error_string)?;
+        if let Err(error) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+            cleanup_temporary_key_path(&path);
+            return Err(error_string(error));
+        }
     }
     #[cfg(windows)]
-    restrict_windows_private_key_acl(&path)?;
+    if let Err(error) = restrict_windows_private_key_acl(&path) {
+        cleanup_temporary_key_path(&path);
+        return Err(error);
+    }
     Ok(path.to_string_lossy().to_string())
+}
+
+struct TempKeyGuard {
+    state: AppState,
+    paths: Vec<PathBuf>,
+    armed: bool,
+}
+
+impl TempKeyGuard {
+    fn new(state: &AppState) -> Self {
+        Self {
+            state: state.clone(),
+            paths: Vec::new(),
+            armed: true,
+        }
+    }
+
+    fn paths_mut(&mut self) -> &mut Vec<PathBuf> {
+        &mut self.paths
+    }
+
+    fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempKeyGuard {
+    fn drop(&mut self) {
+        if self.armed && !self.paths.is_empty() {
+            cleanup_temporary_key_paths_with_state(&self.state, std::mem::take(&mut self.paths));
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -443,27 +491,14 @@ pub(crate) async fn connect_ssh(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let raw_host = args.first().cloned().unwrap_or_else(|| json!({}));
-    let mut temporary_key_paths = Vec::new();
-    let mut profile = match build_ssh_profile(state, &raw_host, false, &mut temporary_key_paths) {
-        Ok(profile) => profile,
-        Err(error) => {
-            cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
-            return Err(error);
-        }
-    };
-    let privilege = match build_privilege_config(state, &raw_host) {
-        Ok(privilege) => privilege,
-        Err(error) => {
-            cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
-            return Err(error);
-        }
-    };
+    let mut temp_key_guard = TempKeyGuard::new(state);
+    let mut profile = build_ssh_profile(state, &raw_host, false, temp_key_guard.paths_mut())?;
+    let privilege = build_privilege_config(state, &raw_host)?;
+    let jump_host_display = build_jump_host_display(state, &raw_host)?;
     if let Some(error) = unavailable_password_auth_error(&profile) {
-        cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
         return Ok(json!({ "ok": false, "error": error }));
     }
     if let Err(error) = prepare_ssh_host_key_trust(state, window, &mut profile).await {
-        cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
         return Ok(json!({ "ok": false, "error": error }));
     }
 
@@ -485,13 +520,13 @@ pub(crate) async fn connect_ssh(
             "privilegeMode": raw_host.get("privilegeMode").cloned().unwrap_or(Value::Null),
             "jumpHostId": raw_host.get("jumpHostId").cloned().unwrap_or(Value::Null),
             "proxyProfileId": raw_host.get("proxyProfileId").cloned().unwrap_or(Value::Null),
-            "jumpHost": build_jump_host_display(state, &raw_host)?,
+            "jumpHost": jump_host_display,
             "systemType": raw_host.get("systemType").cloned().unwrap_or_else(|| json!("unknown")),
             "systemName": raw_host.get("systemName").cloned().unwrap_or(Value::Null)
         }),
         ssh: Some(profile),
         privilege,
-        temporary_key_paths,
+        temporary_key_paths: temp_key_guard.paths().to_vec(),
     };
     let info = connection_info(&connection);
     state
@@ -499,6 +534,7 @@ pub(crate) async fn connect_ssh(
         .lock()
         .map_err(error_string)?
         .insert(id, connection);
+    temp_key_guard.disarm();
 
     Ok(json!({
         "ok": true,
