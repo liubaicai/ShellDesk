@@ -54,7 +54,7 @@ pub(crate) async fn run_connection_command_with_options(
     let connection = get_connection(state, &connection_id)?;
 
     if connection.kind == ConnectionKind::Local {
-        return run_shell(command, &stdin, Duration::from_secs(60)).await;
+        return run_shell(command, &stdin, Some(Duration::from_secs(60))).await;
     }
 
     let profile = connection
@@ -217,7 +217,7 @@ pub(crate) async fn run_connection_command_stream(
     let connection = get_connection(state, &connection_id)?;
 
     if connection.kind == ConnectionKind::Local {
-        return run_shell_stream(command, stdin, Duration::from_secs(60), window, stream_id).await;
+        return run_shell_stream(command, stdin, Some(Duration::from_secs(60)), window, stream_id).await;
     }
 
     let profile = connection
@@ -530,7 +530,7 @@ pub(crate) async fn run_ssh_command_stream_for_profile(
     let first = run_spawned_command_stream(
         &mut child,
         stdin.clone(),
-        Duration::from_secs(90),
+        Some(Duration::from_secs(90)),
         window.clone(),
         stream_id.clone(),
         "SSH command timed out.",
@@ -557,7 +557,7 @@ pub(crate) async fn run_ssh_command_stream_for_profile(
     run_spawned_command_stream(
         &mut child,
         stdin,
-        Duration::from_secs(90),
+        Some(Duration::from_secs(90)),
         window,
         stream_id,
         "SSH command timed out.",

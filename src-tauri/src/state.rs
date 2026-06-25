@@ -81,6 +81,7 @@ pub(crate) struct ActiveConnection {
     pub(crate) host: Value,
     pub(crate) ssh: Option<SshProfile>,
     pub(crate) privilege: Option<PrivilegeConfig>,
+    pub(crate) temporary_key_paths: Vec<PathBuf>,
 }
 
 #[derive(Clone)]

@@ -804,7 +804,7 @@ pub(crate) async fn compress_connection_paths(
     let connection = get_connection(state, &connection_id)?;
     let command = archive_compress_command(&connection, &sources, &format, &dest_path)?;
     let output = if connection.kind == ConnectionKind::Local {
-        run_shell(command, "", Duration::from_secs(300)).await?
+        run_shell(command, "", Some(Duration::from_secs(300))).await?
     } else {
         run_ssh_command_for_profile_interactive(
             state,
@@ -835,7 +835,7 @@ pub(crate) async fn decompress_connection_archive(
     let connection = get_connection(state, &connection_id)?;
     let command = archive_decompress_command(&connection, &archive_path, &dest_dir)?;
     let output = if connection.kind == ConnectionKind::Local {
-        run_shell(command, "", Duration::from_secs(300)).await?
+        run_shell(command, "", Some(Duration::from_secs(300))).await?
     } else {
         run_ssh_command_for_profile_interactive(
             state,
