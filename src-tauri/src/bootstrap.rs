@@ -33,7 +33,17 @@ pub(crate) fn run() {
     tauri::Builder::default()
         .manage(AppState::new(data_dir.clone()))
         .invoke_handler(tauri::generate_handler![ipc_dispatch])
-        .setup(|app| {
+        .setup(move |app| {
+            // 启动时清理上次崩溃残留的临时 SSH 密钥文件。
+            let key_dir = data_dir.join("ssh-keys");
+            if key_dir.exists() {
+                if let Ok(entries) = fs::read_dir(&key_dir) {
+                    for entry in entries.flatten() {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
@@ -51,12 +61,6 @@ pub(crate) fn run() {
             // TODO: Issue #67 - 数据库隧道空闲超时自动断开
             // crate::database::tunnel::start_idle_cleanup(state.clone(), app.handle().clone());
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
-                let state = window.state::<AppState>().inner().clone();
-                crate::connection::cleanup_all_temporary_key_files(&state);
-            }
         })
         .run(tauri::generate_context!())
         .expect("error while running ShellDesk");

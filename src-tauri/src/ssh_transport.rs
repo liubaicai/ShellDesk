@@ -31,6 +31,9 @@ use auth::{
 };
 #[cfg(test)]
 use auth::{proxy_command_arg_for_platform, proxy_command_for_profile};
+
+const DEFAULT_SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(90);
+
 pub(crate) async fn run_connection_command(
     state: &AppState,
     args: Vec<Value>,
@@ -217,7 +220,14 @@ pub(crate) async fn run_connection_command_stream(
     let connection = get_connection(state, &connection_id)?;
 
     if connection.kind == ConnectionKind::Local {
-        return run_shell_stream(command, stdin, Some(Duration::from_secs(60)), window, stream_id).await;
+        return run_shell_stream(
+            command,
+            stdin,
+            Some(Duration::from_secs(60)),
+            window,
+            stream_id,
+        )
+        .await;
     }
 
     let profile = connection
@@ -651,7 +661,7 @@ async fn run_ssh_command_for_profile_with_broker(
             .map_err(error_string)?;
         Ok::<Vec<u8>, String>(output)
     });
-    let status = match time::timeout(Duration::from_secs(90), child.wait()).await {
+    let status = match time::timeout(DEFAULT_SSH_COMMAND_TIMEOUT, child.wait()).await {
         Ok(result) => result.map_err(error_string)?,
         Err(_) => {
             let _ = child.kill().await;

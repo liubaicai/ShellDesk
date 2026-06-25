@@ -879,6 +879,7 @@ mod tests {
                 jump: None,
             }),
             privilege,
+            temporary_key_paths: Vec::new(),
         }
     }
 

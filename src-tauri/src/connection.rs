@@ -11,7 +11,11 @@ use host_keys::prepare_ssh_host_key_trust;
 use serde_json::{json, Value};
 #[cfg(windows)]
 use std::process::Command as StdCommand;
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
+};
 use tauri::Emitter;
 
 #[path = "connection/host_keys.rs"]
@@ -440,12 +444,26 @@ pub(crate) async fn connect_ssh(
 ) -> Result<Value, String> {
     let raw_host = args.first().cloned().unwrap_or_else(|| json!({}));
     let mut temporary_key_paths = Vec::new();
-    let mut profile = build_ssh_profile(state, &raw_host, false, &mut temporary_key_paths)?;
-    let privilege = build_privilege_config(state, &raw_host)?;
+    let mut profile = match build_ssh_profile(state, &raw_host, false, &mut temporary_key_paths) {
+        Ok(profile) => profile,
+        Err(error) => {
+            cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
+            return Err(error);
+        }
+    };
+    let privilege = match build_privilege_config(state, &raw_host) {
+        Ok(privilege) => privilege,
+        Err(error) => {
+            cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
+            return Err(error);
+        }
+    };
     if let Some(error) = unavailable_password_auth_error(&profile) {
+        cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
         return Ok(json!({ "ok": false, "error": error }));
     }
     if let Err(error) = prepare_ssh_host_key_trust(state, window, &mut profile).await {
+        cleanup_temporary_key_paths_with_state(state, temporary_key_paths);
         return Ok(json!({ "ok": false, "error": error }));
     }
 
@@ -555,13 +573,11 @@ pub(crate) fn disconnect_connection(
 }
 
 pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> Result<(), String> {
-    let connection = state
-        .connections
-        .lock()
-        .map_err(error_string)?
-        .remove(connection_id);
-    if let Some(connection) = connection {
-        cleanup_temporary_key_paths(connection.temporary_key_paths);
+    {
+        let mut connections = state.connections.lock().map_err(error_string)?;
+        if let Some(connection) = connections.remove(connection_id) {
+            cleanup_temporary_key_paths(connection.temporary_key_paths, &connections);
+        }
     }
     let _ = remote_fs::cancel_transfers_for_connection(state, connection_id)?;
     let _ = terminal::close_terminals_for_connection(state, connection_id)?;
@@ -678,28 +694,64 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
 
 pub(crate) fn cleanup_all_temporary_key_files(state: &AppState) {
     let paths = match state.connections.lock() {
-        Ok(mut connections) => connections
-            .values_mut()
-            .flat_map(|connection| connection.temporary_key_paths.drain(..))
-            .collect::<Vec<_>>(),
+        Ok(mut connections) => {
+            let mut seen = HashSet::new();
+            connections
+                .values_mut()
+                .flat_map(|connection| connection.temporary_key_paths.drain(..))
+                .filter(|path| seen.insert(path.clone()))
+                .collect::<Vec<_>>()
+        }
         Err(error) => {
             eprintln!("[connection] failed to collect temporary SSH keys for cleanup: {error}");
             Vec::new()
         }
     };
-    cleanup_temporary_key_paths(paths);
+    cleanup_temporary_key_paths_immediate(paths);
 }
 
-fn cleanup_temporary_key_paths(paths: Vec<PathBuf>) {
-    for path in paths {
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => eprintln!(
-                "[connection] failed to remove temporary SSH private key {}: {error}",
-                path.display()
-            ),
+fn cleanup_temporary_key_paths_with_state(state: &AppState, paths: Vec<PathBuf>) {
+    match state.connections.lock() {
+        Ok(connections) => cleanup_temporary_key_paths(paths, &connections),
+        Err(error) => {
+            eprintln!("[connection] failed to inspect active SSH keys for cleanup: {error}");
+            cleanup_temporary_key_paths_immediate(paths);
         }
+    }
+}
+
+fn cleanup_temporary_key_paths(
+    paths: Vec<PathBuf>,
+    all_connections: &HashMap<String, ActiveConnection>,
+) {
+    for path in paths {
+        let still_used = all_connections.values().any(|connection| {
+            connection
+                .temporary_key_paths
+                .iter()
+                .any(|candidate| candidate == &path)
+        });
+        if still_used {
+            continue;
+        }
+        cleanup_temporary_key_path(&path);
+    }
+}
+
+fn cleanup_temporary_key_paths_immediate(paths: Vec<PathBuf>) {
+    for path in paths {
+        cleanup_temporary_key_path(&path);
+    }
+}
+
+fn cleanup_temporary_key_path(path: &PathBuf) {
+    match fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => eprintln!(
+            "[connection] failed to remove temporary SSH private key {}: {error}",
+            path.display()
+        ),
     }
 }
 
@@ -955,11 +1007,44 @@ mod tests {
             "keyPath": "C:\\Users\\me\\.ssh\\id_rsa"
         });
 
-        let profile = build_ssh_profile(&state, &raw_host, false).unwrap();
+        let profile = build_ssh_profile(&state, &raw_host, false, &mut Vec::new()).unwrap();
 
         assert_eq!(profile.auth_method, "key");
         assert_eq!(profile.password, "key-passphrase");
         assert_eq!(profile.key_path, "C:\\Users\\me\\.ssh\\id_rsa");
+    }
+
+    #[test]
+    fn temporary_key_cleanup_keeps_paths_used_by_other_connections() {
+        let path = std::env::temp_dir().join(format!(
+            "shelldesk-shared-key-cleanup-{}.pem",
+            std::process::id()
+        ));
+        fs::write(&path, "PRIVATE KEY").unwrap();
+
+        let mut connections = HashMap::new();
+        connections.insert(
+            "other".to_string(),
+            ActiveConnection {
+                id: "other".to_string(),
+                kind: ConnectionKind::Ssh,
+                partition: "partition".to_string(),
+                proxy_port: 0,
+                browser_certificate_trust: HashSet::new(),
+                connected_at: now(),
+                host: json!({}),
+                ssh: None,
+                privilege: None,
+                temporary_key_paths: vec![path.clone()],
+            },
+        );
+
+        cleanup_temporary_key_paths(vec![path.clone()], &connections);
+        assert!(path.exists());
+
+        connections.clear();
+        cleanup_temporary_key_paths(vec![path.clone()], &connections);
+        assert!(!path.exists());
     }
 
     #[test]
