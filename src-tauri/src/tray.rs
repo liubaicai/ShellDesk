@@ -73,7 +73,7 @@ pub(crate) fn close_window(window: &tauri::Window, state: &AppState) -> Result<(
     window.close().map_err(error_string)
 }
 
-fn show_main_window(app: &tauri::AppHandle) {
+pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();

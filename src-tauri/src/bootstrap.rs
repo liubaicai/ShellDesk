@@ -35,6 +35,9 @@ pub(crate) fn run() {
     let app = tauri::Builder::default()
         .manage(AppState::new(data_dir.clone()))
         .invoke_handler(tauri::generate_handler![ipc_dispatch])
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            crate::tray::show_main_window(app);
+        }))
         .setup(move |app| {
             // 启动时清理上次崩溃残留的临时 SSH 密钥文件。
             let key_dir = data_dir.join("ssh-keys");
