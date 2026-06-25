@@ -6,15 +6,16 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, type RemoteCommandInput } from './remoteSystem';
 import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import {
+  createS3DetectCommand,
   createS3DownloadObjectCommand,
-  createS3DeleteObjectTunnelRequest,
+  createS3DeleteObjectCommand,
   createS3EnsureMcCommand,
-  createS3ListBucketsTunnelRequest,
-  createS3ListObjectsTunnelRequest,
+  createS3ListBucketsCommand,
+  createS3ListObjectsCommand,
   createS3ObjectUrl,
   createS3UploadObjectCommand,
-  parseS3BucketsResponse,
-  parseS3ObjectsResponse,
+  parseS3Buckets,
+  parseS3Objects,
   type S3BucketEntry,
   type S3CliMode,
   type S3ConnectionConfig,
@@ -62,16 +63,6 @@ function runCmd(connectionId: string, input: RemoteCommandInput) {
   }
 
   return api.runCommand(connectionId, input.command, input.stdin);
-}
-
-function getHttpTunnelApi() {
-  const api = window.guiSSH?.connections;
-
-  if (!api) {
-    throw new Error(tCurrent('auto.remoteS3Browser.g77vf3'));
-  }
-
-  return api;
 }
 
 function formatSize(value?: number) {
@@ -132,12 +123,15 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   const [search, setSearch] = useState('');
   const [downloadDirectory, setDownloadDirectory] = useState('/tmp');
   const [availableTools, setAvailableTools] = useState<S3CliMode[]>([]);
+  const [toolsDetected, setToolsDetected] = useState(false);
   const [activeTab, setActiveTab] = useState<S3Tab>('objects');
   const [rawOutput, setRawOutput] = useState('');
   const [loading, setLoading] = useState(false);
   const [objectLoading, setObjectLoading] = useState(false);
   const [actionRunning, setActionRunning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [detectingTools, setDetectingTools] = useState(false);
+  const [installingMc, setInstallingMc] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
@@ -160,6 +154,12 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   }, [objects, selectedObjectKey]);
 
   const breadcrumbs = useMemo(() => createBreadcrumb(prefix), [prefix]);
+  const modeDetected = !toolsDetected || availableTools.includes(mode);
+  const toolStatusText = detectingTools
+    ? '正在检测 S3 CLI'
+    : toolsDetected
+      ? (availableTools.length ? `已检测: ${availableTools.join(' / ')}` : '未检测到 S3 CLI')
+      : '等待检测 S3 CLI';
 
   const updateConfig = <Key extends keyof S3ConnectionConfig>(key: Key, value: S3ConnectionConfig[Key]) => {
     setConfig((currentConfig) => ({ ...currentConfig, [key]: value }));
@@ -188,18 +188,42 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   }, [hostId]);
 
   const detectTools = useCallback(async () => {
-    setAvailableTools(['mc', 'aws']);
-    setNotice(mode === 'aws' ? 'HTTP tunnel + S3 SigV4' : 'HTTP tunnel + Basic Auth');
-  }, [mode]);
+    setDetectingTools(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await runCmd(connectionId, createS3DetectCommand(isWindowsHost));
+      const detectedTools = Array.from(new Set(
+        (result.stdout || '')
+          .split(/\r?\n/)
+          .map((line) => line.trim().toLowerCase())
+          .filter((tool): tool is S3CliMode => tool === 'mc' || tool === 'aws'),
+      ));
+
+      if (result.code !== 0) {
+        throw new Error(result.stderr || result.stdout || 'S3 CLI 检测失败');
+      }
+
+      setAvailableTools(detectedTools);
+      setToolsDetected(true);
+      setNotice(detectedTools.length ? `已检测到 S3 工具: ${detectedTools.join(' / ')}` : '未检测到 mc 或 aws，请先安装命令行工具。');
+    } catch (error) {
+      setToolsDetected(true);
+      setAvailableTools([]);
+      setError(getErrorMessage(error));
+    } finally {
+      setDetectingTools(false);
+    }
+  }, [connectionId, isWindowsHost]);
 
   useEffect(() => {
     void detectTools();
   }, [detectTools]);
 
-  const ensureMcAvailable = useCallback(async () => {
-    if (mode !== 'mc') return;
-
+  const installMc = useCallback(async () => {
     try {
+      setInstallingMc(true);
       const command = createS3EnsureMcCommand(isWindowsHost);
       const result = await runCmd(connectionId, command);
 
@@ -214,10 +238,18 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
         .reverse()
         .find((line) => /^mc\s+version/i.test(line) || /^mc\s+/i.test(line));
       setNotice(`mc 已就绪${versionLine ? `: ${versionLine}` : ''}`);
+      await detectTools();
     } catch (error) {
       throw new Error(`mc 命令不可用且自动安装失败: ${getErrorMessage(error)}。请手动安装 mc 或切换到 aws 模式。`);
+    } finally {
+      setInstallingMc(false);
     }
-  }, [connectionId, isWindowsHost, mode]);
+  }, [connectionId, detectTools, isWindowsHost]);
+
+  const ensureMcAvailable = useCallback(async () => {
+    if (mode !== 'mc') return;
+    await installMc();
+  }, [installMc, mode]);
 
   const loadBuckets = async () => {
     setLoading(true);
@@ -225,18 +257,21 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
     setNotice('');
 
     try {
-      const response = await getHttpTunnelApi().httpTunnelGet({
-        ...(await createS3ListBucketsTunnelRequest(mode, config)),
-        connectionId,
-      });
-      const nextBuckets = parseS3BucketsResponse(response);
+      const result = await runCmd(connectionId, createS3ListBucketsCommand(mode, config, isWindowsHost));
+      const output = result.stdout || result.stderr || '';
+      setRawOutput(output);
+
+      if (result.code !== 0) {
+        throw new Error(output || 'Bucket 列表加载失败');
+      }
+
+      const nextBuckets = parseS3Buckets(mode, result.stdout || '');
       setConnected(true);
       setBuckets(nextBuckets);
       setSelectedBucketName((current) => current && nextBuckets.some((bucket) => bucket.name === current) ? current : nextBuckets[0]?.name ?? '');
       setObjects([]);
       setSelectedObjectKey('');
       setPrefix('');
-      setRawOutput(typeof response === 'string' ? response : JSON.stringify(response, null, 2));
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(tCurrent('auto.remoteS3Browser.rp1fyr', { value0: nextBuckets.length }));
       void saveRemoteConnectionProfile(hostId, 's3-browser', {
@@ -281,16 +316,19 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
 
     try {
       const normalizedPrefix = ensurePrefix(nextPrefix);
-      const response = await getHttpTunnelApi().httpTunnelGet({
-        ...(await createS3ListObjectsTunnelRequest(mode, config, bucketName, normalizedPrefix)),
-        connectionId,
-      });
-      const nextObjects = parseS3ObjectsResponse(response, normalizedPrefix);
+      const result = await runCmd(connectionId, createS3ListObjectsCommand(mode, config, bucketName, normalizedPrefix, isWindowsHost));
+      const output = result.stdout || result.stderr || '';
+      setRawOutput(output);
+
+      if (result.code !== 0) {
+        throw new Error(output || '对象列表加载失败');
+      }
+
+      const nextObjects = parseS3Objects(mode, result.stdout || '', normalizedPrefix);
       setObjects(nextObjects);
       setSelectedBucketName(bucketName);
       setPrefix(normalizedPrefix);
       setSelectedObjectKey(nextObjects[0]?.key ?? '');
-      setRawOutput(typeof response === 'string' ? response : JSON.stringify(response, null, 2));
       setActiveTab('objects');
       setLastRefreshedAt(new Date().toLocaleTimeString(getShellDeskLocale()));
       setNotice(tCurrent('auto.remoteS3Browser.1s0sz3e', { value0: nextObjects.length }));
@@ -443,11 +481,12 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       let output = tCurrent('auto.remoteS3Browser.1m6h6ak');
 
       if (pendingAction.kind === 'delete') {
-        const response = await getHttpTunnelApi().httpTunnelDelete({
-          ...(await createS3DeleteObjectTunnelRequest(mode, config, pendingAction.bucket, pendingAction.object.key)),
-          connectionId,
-        });
-        output = typeof response === 'string' ? response || output : JSON.stringify(response, null, 2);
+        const result = await runCmd(connectionId, createS3DeleteObjectCommand(mode, config, pendingAction.bucket, pendingAction.object.key, isWindowsHost));
+        output = result.stdout || result.stderr || output;
+
+        if (result.code !== 0) {
+          throw new Error(output);
+        }
       } else if (pendingAction.command) {
         if (pendingAction.kind === 'download') {
           await ensureMcAvailable();
@@ -488,14 +527,14 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
         <div className="s3-status-card">
           <span>{tCurrent('auto.remoteS3Browser.1vc65bb')}</span>
           <strong>{selectedBucket?.name ?? 'MinIO / S3'}</strong>
-          <em>{lastRefreshedAt || (availableTools.length ? tCurrent('auto.remoteS3Browser.1hi73fv', { value0: availableTools.join(' / ') }) : tCurrent('auto.remoteS3Browser.12iu3xi'))}</em>
+          <em>{lastRefreshedAt || toolStatusText}</em>
         </div>
         <div className="s3-mode-switch">
           <button type="button" className={mode === 'mc' ? 'active' : ''} onClick={() => setMode('mc')}>mc</button>
           <button type="button" className={mode === 'aws' ? 'active' : ''} onClick={() => setMode('aws')}>aws</button>
         </div>
-        <button type="button" onClick={detectTools}>{tCurrent('auto.remoteS3Browser.93b684')}</button>
-        <button type="button" className="primary" onClick={loadBuckets} disabled={loading}>
+        <button type="button" onClick={detectTools} disabled={detectingTools}>{detectingTools ? '检测中' : tCurrent('auto.remoteS3Browser.93b684')}</button>
+        <button type="button" className="primary" onClick={loadBuckets} disabled={loading || !modeDetected}>
           {loading ? tCurrent('auto.remoteS3Browser.h7vocz') : connected ? tCurrent('auto.remoteS3Browser.nabcrd') : tCurrent('auto.remoteS3Browser.1u8k4u')}
         </button>
         <button type="button" onClick={disconnect} disabled={!connected || loading}>
@@ -510,8 +549,24 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
           <aside className="s3-config">
             <div className="s3-config-head">
               <strong>{tCurrent('auto.remoteS3Browser.1qcyuf')}</strong>
-              <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'}</span>
+              <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'} · {toolsDetected ? (modeDetected ? '已检测' : '未安装') : '检测中'}</span>
             </div>
+            {toolsDetected && !availableTools.includes('mc') ? (
+              <div className="s3-tool-help">
+                <strong>未检测到 mc</strong>
+                <button type="button" className="primary" onClick={() => { void installMc().catch((error) => setError(getErrorMessage(error))); }} disabled={installingMc}>
+                  {installingMc ? '正在安装 mc' : '一键安装 mc'}
+                </button>
+              </div>
+            ) : null}
+            {toolsDetected && !availableTools.includes('aws') ? (
+              <div className="s3-tool-help">
+                <strong>未检测到 aws</strong>
+                <span>Linux: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install</span>
+                <span>macOS: curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg" && sudo installer -pkg AWSCLIV2.pkg -target /</span>
+                <span>Windows: https://aws.amazon.com/cli/</span>
+              </div>
+            ) : null}
             <label>
               <span>Endpoint</span>
               <input value={config.endpoint} onChange={(event) => updateConfig('endpoint', event.target.value)} placeholder="http://127.0.0.1:9000" />
