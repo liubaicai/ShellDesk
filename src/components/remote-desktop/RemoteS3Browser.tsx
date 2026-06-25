@@ -156,10 +156,10 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   const breadcrumbs = useMemo(() => createBreadcrumb(prefix), [prefix]);
   const modeDetected = !toolsDetected || availableTools.includes(mode);
   const toolStatusText = detectingTools
-    ? '正在检测 S3 CLI'
+    ? tCurrent('auto.remoteS3Browser.detectingCli')
     : toolsDetected
-      ? (availableTools.length ? `已检测: ${availableTools.join(' / ')}` : '未检测到 S3 CLI')
-      : '等待检测 S3 CLI';
+      ? (availableTools.length ? tCurrent('auto.remoteS3Browser.detectedTools', { value0: availableTools.join(' / ') }) : tCurrent('auto.remoteS3Browser.noS3CliDetected'))
+      : tCurrent('auto.remoteS3Browser.waitingDetect');
 
   const updateConfig = <Key extends keyof S3ConnectionConfig>(key: Key, value: S3ConnectionConfig[Key]) => {
     setConfig((currentConfig) => ({ ...currentConfig, [key]: value }));
@@ -202,12 +202,14 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       ));
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || 'S3 CLI 检测失败');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.s3CliDetectFailed'));
       }
 
       setAvailableTools(detectedTools);
       setToolsDetected(true);
-      setNotice(detectedTools.length ? `已检测到 S3 工具: ${detectedTools.join(' / ')}` : '未检测到 mc 或 aws，请先安装命令行工具。');
+      setNotice(detectedTools.length
+        ? tCurrent('auto.remoteS3Browser.detectedS3Tools', { value0: detectedTools.join(' / ') })
+        : tCurrent('auto.remoteS3Browser.installCliHint'));
     } catch (error) {
       setToolsDetected(true);
       setAvailableTools([]);
@@ -228,7 +230,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       const result = await runCmd(connectionId, command);
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || 'mc 安装失败');
+        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.mcInstallFailed'));
       }
 
       const versionLine = (result.stdout || '')
@@ -237,19 +239,14 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
         .filter(Boolean)
         .reverse()
         .find((line) => /^mc\s+version/i.test(line) || /^mc\s+/i.test(line));
-      setNotice(`mc 已就绪${versionLine ? `: ${versionLine}` : ''}`);
+      setNotice(`${tCurrent('auto.remoteS3Browser.mcReady')}${versionLine ? `: ${versionLine}` : ''}`);
       await detectTools();
     } catch (error) {
-      throw new Error(`mc 命令不可用且自动安装失败: ${getErrorMessage(error)}。请手动安装 mc 或切换到 aws 模式。`);
+      throw new Error(tCurrent('auto.remoteS3Browser.mcAutoInstallFailed', { value0: getErrorMessage(error) }));
     } finally {
       setInstallingMc(false);
     }
   }, [connectionId, detectTools, isWindowsHost]);
-
-  const ensureMcAvailable = useCallback(async () => {
-    if (mode !== 'mc') return;
-    await installMc();
-  }, [installMc, mode]);
 
   const loadBuckets = async () => {
     setLoading(true);
@@ -262,7 +259,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       setRawOutput(output);
 
       if (result.code !== 0) {
-        throw new Error(output || 'Bucket 列表加载失败');
+        throw new Error(output || tCurrent('auto.remoteS3Browser.bucketListFailed'));
       }
 
       const nextBuckets = parseS3Buckets(mode, result.stdout || '');
@@ -321,7 +318,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       setRawOutput(output);
 
       if (result.code !== 0) {
-        throw new Error(output || '对象列表加载失败');
+        throw new Error(output || tCurrent('auto.remoteS3Browser.objectListFailed'));
       }
 
       const nextObjects = parseS3Objects(mode, result.stdout || '', normalizedPrefix);
@@ -382,7 +379,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
 
   const uploadItemsToBucket = useCallback(async (items: S3UploadItem[]) => {
     if (!selectedBucket) {
-      throw new Error('请先选择 bucket');
+      throw new Error(tCurrent('auto.remoteS3Browser.selectBucket'));
     }
 
     if (!items.length) {
@@ -399,7 +396,6 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
     setNotice('');
 
     try {
-      await ensureMcAvailable();
       const targetPrefix = ensurePrefix(uploadPrefix || prefix);
       const tempDirectory = getS3UploadTempDirectory(isWindowsHost);
       const localItems = items.map((item) => ({
@@ -410,7 +406,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       await api.createDirectory(connectionId, tempDirectory).catch(() => undefined);
       const uploadResult = await api.uploadLocalPaths(connectionId, tempDirectory, localItems);
       if (uploadResult.canceled) {
-        setNotice('已取消上传');
+        setNotice(tCurrent('auto.remoteS3Browser.uploadCanceled'));
         return;
       }
 
@@ -424,19 +420,19 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
         const command = createS3UploadObjectCommand(mode, config, selectedBucket.name, objectKey, remotePath, isWindowsHost);
         const result = await runCmd(connectionId, command);
         if (result.code !== 0) {
-          throw new Error(result.stderr || result.stdout || `上传 ${objectKey} 失败`);
+          throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.uploadFailed', { value0: objectKey }));
         }
         await api.deletePath(connectionId, remotePath, 'file').catch(() => undefined);
       }
 
-      setNotice(`已上传 ${localItems.length} 个对象到 ${selectedBucket.name}/${targetPrefix}`);
+      setNotice(tCurrent('auto.remoteS3Browser.uploadSuccess', { value0: localItems.length, value1: `${selectedBucket.name}/${targetPrefix}` }));
       await loadObjects(selectedBucket.name, targetPrefix);
     } catch (error) {
       setError(getErrorMessage(error));
     } finally {
       setUploading(false);
     }
-  }, [config, connectionId, ensureMcAvailable, isWindowsHost, loadObjects, mode, prefix, selectedBucket, uploadPrefix]);
+  }, [config, connectionId, isWindowsHost, loadObjects, mode, prefix, selectedBucket, uploadPrefix]);
 
   const selectUploadFiles = async () => {
     try {
@@ -463,7 +459,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       .filter((item) => item.path);
 
     if (!files.length) {
-      setError('当前 WebView 未暴露拖拽文件路径，请使用“选择文件”上传。');
+      setError(tCurrent('auto.remoteS3Browser.dragPathUnavailable'));
       return;
     }
 
@@ -488,9 +484,6 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
           throw new Error(output);
         }
       } else if (pendingAction.command) {
-        if (pendingAction.kind === 'download') {
-          await ensureMcAvailable();
-        }
         const result = await runCmd(connectionId, pendingAction.command);
         output = result.stdout || result.stderr || output;
 
@@ -533,7 +526,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
           <button type="button" className={mode === 'mc' ? 'active' : ''} onClick={() => setMode('mc')}>mc</button>
           <button type="button" className={mode === 'aws' ? 'active' : ''} onClick={() => setMode('aws')}>aws</button>
         </div>
-        <button type="button" onClick={detectTools} disabled={detectingTools}>{detectingTools ? '检测中' : tCurrent('auto.remoteS3Browser.93b684')}</button>
+        <button type="button" onClick={detectTools} disabled={detectingTools}>{detectingTools ? tCurrent('auto.remoteS3Browser.detectingButton') : tCurrent('auto.remoteS3Browser.93b684')}</button>
         <button type="button" className="primary" onClick={loadBuckets} disabled={loading || !modeDetected}>
           {loading ? tCurrent('auto.remoteS3Browser.h7vocz') : connected ? tCurrent('auto.remoteS3Browser.nabcrd') : tCurrent('auto.remoteS3Browser.1u8k4u')}
         </button>
@@ -549,19 +542,19 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
           <aside className="s3-config">
             <div className="s3-config-head">
               <strong>{tCurrent('auto.remoteS3Browser.1qcyuf')}</strong>
-              <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'} · {toolsDetected ? (modeDetected ? '已检测' : '未安装') : '检测中'}</span>
+              <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'} · {toolsDetected ? (modeDetected ? tCurrent('auto.remoteS3Browser.toolDetected') : tCurrent('auto.remoteS3Browser.toolNotInstalled')) : tCurrent('auto.remoteS3Browser.detectingButton')}</span>
             </div>
             {toolsDetected && !availableTools.includes('mc') ? (
               <div className="s3-tool-help">
-                <strong>未检测到 mc</strong>
+                <strong>{tCurrent('auto.remoteS3Browser.mcNotFound')}</strong>
                 <button type="button" className="primary" onClick={() => { void installMc().catch((error) => setError(getErrorMessage(error))); }} disabled={installingMc}>
-                  {installingMc ? '正在安装 mc' : '一键安装 mc'}
+                  {installingMc ? tCurrent('auto.remoteS3Browser.installingMc') : tCurrent('auto.remoteS3Browser.oneClickInstallMc')}
                 </button>
               </div>
             ) : null}
             {toolsDetected && !availableTools.includes('aws') ? (
               <div className="s3-tool-help">
-                <strong>未检测到 aws</strong>
+                <strong>{tCurrent('auto.remoteS3Browser.awsNotFound')}</strong>
                 <span>Linux: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install</span>
                 <span>macOS: curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg" && sudo installer -pkg AWSCLIV2.pkg -target /</span>
                 <span>Windows: https://aws.amazon.com/cli/</span>
@@ -632,7 +625,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
             <button type="button" className={activeTab === 'objects' ? 'active' : ''} onClick={() => setActiveTab('objects')}>{tCurrent('auto.remoteS3Browser.1hptjin')}</button>
             <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>{tCurrent('auto.remoteS3Browser.1sxtwbe')}</button>
             <button type="button" onClick={() => copyObjectUrl(selectedObject)} disabled={!selectedObject || selectedObject.type !== 'object'}>{tCurrent('auto.remoteS3Browser.19gy30v')}</button>
-            <button type="button" className="primary" onClick={selectUploadFiles} disabled={!selectedBucket || uploading}>{uploading ? '上传中' : '上传'}</button>
+            <button type="button" className="primary" onClick={selectUploadFiles} disabled={!selectedBucket || uploading}>{uploading ? tCurrent('auto.remoteS3Browser.uploadingButton') : tCurrent('auto.remoteS3Browser.uploadButton')}</button>
           </nav>
 
           {activeTab === 'objects' ? (
@@ -647,12 +640,12 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
             >
               <div className="s3-upload-strip">
                 <div>
-                  <strong>{dragActive ? '松开以上传对象' : '拖拽文件上传到当前目录'}</strong>
-                  <span>{selectedBucket ? `${selectedBucket.name}/${ensurePrefix(uploadPrefix || prefix)}` : '请选择 bucket'}</span>
+                  <strong>{dragActive ? tCurrent('auto.remoteS3Browser.dropToUpload') : tCurrent('auto.remoteS3Browser.dragToUploadDir')}</strong>
+                  <span>{selectedBucket ? `${selectedBucket.name}/${ensurePrefix(uploadPrefix || prefix)}` : tCurrent('auto.remoteS3Browser.selectBucketPrompt')}</span>
                 </div>
                 <label>
-                  <span>目标前缀</span>
-                  <input value={uploadPrefix} onChange={(event) => setUploadPrefix(event.target.value)} placeholder={prefix || '例如 logs/'} />
+                  <span>{tCurrent('auto.remoteS3Browser.uploadTargetPrefix')}</span>
+                  <input value={uploadPrefix} onChange={(event) => setUploadPrefix(event.target.value)} placeholder={prefix || tCurrent('auto.remoteS3Browser.uploadPrefixPlaceholder')} />
                 </label>
               </div>
               <table className="s3-table">
