@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, Executor, PgPool, Row};
+use std::time::Instant;
 
 use super::super::sql::{pg_identifier, pg_value_literal};
 use super::{
@@ -63,7 +64,11 @@ pub(crate) async fn postgres_connect(
         .map_err(error_string)?
         .insert(
             session_key("postgres", &connection_id, &postgres_id),
-            DatabaseTunnelSession::Postgres(PostgresTunnelSession { tunnel, pool }),
+            DatabaseTunnelSession::Postgres(PostgresTunnelSession {
+                tunnel,
+                pool,
+                last_activity: Instant::now(),
+            }),
         );
     Ok(json!({
         "postgresId": postgres_id,
@@ -303,13 +308,14 @@ async fn connect_postgres_direct(
 fn postgres_pool(state: &AppState, args: &[Value]) -> Result<PgPool, String> {
     let connection_id = string_arg(args, 0)?;
     let session_id = string_arg(args, 1)?;
-    let guard = state
+    let mut guard = state
         .database_tunnel_sessions
         .lock()
         .map_err(error_string)?;
     let session = guard
-        .get(&session_key("postgres", &connection_id, &session_id))
+        .get_mut(&session_key("postgres", &connection_id, &session_id))
         .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    session.touch();
     match session {
         DatabaseTunnelSession::Postgres(session) => Ok(session.pool.clone()),
         other => Err(DbTunnelError::SessionKindMismatch {

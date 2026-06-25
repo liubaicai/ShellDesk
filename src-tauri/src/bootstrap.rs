@@ -59,8 +59,7 @@ pub(crate) fn run() {
                 );
             }
             crate::sync_backend::reload_sync_schedule(&state, app.handle());
-            // TODO: Issue #67 - 数据库隧道空闲超时自动断开
-            // crate::database::tunnel::start_idle_cleanup(state.clone(), app.handle().clone());
+            crate::database::tunnel::start_idle_cleanup(state.clone(), app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

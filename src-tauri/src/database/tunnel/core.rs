@@ -11,10 +11,16 @@ use mongodb::Client as MongoClient;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, PgPool};
-use std::{process::Child as StdChild, time::Duration};
+use std::{
+    process::Child as StdChild,
+    time::{Duration, Instant},
+};
+use tauri::Emitter;
 use thiserror::Error;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub(crate) enum DbTunnelError {
@@ -77,6 +83,27 @@ impl DatabaseTunnelSession {
         }
     }
 
+    pub(crate) fn last_activity(&self) -> Instant {
+        match self {
+            Self::Mysql(session) => session.last_activity,
+            Self::Postgres(session) => session.last_activity,
+            Self::Redis(session) => session.last_activity,
+            Self::ClickHouse(session) => session.last_activity,
+            Self::Mongo(session) => session.last_activity,
+        }
+    }
+
+    pub(crate) fn touch(&mut self) {
+        let now = Instant::now();
+        match self {
+            Self::Mysql(session) => session.last_activity = now,
+            Self::Postgres(session) => session.last_activity = now,
+            Self::Redis(session) => session.last_activity = now,
+            Self::ClickHouse(session) => session.last_activity = now,
+            Self::Mongo(session) => session.last_activity = now,
+        }
+    }
+
     pub(crate) async fn shutdown(self) {
         match self {
             Self::Mysql(session) => session.shutdown().await,
@@ -91,26 +118,31 @@ impl DatabaseTunnelSession {
 pub(crate) struct MysqlTunnelSession {
     pub(super) tunnel: Option<DatabaseSshTunnel>,
     pub(super) pool: MySqlPool,
+    pub(super) last_activity: Instant,
 }
 
 pub(crate) struct PostgresTunnelSession {
     pub(super) tunnel: Option<DatabaseSshTunnel>,
     pub(super) pool: PgPool,
+    pub(super) last_activity: Instant,
 }
 
 pub(crate) struct RedisTunnelSession {
     pub(super) tunnel: Option<DatabaseSshTunnel>,
     pub(super) client: RedisClient,
+    pub(super) last_activity: Instant,
 }
 
 pub(crate) struct ClickHouseTunnelSession {
     pub(super) tunnel: Option<DatabaseSshTunnel>,
     pub(super) client: clickhouse::Client,
+    pub(super) last_activity: Instant,
 }
 
 pub(crate) struct MongoTunnelSession {
     pub(super) tunnel: Option<DatabaseSshTunnel>,
     pub(super) client: MongoClient,
+    pub(super) last_activity: Instant,
 }
 
 pub(super) enum DatabaseSshTunnel {
@@ -262,6 +294,66 @@ pub(crate) async fn disconnect(
         let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, session.shutdown()).await;
     }
     Ok(json!(true))
+}
+
+pub(crate) fn start_idle_cleanup(state: AppState, app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(CLEANUP_INTERVAL).await;
+            cleanup_idle_sessions(&state, &app).await;
+        }
+    });
+}
+
+async fn cleanup_idle_sessions(state: &AppState, app: &tauri::AppHandle) {
+    let now = Instant::now();
+    let expired_keys: Vec<String> = {
+        let sessions = match state.database_tunnel_sessions.lock() {
+            Ok(sessions) => sessions,
+            Err(_) => return,
+        };
+        sessions
+            .iter()
+            .filter(|(_, session)| now.duration_since(session.last_activity()) > IDLE_TIMEOUT)
+            .map(|(key, _)| key.clone())
+            .collect()
+    };
+
+    for key in expired_keys {
+        let session = match state.database_tunnel_sessions.lock() {
+            Ok(mut sessions) => {
+                let removal_now = Instant::now();
+                let is_still_expired = sessions.get(&key).is_some_and(|session| {
+                    removal_now.duration_since(session.last_activity()) > IDLE_TIMEOUT
+                });
+                if is_still_expired {
+                    sessions.remove(&key)
+                } else {
+                    None
+                }
+            }
+            Err(_) => continue,
+        };
+        if let Some(session) = session {
+            let parts = key.splitn(3, ':').collect::<Vec<_>>();
+            let kind = parts.first().copied().unwrap_or("unknown").to_string();
+            let session_id = parts.get(2).copied().unwrap_or("unknown").to_string();
+
+            eprintln!("[database-tunnel] idle timeout: disconnecting {key}");
+
+            let _ = app.emit(
+                "database:tunnel-idle-timeout",
+                json!({
+                    "key": key,
+                    "kind": kind,
+                    "sessionId": session_id,
+                    "idleMinutes": IDLE_TIMEOUT.as_secs() / 60,
+                }),
+            );
+
+            let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, session.shutdown()).await;
+        }
+    }
 }
 
 pub(super) async fn open_database_ssh_tunnel(

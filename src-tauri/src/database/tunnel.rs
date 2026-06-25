@@ -19,7 +19,8 @@ pub(crate) use clickhouse::{
 use config::{MysqlConnectConfig, PostgresConnectConfig, RedisConnectConfig};
 use core::DbTunnelError;
 pub(crate) use core::{
-    disconnect, has_session, is_tunnel_mode, DatabaseTunnelSession, TunnelOptions,
+    disconnect, has_session, is_tunnel_mode, start_idle_cleanup, DatabaseTunnelSession,
+    TunnelOptions,
 };
 #[cfg(test)]
 use core::{session_key, validate_database_endpoint};

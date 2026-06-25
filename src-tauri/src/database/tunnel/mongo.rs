@@ -5,6 +5,7 @@ use mongodb::{
     Client as MongoClient,
 };
 use serde_json::{json, Value};
+use std::time::Instant;
 
 use super::{
     config::MongoConnectConfig,
@@ -62,7 +63,11 @@ pub(crate) async fn mongo_connect(
         .map_err(error_string)?
         .insert(
             session_key("mongo", &connection_id, &mongo_id),
-            DatabaseTunnelSession::Mongo(MongoTunnelSession { tunnel, client }),
+            DatabaseTunnelSession::Mongo(MongoTunnelSession {
+                tunnel,
+                client,
+                last_activity: Instant::now(),
+            }),
         );
     Ok(json!({
         "mongoId": mongo_id,
@@ -343,13 +348,14 @@ async fn connect_mongo_direct(
 fn mongo_client(state: &AppState, args: &[Value]) -> Result<MongoClient, String> {
     let connection_id = string_arg(args, 0)?;
     let session_id = string_arg(args, 1)?;
-    let guard = state
+    let mut guard = state
         .database_tunnel_sessions
         .lock()
         .map_err(error_string)?;
     let session = guard
-        .get(&session_key("mongo", &connection_id, &session_id))
+        .get_mut(&session_key("mongo", &connection_id, &session_id))
         .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    session.touch();
     match session {
         DatabaseTunnelSession::Mongo(session) => Ok(session.client.clone()),
         other => Err(DbTunnelError::SessionKindMismatch {

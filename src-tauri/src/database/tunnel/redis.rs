@@ -3,6 +3,7 @@ use fred::{
     types::{ClusterHash, CustomCommand},
 };
 use serde_json::{json, Map, Value};
+use std::time::Instant;
 
 use super::{
     config::RedisConnectConfig,
@@ -60,7 +61,11 @@ pub(crate) async fn redis_connect(
         .map_err(error_string)?
         .insert(
             session_key("redis", &connection_id, &redis_id),
-            DatabaseTunnelSession::Redis(RedisTunnelSession { tunnel, client }),
+            DatabaseTunnelSession::Redis(RedisTunnelSession {
+                tunnel,
+                client,
+                last_activity: Instant::now(),
+            }),
         );
     Ok(json!({
         "redisId": redis_id,
@@ -306,13 +311,14 @@ async fn connect_redis_direct(
 fn redis_client(state: &AppState, args: &[Value]) -> Result<RedisClient, String> {
     let connection_id = string_arg(args, 0)?;
     let session_id = string_arg(args, 1)?;
-    let guard = state
+    let mut guard = state
         .database_tunnel_sessions
         .lock()
         .map_err(error_string)?;
     let session = guard
-        .get(&session_key("redis", &connection_id, &session_id))
+        .get_mut(&session_key("redis", &connection_id, &session_id))
         .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    session.touch();
     match session {
         DatabaseTunnelSession::Redis(session) => Ok(session.client.clone()),
         other => Err(DbTunnelError::SessionKindMismatch {

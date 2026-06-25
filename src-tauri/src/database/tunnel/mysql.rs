@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 use sqlx::{mysql::MySqlPoolOptions, Executor, MySqlPool};
+use std::time::Instant;
 
 use super::{
     config::MysqlConnectConfig,
@@ -65,7 +66,11 @@ pub(crate) async fn mysql_connect(
         .map_err(error_string)?
         .insert(
             session_key("mysql", &connection_id, &mysql_id),
-            DatabaseTunnelSession::Mysql(MysqlTunnelSession { tunnel, pool }),
+            DatabaseTunnelSession::Mysql(MysqlTunnelSession {
+                tunnel,
+                pool,
+                last_activity: Instant::now(),
+            }),
         );
     Ok(json!({
         "mysqlId": mysql_id,
@@ -257,13 +262,14 @@ async fn connect_mysql_direct(
 fn mysql_pool(state: &AppState, args: &[Value]) -> Result<MySqlPool, String> {
     let connection_id = string_arg(args, 0)?;
     let session_id = string_arg(args, 1)?;
-    let guard = state
+    let mut guard = state
         .database_tunnel_sessions
         .lock()
         .map_err(error_string)?;
     let session = guard
-        .get(&session_key("mysql", &connection_id, &session_id))
+        .get_mut(&session_key("mysql", &connection_id, &session_id))
         .ok_or_else(|| DbTunnelError::SessionNotFound.user_message())?;
+    session.touch();
     match session {
         DatabaseTunnelSession::Mysql(session) => Ok(session.pool.clone()),
         other => Err(DbTunnelError::SessionKindMismatch {
