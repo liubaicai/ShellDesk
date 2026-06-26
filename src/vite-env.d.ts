@@ -206,6 +206,7 @@ type ShellDeskDesktopAppKey =
   | 'search-cluster'
   | 'message-queue'
   | 's3-browser'
+  | 'frp-manager'
   | 'security-audit'
   | 'login-sessions'
   | 'api-debugger'

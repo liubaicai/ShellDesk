@@ -8,6 +8,7 @@ export { default as RemoteDiskAnalyzer } from './RemoteDiskAnalyzer';
 export { default as RemoteDiskManager } from './RemoteDiskManager';
 export { default as RemoteFirewallManager } from './RemoteFirewallManager';
 export { default as RemoteFileExplorer } from './RemoteFileExplorer';
+export { default as RemoteFrpManager } from './RemoteFrpManager';
 export { default as RemoteGitManager } from './RemoteGitManager';
 export { default as RemoteIptablesManager } from './RemoteIptablesManager';
 export { default as RemoteLoginSessions } from './RemoteLoginSessions';

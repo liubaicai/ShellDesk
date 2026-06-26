@@ -29,6 +29,7 @@ const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/Remote
 const RemoteDiskManager = lazy(() => import('./components/remote-desktop/RemoteDiskManager'));
 const RemoteFileExplorer = lazy(() => import('./components/remote-desktop/RemoteFileExplorer'));
 const RemoteFirewallManager = lazy(() => import('./components/remote-desktop/RemoteFirewallManager'));
+const RemoteFrpManager = lazy(() => import('./components/remote-desktop/RemoteFrpManager'));
 const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
 const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
 const RemoteLoginSessions = lazy(() => import('./components/remote-desktop/RemoteLoginSessions'));
@@ -86,6 +87,7 @@ const desktopApps = [
   { key: 'search-cluster', labelId: 'desktop.app.searchCluster.label', descriptionId: 'desktop.app.searchCluster.description' },
   { key: 'message-queue', labelId: 'desktop.app.messageQueue.label', descriptionId: 'desktop.app.messageQueue.description' },
   { key: 's3-browser', labelId: 'desktop.app.s3Browser.label', descriptionId: 'desktop.app.s3Browser.description' },
+  { key: 'frp-manager', labelId: 'desktop.app.frpManager.label', descriptionId: 'desktop.app.frpManager.description' },
   { key: 'security-audit', labelId: 'desktop.app.securityAudit.label', descriptionId: 'desktop.app.securityAudit.description' },
   { key: 'login-sessions', labelId: 'desktop.app.loginSessions.label', descriptionId: 'desktop.app.loginSessions.description' },
   { key: 'api-debugger', labelId: 'desktop.app.apiDebugger.label', descriptionId: 'desktop.app.apiDebugger.description' },
@@ -131,6 +133,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'search-cluster': new URL('./assets/desktop-icons/search-cluster.png', import.meta.url).href,
   'message-queue': new URL('./assets/desktop-icons/message-queue.png', import.meta.url).href,
   's3-browser': new URL('./assets/desktop-icons/s3-browser.png', import.meta.url).href,
+  'frp-manager': new URL('./assets/desktop-icons/frp-manager.png', import.meta.url).href,
   'security-audit': new URL('./assets/desktop-icons/security-audit.png', import.meta.url).href,
   'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
   'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
@@ -141,7 +144,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 9;
+const desktopAppCatalogVersion = 10;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
@@ -153,6 +156,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'search-cluster',
   'message-queue',
   's3-browser',
+  'frp-manager',
   'disk-manager',
   'clickhouse',
 ];
@@ -311,6 +315,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
+  'frp-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
   'firewall-manager': { x: 118, y: 48, width: 1080, height: 650 },
   'iptables-manager': { x: 106, y: 44, width: 1160, height: 680 },
@@ -858,6 +863,20 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M8.5 8.5v8.25M12 8.5v8.25M15.5 8.5v8.25" />
         <path d="M7 5h10v3.5H7V5Z" />
         <path d="M6.25 19h11.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'frp-manager') {
+    return (
+      <svg {...iconProps}>
+        <path d="M5 6.5h14v11H5v-11Z" />
+        <path d="M8 9.5h8" />
+        <path d="M8 14.5h8" />
+        <path d="M9.5 4.5h5" />
+        <path d="M9.5 19.5h5" />
+        <circle cx="5" cy="12" r="1.75" />
+        <circle cx="19" cy="12" r="1.75" />
       </svg>
     );
   }
@@ -2508,6 +2527,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'container-manager') {
       return <RemoteContainerManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'frp-manager') {
+      return <RemoteFrpManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'port-manager') {
