@@ -23,6 +23,10 @@ function asBoolean(value: unknown, fallback = false) {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+function asRecord(value: unknown) {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+}
+
 function asLogLevel(value: unknown): FrpsConfig['logLevel'] {
   return value === 'trace' || value === 'debug' || value === 'warn' || value === 'error' ? value : 'info';
 }
@@ -85,6 +89,20 @@ export function parseFrpsConfigToml(content: string): FrpsConfig {
 }
 
 export function parseFrpsDashboardApi(response: string): FrpsProxyInfo[] {
+  const blocks = response
+    .split(/__SHELLDESK_FRPS_PROXY_TYPE__=([a-z0-9-]+)/i)
+    .slice(1);
+  if (blocks.length) {
+    const parsedItems: FrpsProxyInfo[] = [];
+    for (let index = 0; index < blocks.length; index += 2) {
+      parsedItems.push(...parseFrpsDashboardPayload(blocks[index + 1] || '', blocks[index]));
+    }
+    return parsedItems;
+  }
+  return parseFrpsDashboardPayload(response);
+}
+
+function parseFrpsDashboardPayload(response: string, fallbackType = ''): FrpsProxyInfo[] {
   try {
     const payload = JSON.parse(response) as unknown;
     const source = Array.isArray(payload)
@@ -96,11 +114,12 @@ export function parseFrpsDashboardApi(response: string): FrpsProxyInfo[] {
     return source
       .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
       .map((item) => {
+        const conf = asRecord(item.conf);
         const statusText = String(item.status ?? item.phase ?? '').toLowerCase();
         const status: FrpsProxyInfo['status'] = statusText.includes('online') || statusText.includes('active') || statusText.includes('running') ? 'online' : 'offline';
         return {
-          name: String(item.name ?? item.proxyName ?? ''),
-          type: String(item.type ?? item.proxyType ?? ''),
+          name: String(item.name ?? item.proxyName ?? conf.name ?? ''),
+          type: String(item.type ?? item.proxyType ?? conf.type ?? fallbackType),
           status,
           clientAddr: String(item.clientAddr ?? item.clientAddress ?? item.remoteAddr ?? ''),
           lastStartTime: typeof item.lastStartTime === 'string' ? item.lastStartTime : undefined,

@@ -377,7 +377,14 @@ export function createFrpsDashboardCommand(dashboardAddr: string, dashboardPort:
   const safeAddr = dashboardAddr.trim() || '127.0.0.1';
   const safePort = Number.isFinite(dashboardPort) ? Math.trunc(dashboardPort) : 7500;
   const safeUser = user.trim() || 'admin';
-  return command(`curl -s -u ${shellSingleQuote(`${safeUser}:${password}`)} ${shellSingleQuote(`http://${safeAddr}:${safePort}/api/proxy/http`)}`);
+  const dashboardBaseUrl = `http://${safeAddr}:${safePort}/api/proxy/`;
+  return command(`
+for FRPS_PROXY_TYPE in tcp udp http https stcp xtcp tcpmux; do
+  printf '__SHELLDESK_FRPS_PROXY_TYPE__=%s\\n' "$FRPS_PROXY_TYPE"
+  curl -s -u ${shellSingleQuote(`${safeUser}:${password}`)} ${shellSingleQuote(dashboardBaseUrl)}"$FRPS_PROXY_TYPE"
+  printf '\\n'
+done
+`);
 }
 
 export function createFrpsEnsureServiceCommand(isWindows: boolean, configPath: string): RemoteCommandInput {
