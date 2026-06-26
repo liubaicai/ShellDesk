@@ -197,6 +197,9 @@
 .container-run-workbench input,
 .container-run-workbench select,
 .container-run-workbench textarea,
+.container-resource-workbench input,
+.container-resource-workbench select,
+.container-resource-workbench textarea,
 .container-config-form input,
 .container-config-form select {
   height: 30px;
@@ -233,6 +236,9 @@
 .container-run-workbench input:focus,
 .container-run-workbench select:focus,
 .container-run-workbench textarea:focus,
+.container-resource-workbench input:focus,
+.container-resource-workbench select:focus,
+.container-resource-workbench textarea:focus,
 .container-config-form input:focus,
 .container-config-form select:focus {
   border-color: rgba(76, 196, 154, 0.5);
@@ -244,6 +250,8 @@
 .container-exec-panel input::placeholder,
 .container-run-workbench input::placeholder,
 .container-run-workbench textarea::placeholder,
+.container-resource-workbench input::placeholder,
+.container-resource-workbench textarea::placeholder,
 .container-config-form input::placeholder {
   color: var(--container-muted);
 }
@@ -342,6 +350,126 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
     var(--container-panel);
+}
+
+.container-resource-output {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--container-border);
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.container-resource-workbench {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 10000;
+  display: grid;
+  width: min(760px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  gap: 10px;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--container-border-strong);
+  border-radius: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(17, 29, 39, 0.98), rgba(7, 12, 18, 0.98)),
+    var(--container-panel-strong);
+  box-shadow:
+    0 0 0 9999px rgba(2, 6, 12, 0.58),
+    0 24px 70px rgba(0, 0, 0, 0.48);
+}
+
+.container-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.container-resource-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.container-resource-grid label.wide {
+  grid-column: span 2;
+}
+
+.container-resource-grid label span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--container-muted);
+  font-size: 10.5px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.container-resource-workbench input,
+.container-resource-workbench select {
+  width: 100%;
+  padding: 0 9px;
+}
+
+.container-resource-workbench textarea {
+  width: 100%;
+  min-height: 62px;
+  padding: 7px 9px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.container-resource-output header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.container-resource-output header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--container-text);
+  font-size: 12.5px;
+  font-weight: 860;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.container-resource-output header div,
+.container-resource-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.container-resource-actions {
+  flex-wrap: nowrap;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.container-resource-output pre {
+  max-height: 190px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--container-border);
+  border-radius: 7px;
+  padding: 9px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--container-muted-strong);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .container-run-modal-overlay {
@@ -1107,8 +1235,40 @@
   font-weight: 820;
 }
 
+.container-resource-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 .container-resource-table {
   min-width: 780px;
+}
+
+.container-compose-table {
+  min-width: 780px;
+}
+
+.container-compose-table th:nth-child(1),
+.container-compose-table td:nth-child(1) {
+  width: 104px;
+}
+
+.container-compose-table th:nth-child(2),
+.container-compose-table td:nth-child(2) {
+  width: 84px;
+}
+
+.container-compose-table th:nth-child(5),
+.container-compose-table td:nth-child(5) {
+  width: 282px;
+}
+
+.container-network-table {
+  min-width: 1080px;
+}
+
+.container-volume-table {
+  min-width: 980px;
 }
 
 .container-image-repo { width: auto; }
@@ -1175,6 +1335,15 @@
 .container-table-danger {
   width: 58px;
   padding: 0 7px;
+}
+
+.container-resource-actions .container-table-action,
+.container-resource-actions .container-table-danger {
+  height: 26px;
+  width: auto;
+  min-width: 36px;
+  padding: 0 6px;
+  font-size: 10.5px;
 }
 
 .container-table-empty {
@@ -1376,13 +1545,20 @@
 [data-theme="light"] .container-list-panel,
 [data-theme="light"] .container-detail-panel,
 [data-theme="light"] .container-images-panel,
-[data-theme="light"] .container-run-workbench {
+[data-theme="light"] .container-run-workbench,
+[data-theme="light"] .container-resource-output {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 12px 28px rgba(43, 67, 92, 0.08);
 }
 
 [data-theme="light"] .container-run-dialog {
+  background:
+    linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(233, 239, 246, 0.98)),
+    var(--container-panel-strong);
+}
+
+[data-theme="light"] .container-resource-workbench {
   background:
     linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(233, 239, 246, 0.98)),
     var(--container-panel-strong);
@@ -1395,6 +1571,9 @@
 [data-theme="light"] .container-run-workbench input,
 [data-theme="light"] .container-run-workbench select,
 [data-theme="light"] .container-run-workbench textarea,
+[data-theme="light"] .container-resource-workbench input,
+[data-theme="light"] .container-resource-workbench select,
+[data-theme="light"] .container-resource-workbench textarea,
 [data-theme="light"] .container-config-form input,
 [data-theme="light"] .container-config-form select {
   background: rgba(255, 255, 255, 0.86);

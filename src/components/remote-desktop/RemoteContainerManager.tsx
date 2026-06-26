@@ -10,8 +10,18 @@ import { useSudoCommand } from './sudoPrompt';
 import {
   buildContainerConfigCommandGroups,
   buildContainerRunArgs,
+  buildComposeProjectActionArgs,
+  buildComposeUpArgs,
   buildDockerDaemonRestartCommand,
   buildImagePruneArgs,
+  buildNetworkCreateArgs,
+  buildNetworkInspectArgs,
+  buildNetworkPruneArgs,
+  buildNetworkRemoveArgs,
+  buildVolumeCreateArgs,
+  buildVolumeInspectArgs,
+  buildVolumePruneArgs,
+  buildVolumeRemoveArgs,
   createContainerTroubleshooting,
   createDockerNetworkTroubleshooting,
   formatRuntimeCommand,
@@ -37,15 +47,19 @@ import {
 } from './containerCommands';
 import { formatShortId, getStateLabel, parseComposeProjectSummary, parseContainerDetailOutput, parseContainerNetworkSummary, parseContainerSummary, parseContainerVolumeSummary, parseImageSummary, parseJsonLines } from './containerParsers';
 import type {
+  ComposeProjectAction,
   ComposeProjectSummary,
   ContainerAction,
+  ContainerComposeForm,
   ContainerConfigForm,
   ContainerFilter,
+  ContainerNetworkForm,
   ContainerNetworkSummary,
   ContainerRuntime,
   ContainerRunForm as ContainerRunFormState,
   ContainerSummary,
   ContainerTroubleshooting,
+  ContainerVolumeForm,
   ContainerVolumeSummary,
   ImagePruneMode,
   ImageSummary,
@@ -86,6 +100,56 @@ const imagePruneOptions: Array<{ value: ImagePruneMode; labelId: MessageId; desc
   { value: 'unused', labelId: 'container.prune.unused', descriptionId: 'container.prune.unusedDescription' },
 ];
 
+const composeProjectActions: Array<{ action: ComposeProjectAction; labelId: MessageId; danger?: boolean }> = [
+  { action: 'up', labelId: 'container.compose.up' },
+  { action: 'start', labelId: 'container.compose.start' },
+  { action: 'stop', labelId: 'container.compose.stop' },
+  { action: 'restart', labelId: 'container.compose.restart' },
+  { action: 'pull', labelId: 'container.compose.pull' },
+  { action: 'down', labelId: 'container.compose.down', danger: true },
+];
+
+function createDefaultComposeForm(): ContainerComposeForm {
+  return {
+    projectName: '',
+    workingDir: '',
+    configFile: 'docker-compose.yml',
+    envFile: '',
+    services: '',
+    build: false,
+    pull: false,
+    removeOrphans: true,
+  };
+}
+
+function createDefaultNetworkForm(): ContainerNetworkForm {
+  return {
+    name: '',
+    driver: 'bridge',
+    subnet: '',
+    gateway: '',
+    ipRange: '',
+    labels: '',
+    options: '',
+    internal: false,
+    attachable: false,
+    ipv6: false,
+  };
+}
+
+function createDefaultVolumeForm(): ContainerVolumeForm {
+  return {
+    name: '',
+    driver: 'local',
+    labels: '',
+    options: '',
+  };
+}
+
+function isDefaultContainerNetwork(network: ContainerNetworkSummary) {
+  return network.name === 'bridge' || network.name === 'host' || network.name === 'none';
+}
+
 function RemoteContainerManager({ connectionId, systemType }: RemoteContainerManagerProps) {
   const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
@@ -115,6 +179,13 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
   const [imagePruneError, setImagePruneError] = useState('');
   const [runPanelOpen, setRunPanelOpen] = useState(false);
   const [runInitialImage, setRunInitialImage] = useState('');
+  const [composePanelOpen, setComposePanelOpen] = useState(false);
+  const [composeForm, setComposeForm] = useState<ContainerComposeForm>(() => createDefaultComposeForm());
+  const [networkPanelOpen, setNetworkPanelOpen] = useState(false);
+  const [networkForm, setNetworkForm] = useState<ContainerNetworkForm>(() => createDefaultNetworkForm());
+  const [volumePanelOpen, setVolumePanelOpen] = useState(false);
+  const [volumeForm, setVolumeForm] = useState<ContainerVolumeForm>(() => createDefaultVolumeForm());
+  const [resourceOutput, setResourceOutput] = useState<{ title: string; output: string } | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [containersLoading, setContainersLoading] = useState(false);
   const [imagesLoading, setImagesLoading] = useState(false);
@@ -361,6 +432,13 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     setImagePruneMode('dangling');
     setImagePruneDialogOpen(false);
     setImagePruneError('');
+    setComposePanelOpen(false);
+    setComposeForm(createDefaultComposeForm());
+    setNetworkPanelOpen(false);
+    setNetworkForm(createDefaultNetworkForm());
+    setVolumePanelOpen(false);
+    setVolumeForm(createDefaultVolumeForm());
+    setResourceOutput(null);
     void refreshContainers();
     return () => {
       isMountedRef.current = false;
@@ -634,6 +712,247 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
     }
   };
 
+  const runResourceCommand = async (args: string[], fallbackError: string) => {
+    const activeRuntime = await detectRuntime();
+    const result = await runCommand(getRuntimeCliCommand(activeRuntime, args, isWindowsHost));
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    if (result.code !== 0) {
+      throw new Error(output || fallbackError);
+    }
+    return { activeRuntime, output };
+  };
+
+  const executeComposeCreate = async () => {
+    let args: string[];
+    try {
+      args = buildComposeUpArgs(composeForm, language);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return;
+    }
+    setActingKey('compose-create');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(args, t('container.error.composeUpFailed', language));
+      const projectName = composeForm.projectName.trim() || composeForm.workingDir.trim() || composeForm.configFile.trim();
+      setSuccess(t('container.success.composeUp', language, { name: projectName }));
+      if (output) setResourceOutput({ title: t('container.output.composeUp', language), output });
+      setComposePanelOpen(false);
+      setComposeForm(createDefaultComposeForm());
+      await refreshComposeProjects({ runtimeOverride: activeRuntime, silent: true });
+      await refreshContainers({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) setActingKey('');
+    }
+  };
+
+  const executeComposeAction = async (project: ComposeProjectSummary, action: ComposeProjectAction) => {
+    setActingKey(`compose-${action}:${project.id}`);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(buildComposeProjectActionArgs(project, action), t('container.error.composeActionFailed', language));
+      setSuccess(t('container.success.composeAction', language, { action: t(`container.compose.${action}` as MessageId, language), name: project.name }));
+      if (output) setResourceOutput({ title: t('container.output.composeAction', language, { name: project.name }), output });
+      await refreshComposeProjects({ runtimeOverride: activeRuntime, silent: true });
+      await refreshContainers({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setActingKey('');
+        setPendingAction(null);
+      }
+    }
+  };
+
+  const executeNetworkCreate = async () => {
+    let args: string[];
+    try {
+      args = buildNetworkCreateArgs(networkForm, language);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return;
+    }
+    const networkName = networkForm.name.trim();
+    setActingKey('network-create');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(args, t('container.error.networkCreateFailed', language));
+      setSuccess(t('container.success.networkCreated', language, { name: networkName }));
+      if (output) setResourceOutput({ title: t('container.output.networkCreate', language), output });
+      setNetworkPanelOpen(false);
+      setNetworkForm(createDefaultNetworkForm());
+      await refreshNetworks({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) setActingKey('');
+    }
+  };
+
+  const executeNetworkRemove = async (network: ContainerNetworkSummary) => {
+    setActingKey(`network-remove:${network.id}`);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(buildNetworkRemoveArgs(network), t('container.error.networkRemoveFailed', language));
+      setSuccess(t('container.success.networkRemoved', language, { name: network.name }));
+      if (output) setResourceOutput({ title: t('container.output.networkRemove', language), output });
+      await refreshNetworks({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setActingKey('');
+        setPendingAction(null);
+      }
+    }
+  };
+
+  const executeNetworkInspect = async (network: ContainerNetworkSummary) => {
+    setActingKey(`network-inspect:${network.id}`);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    try {
+      const { output } = await runResourceCommand(buildNetworkInspectArgs(network), t('container.error.networkInspectFailed', language));
+      setResourceOutput({ title: t('container.output.networkInspect', language, { name: network.name }), output: output || '-' });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) setActingKey('');
+    }
+  };
+
+  const executeNetworkPrune = async () => {
+    setActingKey('network-prune');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(buildNetworkPruneArgs(), t('container.error.networkPruneFailed', language));
+      setSuccess(t('container.success.networksPruned', language));
+      if (output) setResourceOutput({ title: t('container.output.networkPrune', language), output });
+      await refreshNetworks({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setActingKey('');
+        setPendingAction(null);
+      }
+    }
+  };
+
+  const executeVolumeCreate = async () => {
+    let args: string[];
+    try {
+      args = buildVolumeCreateArgs(volumeForm, language);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return;
+    }
+    const volumeName = volumeForm.name.trim();
+    setActingKey('volume-create');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(args, t('container.error.volumeCreateFailed', language));
+      setSuccess(t('container.success.volumeCreated', language, { name: volumeName }));
+      if (output) setResourceOutput({ title: t('container.output.volumeCreate', language), output });
+      setVolumePanelOpen(false);
+      setVolumeForm(createDefaultVolumeForm());
+      await refreshVolumes({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) setActingKey('');
+    }
+  };
+
+  const executeVolumeRemove = async (volume: ContainerVolumeSummary) => {
+    setActingKey(`volume-remove:${volume.name}`);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(buildVolumeRemoveArgs(volume), t('container.error.volumeRemoveFailed', language));
+      setSuccess(t('container.success.volumeRemoved', language, { name: volume.name }));
+      if (output) setResourceOutput({ title: t('container.output.volumeRemove', language), output });
+      await refreshVolumes({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setActingKey('');
+        setPendingAction(null);
+      }
+    }
+  };
+
+  const executeVolumeInspect = async (volume: ContainerVolumeSummary) => {
+    setActingKey(`volume-inspect:${volume.name}`);
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    try {
+      const { output } = await runResourceCommand(buildVolumeInspectArgs(volume), t('container.error.volumeInspectFailed', language));
+      setResourceOutput({ title: t('container.output.volumeInspect', language, { name: volume.name }), output: output || '-' });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) setActingKey('');
+    }
+  };
+
+  const executeVolumePrune = async () => {
+    setActingKey('volume-prune');
+    setError('');
+    setNotice('');
+    setSuccess('');
+    setTroubleshooting(null);
+    setResourceOutput(null);
+    try {
+      const { activeRuntime, output } = await runResourceCommand(buildVolumePruneArgs(), t('container.error.volumePruneFailed', language));
+      setSuccess(t('container.success.volumesPruned', language));
+      if (output) setResourceOutput({ title: t('container.output.volumePrune', language), output });
+      await refreshVolumes({ runtimeOverride: activeRuntime, silent: true });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      if (isMountedRef.current) {
+        setActingKey('');
+        setPendingAction(null);
+      }
+    }
+  };
+
   const executeContainerExec = async (command: string) => {
     if (!selectedContainer || !command.trim()) {
       setError(selectedContainer ? t('container.error.execRequired', language) : t('container.error.selectContainer', language));
@@ -689,13 +1008,30 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
       );
     }
     if (activeTab === 'compose') {
-      return <input type="search" className="container-search" placeholder={t('container.ui.searchCompose', language)} value={composeSearch} onChange={(event) => setComposeSearch(event.target.value)} />;
+      return (
+        <>
+          <input type="search" className="container-search" placeholder={t('container.ui.searchCompose', language)} value={composeSearch} onChange={(event) => setComposeSearch(event.target.value)} />
+          <button type="button" className="container-tool-button primary" onClick={() => setComposePanelOpen(true)}>{t('container.ui.newCompose', language)}</button>
+        </>
+      );
     }
     if (activeTab === 'networks') {
-      return <input type="search" className="container-search" placeholder={t('container.ui.searchNetworks', language)} value={networkSearch} onChange={(event) => setNetworkSearch(event.target.value)} />;
+      return (
+        <>
+          <input type="search" className="container-search" placeholder={t('container.ui.searchNetworks', language)} value={networkSearch} onChange={(event) => setNetworkSearch(event.target.value)} />
+          <button type="button" className="container-tool-button primary" onClick={() => setNetworkPanelOpen(true)}>{t('container.ui.newNetwork', language)}</button>
+          <button type="button" className="container-tool-button danger" disabled={actingKey === 'network-prune'} onClick={() => setPendingAction({ kind: 'network-prune' })}>{actingKey === 'network-prune' ? t('container.ui.pruning', language) : t('container.ui.pruneNetworks', language)}</button>
+        </>
+      );
     }
     if (activeTab === 'volumes') {
-      return <input type="search" className="container-search" placeholder={t('container.ui.searchVolumes', language)} value={volumeSearch} onChange={(event) => setVolumeSearch(event.target.value)} />;
+      return (
+        <>
+          <input type="search" className="container-search" placeholder={t('container.ui.searchVolumes', language)} value={volumeSearch} onChange={(event) => setVolumeSearch(event.target.value)} />
+          <button type="button" className="container-tool-button primary" onClick={() => setVolumePanelOpen(true)}>{t('container.ui.newVolume', language)}</button>
+          <button type="button" className="container-tool-button danger" disabled={actingKey === 'volume-prune'} onClick={() => setPendingAction({ kind: 'volume-prune' })}>{actingKey === 'volume-prune' ? t('container.ui.pruning', language) : t('container.ui.pruneVolumes', language)}</button>
+        </>
+      );
     }
     return (
       <>
@@ -725,6 +1061,62 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
         : activeTab === 'volumes'
           ? volumes.length
           : containers.length;
+  const composeCommandPreview = useMemo(() => {
+    try {
+      return formatRuntimeCommand(runtime ?? 'docker', buildComposeUpArgs(composeForm, language));
+    } catch {
+      return '';
+    }
+  }, [composeForm, language, runtime]);
+  const networkCommandPreview = useMemo(() => {
+    try {
+      return formatRuntimeCommand(runtime ?? 'docker', buildNetworkCreateArgs(networkForm, language));
+    } catch {
+      return '';
+    }
+  }, [language, networkForm, runtime]);
+  const volumeCommandPreview = useMemo(() => {
+    try {
+      return formatRuntimeCommand(runtime ?? 'docker', buildVolumeCreateArgs(volumeForm, language));
+    } catch {
+      return '';
+    }
+  }, [language, runtime, volumeForm]);
+
+  const renderResourceOutput = () => resourceOutput ? (
+    <section className="container-resource-output">
+      <header>
+        <strong>{resourceOutput.title}</strong>
+        <div>
+          <button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(resourceOutput.output, resourceOutput.title)}>{t('container.ui.copy', language)}</button>
+          <button type="button" className="container-copy-btn" onClick={() => setResourceOutput(null)}>{t('common.close', language)}</button>
+        </div>
+      </header>
+      <pre>{resourceOutput.output}</pre>
+    </section>
+  ) : null;
+
+  const getPendingActionTitle = () => {
+    if (!pendingAction) return '';
+    if (pendingAction.kind === 'container') return t('container.modal.removeContainer', language);
+    if (pendingAction.kind === 'image') return t('container.modal.removeImage', language);
+    if (pendingAction.kind === 'compose') return t('container.modal.composeDown', language);
+    if (pendingAction.kind === 'network') return t('container.modal.removeNetwork', language);
+    if (pendingAction.kind === 'network-prune') return t('container.modal.pruneNetworks', language);
+    if (pendingAction.kind === 'volume') return t('container.modal.removeVolume', language);
+    return t('container.modal.pruneVolumes', language);
+  };
+
+  const executePendingAction = () => {
+    if (!pendingAction) return;
+    if (pendingAction.kind === 'container') void executeContainerAction(pendingAction.action, pendingAction.container);
+    else if (pendingAction.kind === 'image') void executeImageRemove(pendingAction.image);
+    else if (pendingAction.kind === 'compose') void executeComposeAction(pendingAction.project, pendingAction.action);
+    else if (pendingAction.kind === 'network') void executeNetworkRemove(pendingAction.network);
+    else if (pendingAction.kind === 'network-prune') void executeNetworkPrune();
+    else if (pendingAction.kind === 'volume') void executeVolumeRemove(pendingAction.volume);
+    else void executeVolumePrune();
+  };
 
   return (
     <div className="container-manager">
@@ -764,25 +1156,31 @@ function RemoteContainerManager({ connectionId, systemType }: RemoteContainerMan
 
       {activeTab === 'compose' ? (
         <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.composeListAria', language)}>
-          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.project', language)}</th><th>{t('container.ui.status', language)}</th><th>{t('container.ui.configFiles', language)}</th><th>{t('container.ui.workingDir', language)}</th></tr></thead><tbody>{visibleComposeProjects.length === 0 ? <tr><td colSpan={4} className="container-table-empty">{composeLoading ? t('container.ui.loadingCompose', language) : t('container.ui.noCompose', language)}</td></tr> : visibleComposeProjects.map((project) => <tr key={project.id}><td title={project.name}><strong>{project.name}</strong></td><td title={project.status}>{project.status}</td><td title={project.configFiles}>{project.configFiles}</td><td title={project.workingDir}>{project.workingDir}</td></tr>)}</tbody></table></div>
+          {composePanelOpen ? <section className="container-resource-workbench" aria-label={t('container.ui.composeWorkbenchAria', language)}><header className="container-workbench-header"><div><strong>{t('container.ui.newCompose', language)}</strong><span>{t('container.ui.composeWorkbenchHint', language)}</span></div><button type="button" className="container-tool-button" onClick={() => setComposeForm(createDefaultComposeForm())}>{t('container.ui.reset', language)}</button></header><div className="container-resource-grid"><label><span>{t('container.ui.projectName', language)}</span><input value={composeForm.projectName} onChange={(event) => setComposeForm((form) => ({ ...form, projectName: event.target.value }))} placeholder="webapp" /></label><label><span>{t('container.ui.workingDir', language)}</span><input value={composeForm.workingDir} onChange={(event) => setComposeForm((form) => ({ ...form, workingDir: event.target.value }))} placeholder="/opt/webapp" /></label><label className="wide"><span>{t('container.ui.configFiles', language)}</span><input value={composeForm.configFile} onChange={(event) => setComposeForm((form) => ({ ...form, configFile: event.target.value }))} placeholder="/opt/webapp/docker-compose.yml" /></label><label><span>{t('container.ui.envFile', language)}</span><input value={composeForm.envFile} onChange={(event) => setComposeForm((form) => ({ ...form, envFile: event.target.value }))} placeholder=".env" /></label><label className="wide"><span>{t('container.ui.composeServices', language)}</span><input value={composeForm.services} onChange={(event) => setComposeForm((form) => ({ ...form, services: event.target.value }))} placeholder="api worker" /></label></div><div className="container-run-options"><label><input type="checkbox" checked={composeForm.build} onChange={(event) => setComposeForm((form) => ({ ...form, build: event.target.checked }))} />{t('container.ui.composeBuild', language)}</label><label><input type="checkbox" checked={composeForm.pull} onChange={(event) => setComposeForm((form) => ({ ...form, pull: event.target.checked }))} />{t('container.ui.composePullAlways', language)}</label><label><input type="checkbox" checked={composeForm.removeOrphans} onChange={(event) => setComposeForm((form) => ({ ...form, removeOrphans: event.target.checked }))} />{t('container.ui.removeOrphans', language)}</label></div>{composeCommandPreview ? <div className="container-command-preview"><header><span>{t('container.ui.commandPreview', language)}</span><button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(composeCommandPreview, t('container.ui.commandPreview', language))}>{t('container.ui.copy', language)}</button></header><pre>{composeCommandPreview}</pre></div> : null}<div className="container-workbench-actions"><button type="button" className="container-tool-button" onClick={() => setComposePanelOpen(false)}>{t('common.cancel', language)}</button><button type="button" className="container-tool-button primary" disabled={actingKey === 'compose-create'} onClick={() => void executeComposeCreate()}>{actingKey === 'compose-create' ? t('container.ui.processing', language) : t('container.ui.composeUpDetached', language)}</button></div></section> : null}
+          {renderResourceOutput()}
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table container-compose-table"><thead><tr><th>{t('container.ui.project', language)}</th><th>{t('container.ui.status', language)}</th><th>{t('container.ui.configFiles', language)}</th><th>{t('container.ui.workingDir', language)}</th><th>{t('container.ui.operations', language)}</th></tr></thead><tbody>{visibleComposeProjects.length === 0 ? <tr><td colSpan={5} className="container-table-empty">{composeLoading ? t('container.ui.loadingCompose', language) : t('container.ui.noCompose', language)}</td></tr> : visibleComposeProjects.map((project) => <tr key={project.id}><td title={project.name}><strong>{project.name}</strong></td><td title={project.status}>{project.status}</td><td title={project.configFiles}>{project.configFiles}</td><td title={project.workingDir}>{project.workingDir}</td><td><div className="container-resource-actions">{composeProjectActions.map((item) => <button key={item.action} type="button" className={item.danger ? 'container-table-danger' : 'container-table-action'} disabled={Boolean(actingKey)} onClick={() => { if (item.action === 'down') setPendingAction({ kind: 'compose', action: 'down', project }); else void executeComposeAction(project, item.action); }}>{actingKey === `compose-${item.action}:${project.id}` ? t('container.ui.processing', language) : t(item.labelId, language)}</button>)}</div></td></tr>)}</tbody></table></div>
         </div>
       ) : null}
 
       {activeTab === 'networks' ? (
         <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.networkListAria', language)}>
-          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>ID</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.scope', language)}</th><th>IPv6</th><th>Labels</th></tr></thead><tbody>{visibleNetworks.length === 0 ? <tr><td colSpan={6} className="container-table-empty">{networksLoading ? t('container.ui.loadingNetworks', language) : t('container.ui.noNetworks', language)}</td></tr> : visibleNetworks.map((network) => <tr key={network.id}><td title={network.name}><strong>{network.name}</strong></td><td title={network.id}><code>{formatShortId(network.id)}</code></td><td>{network.driver}</td><td>{network.scope}</td><td>{network.ipv6}</td><td title={network.labels}>{network.labels}</td></tr>)}</tbody></table></div>
+          {networkPanelOpen ? <section className="container-resource-workbench" aria-label={t('container.ui.networkWorkbenchAria', language)}><header className="container-workbench-header"><div><strong>{t('container.ui.newNetwork', language)}</strong><span>{t('container.ui.networkWorkbenchHint', language)}</span></div><button type="button" className="container-tool-button" onClick={() => setNetworkForm(createDefaultNetworkForm())}>{t('container.ui.reset', language)}</button></header><div className="container-resource-grid"><label><span>{t('container.ui.networkName', language)}</span><input value={networkForm.name} onChange={(event) => setNetworkForm((form) => ({ ...form, name: event.target.value }))} placeholder="app-net" /></label><label><span>{t('container.ui.driver', language)}</span><input value={networkForm.driver} onChange={(event) => setNetworkForm((form) => ({ ...form, driver: event.target.value }))} placeholder="bridge" /></label><label><span>{t('container.ui.subnet', language)}</span><input value={networkForm.subnet} onChange={(event) => setNetworkForm((form) => ({ ...form, subnet: event.target.value }))} placeholder="172.30.0.0/16" /></label><label><span>{t('container.ui.gateway', language)}</span><input value={networkForm.gateway} onChange={(event) => setNetworkForm((form) => ({ ...form, gateway: event.target.value }))} placeholder="172.30.0.1" /></label><label><span>{t('container.ui.ipRange', language)}</span><input value={networkForm.ipRange} onChange={(event) => setNetworkForm((form) => ({ ...form, ipRange: event.target.value }))} placeholder="172.30.5.0/24" /></label><label className="wide"><span>{t('container.ui.labels', language)}</span><textarea value={networkForm.labels} onChange={(event) => setNetworkForm((form) => ({ ...form, labels: event.target.value }))} placeholder="owner=shelldesk" /></label><label className="wide"><span>{t('container.ui.options', language)}</span><textarea value={networkForm.options} onChange={(event) => setNetworkForm((form) => ({ ...form, options: event.target.value }))} placeholder="com.docker.network.bridge.name=br-app" /></label></div><div className="container-run-options"><label><input type="checkbox" checked={networkForm.internal} onChange={(event) => setNetworkForm((form) => ({ ...form, internal: event.target.checked }))} />{t('container.ui.internal', language)}</label><label><input type="checkbox" checked={networkForm.attachable} onChange={(event) => setNetworkForm((form) => ({ ...form, attachable: event.target.checked }))} />{t('container.ui.attachable', language)}</label><label><input type="checkbox" checked={networkForm.ipv6} onChange={(event) => setNetworkForm((form) => ({ ...form, ipv6: event.target.checked }))} />{t('container.ui.ipv6', language)}</label></div>{networkCommandPreview ? <div className="container-command-preview"><header><span>{t('container.ui.commandPreview', language)}</span><button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(networkCommandPreview, t('container.ui.commandPreview', language))}>{t('container.ui.copy', language)}</button></header><pre>{networkCommandPreview}</pre></div> : null}<div className="container-workbench-actions"><button type="button" className="container-tool-button" onClick={() => setNetworkPanelOpen(false)}>{t('common.cancel', language)}</button><button type="button" className="container-tool-button primary" disabled={actingKey === 'network-create'} onClick={() => void executeNetworkCreate()}>{actingKey === 'network-create' ? t('container.ui.processing', language) : t('container.ui.createNetwork', language)}</button></div></section> : null}
+          {renderResourceOutput()}
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table container-network-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>ID</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.scope', language)}</th><th>{t('container.ui.ipv6', language)}</th><th>{t('container.ui.labels', language)}</th><th>{t('container.ui.operations', language)}</th></tr></thead><tbody>{visibleNetworks.length === 0 ? <tr><td colSpan={7} className="container-table-empty">{networksLoading ? t('container.ui.loadingNetworks', language) : t('container.ui.noNetworks', language)}</td></tr> : visibleNetworks.map((network) => <tr key={network.id}><td title={network.name}><strong>{network.name}</strong></td><td title={network.id}><code>{formatShortId(network.id)}</code></td><td>{network.driver}</td><td>{network.scope}</td><td>{network.ipv6}</td><td title={network.labels}>{network.labels}</td><td><div className="container-resource-actions"><button type="button" className="container-table-action" disabled={Boolean(actingKey)} onClick={() => void executeNetworkInspect(network)}>{actingKey === `network-inspect:${network.id}` ? t('container.ui.reading', language) : t('container.ui.inspect', language)}</button><button type="button" className="container-table-danger" disabled={Boolean(actingKey) || isDefaultContainerNetwork(network)} onClick={() => setPendingAction({ kind: 'network', action: 'remove', network })}>{actingKey === `network-remove:${network.id}` ? t('container.ui.removing', language) : t('container.action.remove', language)}</button></div></td></tr>)}</tbody></table></div>
         </div>
       ) : null}
 
       {activeTab === 'volumes' ? (
         <div className="container-images-panel container-resource-panel" aria-label={t('container.ui.volumeListAria', language)}>
-          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.mountpoint', language)}</th><th>{t('container.ui.scope', language)}</th><th>Labels</th></tr></thead><tbody>{visibleVolumes.length === 0 ? <tr><td colSpan={5} className="container-table-empty">{volumesLoading ? t('container.ui.loadingVolumes', language) : t('container.ui.noVolumes', language)}</td></tr> : visibleVolumes.map((volume) => <tr key={volume.name}><td title={volume.name}><strong>{volume.name}</strong></td><td>{volume.driver}</td><td title={volume.mountpoint}>{volume.mountpoint}</td><td>{volume.scope}</td><td title={volume.labels}>{volume.labels}</td></tr>)}</tbody></table></div>
+          {volumePanelOpen ? <section className="container-resource-workbench" aria-label={t('container.ui.volumeWorkbenchAria', language)}><header className="container-workbench-header"><div><strong>{t('container.ui.newVolume', language)}</strong><span>{t('container.ui.volumeWorkbenchHint', language)}</span></div><button type="button" className="container-tool-button" onClick={() => setVolumeForm(createDefaultVolumeForm())}>{t('container.ui.reset', language)}</button></header><div className="container-resource-grid"><label><span>{t('container.ui.volumeName', language)}</span><input value={volumeForm.name} onChange={(event) => setVolumeForm((form) => ({ ...form, name: event.target.value }))} placeholder="app-data" /></label><label><span>{t('container.ui.driver', language)}</span><input value={volumeForm.driver} onChange={(event) => setVolumeForm((form) => ({ ...form, driver: event.target.value }))} placeholder="local" /></label><label className="wide"><span>{t('container.ui.labels', language)}</span><textarea value={volumeForm.labels} onChange={(event) => setVolumeForm((form) => ({ ...form, labels: event.target.value }))} placeholder="owner=shelldesk" /></label><label className="wide"><span>{t('container.ui.options', language)}</span><textarea value={volumeForm.options} onChange={(event) => setVolumeForm((form) => ({ ...form, options: event.target.value }))} placeholder="type=nfs" /></label></div>{volumeCommandPreview ? <div className="container-command-preview"><header><span>{t('container.ui.commandPreview', language)}</span><button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(volumeCommandPreview, t('container.ui.commandPreview', language))}>{t('container.ui.copy', language)}</button></header><pre>{volumeCommandPreview}</pre></div> : null}<div className="container-workbench-actions"><button type="button" className="container-tool-button" onClick={() => setVolumePanelOpen(false)}>{t('common.cancel', language)}</button><button type="button" className="container-tool-button primary" disabled={actingKey === 'volume-create'} onClick={() => void executeVolumeCreate()}>{actingKey === 'volume-create' ? t('container.ui.processing', language) : t('container.ui.createVolume', language)}</button></div></section> : null}
+          {renderResourceOutput()}
+          <div className="container-image-table-wrap"><table className="container-image-table container-resource-table container-volume-table"><thead><tr><th>{t('container.ui.name', language)}</th><th>{t('container.ui.driver', language)}</th><th>{t('container.ui.mountpoint', language)}</th><th>{t('container.ui.scope', language)}</th><th>{t('container.ui.labels', language)}</th><th>{t('container.ui.operations', language)}</th></tr></thead><tbody>{visibleVolumes.length === 0 ? <tr><td colSpan={6} className="container-table-empty">{volumesLoading ? t('container.ui.loadingVolumes', language) : t('container.ui.noVolumes', language)}</td></tr> : visibleVolumes.map((volume) => <tr key={volume.name}><td title={volume.name}><strong>{volume.name}</strong></td><td>{volume.driver}</td><td title={volume.mountpoint}>{volume.mountpoint}</td><td>{volume.scope}</td><td title={volume.labels}>{volume.labels}</td><td><div className="container-resource-actions"><button type="button" className="container-table-action" disabled={Boolean(actingKey)} onClick={() => void executeVolumeInspect(volume)}>{actingKey === `volume-inspect:${volume.name}` ? t('container.ui.reading', language) : t('container.ui.inspect', language)}</button><button type="button" className="container-table-danger" disabled={Boolean(actingKey)} onClick={() => setPendingAction({ kind: 'volume', action: 'remove', volume })}>{actingKey === `volume-remove:${volume.name}` ? t('container.ui.removing', language) : t('container.action.remove', language)}</button></div></td></tr>)}</tbody></table></div>
         </div>
       ) : null}
 
       {imagePruneDialogOpen ? createPortal(<div className="container-modal-overlay" role="presentation" onClick={() => { if (!pruningImages) setImagePruneDialogOpen(false); }}><div className="container-modal container-prune-modal" role="alertdialog" aria-modal="true" aria-labelledby="container-image-prune-title" onClick={(event) => event.stopPropagation()}><div id="container-image-prune-title" className="container-modal-title">{t('container.modal.pruneImages', language)}</div><div className="container-modal-message"><p>{t('container.modal.pruneImagesDescription', language)}</p></div>{imagePruneError ? <DismissibleAlert className="container-alert danger container-prune-alert" onDismiss={() => setImagePruneError('')} role="alert">{imagePruneError}</DismissibleAlert> : null}<div className="container-prune-options" role="radiogroup" aria-label={t('container.modal.pruneImages', language)}>{imagePruneOptions.map((option) => <label key={option.value} className={`container-prune-option ${imagePruneMode === option.value ? 'selected' : ''}`}><input type="radio" name="container-image-prune-mode" value={option.value} checked={imagePruneMode === option.value} disabled={pruningImages} onChange={() => { setImagePruneError(''); setImagePruneMode(option.value); }} /><span><strong>{t(option.labelId, language)}</strong><small>{t(option.descriptionId, language)}</small></span></label>)}</div><div className="container-command-preview container-prune-preview"><header><span>{t('container.ui.commandPreview', language)}</span><button type="button" className="container-copy-btn" onClick={() => void copyToClipboard(imagePruneCommandPreview, t('container.ui.commandPreview', language))}>{t('container.ui.copy', language)}</button></header><pre>{imagePruneCommandPreview}</pre></div><div className="container-modal-actions"><button type="button" className="container-modal-btn" onClick={() => setImagePruneDialogOpen(false)} disabled={pruningImages}>{t('common.cancel', language)}</button><button type="button" className="container-modal-btn danger" onClick={() => void executeImagePrune()} disabled={pruningImages}>{pruningImages ? t('container.ui.pruning', language) : t('container.modal.confirmPrune', language)}</button></div></div></div>, document.body) : null}
 
-      {pendingAction ? createPortal(<div className="container-modal-overlay" role="presentation" onClick={() => setPendingAction(null)}><div className="container-modal" role="alertdialog" aria-modal="true" aria-labelledby="container-action-confirm-title" onClick={(event) => event.stopPropagation()}><div id="container-action-confirm-title" className="container-modal-title">{pendingAction.kind === 'container' ? t('container.modal.removeContainer', language) : t('container.modal.removeImage', language)}</div><div className="container-modal-message">{pendingAction.kind === 'container' ? <><p>{t('container.modal.targetContainer', language)}<strong>{pendingAction.container.name}</strong></p><p>{t('container.modal.containerDeleteWarning', language)}</p><code>{pendingAction.container.id}</code></> : <><p>{t('container.modal.targetImage', language)}<strong>{getImageReference(pendingAction.image)}</strong></p><p>{t('container.modal.imageDeleteWarning', language)}</p><code>{pendingAction.image.id}</code></>}</div><div className="container-modal-actions"><button type="button" className="container-modal-btn" onClick={() => setPendingAction(null)}>{t('common.cancel', language)}</button><button type="button" className="container-modal-btn danger" onClick={() => { if (pendingAction.kind === 'container') void executeContainerAction(pendingAction.action, pendingAction.container); else void executeImageRemove(pendingAction.image); }}>{t('container.modal.confirmRemove', language)}</button></div></div></div>, document.body) : null}
+      {pendingAction ? createPortal(<div className="container-modal-overlay" role="presentation" onClick={() => setPendingAction(null)}><div className="container-modal" role="alertdialog" aria-modal="true" aria-labelledby="container-action-confirm-title" onClick={(event) => event.stopPropagation()}><div id="container-action-confirm-title" className="container-modal-title">{getPendingActionTitle()}</div><div className="container-modal-message">{pendingAction.kind === 'container' ? <><p>{t('container.modal.targetContainer', language)}<strong>{pendingAction.container.name}</strong></p><p>{t('container.modal.containerDeleteWarning', language)}</p><code>{pendingAction.container.id}</code></> : pendingAction.kind === 'image' ? <><p>{t('container.modal.targetImage', language)}<strong>{getImageReference(pendingAction.image)}</strong></p><p>{t('container.modal.imageDeleteWarning', language)}</p><code>{pendingAction.image.id}</code></> : pendingAction.kind === 'compose' ? <><p>{t('container.modal.targetCompose', language)}<strong>{pendingAction.project.name}</strong></p><p>{t('container.modal.composeDownWarning', language)}</p><code>{pendingAction.project.configFiles}</code></> : pendingAction.kind === 'network' ? <><p>{t('container.modal.targetNetwork', language)}<strong>{pendingAction.network.name}</strong></p><p>{t('container.modal.networkDeleteWarning', language)}</p><code>{pendingAction.network.id}</code></> : pendingAction.kind === 'network-prune' ? <><p>{t('container.modal.networkPruneWarning', language)}</p><code>{formatRuntimeCommand(runtime ?? 'docker', buildNetworkPruneArgs())}</code></> : pendingAction.kind === 'volume' ? <><p>{t('container.modal.targetVolume', language)}<strong>{pendingAction.volume.name}</strong></p><p>{t('container.modal.volumeDeleteWarning', language)}</p><code>{pendingAction.volume.mountpoint}</code></> : <><p>{t('container.modal.volumePruneWarning', language)}</p><code>{formatRuntimeCommand(runtime ?? 'docker', buildVolumePruneArgs())}</code></>}</div><div className="container-modal-actions"><button type="button" className="container-modal-btn" onClick={() => setPendingAction(null)}>{t('common.cancel', language)}</button><button type="button" className="container-modal-btn danger" disabled={Boolean(actingKey)} onClick={executePendingAction}>{actingKey ? t('container.ui.processing', language) : t('container.modal.confirmRemove', language)}</button></div></div></div>, document.body) : null}
       {sudoPrompt}
     </div>
   );

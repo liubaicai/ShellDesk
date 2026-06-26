@@ -49,6 +49,37 @@ export interface ContainerVolumeSummary {
   labels: string;
 }
 
+export interface ContainerComposeForm {
+  projectName: string;
+  workingDir: string;
+  configFile: string;
+  envFile: string;
+  services: string;
+  build: boolean;
+  pull: boolean;
+  removeOrphans: boolean;
+}
+
+export interface ContainerNetworkForm {
+  name: string;
+  driver: string;
+  subnet: string;
+  gateway: string;
+  ipRange: string;
+  labels: string;
+  options: string;
+  internal: boolean;
+  attachable: boolean;
+  ipv6: boolean;
+}
+
+export interface ContainerVolumeForm {
+  name: string;
+  driver: string;
+  labels: string;
+  options: string;
+}
+
 export interface RemoteContainerManagerProps {
   connectionId: string;
   systemType?: RemoteSystemType;
@@ -137,7 +168,13 @@ export type ContainerFilter = 'all' | ContainerState;
 export type DetailTab = 'summary' | 'config' | 'logs' | 'inspect' | 'exec';
 export type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'kill' | 'remove';
 export type ImagePruneMode = 'dangling' | 'unused';
+export type ComposeProjectAction = 'up' | 'start' | 'stop' | 'restart' | 'pull' | 'down';
 
 export type PendingAction =
   | { kind: 'container'; action: 'remove'; container: ContainerSummary }
-  | { kind: 'image'; action: 'remove'; image: ImageSummary };
+  | { kind: 'image'; action: 'remove'; image: ImageSummary }
+  | { kind: 'compose'; action: 'down'; project: ComposeProjectSummary }
+  | { kind: 'network'; action: 'remove'; network: ContainerNetworkSummary }
+  | { kind: 'network-prune' }
+  | { kind: 'volume'; action: 'remove'; volume: ContainerVolumeSummary }
+  | { kind: 'volume-prune' };

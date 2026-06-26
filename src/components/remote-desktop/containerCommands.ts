@@ -2,7 +2,24 @@ import { t, type AppLanguage } from '../../i18n';
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
 import { shellSingleQuote } from './shellUtils';
 import { getStateLabel, formatShortId } from './containerParsers';
-import type { ContainerAction, ContainerConfigForm, ContainerDetail, ContainerRuntime, ContainerRunForm, ContainerSummary, ContainerTroubleshooting, ImagePruneMode, ImageSummary } from './containerTypes';
+import type {
+  ComposeProjectAction,
+  ComposeProjectSummary,
+  ContainerAction,
+  ContainerComposeForm,
+  ContainerConfigForm,
+  ContainerDetail,
+  ContainerNetworkSummary,
+  ContainerNetworkForm,
+  ContainerRuntime,
+  ContainerRunForm,
+  ContainerSummary,
+  ContainerTroubleshooting,
+  ContainerVolumeForm,
+  ContainerVolumeSummary,
+  ImagePruneMode,
+  ImageSummary,
+} from './containerTypes';
 const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
 const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
 const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
@@ -282,6 +299,135 @@ export function buildImagePruneArgs(mode: ImagePruneMode) {
     args.push('--all');
   }
   return args;
+}
+function assertCliName(value: string, label: string, language: AppLanguage) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    throw new Error(t('container.error.resourceNameRequired', language, { field: label }));
+  }
+  if (/\s/u.test(normalizedValue)) {
+    throw new Error(t('container.error.invalidResourceName', language, { field: label }));
+  }
+  return normalizedValue;
+}
+function appendMultilineFlags(args: string[], flag: string, value: string) {
+  parseMultilineValues(value).forEach((item) => args.push(flag, item));
+}
+function appendComposeContext(args: string[], projectName: string, workingDir: string, configFiles: string) {
+  const normalizedProjectName = projectName.trim();
+  const normalizedWorkingDir = workingDir.trim();
+  const configFileList = configFiles
+    .split(/[\r\n,]+/u)
+    .map((item) => item.trim())
+    .filter((item) => item && item !== '-');
+  if (normalizedWorkingDir && normalizedWorkingDir !== '-') {
+    args.push('--project-directory', normalizedWorkingDir);
+  }
+  configFileList.forEach((configFile) => args.push('-f', configFile));
+  if (normalizedProjectName) {
+    args.push('-p', normalizedProjectName);
+  }
+}
+export function buildComposeUpArgs(form: ContainerComposeForm, language: AppLanguage) {
+  const args = ['compose'];
+  const projectName = form.projectName.trim();
+  const configFile = form.configFile.trim();
+  if (projectName && !/^[a-z0-9][a-z0-9_-]*$/u.test(projectName)) {
+    throw new Error(t('container.error.invalidComposeProject', language));
+  }
+  if (!configFile) {
+    throw new Error(t('container.error.composeFileRequired', language));
+  }
+  appendComposeContext(args, projectName, form.workingDir, configFile);
+  const envFile = form.envFile.trim();
+  if (envFile) {
+    args.push('--env-file', envFile);
+  }
+  args.push('up', '-d');
+  if (form.build) {
+    args.push('--build');
+  }
+  if (form.pull) {
+    args.push('--pull', 'always');
+  }
+  if (form.removeOrphans) {
+    args.push('--remove-orphans');
+  }
+  args.push(...parseContainerCliTokens(form.services, t('container.ui.composeServices', language), language));
+  return args;
+}
+export function buildComposeProjectActionArgs(project: ComposeProjectSummary, action: ComposeProjectAction) {
+  const args = ['compose'];
+  appendComposeContext(args, project.name, project.workingDir, project.configFiles);
+  if (action === 'up') {
+    args.push('up', '-d');
+  } else {
+    args.push(action);
+  }
+  return args;
+}
+export function buildNetworkCreateArgs(form: ContainerNetworkForm, language: AppLanguage) {
+  const name = assertCliName(form.name, t('container.ui.networkName', language), language);
+  const args = ['network', 'create'];
+  const driver = form.driver.trim();
+  if (driver) {
+    args.push('--driver', driver);
+  }
+  const subnet = form.subnet.trim();
+  const gateway = form.gateway.trim();
+  const ipRange = form.ipRange.trim();
+  if (subnet) {
+    args.push('--subnet', subnet);
+  }
+  if (gateway) {
+    args.push('--gateway', gateway);
+  }
+  if (ipRange) {
+    args.push('--ip-range', ipRange);
+  }
+  if (form.internal) {
+    args.push('--internal');
+  }
+  if (form.attachable) {
+    args.push('--attachable');
+  }
+  if (form.ipv6) {
+    args.push('--ipv6');
+  }
+  appendMultilineFlags(args, '--label', form.labels);
+  appendMultilineFlags(args, '--opt', form.options);
+  args.push(name);
+  return args;
+}
+export function buildVolumeCreateArgs(form: ContainerVolumeForm, language: AppLanguage) {
+  const name = assertCliName(form.name, t('container.ui.volumeName', language), language);
+  const args = ['volume', 'create'];
+  const driver = form.driver.trim();
+  if (driver) {
+    args.push('--driver', driver);
+  }
+  appendMultilineFlags(args, '--label', form.labels);
+  appendMultilineFlags(args, '--opt', form.options);
+  args.push(name);
+  return args;
+}
+export function buildNetworkRemoveArgs(network: ContainerNetworkSummary) {
+  return ['network', 'rm', network.name];
+}
+export function buildNetworkInspectArgs(network: ContainerNetworkSummary) {
+  return ['network', 'inspect', network.name];
+}
+export function buildNetworkPruneArgs() {
+  return ['network', 'prune', '--force'];
+}
+export function buildVolumeRemoveArgs(volume: ContainerVolumeSummary) {
+  return ['volume', 'rm', volume.name];
+}
+export function buildVolumeInspectArgs(volume: ContainerVolumeSummary) {
+  return ['volume', 'inspect', volume.name];
+}
+export function buildVolumePruneArgs() {
+  return ['volume', 'prune', '--force'];
 }
 export function buildContainerConfigCommandGroups(containerId: string, form: ContainerConfigForm, detail: ContainerDetail, language: AppLanguage) {
   const groups: string[][] = [];
