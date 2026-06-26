@@ -248,10 +248,19 @@
   font-size: 12px;
 }
 
-.frp-config-preview,
+.frp-config-preview {
+  min-height: 220px;
+  flex: 0 0 260px;
+  overflow: auto;
+}
+
 .frp-log-viewer {
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.frp-config-preview,
+.frp-log-viewer {
   border: 1px solid var(--frp-border);
   border-radius: 8px;
   padding: 10px;

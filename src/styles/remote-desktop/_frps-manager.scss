@@ -249,10 +249,19 @@
   font-size: 12px;
 }
 
-.frps-config-preview,
+.frps-config-preview {
+  min-height: 220px;
+  flex: 0 0 260px;
+  overflow: auto;
+}
+
 .frps-log-viewer {
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.frps-config-preview,
+.frps-log-viewer {
   border: 1px solid var(--frps-border);
   border-radius: 8px;
   padding: 10px;
