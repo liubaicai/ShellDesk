@@ -1,0 +1,448 @@
+.frps-manager {
+  --frps-bg: #0f1118;
+  --frps-panel: rgba(24, 27, 38, 0.92);
+  --frps-border: rgba(154, 174, 206, 0.18);
+  --frps-text: #eef4ff;
+  --frps-muted: #9daabe;
+  --frps-accent: #6ec6a6;
+  --frps-blue: #7bb7ff;
+  --frps-danger: #ff8fa3;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(16, 20, 30, 0.98), rgba(9, 12, 18, 0.98)), var(--frps-bg);
+  color: var(--frps-text);
+}
+
+.frps-toolbar,
+.frps-tabs,
+.frps-panel-head,
+.frps-preview-head,
+.frps-modal-head,
+.frps-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.frps-toolbar {
+  min-height: 56px;
+  border-bottom: 1px solid var(--frps-border);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.frps-status {
+  display: grid;
+  min-width: 210px;
+  gap: 2px;
+}
+
+.frps-status span,
+.frps-section-head span,
+.frps-panel-head span {
+  color: var(--frps-muted);
+  font-size: 11px;
+  font-weight: 740;
+}
+
+.frps-status strong {
+  color: var(--frps-blue);
+  font-size: 14px;
+  font-weight: 860;
+}
+
+.frps-status.running strong {
+  color: var(--frps-accent);
+}
+
+.frps-status.missing strong {
+  color: #ffd27a;
+}
+
+.frps-toolbar button,
+.frps-preview-head button,
+.frps-tabs button,
+.frps-panel-head button,
+.frps-proxies-table button,
+.frps-settings button,
+.frps-install-panel button,
+.frps-modal button {
+  height: 30px;
+  border: 1px solid var(--frps-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #dce7f8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.frps-toolbar button:hover:not(:disabled),
+.frps-preview-head button:hover:not(:disabled),
+.frps-tabs button:hover:not(:disabled),
+.frps-tabs button.active,
+.frps-panel-head button:hover:not(:disabled),
+.frps-settings button:hover:not(:disabled),
+.frps-modal button:hover:not(:disabled) {
+  border-color: rgba(110, 198, 166, 0.34);
+  background: rgba(110, 198, 166, 0.12);
+  color: var(--frps-text);
+}
+
+.frps-toolbar button.primary,
+.frps-panel-head button.primary,
+.frps-install-panel button.primary,
+.frps-modal button.primary {
+  border-color: rgba(110, 198, 166, 0.38);
+  background: rgba(110, 198, 166, 0.16);
+  color: #e7fff5;
+}
+
+.frps-proxies-table button.danger {
+  border-color: rgba(255, 143, 163, 0.28);
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--frps-danger);
+}
+
+.frps-toolbar button:disabled,
+.frps-panel-head button:disabled,
+.frps-settings button:disabled,
+.frps-install-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.frps-alert {
+  margin: 8px 10px 0;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.frps-alert.danger {
+  border-color: rgba(255, 143, 163, 0.24);
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--frps-danger);
+}
+
+.frps-alert.info {
+  border-color: rgba(123, 183, 255, 0.24);
+  background: rgba(123, 183, 255, 0.1);
+  color: var(--frps-blue);
+}
+
+.frps-install-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 10px 0;
+  border: 1px solid rgba(255, 210, 122, 0.28);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 210, 122, 0.14), rgba(110, 198, 166, 0.06)),
+    rgba(20, 22, 30, 0.92);
+  color: #ffe3aa;
+  box-shadow: inset 3px 0 0 rgba(255, 210, 122, 0.72);
+}
+
+.frps-install-panel::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ffd27a;
+  box-shadow: 0 0 0 4px rgba(255, 210, 122, 0.12);
+}
+
+.frps-install-panel strong {
+  flex: 0 0 auto;
+  color: #fff3cf;
+  font-size: 13px;
+  font-weight: 860;
+}
+
+.frps-install-panel span {
+  flex: 1 1 auto;
+  color: #e8d4a6;
+  font-size: 12px;
+}
+
+.frps-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.frps-config,
+.frps-panel,
+.frps-settings {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--frps-border);
+  border-radius: 8px;
+  background: var(--frps-panel);
+}
+
+.frps-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.frps-section-head,
+.frps-preview-head,
+.frps-panel-head {
+  justify-content: space-between;
+}
+
+.frps-section-head strong,
+.frps-preview-head strong,
+.frps-panel-head strong,
+.frps-modal-head strong {
+  font-size: 13px;
+  font-weight: 860;
+}
+
+.frps-config label,
+.frps-settings label,
+.frps-modal label {
+  display: grid;
+  gap: 5px;
+  color: var(--frps-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.frps-config input,
+.frps-config select,
+.frps-settings input,
+.frps-settings select,
+.frps-modal input,
+.frps-modal select,
+.frps-modal textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--frps-border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgba(5, 7, 12, 0.5);
+  color: var(--frps-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.frps-config-preview,
+.frps-log-viewer {
+  min-height: 0;
+  flex: 1 1 auto;
+  border: 1px solid var(--frps-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(5, 7, 12, 0.58);
+  color: #dce8f8;
+  font: 12px/1.5 "SFMono-Regular", Consolas, monospace;
+  resize: none;
+}
+
+.frps-main,
+.frps-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.frps-tabs {
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+}
+
+.frps-panel {
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.frps-table-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  margin-top: 10px;
+}
+
+.frps-proxies-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.frps-proxies-table th,
+.frps-proxies-table td {
+  border-bottom: 1px solid rgba(154, 174, 206, 0.12);
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.frps-proxies-table th {
+  color: var(--frps-muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.frps-proxies-table td {
+  color: #edf4ff;
+}
+
+.frps-proxies-table td:last-child:has(button) {
+  display: flex;
+  gap: 6px;
+}
+
+.frps-empty {
+  color: var(--frps-muted) !important;
+  text-align: center !important;
+}
+
+.frps-proxy-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(157, 170, 190, 0.14);
+  color: var(--frps-muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.frps-proxy-status.active {
+  background: rgba(110, 198, 166, 0.14);
+  color: var(--frps-accent);
+}
+
+.frps-proxy-status.error {
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--frps-danger);
+}
+
+.frps-proxy-status.inactive {
+  background: rgba(255, 210, 122, 0.1);
+  color: #ffd27a;
+}
+
+.frps-log-viewer {
+  overflow: auto;
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+}
+
+.frps-settings {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.frps-checkbox {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.frps-checkbox input {
+  width: auto;
+}
+
+.frps-modal-backdrop {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.54);
+}
+
+.frps-modal {
+  display: grid;
+  width: min(520px, calc(100vw - 28px));
+  max-height: calc(100vh - 48px);
+  gap: 12px;
+  overflow: auto;
+  border: 1px solid var(--frps-border);
+  border-radius: 10px;
+  padding: 14px;
+  background: #171b25;
+  color: var(--frps-text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+}
+
+.frps-modal textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.frps-modal-head,
+.frps-modal-actions {
+  justify-content: space-between;
+}
+
+@media (max-width: 860px) {
+  .frps-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .frps-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .frps-config,
+  .frps-panel {
+    min-height: 360px;
+  }
+}
+
+[data-theme="light"] .frps-manager {
+  --frps-bg: #f3f7fb;
+  --frps-panel: rgba(255, 255, 255, 0.94);
+  --frps-border: rgba(53, 77, 112, 0.18);
+  --frps-text: #1d2838;
+  --frps-muted: #627188;
+  --frps-accent: #208b71;
+  --frps-blue: #2169b6;
+  --frps-danger: #be3f5b;
+  background: linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(234, 240, 248, 0.98)), var(--frps-bg);
+}
+
+[data-theme="light"] .frps-install-panel {
+  border-color: rgba(177, 118, 24, 0.28);
+  background:
+    linear-gradient(90deg, rgba(255, 218, 145, 0.42), rgba(221, 248, 239, 0.44)),
+    rgba(255, 255, 255, 0.92);
+  color: #6f4d14;
+  box-shadow: inset 3px 0 0 rgba(204, 132, 25, 0.68);
+}
+
+[data-theme="light"] .frps-install-panel strong {
+  color: #68450f;
+}
+
+[data-theme="light"] .frps-install-panel span {
+  color: #725d36;
+}

@@ -180,6 +180,7 @@ const desktopAppAssetContracts = {
   settings: { component: 'RemoteSettings', style: 'settings' },
   sqlite: { component: 'RemoteSqlite', style: 'sqlite' },
   'frp-manager': { component: 'RemoteFrpManager', style: 'frp-manager' },
+  'frps-manager': { component: 'RemoteFrpsManager', style: 'frps-manager' },
 };
 
 const remoteDesktopSource = readWorkspaceFile('src/RemoteDesktopShell.tsx');
