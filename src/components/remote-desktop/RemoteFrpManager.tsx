@@ -192,7 +192,7 @@ function RemoteFrpManager({ connectionId, systemType }: FrpManagerProps) {
         await refreshRuntimeStatus(nextStatus);
         setNotice(tCurrent('auto.frpManager.detectDone'));
       } else {
-        setNotice(tCurrent('auto.frpManager.detectNone'));
+        setNotice('');
       }
     } catch (caughtError) {
       setError(getErrorMessage(caughtError));
@@ -226,14 +226,15 @@ function RemoteFrpManager({ connectionId, systemType }: FrpManagerProps) {
     setError('');
     setNotice('');
     try {
+      const currentStatus = statusRef.current;
       const command = action === 'start'
-        ? createFrpcStartCommand(isWindowsHost, status.serviceMode, status.configPath)
+        ? createFrpcStartCommand(isWindowsHost, currentStatus.serviceMode, currentStatus.configPath)
         : action === 'stop'
-          ? createFrpcStopCommand(isWindowsHost, status.serviceMode, status.configPath)
-          : createFrpcRestartCommand(isWindowsHost, status.serviceMode, status.configPath);
+          ? createFrpcStopCommand(isWindowsHost, currentStatus.serviceMode, currentStatus.configPath)
+          : createFrpcRestartCommand(isWindowsHost, currentStatus.serviceMode, currentStatus.configPath);
       const result = await runCmd(connectionId, command);
       if (result.code !== 0) throw new Error(result.stderr || result.stdout || tCurrent('auto.frpManager.actionFailed'));
-      await refreshRuntimeStatus(status);
+      await refreshRuntimeStatus(statusRef.current);
       setNotice(action === 'start' ? tCurrent('auto.frpManager.started') : action === 'stop' ? tCurrent('auto.frpManager.stopped') : tCurrent('auto.frpManager.restarted'));
     } catch (caughtError) {
       setError(getErrorMessage(caughtError));
@@ -247,14 +248,15 @@ function RemoteFrpManager({ connectionId, systemType }: FrpManagerProps) {
     setError('');
     setNotice('');
     try {
-      const result = await runCmd(connectionId, createFrpcWriteConfigCommand(status.configPath, tomlPreview));
+      const currentStatus = statusRef.current;
+      const result = await runCmd(connectionId, createFrpcWriteConfigCommand(currentStatus.configPath, tomlPreview));
       if (result.code !== 0) throw new Error(result.stderr || result.stdout || tCurrent('auto.frpManager.configSaveFailed'));
-      saveProfile(status);
-      if (restartAfterSave && status.running) {
-        await runCmd(connectionId, createFrpcRestartCommand(isWindowsHost, status.serviceMode, status.configPath));
-        await refreshRuntimeStatus(status);
+      saveProfile(currentStatus);
+      if (restartAfterSave && currentStatus.running) {
+        await runCmd(connectionId, createFrpcRestartCommand(isWindowsHost, currentStatus.serviceMode, currentStatus.configPath));
+        await refreshRuntimeStatus(statusRef.current);
       }
-      setNotice(restartAfterSave && status.running ? tCurrent('auto.frpManager.configSavedRestart') : tCurrent('auto.frpManager.configSaved'));
+      setNotice(restartAfterSave && currentStatus.running ? tCurrent('auto.frpManager.configSavedRestart') : tCurrent('auto.frpManager.configSaved'));
     } catch (caughtError) {
       setError(getErrorMessage(caughtError));
     } finally {
@@ -301,7 +303,8 @@ function RemoteFrpManager({ connectionId, systemType }: FrpManagerProps) {
     setActing('autostart');
     setError('');
     try {
-      const result = await runCmd(connectionId, createFrpcEnableAutostartCommand(isWindowsHost, status.serviceMode, status.configPath));
+      const currentStatus = statusRef.current;
+      const result = await runCmd(connectionId, createFrpcEnableAutostartCommand(isWindowsHost, currentStatus.serviceMode, currentStatus.configPath));
       if (result.code !== 0) throw new Error(result.stderr || result.stdout || tCurrent('auto.frpManager.autostartFailed'));
       setNotice(tCurrent('auto.frpManager.autostartDone'));
     } catch (caughtError) {

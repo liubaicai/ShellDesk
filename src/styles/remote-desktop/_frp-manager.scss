@@ -119,6 +119,26 @@
 
 .frp-alert {
   margin: 8px 10px 0;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.frp-alert.danger {
+  border-color: rgba(255, 143, 163, 0.24);
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--frp-danger);
+}
+
+.frp-alert.info {
+  border-color: rgba(123, 183, 255, 0.24);
+  background: rgba(123, 183, 255, 0.1);
+  color: var(--frp-blue);
 }
 
 .frp-install-panel {
@@ -126,11 +146,31 @@
   align-items: center;
   gap: 12px;
   margin: 10px 10px 0;
-  border: 1px solid rgba(255, 210, 122, 0.24);
+  border: 1px solid rgba(255, 210, 122, 0.28);
   border-radius: 8px;
-  padding: 10px 12px;
-  background: rgba(255, 210, 122, 0.08);
+  padding: 12px 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 210, 122, 0.14), rgba(110, 198, 166, 0.06)),
+    rgba(20, 22, 30, 0.92);
   color: #ffe3aa;
+  box-shadow: inset 3px 0 0 rgba(255, 210, 122, 0.72);
+}
+
+.frp-install-panel::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ffd27a;
+  box-shadow: 0 0 0 4px rgba(255, 210, 122, 0.12);
+}
+
+.frp-install-panel strong {
+  flex: 0 0 auto;
+  color: #fff3cf;
+  font-size: 13px;
+  font-weight: 860;
 }
 
 .frp-install-panel span {
@@ -375,4 +415,33 @@
   .frp-panel {
     min-height: 360px;
   }
+}
+
+[data-theme="light"] .frp-manager {
+  --frp-bg: #f3f7fb;
+  --frp-panel: rgba(255, 255, 255, 0.94);
+  --frp-border: rgba(53, 77, 112, 0.18);
+  --frp-text: #1d2838;
+  --frp-muted: #627188;
+  --frp-accent: #208b71;
+  --frp-blue: #2169b6;
+  --frp-danger: #be3f5b;
+  background: linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(234, 240, 248, 0.98)), var(--frp-bg);
+}
+
+[data-theme="light"] .frp-install-panel {
+  border-color: rgba(177, 118, 24, 0.28);
+  background:
+    linear-gradient(90deg, rgba(255, 218, 145, 0.42), rgba(221, 248, 239, 0.44)),
+    rgba(255, 255, 255, 0.92);
+  color: #6f4d14;
+  box-shadow: inset 3px 0 0 rgba(204, 132, 25, 0.68);
+}
+
+[data-theme="light"] .frp-install-panel strong {
+  color: #68450f;
+}
+
+[data-theme="light"] .frp-install-panel span {
+  color: #725d36;
 }
