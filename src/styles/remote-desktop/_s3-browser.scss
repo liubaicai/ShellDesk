@@ -138,6 +138,70 @@
   color: var(--s3-accent);
 }
 
+.s3-tool-help-row {
+  display: grid;
+  gap: 8px;
+  margin: 8px 10px 0;
+}
+
+.s3-tool-help {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 214, 102, 0.22);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 214, 102, 0.08);
+  color: #f4d68b;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.s3-tool-help strong {
+  flex: 0 0 auto;
+  color: #ffe2a6;
+}
+
+.s3-tool-help button {
+  flex: 0 0 auto;
+  height: 28px;
+  border: 1px solid rgba(255, 214, 102, 0.28);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: rgba(255, 214, 102, 0.1);
+  color: #fff0c7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 820;
+}
+
+.s3-tool-help button.primary {
+  border-color: rgba(114, 183, 255, 0.36);
+  background: rgba(114, 183, 255, 0.14);
+  color: #e4f2ff;
+}
+
+.s3-tool-help button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.s3-tool-help-commands {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 3px;
+}
+
+.s3-tool-help-commands span {
+  color: #f8e7b3;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .s3-layout {
   display: grid;
   min-height: 0;

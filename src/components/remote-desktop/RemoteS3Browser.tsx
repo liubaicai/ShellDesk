@@ -132,6 +132,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   const [uploading, setUploading] = useState(false);
   const [detectingTools, setDetectingTools] = useState(false);
   const [installingMc, setInstallingMc] = useState(false);
+  const [showAwsInstallHelp, setShowAwsInstallHelp] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
@@ -226,14 +227,20 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
   const installMc = useCallback(async () => {
     try {
       setInstallingMc(true);
+      setError('');
+      setNotice(tCurrent('auto.remoteS3Browser.installingMc'));
+      setActiveTab('raw');
       const command = createS3EnsureMcCommand(isWindowsHost);
+      setRawOutput(`${tCurrent('auto.remoteS3Browser.installingMc')}\n\n${command.command}`);
       const result = await runCmd(connectionId, command);
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+      setRawOutput(output || tCurrent('auto.remoteS3Browser.mcInstallNoOutput'));
 
       if (result.code !== 0) {
-        throw new Error(result.stderr || result.stdout || tCurrent('auto.remoteS3Browser.mcInstallFailed'));
+        throw new Error(output || tCurrent('auto.remoteS3Browser.mcInstallFailed'));
       }
 
-      const versionLine = (result.stdout || '')
+      const versionLine = output
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean)
@@ -242,7 +249,9 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
       setNotice(`${tCurrent('auto.remoteS3Browser.mcReady')}${versionLine ? `: ${versionLine}` : ''}`);
       await detectTools();
     } catch (error) {
-      throw new Error(tCurrent('auto.remoteS3Browser.mcAutoInstallFailed', { value0: getErrorMessage(error) }));
+      const message = tCurrent('auto.remoteS3Browser.mcAutoInstallFailed', { value0: getErrorMessage(error) });
+      setError(message);
+      throw new Error(message);
     } finally {
       setInstallingMc(false);
     }
@@ -514,6 +523,34 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
     setNotice(tCurrent('auto.remoteS3Browser.1e8pmj5'));
   };
 
+  const cliToolHelp = toolsDetected && (!availableTools.includes('mc') || !availableTools.includes('aws')) ? (
+    <div className="s3-tool-help-row">
+      {!availableTools.includes('mc') ? (
+        <div className="s3-tool-help">
+          <strong>{tCurrent('auto.remoteS3Browser.mcNotFound')}</strong>
+          <button type="button" className="primary" onClick={() => { void installMc().catch((error) => setError(getErrorMessage(error))); }} disabled={installingMc}>
+            {installingMc ? tCurrent('auto.remoteS3Browser.installingMc') : tCurrent('auto.remoteS3Browser.oneClickInstallMc')}
+          </button>
+        </div>
+      ) : null}
+      {!availableTools.includes('aws') ? (
+        <div className="s3-tool-help">
+          <strong>{tCurrent('auto.remoteS3Browser.awsNotFound')}</strong>
+          <button type="button" onClick={() => setShowAwsInstallHelp((visible) => !visible)}>
+            {showAwsInstallHelp ? tCurrent('auto.remoteS3Browser.hideAwsInstallHelp') : tCurrent('auto.remoteS3Browser.showAwsInstallHelp')}
+          </button>
+          {showAwsInstallHelp ? (
+            <div className="s3-tool-help-commands">
+              <span>Linux: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install</span>
+              <span>macOS: curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg" && sudo installer -pkg AWSCLIV2.pkg -target /</span>
+              <span>Windows: https://aws.amazon.com/cli/</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <section className="s3-browser">
       <header className="s3-toolbar">
@@ -536,6 +573,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
 
       {error ? <DismissibleAlert className="s3-alert danger" onDismiss={() => setError('')} role="alert">{error}</DismissibleAlert> : null}
       {notice ? <DismissibleAlert className="s3-alert info" onDismiss={() => setNotice('')}>{notice}</DismissibleAlert> : null}
+      {cliToolHelp}
 
       <div className={`s3-layout ${connected ? 'connected' : ''}`}>
         {!connected ? (
@@ -544,22 +582,6 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
               <strong>{tCurrent('auto.remoteS3Browser.1qcyuf')}</strong>
               <span>{mode === 'mc' ? 'MinIO Client' : 'AWS CLI'} · {toolsDetected ? (modeDetected ? tCurrent('auto.remoteS3Browser.toolDetected') : tCurrent('auto.remoteS3Browser.toolNotInstalled')) : tCurrent('auto.remoteS3Browser.detectingButton')}</span>
             </div>
-            {toolsDetected && !availableTools.includes('mc') ? (
-              <div className="s3-tool-help">
-                <strong>{tCurrent('auto.remoteS3Browser.mcNotFound')}</strong>
-                <button type="button" className="primary" onClick={() => { void installMc().catch((error) => setError(getErrorMessage(error))); }} disabled={installingMc}>
-                  {installingMc ? tCurrent('auto.remoteS3Browser.installingMc') : tCurrent('auto.remoteS3Browser.oneClickInstallMc')}
-                </button>
-              </div>
-            ) : null}
-            {toolsDetected && !availableTools.includes('aws') ? (
-              <div className="s3-tool-help">
-                <strong>{tCurrent('auto.remoteS3Browser.awsNotFound')}</strong>
-                <span>Linux: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install</span>
-                <span>macOS: curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg" && sudo installer -pkg AWSCLIV2.pkg -target /</span>
-                <span>Windows: https://aws.amazon.com/cli/</span>
-              </div>
-            ) : null}
             <label>
               <span>Endpoint</span>
               <input value={config.endpoint} onChange={(event) => updateConfig('endpoint', event.target.value)} placeholder="http://127.0.0.1:9000" />

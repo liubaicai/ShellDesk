@@ -139,13 +139,14 @@ function createMcPrefix(config: S3ConnectionConfig, isWindowsHost: boolean) {
 export function createS3DetectCommand(isWindowsHost: boolean): RemoteCommandInput {
   if (isWindowsHost) {
     return powershellStdinCommand(`
+$env:PATH = "$env:USERPROFILE\\bin;$env:PATH"
 if (Get-Command mc -ErrorAction SilentlyContinue) { "mc" }
 if (Get-Command aws -ErrorAction SilentlyContinue) { "aws" }
 `);
   }
 
   return {
-    command: 'for tool in mc aws; do if command -v "$tool" >/dev/null 2>&1; then echo "$tool"; fi; done',
+    command: 'PATH="$HOME/.local/bin:$HOME/bin:$PATH"; for tool in mc aws; do if command -v "$tool" >/dev/null 2>&1; then echo "$tool"; fi; done',
   };
 }
 
@@ -203,6 +204,12 @@ else
   fi
   chmod +x "$DEST"
   echo "mc installed to $DEST"
+  for profile in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$profile" ] && ! grep -F 'export PATH="$HOME/.local/bin:$PATH"' "$profile" >/dev/null 2>&1; then
+      printf '\\n# Added by ShellDesk for MinIO Client\\nexport PATH="$HOME/.local/bin:$PATH"\\n' >> "$profile"
+    fi
+  done
+  echo "Added ~/.local/bin to shell startup files when available. Open a new terminal session if mc is not visible in an existing shell."
   "$DEST" --version
 fi`,
   };
