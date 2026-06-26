@@ -130,10 +130,10 @@ function createMcPrefix(config: S3ConnectionConfig, isWindowsHost: boolean) {
   const hostUrl = createMcHostUrl(config);
 
   if (isWindowsHost) {
-    return `$env:MC_HOST_shelldesk = ${powershellSingleQuote(hostUrl)}`;
+    return `$env:PATH = "$env:USERPROFILE\\bin;$env:PATH"\n$env:MC_HOST_shelldesk = ${powershellSingleQuote(hostUrl)}`;
   }
 
-  return `MC_HOST_shelldesk=${shellSingleQuote(hostUrl)} mc`;
+  return `PATH="$HOME/.local/bin:$PATH" MC_HOST_shelldesk=${shellSingleQuote(hostUrl)} mc`;
 }
 
 export function createS3DetectCommand(isWindowsHost: boolean): RemoteCommandInput {
@@ -146,6 +146,65 @@ if (Get-Command aws -ErrorAction SilentlyContinue) { "aws" }
 
   return {
     command: 'for tool in mc aws; do if command -v "$tool" >/dev/null 2>&1; then echo "$tool"; fi; done',
+  };
+}
+
+export function createS3EnsureMcCommand(isWindowsHost: boolean): RemoteCommandInput {
+  if (isWindowsHost) {
+    return powershellStdinCommand(`
+$env:PATH = "$env:USERPROFILE\\bin;$env:PATH"
+if (-not (Get-Command mc -ErrorAction SilentlyContinue)) {
+  $arch = "windows-amd64"
+  $url = "https://dl.min.io/client/mc/release/$arch/mc.exe"
+  $dest = "$env:USERPROFILE\\bin\\mc.exe"
+  New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+  Write-Host "Downloading mc from $url ..."
+  Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+  Write-Host "mc installed to $dest"
+}
+mc --version
+`);
+  }
+
+  return {
+    command: `if command -v mc >/dev/null 2>&1; then
+  mc --version
+else
+  export PATH="$HOME/.local/bin:$PATH"
+  if command -v mc >/dev/null 2>&1; then
+    mc --version
+    exit 0
+  fi
+  echo "mc not found, downloading..."
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64|amd64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    armv7l|armhf) ARCH="arm" ;;
+    *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+  esac
+  case "$OS" in
+    linux) PLATFORM="linux" ;;
+    darwin) PLATFORM="darwin" ;;
+    *) echo "Unsupported OS: $OS"; exit 1 ;;
+  esac
+  URL="https://dl.min.io/client/mc/release/\${PLATFORM}-\${ARCH}/mc"
+  DEST="$HOME/.local/bin/mc"
+  mkdir -p "$(dirname "$DEST")"
+  echo "Downloading mc from $URL ..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$URL" -o "$DEST"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "$URL" -O "$DEST"
+  else
+    echo "Neither curl nor wget found. Please install mc manually."
+    exit 1
+  fi
+  chmod +x "$DEST"
+  echo "mc installed to $DEST"
+  "$DEST" --version
+fi`,
   };
 }
 
@@ -343,214 +402,6 @@ export function parseS3Objects(mode: S3CliMode, stdout: string, prefix: string):
       }
     })
     .filter((item) => item.name && item.name !== '..');
-}
-
-function parseXml(value: unknown) {
-  if (typeof value !== 'string') {
-    throw new Error(tCurrent('auto.s3CliParsers.1lzmi3i'));
-  }
-
-  const document = new DOMParser().parseFromString(value, 'application/xml');
-  const parserError = document.querySelector('parsererror');
-
-  if (parserError) {
-    throw new Error(tCurrent('auto.s3CliParsers.1lzmi3i'));
-  }
-
-  const errorCode = document.querySelector('Error > Code')?.textContent;
-  const errorMessage = document.querySelector('Error > Message')?.textContent;
-  if (errorCode || errorMessage) {
-    throw new Error([errorCode, errorMessage].filter(Boolean).join(': '));
-  }
-
-  return document;
-}
-
-function textContent(parent: Element, selector: string) {
-  return parent.querySelector(selector)?.textContent ?? '';
-}
-
-export function parseS3BucketsResponse(response: unknown): S3BucketEntry[] {
-  const document = parseXml(response);
-
-  return Array.from(document.querySelectorAll('Bucket'))
-    .map((bucket) => ({
-      name: textContent(bucket, 'Name'),
-      createdAt: textContent(bucket, 'CreationDate') || undefined,
-    }))
-    .filter((bucket) => bucket.name);
-}
-
-export function parseS3ObjectsResponse(response: unknown, prefix: string): S3ObjectEntry[] {
-  const normalizedPrefix = validatePrefix(prefix);
-  const document = parseXml(response);
-  const prefixes = Array.from(document.querySelectorAll('CommonPrefixes'))
-    .map((row) => textContent(row, 'Prefix'))
-    .filter(Boolean)
-    .map((key) => ({
-      key,
-      name: key.slice(normalizedPrefix.length).replace(/\/$/, '') || key,
-      type: 'prefix' as const,
-    }));
-  const objects = Array.from(document.querySelectorAll('Contents'))
-    .map((row) => {
-      const key = textContent(row, 'Key');
-      const name = key.slice(normalizedPrefix.length).split('/').filter(Boolean).pop() ?? key;
-
-      return {
-        key,
-        name,
-        size: toNumber(textContent(row, 'Size')),
-        lastModified: textContent(row, 'LastModified') || undefined,
-        type: 'object' as const,
-      };
-    })
-    .filter((item) => item.key && item.key !== normalizedPrefix);
-
-  return [...prefixes, ...objects];
-}
-
-function encodePathSegment(value: string) {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-}
-
-function createS3Path(config: S3ConnectionConfig, bucket?: string, key?: string) {
-  const safeBucket = bucket ? validateBucket(bucket) : '';
-  const safeKey = key ? validateObjectKey(key).split('/').map(encodePathSegment).join('/') : '';
-
-  if (!safeBucket) return '/';
-  if (config.pathStyle) {
-    return `/${encodePathSegment(safeBucket)}${safeKey ? `/${safeKey}` : ''}`;
-  }
-  return safeKey ? `/${safeKey}` : '/';
-}
-
-function createS3TargetHost(config: S3ConnectionConfig, bucket?: string) {
-  const endpoint = new URL(normalizeEndpoint(config.endpoint));
-  const safeBucket = bucket ? validateBucket(bucket) : '';
-
-  if (safeBucket && !config.pathStyle) {
-    return `${safeBucket}.${endpoint.hostname}`;
-  }
-
-  return endpoint.hostname;
-}
-
-function createTunnelBase(config: S3ConnectionConfig, path: string, search = '', bucket?: string): ShellDeskHttpTunnelRequest {
-  const endpoint = new URL(normalizeEndpoint(config.endpoint));
-  return {
-    connectionId: '',
-    targetHost: createS3TargetHost(config, bucket),
-    targetPort: Number(endpoint.port || (endpoint.protocol === 'https:' ? 443 : 80)),
-    path: `${path}${search}`,
-    secure: endpoint.protocol === 'https:',
-  };
-}
-
-function getHostHeader(config: S3ConnectionConfig, bucket?: string) {
-  const endpoint = new URL(normalizeEndpoint(config.endpoint));
-  const defaultPort = endpoint.protocol === 'https:' ? '443' : '80';
-  const host = createS3TargetHost(config, bucket);
-  return endpoint.port && endpoint.port !== defaultPort ? `${host}:${endpoint.port}` : host;
-}
-
-function toHex(buffer: ArrayBuffer) {
-  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function sha256Hex(value: string) {
-  return toHex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value).buffer as ArrayBuffer));
-}
-
-async function hmac(key: ArrayBuffer, value: string) {
-  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value).buffer as ArrayBuffer);
-}
-
-async function createSigningKey(secretKey: string, dateStamp: string, region: string) {
-  const dateKey = await hmac(new TextEncoder().encode(`AWS4${secretKey}`).buffer as ArrayBuffer, dateStamp);
-  const regionKey = await hmac(dateKey, region);
-  const serviceKey = await hmac(regionKey, 's3');
-  return hmac(serviceKey, 'aws4_request');
-}
-
-async function createS3SignedHeaders(config: S3ConnectionConfig, method: 'GET' | 'DELETE', path: string, search = '', bucket?: string) {
-  const accessKey = validateCredential(config.accessKey, 'Access Key');
-  const secretKey = validateCredential(config.secretKey, 'Secret Key');
-  const region = config.region.trim() || 'us-east-1';
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-  const dateStamp = amzDate.slice(0, 8);
-  const host = getHostHeader(config, bucket);
-  const payloadHash = 'UNSIGNED-PAYLOAD';
-  const canonicalQuery = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  const canonicalQueryString = Array.from(canonicalQuery.entries())
-    .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey === rightKey ? leftValue.localeCompare(rightValue) : leftKey.localeCompare(rightKey))
-    .map(([key, value]) => `${encodePathSegment(key)}=${encodePathSegment(value)}`)
-    .join('&');
-  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
-  const canonicalRequest = [
-    method,
-    path,
-    canonicalQueryString,
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
-  const scope = `${dateStamp}/${region}/s3/aws4_request`;
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    scope,
-    await sha256Hex(canonicalRequest),
-  ].join('\n');
-  const signingKey = await createSigningKey(secretKey, dateStamp, region);
-  const signature = toHex(await hmac(signingKey, stringToSign));
-
-  return {
-    Authorization: `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-    Host: host,
-    'x-amz-content-sha256': payloadHash,
-    'x-amz-date': amzDate,
-  };
-}
-
-async function createS3TunnelRequest(
-  method: 'GET' | 'DELETE',
-  mode: S3CliMode,
-  config: S3ConnectionConfig,
-  path: string,
-  search = '',
-  bucket?: string,
-): Promise<ShellDeskHttpTunnelRequest> {
-  void mode;
-  const request = createTunnelBase(config, path, search, bucket);
-  request.headers = await createS3SignedHeaders(config, method, path, search, bucket);
-
-  return request;
-}
-
-export function createS3ListBucketsTunnelRequest(mode: S3CliMode, config: S3ConnectionConfig) {
-  return createS3TunnelRequest('GET', mode, config, '/');
-}
-
-export function createS3ListObjectsTunnelRequest(mode: S3CliMode, config: S3ConnectionConfig, bucket: string, prefix: string) {
-  const normalizedPrefix = validatePrefix(prefix);
-  const search = new URLSearchParams({
-    'list-type': '2',
-    delimiter: '/',
-    'max-keys': '500',
-  });
-  if (normalizedPrefix) {
-    search.set('prefix', normalizedPrefix);
-  }
-
-  return createS3TunnelRequest('GET', mode, config, createS3Path(config, bucket), `?${search.toString()}`, bucket);
-}
-
-export function createS3DeleteObjectTunnelRequest(mode: S3CliMode, config: S3ConnectionConfig, bucket: string, key: string) {
-  return createS3TunnelRequest('DELETE', mode, config, createS3Path(config, bucket, key), '', bucket);
 }
 
 export function createS3ObjectUrl(config: S3ConnectionConfig, bucket: string, key: string) {
