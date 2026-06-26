@@ -150,10 +150,10 @@ function encodeUtf8Base64(value: string) {
   return btoa(unescape(encodeURIComponent(value)));
 }
 
-function appendOptionalBoolean(lines: string[], key: keyof FrpcProxy, proxy: FrpcProxy) {
+function appendProxyTransportBoolean(lines: string[], fieldName: string, key: keyof FrpcProxy, proxy: FrpcProxy) {
   const value = proxy[key];
   if (typeof value === 'boolean') {
-    lines.push(`${key} = ${value ? 'true' : 'false'}`);
+    lines.push(`${fieldName} = ${value ? 'true' : 'false'}`);
   }
 }
 
@@ -186,8 +186,8 @@ export function generateFrpcToml(config: FrpcConfig) {
     if (proxy.secretKey) {
       lines.push(`secretKey = ${tomlString(proxy.secretKey)}`);
     }
-    appendOptionalBoolean(lines, 'encryption', proxy);
-    appendOptionalBoolean(lines, 'compression', proxy);
+    appendProxyTransportBoolean(lines, 'transport.useEncryption', 'encryption', proxy);
+    appendProxyTransportBoolean(lines, 'transport.useCompression', 'compression', proxy);
     if (proxy.locations?.length) {
       lines.push(`locations = ${tomlArray(proxy.locations)}`);
     }

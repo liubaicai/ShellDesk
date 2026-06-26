@@ -76,6 +76,7 @@ export function parseFrpcConfigToml(content: string): FrpcConfig {
 
   const finishProxy = () => {
     if (!currentProxy) return;
+    const proxyValues = currentProxy as Partial<FrpcProxy> & Record<string, unknown>;
     config.proxies.push({
       name: asString(currentProxy.name, 'proxy'),
       type: asProxyType(currentProxy.type),
@@ -85,8 +86,8 @@ export function parseFrpcConfigToml(content: string): FrpcConfig {
       customDomains: asStringArray(currentProxy.customDomains),
       subDomain: currentProxy.subDomain,
       secretKey: currentProxy.secretKey,
-      encryption: currentProxy.encryption,
-      compression: currentProxy.compression,
+      encryption: typeof proxyValues['transport.useEncryption'] === 'boolean' ? proxyValues['transport.useEncryption'] : currentProxy.encryption,
+      compression: typeof proxyValues['transport.useCompression'] === 'boolean' ? proxyValues['transport.useCompression'] : currentProxy.compression,
       locations: asStringArray(currentProxy.locations),
     });
   };
