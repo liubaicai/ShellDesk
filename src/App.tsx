@@ -53,7 +53,7 @@ const themePreloadStorageKey = 'shelldesk:theme-preload';
 const dismissedUpdateReadyVersionStorageKey = 'shelldesk:update-ready-dismissed-version';
 const ungroupedKey = '__ungrouped__';
 const hostPageSize = 20;
-const remoteDesktopAppCatalogVersion = 11;
+const remoteDesktopAppCatalogVersion = 12;
 const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'git-manager',
   'cert-manager',
@@ -68,6 +68,7 @@ const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'frps-manager',
   'disk-manager',
   'clickhouse',
+  'ai-chat',
 ];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,

@@ -177,6 +177,7 @@ const desktopAppAssetContracts = {
   'login-sessions': { component: 'RemoteLoginSessions', style: 'login-sessions' },
   'api-debugger': { component: 'RemoteApiDebugger', style: 'api-debugger' },
   procmanager: { component: 'RemoteProcessManager', style: 'process-manager' },
+  'ai-chat': { component: 'RemoteAiChat', style: 'ai-chat' },
   settings: { component: 'RemoteSettings', style: 'settings' },
   sqlite: { component: 'RemoteSqlite', style: 'sqlite' },
   'frp-manager': { component: 'RemoteFrpManager', style: 'frp-manager' },

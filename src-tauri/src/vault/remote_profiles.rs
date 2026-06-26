@@ -38,6 +38,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "login-sessions",
     "api-debugger",
     "procmanager",
+    "ai-chat",
     "settings",
     "sqlite",
 ];

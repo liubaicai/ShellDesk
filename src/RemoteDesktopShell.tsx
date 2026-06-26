@@ -19,6 +19,7 @@ import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
 
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
+const RemoteAiChat = lazy(() => import('./components/remote-desktop/RemoteAiChat'));
 const RemoteApacheManager = lazy(() => import('./components/remote-desktop/RemoteApacheManager'));
 const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
 const RemoteCertManager = lazy(() => import('./components/remote-desktop/RemoteCertManager'));
@@ -94,6 +95,7 @@ const desktopApps = [
   { key: 'login-sessions', labelId: 'desktop.app.loginSessions.label', descriptionId: 'desktop.app.loginSessions.description' },
   { key: 'api-debugger', labelId: 'desktop.app.apiDebugger.label', descriptionId: 'desktop.app.apiDebugger.description' },
   { key: 'procmanager', labelId: 'desktop.app.processManager.label', descriptionId: 'desktop.app.processManager.description' },
+  { key: 'ai-chat', labelId: 'desktop.app.aiChat.label', descriptionId: 'desktop.app.aiChat.description' },
   { key: 'settings', labelId: 'desktop.app.settings.label', descriptionId: 'desktop.app.settings.description' },
   { key: 'sqlite', labelId: 'desktop.app.sqlite.label', descriptionId: 'desktop.app.sqlite.description' },
 ] as const satisfies ReadonlyArray<{ key: string; labelId: MessageId; descriptionId: MessageId }>;
@@ -141,13 +143,14 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
   'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
   procmanager: new URL('./assets/desktop-icons/procmanager.png', import.meta.url).href,
+  'ai-chat': new URL('./assets/desktop-icons/ai-chat.png', import.meta.url).href,
   settings: new URL('./assets/desktop-icons/settings.png', import.meta.url).href,
   sqlite: new URL('./assets/desktop-icons/sqlite.png', import.meta.url).href,
 };
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 11;
+const desktopAppCatalogVersion = 12;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
@@ -163,6 +166,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'frps-manager',
   'disk-manager',
   'clickhouse',
+  'ai-chat',
 ];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
@@ -343,6 +347,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'login-sessions': { x: 124, y: 52, width: 1080, height: 640 },
   'api-debugger': { x: 118, y: 46, width: 1080, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
+  'ai-chat': { x: 160, y: 55, width: 800, height: 640 },
   settings: { x: 160, y: 55, width: 960, height: 580 },
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
 };
@@ -783,6 +788,15 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M6 3.75h8.25L18 7.5v12.75H6V3.75Z" />
         <path d="M14 4v4h4" />
         <path d="M8.75 10.5h5.5M8.75 14h6.5M8.75 17.5h3.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'ai-chat') {
+    return (
+      <svg {...iconProps}>
+        <path d="M5 5h14v10H8l-3 3V5Z" />
+        <path d="M8 9h8" />
       </svg>
     );
   }
@@ -2649,6 +2663,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'api-debugger') {
       return <RemoteApiDebugger connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'ai-chat') {
+      return <RemoteAiChat settings={settings} language={settings.language} onOpenSettings={() => openDesktopWindow('settings')} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {

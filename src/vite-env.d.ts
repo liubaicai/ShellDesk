@@ -212,6 +212,7 @@ type ShellDeskDesktopAppKey =
   | 'login-sessions'
   | 'api-debugger'
   | 'procmanager'
+  | 'ai-chat'
   | 'settings'
   | 'sqlite';
 

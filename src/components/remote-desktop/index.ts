@@ -1,4 +1,5 @@
 export { default as RemoteApiDebugger } from './RemoteApiDebugger';
+export { default as RemoteAiChat } from './RemoteAiChat';
 export { default as RemoteApacheManager } from './RemoteApacheManager';
 export { default as RemoteBrowser } from './RemoteBrowser';
 export { default as RemoteCertManager } from './RemoteCertManager';
