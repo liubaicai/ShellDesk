@@ -179,6 +179,7 @@ const desktopAppAssetContracts = {
   procmanager: { component: 'RemoteProcessManager', style: 'process-manager' },
   settings: { component: 'RemoteSettings', style: 'settings' },
   sqlite: { component: 'RemoteSqlite', style: 'sqlite' },
+  'frp-manager': { component: 'RemoteFrpManager', style: 'frp-manager' },
 };
 
 const remoteDesktopSource = readWorkspaceFile('src/RemoteDesktopShell.tsx');

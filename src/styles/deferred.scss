@@ -33,6 +33,7 @@
 @use "./remote-desktop/search-cluster" as *;
 @use "./remote-desktop/message-queue" as *;
 @use "./remote-desktop/s3-browser" as *;
+@use "./remote-desktop/frp-manager" as *;
 @use "./remote-desktop/firewall-manager" as *;
 @use "./remote-desktop/iptables-manager" as *;
 @use "./remote-desktop/security-audit" as *;
