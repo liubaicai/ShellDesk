@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DismissibleAlert from './DismissibleAlert';
 
+import { completeAiRequest, isAiConfigured, streamAiResponse } from '../../ai';
 import { t, translateStructuredText, type AppLanguage } from '../../i18n';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import MarkdownReport from './MarkdownReport';
@@ -201,40 +202,11 @@ function compactAiText(value: string | undefined, maxLength: number, language: A
 }
 
 function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLanguage) {
-  const aiControls = window.guiSSH?.ai;
-
-  if (!aiControls?.chat && !aiControls?.chatStream) {
-    return t('securityAudit.ai.noChat', language);
-  }
-
-  if (
-    !settings.aiApiBaseUrl.trim() ||
-    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
-    !settings.aiModel.trim()
-  ) {
+  if (!isAiConfigured(settings)) {
     return t('securityAudit.ai.configRequired', language);
   }
 
   return '';
-}
-
-function createAiChatRequest(
-  settings: ShellDeskAppSettings,
-  messages: ShellDeskAiChatMessage[],
-  temperature = 0.2,
-): ShellDeskAiChatRequest {
-  return {
-    provider: settings.aiProvider,
-    apiFormat: settings.aiApiFormat,
-    apiBaseUrl: settings.aiApiBaseUrl,
-    apiKey: settings.aiApiKey,
-    model: settings.aiModel,
-    temperature,
-    messages: messages.map((message) => ({
-      ...message,
-      content: translateStructuredText(message.content, settings.language),
-    })),
-  };
 }
 
 function createSecurityAiCatalog(definitions: SecurityCheckDefinition[]) {
@@ -365,41 +337,6 @@ function createSecurityAiReportDocument(report: string, generatedAt: string, pla
 function createSecurityAiReportFileName() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `shelldesk-security-ai-report-${timestamp}.md`;
-}
-
-function createStreamedTextUpdater(setText: (value: string) => void, fallbackText: string) {
-  let nextText = '';
-  let timerId: number | undefined;
-
-  const doFlush = () => {
-    timerId = undefined;
-    setText(nextText || fallbackText);
-  };
-
-  return {
-    append(chunk: string) {
-      nextText += chunk;
-
-      if (timerId !== undefined) {
-        return;
-      }
-
-      timerId = window.setTimeout(doFlush, 250);
-    },
-    cancel() {
-      if (timerId !== undefined) {
-        window.clearTimeout(timerId);
-        timerId = undefined;
-      }
-    },
-    flush() {
-      if (timerId !== undefined) {
-        window.clearTimeout(timerId);
-      }
-
-      doFlush();
-    },
-  };
 }
 
 function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: RemoteSecurityAuditProps) {
@@ -561,25 +498,14 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: 
       return;
     }
 
-    const aiControls = window.guiSSH?.ai;
-
-    if (!aiControls?.chat) {
-      setAiAuditPhase('error');
-      setAiAuditError(t('securityAudit.ai.noChat', language));
-      return;
-    }
-
     let plan: SecurityAiPlan;
 
     try {
-      const planResult = await aiControls.chat(createAiChatRequest(settings, [
-        {
-          role: 'system',
-          content: t('ai.security.plan.systemPrompt', language),
-        },
-        {
+      const planResult = await completeAiRequest(settings, {
+        systemPrompt: translateStructuredText(t('ai.security.plan.systemPrompt', language), settings.language),
+        messages: [{
           role: 'user',
-          content: [
+          content: translateStructuredText([
             t('securityAudit.ai.plan.host', language, { host: effectiveHostLabel }),
             t('securityAudit.ai.plan.systemType', language, { system: isWindowsHost ? 'Windows' : 'Linux/Unix' }),
             t('securityAudit.ai.plan.allowlist', language),
@@ -587,11 +513,12 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: 
             '',
             results.length ? t('securityAudit.ai.plan.currentSummary', language) : t('securityAudit.ai.plan.noSummary', language),
             ...results.map((result) => `- ${result.id}: ${result.status}/${result.severity} - ${result.summary}`),
-          ].join('\n'),
-        },
-      ], 0.1));
+          ].join('\n'), settings.language),
+        }],
+        temperature: 0.1,
+      });
 
-      plan = parseSecurityAiPlan(planResult.content, definitions, language);
+      plan = parseSecurityAiPlan(planResult, definitions, language);
     } catch (err) {
       setAiAuditPhase('error');
       setAiAuditError(t('securityAudit.ai.error.planFailed', language, { error: getErrorMessage(err) }));
@@ -630,14 +557,11 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: 
     const snapshotNote = evidence.omittedCount > 0
       ? t('securityAudit.ai.snapshot.partial', language, { included: evidence.includedCount, total: completedResults.length, omitted: evidence.omittedCount })
       : t('securityAudit.ai.snapshot.all', language, { included: evidence.includedCount });
-    const analysisRequest = createAiChatRequest(settings, [
-      {
-        role: 'system',
-        content: t('ai.security.report.systemPrompt', language),
-      },
-      {
-        role: 'user',
-        content: [
+    const analysisContext = {
+      systemPrompt: translateStructuredText(t('ai.security.report.systemPrompt', language), settings.language),
+      messages: [{
+        role: 'user' as const,
+        content: translateStructuredText([
           t('securityAudit.ai.report.userPrompt', language),
           '',
           t('securityAudit.ai.report.planLabel', language),
@@ -645,43 +569,27 @@ function RemoteSecurityAudit({ connectionId, settings, systemType, hostLabel }: 
           '',
           t('securityAudit.ai.report.dataLabel', language),
           evidence.text,
-        ].join('\n'),
-      },
-    ], 0.1);
+        ].join('\n'), settings.language),
+      }],
+      temperature: 0.1,
+    };
     let streamedContent = '';
-    const streamedTextUpdater = createStreamedTextUpdater(setAiAuditText, t('securityAudit.ai.report.generating', language));
 
     setAiAuditSnapshotNote(snapshotNote);
-    setAiAuditPhase(aiControls.chatStream ? 'streaming' : 'requesting');
+    setAiAuditPhase('streaming');
 
     try {
-      let resultContent = '';
-
-      if (aiControls.chatStream) {
-        try {
-          const result = await aiControls.chatStream(analysisRequest, {
-            onChunk: (chunk) => {
-              streamedContent += chunk;
-              streamedTextUpdater.append(chunk);
-            },
-          });
-          streamedTextUpdater.flush();
-          resultContent = result.content || streamedContent;
-        } catch (streamError) {
-          streamedTextUpdater.cancel();
-
-          if (streamedContent) {
-            throw streamError;
-          }
-
-          setAiAuditPhase('requesting');
-          const result = await aiControls.chat(analysisRequest);
-          resultContent = result.content;
+      const resultContent = await streamAiResponse(settings, analysisContext, (content) => {
+        streamedContent = content;
+        setAiAuditText(content || t('securityAudit.ai.report.generating', language));
+      }).catch(async (streamError) => {
+        if (streamedContent) {
+          throw streamError;
         }
-      } else {
-        const result = await aiControls.chat(analysisRequest);
-        resultContent = result.content;
-      }
+
+        setAiAuditPhase('requesting');
+        return completeAiRequest(settings, analysisContext);
+      });
 
       setAiAuditText(resultContent || t('securityAudit.ai.report.empty', language));
       setAiAuditGeneratedAt(generatedAt);

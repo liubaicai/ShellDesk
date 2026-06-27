@@ -1,11 +1,13 @@
 export {
   PiAgentService,
+  completeAiRequest,
   createContext,
   createMessageId,
   createModelsForSettings,
   getAiApiKey,
   getAiModel,
   isAiConfigured,
+  streamAiResponse,
 } from './PiAgentService';
 export {
   getDefaultChatPrompt,

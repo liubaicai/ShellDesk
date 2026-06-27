@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 
+import { completeAiRequest, isAiConfigured, streamAiResponse } from '../../ai';
 import { t, translateStructuredText, type AppLanguage } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
 import {
@@ -44,6 +45,14 @@ interface NotepadAiPanelProps {
   onApply: (action: Exclude<NotepadAiAction, { type: 'run_command' }>, selection: EditorSelectionSnapshot) => void;
   onClose: () => void;
 }
+
+type NotepadPiMessage = {
+  role: 'user' | 'assistant' | 'toolResult';
+  content: string;
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+};
 
 function useAiAutoScroll(
   isBusy: boolean,
@@ -136,7 +145,7 @@ export default function NotepadAiPanel({
     ].join('\n');
   }, [activeTab, cursorCol, cursorLine, includeAiFileContext, language, remoteEnvironment]);
 
-  const buildAiFileContextMessages = useCallback((): ShellDeskAiChatMessage[] => {
+  const buildAiFileContextMessages = useCallback((): NotepadPiMessage[] => {
     if (!includeAiFileContext) {
       return [];
     }
@@ -163,28 +172,40 @@ export default function NotepadAiPanel({
     }));
   }, [activeTab, includeAiFileContext, language]);
 
-  const createAiChatMessages = useCallback((
+  const createAiContext = useCallback((
     nextMessages: NotepadAiMessage[],
     selection: EditorSelectionSnapshot,
     options?: { environmentOverride?: string },
-  ): ShellDeskAiChatMessage[] => {
-    const recentMessages = nextMessages.slice(-MAX_AI_HISTORY_MESSAGES).map<ShellDeskAiChatMessage>((message) => ({
-      role: message.role === 'assistant' ? 'assistant' : 'user',
-      content: message.role === 'tool'
-        ? `${t('ai.tool.resultPrefix', language)}\n${message.content}`
-        : message.content,
-    }));
+  ): { systemPrompt: string; messages: NotepadPiMessage[]; temperature: number } => {
+    const recentMessages = nextMessages.slice(-MAX_AI_HISTORY_MESSAGES).map<NotepadPiMessage>((message) => {
+      if (message.role === 'tool') {
+        return {
+          role: 'toolResult',
+          toolCallId: message.id,
+          toolName: 'shelldesk',
+          content: `${t('ai.tool.resultPrefix', language)}\n${message.content}`,
+        };
+      }
+
+      return {
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: message.content,
+      };
+    });
     const fileContextMessages = buildAiFileContextMessages().map((message) => ({
       ...message,
       content: translateStructuredText(message.content, settings.language),
     }));
 
-    return [
-      { role: 'system', content: t('ai.notepad.systemPrompt', language) },
-      { role: 'user', content: translateStructuredText(buildAiContextMessage(selection, options), language) },
-      ...fileContextMessages,
-      ...recentMessages,
-    ];
+    return {
+      systemPrompt: translateStructuredText(t('ai.notepad.systemPrompt', language), language),
+      messages: [
+        { role: 'user', content: translateStructuredText(buildAiContextMessage(selection, options), language) },
+        ...fileContextMessages,
+        ...recentMessages,
+      ],
+      temperature: 0.2,
+    };
   }, [buildAiContextMessage, buildAiFileContextMessages, language, settings.language]);
 
   const runRemoteEnvironmentProbe = useCallback(async () => {
@@ -198,20 +219,7 @@ export default function NotepadAiPanel({
     selection: EditorSelectionSnapshot,
     options?: { environmentOverride?: string },
   ) => {
-    const aiControls = window.guiSSH?.ai;
-    const chat = aiControls?.chat;
-    const chatStream = aiControls?.chatStream;
-
-    if (!chat && !chatStream) {
-      setAiError(t('notepad.error.noAiChat', language));
-      return;
-    }
-
-    if (
-      !settings.aiApiBaseUrl.trim() ||
-      (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
-      !settings.aiModel.trim()
-    ) {
+    if (!isAiConfigured(settings)) {
       setAiError(t('notepad.error.aiConfigRequired', language));
       return;
     }
@@ -220,60 +228,41 @@ export default function NotepadAiPanel({
     setAiError('');
 
     try {
-      const chatRequest: ShellDeskAiChatRequest = {
-        provider: settings.aiProvider,
-        apiFormat: settings.aiApiFormat,
-        apiBaseUrl: settings.aiApiBaseUrl,
-        apiKey: settings.aiApiKey,
-        model: settings.aiModel,
-        temperature: 0.2,
-        messages: createAiChatMessages(nextMessages, selection, options),
-      };
+      const context = createAiContext(nextMessages, selection, options);
       const assistantMessageId = createNotepadAiMessageId();
       const assistantCreatedAt = new Date().toISOString();
       let streamedContent = '';
-      let resultContent = '';
 
-      if (chatStream) {
-        try {
-          const result = await chatStream(chatRequest, {
-            onChunk: (chunk) => {
-              streamedContent += chunk;
-              const partialContent = stripAiActionBlocks(streamedContent) || t('notepad.ai.generating', language);
-              const partialMessage: NotepadAiMessage = {
-                id: assistantMessageId,
-                role: 'assistant',
-                content: partialContent,
-                createdAt: assistantCreatedAt,
-              };
+      const updatePartialMessage = (content: string) => {
+        streamedContent = content;
+        const partialContent = stripAiActionBlocks(content) || t('notepad.ai.generating', language);
+        const partialMessage: NotepadAiMessage = {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: partialContent,
+          createdAt: assistantCreatedAt,
+        };
 
-              setAiMessages((currentMessages) => {
-                const existingIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
+        setAiMessages((currentMessages) => {
+          const existingIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
 
-                if (existingIndex >= 0) {
-                  return currentMessages.map((message) => (
-                    message.id === assistantMessageId ? { ...message, content: partialContent } : message
-                  ));
-                }
+          if (existingIndex >= 0) {
+            return currentMessages.map((message) => (
+              message.id === assistantMessageId ? { ...message, content: partialContent } : message
+            ));
+          }
 
-                return [...currentMessages, partialMessage];
-              });
-            },
-          });
-
-          resultContent = result.content || streamedContent;
-        } catch (streamError) {
-          if (streamedContent || !chat) {
+          return [...currentMessages, partialMessage];
+        });
+      };
+      const resultContent = await streamAiResponse(settings, context, updatePartialMessage)
+        .catch(async (streamError) => {
+          if (streamedContent) {
             throw streamError;
           }
 
-          const result = await chat(chatRequest);
-          resultContent = result.content;
-        }
-      } else if (chat) {
-        const result = await chat(chatRequest);
-        resultContent = result.content;
-      }
+          return completeAiRequest(settings, context);
+        });
 
       const action = parseAiAction(resultContent);
       const displayContent = stripAiActionBlocks(resultContent) || (action ? t('notepad.ai.actionReady', language) : resultContent);
@@ -293,13 +282,9 @@ export default function NotepadAiPanel({
       setIsAiBusy(false);
     }
   }, [
-    createAiChatMessages,
+    createAiContext,
     language,
-    settings.aiApiBaseUrl,
-    settings.aiApiFormat,
-    settings.aiApiKey,
-    settings.aiModel,
-    settings.aiProvider,
+    settings,
   ]);
 
   const handleAiSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {

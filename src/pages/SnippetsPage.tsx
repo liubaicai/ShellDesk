@@ -1,6 +1,7 @@
 import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useMemo, useRef, useState } from 'react';
 import { Code2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 
+import { completeAiRequest, isAiConfigured } from '../ai';
 import { isMacClient, keyEventToShortcut } from '../components/remote-desktop/terminalSnippetShortcuts';
 import { t, useCurrentAppLanguage, type AppLanguage } from '../i18n';
 
@@ -73,36 +74,11 @@ function closeSnippetCardMenu(target: HTMLElement) {
 }
 
 function getAiReadinessError(settings: ShellDeskAppSettings, language: ShellDeskAppSettings['language']) {
-  const aiControls = window.guiSSH?.ai;
-
-  if (!aiControls?.chat && !aiControls?.chatStream) {
-    return t('snippets.ai.noChat', language);
-  }
-
-  if (
-    !settings.aiApiBaseUrl.trim() ||
-    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
-    !settings.aiModel.trim()
-  ) {
+  if (!isAiConfigured(settings)) {
     return t('snippets.ai.configRequired', language);
   }
 
   return '';
-}
-
-function createAiChatRequest(
-  settings: ShellDeskAppSettings,
-  messages: ShellDeskAiChatMessage[],
-): ShellDeskAiChatRequest {
-  return {
-    provider: settings.aiProvider,
-    apiFormat: settings.aiApiFormat,
-    apiBaseUrl: settings.aiApiBaseUrl,
-    apiKey: settings.aiApiKey,
-    model: settings.aiModel,
-    temperature: 0.2,
-    messages,
-  };
 }
 
 function extractAiCommand(content: string) {
@@ -503,33 +479,28 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
       return;
     }
 
-    const aiControls = window.guiSSH!.ai!;
-    const messages: ShellDeskAiChatMessage[] = [
-      { role: 'system', content: t('ai.snippets.systemPrompt', language) },
-      {
-        role: 'user',
-        content: [
-          t('snippets.ai.contextHeader', language),
-          `language=${language}`,
-          `name=${snippetDraft.label.trim() || '-'}`,
-          `group=${snippetDraft.group.trim() || '-'}`,
-          `existingCommand=${snippetDraft.command.trim() || '-'}`,
-          '',
-          t('snippets.ai.userPromptHeader', language),
-          prompt || t('snippets.ai.defaultPrompt', language),
-        ].join('\n'),
-      },
-    ];
+    const systemPrompt = t('ai.snippets.systemPrompt', language);
+    const userPrompt = [
+      t('snippets.ai.contextHeader', language),
+      `language=${language}`,
+      `name=${snippetDraft.label.trim() || '-'}`,
+      `group=${snippetDraft.group.trim() || '-'}`,
+      `existingCommand=${snippetDraft.command.trim() || '-'}`,
+      '',
+      t('snippets.ai.userPromptHeader', language),
+      prompt || t('snippets.ai.defaultPrompt', language),
+    ].join('\n');
 
     setAiStatus('running');
     setAiError('');
 
     try {
-      const request = createAiChatRequest(settings, messages);
-      const result = aiControls.chatStream
-        ? await aiControls.chatStream(request)
-        : await aiControls.chat!(request);
-      const command = extractAiCommand(result.content);
+      const result = await completeAiRequest(settings, {
+        systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.2,
+      });
+      const command = extractAiCommand(result);
 
       if (!command) {
         throw new Error(t('snippets.ai.empty', language));

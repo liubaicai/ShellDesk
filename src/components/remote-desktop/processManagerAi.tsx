@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { completeAiRequest, isAiConfigured, streamAiResponse } from '../../ai';
 import { t, translateStructuredText, type AppLanguage } from '../../i18n';
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { compactAiField, formatCpu, formatMemory } from './processManagerParsers';
@@ -13,40 +14,11 @@ import type {
 const PROCESS_AI_SNAPSHOT_CHAR_LIMIT = 100000;
 
 function getAiReadinessError(settings: ShellDeskAppSettings, language: AppLanguage) {
-  const aiControls = window.guiSSH?.ai;
-
-  if (!aiControls?.chat && !aiControls?.chatStream) {
-    return t('process.error.noAiChat', language);
-  }
-
-  if (
-    !settings.aiApiBaseUrl.trim() ||
-    (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim()) ||
-    !settings.aiModel.trim()
-  ) {
+  if (!isAiConfigured(settings)) {
     return t('process.error.aiConfigRequired', language);
   }
 
   return '';
-}
-
-function createAiChatRequest(
-  settings: ShellDeskAppSettings,
-  messages: ShellDeskAiChatMessage[],
-  temperature = 0.2,
-): ShellDeskAiChatRequest {
-  return {
-    provider: settings.aiProvider,
-    apiFormat: settings.aiApiFormat,
-    apiBaseUrl: settings.aiApiBaseUrl,
-    apiKey: settings.aiApiKey,
-    model: settings.aiModel,
-    temperature,
-    messages: messages.map((message) => ({
-      ...message,
-      content: translateStructuredText(message.content, settings.language),
-    })),
-  };
 }
 
 function formatProcessAiLine(process: RemoteProcessEntry, isWindowsHost: boolean, index: number) {
@@ -147,37 +119,37 @@ function createAiReportFileName() {
   return `shelldesk-process-ai-report-${timestamp}.md`;
 }
 
-function createStreamedTextUpdater(setText: (value: string) => void, fallbackText: string) {
-  let nextText = '';
-  let timerId: number | undefined;
+function createThrottledTextUpdater(setText: (value: string) => void, fallbackText: string) {
+  let streamedContent = '';
+  let throttleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const doFlush = () => {
-    timerId = undefined;
-    setText(nextText || fallbackText);
+  const flush = () => {
+    throttleTimer = undefined;
+    setText(streamedContent || fallbackText);
   };
 
   return {
-    append(chunk: string) {
-      nextText += chunk;
+    update(content: string) {
+      streamedContent = content;
 
-      if (timerId !== undefined) {
+      if (throttleTimer) {
         return;
       }
 
-      timerId = window.setTimeout(doFlush, 250);
+      throttleTimer = setTimeout(flush, 150);
     },
     cancel() {
-      if (timerId !== undefined) {
-        window.clearTimeout(timerId);
-        timerId = undefined;
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = undefined;
       }
     },
     flush() {
-      if (timerId !== undefined) {
-        window.clearTimeout(timerId);
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
       }
 
-      doFlush();
+      flush();
     },
   };
 }
@@ -242,54 +214,51 @@ export function useProcessManagerAi({
       return;
     }
 
-    const aiControls = window.guiSSH?.ai;
     const snapshot = createProcessAiSnapshot(processes, isWindowsHost, language);
     const snapshotNote = snapshot.omittedCount > 0
       ? t('process.ai.snapshotNotePartial', language, { included: snapshot.includedCount, total: processes.length, omitted: snapshot.omittedCount })
       : t('process.ai.snapshotNoteAll', language, { included: snapshot.includedCount });
-    const request = createAiChatRequest(settings, [
-      { role: 'system', content: t('ai.process.report.systemPrompt', language) },
-      { role: 'user', content: [t('process.ai.report.userPrompt', language), '', snapshot.text].join('\n') },
-    ], 0.1);
+    const systemPrompt = translateStructuredText(t('ai.process.report.systemPrompt', language), settings.language);
+    const userPrompt = translateStructuredText([t('process.ai.report.userPrompt', language), '', snapshot.text].join('\n'), settings.language);
     let streamedContent = '';
-    const streamedTextUpdater = createStreamedTextUpdater(setAiReportText, t('process.ai.report.generating', language));
+    const throttledReportUpdate = createThrottledTextUpdater(setAiReportText, t('process.ai.report.generating', language));
 
     setAiReportSnapshotNote(snapshotNote);
-    setAiReportPhase(aiControls?.chatStream ? 'streaming' : 'requesting');
+    setAiReportPhase('streaming');
 
     try {
-      let resultContent = '';
+      const resultContent = await streamAiResponse(
+        settings,
+        {
+          systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: 0.1,
+        },
+        (content) => {
+          streamedContent = content;
+          throttledReportUpdate.update(content);
+        },
+      ).catch(async (streamError) => {
+        throttledReportUpdate.cancel();
 
-      if (aiControls?.chatStream) {
-        try {
-          const result = await aiControls.chatStream(request, {
-            onChunk: (chunk) => {
-              streamedContent += chunk;
-              streamedTextUpdater.append(chunk);
-            },
-          });
-          streamedTextUpdater.flush();
-          resultContent = result.content || streamedContent;
-        } catch (streamError) {
-          streamedTextUpdater.cancel();
-
-          if (streamedContent || !aiControls.chat) {
-            throw streamError;
-          }
-
-          setAiReportPhase('requesting');
-          const result = await aiControls.chat(request);
-          resultContent = result.content;
+        if (streamedContent) {
+          throw streamError;
         }
-      } else if (aiControls?.chat) {
-        const result = await aiControls.chat(request);
-        resultContent = result.content;
-      }
 
+        setAiReportPhase('requesting');
+        return completeAiRequest(settings, {
+          systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: 0.1,
+        });
+      });
+
+      throttledReportUpdate.flush();
       setAiReportText(resultContent || t('process.ai.report.empty', language));
       setAiReportGeneratedAt(new Date().toLocaleString(getShellDeskLocale()));
       setAiReportPhase('done');
     } catch (err) {
+      throttledReportUpdate.cancel();
       setAiReportPhase('error');
       setAiReportError(t('process.ai.requestFailed', language, { error: getErrorMessage(err) }));
     }
@@ -307,54 +276,54 @@ export function useProcessManagerAi({
       return;
     }
 
-    const aiControls = window.guiSSH?.ai;
     const detail = processDetail?.pid === selectedProcess.pid ? processDetail : null;
-    const request = createAiChatRequest(settings, [
-      { role: 'system', content: t('ai.process.insight.systemPrompt', language) },
-      {
-        role: 'user',
-        content: [
-          t('process.ai.insight.userPrompt', language),
-          '',
-          formatProcessContextForAi(selectedProcess, isWindowsHost, detail, selectedParent, selectedChildren, language),
-        ].join('\n'),
-      },
-    ], 0.2);
+    const systemPrompt = translateStructuredText(t('ai.process.insight.systemPrompt', language), settings.language);
+    const userPrompt = translateStructuredText([
+      t('process.ai.insight.userPrompt', language),
+      '',
+      formatProcessContextForAi(selectedProcess, isWindowsHost, detail, selectedParent, selectedChildren, language),
+    ].join('\n'), settings.language);
     let streamedContent = '';
+    const throttledInsightUpdate = createThrottledTextUpdater(
+      (content) => setProcessInsight({ pid: selectedProcess.pid, content }),
+      t('process.ai.insight.loading', language),
+    );
 
     setProcessInsightLoadingPid(selectedProcess.pid);
     setProcessInsight({ pid: selectedProcess.pid, content: t('process.ai.insight.loading', language) });
 
     try {
-      let resultContent = '';
+      const resultContent = await streamAiResponse(settings, {
+        systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.2,
+      }, (content) => {
+        streamedContent = content;
+        throttledInsightUpdate.update(content);
+      }).catch(async (streamError) => {
+        throttledInsightUpdate.cancel();
 
-      if (aiControls?.chatStream) {
-        try {
-          const result = await aiControls.chatStream(request, {
-            onChunk: (chunk) => {
-              streamedContent += chunk;
-              setProcessInsight({
-                pid: selectedProcess.pid,
-                content: streamedContent || t('process.ai.insight.loading', language),
-              });
-            },
-          });
-          resultContent = result.content || streamedContent;
-        } catch (streamError) {
-          if (streamedContent || !aiControls.chat) {
-            throw streamError;
-          }
-
-          const result = await aiControls.chat(request);
-          resultContent = result.content;
+        if (streamedContent) {
+          throw streamError;
         }
-      } else if (aiControls?.chat) {
-        const result = await aiControls.chat(request);
-        resultContent = result.content;
-      }
 
+        const fallbackContent = await completeAiRequest(settings, {
+          systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: 0.2,
+        });
+
+        if (!fallbackContent) {
+          throw streamError;
+        }
+
+        return fallbackContent;
+      });
+
+      throttledInsightUpdate.flush();
       setProcessInsight({ pid: selectedProcess.pid, content: resultContent || t('process.ai.insight.empty', language) });
     } catch (err) {
+      throttledInsightUpdate.cancel();
       setProcessInsight({
         pid: selectedProcess.pid,
         content: '',

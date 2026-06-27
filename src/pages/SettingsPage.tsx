@@ -1,5 +1,7 @@
 import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
+import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 
+import { createModelsForSettings } from '../ai';
 import {
   getTerminalThemeChoice,
   terminalBoldWeightChoices,
@@ -331,6 +333,26 @@ function getAiModelDetail(model: ShellDeskAiModelInfo) {
   return details.join(' · ');
 }
 
+function getPiProviderId(settings: ShellDeskAppSettings) {
+  if (settings.aiProvider === 'anthropic' || settings.aiApiFormat === 'anthropic') {
+    return 'anthropic';
+  }
+
+  if (settings.aiProvider === 'openai') {
+    return 'openai';
+  }
+
+  return '';
+}
+
+function piModelToShellDeskModelInfo(model: { id: string; name?: string; provider?: string }): ShellDeskAiModelInfo {
+  return {
+    id: model.id,
+    name: model.name || model.id,
+    ownedBy: model.provider,
+  };
+}
+
 interface SettingsPageProps {
   hostCount: number;
   keyCount: number;
@@ -540,15 +562,7 @@ function SettingsPage({
   };
 
   const fetchAiModels = async () => {
-    const listModels = window.guiSSH?.ai?.listModels;
-
-    if (!listModels) {
-      setAiModelsError(t('settings.ai.model.error.noApi', settings.language));
-      setAiModelsMessage('');
-      return;
-    }
-
-    if (!settings.aiApiBaseUrl.trim()) {
+    if ((settings.aiProvider === 'custom' || settings.aiProvider === 'openai-compatible') && !settings.aiApiBaseUrl.trim()) {
       setAiModelsError(t('settings.ai.model.error.apiBaseUrlRequired', settings.language));
       setAiModelsMessage('');
       return;
@@ -565,13 +579,13 @@ function SettingsPage({
     setAiModelsMessage('');
 
     try {
-      const result = await listModels({
-        provider: settings.aiProvider,
-        apiFormat: settings.aiApiFormat,
-        apiBaseUrl: settings.aiApiBaseUrl,
-        apiKey: settings.aiApiKey,
-      });
-      const models = result.models;
+      const providerId = getPiProviderId(settings);
+      const modelCollection = settings.aiProvider === 'custom' || settings.aiProvider === 'openai-compatible'
+        ? createModelsForSettings(settings)
+        : builtinModels();
+      const models = modelCollection
+        .getModels(providerId || undefined)
+        .map(piModelToShellDeskModelInfo);
 
       setAiModelOptions(models);
       setAiModelsMessage(t('settings.ai.model.loaded', settings.language, { count: String(models.length) }));
@@ -1876,7 +1890,14 @@ function SettingsPage({
                         type="button"
                         className="command-button"
                         onClick={fetchAiModels}
-                        disabled={isAiModelsLoading || !settings.aiApiBaseUrl.trim() || (settings.aiApiFormat === 'anthropic' && !settings.aiApiKey.trim())}
+                        disabled={(
+                          settings.aiProvider !== 'openai'
+                          && settings.aiProvider !== 'anthropic'
+                          && !settings.aiApiBaseUrl.trim()
+                        ) || (
+                          settings.aiApiFormat === 'anthropic'
+                          && !settings.aiApiKey.trim()
+                        ) || isAiModelsLoading}
                       >
                         {isAiModelsLoading ? t('settings.ai.model.fetching', settings.language) : t('settings.ai.model.fetch', settings.language)}
                       </button>

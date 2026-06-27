@@ -1198,6 +1198,7 @@ interface ShellDeskSystemControls {
 }
 
 interface ShellDeskAiControls {
+  // TODO: Keep these legacy IPC AI methods until all fallback callers are retired.
   listModels: (request: ShellDeskAiModelListRequest) => Promise<ShellDeskAiModelListResult>;
   chat: (request: ShellDeskAiChatRequest) => Promise<ShellDeskAiChatResult>;
   chatStream?: (request: ShellDeskAiChatRequest, callbacks?: ShellDeskAiChatStreamCallbacks) => Promise<ShellDeskAiChatResult>;

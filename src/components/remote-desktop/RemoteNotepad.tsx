@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
+import { isAiConfigured as hasAiConfiguration } from '../../ai';
 import { t, type AppLanguage } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
 import NotepadAiPanel from './NotepadAiPanel';
@@ -208,12 +209,7 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   }, []);
 
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0], [tabs, activeTabId]);
-  const isAiConfigured = Boolean(
-    settings.aiApiBaseUrl.trim() &&
-    (settings.aiApiFormat !== 'anthropic' || settings.aiApiKey.trim()) &&
-    settings.aiModel.trim() &&
-    (window.guiSSH?.ai?.chatStream || window.guiSSH?.ai?.chat),
-  );
+  const isAiConfigured = hasAiConfiguration(settings);
 
   const updateTab = useCallback((tabId: string, update: (tab: NotepadTab) => NotepadTab) => {
     setTabs((currentTabs) => currentTabs.map((tab) => tab.id === tabId ? update(tab) : tab));
