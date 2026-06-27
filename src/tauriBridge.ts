@@ -28,7 +28,7 @@ function isTauriRuntime() {
 
 function createPreviewRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
   return {
-    appCatalogVersion: 9,
+    appCatalogVersion: 12,
     sortMode: 'custom',
     items: [
       { id: 'app:files', type: 'app', appKey: 'files' },

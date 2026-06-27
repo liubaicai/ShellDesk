@@ -1,5 +1,18 @@
-export { buildChatRequest, createMessageId, getAiConfig, isAiConfigured, sendChat, sendChatStream } from './aiService';
-export { DEFAULT_CHAT_PROMPT, NOTEPAD_AI_PROMPT, PROCESS_MANAGER_AI_PROMPT, SECURITY_AUDIT_AI_PROMPT } from './defaultPrompts';
-export { SHARED_TOOL_DESCRIPTIONS, executeForAi, formatToolResult } from './sharedTools';
-export { useAiChat } from './useAiChat';
-export type { AiChatOptions, AiChatState, AiMessage, AiServiceConfig, AiToolContext } from './types';
+export {
+  PiAgentService,
+  createContext,
+  createMessageId,
+  createModelsForSettings,
+  getAiApiKey,
+  getAiModel,
+  isAiConfigured,
+} from './PiAgentService';
+export {
+  getDefaultChatPrompt,
+  getNotepadPrompt,
+  getProcessManagerPrompt,
+  getSecurityAuditPrompt,
+} from './defaultPrompts';
+export { SHARED_TOOL_DEFINITIONS, createSharedTools, executeForAi, formatToolResult } from './sharedTools';
+export { usePiAgent } from './usePiAgent';
+export type { AiChatState, AiMessage, AiTokenUsage, AiToolContext, AiToolDetails } from './types';

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { DEFAULT_CHAT_PROMPT, useAiChat } from '../../ai';
+import { createSharedTools, getDefaultChatPrompt, usePiAgent } from '../../ai';
 import { tCurrent, type AppLanguage } from '../../i18n';
 
 interface RemoteAiChatProps {
   settings: ShellDeskAppSettings;
   language: AppLanguage;
+  connectionId: string;
   onOpenSettings?: () => void;
 }
 
@@ -188,9 +189,10 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
-function RemoteAiChat({ settings, language, onOpenSettings }: RemoteAiChatProps) {
+function RemoteAiChat({ settings, language, connectionId, onOpenSettings }: RemoteAiChatProps) {
   const [draft, setDraft] = useState('');
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const sharedTools = useMemo(() => createSharedTools(connectionId), [connectionId]);
   const {
     messages,
     isBusy,
@@ -198,10 +200,13 @@ function RemoteAiChat({ settings, language, onOpenSettings }: RemoteAiChatProps)
     isConfigured,
     sendMessage,
     clearHistory,
-  } = useAiChat({
+    cancelRequest,
+  } = usePiAgent({
     settings,
     language,
-    systemPrompt: DEFAULT_CHAT_PROMPT,
+    systemPrompt: getDefaultChatPrompt(),
+    tools: sharedTools,
+    connectionId,
   });
 
   useEffect(() => {
@@ -231,7 +236,7 @@ function RemoteAiChat({ settings, language, onOpenSettings }: RemoteAiChatProps)
   }, [sendDraft]);
 
   const modelLabel = settings.aiModel.trim() || tCurrent('auto.aiChat.modelUnset');
-  const sendDisabled = !draft.trim() || isBusy || !isConfigured;
+  const sendDisabled = !draft.trim() || !isConfigured;
 
   return (
     <div className="remote-ai-chat">
@@ -273,22 +278,32 @@ function RemoteAiChat({ settings, language, onOpenSettings }: RemoteAiChatProps)
               : <p data-i18n-skip>{message.content}</p>}
           </article>
         ))}
-        {isBusy ? <div className="ai-chat-thinking">{tCurrent('auto.aiChat.thinking')}</div> : null}
+        {isBusy ? (
+          <div className="ai-chat-thinking" role="status" aria-live="polite">
+            {tCurrent('auto.aiChat.thinking')}
+          </div>
+        ) : null}
       </div>
 
-      {error ? <div className="ai-chat-error">{error}</div> : null}
+      {error ? <div className="ai-chat-error" role="alert">{error}</div> : null}
 
       <footer className="ai-chat-input">
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
+          aria-label={tCurrent('auto.aiChat.placeholder')}
           placeholder={tCurrent('auto.aiChat.placeholder')}
           disabled={!isConfigured}
           rows={3}
         />
-        <button type="button" onClick={sendDraft} disabled={sendDisabled}>
-          {isBusy ? tCurrent('auto.aiChat.sending') : tCurrent('auto.aiChat.send')}
+        <button
+          type="button"
+          className={isBusy ? 'danger' : undefined}
+          onClick={isBusy ? cancelRequest : sendDraft}
+          disabled={!isBusy && sendDisabled}
+        >
+          {isBusy ? tCurrent('auto.aiChat.cancel') : tCurrent('auto.aiChat.send')}
         </button>
       </footer>
     </div>

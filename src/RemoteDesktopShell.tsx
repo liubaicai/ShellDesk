@@ -2666,7 +2666,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'ai-chat') {
-      return <RemoteAiChat settings={settings} language={settings.language} onOpenSettings={() => openDesktopWindow('settings')} />;
+      return <RemoteAiChat settings={settings} language={settings.language} connectionId={connection.id} onOpenSettings={() => openDesktopWindow('settings')} />;
     }
 
     if (desktopWindow.appKey === 'sqlite') {

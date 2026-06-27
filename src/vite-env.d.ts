@@ -272,6 +272,7 @@ interface ShellDeskAiChatRequest {
   model: string;
   messages: ShellDeskAiChatMessage[];
   temperature?: number;
+  maxTokens?: number;
 }
 
 interface ShellDeskAiChatResult {

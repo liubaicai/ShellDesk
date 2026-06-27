@@ -1,9 +1,3 @@
-export interface AiChatOptions {
-  temperature?: number;
-  maxTokens?: number;
-  systemPrompt?: string;
-}
-
 export interface AiMessage {
   id: string;
   role: 'system' | 'user' | 'assistant';
@@ -17,16 +11,20 @@ export interface AiChatState {
   error: string;
 }
 
-export interface AiServiceConfig {
-  provider: ShellDeskAiProvider;
-  apiFormat: ShellDeskAiApiFormat;
-  apiBaseUrl: string;
-  apiKey: string;
-  model: string;
-}
-
 export interface AiToolContext {
   connectionId?: string;
   hostId?: string;
   systemType?: string;
+}
+
+export interface AiToolDetails {
+  command?: string;
+  exitCode?: number;
+  stderr?: string;
+}
+
+export interface AiTokenUsage {
+  input: number;
+  output: number;
+  cost: number;
 }

@@ -254,6 +254,10 @@
     cursor: pointer;
   }
 
+  button.danger {
+    background: #b91c1c;
+  }
+
   button:disabled,
   textarea:disabled {
     cursor: not-allowed;
