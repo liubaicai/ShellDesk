@@ -183,6 +183,106 @@ export function getAiApiKey(settings: ShellDeskAppSettings): string | undefined 
   return apiKey || undefined;
 }
 
+function getBackendAiApiBaseUrl(settings: ShellDeskAppSettings): string {
+  const apiBaseUrl = settings.aiApiBaseUrl.trim();
+
+  if (apiBaseUrl) {
+    return apiBaseUrl;
+  }
+
+  if (settings.aiProvider === 'anthropic' || settings.aiApiFormat === 'anthropic') {
+    return 'https://api.anthropic.com';
+  }
+
+  if (settings.aiProvider === 'openai') {
+    return 'https://api.openai.com/v1';
+  }
+
+  return '';
+}
+
+function contextToBackendChatMessages(context: PiRequestContext): ShellDeskAiChatMessage[] {
+  const messages: ShellDeskAiChatMessage[] = [];
+
+  if (context.systemPrompt.trim()) {
+    messages.push({
+      role: 'system',
+      content: context.systemPrompt,
+    });
+  }
+
+  for (const message of context.messages) {
+    if (!message.content.trim()) {
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      messages.push({
+        role: 'assistant',
+        content: message.content,
+      });
+      continue;
+    }
+
+    if (message.role === 'toolResult') {
+      messages.push({
+        role: 'user',
+        content: [
+          `Tool result${message.toolName ? ` (${message.toolName})` : ''}${message.isError ? ' [error]' : ''}:`,
+          message.content,
+        ].join('\n'),
+      });
+      continue;
+    }
+
+    messages.push({
+      role: 'user',
+      content: message.content,
+    });
+  }
+
+  return messages;
+}
+
+function contextToolsToBackendTools(tools: AgentTool[] | undefined): ShellDeskAiChatTool[] | undefined {
+  if (!tools?.length) {
+    return undefined;
+  }
+
+  return tools.map((tool) => {
+    const toolRecord = tool as AgentTool & {
+      description?: string;
+      label?: string;
+      parameters?: unknown;
+    };
+
+    return {
+      name: tool.name,
+      description: toolRecord.description || toolRecord.label || tool.name,
+      parameters: toolRecord.parameters,
+    };
+  });
+}
+
+function createBackendChatRequest(settings: ShellDeskAppSettings, context: PiRequestContext): ShellDeskAiChatRequest | null {
+  const apiBaseUrl = getBackendAiApiBaseUrl(settings);
+
+  if (!apiBaseUrl) {
+    return null;
+  }
+
+  return {
+    provider: settings.aiProvider,
+    apiFormat: settings.aiApiFormat,
+    apiBaseUrl,
+    apiKey: settings.aiApiKey,
+    model: settings.aiModel,
+    messages: contextToBackendChatMessages(context),
+    tools: contextToolsToBackendTools(context.tools),
+    temperature: context.temperature ?? 0.2,
+  };
+}
+
 export function createContext(
   messages: Context['messages'],
   systemPrompt: string,
@@ -283,6 +383,14 @@ export async function completeAiRequest(
   context: PiRequestContext,
   options?: PiRequestOptions,
 ): Promise<string> {
+  const backendChat = window.guiSSH?.ai?.chat;
+  const backendRequest = createBackendChatRequest(settings, context);
+
+  if (backendChat && backendRequest) {
+    const result = await backendChat(backendRequest);
+    return result.content ?? '';
+  }
+
   const models = getCachedModels(settings);
   const model = getAiModel(settings, models);
   const result = await models.complete(model, createRequestContext(context, model), {
@@ -305,6 +413,35 @@ export async function streamAiResponse(
   onUsage?: (usage: PiUsageSummary) => void,
   options?: PiRequestOptions,
 ): Promise<string> {
+  const backendChat = window.guiSSH?.ai?.chat;
+  const backendChatStream = window.guiSSH?.ai?.chatStream;
+  const backendRequest = createBackendChatRequest(settings, context);
+
+  if (backendChatStream && backendRequest) {
+    let fullContent = '';
+    const result = await backendChatStream(backendRequest, {
+      onChunk: (chunk) => {
+        if (options?.signal?.aborted) {
+          return;
+        }
+        fullContent += chunk;
+        onChunk(fullContent);
+      },
+    });
+    return result.content ?? fullContent;
+  }
+
+  if (backendChat && backendRequest) {
+    const result = await backendChat(backendRequest);
+    const content = result.content ?? '';
+
+    if (content) {
+      onChunk(content);
+    }
+
+    return content;
+  }
+
   const models = getCachedModels(settings);
   const model = getAiModel(settings, models);
   const stream = models.stream(model, createRequestContext(context, model), {

@@ -320,30 +320,14 @@ export default function NotepadAiPanel({
 
       try {
         const toolContent = await runRemoteEnvironmentProbe();
-        const toolMessage: NotepadAiMessage = {
-          id: createNotepadAiMessageId(),
-          role: 'tool',
-          content: t('notepad.ai.probe.success', language, { content: toolContent }),
-          createdAt: new Date().toISOString(),
-        };
 
         environmentOverride = toolContent;
-        nextMessages = [...nextMessages, toolMessage];
         setRemoteEnvironment(toolContent);
-        setAiMessages(nextMessages);
       } catch (error) {
         const errorMessage = t('notepad.ai.probe.failed', language, { error: getErrorMessage(error) });
-        const toolMessage: NotepadAiMessage = {
-          id: createNotepadAiMessageId(),
-          role: 'tool',
-          content: errorMessage,
-          createdAt: new Date().toISOString(),
-        };
 
         environmentOverride = errorMessage;
-        nextMessages = [...nextMessages, toolMessage];
         setAiError(errorMessage);
-        setAiMessages(nextMessages);
       } finally {
         setIsAiProbing(false);
       }
