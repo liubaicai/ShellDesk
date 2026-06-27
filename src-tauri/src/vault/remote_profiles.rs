@@ -5,6 +5,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "files",
     "terminal",
     "notepad",
+    "code-editor",
     "browser",
     "vnc",
     "log-viewer",

@@ -179,6 +179,7 @@ type ShellDeskDesktopAppKey =
   | 'files'
   | 'terminal'
   | 'notepad'
+  | 'code-editor'
   | 'browser'
   | 'vnc'
   | 'log-viewer'

@@ -25,6 +25,7 @@ const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrows
 const RemoteCertManager = lazy(() => import('./components/remote-desktop/RemoteCertManager'));
 const RemoteCaddyManager = lazy(() => import('./components/remote-desktop/RemoteCaddyManager'));
 const RemoteClickHouse = lazy(() => import('./components/remote-desktop/RemoteClickHouse'));
+const RemoteCodeEditor = lazy(() => import('./components/remote-desktop/RemoteCodeEditor'));
 const RemoteContainerManager = lazy(() => import('./components/remote-desktop/RemoteContainerManager'));
 const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/RemoteDiskAnalyzer'));
 const RemoteDiskManager = lazy(() => import('./components/remote-desktop/RemoteDiskManager'));
@@ -62,6 +63,7 @@ const desktopApps = [
   { key: 'files', labelId: 'desktop.app.files.label', descriptionId: 'desktop.app.files.description' },
   { key: 'terminal', labelId: 'desktop.app.terminal.label', descriptionId: 'desktop.app.terminal.description' },
   { key: 'notepad', labelId: 'desktop.app.notepad.label', descriptionId: 'desktop.app.notepad.description' },
+  { key: 'code-editor', labelId: 'desktop.app.codeEditor.label', descriptionId: 'desktop.app.codeEditor.description' },
   { key: 'browser', labelId: 'desktop.app.browser.label', descriptionId: 'desktop.app.browser.description' },
   { key: 'vnc', labelId: 'desktop.app.vnc.label', descriptionId: 'desktop.app.vnc.description' },
   { key: 'log-viewer', labelId: 'desktop.app.logViewer.label', descriptionId: 'desktop.app.logViewer.description' },
@@ -110,6 +112,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   files: new URL('./assets/desktop-icons/files.png', import.meta.url).href,
   terminal: new URL('./assets/desktop-icons/terminal.png', import.meta.url).href,
   notepad: new URL('./assets/desktop-icons/notepad.png', import.meta.url).href,
+  'code-editor': new URL('./assets/desktop-icons/code-editor.png', import.meta.url).href,
   browser: new URL('./assets/desktop-icons/browser.png', import.meta.url).href,
   vnc: new URL('./assets/desktop-icons/vnc.png', import.meta.url).href,
   'log-viewer': new URL('./assets/desktop-icons/log-viewer.png', import.meta.url).href,
@@ -150,7 +153,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 12;
+const desktopAppCatalogVersion = 13;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
 const appCatalogMigrationKeys: DesktopAppKey[] = [
   'git-manager',
@@ -167,6 +170,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'disk-manager',
   'clickhouse',
   'ai-chat',
+  'code-editor',
 ];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
@@ -314,6 +318,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   files: { x: 132, y: 54, width: 980, height: 580 },
   terminal: { x: 206, y: 80, width: 780, height: 500 },
   notepad: { x: 140, y: 50, width: 860, height: 580 },
+  'code-editor': { x: 74, y: 30, width: 1220, height: 720 },
   browser: { x: 150, y: 58, width: 1000, height: 600 },
   vnc: { x: 118, y: 46, width: 1040, height: 650 },
   'log-viewer': { x: 118, y: 46, width: 1080, height: 650 },
@@ -2531,6 +2536,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'notepad') {
       return <RemoteNotepad connectionId={connection.id} settings={settings} initialFilePath={desktopWindow.notepadInitialPath} initialContent={desktopWindow.notepadInitialContent} initialTitle={desktopWindow.notepadInitialTitle} openFileRequest={desktopWindow.notepadOpenRequest} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'code-editor') {
+      return (
+        <RemoteCodeEditor
+          connectionId={connection.id}
+          connectionKind={connection.kind}
+          hostId={remoteConnectionProfileHostId}
+          settings={settings}
+          systemType={connection.host.systemType}
+          onSettingsChange={onSettingsChange}
+        />
+      );
     }
 
     if (desktopWindow.appKey === 'mysql') {

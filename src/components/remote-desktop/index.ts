@@ -4,6 +4,7 @@ export { default as RemoteApacheManager } from './RemoteApacheManager';
 export { default as RemoteBrowser } from './RemoteBrowser';
 export { default as RemoteCertManager } from './RemoteCertManager';
 export { default as RemoteClickHouse } from './RemoteClickHouse';
+export { default as RemoteCodeEditor } from './RemoteCodeEditor';
 export { default as RemoteContainerManager } from './RemoteContainerManager';
 export { default as RemoteDiskAnalyzer } from './RemoteDiskAnalyzer';
 export { default as RemoteDiskManager } from './RemoteDiskManager';

@@ -146,6 +146,7 @@ const desktopAppAssetContracts = {
   files: { component: 'RemoteFileExplorer', style: 'file-explorer' },
   terminal: { component: 'RemoteTerminal', style: 'terminal' },
   notepad: { component: 'RemoteNotepad', style: 'notepad' },
+  'code-editor': { component: 'RemoteCodeEditor', style: 'code-editor' },
   browser: { component: 'RemoteBrowser', style: 'browser' },
   vnc: { component: 'RemoteVncViewer', style: 'vnc' },
   'log-viewer': { component: 'RemoteLogViewer', style: 'log-viewer' },

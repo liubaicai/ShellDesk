@@ -8,6 +8,7 @@ const SHELLDESK_APP_KEYS = [
   'files',
   'terminal',
   'notepad',
+  'code-editor',
   'browser',
   'vnc',
   'log-viewer',

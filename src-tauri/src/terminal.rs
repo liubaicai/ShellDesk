@@ -204,6 +204,9 @@ fn terminal_command_for_connection(
     ));
     cmd.arg("-tt");
     cmd.arg(ssh_destination(&profile));
+    if should_launch_ssh_remote_shell(connection, launch_options) {
+        cmd.arg(create_ssh_remote_shell_command(launch_options));
+    }
     cmd.env("TERM", "xterm-256color");
     apply_askpass_env_pty(&mut cmd, &profile, askpass_broker);
     apply_proxy_helper_env_pty(&mut cmd, &profile);
@@ -342,15 +345,22 @@ fn create_terminal_startup_input(
         .get("systemType")
         .and_then(Value::as_str)
         .unwrap_or("");
+    let remote_shell_launched = should_launch_ssh_remote_shell(connection, launch_options);
 
-    if connection.kind == ConnectionKind::Ssh && !launch_options.working_directory.is_empty() {
+    if connection.kind == ConnectionKind::Ssh
+        && !remote_shell_launched
+        && !launch_options.working_directory.is_empty()
+    {
         startup_lines.push(format!(
             "cd {}",
             quote_terminal_startup_directory(&launch_options.working_directory, system_type)
         ));
     }
 
-    if connection.kind == ConnectionKind::Ssh && !launch_options.shell.is_empty() {
+    if connection.kind == ConnectionKind::Ssh
+        && !remote_shell_launched
+        && !launch_options.shell.is_empty()
+    {
         startup_lines.push(launch_options.shell.clone());
     }
 
@@ -368,6 +378,43 @@ fn create_terminal_startup_input(
     } else {
         format!("{}\r", startup_lines.join("\r"))
     }
+}
+
+fn should_launch_ssh_remote_shell(
+    connection: &ActiveConnection,
+    launch_options: &TerminalLaunchOptions,
+) -> bool {
+    if connection.kind != ConnectionKind::Ssh || launch_options.working_directory.is_empty() {
+        return false;
+    }
+
+    let system_type = connection
+        .host
+        .get("systemType")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if system_type == "windows" {
+        return false;
+    }
+
+    !connection
+        .privilege
+        .as_ref()
+        .is_some_and(|privilege| privilege.mode == "su-root" && !privilege.password.is_empty())
+}
+
+fn create_ssh_remote_shell_command(launch_options: &TerminalLaunchOptions) -> String {
+    let shell = launch_options.shell.trim();
+    let shell_command = if shell.is_empty() {
+        "exec \"${SHELL:-/bin/sh}\" -l".to_string()
+    } else {
+        format!("exec {shell}")
+    };
+    format!(
+        "cd {} && {}",
+        quote_terminal_startup_directory(&launch_options.working_directory, "linux"),
+        shell_command
+    )
 }
 
 fn quote_terminal_startup_directory(directory: &str, system_type: &str) -> String {
@@ -704,7 +751,36 @@ mod tests {
 
         assert_eq!(
             create_terminal_startup_input(&connection, &launch_options),
-            "cd '/var/log/app'\\''s'\rbash\recho one\recho two\r"
+            "echo one\recho two\r"
+        );
+    }
+
+    #[test]
+    fn creates_ssh_remote_shell_command_for_working_directory() {
+        let launch_options = TerminalLaunchOptions {
+            shell: "bash".to_string(),
+            initial_command: String::new(),
+            working_directory: "/var/log/app's".to_string(),
+        };
+
+        assert_eq!(
+            create_ssh_remote_shell_command(&launch_options),
+            "cd '/var/log/app'\\''s' && exec bash"
+        );
+    }
+
+    #[test]
+    fn keeps_windows_remote_startup_input() {
+        let connection = ssh_connection("windows", None);
+        let launch_options = TerminalLaunchOptions {
+            shell: "powershell".to_string(),
+            initial_command: "Write-Host ok".to_string(),
+            working_directory: r#"C:\Users\root"#.to_string(),
+        };
+
+        assert_eq!(
+            create_terminal_startup_input(&connection, &launch_options),
+            "cd \"C:\\Users\\root\"\rpowershell\rWrite-Host ok\r"
         );
     }
 

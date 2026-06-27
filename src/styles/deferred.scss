@@ -44,6 +44,7 @@
 @use "./themes/light" as *;
 @use "./remote-desktop/database-tunnel" as *;
 @use "./remote-desktop/notepad" as *;
+@use "./remote-desktop/code-editor" as *;
 @use "./remote-desktop/mysql" as *;
 @use "./remote-desktop/clickhouse" as *;
 @use "./remote-desktop/redis" as *;
