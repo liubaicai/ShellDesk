@@ -56,6 +56,13 @@ struct AiChatStreamRequest {
     stream_id: String,
 }
 
+#[derive(Default)]
+struct OpenAiStreamToolCallDelta {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
 pub(crate) async fn ai_list_models(args: Vec<Value>) -> Result<Value, String> {
     list_ai_models(args.first().cloned().unwrap_or_else(|| json!({}))).await
 }
@@ -209,13 +216,7 @@ fn read_ai_chat_tool(raw_tool: &Value) -> Result<AiChatTool, String> {
     let object = raw_tool
         .as_object()
         .ok_or_else(|| "SD-Agent 工具定义无效。".to_string())?;
-    let name = read_limited_string(
-        object.get("name"),
-        "SD-Agent 工具名称",
-        120,
-        true,
-        true,
-    )?;
+    let name = read_limited_string(object.get("name"), "SD-Agent 工具名称", 120, true, true)?;
     let description = read_limited_string(
         object.get("description"),
         "SD-Agent 工具描述",
@@ -499,30 +500,6 @@ fn parse_model_list(payload: &Value) -> Vec<Value> {
         .collect()
 }
 
-fn read_openai_chat_content(payload: &Value) -> Result<String, String> {
-    let first_choice = payload
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first());
-    let content = first_choice
-        .and_then(|choice| {
-            choice
-                .get("message")
-                .and_then(|message| message.get("content"))
-        })
-        .or_else(|| first_choice.and_then(|choice| choice.get("text")))
-        .or_else(|| {
-            first_choice
-                .and_then(|choice| choice.get("delta").and_then(|delta| delta.get("content")))
-        })
-        .or_else(|| payload.get("output_text"));
-    let text = ai_content_text(content);
-    if text.trim().is_empty() {
-        return Err("SD-Agent 响应为空。".to_string());
-    }
-    Ok(text)
-}
-
 fn read_openai_chat_content_optional(payload: &Value) -> String {
     let first_choice = payload
         .get("choices")
@@ -588,6 +565,81 @@ fn read_openai_tool_calls(payload: &Value) -> Vec<Value> {
                 "id": id,
                 "name": name,
                 "arguments": parse_openai_tool_arguments(function.get("arguments"))
+            }))
+        })
+        .collect()
+}
+
+fn append_openai_stream_tool_call_deltas(
+    payload: &Value,
+    tool_calls: &mut Vec<OpenAiStreamToolCallDelta>,
+) {
+    let Some(choices) = payload.get("choices").and_then(Value::as_array) else {
+        return;
+    };
+    for choice in choices {
+        let raw_tool_calls = choice
+            .get("delta")
+            .and_then(|delta| delta.get("tool_calls"))
+            .or_else(|| choice.get("tool_calls"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for (fallback_index, raw_tool_call) in raw_tool_calls.iter().enumerate() {
+            let index = raw_tool_call
+                .get("index")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize)
+                .unwrap_or(fallback_index);
+            while tool_calls.len() <= index {
+                tool_calls.push(OpenAiStreamToolCallDelta::default());
+            }
+            let target = &mut tool_calls[index];
+            if let Some(id) = raw_tool_call
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                target.id = id.trim().to_string();
+            }
+            let function = raw_tool_call.get("function").unwrap_or(raw_tool_call);
+            if let Some(name) = function
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                target.name.push_str(name);
+            }
+            if let Some(arguments) = function.get("arguments").and_then(Value::as_str) {
+                target.arguments.push_str(arguments);
+            }
+        }
+    }
+}
+
+fn read_openai_stream_tool_calls(tool_calls: &[OpenAiStreamToolCallDelta]) -> Vec<Value> {
+    tool_calls
+        .iter()
+        .enumerate()
+        .filter_map(|(index, tool_call)| {
+            let name = tool_call.name.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let id = if tool_call.id.trim().is_empty() {
+                format!("tool-call-{index}")
+            } else {
+                tool_call.id.trim().to_string()
+            };
+            let arguments = if tool_call.arguments.trim().is_empty() {
+                json!({})
+            } else {
+                serde_json::from_str(&tool_call.arguments).unwrap_or_else(|_| json!({}))
+            };
+            Some(json!({
+                "id": id,
+                "name": name,
+                "arguments": arguments
             }))
         })
         .collect()
@@ -918,20 +970,28 @@ async fn request_ai_chat_stream(
     if !content_type.contains("text/event-stream") {
         let response_text = response.text().await.map_err(error_string)?;
         let payload = parse_json_response(&response_text).unwrap_or(Value::Null);
-        let chunk = if request.chat.api_format == "anthropic" {
-            read_anthropic_chat_content(&payload)?
+        let (chunk, tool_calls) = if request.chat.api_format == "anthropic" {
+            (read_anthropic_chat_content(&payload)?, Vec::new())
         } else {
-            read_openai_chat_content(&payload)?
+            let tool_calls = read_openai_tool_calls(&payload);
+            let chunk = read_openai_chat_content_optional(&payload);
+            if chunk.trim().is_empty() && tool_calls.is_empty() {
+                return Err("SD-Agent 响应为空。".to_string());
+            }
+            (chunk, tool_calls)
         };
         content.push_str(&chunk);
-        let _ = window.emit(
-            "ai:chat-stream:chunk",
-            json!({ "streamId": request.stream_id, "chunk": chunk }),
-        );
-        return Ok(json!({ "endpoint": endpoint, "content": content }));
+        if !chunk.is_empty() {
+            let _ = window.emit(
+                "ai:chat-stream:chunk",
+                json!({ "streamId": request.stream_id, "chunk": chunk }),
+            );
+        }
+        return Ok(json!({ "endpoint": endpoint, "content": content, "toolCalls": tool_calls }));
     }
 
     let mut buffer = String::new();
+    let mut openai_tool_call_deltas: Vec<OpenAiStreamToolCallDelta> = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(error_string)?;
@@ -948,6 +1008,9 @@ async fn request_ai_chat_stream(
             let Some(payload) = parse_json_response(&data) else {
                 continue;
             };
+            if request.chat.api_format != "anthropic" {
+                append_openai_stream_tool_call_deltas(&payload, &mut openai_tool_call_deltas);
+            }
             let chunk = if request.chat.api_format == "anthropic" {
                 extract_anthropic_stream_delta(&payload)?
             } else {
@@ -967,6 +1030,12 @@ async fn request_ai_chat_stream(
         if let Some(data) = parse_sse_message(&buffer) {
             if data != "[DONE]" {
                 if let Some(payload) = parse_json_response(&data) {
+                    if request.chat.api_format != "anthropic" {
+                        append_openai_stream_tool_call_deltas(
+                            &payload,
+                            &mut openai_tool_call_deltas,
+                        );
+                    }
                     let chunk = if request.chat.api_format == "anthropic" {
                         extract_anthropic_stream_delta(&payload)?
                     } else {
@@ -983,10 +1052,15 @@ async fn request_ai_chat_stream(
             }
         }
     }
-    if content.trim().is_empty() {
+    let tool_calls = if request.chat.api_format == "anthropic" {
+        Vec::new()
+    } else {
+        read_openai_stream_tool_calls(&openai_tool_call_deltas)
+    };
+    if content.trim().is_empty() && tool_calls.is_empty() {
         return Err("SD-Agent 响应为空。".to_string());
     }
-    Ok(json!({ "endpoint": endpoint, "content": content }))
+    Ok(json!({ "endpoint": endpoint, "content": content, "toolCalls": tool_calls }))
 }
 
 trait StringFallback {

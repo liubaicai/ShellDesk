@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createSharedTools, getDefaultChatPrompt, usePiAgent } from '../../ai';
 import { tCurrent, type AppLanguage } from '../../i18n';
+import type { RemoteSystemType } from './types';
 
 interface RemoteAiChatProps {
   settings: ShellDeskAppSettings;
   language: AppLanguage;
   connectionId: string;
+  systemType?: RemoteSystemType;
   onOpenSettings?: () => void;
+  onOpenApp?: (appKey: ShellDeskDesktopAppKey) => void;
 }
 
 interface MarkdownCodeBlock {
@@ -99,6 +102,72 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const withoutEdges = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+  return withoutEdges.split('|').map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function isMarkdownTableStart(lines: string[], index: number) {
+  if (index + 1 >= lines.length) {
+    return false;
+  }
+
+  const header = splitMarkdownTableRow(lines[index]);
+  return header.length > 1 && isMarkdownTableSeparator(lines[index + 1]);
+}
+
+function renderMarkdownTable(lines: string[], index: number, keyPrefix: string) {
+  const header = splitMarkdownTableRow(lines[index]);
+  const rows: string[][] = [];
+  let nextIndex = index + 2;
+
+  while (nextIndex < lines.length && lines[nextIndex].includes('|') && lines[nextIndex].trim()) {
+    const row = splitMarkdownTableRow(lines[nextIndex]);
+
+    if (!isMarkdownTableSeparator(lines[nextIndex])) {
+      rows.push(row);
+    }
+
+    nextIndex += 1;
+  }
+
+  return {
+    nextIndex,
+    element: (
+      <div className="ai-chat-table-wrap" key={`${keyPrefix}-table-${index}`}>
+        <table>
+          <thead>
+            <tr>
+              {header.map((cell, cellIndex) => (
+                <th key={`${keyPrefix}-th-${cellIndex}`}>
+                  {renderInlineMarkdown(cell, `${keyPrefix}-th-${cellIndex}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={`${keyPrefix}-tr-${rowIndex}`}>
+                {header.map((_, cellIndex) => (
+                  <td key={`${keyPrefix}-td-${rowIndex}-${cellIndex}`}>
+                    {renderInlineMarkdown(row[cellIndex] ?? '', `${keyPrefix}-td-${rowIndex}-${cellIndex}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ),
+  };
+}
+
 function renderTextMarkdown(content: string, keyPrefix: string) {
   const lines = content.split('\n');
   const elements: ReactNode[] = [];
@@ -109,6 +178,27 @@ function renderTextMarkdown(content: string, keyPrefix: string) {
 
     if (!line.trim()) {
       index += 1;
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const HeadingTag = `h${Math.min(level + 1, 5)}` as 'h2' | 'h3' | 'h4' | 'h5';
+      elements.push(
+        <HeadingTag key={`${keyPrefix}-heading-${index}`}>
+          {renderInlineMarkdown(headingMatch[2].trim(), `${keyPrefix}-heading-${index}`)}
+        </HeadingTag>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (isMarkdownTableStart(lines, index)) {
+      const table = renderMarkdownTable(lines, index, keyPrefix);
+      elements.push(table.element);
+      index = table.nextIndex;
       continue;
     }
 
@@ -141,7 +231,12 @@ function renderTextMarkdown(content: string, keyPrefix: string) {
     const paragraphLines = [line.trim()];
     index += 1;
 
-    while (index < lines.length && lines[index].trim() && !/^\s*(?:[-*]|\d+\.)\s+/.test(lines[index])) {
+    while (
+      index < lines.length
+      && lines[index].trim()
+      && !/^\s*(?:#{1,4}\s+|[-*]\s+|\d+\.\s+)/.test(lines[index])
+      && !isMarkdownTableStart(lines, index)
+    ) {
       paragraphLines.push(lines[index].trim());
       index += 1;
     }
@@ -189,10 +284,13 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
-function RemoteAiChat({ settings, language, connectionId, onOpenSettings }: RemoteAiChatProps) {
+function RemoteAiChat({ settings, language, connectionId, systemType, onOpenSettings, onOpenApp }: RemoteAiChatProps) {
   const [draft, setDraft] = useState('');
   const messagesRef = useRef<HTMLDivElement | null>(null);
-  const sharedTools = useMemo(() => createSharedTools(connectionId), [connectionId]);
+  const sharedTools = useMemo(() => createSharedTools(connectionId, {
+    systemType,
+    onOpenApp,
+  }), [connectionId, onOpenApp, systemType]);
   const {
     messages,
     isBusy,

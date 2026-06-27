@@ -33,6 +33,12 @@ interface UsePiAgentConfig {
 
 const AI_PROVIDER_TIMEOUT_MS = 45000;
 
+interface BackendMessageCommitOptions {
+  partial?: boolean;
+}
+
+type BackendMessageCommit = (message: AssistantMessage, options?: BackendMessageCommitOptions) => void;
+
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
   return typeof message === 'object' && message !== null && 'role' in message && message.role === 'assistant';
 }
@@ -83,7 +89,7 @@ function upsertMessage(messages: AiMessage[], message: AiMessage): AiMessage[] {
 
 function createAgent(
   config: UsePiAgentConfig,
-  onBackendMessage?: (message: AssistantMessage) => void,
+  onBackendMessage?: BackendMessageCommit,
 ): Agent | null {
   if (!isAiConfigured(config.settings)) {
     return null;
@@ -99,7 +105,7 @@ function createAgent(
       model,
       tools: config.tools ?? [],
     },
-    streamFn: window.guiSSH?.ai?.chat
+    streamFn: (window.guiSSH?.ai?.chatStream || window.guiSSH?.ai?.chat)
       ? createBackendStreamFn(config.settings, onBackendMessage)
       : (streamModel, context, options) => models.streamSimple(streamModel, context, {
         ...options,
@@ -153,6 +159,55 @@ function messageToolCalls(message: AssistantMessage): ShellDeskAiToolCall[] {
     }));
 }
 
+function sanitizeChatToolMessages(messages: ShellDeskAiChatMessage[]): ShellDeskAiChatMessage[] {
+  const sanitizedMessages: ShellDeskAiChatMessage[] = [];
+  let index = 0;
+
+  while (index < messages.length) {
+    const message = messages[index];
+
+    if (message.role === 'tool') {
+      index += 1;
+      continue;
+    }
+
+    if (message.role !== 'assistant' || !message.toolCalls?.length) {
+      sanitizedMessages.push(message);
+      index += 1;
+      continue;
+    }
+
+    const toolCallIds = new Set(message.toolCalls.map((toolCall) => toolCall.id));
+    const matchingToolMessages: ShellDeskAiChatMessage[] = [];
+    let nextIndex = index + 1;
+
+    while (nextIndex < messages.length && messages[nextIndex].role === 'tool') {
+      const toolMessage = messages[nextIndex];
+      if (toolMessage.toolCallId && toolCallIds.has(toolMessage.toolCallId)) {
+        matchingToolMessages.push(toolMessage);
+      }
+      nextIndex += 1;
+    }
+
+    if (matchingToolMessages.length) {
+      const matchedToolCallIds = new Set(matchingToolMessages.map((toolMessage) => toolMessage.toolCallId));
+      sanitizedMessages.push({
+        ...message,
+        toolCalls: message.toolCalls.filter((toolCall) => matchedToolCallIds.has(toolCall.id)),
+      });
+      sanitizedMessages.push(...matchingToolMessages);
+      index = nextIndex;
+      continue;
+    }
+
+    const { toolCalls: _toolCalls, ...messageWithoutToolCalls } = message;
+    sanitizedMessages.push(messageWithoutToolCalls);
+    index += 1;
+  }
+
+  return sanitizedMessages;
+}
+
 function contextToChatMessages(systemPrompt: string | undefined, messages: Message[]): ShellDeskAiChatMessage[] {
   const chatMessages: ShellDeskAiChatMessage[] = [];
 
@@ -202,7 +257,7 @@ function contextToChatMessages(systemPrompt: string | undefined, messages: Messa
     }
   }
 
-  return chatMessages.filter((message) => message.content.trim());
+  return sanitizeChatToolMessages(chatMessages.filter((message) => message.content.trim()));
 }
 
 function createAssistantMessage(
@@ -243,22 +298,34 @@ async function requestBackendAssistantMessage(
   model: Model<Api>,
   context: Context,
   options?: SimpleStreamOptions,
+  onChunk?: (content: string) => void,
 ): Promise<AssistantMessage> {
   const backendChat = window.guiSSH?.ai?.chat;
+  const backendChatStream = window.guiSSH?.ai?.chatStream;
 
-  if (!backendChat) {
+  if (!backendChat && !backendChatStream) {
     return createErrorAssistantMessage(model, new Error('AI backend is unavailable'));
   }
+
+  let timeoutId: number | undefined;
+  let rejectTimeout: ((reason?: unknown) => void) | undefined;
 
   try {
     if (options?.signal?.aborted) {
       throw new Error('Request was aborted');
     }
 
+    const resetTimeout = () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => rejectTimeout?.(new Error('AI request timed out.')), AI_PROVIDER_TIMEOUT_MS);
+    };
     const timeout = new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error('AI request timed out.')), AI_PROVIDER_TIMEOUT_MS);
+      rejectTimeout = reject;
+      resetTimeout();
     });
-    const result = await Promise.race([backendChat({
+    const request: ShellDeskAiChatRequest = {
       provider: settings.aiProvider,
       apiFormat: settings.aiApiFormat,
       apiBaseUrl: settings.aiApiBaseUrl,
@@ -271,15 +338,38 @@ async function requestBackendAssistantMessage(
         parameters: tool.parameters,
       })),
       temperature: options?.temperature ?? 0.2,
-    }), timeout]);
+    };
+    let streamedContent = '';
+    const requestPromise = backendChatStream
+      ? backendChatStream(request, {
+        onChunk: (chunk) => {
+          if (options?.signal?.aborted) {
+            return;
+          }
+          streamedContent += chunk;
+          onChunk?.(streamedContent);
+          resetTimeout();
+        },
+      })
+      : backendChat?.(request);
+
+    if (!requestPromise) {
+      throw new Error('AI backend is unavailable');
+    }
+
+    const result = await Promise.race([requestPromise, timeout]);
 
     if (options?.signal?.aborted) {
       throw new Error('Request was aborted');
     }
 
-    return createAssistantMessage(model, result.content ?? '', result.toolCalls ?? []);
+    return createAssistantMessage(model, result.content ?? streamedContent, result.toolCalls ?? []);
   } catch (error) {
     return createErrorAssistantMessage(model, error);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -297,13 +387,18 @@ function createAssistantEvents(message: AssistantMessage): AssistantMessageEvent
 
 function createBackendStreamFn(
   settings: ShellDeskAppSettings,
-  onBackendMessage?: (message: AssistantMessage) => void,
+  onBackendMessage?: BackendMessageCommit,
 ) {
   return (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
-    const finalMessagePromise = requestBackendAssistantMessage(settings, model, context, options)
+    const streamingMessage = createAssistantMessage(model, '', [], 'stop');
+    const finalMessagePromise = requestBackendAssistantMessage(settings, model, context, options, (content) => {
+      Object.assign(streamingMessage, createAssistantMessage(model, content, [], 'stop'));
+      onBackendMessage?.(streamingMessage, { partial: true });
+    })
       .then((message) => {
-        onBackendMessage?.(message);
-        return message;
+        Object.assign(streamingMessage, message);
+        onBackendMessage?.(streamingMessage);
+        return streamingMessage;
       });
     return {
       async *[Symbol.asyncIterator]() {
@@ -348,7 +443,7 @@ export function usePiAgent(config: UsePiAgentConfig) {
     assistantMessageIdsRef.current = new WeakMap();
   }, []);
 
-  const commitAssistantMessage = useCallback((message: AssistantMessage) => {
+  const commitAssistantMessage = useCallback((message: AssistantMessage, options?: BackendMessageCommitOptions) => {
     const id = assistantMessageIdsRef.current.get(message) ?? createMessageId();
     assistantMessageIdsRef.current.set(message, id);
     const content = getMessageText(message);
@@ -360,6 +455,10 @@ export function usePiAgent(config: UsePiAgentConfig) {
         content,
         createdAt: new Date(message.timestamp || Date.now()).toISOString(),
       }));
+    }
+
+    if (options?.partial) {
+      return;
     }
 
     if (message.usage) {
