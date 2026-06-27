@@ -1,5 +1,7 @@
 # MongoDB 管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `mongo`），实现入口为 `src/components/remote-desktop/RemoteMongo.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 MongoDB 管理器用于通过 SSH 隧道连接远程 MongoDB，查看数据库、集合、文档和索引。它补充现有关系型数据库与键值数据库管理能力。

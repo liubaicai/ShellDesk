@@ -1,5 +1,7 @@
 # 端口与监听管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `port-manager`），实现入口为 `src/components/remote-desktop/RemotePortManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 端口与监听管理器用于展示远程主机当前开放端口、监听进程和连接状态。它帮助用户快速判断服务是否监听、端口是否冲突、某个端口由哪个进程占用。

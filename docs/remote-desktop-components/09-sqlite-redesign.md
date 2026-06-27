@@ -1,5 +1,7 @@
 # SQLite 管理器组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `sqlite`），实现入口为 `src/components/remote-desktop/RemoteSqlite.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 SQLite 管理器用于打开远程文件系统中的 SQLite 数据库文件，浏览结构、查询数据并做轻量编辑。它天然连接文件管理器和数据库工作台。

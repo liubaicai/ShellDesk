@@ -1,5 +1,7 @@
 # 磁盘空间分析器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `disk-analyzer`），实现入口为 `src/components/remote-desktop/RemoteDiskAnalyzer.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 磁盘空间分析器用于快速定位远程主机磁盘占用来源。它优先解决服务器磁盘爆满时“哪个目录最大、哪些文件能清理”的问题。

@@ -1,5 +1,7 @@
 # Elasticsearch / OpenSearch 面板功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `search-cluster`），实现入口为 `src/components/remote-desktop/RemoteSearchCluster.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 Elasticsearch / OpenSearch 面板用于查看搜索集群健康、节点、索引、分片和执行基础查询。它面向运维排查，不试图替代 Kibana 或 OpenSearch Dashboards。

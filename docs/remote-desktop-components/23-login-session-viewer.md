@@ -1,5 +1,7 @@
 # 登录会话查看器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `login-sessions`），实现入口为 `src/components/remote-desktop/RemoteLoginSessions.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 登录会话查看器用于查看远程主机当前登录用户、历史登录记录和失败登录记录。它帮助用户判断是否有异常会话、谁在使用服务器、最近登录来源是否正常。

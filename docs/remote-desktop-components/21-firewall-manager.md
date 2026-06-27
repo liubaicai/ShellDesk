@@ -1,5 +1,7 @@
 # 防火墙管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `firewall-manager`），实现入口为 `src/components/remote-desktop/RemoteFirewallManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 防火墙管理器用于查看和维护远程主机防火墙规则。它优先覆盖 Linux `ufw`、`firewalld`，兼容 Windows Firewall，帮助用户安全地开放或关闭端口。

@@ -1,5 +1,7 @@
 # 记事本组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `notepad`），实现入口为 `src/components/remote-desktop/RemoteNotepad.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 记事本是远程文本文件编辑器，负责轻量文本、脚本和配置文件修改。它应比普通 textarea 更可靠，但不需要承担完整代码 IDE 的复杂度。

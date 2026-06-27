@@ -1,5 +1,7 @@
 # 浏览器组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `browser`），实现入口为 `src/components/remote-desktop/RemoteBrowser.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 浏览器用于从远程连接对应的网络视角访问 Web 页面，尤其是远程 localhost、内网管理后台和服务验证页面。它不是通用 Chrome 替代品，而是 ShellDesk 的远程 Web 检查窗口。

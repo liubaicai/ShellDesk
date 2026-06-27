@@ -1,5 +1,7 @@
 # RabbitMQ / Kafka 简易面板功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `message-queue`），实现入口为 `src/components/remote-desktop/RemoteMessageQueuePanel.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 RabbitMQ / Kafka 简易面板用于查看消息队列的基础状态，例如 RabbitMQ 队列、consumer、消息堆积，以及 Kafka topic、partition、consumer lag。它面向排障和观察，不做完整管理控制台。

@@ -1,5 +1,7 @@
 # 日志查看器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `log-viewer`），实现入口为 `src/components/remote-desktop/RemoteLogViewer.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 日志查看器用于统一查看远程主机系统日志、服务日志和常见应用日志。它的目标不是替代专业日志平台，而是在 SSH 会话中提供最快的排障入口。

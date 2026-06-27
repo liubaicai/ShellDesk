@@ -1,5 +1,7 @@
 # 终端组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `terminal`），实现入口为 `src/components/remote-desktop/RemoteTerminal.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 终端是 ShellDesk 远程桌面的基础能力，不应只是一个 SSH 输出框，而应成为远程工作流的命令执行核心。重新设计时优先考虑长时间使用、可恢复上下文和与其他组件协作。并行排障继续通过远程桌面打开多个终端窗口承载，不在单个终端窗口内引入额外的会话布局复杂度。

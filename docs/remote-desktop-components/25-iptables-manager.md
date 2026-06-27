@@ -1,5 +1,7 @@
 # iptables 管理器功能设计与开发记录
 
+> 当前状态：已接入远程桌面（appKey: `iptables-manager`），实现入口为 `src/components/remote-desktop/RemoteIptablesManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 iptables 管理器是独立于通用防火墙管理器的 Linux 规则链工具，用于查看和维护远程主机上的 `iptables` / `ip6tables` 运行时规则。它面向已经直接使用 netfilter/iptables 的主机，不和 `ufw`、`firewalld`、Windows Firewall 的抽象规则混在一起。

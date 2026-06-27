@@ -1,5 +1,7 @@
 # API 调试器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `api-debugger`），实现入口为 `src/components/remote-desktop/RemoteApiDebugger.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 API 调试器用于从远程主机网络环境发起 HTTP 请求。它适合测试内网接口、本机服务、容器端口和仅服务器可访问的地址。

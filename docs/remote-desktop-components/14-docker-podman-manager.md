@@ -1,5 +1,7 @@
 # Docker / Podman 管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `container-manager`），实现入口为 `src/components/remote-desktop/RemoteContainerManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 Docker / Podman 管理器用于管理远程主机上的容器运行时。它应覆盖容器、镜像、卷、网络、日志和 compose 项目的常用操作，让用户不离开 ShellDesk 就能完成容器排障与维护。

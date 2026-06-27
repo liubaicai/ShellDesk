@@ -1,5 +1,7 @@
 # Redis 管理器组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `redis`），实现入口为 `src/components/remote-desktop/RemoteRedis.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 Redis 管理器用于通过 SSH 访问远程 Redis，查看 key 空间、TTL、类型和值，执行受控命令并辅助缓存排障。

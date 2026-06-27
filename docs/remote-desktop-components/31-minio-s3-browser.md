@@ -1,5 +1,7 @@
 # MinIO / S3 浏览器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `s3-browser`），实现入口为 `src/components/remote-desktop/RemoteS3Browser.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 MinIO / S3 浏览器用于浏览对象存储 bucket 和对象，适合管理自建 MinIO、内网 S3 兼容服务或云对象存储。它补充文件管理器，处理对象存储而非传统文件系统。

@@ -1,5 +1,7 @@
 # PostgreSQL 管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `postgres`），实现入口为 `src/components/remote-desktop/RemotePostgres.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 PostgreSQL 管理器用于补齐 ShellDesk 的数据库管理能力。当前已有 MySQL、Redis、SQLite，PostgreSQL 是最自然的下一类数据库组件。

@@ -1,5 +1,7 @@
 # 包管理器中心功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `package-manager`），实现入口为 `src/components/remote-desktop/RemotePackageManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 包管理器中心用于图形化管理远程系统软件包。它面向日常维护场景：查看更新、搜索包、安装、卸载、升级，以及识别当前系统包管理器。

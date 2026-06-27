@@ -1,5 +1,7 @@
 # 磁盘管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `disk-manager`），实现入口为 `src/components/remote-desktop/RemoteDiskManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 磁盘管理器用于在远程桌面中查看和维护远程主机的块设备、分区、挂载点和 LVM。它补充“磁盘空间分析器”：空间分析器负责定位目录占用来源，磁盘管理器负责设备级存储操作。

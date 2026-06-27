@@ -1,5 +1,7 @@
 # 系统设置组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `settings`），实现入口为 `src/components/remote-desktop/RemoteSettings.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 系统设置是远程主机配置入口，但不应成为所有运维功能的杂物箱。重新设计时它应聚焦系统级配置，和服务、包管理、网络诊断、Hosts/DNS 等专门组件建立清晰分工。

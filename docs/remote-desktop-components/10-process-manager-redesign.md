@@ -1,5 +1,7 @@
 # 进程管理器组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `procmanager`），实现入口为 `src/components/remote-desktop/RemoteProcessManager.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 进程管理器用于查看远程主机正在运行的进程、资源占用、父子关系和可控信号。它应与系统监视器、端口管理器、服务管理器互相协作。

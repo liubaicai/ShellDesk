@@ -1,5 +1,7 @@
 # 系统监视器组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `monitor`），实现入口为 `src/components/remote-desktop/RemoteMonitor.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 系统监视器以四张折线图展示远程主机的 CPU 使用率、内存使用率、网络上传速率和网络下载速率，提供直观的趋势视图。

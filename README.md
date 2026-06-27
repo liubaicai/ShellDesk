@@ -10,7 +10,7 @@
 
 <p align="center">
   ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, and xterm.js.<br/>
-  It brings SSH and local host management, key management, terminals, SFTP, remote editing, browser and VNC access, databases, WebDAV sync, and operations tools into one desktop-style workspace.
+  It brings SSH and local host management, key management, terminals, SFTP, remote editing, code editing, AI assistance, browser and VNC access, databases, WebDAV sync, and operations tools into one desktop-style workspace.
 </p>
 
 <p align="center">
@@ -60,7 +60,7 @@
 
 ## Purpose
 
-ShellDesk is designed for developers, operations engineers, and anyone who maintains multiple servers over time. It is not just a terminal replacement; it is a desktop-style workspace centered on an SSH or local connection. After connecting, you can open terminals, file management, databases, VNC, private-network browser access, system monitoring, logs, service management, network diagnostics, security auditing, and more in one window.
+ShellDesk is designed for developers, operations engineers, and anyone who maintains multiple servers over time. It is not just a terminal replacement; it is a desktop-style workspace centered on an SSH or local connection. After connecting, you can open terminals, file management, code editing, databases, VNC, private-network browser access, system monitoring, logs, service management, network diagnostics, security auditing, AI assistance, and more in one window.
 
 ShellDesk is useful for:
 
@@ -98,6 +98,7 @@ ShellDesk is useful for:
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
 - Remote Notepad supports tabs, remote read/write, find, go to line, syntax highlighting, language modes, and unsaved-change prompts
 - Notepad uses a binary extension blacklist to avoid opening images, archives, databases, executables, and other binary files by mistake
+- Code Editor adds a remote project tree, multi-tab editing, remote-change detection, embedded project terminals, and an AI coding assistant
 
 ### Databases and System Tools
 
@@ -108,17 +109,21 @@ ShellDesk is useful for:
 - System Monitor, Process Manager, Service Manager, Container Manager, Port Listener, and Disk Analyzer help with daily checks
 - Disk Manager shows physical disks, partitions, and mounts, with mount/unmount, format, partition maintenance, and Linux LVM configuration
 - Git Repository Manager shows remote branch trees, remote branches, changed files, diffs, recent commits, branch create/delete/track, stage/unstage, commit, fetch, pull, push, and checkout
-- Web Server Manager covers Nginx, Apache/httpd, and Caddy config discovery, Notepad handoff for config edits, config test, reload, and restart flows
+- Nginx Manager, Caddy Manager, and Apache Manager are separate apps for site discovery, templates, config editing, config test, reload, and restart flows
+- Certificate Manager discovers TLS certificates, checks expiry, manages Certbot renewal state, and handles trusted root certificates
 - MinIO / S3 Browser uses remote `mc` or `aws` CLI to browse buckets, prefixes, objects, delete objects, copy object URLs, and download to a remote directory
-- Firewall, iptables, Network Diagnostics, Package Manager, Scheduled Tasks, Certificate Manager, Login Sessions, and Security Audit support operations troubleshooting
+- FRP Client and FRP Server managers cover frpc/frps detection, installation, TOML config editing, service control, logs, autostart, and runtime status
+- Firewall, iptables, Network Diagnostics, Package Manager, Scheduled Tasks, Login Sessions, and Security Audit support operations troubleshooting
 - System Settings provides views for system information, network interfaces, DNS, mirrors, updates, Hosts, routes, disks, and mounts
 - Log Viewer supports journalctl, `/var/log`, Windows Event Log, and related sources
 - API Debugger sends HTTP requests from the remote host, which is useful for validating private-network services
+- AI Assistant uses the configured provider and model to help with remote server management, code analysis, and component handoffs
 
 ### App Settings, Logs, Backup, and Language
 
 - Supports dark, light, and system themes
 - Supports accent color, system fonts, default host view, desktop wallpaper, and remote desktop layout
+- Supports AI provider, API format, base URL, API key, and model discovery settings for the AI Assistant and Code Editor
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing
 - Config import/export covers hosts, keys, settings, and browser bookmarks
@@ -300,6 +305,9 @@ ShellDesk/
 │   │   ├── remote-desktop/              # Remote desktop and built-in app styles
 │   │   └── themes/                      # Light theme overrides
 │   └── vite-env.d.ts                    # window.guiSSH and global type definitions
+├── docs/
+│   ├── remote-desktop-component-roadmap.md # Remote desktop app catalog and docs index
+│   └── remote-desktop-components/       # Per-component design and implementation notes
 ├── index.html
 ├── package.json
 ├── src-tauri/tauri.conf.json
@@ -320,6 +328,7 @@ ShellDesk/
 - New styles should account for both dark and light themes
 - New IPC requires synchronized changes in the Rust dispatcher, `src/tauriBridge.ts`, and `src/vite-env.d.ts`
 - Remote desktop windows use `transform` for positioning, so context menus and dialogs should render to `document.body` with `createPortal`
+- Remote desktop app changes should stay in sync with [the component roadmap](docs/remote-desktop-component-roadmap.md), `RemoteDesktopShell.tsx`, `ShellDeskDesktopAppKey`, vault white lists, icons, i18n, and style entry files
 - UI copy should remain available in both English and Simplified Chinese
 
 See [AGENTS.md](AGENTS.md) for the full collaboration and engineering notes.

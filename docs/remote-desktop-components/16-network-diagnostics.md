@@ -1,5 +1,7 @@
 # 网络诊断工具箱功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `network-diagnostics`），实现入口为 `src/components/remote-desktop/RemoteNetworkDiagnostics.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 网络诊断工具箱提供常用网络排障命令的图形化入口。它强调低门槛、结果清晰和可复制，帮助用户从远程主机视角检查网络连通性、DNS、路由和 HTTP 服务。

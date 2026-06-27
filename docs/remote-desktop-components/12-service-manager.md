@@ -1,5 +1,7 @@
 # 服务管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `service-manager`），实现入口为 `src/components/remote-desktop/RemoteServiceManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 服务管理器用于把远程主机上的常驻服务变成可扫描、可筛选、可控制、可追踪的图形界面。它优先覆盖 Linux `systemd`，同时兼容 Windows Services。它应成为 ShellDesk 远程桌面中最常用的运维入口之一。

@@ -1,5 +1,7 @@
 # 计划任务管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `scheduled-tasks`），实现入口为 `src/components/remote-desktop/RemoteScheduledTasks.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 计划任务管理器用于统一管理远程主机的定时任务。它覆盖 Linux crontab、systemd timer，以及 Windows Task Scheduler，帮助用户查看、编辑、启停和诊断定时任务。

@@ -1,5 +1,7 @@
 # VNC Viewer 组件重设计文档
 
+> 当前状态：已接入远程桌面（appKey: `vnc`），实现入口为 `src/components/remote-desktop/RemoteVncViewer.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 VNC Viewer 用于通过 SSH 可达网络连接远程图形桌面。它应提供稳定的屏幕查看和输入控制，同时把连接诊断、性能模式和安全边界讲清楚。

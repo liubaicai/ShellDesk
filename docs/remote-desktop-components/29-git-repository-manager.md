@@ -1,5 +1,7 @@
 # Git 仓库管理器功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `git-manager`），实现入口为 `src/components/remote-desktop/RemoteGitManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 Git 仓库管理器用于在远程主机上查看和维护代码仓库。它不是完整 IDE，而是面向服务器维护场景，帮助用户快速确认分支、变更、提交记录，并执行轻量级同步操作。

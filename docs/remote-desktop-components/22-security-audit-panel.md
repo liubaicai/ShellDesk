@@ -1,5 +1,7 @@
 # 安全巡检面板功能设计与开发计划
 
+> 当前状态：已接入远程桌面（appKey: `security-audit`），实现入口为 `src/components/remote-desktop/RemoteSecurityAudit.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+
 ## 定位
 
 安全巡检面板用于对远程主机做轻量安全检查，聚合 SSH 配置、用户权限、开放端口、登录失败、文件权限等常见风险。它不是合规扫描器，而是 ShellDesk 内置的日常安全体检工具。
