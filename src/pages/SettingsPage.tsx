@@ -334,6 +334,10 @@ function getAiModelDetail(model: ShellDeskAiModelInfo) {
 }
 
 function getPiProviderId(settings: ShellDeskAppSettings) {
+  if (settings.aiProvider === 'custom' || settings.aiProvider === 'openai-compatible') {
+    return '';
+  }
+
   if (settings.aiProvider === 'anthropic' || settings.aiApiFormat === 'anthropic') {
     return 'anthropic';
   }

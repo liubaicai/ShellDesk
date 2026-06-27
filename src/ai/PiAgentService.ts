@@ -9,11 +9,12 @@ import {
   type Models,
   type Usage,
 } from '@earendil-works/pi-ai';
+import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
-type PiCustomModel = Model<'openai-completions'>;
+type PiCustomModel = Model<'openai-completions' | 'anthropic-messages'>;
 type PiRequestMessage = {
   role: 'user' | 'assistant' | 'toolResult';
   content: string;
@@ -37,6 +38,10 @@ const CUSTOM_PROVIDER_ID = 'shelldesk-openai-compatible';
 const modelsCache = new Map<string, Models>();
 
 function getProviderId(settings: ShellDeskAppSettings): string {
+  if (settings.aiProvider === 'custom' || settings.aiProvider === 'openai-compatible') {
+    return CUSTOM_PROVIDER_ID;
+  }
+
   if (settings.aiProvider === 'anthropic' || settings.aiApiFormat === 'anthropic') {
     return 'anthropic';
   }
@@ -70,6 +75,24 @@ function createOpenAiCompatibleModel(settings: ShellDeskAppSettings): PiCustomMo
   };
 }
 
+function createAnthropicCompatibleModel(settings: ShellDeskAppSettings): PiCustomModel {
+  const modelId = settings.aiModel.trim();
+  const baseUrl = settings.aiApiBaseUrl.trim();
+
+  return {
+    id: modelId,
+    name: modelId,
+    api: 'anthropic-messages',
+    provider: CUSTOM_PROVIDER_ID,
+    baseUrl,
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200000,
+    maxTokens: 8192,
+  };
+}
+
 export function isAiConfigured(settings: ShellDeskAppSettings): boolean {
   const hasEndpoint = settings.aiProvider === 'openai' || settings.aiProvider === 'anthropic'
     ? true
@@ -85,7 +108,10 @@ export function isAiConfigured(settings: ShellDeskAppSettings): boolean {
 export function createModelsForSettings(settings: ShellDeskAppSettings): Models {
   if (settings.aiProvider === 'custom' || settings.aiProvider === 'openai-compatible') {
     const models = createModels();
-    const model = createOpenAiCompatibleModel(settings);
+    const isAnthropicCompatible = settings.aiApiFormat === 'anthropic';
+    const model = isAnthropicCompatible
+      ? createAnthropicCompatibleModel(settings)
+      : createOpenAiCompatibleModel(settings);
 
     models.setProvider(createProvider({
       id: CUSTOM_PROVIDER_ID,
@@ -98,7 +124,7 @@ export function createModelsForSettings(settings: ShellDeskAppSettings): Models 
         },
       },
       models: [model],
-      api: openAICompletionsApi(),
+      api: isAnthropicCompatible ? anthropicMessagesApi() : openAICompletionsApi(),
     }));
 
     return models;
