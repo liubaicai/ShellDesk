@@ -228,6 +228,16 @@ interface RemoteDesktopProps {
   onTerminalSessionEvent?: (event: RemoteTerminalSessionEvent) => void;
 }
 
+function clearDesktopTextSelection() {
+  window.getSelection()?.removeAllRanges();
+}
+
+function preventDesktopOpenSelection(event: ReactMouseEvent<HTMLElement>) {
+  event.preventDefault();
+  clearDesktopTextSelection();
+  window.requestAnimationFrame(clearDesktopTextSelection);
+}
+
 interface DesktopWindowFrame {
   x: number;
   y: number;
@@ -2762,7 +2772,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   onDragEnd={handleDragEnd}
                   onDragOver={handleDragOver}
                   onDrop={(event) => handleDesktopDrop(event, item)}
-                  onDoubleClick={() => openDesktopWindow(item.appKey)}
+                  onDoubleClick={(event) => {
+                    preventDesktopOpenSelection(event);
+                    openDesktopWindow(item.appKey);
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -2989,7 +3002,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   onDragEnd={handleDragEnd}
                   onDragOver={handleDragOver}
                   onDrop={(event) => handleFolderDrop(event, openFolder.id, appKey)}
-                  onDoubleClick={() => {
+                  onDoubleClick={(event) => {
+                    preventDesktopOpenSelection(event);
                     openDesktopWindow(appKey);
                     closeDesktopFolder();
                   }}

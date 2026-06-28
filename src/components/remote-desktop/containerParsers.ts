@@ -26,6 +26,127 @@ export function formatInspectValue(value: unknown) {
   }
   return String(value);
 }
+function readFirstValue(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+function formatPortWithProtocol(port: string, protocol: string) {
+  const portText = port.trim();
+  const protocolText = protocol.trim().replace(/^\//u, '');
+  if (!portText) {
+    return '';
+  }
+  if (!protocolText || portText.includes('/')) {
+    return portText;
+  }
+  return `${portText}/${protocolText}`;
+}
+function formatPortRange(port: string, range: number | undefined) {
+  const portText = port.trim();
+  if (!portText || !range || range <= 1 || !/^\d+$/u.test(portText)) {
+    return portText;
+  }
+  return `${portText}-${Number(portText) + range - 1}`;
+}
+function formatPortBinding(containerPort: string, hostIp: string, hostPort: string, protocol: string) {
+  const containerPortText = formatPortWithProtocol(containerPort, protocol);
+  if (hostPort && containerPortText) {
+    return `${hostIp ? `${hostIp}:` : ''}${hostPort}->${containerPortText}`;
+  }
+  if (containerPortText) {
+    return containerPortText;
+  }
+  return hostPort ? `${hostIp ? `${hostIp}:` : ''}${hostPort}` : '';
+}
+function formatPortRecord(record: Record<string, unknown>) {
+  const containerPort = readString(
+    record,
+    'container_port',
+    'ContainerPort',
+    'PrivatePort',
+    'private_port',
+    'target',
+    'TargetPort',
+  );
+  const hostPortText = readString(
+    record,
+    'host_port',
+    'HostPort',
+    'PublicPort',
+    'public_port',
+    'published',
+    'PublishedPort',
+  );
+  const range = readNumber(record, 'range', 'Range');
+  const rangedContainerPort = formatPortRange(containerPort, range);
+  const hostPort = formatPortRange(hostPortText === '0' ? '' : hostPortText, range);
+  const hostIp = readString(record, 'host_ip', 'HostIp', 'HostIP', 'hostIP', 'IP', 'ip');
+  const protocol = readString(record, 'protocol', 'Protocol', 'type', 'Type') || 'tcp';
+  const directMapping = formatPortBinding(rangedContainerPort, hostIp, hostPort, protocol);
+  if (directMapping) {
+    return directMapping;
+  }
+
+  const networkPorts = Object.entries(record).flatMap(([mappedContainerPort, bindings]) => {
+    if (!/^\d+(?:-\d+)?\/[a-z0-9]+$/iu.test(mappedContainerPort)) {
+      return [] as string[];
+    }
+    if (bindings === null) {
+      return [mappedContainerPort];
+    }
+    if (!Array.isArray(bindings)) {
+      return [];
+    }
+    const formattedBindings = bindings
+      .map(toRecord)
+      .filter((bindingRecord): bindingRecord is Record<string, unknown> => Boolean(bindingRecord))
+      .map((bindingRecord) => formatPortBinding(
+        mappedContainerPort,
+        readString(bindingRecord, 'HostIp', 'host_ip', 'HostIP', 'hostIP') || '0.0.0.0',
+        readString(bindingRecord, 'HostPort', 'host_port', 'PublicPort', 'public_port'),
+        '',
+      ))
+      .filter(Boolean);
+    return formattedBindings.length ? formattedBindings : [mappedContainerPort];
+  });
+  if (networkPorts.length) {
+    return networkPorts.join(', ');
+  }
+
+  return formatInspectValue(record);
+}
+function formatContainerPorts(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (typeof item === 'number' || typeof item === 'boolean') return String(item);
+        const itemRecord = toRecord(item);
+        return itemRecord ? formatPortRecord(itemRecord) : '';
+      })
+      .filter(Boolean)
+      .join(', ');
+  }
+  const record = toRecord(value);
+  return record ? formatPortRecord(record) : '';
+}
+function readContainerSummaryPorts(record: Record<string, unknown>) {
+  return formatContainerPorts(readFirstValue(record, 'Ports', 'ports', 'PortMappings', 'portMappings')) || '-';
+}
 export function formatByteLimit(value: number | undefined) {
   if (!value || value <= 0) {
     return '';
@@ -135,7 +256,7 @@ export function parseContainerSummary(record: Record<string, unknown>): Containe
     command: readString(record, 'Command', 'command') || undefined,
     status,
     state,
-    ports: readString(record, 'Ports', 'ports') || '-',
+    ports: readContainerSummaryPorts(record),
     createdAt: readString(record, 'CreatedAt', 'Created', 'createdAt', 'created') || undefined,
     runningFor: readString(record, 'RunningFor', 'RunningForHuman', 'runningFor') || undefined,
   };

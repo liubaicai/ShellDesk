@@ -69,6 +69,8 @@
   padding: 5px 4px;
   background: transparent;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .desktop-icons button.active,
@@ -359,7 +361,6 @@
 .launchpad-overlay.closing,
 .desktop-folder-overlay.closing {
   animation: launchpad-overlay-exit 160ms ease both;
-  pointer-events: none;
 }
 
 .launchpad-panel {
@@ -498,6 +499,8 @@
   color: #eef4ff;
   cursor: pointer;
   text-align: center;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .launchpad-app-button {
