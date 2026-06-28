@@ -1,12 +1,8 @@
-use crate::{now, sanitize_file_name, vault::read_store, AppState};
+use crate::{error_string, now, sanitize_file_name, vault::read_store, AppState};
 use serde_json::{json, Value};
 use std::{fs, path::Path, time::Duration};
 use tauri::{Emitter, Runtime};
 use tauri_plugin_updater::UpdaterExt;
-
-fn error_string(error: impl std::fmt::Display) -> String {
-    error.to_string()
-}
 
 const TAURI_UPDATER_ENDPOINT: &str =
     "https://github.com/liubaicai/ShellDesk/releases/latest/download/latest.json";

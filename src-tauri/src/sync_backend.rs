@@ -1,10 +1,12 @@
-use base64::Engine;
 use serde_json::{json, Value};
 use std::{path::PathBuf, time::Duration};
 use tauri::{Emitter, Manager};
 use tokio::time;
 
-use crate::{error_string, now, random_id, read_json_file, write_json_file, AppState};
+use crate::{
+    error_string, now, random_id, read_json_file, vault_storage::decrypt_electron_safe_storage,
+    write_json_file, AppState,
+};
 
 #[path = "sync_backend/apply.rs"]
 mod apply;
@@ -116,57 +118,6 @@ fn normalize_sync_secrets(raw: &Value) -> Value {
         "webdavPassword": raw.get("webdavPassword").and_then(Value::as_str).unwrap_or(""),
         "syncPassphrase": raw.get("syncPassphrase").and_then(Value::as_str).unwrap_or("")
     })
-}
-
-#[cfg(windows)]
-fn decrypt_electron_safe_storage(ciphertext: &str) -> Result<String, String> {
-    use windows_sys::Win32::Foundation::LocalFree;
-    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
-
-    let mut encrypted = base64::engine::general_purpose::STANDARD
-        .decode(ciphertext)
-        .map_err(|_| "同步设置密文格式无效，请重新保存同步设置。".to_string())?;
-    if encrypted.is_empty() {
-        return Err("同步设置密文为空，请重新保存同步设置。".to_string());
-    }
-    let input = CRYPT_INTEGER_BLOB {
-        cbData: encrypted.len() as u32,
-        pbData: encrypted.as_mut_ptr(),
-    };
-    let mut output = CRYPT_INTEGER_BLOB {
-        cbData: 0,
-        pbData: std::ptr::null_mut(),
-    };
-    let ok = unsafe {
-        CryptUnprotectData(
-            &input,
-            std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
-            std::ptr::null(),
-            0,
-            &mut output,
-        )
-    };
-    if ok == 0 {
-        return Err("无法解密 Electron safeStorage 同步设置，请在同一 Windows 用户下运行或重新保存同步设置。".to_string());
-    }
-    let bytes = if output.pbData.is_null() || output.cbData == 0 {
-        Vec::new()
-    } else {
-        unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() }
-    };
-    if !output.pbData.is_null() {
-        unsafe {
-            let _ = LocalFree(output.pbData as _);
-        }
-    }
-    String::from_utf8(bytes).map_err(|_| "同步设置密文内容不是有效 UTF-8。".to_string())
-}
-
-#[cfg(not(windows))]
-fn decrypt_electron_safe_storage(_ciphertext: &str) -> Result<String, String> {
-    Err("当前平台无法直接解密 Electron safeStorage 同步设置；请重新保存同步设置。".to_string())
 }
 
 fn normalize_legacy_sync_store(raw: Value) -> Value {
@@ -1068,6 +1019,7 @@ fn update_sync_status_with_time(
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+    use base64::Engine;
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
 

@@ -74,4 +74,5 @@ pub(crate) use util::{
     app_data_dir, error_string, escape_pointer, https_url_origin, node_platform, now,
     prevent_process_window, prevent_tokio_process_window, random_id, read_json_file,
     read_string_field, read_u16_field, sanitize_file_name, string_arg, whoami, write_json_file,
+    write_json_file_private,
 };

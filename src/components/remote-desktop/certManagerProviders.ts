@@ -1,4 +1,5 @@
 import { powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
+import { shellSingleQuote } from './shellUtils';
 import { tCurrent } from '../../i18n';
 
 export type CertExpiryStatus = 'valid' | 'warning' | 'danger' | 'expired' | 'unknown';
@@ -80,10 +81,6 @@ export interface CertbotRenewalScheduleStatus {
   nextRun: string;
   lastResult: string;
   rawOutput: string;
-}
-
-export function shellSingleQuote(value: string) {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function stableId(value: string) {

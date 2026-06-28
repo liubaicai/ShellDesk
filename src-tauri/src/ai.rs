@@ -4,9 +4,7 @@ use serde_json::{json, Value};
 use std::{collections::HashSet, time::Duration};
 use tauri::Emitter;
 
-fn error_string(error: impl std::fmt::Display) -> String {
-    error.to_string()
-}
+use crate::error_string;
 
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 const MODEL_LIST_TIMEOUT_SECS: u64 = 20;

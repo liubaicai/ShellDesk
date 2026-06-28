@@ -140,11 +140,6 @@ export function getParentRemotePath(remotePath: string, isWindowsHost = false) {
   return normalized.slice(0, slashIndex);
 }
 
-export function getFileExtension(name: string) {
-  const dotIndex = name.lastIndexOf('.');
-  return dotIndex > 0 ? name.slice(dotIndex + 1).toLowerCase() : '';
-}
-
 export function getBaseName(path: string) {
   const normalized = normalizeWindowsRemotePath(path).replace(/\/+$/, '');
   const slashIndex = normalized.lastIndexOf('/');

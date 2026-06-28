@@ -439,4 +439,3 @@ export function parseIpRoute(stdout: string): RouteEntry[] {
 
 export const parseRouteTable = parseIpRoute;
 export const parseDnsResolvConf = parseResolvConf;
-export const formatBytes = formatSysInfoDiskBytes;

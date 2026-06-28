@@ -1,11 +1,9 @@
+#[cfg(windows)]
 use base64::Engine;
 use serde_json::{json, Map, Value};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 
-use crate::{error_string, now, read_json_file, AppState};
+use crate::{error_string, now, read_json_file, write_json_file_private, AppState};
 
 const CONFIG_STORE_FORMAT: &str = "shelldesk-config-store";
 const VAULT_FORMAT: &str = "shelldesk-vault";
@@ -154,31 +152,6 @@ fn read_persisted_vault_wrapper(raw_payload: Value) -> Result<Value, String> {
         return serde_json::from_str(&plaintext).map_err(error_string);
     }
     Ok(object.get("payload").cloned().unwrap_or_else(|| json!({})))
-}
-
-fn write_json_file_private(path: &Path, value: &Value) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(value).map_err(error_string)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(error_string)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(error_string)?;
-        file.write_all(content.as_bytes()).map_err(error_string)?;
-        return Ok(());
-    }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, content).map_err(error_string)
-    }
 }
 
 fn create_config_payload(store: &Value) -> Value {
@@ -700,7 +673,7 @@ fn encrypt_electron_safe_storage(_plaintext: &str) -> Result<String, String> {
 }
 
 #[cfg(windows)]
-fn decrypt_electron_safe_storage(ciphertext: &str) -> Result<String, String> {
+pub(crate) fn decrypt_electron_safe_storage(ciphertext: &str) -> Result<String, String> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
@@ -743,13 +716,14 @@ fn decrypt_electron_safe_storage(ciphertext: &str) -> Result<String, String> {
 }
 
 #[cfg(not(windows))]
-fn decrypt_electron_safe_storage(_ciphertext: &str) -> Result<String, String> {
+pub(crate) fn decrypt_electron_safe_storage(_ciphertext: &str) -> Result<String, String> {
     Err("当前平台不支持系统凭据解密。".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn temp_state(name: &str) -> AppState {
         let dir = std::env::temp_dir().join(format!(

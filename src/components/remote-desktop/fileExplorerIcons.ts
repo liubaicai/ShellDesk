@@ -1,6 +1,5 @@
 import { t, type AppLanguage } from '../../i18n';
-import { isTextFile } from './textFileUtils';
-import { getFileExtension } from './fileExplorerPaths';
+import { getFileExtension, isTextFile } from './textFileUtils';
 import type { RemoteFileEntry, RemoteFileEntryType } from './fileExplorerTypes';
 
 const FILE_ICON_MAP: Record<string, string> = {

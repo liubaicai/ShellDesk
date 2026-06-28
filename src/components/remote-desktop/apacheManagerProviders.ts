@@ -1,5 +1,5 @@
 import { powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
-import { shellSingleQuote } from './certManagerProviders';
+import { shellSingleQuote } from './shellUtils';
 import type { ApacheDistro, ApacheInstallation, ApacheSitesLayout } from './apacheManagerTypes';
 
 const apacheFieldMarker = '__SHELLDESK_APACHE_FIELD__';

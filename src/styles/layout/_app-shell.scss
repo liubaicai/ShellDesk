@@ -387,12 +387,6 @@
   opacity: 0.72;
 }
 
-[data-theme="light"] .app-shell {
-  background:
-    radial-gradient(ellipse at 20% -12%, rgba(55, 122, 220, 0.12), transparent 42%),
-    linear-gradient(145deg, #eef3f8 0%, #e7edf5 100%);
-}
-
 .settings-entry::after {
   position: absolute;
   top: -18px;
@@ -415,9 +409,7 @@
 /* Home workbench refresh */
 
 .top-chrome {
-  height: 42px;
   padding: 0 14px 0 16px;
-  background: var(--chrome);
 }
 
 .workspace-title.app-only {
@@ -439,7 +431,6 @@
 
 .side-nav {
   padding: 18px 14px 16px;
-  background: var(--sidebar);
 }
 
 .feature-nav {
@@ -471,7 +462,6 @@
 .settings-entry .nav-icon {
   width: 22px;
   height: 22px;
-  color: var(--muted-strong);
 }
 
 .nav-icon svg {
@@ -484,7 +474,6 @@
 .feature-nav-item:hover,
 .settings-entry.active,
 .settings-entry:hover {
-  background: var(--sidebar-active);
   color: var(--accent);
 }
 

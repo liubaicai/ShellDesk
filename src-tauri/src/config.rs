@@ -2,7 +2,7 @@ use crate::vault::{
     normalize_app_settings, normalize_hosts, normalize_known_hosts, normalize_proxy_profiles,
     normalize_ssh_keys_for_import, read_store, to_snapshot, with_store_mut,
 };
-use crate::{error_string, read_json_file, sanitize_file_name, AppState};
+use crate::{error_string, read_json_file, sanitize_file_name, write_json_file_private, AppState};
 use base64::Engine;
 use serde_json::{json, Value};
 use std::{fs, path::Path};
@@ -327,11 +327,6 @@ fn validate_config_import_file(path: &Path, language: DialogLanguage) -> Result<
         return Err(dialog_text(language).import_size_error.to_string());
     }
     Ok(())
-}
-
-fn write_json_file_private(path: &Path, value: &Value) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(value).map_err(error_string)?;
-    write_text_file_private(path, &content)
 }
 
 fn write_text_file_private(path: &Path, content: &str) -> Result<(), String> {

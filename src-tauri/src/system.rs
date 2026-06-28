@@ -9,11 +9,7 @@ use std::{
 };
 use tokio::{process::Command, time};
 
-use crate::prevent_tokio_process_window;
-
-fn error_string(error: impl std::fmt::Display) -> String {
-    error.to_string()
-}
+use crate::{error_string, prevent_tokio_process_window};
 
 pub(crate) fn read_known_hosts() -> Result<Value, String> {
     const MAX_KNOWN_HOSTS_FILE_SIZE: u64 = 5 * 1024 * 1024;

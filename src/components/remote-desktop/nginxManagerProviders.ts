@@ -1,6 +1,6 @@
 import { powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import { tCurrent } from '../../i18n';
-import { shellSingleQuote } from './certManagerProviders';
+import { shellSingleQuote } from './shellUtils';
 import type { NginxDistro, NginxInstallation, NginxSitesLayout } from './nginxManagerTypes';
 
 const nginxFieldMarker = '__SHELLDESK_NGINX_FIELD__';

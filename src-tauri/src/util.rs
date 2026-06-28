@@ -38,6 +38,31 @@ pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<(), String> 
     fs::write(path, content).map_err(error_string)
 }
 
+pub(crate) fn write_json_file_private(path: &Path, value: &Value) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(error_string)?;
+    }
+    let content = serde_json::to_string_pretty(value).map_err(error_string)?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(error_string)?;
+        file.write_all(content.as_bytes()).map_err(error_string)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, content).map_err(error_string)
+    }
+}
+
 pub(crate) fn sanitize_file_name(value: &str) -> String {
     let mut output = value
         .chars()

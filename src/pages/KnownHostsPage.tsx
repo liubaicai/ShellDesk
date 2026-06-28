@@ -1,5 +1,6 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 
+import { getErrorMessage } from '../components/remote-desktop/desktopUtils';
 import { useCurrentAppLanguage } from '../i18n';
 
 interface KnownHostsPageProps {
@@ -91,18 +92,6 @@ function createId() {
 
 function formatCount(template: string, count: number) {
   return template.replace('{count}', String(count));
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    return error.message.replace(/^Error invoking remote method '[^']+': Error: /u, '');
-  }
-
-  if (typeof error === 'string' && error.trim()) {
-    return error.trim();
-  }
-
-  return 'unknown';
 }
 
 function isHashedHostname(hostname: string) {

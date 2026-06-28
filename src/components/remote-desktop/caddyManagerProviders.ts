@@ -1,6 +1,6 @@
 import { powershellStdinCommand, type RemoteCommandInput } from './remoteSystem';
 import { tCurrent } from '../../i18n';
-import { shellSingleQuote } from './certManagerProviders';
+import { shellSingleQuote } from './shellUtils';
 import type { CaddyInstallation } from './caddyManagerTypes';
 
 const caddyFieldMarker = '__SHELLDESK_CADDY_FIELD__';
