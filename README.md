@@ -262,6 +262,26 @@ More platform packaging scripts are available in [package.json](package.json).
 
 ---
 
+## FAQ
+
+### macOS says the app is damaged or cannot be opened
+
+Since ShellDesk packages are unsigned / unnotarized, macOS Gatekeeper may block the application and display a warning like "ShellDesk is damaged and cannot be opened."
+
+If you see this message, run the following command in Terminal to remove Apple's quarantine attribute:
+
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/ShellDesk.app
+```
+
+After that, open ShellDesk again — it should launch normally.
+
+### Can ShellDesk run on Intel Macs?
+
+Yes. Releases provide both `macos-x64.dmg` (Intel) and `macos-arm64.dmg` (Apple Silicon). Intel Mac users should download the x64 package, and Apple Silicon users should download the arm64 package.
+
+---
+
 ## Project Structure
 
 ```text

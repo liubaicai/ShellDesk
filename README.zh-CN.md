@@ -262,6 +262,26 @@ Stop-Process -Id <PID>
 
 ---
 
+## 常见问题
+
+### macOS 提示无法打开或已损坏
+
+ShellDesk 安装包未签名/未公证时，macOS Gatekeeper 可能会拦截并提示"已损坏，无法打开"。
+
+如果遇到该提示，可以在终端执行以下命令，解除苹果系统的安全隔离限制：
+
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/ShellDesk.app
+```
+
+执行后重新打开 ShellDesk 即可。
+
+### macOS Intel 能用吗
+
+可以。Release 会分别提供 `macos-x64.dmg`（Intel）和 `macos-arm64.dmg`（Apple Silicon）。Intel Mac 下载 x64 包，Apple Silicon 下载 arm64 包。
+
+---
+
 ## 项目结构
 
 ```text
