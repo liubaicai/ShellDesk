@@ -251,6 +251,14 @@ function CodeEditorAiPanel({
     void sendMessage(`${prompt}\n\nProject root: ${projectRoot}`);
   }, [draft, isBusy, isConfigured, projectRoot, sendMessage]);
 
+  const retryPrompt = useCallback((messageId: string, content: string) => {
+    if (isBusy || !isConfigured) {
+      return;
+    }
+
+    void sendMessage(content, { retryFromMessageId: messageId });
+  }, [isBusy, isConfigured, sendMessage]);
+
   const messagesScrollKey = messages.map((message) => `${message.id}:${message.content}`).join('\x1e');
 
   useEffect(() => {
@@ -281,7 +289,20 @@ function CodeEditorAiPanel({
         {messages.length === 0 && isConfigured ? <div className="code-editor-ai-empty">{t('codeEditor.ai.empty', language)}</div> : null}
         {messages.map((message) => (
           <article key={message.id} className={`code-editor-ai-message ${message.role}`}>
-            <span>{message.role === 'assistant' ? t('auto.aiChat.assistant', language) : t('auto.aiChat.user', language)}</span>
+            <div className="code-editor-ai-message-meta">
+              <span>{message.role === 'assistant' ? t('auto.aiChat.assistant', language) : t('auto.aiChat.user', language)}</span>
+              {message.role === 'user' ? (
+                <button
+                  type="button"
+                  onClick={() => retryPrompt(message.id, message.content)}
+                  disabled={isBusy || !isConfigured}
+                  title={t('codeEditor.ai.retry', language)}
+                >
+                  <RefreshCw size={12} />
+                  {t('codeEditor.ai.retry', language)}
+                </button>
+              ) : null}
+            </div>
             {message.role === 'assistant'
               ? <MarkdownMessage content={message.content} />
               : <p data-i18n-skip>{message.content}</p>}

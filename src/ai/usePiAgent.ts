@@ -10,6 +10,7 @@ import type {
   SimpleStreamOptions,
   ToolCall,
   Usage,
+  UserMessage,
 } from '@earendil-works/pi-ai';
 import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentEvent, AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
@@ -38,6 +39,10 @@ interface BackendMessageCommitOptions {
 }
 
 type BackendMessageCommit = (message: AssistantMessage, options?: BackendMessageCommitOptions) => void;
+
+interface SendMessageOptions {
+  retryFromMessageId?: string;
+}
 
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
   return typeof message === 'object' && message !== null && 'role' in message && message.role === 'assistant';
@@ -421,6 +426,7 @@ export function usePiAgent(config: UsePiAgentConfig) {
   const agentRef = useRef<Agent | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const assistantMessageIdsRef = useRef(new WeakMap<AssistantMessage, string>());
+  const messageIdToAgentMessageRef = useRef(new Map<string, AgentMessage>());
   const isMountedRef = useRef(true);
   const isConfigured = isAiConfigured(config.settings);
 
@@ -441,6 +447,7 @@ export function usePiAgent(config: UsePiAgentConfig) {
     agentRef.current?.abort();
     agentRef.current = null;
     assistantMessageIdsRef.current = new WeakMap();
+    messageIdToAgentMessageRef.current = new Map();
   }, []);
 
   const commitAssistantMessage = useCallback((message: AssistantMessage, options?: BackendMessageCommitOptions) => {
@@ -449,6 +456,7 @@ export function usePiAgent(config: UsePiAgentConfig) {
     const content = getMessageText(message);
 
     if (content.trim()) {
+      messageIdToAgentMessageRef.current.set(id, message);
       setMessages((prev) => upsertMessage(prev, {
         id,
         role: 'assistant',
@@ -562,7 +570,7 @@ export function usePiAgent(config: UsePiAgentConfig) {
     disposeAgent();
   }, [disposeAgent]);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, options?: SendMessageOptions) => {
     const trimmedContent = content.trim();
 
     if (!trimmedContent || isBusy) {
@@ -581,20 +589,44 @@ export function usePiAgent(config: UsePiAgentConfig) {
       return;
     }
 
+    const timestamp = Date.now();
     const userMessage: AiMessage = {
       id: createMessageId(),
       role: 'user',
       content: trimmedContent,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(timestamp).toISOString(),
+    };
+    const agentUserMessage: UserMessage = {
+      role: 'user',
+      content: trimmedContent,
+      timestamp,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    if (options?.retryFromMessageId) {
+      const targetAgentMessage = messageIdToAgentMessageRef.current.get(options.retryFromMessageId);
+      const targetAgentIndex = targetAgentMessage ? agent.state.messages.indexOf(targetAgentMessage) : -1;
+
+      if (targetAgentIndex >= 0) {
+        agent.state.messages = agent.state.messages.slice(0, targetAgentIndex);
+      } else {
+        agent.state.messages = [];
+      }
+    }
+
+    messageIdToAgentMessageRef.current.set(userMessage.id, agentUserMessage);
+    setMessages((prev) => {
+      const targetUiIndex = options?.retryFromMessageId
+        ? prev.findIndex((message) => message.id === options.retryFromMessageId)
+        : -1;
+      const nextMessages = targetUiIndex >= 0 ? prev.slice(0, targetUiIndex) : prev;
+      return [...nextMessages, userMessage];
+    });
     setError('');
     setIsBusy(true);
     setBusyText(t('auto.aiChat.thinking', config.language));
 
     try {
-      await agent.prompt(trimmedContent);
+      await agent.prompt(agentUserMessage);
     } catch (err) {
       if (isMountedRef.current) {
         setError(err instanceof Error ? err.message : String(err));
