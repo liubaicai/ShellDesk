@@ -115,16 +115,6 @@ export interface DiskInfoSummary {
   available: string;
 }
 
-export type MirrorDistroType = 'debian' | 'redhat' | 'rhel' | 'unknown';
-export type AptSourceFormat = 'legacy' | 'deb822';
-export type AptMirrorFlavor = 'ubuntu' | 'debian';
-
-export interface AptSourceTarget {
-  path: string;
-  format: AptSourceFormat;
-  flavor: AptMirrorFlavor;
-}
-
 export interface SettingsNetworkHostnameDialogProps {
   hostnameDraft: string;
   language: AppLanguage;

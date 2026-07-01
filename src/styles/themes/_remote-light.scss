@@ -173,14 +173,12 @@
   color: #8b949e;
 }
 
-[data-theme="light"] .settings-draft-footer,
-[data-theme="light"] .settings-preview-card {
+[data-theme="light"] .settings-draft-footer {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
-[data-theme="light"] .settings-draft-footer span,
-[data-theme="light"] .settings-preview-card span {
+[data-theme="light"] .settings-draft-footer span {
   color: var(--accent);
 }
 
@@ -199,27 +197,6 @@
 [data-theme="light"] .settings-textarea:focus {
   border-color: var(--focus-border);
   box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-[data-theme="light"] .settings-mirror-btn {
-  border-color: rgba(16, 32, 51, 0.07);
-  background: var(--surface);
-  color: #1f2328;
-}
-
-[data-theme="light"] .settings-mirror-btn:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 5%, transparent);
-}
-
-[data-theme="light"] .settings-mirror-btn.selected {
-  border-color: var(--accent-border);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-[data-theme="light"] .settings-mirror-btn small {
-  color: #656d76;
 }
 
 [data-theme="light"] .settings-select {
@@ -252,8 +229,7 @@
   border-color: rgba(207, 34, 46, 0.24);
 }
 
-[data-theme="light"] .settings-modal-title,
-[data-theme="light"] .settings-preview-card strong {
+[data-theme="light"] .settings-modal-title {
   color: #1f2328;
 }
 
