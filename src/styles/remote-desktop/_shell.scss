@@ -8,7 +8,7 @@
 
 .browser-toolbar button,
 .mac-dock button,
-.desktop-icons button {
+.desktop-icon-button {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.09);
   color: var(--text);
@@ -57,7 +57,7 @@
   width: auto;
 }
 
-.desktop-icons button {
+.desktop-icon-button {
   display: grid;
   width: 74px;
   height: 84px;
@@ -71,10 +71,23 @@
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
   -webkit-user-select: none;
   user-select: none;
+  touch-action: none;
 }
 
-.desktop-icons button.active,
-.desktop-icons button:hover {
+.desktop-icon-button,
+.launchpad-app-button,
+.desktop-folder-app-button {
+  -webkit-user-drag: none;
+}
+
+.desktop-icon-button *,
+.launchpad-app-button *,
+.desktop-folder-app-button * {
+  -webkit-user-drag: none;
+}
+
+.desktop-icon-button.active,
+.desktop-icon-button:hover {
   border-color: rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.13);
   backdrop-filter: blur(8px);
@@ -275,6 +288,37 @@
   font-weight: 750;
   line-height: 1.22;
   text-align: center;
+}
+
+.desktop-pointer-drag-preview {
+  position: fixed;
+  z-index: 10020;
+  display: grid;
+  min-width: 72px;
+  justify-items: center;
+  gap: 4px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 35, 0.72);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  color: #ffffff;
+  pointer-events: none;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  transform: translate(12px, 12px);
+}
+
+.desktop-pointer-drag-preview .desktop-app-icon-shell {
+  width: 34px;
+  height: 34px;
+}
+
+.desktop-pointer-drag-preview strong {
+  max-width: 92px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.18;
 }
 
 .desktop-folder-icon-shell {
@@ -540,6 +584,7 @@
   text-align: center;
   -webkit-user-select: none;
   user-select: none;
+  touch-action: none;
 }
 
 .launchpad-app-button {
@@ -1386,7 +1431,7 @@
   max-height: calc(100% - 62px);
 }
 
-.desktop-icons button {
+.desktop-icon-button {
   gap: 5px;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -1396,14 +1441,14 @@
     border-color 120ms ease;
 }
 
-.desktop-icons button.active,
-.desktop-icons button:hover {
+.desktop-icon-button.active,
+.desktop-icon-button:hover {
   border-color: rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(6px);
 }
 
-.desktop-icons button:focus-visible {
+.desktop-icon-button:focus-visible {
   outline: 1px dotted rgba(255, 255, 255, 0.9);
   outline-offset: -3px;
 }

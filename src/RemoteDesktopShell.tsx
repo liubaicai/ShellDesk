@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, type FormEvent, lazy, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, lazy, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
@@ -174,7 +174,6 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   sqlite: new URL('./assets/desktop-icons/sqlite.png', import.meta.url).href,
 };
 
-const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const launchpadAnimationMs = 180;
 const desktopAppCatalogVersion = 13;
@@ -213,6 +212,21 @@ type DesktopDragPayload =
   | { source: 'desktop'; itemId: string; itemType: 'app' | 'folder'; appKey?: DesktopAppKey }
   | { source: 'launchpad'; appKey: DesktopAppKey }
   | { source: 'folder'; folderId: string; appKey: DesktopAppKey };
+
+interface DesktopPointerDragSession {
+  payload: DesktopDragPayload;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  isDragging: boolean;
+}
+
+interface DesktopPointerDragPreviewState {
+  x: number;
+  y: number;
+  label: string;
+  appKey?: DesktopAppKey;
+}
 
 interface DesktopAppContextMenuState {
   x: number;
@@ -808,38 +822,6 @@ function createUniqueFolderName(items: DesktopLayoutItem[], baseName: string) {
   }
 
   return name;
-}
-
-function getDragPayload(event: ReactDragEvent<HTMLElement>, fallbackPayload: DesktopDragPayload | null) {
-  if (fallbackPayload) {
-    return fallbackPayload;
-  }
-
-  try {
-    const rawPayload = event.dataTransfer.getData(desktopDragMimeType);
-    const payload = rawPayload ? JSON.parse(rawPayload) as Partial<DesktopDragPayload> : null;
-
-    if (payload?.source === 'launchpad' && isDesktopAppKey(payload.appKey)) {
-      return { source: 'launchpad', appKey: payload.appKey } satisfies DesktopDragPayload;
-    }
-
-    if (payload?.source === 'folder' && typeof payload.folderId === 'string' && isDesktopAppKey(payload.appKey)) {
-      return { source: 'folder', folderId: payload.folderId, appKey: payload.appKey } satisfies DesktopDragPayload;
-    }
-
-    if (payload?.source === 'desktop' && typeof payload.itemId === 'string' && (payload.itemType === 'app' || payload.itemType === 'folder')) {
-      return {
-        source: 'desktop',
-        itemId: payload.itemId,
-        itemType: payload.itemType,
-        appKey: isDesktopAppKey(payload.appKey) ? payload.appKey : undefined,
-      } satisfies DesktopDragPayload;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function AllAppsIcon() {
@@ -1558,7 +1540,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
   const windowPointerStateRef = useRef<DesktopWindowPointerState | null>(null);
   const titlebarClickStateRef = useRef<DesktopWindowTitlebarClickState | null>(null);
-  const desktopDragPayloadRef = useRef<DesktopDragPayload | null>(null);
+  const desktopPointerDragSessionRef = useRef<DesktopPointerDragSession | null>(null);
+  const suppressNextPointerClickRef = useRef(false);
   const windowSequenceRef = useRef(0);
   const terminalToolRequestSequenceRef = useRef(0);
   const terminalCommandRequestSequenceRef = useRef(0);
@@ -1588,6 +1571,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const [isFolderOpen, setIsFolderOpen] = useState(false);
   const [renameFolderDialog, setRenameFolderDialog] = useState<FolderRenameDialogState | null>(null);
   const [launchpadTooltip, setLaunchpadTooltip] = useState<LaunchpadTooltipState | null>(null);
+  const [desktopPointerDragPreview, setDesktopPointerDragPreview] = useState<DesktopPointerDragPreviewState | null>(null);
   const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
   const [tmuxMenuState, setTmuxMenuState] = useState<TmuxMenuState>({ status: 'idle', sessions: [] });
   const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
@@ -1864,6 +1848,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }));
   };
 
+  const activateRoleButton = (event: ReactKeyboardEvent<HTMLElement>, action: () => void) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    action();
+  };
+
   const showLaunchpadTooltip = (element: HTMLElement, description: string) => {
     const rect = element.getBoundingClientRect();
     const tooltipHeight = 56;
@@ -1875,21 +1868,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       y: placement === 'bottom' ? rect.bottom + 10 : rect.top - 10,
       placement,
     });
-  };
-
-  const handleDragStart = (event: ReactDragEvent<HTMLElement>, payload: DesktopDragPayload) => {
-    desktopDragPayloadRef.current = payload;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData(desktopDragMimeType, JSON.stringify(payload));
-  };
-
-  const handleDragEnd = () => {
-    desktopDragPayloadRef.current = null;
-  };
-
-  const handleDragOver = (event: ReactDragEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
   };
 
   const applyDesktopDrop = (payload: DesktopDragPayload, targetItem?: DesktopLayoutItem) => {
@@ -1908,32 +1886,126 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     updateDesktopLayout((layout) => moveAppToDesktop(layout, payload.appKey, targetItem?.id));
   };
 
-  const handleDesktopDrop = (event: ReactDragEvent<HTMLElement>, targetItem?: DesktopLayoutItem) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const payload = getDragPayload(event, desktopDragPayloadRef.current);
-    desktopDragPayloadRef.current = null;
-
-    if (!payload) {
-      return;
+  const getPointerDragLabel = (payload: DesktopDragPayload) => {
+    if ('appKey' in payload && payload.appKey) {
+      return getAppLabel(getAppInfo(payload.appKey), settings.language);
     }
 
-    applyDesktopDrop(payload, targetItem);
+    const item = desktopLayoutRef.current.items.find((layoutItem) => layoutItem.id === payload.itemId);
+    return item ? getLayoutItemLabel(item, settings.language) : '';
   };
 
-  const handleFolderDrop = (event: ReactDragEvent<HTMLElement>, folderId: string, targetAppKey?: DesktopAppKey) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const payload = getDragPayload(event, desktopDragPayloadRef.current);
-    desktopDragPayloadRef.current = null;
+  const applyPointerDrop = (payload: DesktopDragPayload, clientX: number, clientY: number) => {
+    const target = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLElement>('[data-desktop-drop-kind]');
 
-    const payloadAppKey = payload && 'appKey' in payload ? payload.appKey : undefined;
-
-    if (!payloadAppKey) {
+    if (!target) {
       return;
     }
 
-    updateDesktopLayout((layout) => addAppToFolder(layout, folderId, payloadAppKey, targetAppKey));
+    const dropKind = target.dataset.desktopDropKind;
+    const payloadAppKey = 'appKey' in payload ? payload.appKey : undefined;
+
+    if (dropKind === 'folder' || dropKind === 'folder-app') {
+      const folderId = target.dataset.folderId;
+      const targetAppKey = isDesktopAppKey(target.dataset.appKey) ? target.dataset.appKey : undefined;
+
+      if (folderId && payloadAppKey) {
+        updateDesktopLayout((layout) => addAppToFolder(layout, folderId, payloadAppKey, targetAppKey));
+      }
+      return;
+    }
+
+    if (dropKind === 'desktop-item') {
+      const targetItemId = target.dataset.layoutItemId;
+      const targetItem = desktopLayoutRef.current.items.find((layoutItem) => layoutItem.id === targetItemId);
+      applyDesktopDrop(payload, targetItem);
+      return;
+    }
+
+    if (dropKind === 'desktop') {
+      applyDesktopDrop(payload);
+    }
+  };
+
+  const consumeSuppressedPointerClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!suppressNextPointerClickRef.current) {
+      return false;
+    }
+
+    suppressNextPointerClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+
+  const startPointerDrag = (event: ReactPointerEvent<HTMLElement>, payload: DesktopDragPayload) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const session: DesktopPointerDragSession = {
+      payload,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      isDragging: false,
+    };
+
+    desktopPointerDragSessionRef.current = session;
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== session.pointerId) {
+        return;
+      }
+
+      const distance = Math.hypot(pointerEvent.clientX - session.startX, pointerEvent.clientY - session.startY);
+
+      if (!session.isDragging && distance < 5) {
+        return;
+      }
+
+      if (!session.isDragging) {
+        session.isDragging = true;
+        closeDesktopMenus();
+      }
+
+      pointerEvent.preventDefault();
+      setDesktopPointerDragPreview({
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
+        label: getPointerDragLabel(session.payload),
+        appKey: 'appKey' in session.payload ? session.payload.appKey : undefined,
+      });
+    };
+
+    const finishPointerDrag = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== session.pointerId) {
+        return;
+      }
+
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishPointerDrag);
+      window.removeEventListener('pointercancel', finishPointerDrag);
+      desktopPointerDragSessionRef.current = null;
+      setDesktopPointerDragPreview(null);
+
+      if (!session.isDragging) {
+        return;
+      }
+
+      pointerEvent.preventDefault();
+      suppressNextPointerClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextPointerClickRef.current = false;
+      }, 80);
+      applyPointerDrop(session.payload, pointerEvent.clientX, pointerEvent.clientY);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', finishPointerDrag);
+    window.addEventListener('pointercancel', finishPointerDrag);
   };
 
   const handleSurfaceContextMenu = (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) => {
@@ -2843,23 +2915,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           className={`remote-desktop-surface no-drag ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'}`}
           style={desktopWallpaperStyle}
           onContextMenu={handleSurfaceContextMenu}
-          onDragOver={handleDragOver}
-          onDrop={(event) => handleDesktopDrop(event)}
+          data-desktop-drop-kind="desktop"
         >
           <div className="desktop-icons" aria-label={t('desktop.icons.aria', settings.language)}>
             {visibleDesktopItems.map((item) => {
               if (item.type === 'folder') {
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={`desktop-icon-button desktop-folder-button ${openFolderId === item.id ? 'active' : ''}`}
-                    draggable
-                    onDragStart={(event) => handleDragStart(event, { source: 'desktop', itemId: item.id, itemType: 'folder' })}
-                    onDragEnd={handleDragEnd}
-                    onDragOver={handleDragOver}
-                    onDrop={(event) => handleDesktopDrop(event, item)}
-                    onClick={() => openDesktopFolder(item.id)}
+                    draggable={false}
+                    data-desktop-drop-kind="desktop-item"
+                    data-layout-item-id={item.id}
+                    onPointerDown={(event) => startPointerDrag(event, { source: 'desktop', itemId: item.id, itemType: 'folder' })}
+                    onDragStart={(event) => event.preventDefault()}
+                    onClick={(event) => {
+                      if (consumeSuppressedPointerClick(event)) return;
+                      openDesktopFolder(item.id);
+                    }}
+                    onKeyDown={(event) => activateRoleButton(event, () => openDesktopFolder(item.id))}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -2877,7 +2953,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                       </span>
                     </span>
                     <strong>{item.name}</strong>
-                  </button>
+                  </div>
                 );
               }
 
@@ -2885,19 +2961,22 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               const appLabel = getAppLabel(app, settings.language);
 
               return (
-                <button
+                <div
                   key={item.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={`desktop-icon-button ${focusedWindow?.appKey === item.appKey ? 'active' : ''}`}
-                  draggable
-                  onDragStart={(event) => handleDragStart(event, { source: 'desktop', itemId: item.id, itemType: 'app', appKey: item.appKey })}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={handleDragOver}
-                  onDrop={(event) => handleDesktopDrop(event, item)}
+                  draggable={false}
+                  data-desktop-drop-kind="desktop-item"
+                  data-layout-item-id={item.id}
+                  onPointerDown={(event) => startPointerDrag(event, { source: 'desktop', itemId: item.id, itemType: 'app', appKey: item.appKey })}
+                  onDragStart={(event) => event.preventDefault()}
                   onDoubleClick={(event) => {
+                    if (consumeSuppressedPointerClick(event)) return;
                     preventDesktopOpenSelection(event);
                     openDesktopWindow(item.appKey);
                   }}
+                  onKeyDown={(event) => activateRoleButton(event, () => openDesktopWindow(item.appKey))}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -2909,10 +2988,28 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                     <DesktopAppIcon appKey={item.appKey} />
                   </span>
                   <strong>{appLabel}</strong>
-                </button>
+                </div>
               );
             })}
           </div>
+
+          {desktopPointerDragPreview ? (
+            <div
+              className="desktop-pointer-drag-preview"
+              style={{
+                left: desktopPointerDragPreview.x,
+                top: desktopPointerDragPreview.y,
+              }}
+              aria-hidden="true"
+            >
+              {desktopPointerDragPreview.appKey ? (
+                <span className={`desktop-app-icon-shell desktop-app-icon-${desktopPointerDragPreview.appKey}`}>
+                  <DesktopAppIcon appKey={desktopPointerDragPreview.appKey} />
+                </span>
+              ) : null}
+              <strong>{desktopPointerDragPreview.label}</strong>
+            </div>
+          ) : null}
 
         {desktopWindows.map((desktopWindow) => {
           const appInfo = getAppInfo(desktopWindow.appKey);
@@ -3041,21 +3138,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                     const appDescription = getAppDescription(app, settings.language);
 
                     return (
-                      <button
+                      <div
                         key={app.key}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className="launchpad-app-button"
-                        draggable
-                        onDragStart={(event) => handleDragStart(event, { source: 'launchpad', appKey: app.key })}
-                        onDragEnd={handleDragEnd}
+                        draggable={false}
+                        onPointerDown={(event) => startPointerDrag(event, { source: 'launchpad', appKey: app.key })}
+                        onDragStart={(event) => event.preventDefault()}
                         onMouseEnter={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
                         onMouseLeave={() => setLaunchpadTooltip(null)}
                         onFocus={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
                         onBlur={() => setLaunchpadTooltip(null)}
-                        onClick={() => {
+                        onClick={(event) => {
+                          if (consumeSuppressedPointerClick(event)) return;
                           closeLaunchpad();
                           openDesktopWindow(app.key);
                         }}
+                        onKeyDown={(event) => activateRoleButton(event, () => {
+                          closeLaunchpad();
+                          openDesktopWindow(app.key);
+                        })}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -3067,7 +3170,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                           <DesktopAppIcon appKey={app.key} />
                         </span>
                         <strong>{appLabel}</strong>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -3099,8 +3202,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           className="desktop-folder-panel"
           aria-label={openFolder.name}
           onClick={(event) => event.stopPropagation()}
-          onDragOver={handleDragOver}
-          onDrop={(event) => handleFolderDrop(event, openFolder.id)}
+          data-desktop-drop-kind="folder"
+          data-folder-id={openFolder.id}
         >
           <header className="desktop-folder-header">
             <button
@@ -3124,21 +3227,28 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               const appLabel = getAppLabel(app, settings.language);
 
               return (
-                <button
+                <div
                   key={appKey}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className="desktop-icon-button desktop-folder-app-button"
                   title={t('desktop.folder.openHint', settings.language)}
-                  draggable
-                  onDragStart={(event) => handleDragStart(event, { source: 'folder', folderId: openFolder.id, appKey })}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={handleDragOver}
-                  onDrop={(event) => handleFolderDrop(event, openFolder.id, appKey)}
+                  draggable={false}
+                  data-desktop-drop-kind="folder-app"
+                  data-folder-id={openFolder.id}
+                  data-app-key={appKey}
+                  onPointerDown={(event) => startPointerDrag(event, { source: 'folder', folderId: openFolder.id, appKey })}
+                  onDragStart={(event) => event.preventDefault()}
                   onDoubleClick={(event) => {
+                    if (consumeSuppressedPointerClick(event)) return;
                     preventDesktopOpenSelection(event);
                     openDesktopWindow(appKey);
                     closeDesktopFolder();
                   }}
+                  onKeyDown={(event) => activateRoleButton(event, () => {
+                    openDesktopWindow(appKey);
+                    closeDesktopFolder();
+                  })}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -3150,7 +3260,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                     <DesktopAppIcon appKey={appKey} />
                   </span>
                   <strong>{appLabel}</strong>
-                </button>
+                </div>
               );
             }) : (
               <div className="desktop-folder-empty">{t('desktop.folder.empty', settings.language)}</div>
