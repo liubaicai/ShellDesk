@@ -19,6 +19,7 @@ pub(crate) async fn dispatch(
         "vault:get-public-snapshot" => public_snapshot(state)?,
         "vault:get-snapshot" => snapshot(state)?,
         "vault:save-collections" => {
+            let _operation = state.vault_operation_lock.lock().await;
             let payload = args.first().cloned().unwrap_or(Value::Null);
             let snapshot = with_store_mut(state, |store| {
                 upsert_vault_collections(store, payload)?;
@@ -33,6 +34,7 @@ pub(crate) async fn dispatch(
             get_bookmarks(&store, &scope)?
         }
         "vault:save-bookmarks" => {
+            let _operation = state.vault_operation_lock.lock().await;
             let scope = string_arg(args, 0)?;
             let bookmarks = args.get(1).cloned().unwrap_or_else(|| json!([]));
             let bookmarks = with_store_mut(state, |store| {
@@ -51,6 +53,7 @@ pub(crate) async fn dispatch(
             get_remote_connection_profile(&store, &host_id, &app_key)?
         }
         "vault:save-remote-connection-profile" => {
+            let _operation = state.vault_operation_lock.lock().await;
             let host_id = string_arg(args, 0)?;
             let app_key = string_arg(args, 1)?;
             let values = args.get(2).cloned().unwrap_or_else(|| json!({}));
@@ -67,6 +70,7 @@ pub(crate) async fn dispatch(
             get_preference(&store, &key)?
         }
         "preferences:set" => {
+            let _operation = state.vault_operation_lock.lock().await;
             let key = string_arg(args, 0)?;
             let value = args.get(1).cloned().unwrap_or(Value::Null);
             let value = with_store_mut(state, |store| set_preference_to_store(store, &key, value))?;

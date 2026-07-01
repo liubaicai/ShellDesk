@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -31,6 +31,7 @@ pub(crate) struct AppState {
     pub(crate) host_key_responses: Arc<Mutex<HashMap<String, HostKeyRequest>>>,
     pub(crate) keyboard_interactive_responses: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
     pub(crate) store_lock: Arc<Mutex<()>>,
+    pub(crate) vault_operation_lock: Arc<AsyncMutex<()>>,
 }
 
 pub(crate) struct HostKeyRequest {
@@ -60,6 +61,7 @@ impl AppState {
             host_key_responses: Arc::new(Mutex::new(HashMap::new())),
             keyboard_interactive_responses: Arc::new(Mutex::new(HashMap::new())),
             store_lock: Arc::new(Mutex::new(())),
+            vault_operation_lock: Arc::new(AsyncMutex::new(())),
         }
     }
 }

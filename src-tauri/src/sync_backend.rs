@@ -25,11 +25,10 @@ use merge::{
     create_sync_state_from_document, detect_suspicious_shrink, merge_sync_documents,
     tombstones_for_records,
 };
-#[cfg(test)]
-use records::create_sync_footprint;
 use records::{
     conflict_summary, count_content_records, count_records_by_type, create_empty_remote_document,
-    create_local_sync_inputs, merge_objects, sanitize_remote_document, sync_summary,
+    create_local_sync_inputs, create_sync_footprint, merge_objects, sanitize_remote_document,
+    sync_summary,
 };
 use webdav::{
     ensure_webdav_directories, normalize_webdav_remote_path, normalize_webdav_url, webdav_request,
@@ -338,6 +337,7 @@ async fn run_scheduled_webdav_sync(state: &AppState, app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
+    let _operation = state.vault_operation_lock.lock().await;
     if let Err(error) = run_webdav_sync(state, &window, vec![]).await {
         let _ = update_sync_status(state, "error", &error);
         let result = sync_config(state).map(|config| {
@@ -493,6 +493,10 @@ where
             .get("document")
             .cloned()
             .unwrap_or_else(create_empty_remote_document);
+        let remote_exists = remote
+            .get("exists")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let remote_count =
             count_content_records(remote_document.get("records").unwrap_or(&Value::Null));
 
@@ -518,6 +522,115 @@ where
                     &now_value,
                 ),
             );
+        }
+
+        if is_initial_sync_divergence(
+            store.get("state").unwrap_or(&Value::Null),
+            &local,
+            &remote_document,
+            remote_exists,
+        ) {
+            let conflicts = initial_sync_conflicts();
+            let initial_merged = json!({
+                "document": remote_document,
+                "conflicts": conflicts,
+                "uploaded": 0,
+                "downloaded": 0,
+                "deleted": 0
+            });
+
+            if conflict_resolution.is_empty() {
+                let result = pending_conflict_result(
+                    state,
+                    &mut store,
+                    &local,
+                    &remote_document,
+                    &initial_merged,
+                )?;
+                let _ = window.emit("sync:changed", result.clone());
+                return Ok(result);
+            }
+
+            let initial_document = if conflict_resolution == "local" {
+                local_sync_document(&local, &now_value)
+            } else {
+                remote_document.clone()
+            };
+            let write_result = if conflict_resolution == "local" {
+                write_remote_sync_document(
+                    &config,
+                    &secrets,
+                    &initial_document,
+                    remote.get("etag").and_then(Value::as_str).unwrap_or(""),
+                    remote_exists,
+                )
+                .await?
+            } else {
+                json!({
+                    "etag": remote.get("etag").and_then(Value::as_str).unwrap_or(""),
+                    "preconditionFailed": false
+                })
+            };
+            if write_result
+                .get("preconditionFailed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                if precondition_retries < max_precondition_retries {
+                    precondition_retries += 1;
+                    continue;
+                }
+                return Err("远端同步文件刚刚被其他设备更新，请稍后重试。".to_string());
+            }
+
+            let snapshot_value = apply_sync_document_to_vault(state, &initial_document)?;
+            let synced_at = now();
+            let message = format!(
+                "首次同步完成，已按选择保留{}。",
+                if conflict_resolution == "local" {
+                    "本地"
+                } else {
+                    "云端"
+                }
+            );
+            store["state"] = create_sync_state_from_document(
+                &initial_document,
+                store
+                    .pointer("/state/deviceId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("tauri-local"),
+                write_result
+                    .get("etag")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+                &synced_at,
+            );
+            store["config"]["lastSyncAt"] = json!(synced_at);
+            store["config"]["lastSyncStatus"] = json!("success");
+            store["config"]["lastSyncMessage"] = json!(message);
+            store["config"]["lastConflictCount"] = json!(0);
+            let saved_store = write_sync_store(state, store)?;
+            let _ = window.emit("vault:changed", json!({ "kind": "sync" }));
+            let merged = json!({
+                "document": initial_document,
+                "conflicts": initial_sync_conflicts(),
+                "uploaded": if conflict_resolution == "local" { local_count } else { 0 },
+                "downloaded": if conflict_resolution == "remote" { remote_count } else { 0 },
+                "deleted": 0
+            });
+            let result = sync_success_result(
+                &saved_store,
+                &local,
+                &remote_document,
+                &merged,
+                snapshot_value,
+                &message,
+                &conflict_resolution,
+                &empty_vault_resolution,
+                &shrink_resolution,
+            );
+            let _ = window.emit("sync:changed", result.clone());
+            return Ok(result);
         }
 
         let merged = merge_sync_documents(
@@ -723,6 +836,63 @@ fn read_resolution(incoming: Option<&Value>, key: &str, allowed: &[&str]) -> Str
         .filter(|value| allowed.contains(value))
         .unwrap_or("")
         .to_string()
+}
+
+fn has_sync_baseline(sync_state: &Value) -> bool {
+    sync_state
+        .get("lastRecords")
+        .and_then(Value::as_object)
+        .is_some_and(|records| !records.is_empty())
+        || sync_state
+            .get("lastTombstones")
+            .and_then(Value::as_object)
+            .is_some_and(|tombstones| !tombstones.is_empty())
+        || sync_state
+            .get("lastRemoteEtag")
+            .and_then(Value::as_str)
+            .is_some_and(|etag| !etag.is_empty())
+}
+
+fn remote_document_footprint(document: &Value) -> String {
+    create_sync_footprint(
+        document.get("records").unwrap_or(&Value::Null),
+        document.get("tombstones").unwrap_or(&Value::Null),
+    )
+}
+
+fn is_initial_sync_divergence(
+    sync_state: &Value,
+    local: &Value,
+    remote: &Value,
+    remote_exists: bool,
+) -> bool {
+    remote_exists
+        && !has_sync_baseline(sync_state)
+        && local.get("footprint").and_then(Value::as_str).unwrap_or("")
+            != remote_document_footprint(remote)
+}
+
+fn local_sync_document(local: &Value, updated_at: &str) -> Value {
+    let mut document = create_empty_remote_document();
+    document["updatedAt"] = json!(updated_at);
+    document["records"] = local
+        .get("localRecords")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    document["tombstones"] = local
+        .get("localTombstones")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    document
+}
+
+fn initial_sync_conflicts() -> Vec<Value> {
+    vec![json!({
+        "type": "settings",
+        "id": "initial-sync",
+        "name": "首次同步",
+        "reason": "本机和云端都已有数据且没有共同同步基线，请选择保留本地或保留云端。"
+    })]
 }
 
 async fn read_remote_sync_document(config: &Value, secrets: &Value) -> Result<Value, String> {
@@ -1189,5 +1359,77 @@ mod tests {
 
         assert_eq!(first, second);
         assert_ne!(first, changed);
+    }
+
+    #[test]
+    fn initial_sync_divergence_requires_no_baseline_and_existing_remote_difference() {
+        let local_records = json!({
+            "host:local": {
+                "id": "host:local",
+                "type": "host",
+                "hash": "local-hash"
+            }
+        });
+        let local = json!({
+            "localRecords": local_records,
+            "localTombstones": {},
+            "footprint": create_sync_footprint(&local_records, &json!({}))
+        });
+        let mut remote = create_empty_remote_document();
+        remote["records"] = json!({
+            "host:remote": {
+                "id": "host:remote",
+                "type": "host",
+                "hash": "remote-hash"
+            }
+        });
+        let empty_state = json!({
+            "lastRecords": {},
+            "lastTombstones": {},
+            "lastRemoteEtag": ""
+        });
+        let synced_state = json!({
+            "lastRecords": {
+                "host:local": {
+                    "type": "host",
+                    "hash": "local-hash"
+                }
+            },
+            "lastTombstones": {},
+            "lastRemoteEtag": "\"etag-1\""
+        });
+
+        assert!(is_initial_sync_divergence(
+            &empty_state,
+            &local,
+            &remote,
+            true
+        ));
+        assert!(!is_initial_sync_divergence(
+            &empty_state,
+            &local,
+            &remote,
+            false
+        ));
+        assert!(!is_initial_sync_divergence(
+            &synced_state,
+            &local,
+            &remote,
+            true
+        ));
+
+        remote["records"] = json!({
+            "host:local": {
+                "id": "host:local",
+                "type": "host",
+                "hash": "local-hash"
+            }
+        });
+        assert!(!is_initial_sync_divergence(
+            &empty_state,
+            &local,
+            &remote,
+            true
+        ));
     }
 }

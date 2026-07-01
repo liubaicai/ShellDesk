@@ -3,6 +3,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde_json::Value;
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -31,36 +32,96 @@ pub(crate) fn read_json_file(path: &Path, fallback: Value) -> Result<Value, Stri
 }
 
 pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(error_string)?;
-    }
     let content = serde_json::to_string_pretty(value).map_err(error_string)?;
-    fs::write(path, content).map_err(error_string)
+    write_json_content(path, &content, false)
 }
 
 pub(crate) fn write_json_file_private(path: &Path, value: &Value) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(value).map_err(error_string)?;
+    write_json_content(path, &content, true)
+}
+
+fn write_json_content(path: &Path, content: &str, private: bool) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(error_string)?;
     }
-    let content = serde_json::to_string_pretty(value).map_err(error_string)?;
+    let temp_path = temp_json_write_path(path);
+    write_temp_json_file(&temp_path, content, private).inspect_err(|_| {
+        let _ = fs::remove_file(&temp_path);
+    })?;
+    replace_file(&temp_path, path).inspect_err(|_| {
+        let _ = fs::remove_file(&temp_path);
+    })
+}
+
+fn temp_json_write_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("shelldesk");
+    let temp_file_name = format!(".{file_name}.{}.tmp", random_id("write"));
+    path.with_file_name(temp_file_name)
+}
+
+fn write_temp_json_file(path: &Path, content: &str, private: bool) -> Result<(), String> {
     #[cfg(unix)]
     {
-        use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(error_string)?;
+        let mut options = fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        if private {
+            options.mode(0o600);
+        }
+        let mut file = options.open(path).map_err(error_string)?;
         file.write_all(content.as_bytes()).map_err(error_string)?;
-        Ok(())
+        file.sync_all().map_err(error_string)
     }
     #[cfg(not(unix))]
     {
-        fs::write(path, content).map_err(error_string)
+        let _ = private;
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path)
+            .map_err(error_string)?;
+        file.write_all(content.as_bytes()).map_err(error_string)?;
+        file.sync_all().map_err(error_string)
     }
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let mut source_wide = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut target_wide = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let ok = unsafe {
+        MoveFileExW(
+            source_wide.as_mut_ptr(),
+            target_wide.as_mut_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        return Err(error_string(std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+    fs::rename(source, target).map_err(error_string)
 }
 
 pub(crate) fn sanitize_file_name(value: &str) -> String {
