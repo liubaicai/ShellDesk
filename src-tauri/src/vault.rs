@@ -56,7 +56,8 @@ pub(crate) fn default_settings() -> Value {
                 { "id": "app:terminal", "type": "app", "appKey": "terminal" },
                 { "id": "app:browser", "type": "app", "appKey": "browser" },
                 { "id": "app:settings", "type": "app", "appKey": "settings" }
-            ]
+            ],
+            "removedAppKeys": []
         },
         "rememberPasswords": true,
         "rememberKeyPassphrases": true,
@@ -544,7 +545,8 @@ mod tests {
                     { "type": "app", "appKey": "terminal" },
                     { "type": "app", "appKey": "bad-app" },
                     { "type": "folder", "id": "", "name": "", "appKeys": ["files", "bad-app", "terminal"] }
-                ]
+                ],
+                "removedAppKeys": ["browser", "terminal", "bad-app", "browser"]
             },
             "rememberPasswords": false,
             "aiProvider": "anthropic",
@@ -596,6 +598,10 @@ mod tests {
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][1]["appKeys"],
             json!(["files"])
+        );
+        assert_eq!(
+            settings["remoteDesktopLayout"]["removedAppKeys"],
+            json!(["browser"])
         );
         assert_eq!(settings["aiProvider"], "anthropic");
         assert_eq!(settings["aiApiFormat"], "anthropic");

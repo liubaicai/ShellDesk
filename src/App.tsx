@@ -51,6 +51,8 @@ const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const themePreloadStorageKey = 'shelldesk:theme-preload';
 const dismissedUpdateReadyVersionStorageKey = 'shelldesk:update-ready-dismissed-version';
+const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
+const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
 const ungroupedKey = '__ungrouped__';
 const hostPageSize = 20;
 const remoteDesktopAppCatalogVersion = 13;
@@ -80,6 +82,7 @@ const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
     { id: 'app:browser', type: 'app', appKey: 'browser' },
     { id: 'app:settings', type: 'app', appKey: 'settings' },
   ],
+  removedAppKeys: [],
 };
 
 function createDefaultTerminalSnippets(language: AppLanguage): ShellDeskTerminalSnippet[] {
@@ -446,14 +449,75 @@ function getRemoteDesktopLayoutAppKeys(items: ShellDeskDesktopLayoutItem[]) {
   return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
 }
 
+function getRemoteDesktopLayoutRemovedAppKeys(layout: Pick<ShellDeskRemoteDesktopLayout, 'removedAppKeys'>) {
+  return new Set(layout.removedAppKeys ?? []);
+}
+
+function isRemoteDesktopLayout(value: unknown): value is ShellDeskRemoteDesktopLayout {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const layout = value as Partial<ShellDeskRemoteDesktopLayout>;
+
+  return (
+    typeof layout.appCatalogVersion === 'number' &&
+    (layout.sortMode === 'custom' || layout.sortMode === 'name-asc' || layout.sortMode === 'name-desc') &&
+    Array.isArray(layout.items) &&
+    Array.isArray(layout.removedAppKeys)
+  );
+}
+
+function readRemoteDesktopLayoutShadow() {
+  try {
+    const rawLayout = window.localStorage.getItem(remoteDesktopLayoutShadowStorageKey);
+
+    if (!rawLayout) {
+      return null;
+    }
+
+    const parsedLayout: unknown = JSON.parse(rawLayout);
+
+    return isRemoteDesktopLayout(parsedLayout) ? parsedLayout : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeRemoteDesktopLayoutShadow(layout: ShellDeskRemoteDesktopLayout) {
+  try {
+    window.localStorage.setItem(remoteDesktopLayoutShadowStorageKey, JSON.stringify(layout));
+  } catch {
+    // Ignore localStorage write failures in restricted environments.
+  }
+}
+
+function persistRemoteDesktopLayoutShadow(layout: ShellDeskRemoteDesktopLayout) {
+  storeRemoteDesktopLayoutShadow(layout);
+  void window.guiSSH?.preferences?.set(remoteDesktopLayoutShadowPreferenceKey, layout).catch(() => undefined);
+}
+
+async function readPersistedRemoteDesktopLayoutShadow() {
+  try {
+    const layout = await window.guiSSH?.preferences?.get(remoteDesktopLayoutShadowPreferenceKey);
+    return isRemoteDesktopLayout(layout) ? layout : null;
+  } catch {
+    return null;
+  }
+}
+
 function shouldPreserveCurrentRemoteDesktopLayout(
   currentLayout: ShellDeskRemoteDesktopLayout,
   incomingLayout: ShellDeskRemoteDesktopLayout,
 ) {
   const currentAppKeys = getRemoteDesktopLayoutAppKeys(currentLayout.items);
   const incomingAppKeys = getRemoteDesktopLayoutAppKeys(incomingLayout.items);
+  const currentRemovedAppKeys = getRemoteDesktopLayoutRemovedAppKeys(currentLayout);
+  const incomingRemovedAppKeys = getRemoteDesktopLayoutRemovedAppKeys(incomingLayout);
+  const shouldPreserveUserRemovedApps = [...currentRemovedAppKeys]
+    .some((appKey) => !incomingRemovedAppKeys.has(appKey));
 
-  return remoteDesktopAppCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
+  return shouldPreserveUserRemovedApps || remoteDesktopAppCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
 }
 
 function protectRemoteDesktopLayoutFromStaleSnapshot(
@@ -461,7 +525,16 @@ function protectRemoteDesktopLayoutFromStaleSnapshot(
   currentSettings: ShellDeskAppSettings,
 ) {
   if (!shouldPreserveCurrentRemoteDesktopLayout(currentSettings.remoteDesktopLayout, incomingSettings.remoteDesktopLayout)) {
-    return incomingSettings;
+    const layoutShadow = readRemoteDesktopLayoutShadow();
+
+    if (!layoutShadow || !shouldPreserveCurrentRemoteDesktopLayout(layoutShadow, incomingSettings.remoteDesktopLayout)) {
+      return incomingSettings;
+    }
+
+    return {
+      ...incomingSettings,
+      remoteDesktopLayout: layoutShadow,
+    };
   }
 
   return {
@@ -2183,6 +2256,15 @@ function App() {
   const [isKeyEditorOpen, setIsKeyEditorOpen] = useState(false);
   const [settings, setSettings] = useState<ShellDeskAppSettings>(() => {
     if (initialPublicSnapshot) {
+      const layoutShadow = readRemoteDesktopLayoutShadow();
+
+      if (layoutShadow && shouldPreserveCurrentRemoteDesktopLayout(layoutShadow, initialPublicSnapshot.settings.remoteDesktopLayout)) {
+        return {
+          ...initialPublicSnapshot.settings,
+          remoteDesktopLayout: layoutShadow,
+        };
+      }
+
       return initialPublicSnapshot.settings;
     }
 
@@ -2437,6 +2519,7 @@ function App() {
     }
 
     settingsRef.current = nextSettings;
+    storeRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
     setSettings(nextSettings);
     setStorageInfo(snapshot.storage);
     setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
@@ -2583,6 +2666,7 @@ function App() {
     proxyProfilesRef.current = nextProxyProfiles;
     knownHostsRef.current = nextKnownHosts;
     settingsRef.current = nextSettings;
+    storeRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
     setHosts(orderedHosts);
     setSshKeys(nextSshKeys);
     setProxyProfiles(nextProxyProfiles);
@@ -2700,6 +2784,7 @@ function App() {
         setSettings((prev) => {
           const nextSettings = { ...backendDefaults, ...prev };
           settingsRef.current = nextSettings;
+          storeRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
           return nextSettings;
         });
       }
@@ -2748,6 +2833,11 @@ function App() {
 
     const loadSnapshot = async () => {
       let renderedPublicSnapshot = Boolean(initialPublicSnapshotRef.current);
+      const persistedLayoutShadow = await readPersistedRemoteDesktopLayoutShadow();
+
+      if (!disposed && persistedLayoutShadow) {
+        storeRemoteDesktopLayoutShadow(persistedLayoutShadow);
+      }
 
       if (!renderedPublicSnapshot) {
         try {
@@ -3235,6 +3325,10 @@ function App() {
     }
 
     return window.guiSSH.events.onVaultChanged((payload) => {
+      if (payload.kind === 'preference' && payload.key === remoteDesktopLayoutShadowPreferenceKey) {
+        return;
+      }
+
       if (payload.kind === 'hostKeyTrust') {
         void vaultControls.getSnapshot().then((snapshot) => {
           knownHostsRef.current = snapshot.knownHosts;
@@ -3296,6 +3390,11 @@ function App() {
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
     await persistCurrentCollections();
   }, [commitCollectionsState, persistCurrentCollections]);
+
+  const updateRemoteDesktopSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
+    persistRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
+    void updateSettingsAndPersist(nextSettings);
+  }, [updateSettingsAndPersist]);
 
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '', hostMeta: LogHostMeta = {}) => {
     const entry: LogEntry = {
@@ -4747,7 +4846,7 @@ function App() {
 
       {connection ? (
         <Suspense fallback={<RemoteDesktopLoadingFallback language={appLanguage} />}>
-          <RemoteDesktop connection={connection} settings={settings} onSettingsChange={updateSettings} />
+          <RemoteDesktop connection={connection} settings={settings} onSettingsChange={updateRemoteDesktopSettings} />
         </Suspense>
       ) : isConnectionWindow ? (
         <main className="vault-page no-drag">

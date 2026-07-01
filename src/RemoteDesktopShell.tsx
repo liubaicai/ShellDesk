@@ -18,6 +18,8 @@ import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
 
+const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
+
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
 const RemoteAiChat = lazy(() => import('./components/remote-desktop/RemoteAiChat'));
 const RemoteApacheManager = lazy(() => import('./components/remote-desktop/RemoteApacheManager'));
@@ -173,6 +175,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 };
 
 const desktopDragMimeType = 'application/x-shelldesk-desktop-item';
+const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const launchpadAnimationMs = 180;
 const desktopAppCatalogVersion = 13;
 const defaultDesktopAppKeys: DesktopAppKey[] = ['files', 'terminal', 'browser', 'settings'];
@@ -480,6 +483,7 @@ function createDefaultRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
       type: 'app',
       appKey,
     })),
+    removedAppKeys: [],
   };
 }
 
@@ -492,6 +496,10 @@ function getLayoutAppKeys(items: DesktopLayoutItem[]) {
   return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
 }
 
+function getLayoutRemovedAppKeys(layout: Pick<ShellDeskRemoteDesktopLayout, 'removedAppKeys'>) {
+  return new Set(layout.removedAppKeys ?? []);
+}
+
 function areRemoteDesktopLayoutsEqual(firstLayout: ShellDeskRemoteDesktopLayout, secondLayout: ShellDeskRemoteDesktopLayout) {
   return JSON.stringify(firstLayout) === JSON.stringify(secondLayout);
 }
@@ -502,11 +510,15 @@ function shouldPreserveCurrentDesktopLayout(
 ) {
   const currentAppKeys = getLayoutAppKeys(currentLayout.items);
   const incomingAppKeys = getLayoutAppKeys(incomingLayout.items);
+  const currentRemovedAppKeys = getLayoutRemovedAppKeys(currentLayout);
+  const incomingRemovedAppKeys = getLayoutRemovedAppKeys(incomingLayout);
+  const shouldPreserveUserRemovedApps = [...currentRemovedAppKeys]
+    .some((appKey) => !incomingRemovedAppKeys.has(appKey));
 
-  return appCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
+  return shouldPreserveUserRemovedApps || appCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
 }
 
-function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersion: number) {
+function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersion: number, removedAppKeys: Set<DesktopAppKey>) {
   if (appCatalogVersion >= desktopAppCatalogVersion) {
     return items;
   }
@@ -521,7 +533,7 @@ function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersio
   return [
     ...items,
     ...appCatalogMigrationKeys
-      .filter((appKey) => !appKeys.has(appKey))
+      .filter((appKey) => !appKeys.has(appKey) && !removedAppKeys.has(appKey))
       .map((appKey): DesktopLayoutItem => ({
         id: `app:${appKey}`,
         type: 'app',
@@ -596,11 +608,53 @@ function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDeskto
     }
   });
 
+  const layoutAppKeys = getLayoutAppKeys(items);
+  const removedAppKeys = new Set<DesktopAppKey>();
+  if (Array.isArray(layout.removedAppKeys)) {
+    layout.removedAppKeys.forEach((appKey) => {
+      if (isDesktopAppKey(appKey) && !layoutAppKeys.has(appKey)) {
+        removedAppKeys.add(appKey);
+      }
+    });
+  }
+  const migratedItems = migrateLegacyAllAppsLayout(items, appCatalogVersion, removedAppKeys);
+  const migratedAppKeys = getLayoutAppKeys(migratedItems);
+
   return {
     appCatalogVersion: desktopAppCatalogVersion,
     sortMode,
-    items: migrateLegacyAllAppsLayout(items, appCatalogVersion),
+    items: migratedItems,
+    removedAppKeys: [...removedAppKeys].filter((appKey) => !migratedAppKeys.has(appKey)),
   };
+}
+
+function readRemoteDesktopLayoutShadow() {
+  try {
+    const rawLayout = window.localStorage.getItem(remoteDesktopLayoutShadowStorageKey);
+
+    if (!rawLayout) {
+      return null;
+    }
+
+    const parsedLayout: unknown = JSON.parse(rawLayout);
+
+    if (!parsedLayout || typeof parsedLayout !== 'object' || Array.isArray(parsedLayout)) {
+      return null;
+    }
+
+    return normalizeRemoteDesktopLayout(parsedLayout);
+  } catch {
+    return null;
+  }
+}
+
+function storeRemoteDesktopLayoutShadow(layout: ShellDeskRemoteDesktopLayout) {
+  try {
+    window.localStorage.setItem(remoteDesktopLayoutShadowStorageKey, JSON.stringify(layout));
+  } catch {
+    // Ignore localStorage write failures in restricted environments.
+  }
+  void window.guiSSH?.preferences?.set(remoteDesktopLayoutShadowPreferenceKey, layout).catch(() => undefined);
 }
 
 function getLayoutItemLabel(item: DesktopLayoutItem, language: ShellDeskAppSettings['language']) {
@@ -650,6 +704,28 @@ function removeAppFromDesktopLayout(layout: ShellDeskRemoteDesktopLayout, appKey
   };
 }
 
+function markDesktopAppRemoved(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey): ShellDeskRemoteDesktopLayout {
+  if (layout.removedAppKeys.includes(appKey)) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    removedAppKeys: [...layout.removedAppKeys, appKey],
+  };
+}
+
+function clearDesktopAppRemoved(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey): ShellDeskRemoteDesktopLayout {
+  if (!layout.removedAppKeys.includes(appKey)) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    removedAppKeys: layout.removedAppKeys.filter((currentAppKey) => currentAppKey !== appKey),
+  };
+}
+
 function removeTopLevelItem(items: DesktopLayoutItem[], itemId: string) {
   return items.filter((item) => item.id !== itemId);
 }
@@ -670,7 +746,7 @@ function insertTopLevelItem(items: DesktopLayoutItem[], nextItem: DesktopLayoutI
 }
 
 function addAppToFolder(layout: ShellDeskRemoteDesktopLayout, folderId: string, appKey: DesktopAppKey, targetAppKey?: DesktopAppKey): ShellDeskRemoteDesktopLayout {
-  const withoutApp = removeAppFromDesktopLayout(layout, appKey);
+  const withoutApp = clearDesktopAppRemoved(removeAppFromDesktopLayout(layout, appKey), appKey);
 
   return {
     ...withoutApp,
@@ -695,7 +771,7 @@ function addAppToFolder(layout: ShellDeskRemoteDesktopLayout, folderId: string, 
 }
 
 function moveAppToDesktop(layout: ShellDeskRemoteDesktopLayout, appKey: DesktopAppKey, targetItemId?: string): ShellDeskRemoteDesktopLayout {
-  const withoutApp = removeAppFromDesktopLayout(layout, appKey);
+  const withoutApp = clearDesktopAppRemoved(removeAppFromDesktopLayout(layout, appKey), appKey);
   return {
     ...withoutApp,
     sortMode: 'custom',
@@ -1492,7 +1568,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const folderCloseTimerRef = useRef<number | null>(null);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const desktopWindowsRef = useRef(desktopWindows);
-  const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => normalizeRemoteDesktopLayout(settings.remoteDesktopLayout));
+  const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => {
+    const normalizedLayout = normalizeRemoteDesktopLayout(settings.remoteDesktopLayout);
+    const layoutShadow = readRemoteDesktopLayoutShadow();
+
+    return layoutShadow && shouldPreserveCurrentDesktopLayout(layoutShadow, normalizedLayout)
+      ? layoutShadow
+      : normalizedLayout;
+  });
   const desktopLayoutRef = useRef(desktopLayout);
   const [focusedWindowId, setFocusedWindowId] = useState('');
   const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
@@ -1563,18 +1646,23 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   useEffect(() => {
     const normalizedLayout = normalizeRemoteDesktopLayout(settings.remoteDesktopLayout);
+    const layoutShadow = readRemoteDesktopLayoutShadow();
     const currentLayout = desktopLayoutRef.current;
+    const shouldUseLayoutShadow = Boolean(layoutShadow && shouldPreserveCurrentDesktopLayout(layoutShadow, normalizedLayout));
+    const nextLayout = shouldUseLayoutShadow && layoutShadow
+      ? layoutShadow
+      : normalizedLayout;
 
-    if (areRemoteDesktopLayoutsEqual(currentLayout, normalizedLayout)) {
+    if (areRemoteDesktopLayoutsEqual(currentLayout, nextLayout)) {
       return;
     }
 
-    if (shouldPreserveCurrentDesktopLayout(currentLayout, normalizedLayout)) {
+    if (!shouldUseLayoutShadow && shouldPreserveCurrentDesktopLayout(currentLayout, nextLayout)) {
       return;
     }
 
-    desktopLayoutRef.current = normalizedLayout;
-    setDesktopLayout(normalizedLayout);
+    desktopLayoutRef.current = nextLayout;
+    setDesktopLayout(nextLayout);
   }, [settings.remoteDesktopLayout]);
 
   useEffect(() => {
@@ -1645,6 +1733,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const commitDesktopLayout = (nextLayout: ShellDeskRemoteDesktopLayout) => {
     const normalizedLayout = normalizeRemoteDesktopLayout(nextLayout);
     desktopLayoutRef.current = normalizedLayout;
+    storeRemoteDesktopLayoutShadow(normalizedLayout);
     setDesktopLayout(normalizedLayout);
     onSettingsChange?.({
       ...settings,
@@ -1873,7 +1962,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   const deleteAppFromDesktop = (appKey: DesktopAppKey) => {
     updateDesktopLayout((layout) => ({
-      ...removeAppFromDesktopLayout(layout, appKey),
+      ...markDesktopAppRemoved(removeAppFromDesktopLayout(layout, appKey), appKey),
       sortMode: 'custom',
     }));
   };

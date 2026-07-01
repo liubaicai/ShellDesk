@@ -236,6 +236,7 @@ interface ShellDeskRemoteDesktopLayout {
   appCatalogVersion: number;
   sortMode: ShellDeskDesktopSortMode;
   items: ShellDeskDesktopLayoutItem[];
+  removedAppKeys: ShellDeskDesktopAppKey[];
 }
 
 type ShellDeskAiProvider = 'openai' | 'anthropic' | 'openai-compatible' | 'custom';

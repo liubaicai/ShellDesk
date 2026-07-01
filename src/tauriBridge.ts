@@ -36,6 +36,7 @@ function createPreviewRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
       { id: 'app:browser', type: 'app', appKey: 'browser' },
       { id: 'app:settings', type: 'app', appKey: 'settings' },
     ],
+    removedAppKeys: [],
   };
 }
 

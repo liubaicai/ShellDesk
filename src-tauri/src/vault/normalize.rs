@@ -499,6 +499,23 @@ fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {
             _ => {}
         }
     }
+    let raw_removed_app_keys = layout
+        .get("removedAppKeys")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut removed_app_keys = Vec::<String>::new();
+    for value in raw_removed_app_keys {
+        let Some(app_key) = value.as_str() else {
+            continue;
+        };
+        if REMOTE_DESKTOP_APP_KEYS.contains(&app_key)
+            && !seen_app_keys.iter().any(|seen| seen == app_key)
+            && !removed_app_keys.iter().any(|removed| removed == app_key)
+        {
+            removed_app_keys.push(app_key.to_string());
+        }
+    }
     if app_catalog_version < REMOTE_DESKTOP_APP_CATALOG_VERSION {
         let migration_key_set = REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS
             .iter()
@@ -514,18 +531,23 @@ fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {
             .all(|app_key| seen_app_keys.iter().any(|seen| seen == app_key));
         if has_all_legacy_apps {
             for app_key in REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS {
-                if !seen_app_keys.iter().any(|seen| seen == app_key) {
+                if !seen_app_keys.iter().any(|seen| seen == app_key)
+                    && !removed_app_keys.iter().any(|removed| removed == app_key)
+                {
                     items.push(
                         json!({ "id": format!("app:{app_key}"), "type": "app", "appKey": app_key }),
                     );
+                    seen_app_keys.push(app_key.to_string());
                 }
             }
         }
     }
+    removed_app_keys.retain(|app_key| !seen_app_keys.iter().any(|seen| seen == app_key));
     Ok(json!({
         "appCatalogVersion": REMOTE_DESKTOP_APP_CATALOG_VERSION,
         "sortMode": sort_mode,
-        "items": items
+        "items": items,
+        "removedAppKeys": removed_app_keys
     }))
 }
 
