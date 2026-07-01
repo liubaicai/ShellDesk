@@ -1,5 +1,5 @@
-import { getCurrentAppLanguage, t, type AppLanguage } from '../../i18n';
-import type { AptMirrorFlavor, AptSourceTarget, CpuInfoSummary, DiskInfoSummary, DnsConfig, MemoryInfoSummary, NetworkInterface, RouteEntry } from './settingsTypes';
+import { t, type AppLanguage } from '../../i18n';
+import type { CpuInfoSummary, DiskInfoSummary, DnsConfig, MemoryInfoSummary, NetworkInterface, RouteEntry } from './settingsTypes';
 
 export function parseKeyValueOutput(stdout: string) {
   const values = new Map<string, string>();
@@ -372,56 +372,6 @@ export function parseOsName(raw: string, language: AppLanguage) {
   return [name, version].filter(Boolean).join(' ') || raw.split('\n')[0] || t('remoteSettings.systemInfo.unknown', language);
 }
 
-
-const APT_SOURCE_CONTENT_MARKER = 'SHELLDESK_APT_SOURCE_CONTENT';
-const YUM_REPO_CONTENT_MARKER = 'SHELLDESK_YUM_REPO_CONTENT';
-const LEGACY_APT_SOURCE_PATH = '/etc/apt/sources.list';
-const UBUNTU_DEB822_SOURCE_PATH = '/etc/apt/sources.list.d/ubuntu.sources';
-
-function getDefaultAptSourceTarget(flavor: AptMirrorFlavor): AptSourceTarget {
-  if (flavor === 'ubuntu') {
-    return { path: UBUNTU_DEB822_SOURCE_PATH, format: 'deb822', flavor };
-  }
-
-  return { path: LEGACY_APT_SOURCE_PATH, format: 'legacy', flavor };
-}
-
-export function parseAptSourceInspection(stdout: string, flavor: AptMirrorFlavor, language: AppLanguage = getCurrentAppLanguage()) {
-  const lines = stdout.split(/\r?\n/);
-  const markerIndex = lines.findIndex((line) => line.trim() === APT_SOURCE_CONTENT_MARKER);
-  const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : lines;
-  const contentLines = markerIndex >= 0 ? lines.slice(markerIndex + 1) : [];
-  const values = parseKeyValueOutput(metadataLines.join('\n'));
-  const fallbackTarget = getDefaultAptSourceTarget(flavor);
-  const path = values.get('APT_SOURCE_PATH') || fallbackTarget.path;
-  const format = values.get('APT_SOURCE_FORMAT') === 'deb822' || path.endsWith('.sources') ? 'deb822' : 'legacy';
-  const target: AptSourceTarget = { path, format, flavor };
-  const content = contentLines.join('\n').trimEnd();
-  const display = [
-    t('remoteSettings.mirrors.configFile', language, { path }),
-    t('remoteSettings.mirrors.format', language, { format: format === 'deb822' ? 'deb822 (.sources)' : 'legacy sources.list' }),
-    '',
-    content || t('remoteSettings.mirrors.unreadableCreate', language),
-  ].join('\n');
-
-  return { target, display };
-}
-
-export function parseYumRepoInspection(stdout: string, language: AppLanguage = getCurrentAppLanguage()) {
-  const lines = stdout.split(/\r?\n/);
-  const markerIndex = lines.findIndex((line) => line.trim() === YUM_REPO_CONTENT_MARKER);
-  const metadataLines = markerIndex >= 0 ? lines.slice(0, markerIndex) : [];
-  const contentLines = markerIndex >= 0 ? lines.slice(markerIndex + 1) : lines;
-  const values = parseKeyValueOutput(metadataLines.join('\n'));
-  const repoDir = values.get('YUM_REPO_DIR') || '/etc/yum.repos.d';
-  const content = contentLines.join('\n').trimEnd();
-
-  return [
-    t('remoteSettings.mirrors.configDir', language, { path: repoDir }),
-    '',
-    content || t('remoteSettings.mirrors.repoUnreadable', language, { path: repoDir }),
-  ].join('\n');
-}
 
 export function parseIpRoute(stdout: string): RouteEntry[] {
   return stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
