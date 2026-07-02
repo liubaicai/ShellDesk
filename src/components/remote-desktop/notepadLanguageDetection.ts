@@ -56,6 +56,8 @@ export const LANGUAGE_OPTIONS: Array<{ value: string; label?: string; labelId?: 
   { value: 'json', label: 'JSON' },
   { value: 'yaml', label: 'YAML' },
   { value: 'bash', label: 'Shell' },
+  { value: 'powershell', label: 'PowerShell' },
+  { value: 'bat', label: 'Batch / CMD' },
   { value: 'markdown', label: 'Markdown' },
   { value: 'sql', label: 'SQL' },
   { value: 'python', label: 'Python' },

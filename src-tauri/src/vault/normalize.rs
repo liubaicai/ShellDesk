@@ -43,6 +43,33 @@ const TERMINAL_THEME_CHOICES: &[&str] = &[
 ];
 const TERMINAL_CURSOR_INACTIVE_STYLE_CHOICES: &[&str] =
     &["outline", "block", "bar", "underline", "none"];
+const TERMINAL_SNIPPET_LANGUAGE_CHOICES: &[&str] = &[
+    "plaintext",
+    "javascript",
+    "typescript",
+    "html",
+    "xml",
+    "css",
+    "json",
+    "yaml",
+    "bash",
+    "powershell",
+    "bat",
+    "markdown",
+    "sql",
+    "python",
+    "go",
+    "rust",
+    "java",
+    "c",
+    "cpp",
+    "php",
+    "ruby",
+    "ini",
+    "nginx",
+    "dockerfile",
+    "diff",
+];
 const AI_API_FORMAT_CHOICES: &[&str] = &["openai", "anthropic"];
 const WEB_SEARCH_PROVIDER_CHOICES: &[&str] = &["tavily", "exa", "zhipu"];
 const MAX_DESKTOP_WALLPAPER_BYTES: usize = 2 * 1024 * 1024;
@@ -614,6 +641,11 @@ fn read_terminal_snippets(raw_snippets: Option<&Value>, fallback: Value) -> Resu
             true,
             true,
         )?;
+        let language = read_choice(
+            snippet_object.get("language"),
+            TERMINAL_SNIPPET_LANGUAGE_CHOICES,
+            "bash",
+        );
         let created_at = read_optional_bounded_string(
             snippet_object.get("createdAt"),
             "代码片段创建时间",
@@ -643,6 +675,7 @@ fn read_terminal_snippets(raw_snippets: Option<&Value>, fallback: Value) -> Resu
             "label": label,
             "command": command,
             "group": group,
+            "language": language,
             "shortcut": shortcut,
             "createdAt": created_at,
             "updatedAt": updated_at

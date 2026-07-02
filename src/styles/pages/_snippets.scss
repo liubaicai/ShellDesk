@@ -113,8 +113,14 @@
   margin-top: 6px !important;
 }
 
+.snippet-card-meta-tags {
+  display: flex;
+  min-width: 0;
+  gap: 5px;
+}
+
 .snippet-card-tags em {
-  display: block !important;
+  display: block;
   max-width: 100%;
   min-height: 21px !important;
   overflow: hidden;
@@ -123,7 +129,7 @@
   white-space: nowrap;
 }
 
-.snippet-card-tags em:last-child {
+.snippet-command-preview {
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   font-size: 10.5px !important;
 }
@@ -146,11 +152,56 @@
   gap: 11px;
 }
 
-.snippet-command-field textarea {
-  min-height: 190px;
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
+.snippet-command-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.snippet-language-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.snippet-language-control select {
+  min-width: 150px;
+  max-width: 210px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 30px 0 10px;
+  outline: 0;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+}
+
+.snippet-language-control select:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.snippet-command-editor {
+  height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.snippet-command-editor:focus-within {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.snippet-command-editor .snippet-codemirror,
+.snippet-command-editor .cm-editor {
+  height: 100%;
 }
 
 .snippet-ai-inline {
@@ -272,6 +323,21 @@
 
   .snippet-shortcut-row {
     grid-template-columns: 1fr;
+  }
+
+  .snippet-command-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .snippet-language-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .snippet-language-control select {
+    width: 100%;
+    max-width: none;
   }
 }
 

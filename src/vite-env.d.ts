@@ -38,6 +38,7 @@ interface ShellDeskTerminalSnippet {
   label: string;
   command: string;
   group: string;
+  language: string;
   shortcut: string;
   createdAt: string;
   updatedAt: string;

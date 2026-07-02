@@ -139,6 +139,7 @@ fn default_terminal_snippets(language: &str) -> Value {
                     "label": label,
                     "command": command,
                     "group": group,
+                    "language": "bash",
                     "shortcut": "",
                     "createdAt": "2026-01-01T00:00:00.000Z",
                     "updatedAt": "2026-01-01T00:00:00.000Z"
@@ -565,8 +566,8 @@ mod tests {
             "terminalMinimumContrastRatio": 9,
             "terminalSnippets": [
                 { "id": "same", "label": "", "command": "ignored" },
-                { "id": "same", "label": "Deploy", "command": "echo ok\n", "shortcut": "Ctrl+ Shift + D" },
-                { "id": "same", "label": "Logs", "command": "tail -f app.log" }
+                { "id": "same", "label": "Deploy", "command": "echo ok\n", "language": "powershell", "shortcut": "Ctrl+ Shift + D" },
+                { "id": "same", "label": "Logs", "command": "tail -f app.log", "language": "unknown" }
             ]
         }))
         .unwrap();
@@ -624,6 +625,8 @@ mod tests {
         assert_eq!(snippets[0]["id"], "same");
         assert_ne!(snippets[1]["id"], "same");
         assert_eq!(snippets[0]["command"], "echo ok");
+        assert_eq!(snippets[0]["language"], "powershell");
+        assert_eq!(snippets[1]["language"], "bash");
         assert_eq!(snippets[0]["shortcut"], "Ctrl + Shift + D");
     }
 

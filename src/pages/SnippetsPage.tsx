@@ -2,6 +2,8 @@ import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useMemo, useR
 import { Code2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 
 import { completeAiRequest, isAiConfigured } from '../ai';
+import NotepadEditor from '../components/remote-desktop/NotepadEditor';
+import { LANGUAGE_OPTIONS, normalizeLanguage } from '../components/remote-desktop/notepadLanguageDetection';
 import { isMacClient, keyEventToShortcut } from '../components/remote-desktop/terminalSnippetShortcuts';
 import { t, useCurrentAppLanguage, type AppLanguage } from '../i18n';
 
@@ -17,6 +19,7 @@ interface SnippetDraft {
   label: string;
   group: string;
   command: string;
+  language: string;
   shortcut: string;
 }
 
@@ -28,6 +31,7 @@ const emptySnippetDraft: SnippetDraft = {
   label: '',
   group: '',
   command: '',
+  language: 'bash',
   shortcut: '',
 };
 
@@ -45,6 +49,7 @@ function snippetToDraft(snippet: ShellDeskTerminalSnippet): SnippetDraft {
     label: snippet.label,
     group: snippet.group,
     command: snippet.command,
+    language: normalizeSnippetLanguage(snippet.language),
     shortcut: snippet.shortcut,
   };
 }
@@ -93,6 +98,53 @@ function extractAiCommand(content: string) {
 
 function normalizeShortcutLabel(shortcut: string) {
   return shortcut.replace(/\s*\+\s*/gu, ' + ').trim();
+}
+
+function normalizeSnippetLanguage(language?: string) {
+  if (language === 'plaintext') {
+    return 'plaintext';
+  }
+
+  const normalizedLanguage = normalizeLanguage(language);
+  return normalizedLanguage === 'plaintext' ? 'bash' : normalizedLanguage;
+}
+
+function getSnippetLanguageLabel(languageValue: string | undefined, appLanguage: AppLanguage) {
+  const normalizedLanguage = normalizeSnippetLanguage(languageValue);
+  const languageOption = LANGUAGE_OPTIONS.find((option) => option.value === normalizedLanguage);
+
+  if (!languageOption) {
+    return normalizedLanguage;
+  }
+
+  if (languageOption.labelId) {
+    return t(languageOption.labelId, appLanguage);
+  }
+
+  return languageOption.label ?? normalizedLanguage;
+}
+
+function getEffectiveSnippetEditorTheme(theme: ShellDeskAppSettings['theme']): 'light' | 'dark' {
+  if (typeof document !== 'undefined') {
+    const documentTheme = document.documentElement.getAttribute('data-theme');
+    if (documentTheme === 'light' || documentTheme === 'dark') {
+      return documentTheme;
+    }
+  }
+
+  if (theme === 'light' || theme === 'dark') {
+    return theme;
+  }
+
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+
+  return 'dark';
+}
+
+function handleSnippetEditorCursorChange() {
+  // The snippets page does not currently display cursor position.
 }
 
 function normalizeShortcutForCompare(shortcut: string) {
@@ -274,12 +326,14 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
         snippet.label.toLowerCase().includes(query) ||
         snippet.group.toLowerCase().includes(query) ||
         snippet.command.toLowerCase().includes(query) ||
+        normalizeSnippetLanguage(snippet.language).toLowerCase().includes(query) ||
+        getSnippetLanguageLabel(snippet.language, language).toLowerCase().includes(query) ||
         snippet.shortcut.toLowerCase().includes(query)
       );
 
       return matchesGroup && matchesQuery;
     });
-  }, [searchQuery, selectedGroup, snippets]);
+  }, [language, searchQuery, selectedGroup, snippets]);
 
   const activeSnippet = editingSnippetId
     ? snippets.find((snippet) => snippet.id === editingSnippetId) ?? null
@@ -364,6 +418,7 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
     const label = snippetDraft.label.trim();
     const group = snippetDraft.group.trim();
     const command = snippetDraft.command.trim();
+    const snippetLanguage = normalizeSnippetLanguage(snippetDraft.language);
     const shortcut = snippetDraft.shortcut.trim();
 
     if (!label) {
@@ -393,7 +448,7 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
           }
 
           didUpdate = true;
-          return { ...snippet, label, group, command, shortcut, updatedAt: now };
+          return { ...snippet, label, group, command, language: snippetLanguage, shortcut, updatedAt: now };
         });
 
         return didUpdate
@@ -404,6 +459,7 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
                 label,
                 group,
                 command,
+                language: snippetLanguage,
                 shortcut,
                 createdAt: now,
                 updatedAt: now,
@@ -421,6 +477,7 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
         label,
         group,
         command,
+        language: snippetLanguage,
         shortcut,
         createdAt: now,
         updatedAt: now,
@@ -480,9 +537,11 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
     }
 
     const systemPrompt = t('ai.snippets.systemPrompt', language);
+    const snippetLanguage = normalizeSnippetLanguage(snippetDraft.language);
     const userPrompt = [
       t('snippets.ai.contextHeader', language),
-      `language=${language}`,
+      `uiLanguage=${language}`,
+      `snippetLanguage=${snippetLanguage}`,
       `name=${snippetDraft.label.trim() || '-'}`,
       `group=${snippetDraft.group.trim() || '-'}`,
       `existingCommand=${snippetDraft.command.trim() || '-'}`,
@@ -530,6 +589,7 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
       : saveStatus === 'error'
         ? t('snippets.page.saveFailed', language, { error: saveStatusDetail || t('app.error.operationFailed', language) })
         : '';
+  const editorTheme = getEffectiveSnippetEditorTheme(settings.theme);
 
   return (
     <>
@@ -633,8 +693,13 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
                         <strong>{snippet.label}</strong>
                         <small>{snippet.group || t('terminal.snippets.ungrouped', language)}</small>
                         <span className="host-card-tags snippet-card-tags">
-                          {snippet.shortcut ? <em>{snippet.shortcut}</em> : null}
-                          <em>{getSnippetPreview(snippet) || t('snippets.page.commandFallback', language)}</em>
+                          <span className="snippet-card-meta-tags">
+                            <em>{getSnippetLanguageLabel(snippet.language, language)}</em>
+                            {snippet.shortcut ? <em>{snippet.shortcut}</em> : null}
+                          </span>
+                          <em className="snippet-command-preview">
+                            {getSnippetPreview(snippet) || t('snippets.page.commandFallback', language)}
+                          </em>
                         </span>
                       </span>
                     </div>
@@ -725,14 +790,42 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
               />
             </label>
 
-            <label className="field snippet-command-field">
-              <span>{t('terminal.snippets.fieldCommand', language)}</span>
-              <textarea
-                value={snippetDraft.command}
-                onChange={(event) => setSnippetDraft((currentDraft) => ({ ...currentDraft, command: event.target.value }))}
-                placeholder="systemctl status nginx"
-              />
-            </label>
+            <div className="field snippet-command-field">
+              <div className="snippet-command-toolbar">
+                <span>{t('terminal.snippets.fieldCommand', language)}</span>
+                <label className="snippet-language-control">
+                  <span>{t('terminal.snippets.fieldLanguage', language)}</span>
+                  <select
+                    value={normalizeSnippetLanguage(snippetDraft.language)}
+                    onChange={(event) => {
+                      setSnippetDraft((currentDraft) => ({
+                        ...currentDraft,
+                        language: normalizeSnippetLanguage(event.target.value),
+                      }));
+                    }}
+                  >
+                    {LANGUAGE_OPTIONS.map((languageOption) => (
+                      <option key={languageOption.value} value={languageOption.value}>
+                        {languageOption.labelId ? t(languageOption.labelId, language) : languageOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="snippet-command-editor">
+                <NotepadEditor
+                  ariaLabel={t('terminal.snippets.fieldCommand', language)}
+                  className="snippet-codemirror"
+                  content={snippetDraft.command}
+                  language={normalizeSnippetLanguage(snippetDraft.language)}
+                  readOnly={saveStatus === 'saving'}
+                  theme={editorTheme}
+                  wrapEnabled
+                  onChange={(command) => setSnippetDraft((currentDraft) => ({ ...currentDraft, command }))}
+                  onCursorChange={handleSnippetEditorCursorChange}
+                />
+              </div>
+            </div>
 
             <section className="snippet-ai-inline" aria-label={t('snippets.ai.title', language)}>
               <div className="snippet-ai-heading">
