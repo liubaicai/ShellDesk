@@ -2756,7 +2756,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'log-viewer') {
-      return <RemoteLogViewer connectionId={connection.id} systemType={connection.host.systemType} />;
+      return <RemoteLogViewer connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'monitor') {

@@ -50,7 +50,8 @@
 .log-toolbar-left,
 .log-toolbar-right,
 .log-result-actions,
-.log-pagination div {
+.log-pagination div,
+.log-file-path-control {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -297,15 +298,13 @@
   display: grid;
   width: 100%;
   min-height: 48px;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 30px;
   align-items: center;
-  gap: 8px;
   border: 1px solid transparent;
   border-radius: 7px;
-  padding: 6px 8px;
+  padding: 4px;
   background: transparent;
   color: var(--log-text);
-  cursor: pointer;
   text-align: left;
 }
 
@@ -317,6 +316,46 @@
 .log-source-item.selected {
   border-color: rgba(96, 188, 201, 0.3);
   background: rgba(96, 188, 201, 0.12);
+}
+
+.log-source-select {
+  display: grid;
+  min-width: 0;
+  min-height: 38px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.log-source-favorite {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--log-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.log-source-favorite:hover {
+  border-color: var(--log-border);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--log-warning);
+}
+
+.log-source-favorite.active {
+  color: var(--log-warning);
 }
 
 .log-source-kind {

@@ -1,8 +1,10 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
+import RemoteFilePicker from './RemoteFilePicker';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { formatBytes, toStringOrEmpty } from './parseUtils';
+import { loadRemoteConnectionProfile, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
 import { isWindowsSystem, powershellCommand, powershellSingleQuote } from './remoteSystem';
 import { shellSingleQuote } from './shellUtils';
 import { useSudoCommand } from './sudoPrompt';
@@ -16,6 +18,7 @@ type LogLineLevel = 'error' | 'warning' | 'info' | 'debug' | 'unknown';
 
 interface RemoteLogViewerProps {
   connectionId: string;
+  hostId: string;
   systemType?: RemoteSystemType;
 }
 
@@ -66,6 +69,7 @@ interface WindowsEventRecord {
 const defaultLines = 300;
 const maxLines = 2000;
 const pageSize = 300;
+const maxManualLogPaths = 60;
 
 const levelOptions: Array<{ value: LogLevelFilter; label: string }> = [
   { value: 'all', label: tCurrent('auto.remoteLogViewer.12ej1cf') },
@@ -103,6 +107,62 @@ const debugPattern = /\b(debug|trace|verbose)\b/i;
 
 function sanitizeSingleLine(value: string) {
   return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+function parseStringList(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => (typeof item === 'string' ? sanitizeSingleLine(item) : ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  values.forEach((value) => {
+    const normalizedValue = sanitizeSingleLine(value);
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      return;
+    }
+    seen.add(normalizedValue);
+    result.push(normalizedValue);
+  });
+
+  return result;
+}
+
+function createManualLogSource(path: string): LogSource {
+  const normalizedPath = sanitizeSingleLine(path);
+  return {
+    id: `file:${normalizedPath}`,
+    type: 'file',
+    label: normalizedPath.split(/[\\/]/u).filter(Boolean).pop() || normalizedPath,
+    value: normalizedPath,
+    description: normalizedPath,
+  };
+}
+
+function getLogFilePickerInitialPath(filePath: string) {
+  const normalizedPath = sanitizeSingleLine(filePath);
+  if (!normalizedPath) {
+    return '/var/log';
+  }
+
+  const parentPath = normalizedPath.replace(/[\\/][^\\/]*$/u, '');
+  return parentPath || '/';
 }
 
 function clampLines(value: number) {
@@ -645,7 +705,7 @@ function renderHighlightedText(text: string, keyword: string, useRegex: boolean)
   return parts.length ? parts : text;
 }
 
-function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
+function RemoteLogViewer({ connectionId, hostId, systemType }: RemoteLogViewerProps) {
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const defaultSourceId = isWindowsHost ? 'event:System' : 'journal:system';
@@ -655,7 +715,10 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   const initialQueryKeyRef = useRef('');
   const logLinesRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToLatestRef = useRef(false);
+  const profileLoadedRef = useRef(false);
   const [logFiles, setLogFiles] = useState<LogSource[]>([]);
+  const [manualLogPaths, setManualLogPaths] = useState<string[]>([]);
+  const [favoriteSourceIds, setFavoriteSourceIds] = useState<string[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState(defaultSourceId);
   const [serviceName, setServiceName] = useState('nginx.service');
   const [filePath, setFilePath] = useState('/var/log/syslog');
@@ -677,35 +740,53 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [loadedSourceLabel, setLoadedSourceLabel] = useState('');
   const [liveMode, setLiveMode] = useState(false);
+  const [filePickerOpen, setFilePickerOpen] = useState(false);
 
   const sourceGroups = useMemo<LogSourceGroup[]>(() => {
     if (isWindowsHost) {
+      const windowsSources: LogSource[] = [
+        { id: 'event:System', type: 'windows-event', label: 'System', value: 'System', description: tCurrent('auto.remoteLogViewer.8pjb5q') },
+        { id: 'event:Application', type: 'windows-event', label: 'Application', value: 'Application', description: tCurrent('auto.remoteLogViewer.qfh8h4') },
+      ];
+      const favoriteIdSet = new Set(favoriteSourceIds);
+      const favoriteSources = windowsSources.filter((source) => favoriteIdSet.has(source.id));
+      const regularSources = windowsSources.filter((source) => !favoriteIdSet.has(source.id));
+
       return [
+        favoriteSources.length ? {
+          id: 'favorites',
+          label: tCurrent('logViewer.favorites'),
+          sources: favoriteSources,
+        } : null,
         {
           id: 'windows-events',
           label: 'Windows Event Log',
-          sources: [
-            { id: 'event:System', type: 'windows-event', label: 'System', value: 'System', description: tCurrent('auto.remoteLogViewer.8pjb5q') },
-            { id: 'event:Application', type: 'windows-event', label: 'Application', value: 'Application', description: tCurrent('auto.remoteLogViewer.qfh8h4') },
-          ],
+          sources: regularSources,
         },
-      ];
+      ].filter((group): group is LogSourceGroup => Boolean(group));
     }
 
-    return [
+    const manualSources = manualLogPaths.map(createManualLogSource);
+    const journalSources: LogSource[] = [
+      { id: 'journal:system', type: 'journal', label: tCurrent('auto.remoteLogViewer.u4rwyj'), value: '', description: 'journalctl' },
+      ...serviceShortcuts.map((service) => ({
+        id: `journal:${service}`,
+        type: 'journal' as const,
+        label: service.replace(/\.service$/, ''),
+        value: service,
+        description: service,
+      })),
+    ];
+    const baseGroups: LogSourceGroup[] = [
+      manualSources.length ? {
+        id: 'manual-files',
+        label: tCurrent('logViewer.manualLogs'),
+        sources: manualSources,
+      } : null,
       {
         id: 'journal',
         label: 'Journal',
-        sources: [
-          { id: 'journal:system', type: 'journal', label: tCurrent('auto.remoteLogViewer.u4rwyj'), value: '', description: 'journalctl' },
-          ...serviceShortcuts.map((service) => ({
-            id: `journal:${service}`,
-            type: 'journal' as const,
-            label: service.replace(/\.service$/, ''),
-            value: service,
-            description: service,
-          })),
-        ],
+        sources: journalSources,
       },
       {
         id: 'files',
@@ -714,8 +795,32 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           ...logFiles,
         ],
       },
-    ];
-  }, [isWindowsHost, logFiles]);
+    ].filter((group): group is LogSourceGroup => Boolean(group));
+    const favoriteIdSet = new Set(favoriteSourceIds);
+    const sourceById = new Map<string, LogSource>();
+
+    baseGroups.flatMap((group) => group.sources).forEach((source) => {
+      if (!sourceById.has(source.id)) {
+        sourceById.set(source.id, source);
+      }
+    });
+
+    const favoriteSources = favoriteSourceIds
+      .map((sourceId) => sourceById.get(sourceId))
+      .filter((source): source is LogSource => Boolean(source));
+
+    return [
+      favoriteSources.length ? {
+        id: 'favorites',
+        label: tCurrent('logViewer.favorites'),
+        sources: favoriteSources,
+      } : null,
+      ...baseGroups.map((group) => ({
+        ...group,
+        sources: group.sources.filter((source) => !favoriteIdSet.has(source.id)),
+      })).filter((group) => group.sources.length > 0),
+    ].filter((group): group is LogSourceGroup => Boolean(group));
+  }, [favoriteSourceIds, isWindowsHost, logFiles, manualLogPaths]);
 
   const hiddenCustomSources = useMemo<LogSource[]>(() => (
     isWindowsHost ? [] : [
@@ -779,6 +884,25 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
     info: logLines.filter((line) => line.level === 'info').length,
     debug: logLines.filter((line) => line.level === 'debug').length,
   }), [logLines]);
+
+  const addManualLogPath = useCallback((path: string) => {
+    const normalizedPath = sanitizeSingleLine(path);
+    if (!normalizedPath || isWindowsHost) {
+      return;
+    }
+
+    setManualLogPaths((currentPaths) => uniqueStrings([normalizedPath, ...currentPaths]).slice(0, maxManualLogPaths));
+  }, [isWindowsHost]);
+
+  const toggleFavoriteSource = useCallback((source: LogSource) => {
+    setFavoriteSourceIds((currentIds) => {
+      if (currentIds.includes(source.id)) {
+        return currentIds.filter((sourceId) => sourceId !== source.id);
+      }
+
+      return uniqueStrings([source.id, ...currentIds]);
+    });
+  }, []);
 
   const loadLogFiles = useCallback(async () => {
     if (isWindowsHost) {
@@ -858,6 +982,9 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
       setPage(Math.max(0, Math.ceil(nextLines.length / pageSize) - 1));
       setLoadedAt(Date.now());
       setLoadedSourceLabel(querySource.label);
+      if (querySource.id === 'file:custom' && querySource.value) {
+        addManualLogPath(querySource.value);
+      }
 
       if (result.code !== 0) {
         setNotice(result.stderr || tCurrent('auto.remoteLogViewer.1wn95my'));
@@ -874,7 +1001,18 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
         setLoading(false);
       }
     }
-  }, [isWindowsHost, query, resolvedSource, runCommand]);
+  }, [addManualLogPath, isWindowsHost, query, resolvedSource, runCommand]);
+
+  const openManualLogPath = useCallback((path: string) => {
+    const source = createManualLogSource(path);
+    addManualLogPath(source.value);
+    setFilePath(source.value);
+    setSelectedSourceId(source.id);
+    setFilePickerOpen(false);
+    setError('');
+    setSuccess('');
+    void executeQuery(source);
+  }, [addManualLogPath, executeQuery]);
 
   useEffect(() => {
     if (!liveMode) {
@@ -956,6 +1094,39 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    profileLoadedRef.current = false;
+    setManualLogPaths([]);
+    setFavoriteSourceIds([]);
+
+    void (async () => {
+      const profile = await loadRemoteConnectionProfile(hostId, 'log-viewer');
+      if (cancelled || !isMountedRef.current) {
+        return;
+      }
+
+      setManualLogPaths(uniqueStrings(parseStringList(profile?.manualLogPaths)).slice(0, maxManualLogPaths));
+      setFavoriteSourceIds(uniqueStrings(parseStringList(profile?.favoriteSourceIds)));
+      profileLoadedRef.current = true;
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostId]);
+
+  useEffect(() => {
+    if (!profileLoadedRef.current) {
+      return;
+    }
+
+    void saveRemoteConnectionProfile(hostId, 'log-viewer', {
+      manualLogPaths: JSON.stringify(manualLogPaths),
+      favoriteSourceIds: JSON.stringify(favoriteSourceIds),
+    });
+  }, [favoriteSourceIds, hostId, manualLogPaths]);
+
+  useEffect(() => {
     initialQueryKeyRef.current = '';
     liveRequestIdRef.current += 1;
     setLiveMode(false);
@@ -1016,8 +1187,6 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
     setSelectedSourceId(source.id);
     setError('');
     setSuccess('');
-    liveRequestIdRef.current += 1;
-    setLiveMode(false);
     let nextSource = source;
 
     if (source.type === 'journal' && source.value && source.value !== '__service__') {
@@ -1104,20 +1273,30 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
 
   const renderSourceButton = (source: LogSource) => {
     const isSelected = source.id === selectedSourceId;
+    const isFavorite = favoriteSourceIds.includes(source.id);
 
     return (
-      <button
+      <div
         key={source.id}
-        type="button"
         className={`log-source-item ${isSelected ? 'selected' : ''}`}
-        onClick={() => selectSource(source)}
       >
-        <span className={`log-source-kind ${source.type}`}>{source.type === 'file' ? 'FILE' : source.type === 'windows-event' ? 'EVT' : 'JNL'}</span>
-        <span className="log-source-main">
-          <strong title={source.value || source.label}>{source.label}</strong>
-          {source.description ? <small title={source.description}>{source.description}</small> : null}
-        </span>
-      </button>
+        <button type="button" className="log-source-select" onClick={() => selectSource(source)}>
+          <span className={`log-source-kind ${source.type}`}>{source.type === 'file' ? 'FILE' : source.type === 'windows-event' ? 'EVT' : 'JNL'}</span>
+          <span className="log-source-main">
+            <strong title={source.value || source.label}>{source.label}</strong>
+            {source.description ? <small title={source.description}>{source.description}</small> : null}
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`log-source-favorite ${isFavorite ? 'active' : ''}`}
+          title={isFavorite ? tCurrent('logViewer.unfollow') : tCurrent('logViewer.follow')}
+          aria-label={isFavorite ? tCurrent('logViewer.unfollow') : tCurrent('logViewer.follow')}
+          onClick={() => toggleFavoriteSource(source)}
+        >
+          {isFavorite ? '★' : '☆'}
+        </button>
+      </div>
     );
   };
 
@@ -1138,6 +1317,11 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           {!isWindowsHost ? (
             <button type="button" className="log-tool-button" onClick={() => void loadLogFiles()} disabled={filesLoading}>
               {filesLoading ? tCurrent('auto.remoteLogViewer.15wbj2u') : tCurrent('auto.remoteLogViewer.1dovqdy')}
+            </button>
+          ) : null}
+          {!isWindowsHost ? (
+            <button type="button" className="log-tool-button" onClick={() => setFilePickerOpen(true)}>
+              {tCurrent('logViewer.addManualLog')}
             </button>
           ) : null}
           <span className="log-system-pill">{isWindowsHost ? 'Windows Event Log' : tCurrent('auto.remoteLogViewer.1rlrh2l')}</span>
@@ -1182,17 +1366,22 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           />
         ) : null}
         {resolvedSource.type === 'file' ? (
-          <input
-            type="text"
-            className="log-source-input"
-            value={filePath}
-            onChange={(event) => {
-              setSelectedSourceId('file:custom');
-              setFilePath(event.target.value);
-            }}
-            placeholder="/var/log/nginx/error.log"
-            aria-label={tCurrent('auto.remoteLogViewer.1w847h7')}
-          />
+          <div className="log-file-path-control">
+            <input
+              type="text"
+              className="log-source-input"
+              value={filePath}
+              onChange={(event) => {
+                setSelectedSourceId('file:custom');
+                setFilePath(event.target.value);
+              }}
+              placeholder="/var/log/nginx/error.log"
+              aria-label={tCurrent('auto.remoteLogViewer.1w847h7')}
+            />
+            <button type="button" className="log-tool-button" onClick={() => setFilePickerOpen(true)}>
+              {tCurrent('logViewer.chooseFile')}
+            </button>
+          </div>
         ) : null}
         <input
           type="search"
@@ -1313,6 +1502,19 @@ function RemoteLogViewer({ connectionId, systemType }: RemoteLogViewerProps) {
           </footer>
         </section>
       </div>
+      {!isWindowsHost ? (
+        <RemoteFilePicker
+          connectionId={connectionId}
+          systemType={systemType}
+          mode="open"
+          title={tCurrent('logViewer.chooseLogFile')}
+          visible={filePickerOpen}
+          initialPath={getLogFilePickerInitialPath(filePath)}
+          confirmLabel={tCurrent('logViewer.addManualLog')}
+          onConfirm={openManualLogPath}
+          onCancel={() => setFilePickerOpen(false)}
+        />
+      ) : null}
       {sudoPrompt}
     </div>
   );
