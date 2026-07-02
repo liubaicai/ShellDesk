@@ -1174,16 +1174,44 @@ function hasCustomDesktopWallpaper(settings: ShellDeskAppSettings) {
   return settings.desktopWallpaperMode === 'custom' && Boolean(settings.desktopWallpaperDataUrl);
 }
 
-function getDesktopWallpaperStyle(settings: ShellDeskAppSettings, presetWallpaperUrl: string): CSSProperties {
-  const wallpaperSource = hasCustomDesktopWallpaper(settings)
-    ? settings.desktopWallpaperDataUrl
-    : presetWallpaperUrl;
-  const wallpaperImage = wallpaperSource
-    ? `, url(${JSON.stringify(wallpaperSource)})`
-    : '';
+function createWallpaperObjectUrl(dataUrl: string) {
+  const match = /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl);
+
+  if (!match) {
+    return '';
+  }
+
+  const [, mimeType, payload] = match;
+  const binary = window.atob(payload);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return window.URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
+function getDesktopWallpaperStyle(
+  settings: ShellDeskAppSettings,
+  presetWallpaperUrl: string,
+  customWallpaperUrl: string,
+): CSSProperties {
+  if (hasCustomDesktopWallpaper(settings)) {
+    const wallpaperSource = customWallpaperUrl || settings.desktopWallpaperDataUrl;
+
+    return {
+      backgroundImage: wallpaperSource ? `url(${JSON.stringify(wallpaperSource)})` : 'none',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundSize: 'cover',
+    };
+  }
 
   return {
-    backgroundImage: `linear-gradient(180deg, var(--desktop-wallpaper-scrim-top), var(--desktop-wallpaper-scrim-bottom))${wallpaperImage}`,
+    backgroundImage: presetWallpaperUrl
+      ? `linear-gradient(180deg, var(--desktop-wallpaper-scrim-top), var(--desktop-wallpaper-scrim-bottom)), url(${JSON.stringify(presetWallpaperUrl)})`
+      : 'linear-gradient(180deg, var(--desktop-wallpaper-scrim-top), var(--desktop-wallpaper-scrim-bottom))',
     backgroundPosition: 'center, center',
     backgroundRepeat: 'no-repeat, no-repeat',
     backgroundSize: 'cover, cover',
@@ -1560,10 +1588,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const [tmuxMenuState, setTmuxMenuState] = useState<TmuxMenuState>({ status: 'idle', sessions: [] });
   const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
   const [presetWallpaperUrl, setPresetWallpaperUrl] = useState('');
+  const [customWallpaperUrl, setCustomWallpaperUrl] = useState('');
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
   const terminalTitlebarMenuWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === terminalTitlebarMenu?.windowId && desktopWindow.appKey === 'terminal') ?? null;
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
-  const desktopWallpaperStyle = getDesktopWallpaperStyle(settings, presetWallpaperUrl);
+  const desktopWallpaperStyle = getDesktopWallpaperStyle(settings, presetWallpaperUrl, customWallpaperUrl);
   const hasCustomWallpaper = hasCustomDesktopWallpaper(settings);
   const remoteConnectionProfileHostId = getRemoteConnectionProfileHostId(connection);
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
@@ -1636,6 +1665,28 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   useEffect(() => {
     desktopLayoutRef.current = desktopLayout;
   }, [desktopLayout]);
+
+  useEffect(() => {
+    if (!hasCustomDesktopWallpaper(settings)) {
+      setCustomWallpaperUrl('');
+      return undefined;
+    }
+
+    let objectUrl = '';
+
+    try {
+      objectUrl = createWallpaperObjectUrl(settings.desktopWallpaperDataUrl);
+      setCustomWallpaperUrl(objectUrl);
+    } catch {
+      setCustomWallpaperUrl('');
+    }
+
+    return () => {
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [settings.desktopWallpaperMode, settings.desktopWallpaperDataUrl]);
 
   useEffect(() => {
     if (hasCustomDesktopWallpaper(settings)) {

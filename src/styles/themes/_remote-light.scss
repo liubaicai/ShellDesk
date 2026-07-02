@@ -45,7 +45,7 @@
 [data-theme="light"] .settings-status-strip {
   border-bottom-color: rgba(16, 32, 51, 0.08);
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.88), rgba(232, 239, 247, 0.92)),
+    linear-gradient(180deg, rgba(250, 248, 244, 0.88), rgba(239, 234, 226, 0.92)),
     var(--surface);
 }
 
@@ -216,9 +216,9 @@
 [data-theme="light"] .settings-modal {
   border-color: rgba(16, 32, 51, 0.14);
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(235, 241, 248, 0.98)),
+    linear-gradient(180deg, rgba(250, 248, 244, 0.98), rgba(239, 234, 226, 0.98)),
     var(--surface);
-  box-shadow: 0 22px 60px rgba(43, 67, 92, 0.22);
+  box-shadow: 0 22px 60px rgba(64, 52, 38, 0.22);
 }
 
 [data-theme="light"] .settings-modal.warning {
@@ -363,7 +363,7 @@
 }
 
 [data-theme="light"] .command-bar {
-  background: rgba(236, 242, 249, 0.86);
+  background: rgba(244, 240, 234, 0.86);
 }
 
 [data-theme="light"] .remote-desktop-surface {
@@ -385,9 +385,9 @@
 [data-theme="light"] .remote-desktop-boot-dock span {
   border-color: rgba(52, 72, 104, 0.12);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(230, 237, 246, 0.3)),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(239, 234, 226, 0.3)),
     rgba(28, 115, 195, 0.16);
-  box-shadow: 0 12px 26px rgba(34, 55, 84, 0.16);
+  box-shadow: 0 12px 26px rgba(64, 52, 38, 0.16);
 }
 
 [data-theme="light"] .remote-desktop-boot-icons span::after,
@@ -398,22 +398,22 @@
 
 [data-theme="light"] .remote-desktop-boot-window {
   border-color: rgba(61, 82, 116, 0.16);
-  background: rgba(244, 248, 252, 0.7);
+  background: rgba(250, 247, 242, 0.7);
   box-shadow:
-    0 30px 70px rgba(34, 55, 84, 0.18),
+    0 30px 70px rgba(64, 52, 38, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.64);
 }
 
 [data-theme="light"] .remote-desktop-boot-dock {
   border-color: rgba(61, 82, 116, 0.14);
-  background: rgba(244, 248, 252, 0.68);
-  box-shadow: 0 20px 42px rgba(34, 55, 84, 0.16);
+  background: rgba(250, 247, 242, 0.68);
+  box-shadow: 0 20px 42px rgba(64, 52, 38, 0.16);
 }
 
 [data-theme="light"] .global-search,
 [data-theme="light"] .command-button {
   background: var(--surface);
-  box-shadow: 0 12px 28px rgba(34, 55, 84, 0.08);
+  box-shadow: 0 12px 28px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .global-search input {
@@ -428,7 +428,7 @@
 [data-theme="light"] .hosts-group-panel,
 [data-theme="light"] .host-card,
 [data-theme="light"] .key-card {
-  background: rgba(248, 250, 252, 0.84);
+  background: rgba(250, 248, 244, 0.84);
 }
 
 [data-theme="light"] .group-panel-toggle-button,
@@ -466,7 +466,7 @@
 [data-theme="light"] .explorer-addressbar,
 [data-theme="light"] .explorer-statusbar {
   background:
-    linear-gradient(180deg, rgba(239, 244, 250, 0.96), rgba(224, 232, 243, 0.96));
+    linear-gradient(180deg, rgba(247, 244, 239, 0.96), rgba(235, 229, 220, 0.96));
 }
 
 [data-theme="light"] .mac-dock button.open::after {
@@ -488,8 +488,8 @@
 [data-theme="light"] .launchpad-panel,
 [data-theme="light"] .desktop-folder-panel {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(248, 250, 252, 0.86);
-  box-shadow: 0 18px 46px rgba(43, 67, 92, 0.18);
+  background: rgba(250, 248, 244, 0.86);
+  box-shadow: 0 18px 46px rgba(64, 52, 38, 0.18);
 }
 
 [data-theme="light"] .launchpad-header span,
@@ -500,20 +500,20 @@
 
 [data-theme="light"] .launchpad-tooltip {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(242, 246, 251, 0.96);
-  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.16);
+  background: rgba(246, 243, 238, 0.96);
+  box-shadow: 0 12px 28px rgba(64, 52, 38, 0.16);
   color: #526178;
 }
 
 [data-theme="light"] .launchpad-close {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(248, 250, 252, 0.88);
+  background: rgba(250, 248, 244, 0.88);
   color: #172033;
 }
 
 [data-theme="light"] .launchpad-search {
   border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(248, 250, 252, 0.9);
+  background: rgba(250, 248, 244, 0.9);
   color: #526178;
 }
 
@@ -538,7 +538,7 @@
 
 [data-theme="light"] .launchpad-overlay,
 [data-theme="light"] .desktop-folder-overlay {
-  background: rgba(225, 233, 243, 0.64);
+  background: rgba(238, 232, 224, 0.64);
 }
 
 [data-theme="light"] .launchpad-header,
@@ -568,10 +568,10 @@
 
 [data-theme="light"] .desktop-folder-icon-shell {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(210, 221, 236, 0.96));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(226, 219, 209, 0.96));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    0 8px 18px rgba(43, 67, 92, 0.16);
+    0 8px 18px rgba(64, 52, 38, 0.16);
 }
 
 [data-theme="light"] .desktop-folder-icon-shell::before {
@@ -619,7 +619,7 @@
 [data-theme="light"] .addressbar-breadcrumb-input,
 [data-theme="light"] .explorer-search {
   background: var(--surface-input);
-  box-shadow: 0 12px 26px rgba(34, 55, 84, 0.08);
+  box-shadow: 0 12px 26px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .browser-address-shell:focus-within {
@@ -627,16 +627,16 @@
   background: #ffffff;
   box-shadow:
     0 0 0 1px rgba(37, 99, 235, 0.07),
-    0 10px 22px rgba(34, 55, 84, 0.08);
+    0 10px 22px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .remote-browser-pane {
-  --browser-panel: rgba(248, 250, 252, 0.82);
-  --browser-panel-strong: rgba(242, 246, 251, 0.96);
+  --browser-panel: rgba(250, 248, 244, 0.82);
+  --browser-panel-strong: rgba(246, 243, 238, 0.96);
   --browser-panel-soft: rgba(31, 64, 104, 0.06);
   --browser-panel-hover: rgba(37, 99, 235, 0.12);
-  --browser-border: rgba(34, 55, 84, 0.14);
-  --browser-border-strong: rgba(34, 55, 84, 0.24);
+  --browser-border: rgba(64, 52, 38, 0.14);
+  --browser-border-strong: rgba(64, 52, 38, 0.24);
   --browser-text: #172033;
   --browser-muted: #526178;
   --browser-accent: #2563eb;
@@ -646,42 +646,42 @@
 
 [data-theme="light"] .browser-shortcut-panel {
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.66), rgba(227, 236, 246, 0.86)),
+    linear-gradient(180deg, rgba(250, 248, 244, 0.66), rgba(240, 234, 226, 0.86)),
     var(--browser-panel-strong);
 }
 
 [data-theme="light"] .browser-start-page {
   background:
-    linear-gradient(180deg, rgba(246, 249, 253, 0.92), rgba(235, 241, 249, 0.98)),
+    linear-gradient(180deg, rgba(250, 248, 244, 0.92), rgba(241, 236, 229, 0.98)),
     repeating-linear-gradient(90deg, rgba(37, 99, 235, 0.035) 0 1px, transparent 1px 42px),
     repeating-linear-gradient(180deg, rgba(37, 99, 235, 0.03) 0 1px, transparent 1px 42px),
-    #edf3fa;
+    #f2eee8;
 }
 
 [data-theme="light"] .browser-start-card {
-  border-color: rgba(34, 55, 84, 0.12);
+  border-color: rgba(64, 52, 38, 0.12);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(242, 247, 252, 0.72)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(247, 243, 238, 0.72)),
     rgba(255, 255, 255, 0.58);
-  box-shadow: 0 10px 22px rgba(34, 55, 84, 0.07);
+  box-shadow: 0 10px 22px rgba(64, 52, 38, 0.07);
 }
 
 [data-theme="light"] .browser-start-card:hover,
 [data-theme="light"] .browser-start-card:focus-visible {
   background:
-    linear-gradient(180deg, var(--browser-start-signal-soft), rgba(242, 247, 252, 0.84)),
+    linear-gradient(180deg, var(--browser-start-signal-soft), rgba(247, 243, 238, 0.84)),
     rgba(255, 255, 255, 0.72);
-  box-shadow: 0 14px 28px rgba(34, 55, 84, 0.11);
+  box-shadow: 0 14px 28px rgba(64, 52, 38, 0.11);
 }
 
 [data-theme="light"] .browser-start-card-arrow {
-  border-color: rgba(34, 55, 84, 0.11);
+  border-color: rgba(64, 52, 38, 0.11);
 }
 
 [data-theme="light"] .browser-error-page {
   background:
-    linear-gradient(135deg, rgba(227, 236, 247, 0.94), rgba(238, 244, 251, 0.76)),
-    rgba(248, 250, 252, 0.64);
+    linear-gradient(135deg, rgba(241, 236, 229, 0.94), rgba(247, 243, 238, 0.76)),
+    rgba(250, 248, 244, 0.64);
 }
 
 [data-theme="light"] .browser-error-page code {
@@ -722,7 +722,7 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.96));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 20px 44px rgba(34, 55, 84, 0.16);
+    0 20px 44px rgba(64, 52, 38, 0.16);
   color: #172033;
 }
 
@@ -753,7 +753,7 @@
 [data-theme="light"] .explorer-details {
   border-color: rgba(16, 32, 51, 0.1);
   background:
-    linear-gradient(180deg, rgba(249, 251, 254, 0.98), rgba(236, 242, 249, 0.98));
+    linear-gradient(180deg, rgba(251, 249, 246, 0.98), rgba(244, 240, 234, 0.98));
 }
 
 [data-theme="light"] .explorer-commandbar button,
@@ -896,8 +896,8 @@
   border-color: var(--win11-border);
   background: var(--win11-mica-strong);
   box-shadow:
-    0 22px 54px rgba(43, 67, 92, 0.18),
-    0 4px 14px rgba(43, 67, 92, 0.12),
+    0 22px 54px rgba(64, 52, 38, 0.18),
+    0 4px 14px rgba(64, 52, 38, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
@@ -913,14 +913,14 @@
 }
 
 [data-theme="light"] .desktop-folder-overlay {
-  background: rgba(225, 233, 243, 0.42);
+  background: rgba(238, 232, 224, 0.42);
 }
 
 [data-theme="light"] .desktop-folder-panel {
   border-color: var(--win11-border);
   background: var(--win11-mica);
   box-shadow:
-    0 24px 62px rgba(43, 67, 92, 0.2),
+    0 24px 62px rgba(64, 52, 38, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
@@ -1011,7 +1011,7 @@
   border-color: rgba(16, 32, 51, 0.12);
   background: rgba(249, 249, 249, 0.92);
   box-shadow:
-    0 18px 46px rgba(43, 67, 92, 0.18),
+    0 18px 46px rgba(64, 52, 38, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 

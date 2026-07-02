@@ -47,6 +47,33 @@ const SettingsPage = lazy(() =>
 
 const hostsStorageKey = 'shelldesk:hosts';
 const terminalSnippetsStorageKey = 'shelldesk:terminal-snippets';
+const terminalSnippetLanguageChoices = new Set([
+  'plaintext',
+  'javascript',
+  'typescript',
+  'html',
+  'xml',
+  'css',
+  'json',
+  'yaml',
+  'bash',
+  'powershell',
+  'bat',
+  'markdown',
+  'sql',
+  'python',
+  'go',
+  'rust',
+  'java',
+  'c',
+  'cpp',
+  'php',
+  'ruby',
+  'ini',
+  'nginx',
+  'dockerfile',
+  'diff',
+]);
 const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const themePreloadStorageKey = 'shelldesk:theme-preload';
@@ -110,10 +137,17 @@ function createDefaultTerminalSnippets(language: AppLanguage): ShellDeskTerminal
     label,
     command,
     group,
+    language: 'bash',
     shortcut: '',
     createdAt: timestamp,
     updatedAt: timestamp,
   }));
+}
+
+function normalizeTerminalSnippetLanguage(value: unknown) {
+  return typeof value === 'string' && terminalSnippetLanguageChoices.has(value)
+    ? value
+    : 'bash';
 }
 
 const defaultAppLanguage = getSystemLanguage();
@@ -1819,6 +1853,7 @@ function readStoredTerminalSnippets(fallbackSnippets: ShellDeskTerminalSnippet[]
         label,
         command,
         group: typeof snippet.group === 'string' ? snippet.group.trim().slice(0, 80) : '',
+        language: normalizeTerminalSnippetLanguage(snippet.language),
         shortcut: typeof snippet.shortcut === 'string' ? snippet.shortcut.replace(/\s*\+\s*/g, ' + ').trim().slice(0, 80) : '',
         createdAt: typeof snippet.createdAt === 'string' ? snippet.createdAt.slice(0, 64) : new Date().toISOString(),
         updatedAt: typeof snippet.updatedAt === 'string' ? snippet.updatedAt.slice(0, 64) : new Date().toISOString(),

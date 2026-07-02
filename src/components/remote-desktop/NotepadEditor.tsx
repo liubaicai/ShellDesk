@@ -34,6 +34,20 @@ const CODEMIRROR_LANGUAGE_LOADERS: Partial<Record<string, CodeMirrorLanguageLoad
     ]);
     return StreamLanguage.define(shell);
   },
+  powershell: async () => {
+    const [{ StreamLanguage }, { shell }] = await Promise.all([
+      import('@codemirror/language'),
+      import('@codemirror/legacy-modes/mode/shell'),
+    ]);
+    return StreamLanguage.define(shell);
+  },
+  bat: async () => {
+    const [{ StreamLanguage }, { shell }] = await Promise.all([
+      import('@codemirror/language'),
+      import('@codemirror/legacy-modes/mode/shell'),
+    ]);
+    return StreamLanguage.define(shell);
+  },
   markdown: async () => (await import('@codemirror/lang-markdown')).markdown(),
   sql: async () => (await import('@codemirror/lang-sql')).sql(),
   python: async () => (await import('@codemirror/lang-python')).python(),

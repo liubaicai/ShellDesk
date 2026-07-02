@@ -78,7 +78,7 @@
   border-color: var(--accent-border);
   background: var(--toast-bg);
   color: var(--toast-text);
-  box-shadow: 0 12px 32px rgba(43, 67, 92, 0.14);
+  box-shadow: 0 12px 32px rgba(64, 52, 38, 0.14);
 }
 
 [data-theme="light"] .connection-error-dialog {
@@ -87,7 +87,7 @@
     linear-gradient(180deg, rgba(200, 48, 78, 0.07), rgba(200, 48, 78, 0.04)),
     var(--surface-panel);
   color: #a02040;
-  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.12);
+  box-shadow: 0 12px 28px rgba(64, 52, 38, 0.12);
 }
 
 [data-theme="light"] .connection-error-mark {
@@ -113,7 +113,7 @@
 [data-theme="light"] .host-card,
 [data-theme="light"] .key-card {
   border-color: rgba(16, 32, 51, 0.1);
-  box-shadow: 0 6px 18px rgba(43, 67, 92, 0.08);
+  box-shadow: 0 6px 18px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .group-card.active,
@@ -146,7 +146,7 @@
   color: #246ed8;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 8px 18px rgba(34, 55, 84, 0.08);
+    0 8px 18px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .group-icon::after {
@@ -176,7 +176,7 @@
 [data-theme="light"] .host-card-loading {
   background:
     radial-gradient(circle at center, rgba(37, 99, 235, 0.14), transparent 48%),
-    rgba(241, 246, 251, 0.76);
+    rgba(246, 243, 238, 0.76);
   color: #172033;
 }
 
@@ -200,7 +200,7 @@
 [data-theme="light"] .host-card-menu-panel {
   border-color: rgba(16, 32, 51, 0.16);
   background: var(--surface-panel);
-  box-shadow: 0 12px 28px rgba(43, 67, 92, 0.16);
+  box-shadow: 0 12px 28px rgba(64, 52, 38, 0.16);
 }
 
 [data-theme="light"] .host-card-menu-panel button {
@@ -214,7 +214,7 @@
 }
 
 [data-theme="light"] .host-info-modal {
-  box-shadow: 0 26px 80px rgba(43, 67, 92, 0.22);
+  box-shadow: 0 26px 80px rgba(64, 52, 38, 0.22);
 }
 
 [data-theme="light"] .danger-text {
@@ -239,13 +239,13 @@
 [data-theme="light"] .editor-panel {
   border-color: rgba(16, 32, 51, 0.14);
   background: var(--surface-panel);
-  box-shadow: 0 16px 48px rgba(43, 67, 92, 0.16);
+  box-shadow: 0 16px 48px rgba(64, 52, 38, 0.16);
 }
 
 [data-theme="light"] .credential-panel {
   border-color: rgba(16, 32, 51, 0.14);
   background: var(--surface-panel);
-  box-shadow: 0 16px 48px rgba(43, 67, 92, 0.18);
+  box-shadow: 0 16px 48px rgba(64, 52, 38, 0.18);
 }
 
 [data-theme="light"] .editor-header {
@@ -375,7 +375,7 @@
 }
 
 [data-theme="light"] .settings-toggle {
-  background: #cdd6e0;
+  background: #d8d1c6;
 }
 
 [data-theme="light"] .settings-toggle:checked {
@@ -407,7 +407,7 @@
 }
 
 [data-theme="light"] .logs-filter-chip small {
-  background: #d0d9e4;
+  background: #ded8ce;
   color: var(--muted-strong);
 }
 
@@ -457,7 +457,7 @@
 }
 
 [data-theme="light"] .section-heading b {
-  background: #dce5ef;
+  background: #e5ded4;
   color: var(--muted-strong);
 }
 
@@ -469,8 +469,8 @@
 
 [data-theme="light"] .monitor-pane {
   --monitor-bg: #e7edf5;
-  --monitor-panel: rgba(248, 250, 252, 0.78);
-  --monitor-panel-strong: rgba(242, 246, 251, 0.95);
+  --monitor-panel: rgba(250, 248, 244, 0.78);
+  --monitor-panel-strong: rgba(246, 243, 238, 0.95);
   --monitor-panel-soft: rgba(16, 32, 51, 0.04);
   --monitor-panel-hover: rgba(38, 111, 232, 0.09);
   --monitor-border: rgba(16, 32, 51, 0.12);
@@ -486,7 +486,7 @@
   --monitor-chart-empty: #7a8798;
   --monitor-chart-crosshair: rgba(24, 35, 52, 0.32);
   background:
-    linear-gradient(180deg, rgba(238, 243, 248, 0.98), rgba(224, 232, 242, 0.98)),
+    linear-gradient(180deg, rgba(247, 244, 239, 0.98), rgba(236, 230, 221, 0.98)),
     var(--monitor-bg);
 }
 
@@ -494,7 +494,7 @@
 [data-theme="light"] .monitor-chart-card {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 12px 28px rgba(43, 67, 92, 0.08);
+    0 12px 28px rgba(64, 52, 38, 0.08);
 }
 
 [data-theme="light"] .monitor-interval-control {
