@@ -1,5 +1,7 @@
 /* ─── Remote Settings ─────────────────────────────────────────────────────── */
 
+@use "./login-sessions" as *;
+
 .settings-pane {
   display: grid;
   height: 100%;

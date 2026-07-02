@@ -9,6 +9,7 @@ import type { RemoteSettingsProps, SettingsGroup, SettingsHostStatus, SettingsTa
 import { parseKeyValueOutput } from './settingsParsers';
 import { getSystemTypeLabel, RemoteSettingsCommandContext } from './settingsShared';
 import SettingsHostsPanel from './SettingsHostsPanel';
+import SettingsLoginSessionsPanel from './SettingsLoginSessionsPanel';
 import SettingsNetworkPanel from './SettingsNetworkPanel';
 import SettingsRoutePanel from './SettingsRoutePanel';
 import SettingsSystemInfoPanel from './SettingsSystemInfoPanel';
@@ -21,6 +22,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     tabs: [
       { key: 'systeminfo', labelId: 'remoteSettings.tab.systemInfo.label', icon: '\u{1F4BB}', descriptionId: 'remoteSettings.tab.systemInfo.description' },
       { key: 'update', labelId: 'remoteSettings.tab.update.label', icon: '\u{1F504}', descriptionId: 'remoteSettings.tab.update.description' },
+      { key: 'loginsessions', labelId: 'remoteSettings.tab.loginsessions.label', icon: '\u{1F512}', descriptionId: 'remoteSettings.tab.loginsessions.description' },
     ],
   },
   {
@@ -38,6 +40,7 @@ const WINDOWS_SETTINGS_GROUPS: SettingsGroup[] = [
     labelId: 'remoteSettings.group.system',
     tabs: [
       { key: 'systeminfo', labelId: 'remoteSettings.tab.systemInfo.label', icon: '\u{1F4BB}', descriptionId: 'remoteSettings.tab.systemInfo.windowsDescription' },
+      { key: 'loginsessions', labelId: 'remoteSettings.tab.loginsessions.label', icon: '\u{1F512}', descriptionId: 'remoteSettings.tab.loginsessions.description' },
     ],
   },
   {
@@ -196,6 +199,7 @@ Write-Output ("PRIV=" + $privilege)
         case 'network': return <WindowsNetworkPanel />;
         case 'hosts': return <WindowsHostsPanel connectionId={connectionId} />;
         case 'route': return <WindowsRoutePanel />;
+        case 'loginsessions': return <SettingsLoginSessionsPanel connectionId={connectionId} systemType={systemType} />;
         default: return <WindowsSystemInfoPanel connectionId={connectionId} />;
       }
     }
@@ -206,6 +210,7 @@ Write-Output ("PRIV=" + $privilege)
       case 'update': return <SettingsUpdatePanel />;
       case 'hosts': return <SettingsHostsPanel />;
       case 'route': return <SettingsRoutePanel />;
+      case 'loginsessions': return <SettingsLoginSessionsPanel connectionId={connectionId} systemType={systemType} />;
       default: return null;
     }
   };
