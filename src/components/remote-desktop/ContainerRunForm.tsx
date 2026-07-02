@@ -34,6 +34,7 @@ function createDefaultRunForm(image = ''): ContainerRunFormState {
     hostname: '',
     workdir: '',
     user: '',
+    privileged: false,
     command: '',
     extraArgs: '',
     createOnly: false,
@@ -142,6 +143,7 @@ function ContainerRunForm({ runtime, initialImage = '', running, error, troubles
             <label className="wide"><span>{t('container.ui.extraArgs', language)}</span><input type="text" value={form.extraArgs} onChange={(event) => updateForm('extraArgs', event.target.value)} placeholder="--add-host app.local:127.0.0.1" /></label>
           </div>
           <div className="container-run-options">
+            <label><input type="checkbox" checked={form.privileged} onChange={(event) => updateForm('privileged', event.target.checked)} /><span>{t('container.ui.privilegedMode', language)}</span></label>
             <label><input type="checkbox" checked={form.createOnly} onChange={(event) => updateForm('createOnly', event.target.checked)} /><span>{t('container.ui.createOnly', language)}</span></label>
             <label><input type="checkbox" checked={!form.createOnly && form.removeWhenStopped} disabled={form.createOnly} onChange={(event) => updateForm('removeWhenStopped', event.target.checked)} /><span>{t('container.ui.removeWhenStopped', language)}</span></label>
           </div>

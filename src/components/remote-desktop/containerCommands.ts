@@ -312,6 +312,9 @@ export function buildContainerRunArgs(form: ContainerRunForm, language: AppLangu
   if (user) {
     args.push('-u', user);
   }
+  if (form.privileged) {
+    args.push('--privileged');
+  }
   parseMultilineValues(form.ports).forEach((port) => args.push('-p', port));
   parseMultilineValues(form.volumes).forEach((volume) => args.push('-v', volume));
   parseMultilineValues(form.environment).forEach((env) => args.push('-e', env));

@@ -150,6 +150,7 @@ export interface ContainerRunForm {
   hostname: string;
   workdir: string;
   user: string;
+  privileged: boolean;
   command: string;
   extraArgs: string;
   createOnly: boolean;
