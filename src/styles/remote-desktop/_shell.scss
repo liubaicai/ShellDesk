@@ -1152,6 +1152,18 @@
     radial-gradient(ellipse at 50% 100%, rgba(4, 8, 13, 0.34), transparent 52%);
 }
 
+[data-theme="light"] .remote-desktop-surface::before {
+  background: none;
+}
+
+[data-theme="light"] .remote-desktop-surface.has-default-wallpaper::before {
+  background: none;
+}
+
+[data-theme="light"] .remote-desktop-surface.has-custom-wallpaper::before {
+  background: none;
+}
+
 .remote-desktop-boot-surface {
   position: relative;
 }

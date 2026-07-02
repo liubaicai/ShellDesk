@@ -778,6 +778,27 @@
   background: rgba(15, 23, 42, 0.035);
 }
 
+[data-theme="light"] .settings-panel-header {
+  border-bottom-color: rgba(78, 96, 126, 0.16);
+}
+
+[data-theme="light"] .settings-panel-header h3,
+[data-theme="light"] .settings-status-item strong,
+[data-theme="light"] .settings-info-value {
+  color: #172033;
+}
+
+[data-theme="light"] .settings-panel-header p,
+[data-theme="light"] .settings-status-hint,
+[data-theme="light"] .settings-info-label {
+  color: #5c6d84;
+}
+
+[data-theme="light"] .settings-section h4,
+[data-theme="light"] .settings-status-item span {
+  color: #394b63;
+}
+
 [data-theme="light"] .settings-segmented-control button:hover,
 [data-theme="light"] .settings-segmented-control button.active {
   background: rgba(21, 101, 148, 0.1);
