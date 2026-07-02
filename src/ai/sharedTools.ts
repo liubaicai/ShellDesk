@@ -39,7 +39,6 @@ const SHELLDESK_APP_KEYS = [
   'frp-manager',
   'frps-manager',
   'security-audit',
-  'login-sessions',
   'api-debugger',
   'procmanager',
   'ai-chat',

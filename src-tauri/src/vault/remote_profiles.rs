@@ -36,7 +36,6 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "frp-manager",
     "frps-manager",
     "security-audit",
-    "login-sessions",
     "api-debugger",
     "procmanager",
     "ai-chat",

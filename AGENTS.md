@@ -96,7 +96,7 @@ src/
       RemoteProcessManager.tsx / RemoteServiceManager.tsx / RemoteContainerManager.tsx
       RemotePortManager.tsx / RemoteFirewallManager.tsx / RemoteNetworkDiagnostics.tsx
       RemoteDiskAnalyzer.tsx / RemoteDiskManager.tsx / RemotePackageManager.tsx / RemoteScheduledTasks.tsx
-      RemoteSecurityAudit.tsx / RemoteLoginSessions.tsx / RemoteLogViewer.tsx
+      RemoteSecurityAudit.tsx / RemoteLogViewer.tsx / SettingsLoginSessionsPanel.tsx
       RemoteApiDebugger.tsx / RemoteSettings.tsx
   pages/
     KeysPage.tsx    # SSH 密钥管理
@@ -117,7 +117,7 @@ src/
 - 新增 IPC 需同步修改：`src-tauri/src/ipc.rs` 或相关 Rust handler + `src/tauriBridge.ts` bridge + `src/vite-env.d.ts` 类型；如涉及远程桌面应用，再同步组件调用和错误文案
 
 ### 远程桌面窗口系统
-- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/browser/vnc/log-viewer/monitor/mysql/redis/service-manager/container-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/web-server-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/security-audit/login-sessions/api-debugger/procmanager/settings/sqlite
+- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/code-editor/browser/vnc/log-viewer/monitor/mysql/clickhouse/redis/service-manager/container-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/cert-manager/nginx-manager/caddy-manager/apache-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/frp-manager/frps-manager/security-audit/api-debugger/procmanager/ai-chat/settings/sqlite
 - `desktopApps`、`desktopAppIconSources`、`defaultWindowFrames`、`renderWindowContent` 是新增远程桌面应用时必须检查的核心位置
 - `ShellDeskRemoteDesktopLayout` 保存桌面排序、应用图标和文件夹布局；默认桌面应用为 files/terminal/browser/settings
 - 窗口支持拖拽移动、缩放、最大化，使用 `transform: translate3d` 定位

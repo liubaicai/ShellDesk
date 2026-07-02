@@ -185,7 +185,6 @@ const desktopAppAssetContracts = {
   'message-queue': { component: 'RemoteMessageQueuePanel', style: 'message-queue' },
   's3-browser': { component: 'RemoteS3Browser', style: 's3-browser' },
   'security-audit': { component: 'RemoteSecurityAudit', style: 'security-audit' },
-  'login-sessions': { component: 'RemoteLoginSessions', style: 'login-sessions' },
   'api-debugger': { component: 'RemoteApiDebugger', style: 'api-debugger' },
   procmanager: { component: 'RemoteProcessManager', style: 'process-manager' },
   'ai-chat': { component: 'RemoteAiChat', style: 'ai-chat' },

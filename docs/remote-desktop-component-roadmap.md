@@ -46,7 +46,7 @@
 | 20 | `postgres` | PostgreSQL 管理器 | [PostgreSQL 管理器](./remote-desktop-components/20-postgresql-manager.md) | PostgreSQL 连接、schema/表浏览、SQL 查询 |
 | 21 | `firewall-manager` | 防火墙管理器 | [防火墙管理器](./remote-desktop-components/21-firewall-manager.md) | ufw、firewalld、Windows Firewall 状态、规则、新增/删除确认 |
 | 22 | `security-audit` | 安全巡检面板 | [安全巡检面板](./remote-desktop-components/22-security-audit-panel.md) | SSH 配置、高权限账号、失败登录、端口、敏感权限和报告复制 |
-| 23 | `login-sessions` | 登录会话查看器 | [登录会话查看器](./remote-desktop-components/23-login-session-viewer.md) | 在线用户、成功登录、失败登录、来源聚合和详情复制 |
+| 23 | 设置页 `loginsessions` | 登录会话设置面板 | [登录会话查看器](./remote-desktop-components/23-login-session-viewer.md) | 已迁入系统设置页，提供在线用户、成功登录、失败登录、来源聚合和详情复制 |
 | 24 | `api-debugger` | API 调试器 | [API 调试器](./remote-desktop-components/24-api-debugger.md) | 远程 curl 请求、Header/Body、响应查看、JSON 格式化和历史 |
 | 25 | `iptables-manager` | iptables 管理器 | [iptables 管理器](./remote-desktop-components/25-iptables-manager.md) | IPv4/IPv6 iptables 规则链、默认策略、运行时新增/删除、nft 提示 |
 | 26 | `mongo` | MongoDB 管理器 | [MongoDB 管理器](./remote-desktop-components/26-mongodb-manager.md) | SSH 隧道连接、数据库/集合浏览、文档查询和索引查看 |

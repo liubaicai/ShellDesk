@@ -50,7 +50,7 @@
 | `frp-manager` | FRP 客户端 | `RemoteFrpManager.tsx` | `38-frp-client-manager.md` |
 | `frps-manager` | FRP 服务端 | `RemoteFrpsManager.tsx` | `39-frp-server-manager.md` |
 | `security-audit` | 安全巡检 | `RemoteSecurityAudit.tsx` | `22-security-audit-panel.md` |
-| `login-sessions` | 登录会话 | `RemoteLoginSessions.tsx` | `23-login-session-viewer.md` |
+| 设置页 `loginsessions` | 登录会话 | `SettingsLoginSessionsPanel.tsx` | `23-login-session-viewer.md` |
 | `api-debugger` | API 调试 | `RemoteApiDebugger.tsx` | `24-api-debugger.md` |
 | `procmanager` | 进程管理 | `RemoteProcessManager.tsx` | `10-process-manager-redesign.md` |
 | `ai-chat` | AI 助手 | `RemoteAiChat.tsx` | `40-ai-assistant.md` |

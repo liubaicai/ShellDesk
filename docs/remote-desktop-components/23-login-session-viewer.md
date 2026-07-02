@@ -1,6 +1,6 @@
 # 登录会话查看器功能设计与开发计划
 
-> 当前状态：已接入远程桌面（appKey: `login-sessions`），实现入口为 `src/components/remote-desktop/RemoteLoginSessions.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+> 当前状态：已迁入系统设置页（settings tab: `loginsessions`），设置面板实现入口为 `src/components/remote-desktop/SettingsLoginSessionsPanel.tsx`。原独立组件 `RemoteLoginSessions.tsx` 保留，数据解析层继续由 `loginSessionParsers.ts` 提供。
 
 ## 定位
 
@@ -82,7 +82,8 @@ Windows：
 
 文件建议：
 
-- `src/components/remote-desktop/RemoteLoginSessions.tsx`
+- `src/components/remote-desktop/SettingsLoginSessionsPanel.tsx`
+- `src/components/remote-desktop/RemoteLoginSessions.tsx`（历史独立组件，暂保留）
 - `src/components/remote-desktop/loginSessionParsers.ts`
 - `src/styles/remote-desktop/_login-sessions.scss`
 - `src/components/remote-desktop/index.ts`

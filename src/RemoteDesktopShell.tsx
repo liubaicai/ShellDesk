@@ -37,7 +37,6 @@ const RemoteFrpManager = lazy(() => import('./components/remote-desktop/RemoteFr
 const RemoteFrpsManager = lazy(() => import('./components/remote-desktop/RemoteFrpsManager'));
 const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
 const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
-const RemoteLoginSessions = lazy(() => import('./components/remote-desktop/RemoteLoginSessions'));
 const RemoteLogViewer = lazy(() => import('./components/remote-desktop/RemoteLogViewer'));
 const RemoteMessageQueuePanel = lazy(() => import('./components/remote-desktop/RemoteMessageQueuePanel'));
 const RemoteMonitor = lazy(() => import('./components/remote-desktop/RemoteMonitor'));
@@ -117,7 +116,6 @@ const desktopApps = [
   { key: 'frp-manager', group: 'network-security', labelId: 'desktop.app.frpManager.label', descriptionId: 'desktop.app.frpManager.description' },
   { key: 'frps-manager', group: 'network-security', labelId: 'desktop.app.frpsManager.label', descriptionId: 'desktop.app.frpsManager.description' },
   { key: 'security-audit', group: 'network-security', labelId: 'desktop.app.securityAudit.label', descriptionId: 'desktop.app.securityAudit.description' },
-  { key: 'login-sessions', group: 'operations', labelId: 'desktop.app.loginSessions.label', descriptionId: 'desktop.app.loginSessions.description' },
   { key: 'api-debugger', group: 'development', labelId: 'desktop.app.apiDebugger.label', descriptionId: 'desktop.app.apiDebugger.description' },
   { key: 'procmanager', group: 'basic', labelId: 'desktop.app.processManager.label', descriptionId: 'desktop.app.processManager.description' },
   { key: 'ai-chat', group: 'basic', labelId: 'desktop.app.aiChat.label', descriptionId: 'desktop.app.aiChat.description' },
@@ -166,7 +164,6 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'frp-manager': new URL('./assets/desktop-icons/frp-manager.png', import.meta.url).href,
   'frps-manager': new URL('./assets/desktop-icons/frps-manager.png', import.meta.url).href,
   'security-audit': new URL('./assets/desktop-icons/security-audit.png', import.meta.url).href,
-  'login-sessions': new URL('./assets/desktop-icons/login-sessions.png', import.meta.url).href,
   'api-debugger': new URL('./assets/desktop-icons/api-debugger.png', import.meta.url).href,
   procmanager: new URL('./assets/desktop-icons/procmanager.png', import.meta.url).href,
   'ai-chat': new URL('./assets/desktop-icons/ai-chat.png', import.meta.url).href,
@@ -397,7 +394,6 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'message-queue': { x: 112, y: 46, width: 1120, height: 650 },
   's3-browser': { x: 106, y: 44, width: 1180, height: 680 },
   'security-audit': { x: 116, y: 48, width: 1080, height: 650 },
-  'login-sessions': { x: 124, y: 52, width: 1080, height: 640 },
   'api-debugger': { x: 118, y: 46, width: 1080, height: 650 },
   procmanager: { x: 126, y: 54, width: 1100, height: 640 },
   'ai-chat': { x: 160, y: 55, width: 800, height: 640 },
@@ -1112,18 +1108,6 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M12 3.5 18.25 6v5.2c0 3.65-2.32 6.72-6.25 8.45-3.93-1.73-6.25-4.8-6.25-8.45V6L12 3.5Z" />
         <path d="m8.75 11.8 2.1 2.1 4.4-5" />
         <path d="M8.5 16.5h7" />
-      </svg>
-    );
-  }
-
-  if (appKey === 'login-sessions') {
-    return (
-      <svg {...iconProps}>
-        <path d="M8.5 10.75a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" />
-        <path d="M3.75 19.25c.5-3.25 2.15-5 4.75-5s4.25 1.75 4.75 5" />
-        <path d="M16 8.5h4.25" />
-        <path d="m18.25 6.5 2 2-2 2" />
-        <path d="M15.5 14.5h4.75" />
       </svg>
     );
   }
@@ -2877,10 +2861,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'security-audit') {
       return <RemoteSecurityAudit connectionId={connection.id} settings={settings} systemType={connection.host.systemType} hostLabel={connection.host.name} />;
-    }
-
-    if (desktopWindow.appKey === 'login-sessions') {
-      return <RemoteLoginSessions connectionId={connection.id} systemType={connection.host.systemType} onOpenSecurityAudit={() => openDesktopWindow('security-audit')} />;
     }
 
     if (desktopWindow.appKey === 'api-debugger') {

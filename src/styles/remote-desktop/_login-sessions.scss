@@ -9,11 +9,9 @@
   --login-danger: #ff8fa3;
   --login-ok: #75e4aa;
   display: flex;
-  height: 100%;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(14, 24, 38, 0.98), rgba(7, 12, 18, 0.98)), var(--login-bg);
   color: var(--login-text);
 }
 
@@ -344,7 +342,6 @@
   --login-text: #172033;
   --login-muted: #66748a;
   --login-muted-strong: #344158;
-  background: linear-gradient(180deg, #f6fbff, #edf3f7);
 }
 
 [data-theme="light"] .login-toolbar-actions button.primary {
