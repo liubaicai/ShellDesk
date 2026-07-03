@@ -15,6 +15,7 @@ import type {
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
 import type { SettingsTab } from './components/remote-desktop/settingsTypes';
 import { getRemoteConnectionProfileHostId } from './components/remote-desktop/remoteConnectionProfiles';
+import { getErrorMessage } from './components/remote-desktop/desktopUtils';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
@@ -357,6 +358,13 @@ interface TmuxMenuState {
 interface TmuxLaunchRequest {
   sessionName: string;
   command: 'attach' | 'new';
+}
+
+type DesktopConnectionGateStatus = 'checking' | 'ready' | 'blocked';
+
+interface DesktopConnectionGateState {
+  status: DesktopConnectionGateStatus;
+  message: string;
 }
 
 interface DesktopWindowTitlebarClickState {
@@ -1572,6 +1580,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const terminalToolRequestSequenceRef = useRef(0);
   const terminalCommandRequestSequenceRef = useRef(0);
   const tmuxRefreshRequestRef = useRef(0);
+  const connectionCheckSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const launchpadCloseTimerRef = useRef<number | null>(null);
   const folderCloseTimerRef = useRef<number | null>(null);
@@ -1601,6 +1610,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
   const [tmuxMenuState, setTmuxMenuState] = useState<TmuxMenuState>({ status: 'idle', sessions: [] });
   const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
+  const [connectionGate, setConnectionGate] = useState<DesktopConnectionGateState>(() => (
+    connection.kind === 'local'
+      ? { status: 'ready', message: '' }
+      : { status: 'checking', message: t('desktop.connection.checking', settings.language) }
+  ));
   const [presetWallpaperUrl, setPresetWallpaperUrl] = useState('');
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState('');
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
@@ -1612,6 +1626,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
   const appLocale = getAppLocale(settings.language);
+  const isConnectionGateBlocking = connectionGate.status !== 'ready';
+  const connectionEndpointLabel = connection.kind === 'local'
+    ? t('app.connection.localBadge', settings.language)
+    : `${connection.host.username ? `${connection.host.username}@` : ''}${connection.host.address}:${connection.host.port}`;
   const launchpadSearchTerm = launchpadSearch.trim().toLocaleLowerCase(appLocale);
   const launchpadApps = [...desktopApps]
     .filter((app) => {
@@ -1635,9 +1653,130 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }))
     .filter((group) => group.apps.length > 0);
 
+  const dismissDesktopChromeForConnectionGate = useCallback(() => {
+    if (launchpadCloseTimerRef.current !== null) {
+      window.clearTimeout(launchpadCloseTimerRef.current);
+      launchpadCloseTimerRef.current = null;
+    }
+
+    if (folderCloseTimerRef.current !== null) {
+      window.clearTimeout(folderCloseTimerRef.current);
+      folderCloseTimerRef.current = null;
+    }
+
+    setAppContextMenu(null);
+    setFolderContextMenu(null);
+    setSurfaceContextMenu(null);
+    setTerminalTitlebarMenu(null);
+    setLaunchpadTooltip(null);
+    setRenameFolderDialog(null);
+    setPendingCloseWindowId('');
+    setIsLaunchpadOpen(false);
+    setIsLaunchpadRendered(false);
+    setOpenFolderId('');
+    setIsFolderOpen(false);
+  }, []);
+
+  const checkDesktopConnection = useCallback(async () => {
+    const requestId = connectionCheckSequenceRef.current + 1;
+    connectionCheckSequenceRef.current = requestId;
+
+    if (connection.kind === 'local') {
+      setConnectionGate({ status: 'ready', message: '' });
+      return;
+    }
+
+    const connections = window.guiSSH?.connections;
+
+    setConnectionGate({ status: 'checking', message: t('desktop.connection.checking', settings.language) });
+    dismissDesktopChromeForConnectionGate();
+
+    if (!connections?.getStatus) {
+      setConnectionGate({
+        status: 'blocked',
+        message: t('desktop.connection.unsupported', settings.language),
+      });
+      return;
+    }
+
+    try {
+      await connections.getStatus(connection.id);
+
+      if (connectionCheckSequenceRef.current === requestId) {
+        setConnectionGate({ status: 'ready', message: '' });
+      }
+    } catch (error) {
+      if (connectionCheckSequenceRef.current === requestId) {
+        setConnectionGate({
+          status: 'blocked',
+          message: getErrorMessage(error),
+        });
+      }
+    }
+  }, [connection.id, connection.kind, dismissDesktopChromeForConnectionGate, settings.language]);
+
+  const closeRemoteDesktop = useCallback(() => {
+    dismissDesktopChromeForConnectionGate();
+    const disconnectPromise = window.guiSSH?.connections?.disconnect?.(connection.id) ?? Promise.resolve(false);
+
+    void disconnectPromise
+      .catch(() => undefined)
+      .finally(() => {
+        void window.guiSSH?.window?.close();
+      });
+  }, [connection.id, dismissDesktopChromeForConnectionGate]);
+
   useEffect(() => {
     desktopWindowsRef.current = desktopWindows;
   }, [desktopWindows]);
+
+  useEffect(() => {
+    void checkDesktopConnection();
+  }, [checkDesktopConnection]);
+
+  useEffect(() => {
+    if (!window.guiSSH?.events || connection.kind === 'local') {
+      return undefined;
+    }
+
+    const removeClosed = window.guiSSH.events.onConnectionClosed((payload) => {
+      if (payload.connectionId !== connection.id) {
+        return;
+      }
+
+      connectionCheckSequenceRef.current += 1;
+      dismissDesktopChromeForConnectionGate();
+      setConnectionGate({
+        status: 'blocked',
+        message: payload.reason || t('desktop.connection.closed', settings.language),
+      });
+    });
+    const removeReconnecting = window.guiSSH.events.onConnectionReconnecting((payload) => {
+      if (payload.connectionId !== connection.id) {
+        return;
+      }
+
+      dismissDesktopChromeForConnectionGate();
+      setConnectionGate({
+        status: 'checking',
+        message: payload.reason || t('desktop.connection.reconnecting', settings.language),
+      });
+    });
+    const removeRestored = window.guiSSH.events.onConnectionRestored((payload) => {
+      if (payload.connectionId !== connection.id) {
+        return;
+      }
+
+      connectionCheckSequenceRef.current += 1;
+      setConnectionGate({ status: 'ready', message: '' });
+    });
+
+    return () => {
+      removeClosed();
+      removeReconnecting();
+      removeRestored();
+    };
+  }, [connection.id, connection.kind, dismissDesktopChromeForConnectionGate, settings.language]);
 
   useEffect(() => {
     const logContext = {
@@ -2995,10 +3134,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       <main className="remote-desktop-page">
         <section
           ref={desktopSurfaceRef}
-          className={`remote-desktop-surface no-drag ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'}`}
+          className={`remote-desktop-surface no-drag ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'} ${isConnectionGateBlocking ? 'connection-locked' : ''}`}
           style={desktopWallpaperStyle}
           onContextMenu={handleSurfaceContextMenu}
           data-desktop-drop-kind="desktop"
+          aria-busy={connectionGate.status === 'checking'}
         >
           <div className="desktop-icons" aria-label={t('desktop.icons.aria', settings.language)}>
             {visibleDesktopItems.map((item) => {
@@ -3178,6 +3318,49 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             });
           })()}
         </nav>
+        {isConnectionGateBlocking ? (
+          <div className="remote-desktop-connection-overlay" role="presentation">
+            <section
+              className={`remote-desktop-connection-dialog ${connectionGate.status}`}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="desktop-connection-gate-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="remote-desktop-connection-mark" aria-hidden="true">
+                {connectionGate.status === 'checking' ? <span /> : '!'}
+              </div>
+              <div className="remote-desktop-connection-copy">
+                <strong id="desktop-connection-gate-title">
+                  {connectionGate.status === 'checking'
+                    ? t('desktop.connection.checkingTitle', settings.language)
+                    : t('desktop.connection.blockedTitle', settings.language)}
+                </strong>
+                <span>{connectionEndpointLabel}</span>
+                <p>{connectionGate.message}</p>
+              </div>
+              <div className="remote-desktop-connection-actions">
+                <button
+                  type="button"
+                  className="notepad-modal-btn"
+                  onClick={closeRemoteDesktop}
+                >
+                  {t('common.close', settings.language)}
+                </button>
+                <button
+                  type="button"
+                  className="notepad-modal-btn primary"
+                  onClick={() => void checkDesktopConnection()}
+                  disabled={connectionGate.status === 'checking'}
+                >
+                  {connectionGate.status === 'checking'
+                    ? t('desktop.connection.retrying', settings.language)
+                    : t('desktop.connection.retry', settings.language)}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </section>
     </main>
 

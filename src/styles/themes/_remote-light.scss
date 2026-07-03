@@ -406,6 +406,32 @@
   box-shadow: 0 20px 42px rgba(31, 35, 40, 0.16);
 }
 
+[data-theme="light"] .remote-desktop-connection-overlay {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.32), rgba(230, 236, 245, 0.56));
+}
+
+[data-theme="light"] .remote-desktop-connection-dialog {
+  border-color: rgba(16, 32, 51, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(31, 35, 40, 0.18);
+}
+
+[data-theme="light"] .remote-desktop-connection-mark {
+  border-color: rgba(200, 48, 78, 0.28);
+  background: rgba(200, 48, 78, 0.08);
+  color: #c8304e;
+}
+
+[data-theme="light"] .remote-desktop-connection-dialog.checking .remote-desktop-connection-mark {
+  border-color: rgba(28, 115, 195, 0.22);
+  background: rgba(28, 115, 195, 0.08);
+}
+
+[data-theme="light"] .remote-desktop-connection-mark span {
+  border-color: rgba(28, 115, 195, 0.2);
+  border-top-color: #1c73c3;
+}
+
 [data-theme="light"] .global-search,
 [data-theme="light"] .command-button {
   background: var(--surface);
