@@ -11,6 +11,7 @@ import { getSystemTypeLabel, RemoteSettingsCommandContext } from './settingsShar
 import SettingsHostsPanel from './SettingsHostsPanel';
 import SettingsLoginSessionsPanel from './SettingsLoginSessionsPanel';
 import SettingsNetworkPanel from './SettingsNetworkPanel';
+import PackageSourcesPanel from './PackageSourcesPanel';
 import SettingsRoutePanel from './SettingsRoutePanel';
 import SettingsSystemInfoPanel from './SettingsSystemInfoPanel';
 import SettingsUpdatePanel from './SettingsUpdatePanel';
@@ -23,6 +24,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     tabs: [
       { key: 'systeminfo', labelId: 'remoteSettings.tab.systemInfo.label', icon: '\u{1F4BB}', descriptionId: 'remoteSettings.tab.systemInfo.description' },
       { key: 'update', labelId: 'remoteSettings.tab.update.label', icon: '\u{1F504}', descriptionId: 'remoteSettings.tab.update.description' },
+      { key: 'package-sources', labelId: 'remoteSettings.tab.packageSources.label', icon: '\u{1F5C4}', descriptionId: 'remoteSettings.tab.packageSources.description' },
     ],
   },
   {
@@ -148,12 +150,12 @@ function SettingsStatusStrip({
 
 /* ─── Main Component ──────────────────────────────────────────────────────── */
 
-function RemoteSettings({ connectionId, systemType }: RemoteSettingsProps) {
+function RemoteSettings({ connectionId, systemType, initialTab = 'systeminfo', initialTabRequestId = 0, onOpenTerminal }: RemoteSettingsProps) {
   const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const settingsGroups = isWindowsHost ? WINDOWS_SETTINGS_GROUPS : SETTINGS_GROUPS;
-  const [activeTab, setActiveTab] = useState<SettingsTab>('systeminfo');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [hostStatus, setHostStatus] = useState<SettingsHostStatus>(() => createInitialHostStatus(systemType, language));
   const [hostStatusLoading, setHostStatusLoading] = useState(false);
 
@@ -197,6 +199,12 @@ Write-Output ("PRIV=" + $privilege)
     }
   }, [activeTab, settingsGroups]);
 
+  useEffect(() => {
+    if (settingsGroups.some((group) => group.tabs.some((tab) => tab.key === initialTab))) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, initialTabRequestId, settingsGroups]);
+
   useEffect(() => { void refreshHostStatus(); }, [refreshHostStatus]);
 
   const renderPanel = () => {
@@ -215,6 +223,7 @@ Write-Output ("PRIV=" + $privilege)
       case 'systeminfo': return <SettingsSystemInfoPanel connectionId={connectionId} />;
       case 'network': return <SettingsNetworkPanel />;
       case 'update': return <SettingsUpdatePanel />;
+      case 'package-sources': return <PackageSourcesPanel connectionId={connectionId} systemType={systemType} onOpenTerminal={onOpenTerminal} />;
       case 'hosts': return <SettingsHostsPanel />;
       case 'route': return <SettingsRoutePanel />;
       case 'users': return <SettingsUserManagerPanel />;

@@ -1,12 +1,16 @@
 import type { AppLanguage, MessageId } from '../../i18n';
+import type { RemoteTerminalLaunchOptions } from './RemoteTerminal';
 import type { RemoteSystemType } from './types';
 
 export interface RemoteSettingsProps {
   connectionId: string;
   systemType?: RemoteSystemType;
+  initialTab?: SettingsTab;
+  initialTabRequestId?: number;
+  onOpenTerminal?: (launchOptions?: RemoteTerminalLaunchOptions) => void;
 }
 
-export type SettingsTab = 'systeminfo' | 'network' | 'update' | 'hosts' | 'route' | 'loginsessions' | 'users';
+export type SettingsTab = 'systeminfo' | 'network' | 'update' | 'package-sources' | 'hosts' | 'route' | 'loginsessions' | 'users';
 
 export interface SettingsTabDef {
   key: SettingsTab;

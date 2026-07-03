@@ -6,6 +6,8 @@
 
 包管理器中心用于图形化管理远程系统软件包。它面向日常维护场景：查看更新、搜索包、安装、卸载、升级，以及识别当前系统包管理器。
 
+镜像源管理已迁入系统设置的“镜像源”菜单，包管理器中心仅保留跳转入口，避免包操作和系统级仓库配置混在同一工作区。
+
 ## 目标用户场景
 
 - 查看系统是否有可升级软件包。
@@ -101,6 +103,7 @@ zypper/apk 类似封装为 provider。
 首版文件建议：
 
 - `src/components/remote-desktop/RemotePackageManager.tsx`
+- `src/components/remote-desktop/PackageSourcesPanel.tsx`
 - `src/styles/remote-desktop/_package-manager.scss`
 - `src/components/remote-desktop/packageProviders.ts`
 - `src/components/remote-desktop/index.ts`

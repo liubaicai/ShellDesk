@@ -13,6 +13,7 @@ import type {
   RemoteTerminalToolRequest,
 } from './components/remote-desktop/RemoteTerminal';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
+import type { SettingsTab } from './components/remote-desktop/settingsTypes';
 import { getRemoteConnectionProfileHostId } from './components/remote-desktop/remoteConnectionProfiles';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
@@ -115,7 +116,7 @@ const desktopApps = [
   { key: 's3-browser', group: 'data', labelId: 'desktop.app.s3Browser.label', descriptionId: 'desktop.app.s3Browser.description' },
   { key: 'frp-manager', group: 'network-security', labelId: 'desktop.app.frpManager.label', descriptionId: 'desktop.app.frpManager.description' },
   { key: 'frps-manager', group: 'network-security', labelId: 'desktop.app.frpsManager.label', descriptionId: 'desktop.app.frpsManager.description' },
-  { key: 'security-audit', group: 'network-security', labelId: 'desktop.app.securityAudit.label', descriptionId: 'desktop.app.securityAudit.description' },
+  { key: 'security-audit', group: 'operations', labelId: 'desktop.app.securityAudit.label', descriptionId: 'desktop.app.securityAudit.description' },
   { key: 'api-debugger', group: 'development', labelId: 'desktop.app.apiDebugger.label', descriptionId: 'desktop.app.apiDebugger.description' },
   { key: 'procmanager', group: 'basic', labelId: 'desktop.app.processManager.label', descriptionId: 'desktop.app.processManager.description' },
   { key: 'ai-chat', group: 'basic', labelId: 'desktop.app.aiChat.label', descriptionId: 'desktop.app.aiChat.description' },
@@ -314,6 +315,8 @@ interface DesktopWindowState {
   notepadOpenRequest?: { id: string; filePath: string };
   processManagerLaunchOptions?: RemoteProcessManagerLaunchOptions;
   fileExplorerInitialPath?: string;
+  settingsInitialTab?: SettingsTab;
+  settingsTabRequestId?: number;
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -2144,6 +2147,29 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     appendDesktopWindow(appKey);
   };
 
+  const openSettingsWindow = (initialTab: SettingsTab = 'systeminfo') => {
+    const existingSettingsWindow = desktopWindows.find((desktopWindow) => desktopWindow.appKey === 'settings');
+
+    if (existingSettingsWindow) {
+      setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => (
+        desktopWindow.id === existingSettingsWindow.id
+          ? {
+              ...desktopWindow,
+              settingsInitialTab: initialTab,
+              settingsTabRequestId: (desktopWindow.settingsTabRequestId ?? 0) + 1,
+            }
+          : desktopWindow
+      )));
+      bringWindowToFront(existingSettingsWindow.id);
+      return;
+    }
+
+    appendDesktopWindow('settings', (nextWindow) => {
+      nextWindow.settingsInitialTab = initialTab;
+      nextWindow.settingsTabRequestId = 1;
+    });
+  };
+
   const openTerminalWindow = (launchOptions?: RemoteTerminalLaunchOptions) => {
     appendDesktopWindow('terminal', (nextWindow) => {
       nextWindow.terminalLaunchOptions = launchOptions;
@@ -2826,7 +2852,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'settings') {
-      return <RemoteSettings connectionId={connection.id} systemType={connection.host.systemType} />;
+      return (
+        <RemoteSettings
+          connectionId={connection.id}
+          systemType={connection.host.systemType}
+          initialTab={desktopWindow.settingsInitialTab}
+          initialTabRequestId={desktopWindow.settingsTabRequestId}
+          onOpenTerminal={openTerminalWindow}
+        />
+      );
     }
 
     if (desktopWindow.appKey === 'procmanager') {
@@ -2874,7 +2908,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'package-manager') {
-      return <RemotePackageManager connectionId={connection.id} systemType={connection.host.systemType} onOpenTerminal={openTerminalWindow} />;
+      return (
+        <RemotePackageManager
+          connectionId={connection.id}
+          systemType={connection.host.systemType}
+          onOpenTerminal={openTerminalWindow}
+          onOpenPackageSourcesSettings={() => openSettingsWindow('package-sources')}
+        />
+      );
     }
 
     if (desktopWindow.appKey === 'git-manager') {
@@ -2936,7 +2977,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           language={settings.language}
           connectionId={connection.id}
           systemType={connection.host.systemType}
-          onOpenSettings={() => openDesktopWindow('settings')}
+          onOpenSettings={() => openSettingsWindow()}
           onOpenApp={(appKey) => openDesktopWindow(appKey as DesktopAppKey)}
         />
       );
