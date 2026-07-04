@@ -125,11 +125,239 @@ interface MysqlContextMenuState {
   target: MysqlContextMenuTarget;
 }
 
+interface SchemaColumn {
+  id: string;
+  name: string;
+  type: string;
+  length: string;
+  nullable: boolean;
+  defaultValue: string;
+  autoIncrement: boolean;
+  comment: string;
+}
+
+interface SchemaIndex {
+  id: string;
+  type: 'INDEX' | 'UNIQUE' | 'FULLTEXT' | 'SPATIAL';
+  columns: string[];
+  name: string;
+}
+
+interface SchemaForeignKey {
+  id: string;
+  columns: string[];
+  refTable: string;
+  refColumns: string[];
+  onDelete: string;
+  onUpdate: string;
+}
+
+interface CreateTableState {
+  open: boolean;
+  database: string;
+  tableName: string;
+  engine: string;
+  charset: string;
+  comment: string;
+  columns: SchemaColumn[];
+  primaryKeyColumns: string[];
+  indexes: SchemaIndex[];
+  foreignKeys: SchemaForeignKey[];
+  showAdvanced: boolean;
+  executing: boolean;
+}
+
 const defaultPort = 3306;
 const pageSize = 100;
 const tablePreviewLimit = 50;
 const maxResultTabs = 10;
 const maxHistoryItems = 12;
+const mysqlColumnTypes = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'DATE', 'DATETIME', 'TIMESTAMP', 'FLOAT', 'DOUBLE', 'DECIMAL', 'BLOB', 'JSON', 'ENUM'];
+const mysqlEngines = ['InnoDB', 'MyISAM', 'MEMORY', 'CSV', 'ARCHIVE'];
+const mysqlCharsets = ['utf8mb4', 'utf8', 'utf8mb3', 'latin1', 'ascii', 'utf16', 'utf32'];
+const mysqlForeignKeyActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
+const mysqlIntegerTypes = new Set(['INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'MEDIUMINT']);
+const mysqlTypesWithoutLength = new Set(['DATE', 'DATETIME', 'TIMESTAMP', 'TEXT', 'BOOLEAN', 'JSON', 'BLOB']);
+
+function createSchemaColumn(): SchemaColumn {
+  return {
+    id: createId('column'),
+    name: '',
+    type: 'INT',
+    length: '',
+    nullable: false,
+    defaultValue: '',
+    autoIncrement: false,
+    comment: '',
+  };
+}
+
+function createSchemaIndex(): SchemaIndex {
+  return {
+    id: createId('index'),
+    type: 'INDEX',
+    columns: [],
+    name: '',
+  };
+}
+
+function createSchemaForeignKey(): SchemaForeignKey {
+  return {
+    id: createId('fk'),
+    columns: [],
+    refTable: '',
+    refColumns: [],
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+  };
+}
+
+function quoteMysqlDefaultValue(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) return '';
+  if (/^null$/i.test(trimmed)) return 'NULL';
+  if (/^(current_timestamp|current_date|current_time)(\(\))?$/i.test(trimmed)) return trimmed;
+  if (/^(uuid|now)\(\)$/i.test(trimmed)) return trimmed;
+  if (/^-?\d+(\.\d+)?$/u.test(trimmed)) return trimmed;
+
+  return quoteMysqlString(trimmed);
+}
+
+function isMysqlEnumValueList(value: string): boolean {
+  const quotedValue = String.raw`'(?:''|\\.|[^'\\])*'`;
+  return new RegExp(`^${quotedValue}(?:\\s*,\\s*${quotedValue})*$`, 'u').test(value.trim());
+}
+
+function sanitizeMysqlColumnLength(type: string, length: string): string {
+  const normalizedType = type.toUpperCase();
+  const trimmed = length.trim();
+
+  if (!trimmed || mysqlTypesWithoutLength.has(normalizedType)) return '';
+  if (normalizedType === 'ENUM' && isMysqlEnumValueList(trimmed)) return trimmed;
+
+  return trimmed.replace(/[^\d,]/gu, '').replace(/,+/gu, ',').replace(/^,|,$/gu, '');
+}
+
+function quoteMysqlQualifiedIdentifier(identifier: string): string {
+  const parts = identifier.trim().split('.').map((part) => part.trim()).filter(Boolean);
+  return parts.length > 1
+    ? parts.map((part) => quoteIdentifier(part, 'mysql')).join('.')
+    : quoteIdentifier(identifier.trim(), 'mysql');
+}
+
+function getForeignKeyConstraintName(foreignKey: SchemaForeignKey): string {
+  const suffix = foreignKey.id.replace(/^fk[-_]?/iu, '').replace(/[^a-z0-9_]/giu, '_').slice(0, 61);
+  return `fk_${suffix || Math.random().toString(36).slice(2, 8)}`;
+}
+
+function validateCreateTableState(state: CreateTableState): string | null {
+  const seenColumnNames = new Set<string>();
+
+  for (const column of state.columns) {
+    const columnName = column.name.trim();
+    if (!columnName) continue;
+
+    const normalizedColumnName = columnName.toLowerCase();
+    if (seenColumnNames.has(normalizedColumnName)) {
+      return tCurrent('auto.remoteMySQL.duplicateColumn', { name: columnName });
+    }
+    seenColumnNames.add(normalizedColumnName);
+
+    const normalizedType = column.type.toUpperCase();
+    if (column.autoIncrement && !mysqlIntegerTypes.has(normalizedType)) {
+      return tCurrent('auto.remoteMySQL.autoIncrementRequiresInt');
+    }
+    if (normalizedType === 'ENUM' && !isMysqlEnumValueList(column.length)) {
+      return tCurrent('auto.remoteMySQL.enumRequiresValues');
+    }
+  }
+
+  return null;
+}
+
+function generateCreateTableSql(state: CreateTableState): string {
+  const tableName = state.tableName.trim();
+  const definitions: string[] = state.columns
+    .filter((column) => column.name.trim())
+    .map((column) => {
+      const length = sanitizeMysqlColumnLength(column.type, column.length);
+      const type = length ? `${column.type}(${length})` : column.type;
+      const parts = [
+        quoteIdentifier(column.name.trim(), 'mysql'),
+        type,
+        column.nullable ? 'NULL' : 'NOT NULL',
+      ];
+      const defaultValue = quoteMysqlDefaultValue(column.defaultValue);
+
+      if (defaultValue) {
+        parts.push(`DEFAULT ${defaultValue}`);
+      }
+      if (column.autoIncrement) {
+        parts.push('AUTO_INCREMENT');
+      }
+      if (column.comment.trim()) {
+        parts.push(`COMMENT ${quoteMysqlString(column.comment.trim())}`);
+      }
+
+      return `  ${parts.join(' ')}`;
+    });
+  const primaryKeyColumns = state.primaryKeyColumns.filter((column) => state.columns.some((item) => item.name.trim() === column));
+
+  if (primaryKeyColumns.length > 0) {
+    definitions.push(`  PRIMARY KEY (${primaryKeyColumns.map((column) => quoteIdentifier(column, 'mysql')).join(', ')})`);
+  }
+
+  state.indexes.forEach((index) => {
+    const columns = index.columns.filter((column) => state.columns.some((item) => item.name.trim() === column));
+    if (columns.length === 0) return;
+
+    const name = index.name.trim() ? ` ${quoteIdentifier(index.name.trim(), 'mysql')}` : '';
+    definitions.push(`  ${index.type}${name} (${columns.map((column) => quoteIdentifier(column, 'mysql')).join(', ')})`);
+  });
+
+  state.foreignKeys.forEach((foreignKey) => {
+    const columns = foreignKey.columns.filter((column) => state.columns.some((item) => item.name.trim() === column));
+    const refColumns = foreignKey.refColumns.filter((column) => column.trim());
+    if (columns.length === 0 || !foreignKey.refTable.trim() || refColumns.length === 0) return;
+
+    const constraintName = quoteIdentifier(getForeignKeyConstraintName(foreignKey), 'mysql');
+    const parts = [
+      `  CONSTRAINT ${constraintName} FOREIGN KEY (${columns.map((column) => quoteIdentifier(column, 'mysql')).join(', ')})`,
+      `REFERENCES ${quoteMysqlQualifiedIdentifier(foreignKey.refTable)} (${refColumns.map((column) => quoteIdentifier(column.trim(), 'mysql')).join(', ')})`,
+    ];
+
+    if (foreignKey.onDelete) {
+      parts.push(`ON DELETE ${foreignKey.onDelete}`);
+    }
+    if (foreignKey.onUpdate) {
+      parts.push(`ON UPDATE ${foreignKey.onUpdate}`);
+    }
+
+    definitions.push(parts.join(' '));
+  });
+
+  const options = [`ENGINE=${state.engine || 'InnoDB'}`];
+  if (state.charset) {
+    options.push(`DEFAULT CHARSET=${state.charset}`);
+  }
+  if (state.comment.trim()) {
+    options.push(`COMMENT=${quoteMysqlString(state.comment.trim())}`);
+  }
+
+  return [
+    `CREATE TABLE ${quoteIdentifier(tableName || 'table_name', 'mysql')} (`,
+    definitions.length > 0 ? definitions.join(',\n') : '  `id` INT NOT NULL',
+    `) ${options.join(' ')};`,
+  ].join('\n');
+}
+
+function translateForeignKeyAction(action: string): string {
+  if (action === 'CASCADE') return tCurrent('auto.remoteMySQL.cascade');
+  if (action === 'SET NULL') return tCurrent('auto.remoteMySQL.setNull');
+  if (action === 'NO ACTION') return tCurrent('auto.remoteMySQL.noAction');
+  return tCurrent('auto.remoteMySQL.restrict');
+}
 
 function getShellDeskEditorTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') {
@@ -207,6 +435,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const initialQueryStateRef = useRef(createInitialQueryState());
   const mysqlIdRef = useRef('');
   const sqlEditorRef = useRef<ReactCodeMirrorRef>(null);
+  const createTablePreviousFocusRef = useRef<Element | null>(null);
 
   const [status, setStatus] = useState<MysqlStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -257,6 +486,20 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const [sortState, setSortState] = useState<MysqlSortState | null>(null);
   const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [contextMenu, setContextMenu] = useState<MysqlContextMenuState | null>(null);
+  const [createTableState, setCreateTableState] = useState<CreateTableState>({
+    open: false,
+    database: '',
+    tableName: '',
+    engine: 'InnoDB',
+    charset: '',
+    comment: '',
+    columns: [],
+    primaryKeyColumns: [],
+    indexes: [],
+    foreignKeys: [],
+    showAdvanced: false,
+    executing: false,
+  });
 
   const isReady = status === 'connected';
 
@@ -277,6 +520,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const isActiveResultEditable = Boolean(activeResultTab?.table && activeResultPrimaryKeys.length > 0);
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
   const canExplainActiveQuery = canRunActiveQuery && !isWriteStatement(activeQueryTab?.sql.trim() ?? '', 'mysql');
+  const createTableSqlPreview = useMemo(() => generateCreateTableSql(createTableState), [createTableState]);
 
   useEffect(() => {
     let disposed = false;
@@ -368,6 +612,20 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     setSortState(null);
     setMessage(null);
     setContextMenu(null);
+    setCreateTableState({
+      open: false,
+      database: '',
+      tableName: '',
+      engine: 'InnoDB',
+      charset: '',
+      comment: '',
+      columns: [],
+      primaryKeyColumns: [],
+      indexes: [],
+      foreignKeys: [],
+      showAdvanced: false,
+      executing: false,
+    });
   }, []);
 
   const addHistoryItem = useCallback((item: Omit<MysqlHistoryItem, 'id' | 'createdAt'>) => {
@@ -862,6 +1120,223 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     }
   }, [contextMenu, handleSelectTable, handleShowDatabaseInfo, handleShowTableStructure]);
 
+  const openCreateTableDialog = useCallback(() => {
+    const database = activeDb || databases[0] || '';
+
+    createTablePreviousFocusRef.current = typeof document === 'undefined' ? null : document.activeElement;
+    setActiveDb(database);
+    setCreateTableState({
+      open: true,
+      database,
+      tableName: '',
+      engine: 'InnoDB',
+      charset: '',
+      comment: '',
+      columns: [createSchemaColumn()],
+      primaryKeyColumns: [],
+      indexes: [],
+      foreignKeys: [],
+      showAdvanced: false,
+      executing: false,
+    });
+  }, [activeDb, databases]);
+
+  const closeCreateTableDialog = useCallback(() => {
+    setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+  }, []);
+
+  useEffect(() => {
+    if (!createTableState.open) return undefined;
+
+    return () => {
+      const previousFocus = createTablePreviousFocusRef.current;
+      createTablePreviousFocusRef.current = null;
+      if (previousFocus instanceof HTMLElement) {
+        previousFocus.focus();
+      }
+    };
+  }, [createTableState.open]);
+
+  useEffect(() => {
+    if (!createTableState.open || typeof document === 'undefined') return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || createTableState.executing) return;
+      event.preventDefault();
+      closeCreateTableDialog();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeCreateTableDialog, createTableState.executing, createTableState.open]);
+
+  const updateCreateTableColumn = useCallback(<Key extends keyof SchemaColumn,>(
+    columnId: string,
+    key: Key,
+    value: SchemaColumn[Key],
+  ) => {
+    setCreateTableState((current) => {
+      const previousColumn = current.columns.find((column) => column.id === columnId);
+      const nextColumns = current.columns.map((column) => (column.id === columnId ? { ...column, [key]: value } : column));
+      const previousName = previousColumn?.name.trim() ?? '';
+      const nextName = key === 'name' ? String(value).trim() : previousName;
+
+      if (key === 'name' && nextName) {
+        const hasDuplicate = current.columns.some((column) => column.id !== columnId && column.name.trim().toLowerCase() === nextName.toLowerCase());
+        if (hasDuplicate) {
+          setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.duplicateColumn', { name: nextName }) });
+          return current;
+        }
+      }
+
+      if (key !== 'name' || !previousName || previousName === nextName) {
+        return { ...current, columns: nextColumns };
+      }
+
+      return {
+        ...current,
+        columns: nextColumns,
+        primaryKeyColumns: current.primaryKeyColumns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        indexes: current.indexes.map((index) => ({
+          ...index,
+          columns: index.columns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        })),
+        foreignKeys: current.foreignKeys.map((foreignKey) => ({
+          ...foreignKey,
+          columns: foreignKey.columns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        })),
+      };
+    });
+  }, []);
+
+  const addCreateTableColumn = useCallback(() => {
+    setCreateTableState((current) => ({ ...current, columns: [...current.columns, createSchemaColumn()] }));
+  }, []);
+
+  const removeCreateTableColumn = useCallback((columnId: string) => {
+    setCreateTableState((current) => {
+      const removed = current.columns.find((column) => column.id === columnId);
+      const removedName = removed?.name.trim() ?? '';
+
+      return {
+        ...current,
+        columns: current.columns.filter((column) => column.id !== columnId),
+        primaryKeyColumns: current.primaryKeyColumns.filter((column) => column !== removedName),
+        indexes: current.indexes.map((index) => ({ ...index, columns: index.columns.filter((column) => column !== removedName) })),
+        foreignKeys: current.foreignKeys.map((foreignKey) => ({ ...foreignKey, columns: foreignKey.columns.filter((column) => column !== removedName) })),
+      };
+    });
+  }, []);
+
+  const toggleCreateTablePrimaryKey = useCallback((columnName: string, checked: boolean) => {
+    if (!columnName) return;
+
+    setCreateTableState((current) => ({
+      ...current,
+      primaryKeyColumns: checked
+        ? Array.from(new Set([...current.primaryKeyColumns, columnName]))
+        : current.primaryKeyColumns.filter((column) => column !== columnName),
+    }));
+  }, []);
+
+  const updateSchemaIndex = useCallback((indexId: string, patch: Partial<SchemaIndex>) => {
+    setCreateTableState((current) => ({
+      ...current,
+      indexes: current.indexes.map((index) => (index.id === indexId ? { ...index, ...patch } : index)),
+    }));
+  }, []);
+
+  const updateSchemaForeignKey = useCallback((foreignKeyId: string, patch: Partial<SchemaForeignKey>) => {
+    setCreateTableState((current) => ({
+      ...current,
+      foreignKeys: current.foreignKeys.map((foreignKey) => (foreignKey.id === foreignKeyId ? { ...foreignKey, ...patch } : foreignKey)),
+    }));
+  }, []);
+
+  const handleExecuteCreateTable = useCallback(async () => {
+    if (!api?.connections || !mysqlId) return;
+
+    if (!createTableState.tableName.trim()) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.pleaseFillTableName') });
+      return;
+    }
+    if (createTableState.columns.length === 0) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.pleaseAddColumns') });
+      return;
+    }
+    if (createTableState.columns.some((column) => !column.name.trim())) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.invalidColumnName') });
+      return;
+    }
+    const validationError = validateCreateTableState(createTableState);
+    if (validationError) {
+      setMessage({ type: 'error', text: validationError });
+      return;
+    }
+
+    const sqlText = generateCreateTableSql(createTableState);
+    const database = createTableState.database || undefined;
+    const startTime = performance.now();
+
+    setCreateTableState((current) => ({ ...current, executing: true }));
+    setMessage(null);
+
+    try {
+      const result = await api.connections.mysqlQuery(connectionId, mysqlId, sqlText, database);
+      const queryTime = Math.round(performance.now() - startTime);
+
+      addResultTab({
+        id: createId('result'),
+        title: createTableState.tableName.trim(),
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx'),
+        sql: sqlText,
+        database,
+        status: 'success',
+        result,
+        queryTime,
+        createdAt: Date.now(),
+        columns: createGenericColumns(result.columns, 'mysql'),
+      });
+      addHistoryItem({
+        sql: sqlText,
+        database,
+        status: 'success',
+        queryTime,
+        rowCount: result.rows.length,
+        affectedRows: result.affectedRows,
+      });
+      if (database) {
+        setExpandedDbs((current) => new Set(current).add(database));
+        await loadTables(database, true);
+      }
+      setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+      setMessage({ type: 'success', text: tCurrent('auto.remoteMySQL.tableCreated', { table: createTableState.tableName.trim() }) });
+    } catch (error) {
+      const text = getErrorMessage(error);
+      addResultTab({
+        id: createId('result'),
+        title: tCurrent('auto.remoteMySQL.wq5uqu'),
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr2', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx2'),
+        sql: sqlText,
+        database,
+        status: 'error',
+        error: text,
+        queryTime: Math.round(performance.now() - startTime),
+        createdAt: Date.now(),
+        columns: [],
+      });
+      addHistoryItem({
+        sql: sqlText,
+        database,
+        status: 'error',
+        queryTime: Math.round(performance.now() - startTime),
+        error: text,
+      });
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.createTableFailed', { error: text }) });
+      setCreateTableState((current) => ({ ...current, executing: false }));
+    }
+  }, [addHistoryItem, addResultTab, api, connectionId, createTableState, loadTables, mysqlId]);
+
   const handleExecuteSql = useCallback(async () => {
     if (!api?.connections || !mysqlId || !activeQueryTab?.sql.trim()) return;
 
@@ -1355,9 +1830,12 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
               <strong>{tCurrent('auto.remoteMySQL.dzec2g')}</strong>
               <span>{databases.length} {tCurrent('auto.remoteMySQL.1bg3e3c')}</span>
             </div>
-            <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title={tCurrent('auto.remoteMySQL.oj1z9s')}>
-              {schemaLoading ? '...' : '↻'}
-            </button>
+            <div className="mysql-sidebar-actions">
+              <button type="button" onClick={openCreateTableDialog} title={tCurrent('auto.remoteMySQL.createTable')}>+</button>
+              <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title={tCurrent('auto.remoteMySQL.oj1z9s')}>
+                {schemaLoading ? '...' : '↻'}
+              </button>
+            </div>
           </div>
           <div className="mysql-object-search">
             <input
@@ -1732,6 +2210,314 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
           </section>
         </main>
       </div>
+
+      {createTableState.open ? createPortal(
+        <div className="schema-dialog-overlay" role="presentation">
+          <div className="schema-dialog" role="dialog" aria-modal="true" aria-labelledby="mysql-create-table-title">
+            <div className="schema-dialog-header">
+              <h3 id="mysql-create-table-title">
+                {tCurrent('auto.remoteMySQL.createTableTitle', { database: createTableState.database || activeDb || '-' })}
+              </h3>
+              <button
+                type="button"
+                onClick={closeCreateTableDialog}
+                disabled={createTableState.executing}
+                aria-label={tCurrent('auto.remoteMySQL.cancel')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="schema-form-grid">
+              <label className="schema-field">
+                <span>{tCurrent('auto.remoteMySQL.tableName')}</span>
+                <input
+                  type="text"
+                  value={createTableState.tableName}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, tableName: event.target.value }))}
+                  placeholder={tCurrent('auto.remoteMySQL.tableNamePlaceholder')}
+                  autoFocus
+                />
+              </label>
+            </div>
+
+            <button
+              type="button"
+              className="schema-collapse-toggle"
+              onClick={() => setCreateTableState((current) => ({ ...current, showAdvanced: !current.showAdvanced }))}
+            >
+              {createTableState.showAdvanced ? '▾' : '▸'} {tCurrent('auto.remoteMySQL.createTableSuffix')}
+            </button>
+
+            {createTableState.showAdvanced ? (
+              <div className="schema-advanced-panel">
+                <label className="schema-field">
+                  <span>{tCurrent('auto.remoteMySQL.engine')}</span>
+                  <select
+                    value={createTableState.engine}
+                    onChange={(event) => setCreateTableState((current) => ({ ...current, engine: event.target.value }))}
+                  >
+                    {mysqlEngines.map((engine) => (
+                      <option key={engine} value={engine}>{engine}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="schema-field">
+                  <span>{tCurrent('auto.remoteMySQL.charset')}</span>
+                  <select
+                    value={createTableState.charset}
+                    onChange={(event) => setCreateTableState((current) => ({ ...current, charset: event.target.value }))}
+                  >
+                    <option value="">{tCurrent('auto.remoteMySQL.baseTable')}</option>
+                    {mysqlCharsets.map((charset) => (
+                      <option key={charset} value={charset}>{charset}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="schema-field schema-field-wide">
+                  <span>{tCurrent('auto.remoteMySQL.comment')}</span>
+                  <input
+                    type="text"
+                    value={createTableState.comment}
+                    onChange={(event) => setCreateTableState((current) => ({ ...current, comment: event.target.value }))}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <div className="schema-section">
+              <div className="schema-section-header">
+                <strong>{tCurrent('auto.remoteMySQL.columnName')}</strong>
+                <button type="button" onClick={addCreateTableColumn}>{tCurrent('auto.remoteMySQL.addColumn')}</button>
+              </div>
+              <div className="schema-columns-scroll">
+                <table className="schema-columns-table">
+                  <thead>
+                    <tr>
+                      <th>{tCurrent('auto.remoteMySQL.primaryKey')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.columnName')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.columnType')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.columnLength')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.nullable')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.defaultValue')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.autoIncrement')}</th>
+                      <th>{tCurrent('auto.remoteMySQL.comment')}</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {createTableState.columns.map((column) => {
+                      const columnName = column.name.trim();
+
+                      return (
+                        <tr key={column.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={columnName ? createTableState.primaryKeyColumns.includes(columnName) : false}
+                              onChange={(event) => toggleCreateTablePrimaryKey(columnName, event.target.checked)}
+                              disabled={!columnName}
+                              title={tCurrent('auto.remoteMySQL.primaryKey')}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.name}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'name', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <select value={column.type} onChange={(event) => updateCreateTableColumn(column.id, 'type', event.target.value)}>
+                              {mysqlColumnTypes.map((type) => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.length}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'length', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={column.nullable}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'nullable', event.target.checked)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.defaultValue}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'defaultValue', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={column.autoIncrement}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'autoIncrement', event.target.checked)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.comment}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'comment', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <button type="button" onClick={() => removeCreateTableColumn(column.id)}>
+                              {tCurrent('auto.remoteMySQL.removeColumn')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="schema-relations-grid">
+              <section className="schema-subsection">
+                <div className="schema-section-header">
+                  <strong>{tCurrent('auto.remoteMySQL.index')}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setCreateTableState((current) => ({ ...current, indexes: [...current.indexes, createSchemaIndex()] }))}
+                    title={tCurrent('auto.remoteMySQL.index')}
+                  >
+                    +
+                  </button>
+                </div>
+                {createTableState.indexes.map((index) => (
+                  <div key={index.id} className="schema-inline-editor">
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.indexType')}</span>
+                      <select value={index.type} onChange={(event) => updateSchemaIndex(index.id, { type: event.target.value as SchemaIndex['type'] })}>
+                        <option value="INDEX">{tCurrent('auto.remoteMySQL.index')}</option>
+                        <option value="UNIQUE">{tCurrent('auto.remoteMySQL.unique')}</option>
+                        <option value="FULLTEXT">{tCurrent('auto.remoteMySQL.fulltext')}</option>
+                        <option value="SPATIAL">{tCurrent('auto.remoteMySQL.spatial')}</option>
+                      </select>
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.columnName')}</span>
+                      <select
+                        multiple
+                        value={index.columns}
+                        onChange={(event) => updateSchemaIndex(index.id, {
+                          columns: Array.from(event.target.selectedOptions, (option) => option.value),
+                        })}
+                      >
+                        {createTableState.columns.filter((column) => column.name.trim()).map((column) => (
+                          <option key={column.id} value={column.name.trim()}>{column.name.trim()}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.indexName')}</span>
+                      <input type="text" value={index.name} onChange={(event) => updateSchemaIndex(index.id, { name: event.target.value })} />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTableState((current) => ({ ...current, indexes: current.indexes.filter((item) => item.id !== index.id) }))}
+                    >
+                      {tCurrent('auto.remoteMySQL.removeIndex')}
+                    </button>
+                  </div>
+                ))}
+              </section>
+
+              <section className="schema-subsection">
+                <div className="schema-section-header">
+                  <strong>{tCurrent('auto.remoteMySQL.foreignKey')}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setCreateTableState((current) => ({ ...current, foreignKeys: [...current.foreignKeys, createSchemaForeignKey()] }))}
+                    title={tCurrent('auto.remoteMySQL.foreignKey')}
+                  >
+                    +
+                  </button>
+                </div>
+                {createTableState.foreignKeys.map((foreignKey) => (
+                  <div key={foreignKey.id} className="schema-inline-editor">
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.columnName')}</span>
+                      <select
+                        multiple
+                        value={foreignKey.columns}
+                        onChange={(event) => updateSchemaForeignKey(foreignKey.id, {
+                          columns: Array.from(event.target.selectedOptions, (option) => option.value),
+                        })}
+                      >
+                        {createTableState.columns.filter((column) => column.name.trim()).map((column) => (
+                          <option key={column.id} value={column.name.trim()}>{column.name.trim()}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.referenceTable')}</span>
+                      <input type="text" value={foreignKey.refTable} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { refTable: event.target.value })} />
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.referenceColumn')}</span>
+                      <input
+                        type="text"
+                        value={foreignKey.refColumns.join(', ')}
+                        onChange={(event) => updateSchemaForeignKey(foreignKey.id, {
+                          refColumns: event.target.value.split(',').map((column) => column.trim()).filter(Boolean),
+                        })}
+                      />
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.onDelete')}</span>
+                      <select value={foreignKey.onDelete} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { onDelete: event.target.value })}>
+                        {mysqlForeignKeyActions.map((action) => (
+                          <option key={action} value={action}>{translateForeignKeyAction(action)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="schema-field">
+                      <span>{tCurrent('auto.remoteMySQL.onUpdate')}</span>
+                      <select value={foreignKey.onUpdate} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { onUpdate: event.target.value })}>
+                        {mysqlForeignKeyActions.map((action) => (
+                          <option key={action} value={action}>{translateForeignKeyAction(action)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTableState((current) => ({ ...current, foreignKeys: current.foreignKeys.filter((item) => item.id !== foreignKey.id) }))}
+                    >
+                      {tCurrent('auto.remoteMySQL.removeForeignKey')}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            </div>
+
+            <label className="schema-field schema-preview-field">
+              <span>{tCurrent('auto.remoteMySQL.sqlPreview')}</span>
+              <textarea className="schema-preview" value={createTableSqlPreview} readOnly rows={8} />
+            </label>
+
+            <div className="schema-actions">
+              <button type="button" onClick={closeCreateTableDialog} disabled={createTableState.executing}>
+                {tCurrent('auto.remoteMySQL.cancel')}
+              </button>
+              <button type="button" className="primary" onClick={() => void handleExecuteCreateTable()} disabled={createTableState.executing}>
+                {createTableState.executing ? tCurrent('auto.remoteMySQL.e2byz1') : tCurrent('auto.remoteMySQL.executeCreate')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
 
       {pendingEdit ? createPortal(
         <div className="mysql-modal-backdrop" role="presentation">

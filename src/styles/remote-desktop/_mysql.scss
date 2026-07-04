@@ -1325,3 +1325,296 @@
 [data-theme="light"] .mysql-modal-backdrop {
   background: rgba(16, 24, 32, 0.28);
 }
+
+.mysql-sidebar-header .mysql-sidebar-actions {
+  flex: 0 0 auto;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.schema-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.schema-dialog {
+  width: min(1180px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  color: var(--text);
+}
+
+.schema-dialog-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.schema-dialog h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.schema-dialog button,
+.schema-dialog input,
+.schema-dialog select,
+.schema-dialog textarea {
+  font: inherit;
+}
+
+.schema-dialog button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.schema-dialog button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.schema-dialog button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.schema-dialog-header button {
+  width: 28px;
+  height: 28px;
+}
+
+.schema-form-grid,
+.schema-advanced-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px 0;
+}
+
+.schema-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.schema-field-wide {
+  grid-column: 1 / -1;
+}
+
+.schema-field input,
+.schema-field select,
+.schema-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.schema-field input,
+.schema-field select {
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.schema-field select[multiple] {
+  min-height: 76px;
+}
+
+.schema-field textarea {
+  min-height: 130px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.schema-field input:focus,
+.schema-field select:focus,
+.schema-field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.schema-collapse-toggle {
+  margin: 14px 16px 0;
+  padding: 7px 10px;
+}
+
+.schema-section,
+.schema-subsection,
+.schema-preview-field {
+  margin: 14px 16px 0;
+}
+
+.schema-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.schema-section-header strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.schema-section-header button,
+.schema-inline-editor > button {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.schema-columns-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.schema-columns-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.schema-columns-table th,
+.schema-columns-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.schema-columns-table th {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.schema-columns-table td {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.schema-columns-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.schema-columns-table input[type="text"],
+.schema-columns-table select {
+  width: 100%;
+  min-width: 92px;
+  box-sizing: border-box;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.schema-columns-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.schema-relations-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.schema-subsection {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.schema-inline-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.schema-inline-editor:first-of-type {
+  border-top: none;
+}
+
+.schema-inline-editor > button {
+  align-self: end;
+}
+
+.schema-preview {
+  min-height: 150px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.schema-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  background: var(--surface);
+}
+
+.schema-actions button {
+  min-height: 34px;
+  padding: 0 14px;
+}
+
+.schema-actions button.primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+  font-weight: 700;
+}
+
+[data-theme="light"] .schema-dialog-overlay {
+  background: rgba(16, 24, 32, 0.28);
+}
+
+@media (max-width: 900px) {
+  .schema-form-grid,
+  .schema-advanced-panel,
+  .schema-relations-grid,
+  .schema-inline-editor {
+    grid-template-columns: 1fr;
+  }
+}
