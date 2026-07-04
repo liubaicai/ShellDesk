@@ -175,6 +175,18 @@ interface CreateTableState extends CreateTableSnapshot {
   original?: CreateTableSnapshot;
 }
 
+interface ImportDataState {
+  open: boolean;
+  mode: 'csv' | 'json';
+  targetTable: string;
+  csvText: string;
+  jsonText: string;
+  preview: Record<string, string>[];
+  columns: string[];
+  executing: boolean;
+  progress: { current: number; total: number } | null;
+}
+
 type MysqlContextMenuAction = 'database-info' | 'query-table' | 'table-structure' | 'edit-table';
 
 const defaultPort = 3306;
@@ -188,6 +200,7 @@ const mysqlCharsets = ['utf8mb4', 'utf8', 'utf8mb3', 'latin1', 'ascii', 'utf16',
 const mysqlForeignKeyActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
 const mysqlIntegerTypes = new Set(['INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'MEDIUMINT']);
 const mysqlTypesWithoutLength = new Set(['DATE', 'DATETIME', 'TIMESTAMP', 'TEXT', 'BOOLEAN', 'JSON', 'BLOB']);
+const importEditorTarget = '__sql_editor__';
 
 function createSchemaColumn(): SchemaColumn {
   return {
@@ -759,6 +772,128 @@ function quoteMysqlString(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
 
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[index + 1] === '"') {
+          value += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (char === ',') {
+      row.push(value);
+      value = '';
+      continue;
+    }
+    if (char === '\n') {
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = '';
+      continue;
+    }
+    if (char === '\r') {
+      continue;
+    }
+    value += char;
+  }
+
+  if (inQuotes) {
+    throw new Error(tCurrent('auto.remoteMySQL.importCsvUnclosedQuote'));
+  }
+  if (value || row.length > 0) {
+    row.push(value);
+    rows.push(row);
+  }
+
+  return rows.filter((item) => item.some((cell) => cell.trim()));
+}
+
+function normalizeImportPreviewValue(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function parseImportCsv(text: string): { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] } {
+  const parsedRows = parseCsvRows(text.trim());
+  const columns = parsedRows[0]?.map((column) => column.trim()).filter(Boolean) ?? [];
+  if (columns.length === 0 || parsedRows.length <= 1) {
+    return { columns, rows: [], preview: [] };
+  }
+
+  const rows = parsedRows.slice(1).map((row) => {
+    const entry: Record<string, unknown> = {};
+    columns.forEach((column, index) => {
+      entry[column] = row[index] ?? '';
+    });
+    return entry;
+  });
+
+  return {
+    columns,
+    rows,
+    preview: rows.slice(0, 5).map((row) => Object.fromEntries(columns.map((column) => [column, normalizeImportPreviewValue(row[column])]))),
+  };
+}
+
+function parseImportJson(text: string): { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] } {
+  const parsed = JSON.parse(text) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(tCurrent('auto.remoteMySQL.importJsonMustBeArray'));
+  }
+
+  const rows = parsed.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(tCurrent('auto.remoteMySQL.importJsonItemsMustBeObjects'));
+    }
+    return item as Record<string, unknown>;
+  });
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+
+  return {
+    columns,
+    rows,
+    preview: rows.slice(0, 5).map((row) => Object.fromEntries(columns.map((column) => [column, normalizeImportPreviewValue(row[column])]))),
+  };
+}
+
+function quoteMysqlImportValue(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'object') return quoteMysqlString(JSON.stringify(value));
+  return quoteMysqlString(String(value));
+}
+
+function buildMysqlInsertSql(table: string, columns: string[], rows: Record<string, unknown>[]): string {
+  const columnSql = columns.map((column) => quoteIdentifier(column, 'mysql')).join(', ');
+  const valuesSql = rows
+    .map((row) => `(${columns.map((column) => quoteMysqlImportValue(row[column])).join(', ')})`)
+    .join(', ');
+
+  return `INSERT INTO ${quoteIdentifier(table, 'mysql')} (${columnSql}) VALUES ${valuesSql};`;
+}
+
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (left === null || left === undefined) return right === null || right === undefined;
   if (right === null || right === undefined) return false;
@@ -810,6 +945,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const mysqlIdRef = useRef('');
   const sqlEditorRef = useRef<ReactCodeMirrorRef>(null);
   const createTablePreviousFocusRef = useRef<Element | null>(null);
+  const importPreviousFocusRef = useRef<Element | null>(null);
 
   const [status, setStatus] = useState<MysqlStatus>('disconnected');
   const [errorMessage, setErrorMessage] = useState('');
@@ -875,6 +1011,17 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     showAdvanced: false,
     executing: false,
   });
+  const [importDataState, setImportDataState] = useState<ImportDataState>({
+    open: false,
+    mode: 'csv',
+    targetTable: '',
+    csvText: '',
+    jsonText: '',
+    preview: [],
+    columns: [],
+    executing: false,
+    progress: null,
+  });
 
   const isReady = status === 'connected';
 
@@ -888,6 +1035,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
 
   const activeResult = activeResultTab?.result ?? null;
   const activeResultColumns = activeResultTab?.columns ?? [];
+  const importTargetTables = activeDb ? dbTables[activeDb] ?? [] : [];
   const activeResultPrimaryKeys = useMemo(() => {
     return activeResultColumns.filter((column) => column.key === 'PRI').map((column) => column.name);
   }, [activeResultColumns]);
@@ -1006,6 +1154,17 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       showAdvanced: false,
       executing: false,
       original: undefined,
+    });
+    setImportDataState({
+      open: false,
+      mode: 'csv',
+      targetTable: '',
+      csvText: '',
+      jsonText: '',
+      preview: [],
+      columns: [],
+      executing: false,
+      progress: null,
     });
   }, []);
 
@@ -1575,6 +1734,175 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     setCreateTableState((current) => ({ ...current, open: false, executing: false }));
   }, []);
 
+  const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
+    if (!text.trim()) {
+      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
+      return;
+    }
+
+    try {
+      const parsed = mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
+      setImportDataState((current) => ({ ...current, preview: parsed.preview, columns: parsed.columns }));
+    } catch {
+      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
+    }
+  }, []);
+
+  const openImportDialog = useCallback(() => {
+    const database = activeDb || selectedTable?.database || activeResultTab?.table?.database || databases[0] || '';
+    const table = selectedTable?.database === database
+      ? selectedTable.name
+      : activeResultTab?.table?.database === database
+        ? activeResultTab.table.name
+        : dbTables[database]?.[0] ?? '';
+
+    importPreviousFocusRef.current = typeof document === 'undefined' ? null : document.activeElement;
+    if (database) {
+      setActiveDb(database);
+      void loadTables(database);
+    }
+    setImportDataState((current) => ({
+      ...current,
+      open: true,
+      targetTable: table,
+      executing: false,
+      progress: null,
+    }));
+  }, [activeDb, activeResultTab, databases, dbTables, loadTables, selectedTable]);
+
+  const closeImportDialog = useCallback(() => {
+    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null }));
+  }, []);
+
+  const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
+    setImportDataState((current) => ({
+      ...current,
+      mode,
+      csvText: mode === 'csv' ? text : current.csvText,
+      jsonText: mode === 'json' ? text : current.jsonText,
+      progress: null,
+    }));
+    refreshImportPreview(mode, text);
+  }, [refreshImportPreview]);
+
+  const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
+    setImportDataState((current) => ({ ...current, mode, progress: null }));
+    refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
+  }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
+
+  const getImportTargetTable = useCallback(() => {
+    if (importDataState.targetTable === importEditorTarget) {
+      return selectedTable?.name || activeResultTab?.table?.name || '';
+    }
+    return importDataState.targetTable;
+  }, [activeResultTab, importDataState.targetTable, selectedTable]);
+
+  const handleExecuteImport = useCallback(async () => {
+    if (!api?.connections || !mysqlId) return;
+
+    const table = getImportTargetTable().trim();
+    const database = activeDb || selectedTable?.database || activeResultTab?.table?.database || undefined;
+    const text = importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText;
+
+    if (!table) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.importNoTable') });
+      return;
+    }
+    if (!text.trim()) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.importNoData') });
+      return;
+    }
+
+    let parsed: { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] };
+    try {
+      parsed = importDataState.mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
+    } catch (error) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.importParseError', { error: getErrorMessage(error) }) });
+      return;
+    }
+
+    if (parsed.columns.length === 0 || parsed.rows.length === 0) {
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.importNoData') });
+      return;
+    }
+
+    const batchSize = parsed.rows.length > 50 ? 100 : parsed.rows.length;
+    const startTime = performance.now();
+    let importedRows = 0;
+    let lastResult: ShellDeskMysqlQueryResult = { columns: [], rows: [], affectedRows: 0 };
+    const sqlStatements: string[] = [];
+
+    setMessage(null);
+    setImportDataState((current) => ({
+      ...current,
+      executing: true,
+      progress: { current: 0, total: parsed.rows.length },
+      preview: parsed.preview,
+      columns: parsed.columns,
+    }));
+
+    try {
+      for (let index = 0; index < parsed.rows.length; index += batchSize) {
+        const batch = parsed.rows.slice(index, index + batchSize);
+        const sqlText = buildMysqlInsertSql(table, parsed.columns, batch);
+        sqlStatements.push(sqlText);
+        lastResult = await api.connections.mysqlQuery(connectionId, mysqlId, sqlText, database);
+        importedRows += batch.length;
+        setImportDataState((current) => ({ ...current, progress: { current: importedRows, total: parsed.rows.length } }));
+      }
+
+      const queryTime = Math.round(performance.now() - startTime);
+      const result: ShellDeskMysqlQueryResult = { ...lastResult, affectedRows: importedRows };
+      addResultTab({
+        id: createId('result'),
+        title: table,
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx'),
+        sql: sqlStatements.join('\n'),
+        database,
+        status: 'success',
+        result,
+        queryTime,
+        createdAt: Date.now(),
+        table: database ? { database, name: table } : undefined,
+        columns: createGenericColumns(result.columns, 'mysql'),
+      });
+      addHistoryItem({
+        sql: sqlStatements.join('\n'),
+        database,
+        status: 'success',
+        queryTime,
+        rowCount: result.rows.length,
+        affectedRows: result.affectedRows,
+      });
+      setMessage({ type: 'success', text: tCurrent('auto.remoteMySQL.importSuccess', { count: importedRows, table }) });
+      setImportDataState((current) => ({ ...current, executing: false, progress: { current: importedRows, total: parsed.rows.length } }));
+    } catch (error) {
+      const text = getErrorMessage(error);
+      const queryTime = Math.round(performance.now() - startTime);
+      addResultTab({
+        id: createId('result'),
+        title: tCurrent('auto.remoteMySQL.wq5uqu'),
+        subtitle: database ? tCurrent('auto.remoteMySQL.4uvcwr2', { value0: database }) : tCurrent('auto.remoteMySQL.1qglxbx2'),
+        sql: sqlStatements.join('\n'),
+        database,
+        status: 'error',
+        error: text,
+        queryTime,
+        createdAt: Date.now(),
+        columns: [],
+      });
+      addHistoryItem({
+        sql: sqlStatements.join('\n'),
+        database,
+        status: 'error',
+        queryTime,
+        error: text,
+      });
+      setMessage({ type: 'error', text: tCurrent('auto.remoteMySQL.importFailed', { error: text }) });
+      setImportDataState((current) => ({ ...current, executing: false }));
+    }
+  }, [activeDb, activeResultTab, addHistoryItem, addResultTab, api, connectionId, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, mysqlId, selectedTable]);
+
   useEffect(() => {
     if (!createTableState.open) return undefined;
 
@@ -1599,6 +1927,31 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [closeCreateTableDialog, createTableState.executing, createTableState.open]);
+
+  useEffect(() => {
+    if (!importDataState.open) return undefined;
+
+    return () => {
+      const previousFocus = importPreviousFocusRef.current;
+      importPreviousFocusRef.current = null;
+      if (previousFocus instanceof HTMLElement) {
+        previousFocus.focus();
+      }
+    };
+  }, [importDataState.open]);
+
+  useEffect(() => {
+    if (!importDataState.open || typeof document === 'undefined') return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || importDataState.executing) return;
+      event.preventDefault();
+      closeImportDialog();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeImportDialog, importDataState.executing, importDataState.open]);
 
   const updateCreateTableColumn = useCallback(<Key extends keyof SchemaColumn,>(
     columnId: string,
@@ -2353,6 +2706,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
             </div>
             <div className="mysql-sidebar-actions">
               <button type="button" onClick={openCreateTableDialog} title={tCurrent('auto.remoteMySQL.createTable')}>+</button>
+              <button type="button" onClick={openImportDialog} title={tCurrent('auto.remoteMySQL.importData')}>⇧</button>
               <button type="button" onClick={() => void refreshDatabases()} disabled={schemaLoading} title={tCurrent('auto.remoteMySQL.oj1z9s')}>
                 {schemaLoading ? '...' : '↻'}
               </button>
@@ -2620,6 +2974,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                       : activeResultTab.table ? tCurrent('auto.remoteMySQL.122vefz') : tCurrent('auto.remoteMySQL.g4u81i')}
                   </span>
                   <div className="database-export-actions" aria-label={tCurrent('db.query.exportAria')}>
+                    <button type="button" className="database-export-button" onClick={openImportDialog}>{tCurrent('auto.remoteMySQL.importData')}</button>
                     <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('json')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportJson')}</button>
                     <button type="button" className="database-export-button" onClick={() => void handleExportActiveResult('csv')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportCsv')}</button>
                   </div>
@@ -3049,6 +3404,134 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
                   : createTableState.mode === 'edit'
                     ? tCurrent('auto.remoteMySQL.executeAlter')
                     : tCurrent('auto.remoteMySQL.executeCreate')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
+      {importDataState.open ? createPortal(
+        <div className="schema-dialog-overlay" role="presentation">
+          <div className="schema-dialog mysql-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mysql-import-title">
+            <div className="schema-dialog-header">
+              <h3 id="mysql-import-title">
+                {tCurrent('auto.remoteMySQL.importDialogTitle', { table: getImportTargetTable() || '-' })}
+              </h3>
+              <button
+                type="button"
+                onClick={closeImportDialog}
+                disabled={importDataState.executing}
+                aria-label={tCurrent('auto.remoteMySQL.cancel')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="schema-form-grid">
+              <label className="schema-field schema-field-wide">
+                <span>{tCurrent('auto.remoteMySQL.importTargetTable')}</span>
+                <select
+                  value={importDataState.targetTable}
+                  onChange={(event) => setImportDataState((current) => ({ ...current, targetTable: event.target.value, progress: null }))}
+                  disabled={importDataState.executing}
+                >
+                  <option value="">{tCurrent('auto.remoteMySQL.importNoTable')}</option>
+                  <option value={importEditorTarget}>{tCurrent('auto.remoteMySQL.importFromSqlEditor')}</option>
+                  {importTargetTables.map((table) => (
+                    <option key={table} value={table}>{table}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mysql-import-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={importDataState.mode === 'csv'}
+                className={importDataState.mode === 'csv' ? 'active' : ''}
+                onClick={() => updateImportMode('csv')}
+                disabled={importDataState.executing}
+              >
+                {tCurrent('auto.remoteMySQL.importCsvTab')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={importDataState.mode === 'json'}
+                className={importDataState.mode === 'json' ? 'active' : ''}
+                onClick={() => updateImportMode('json')}
+                disabled={importDataState.executing}
+              >
+                {tCurrent('auto.remoteMySQL.importJsonTab')}
+              </button>
+            </div>
+
+            <label className="schema-field schema-preview-field">
+              <span>
+                {importDataState.mode === 'csv'
+                  ? tCurrent('auto.remoteMySQL.importPasteCsv')
+                  : tCurrent('auto.remoteMySQL.importPasteJson')}
+              </span>
+              <textarea
+                value={importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText}
+                onChange={(event) => updateImportText(importDataState.mode, event.target.value)}
+                disabled={importDataState.executing}
+                rows={8}
+                autoFocus
+              />
+            </label>
+
+            <div className="schema-section">
+              <div className="schema-section-header">
+                <strong>{tCurrent('auto.remoteMySQL.importPreview')}</strong>
+                {importDataState.progress ? (
+                  <span className="mysql-import-progress">
+                    {tCurrent('auto.remoteMySQL.importProgress', {
+                      current: importDataState.progress.current,
+                      total: importDataState.progress.total,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mysql-import-preview">
+                {importDataState.columns.length > 0 && importDataState.preview.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        {importDataState.columns.map((column) => (
+                          <th key={column}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importDataState.preview.map((row, rowIndex) => (
+                        <tr key={`${rowIndex}-${importDataState.columns.join('|')}`}>
+                          {importDataState.columns.map((column) => (
+                            <td key={column}>{row[column] ?? ''}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="mysql-import-empty">{tCurrent('auto.remoteMySQL.importNoData')}</div>
+                )}
+              </div>
+            </div>
+
+            <div className="schema-actions">
+              <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
+                {tCurrent('auto.remoteMySQL.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void handleExecuteImport()}
+                disabled={importDataState.executing}
+              >
+                {importDataState.executing ? tCurrent('auto.remoteMySQL.e2byz1') : tCurrent('auto.remoteMySQL.importExecute')}
               </button>
             </div>
           </div>

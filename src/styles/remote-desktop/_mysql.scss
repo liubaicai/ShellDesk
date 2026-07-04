@@ -1606,6 +1606,79 @@
   font-weight: 700;
 }
 
+.mysql-import-dialog {
+  width: min(860px, 94vw);
+}
+
+.mysql-import-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.mysql-import-tabs button {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.mysql-import-tabs button.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mysql-import-progress {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mysql-import-preview {
+  overflow: auto;
+  max-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.mysql-import-preview table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+}
+
+.mysql-import-preview th,
+.mysql-import-preview td {
+  max-width: 240px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mysql-import-preview th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mysql-import-preview tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mysql-import-empty {
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 [data-theme="light"] .schema-dialog-overlay {
   background: rgba(16, 24, 32, 0.28);
 }
