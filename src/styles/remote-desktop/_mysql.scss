@@ -1628,6 +1628,29 @@
   font-weight: 700;
 }
 
+.schema-import-file-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.schema-import-file-row button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.schema-import-file-row button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .mysql-import-progress {
   color: var(--text-secondary);
   font-size: 12px;

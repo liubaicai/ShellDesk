@@ -1,4 +1,4 @@
-import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { indentWithTab } from '@codemirror/commands';
@@ -603,6 +603,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const createTablePreviousFocusRef = useRef<Element | null>(null);
   const importPreviousFocusRef = useRef<Element | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [status, setStatus] = useState<PostgresStatus>('disconnected');
   const [error, setError] = useState('');
@@ -1421,6 +1422,28 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       progress: null,
     }));
     refreshImportPreview(mode, text);
+  }, [refreshImportPreview]);
+
+  const handleImportFileSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      const mode: ImportDataState['mode'] = file.name.endsWith('.json') ? 'json' : 'csv';
+      setImportDataState((current) => ({
+        ...current,
+        mode,
+        csvText: mode === 'csv' ? text : current.csvText,
+        jsonText: mode === 'json' ? text : current.jsonText,
+        progress: null,
+      }));
+      refreshImportPreview(mode, text);
+    };
+    reader.readAsText(file);
+
+    event.target.value = '';
   }, [refreshImportPreview]);
 
   const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
@@ -2581,6 +2604,19 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                 disabled={importDataState.executing}
               >
                 {tCurrent('auto.remotePostgres.importJsonTab')}
+              </button>
+            </div>
+
+            <div className="schema-import-file-row">
+              <input
+                type="file"
+                ref={importFileInputRef}
+                style={{ display: 'none' }}
+                accept=".csv,.json"
+                onChange={handleImportFileSelected}
+              />
+              <button type="button" onClick={() => importFileInputRef.current?.click()} disabled={importDataState.executing}>
+                {tCurrent('auto.remotePostgres.importSelectFile')}
               </button>
             </div>
 
