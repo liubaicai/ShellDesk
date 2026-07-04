@@ -1,4 +1,4 @@
-import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { indentWithTab } from '@codemirror/commands';
@@ -114,11 +114,108 @@ interface PostgresContextMenuState {
   target: PostgresContextMenuTarget;
 }
 
+interface PgSchemaColumn {
+  id: string;
+  name: string;
+  type: string;
+  length: string;
+  nullable: boolean;
+  defaultValue: string;
+  comment: string;
+}
+
+interface PgSchemaIndex {
+  id: string;
+  type: 'INDEX' | 'UNIQUE';
+  columns: string[];
+  name: string;
+}
+
+interface PgSchemaForeignKey {
+  id: string;
+  columns: string[];
+  refSchema: string;
+  refTable: string;
+  refColumns: string[];
+  onDelete: string;
+  onUpdate: string;
+}
+
+interface PgCreateTableState {
+  open: boolean;
+  schema: string;
+  tableName: string;
+  comment: string;
+  columns: PgSchemaColumn[];
+  primaryKeyColumns: string[];
+  indexes: PgSchemaIndex[];
+  foreignKeys: PgSchemaForeignKey[];
+  showAdvanced: boolean;
+  executing: boolean;
+}
+
+interface ImportDataState {
+  open: boolean;
+  mode: 'csv' | 'json';
+  targetTable: string;
+  csvText: string;
+  jsonText: string;
+  preview: Record<string, string>[];
+  columns: string[];
+  executing: boolean;
+  progress: { current: number; total: number } | null;
+}
+
 const tablePreviewLimit = 50;
 const pageSize = 100;
 const maxHistoryItems = 12;
 const maxResultTabs = 10;
 const defaultPort = 5432;
+const postgresColumnTypes = [
+  'INTEGER',
+  'BIGINT',
+  'SMALLINT',
+  'TEXT',
+  'VARCHAR',
+  'CHAR',
+  'BOOLEAN',
+  'DATE',
+  'TIMESTAMP',
+  'TIMESTAMPTZ',
+  'NUMERIC',
+  'REAL',
+  'DOUBLE PRECISION',
+  'JSON',
+  'JSONB',
+  'UUID',
+  'BYTEA',
+  'INTERVAL',
+  'INET',
+  'CIDR',
+  'MACADDR',
+];
+const postgresTypesWithoutLength = new Set([
+  'INTEGER',
+  'BIGINT',
+  'SMALLINT',
+  'TEXT',
+  'BOOLEAN',
+  'DATE',
+  'TIMESTAMP',
+  'TIMESTAMPTZ',
+  'REAL',
+  'DOUBLE PRECISION',
+  'JSON',
+  'JSONB',
+  'UUID',
+  'BYTEA',
+  'INTERVAL',
+  'INET',
+  'CIDR',
+  'MACADDR',
+]);
+const postgresForeignKeyActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
+const importEditorTarget = '__sql_editor__';
 
 function getShellDeskEditorTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') {
@@ -144,6 +241,294 @@ function createInitialQueryState(): { tabs: PostgresQueryTab[]; activeId: string
 
 function quotePgString(value: string) {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[index + 1] === '"') {
+          value += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (char === ',') {
+      row.push(value);
+      value = '';
+      continue;
+    }
+    if (char === '\n') {
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = '';
+      continue;
+    }
+    if (char === '\r') {
+      continue;
+    }
+    value += char;
+  }
+
+  if (inQuotes) {
+    throw new Error(tCurrent('auto.remotePostgres.importCsvUnclosedQuote'));
+  }
+  if (value || row.length > 0) {
+    row.push(value);
+    rows.push(row);
+  }
+
+  return rows.filter((item) => item.some((cell) => cell.trim()));
+}
+
+function normalizeImportPreviewValue(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function parseImportCsv(text: string): { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] } {
+  const parsedRows = parseCsvRows(text.trim());
+  const columns = parsedRows[0]?.map((column) => column.trim()).filter(Boolean) ?? [];
+  if (columns.length === 0 || parsedRows.length <= 1) {
+    return { columns, rows: [], preview: [] };
+  }
+
+  const rows = parsedRows.slice(1).map((row) => {
+    const entry: Record<string, unknown> = {};
+    columns.forEach((column, index) => {
+      entry[column] = row[index] ?? '';
+    });
+    return entry;
+  });
+
+  return {
+    columns,
+    rows,
+    preview: rows.slice(0, 5).map((row) => Object.fromEntries(columns.map((column) => [column, normalizeImportPreviewValue(row[column])]))),
+  };
+}
+
+function parseImportJson(text: string): { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] } {
+  const parsed = JSON.parse(text) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(tCurrent('auto.remotePostgres.importJsonMustBeArray'));
+  }
+
+  const rows = parsed.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(tCurrent('auto.remotePostgres.importJsonItemsMustBeObjects'));
+    }
+    return item as Record<string, unknown>;
+  });
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+
+  return {
+    columns,
+    rows,
+    preview: rows.slice(0, 5).map((row) => Object.fromEntries(columns.map((column) => [column, normalizeImportPreviewValue(row[column])]))),
+  };
+}
+
+function quotePgImportValue(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'object') return quotePgString(JSON.stringify(value));
+  return quotePgString(String(value));
+}
+
+function buildPgInsertSql(schema: string, table: string, columns: string[], rows: Record<string, unknown>[]): string {
+  const tableIdentifier = `${quoteIdentifier(schema || 'public', 'postgres')}.${quoteIdentifier(table, 'postgres')}`;
+  const columnSql = columns.map((column) => quoteIdentifier(column, 'postgres')).join(', ');
+  const valuesSql = rows
+    .map((row) => `(${columns.map((column) => quotePgImportValue(row[column])).join(', ')})`)
+    .join(', ');
+  return `INSERT INTO ${tableIdentifier} (${columnSql}) VALUES ${valuesSql};`;
+}
+
+function createPgSchemaColumn(): PgSchemaColumn {
+  return {
+    id: createId('pg-column'),
+    name: '',
+    type: 'INTEGER',
+    length: '',
+    nullable: false,
+    defaultValue: '',
+    comment: '',
+  };
+}
+
+function createPgSchemaIndex(): PgSchemaIndex {
+  return {
+    id: createId('pg-index'),
+    type: 'INDEX',
+    columns: [],
+    name: '',
+  };
+}
+
+function createPgSchemaForeignKey(): PgSchemaForeignKey {
+  return {
+    id: createId('pg-fk'),
+    columns: [],
+    refSchema: 'public',
+    refTable: '',
+    refColumns: [],
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
+  };
+}
+
+function quotePgDefaultValue(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) return '';
+  if (/^null$/i.test(trimmed)) return 'NULL';
+  if (/^(current_timestamp|current_date|current_time)(\(\))?$/i.test(trimmed)) return trimmed;
+  if (/^(uuid_generate_v4|gen_random_uuid|now)\(\)$/i.test(trimmed)) return trimmed;
+  if (/^-?\d+(\.\d+)?$/u.test(trimmed)) return trimmed;
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toUpperCase();
+
+  return quotePgString(trimmed);
+}
+
+function sanitizePgColumnLength(type: string, length: string): string {
+  const normalizedType = type.toUpperCase();
+  const trimmed = length.trim();
+
+  if (!trimmed || postgresTypesWithoutLength.has(normalizedType)) return '';
+  return trimmed.replace(/[^\d,]/gu, '').replace(/,+/gu, ',').replace(/^,|,$/gu, '');
+}
+
+function quotePgQualifiedIdentifier(schema: string, name: string): string {
+  return `${quoteIdentifier(schema || 'public', 'postgres')}.${quoteIdentifier(name || 'table_name', 'postgres')}`;
+}
+
+function buildPgColumnDefinition(column: PgSchemaColumn, primaryKeyColumns: string[]): string {
+  const columnName = column.name.trim();
+  const normalizedType = column.type.toUpperCase();
+  const defaultValue = quotePgDefaultValue(column.defaultValue);
+  const length = sanitizePgColumnLength(normalizedType, column.length);
+  const isSinglePrimaryKey = primaryKeyColumns.length === 1 && primaryKeyColumns[0] === columnName;
+  const isSerial = (normalizedType === 'INTEGER' || normalizedType === 'BIGINT') && /^(serial|bigserial)$/i.test(column.defaultValue.trim());
+  const type = isSerial
+    ? (normalizedType === 'BIGINT' ? 'BIGSERIAL' : 'SERIAL')
+    : length ? `${normalizedType}(${length})` : normalizedType;
+  const parts = [
+    quoteIdentifier(columnName, 'postgres'),
+    type,
+    column.nullable ? 'NULL' : 'NOT NULL',
+  ];
+
+  if (!isSerial && defaultValue) {
+    parts.push(`DEFAULT ${defaultValue}`);
+  }
+  if (isSinglePrimaryKey) {
+    parts.push('PRIMARY KEY');
+  }
+
+  return parts.join(' ');
+}
+
+function buildPgIndexName(index: PgSchemaIndex, tableName: string): string {
+  if (index.name.trim()) return index.name.trim();
+  const suffix = index.columns.join('_') || index.id.replace(/^pg-index[-_]?/iu, '');
+  return `${index.type === 'UNIQUE' ? 'uniq' : 'idx'}_${tableName}_${suffix}`.replace(/[^a-zA-Z0-9_]/gu, '_').slice(0, 63);
+}
+
+function generateCreateTableStatements(state: PgCreateTableState): string[] {
+  const schema = state.schema.trim() || 'public';
+  const tableName = state.tableName.trim() || 'table_name';
+  const tableIdentifier = quotePgQualifiedIdentifier(schema, tableName);
+  const definitions = state.columns
+    .filter((column) => column.name.trim())
+    .map((column) => `  ${buildPgColumnDefinition(column, state.primaryKeyColumns)}`);
+  const primaryKeyColumns = state.primaryKeyColumns.filter((column) => (
+    state.columns.some((item) => item.name.trim() === column) && state.primaryKeyColumns.length !== 1
+  ));
+
+  if (primaryKeyColumns.length > 0) {
+    definitions.push(`  PRIMARY KEY (${primaryKeyColumns.map((column) => quoteIdentifier(column, 'postgres')).join(', ')})`);
+  }
+
+  state.foreignKeys.forEach((foreignKey) => {
+    const keyColumns = foreignKey.columns.filter((column) => state.columns.some((item) => item.name.trim() === column));
+    const refColumns = foreignKey.refColumns.filter((column) => column.trim());
+    if (keyColumns.length === 0 || !foreignKey.refTable.trim() || refColumns.length === 0) return;
+
+    const parts = [
+      `FOREIGN KEY (${keyColumns.map((column) => quoteIdentifier(column, 'postgres')).join(', ')})`,
+      `REFERENCES ${quotePgQualifiedIdentifier(foreignKey.refSchema.trim() || 'public', foreignKey.refTable.trim())} (${refColumns.map((column) => quoteIdentifier(column.trim(), 'postgres')).join(', ')})`,
+    ];
+    if (foreignKey.onDelete) parts.push(`ON DELETE ${foreignKey.onDelete}`);
+    if (foreignKey.onUpdate) parts.push(`ON UPDATE ${foreignKey.onUpdate}`);
+    definitions.push(`  ${parts.join(' ')}`);
+  });
+
+  const statements: string[] = [
+    [
+      `CREATE TABLE ${tableIdentifier} (`,
+      definitions.length > 0 ? definitions.join(',\n') : '  "id" INTEGER NOT NULL',
+      ');',
+    ].join('\n'),
+  ];
+
+  state.indexes.forEach((index) => {
+    const indexColumns = index.columns.filter((column) => state.columns.some((item) => item.name.trim() === column));
+    if (indexColumns.length === 0) return;
+    const indexType = index.type === 'UNIQUE' ? 'CREATE UNIQUE INDEX' : 'CREATE INDEX';
+    statements.push(`${indexType} ${quoteIdentifier(buildPgIndexName(index, tableName), 'postgres')} ON ${tableIdentifier} (${indexColumns.map((column) => quoteIdentifier(column, 'postgres')).join(', ')});`);
+  });
+
+  if (state.comment.trim()) {
+    statements.push(`COMMENT ON TABLE ${tableIdentifier} IS ${quotePgString(state.comment.trim())};`);
+  }
+
+  return statements;
+}
+
+function generateCreateTableSql(state: PgCreateTableState): string {
+  return generateCreateTableStatements(state).join('\n');
+}
+
+function validateCreateTableState(state: PgCreateTableState): string | null {
+  const seenColumnNames = new Set<string>();
+
+  for (const column of state.columns) {
+    const columnName = column.name.trim();
+    if (!columnName) continue;
+
+    const normalizedColumnName = columnName.toLowerCase();
+    if (seenColumnNames.has(normalizedColumnName)) {
+      return tCurrent('auto.remotePostgres.duplicateColumn', { name: columnName });
+    }
+    seenColumnNames.add(normalizedColumnName);
+  }
+
+  return null;
+}
+
+function translateForeignKeyAction(action: string): string {
+  return action;
 }
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -184,11 +569,41 @@ function comparePostgresCellValues(left: unknown, right: unknown): number {
   });
 }
 
+function serializeImportTarget(table: TableInfo): string {
+  return JSON.stringify({ schema: table.schema, name: table.name, type: table.type });
+}
+
+function parseImportTarget(value: string): TableInfo | null {
+  if (!value || value === importEditorTarget) return null;
+
+  try {
+    const parsed = JSON.parse(value) as Partial<TableInfo>;
+    if (typeof parsed.schema === 'string' && typeof parsed.name === 'string') {
+      return {
+        schema: parsed.schema,
+        name: parsed.name,
+        type: typeof parsed.type === 'string' ? parsed.type : 'BASE TABLE',
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function formatImportTarget(table: TableInfo | null): string {
+  return table ? `${table.schema}.${table.name}` : '';
+}
+
 function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const api = window.guiSSH?.connections;
   const initialQueryStateRef = useRef(createInitialQueryState());
   const postgresIdRef = useRef('');
   const editorRef = useRef<ReactCodeMirrorRef>(null);
+  const createTablePreviousFocusRef = useRef<Element | null>(null);
+  const importPreviousFocusRef = useRef<Element | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [status, setStatus] = useState<PostgresStatus>('disconnected');
   const [error, setError] = useState('');
@@ -218,6 +633,29 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const [editSaving, setEditSaving] = useState(false);
   const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
   const [contextMenu, setContextMenu] = useState<PostgresContextMenuState | null>(null);
+  const [createTableState, setCreateTableState] = useState<PgCreateTableState>({
+    open: false,
+    schema: 'public',
+    tableName: '',
+    comment: '',
+    columns: [],
+    primaryKeyColumns: [],
+    indexes: [],
+    foreignKeys: [],
+    showAdvanced: false,
+    executing: false,
+  });
+  const [importDataState, setImportDataState] = useState<ImportDataState>({
+    open: false,
+    mode: 'csv',
+    targetTable: '',
+    csvText: '',
+    jsonText: '',
+    preview: [],
+    columns: [],
+    executing: false,
+    progress: null,
+  });
 
   const isConnected = status === 'connected';
 
@@ -237,6 +675,12 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const isActiveResultEditable = Boolean(activeResultTab?.table && activeResultPrimaryKeys.length > 0);
   const canRunActiveQuery = Boolean(activeQueryTab?.sql.trim()) && !activeQueryTab?.running;
   const canExplainActiveQuery = canRunActiveQuery && !isWriteStatement(activeQueryTab?.sql.trim() ?? '', 'postgres');
+  const createTableSqlPreview = useMemo(() => generateCreateTableSql(createTableState), [createTableState]);
+  const importTargetTables = useMemo(() => {
+    return Object.values(tablesBySchema)
+      .flat()
+      .map((table) => ({ schema: table.schema, name: table.name, type: table.type }));
+  }, [tablesBySchema]);
 
   useEffect(() => {
     let disposed = false;
@@ -314,6 +758,8 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setPendingEdit(null);
     setMessage(null);
     setContextMenu(null);
+    setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null }));
   }, []);
 
   const addHistoryItem = useCallback((item: Omit<PostgresHistoryItem, 'id' | 'createdAt'>) => {
@@ -910,6 +1356,366 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     }
   }, [contextMenu, selectTable, showDatabaseInfo, showTableStructure]);
 
+  const openCreateTableDialog = useCallback((schema?: string) => {
+    const targetSchema = schema || (schemas.includes('public') ? 'public' : schemas[0]) || 'public';
+
+    createTablePreviousFocusRef.current = typeof document === 'undefined' ? null : document.activeElement;
+    setCreateTableState({
+      open: true,
+      schema: targetSchema,
+      tableName: '',
+      comment: '',
+      columns: [createPgSchemaColumn()],
+      primaryKeyColumns: [],
+      indexes: [],
+      foreignKeys: [],
+      showAdvanced: false,
+      executing: false,
+    });
+  }, [schemas]);
+
+  const closeCreateTableDialog = useCallback(() => {
+    setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+  }, []);
+
+  const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
+    if (!text.trim()) {
+      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
+      return;
+    }
+
+    try {
+      const parsed = mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
+      setImportDataState((current) => ({ ...current, preview: parsed.preview, columns: parsed.columns }));
+    } catch {
+      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
+    }
+  }, []);
+
+  const openImportDialog = useCallback(() => {
+    const targetTable = selectedTable ?? activeResultTab?.table ?? importTargetTables[0] ?? null;
+    const targetValue = targetTable ? serializeImportTarget(targetTable) : '';
+
+    importPreviousFocusRef.current = typeof document === 'undefined' ? null : document.activeElement;
+    if (targetTable && (!tablesBySchema[targetTable.schema] || tablesBySchema[targetTable.schema].length === 0)) {
+      void toggleSchema(targetTable.schema);
+    }
+    setImportDataState((current) => ({
+      ...current,
+      open: true,
+      targetTable: targetValue,
+      executing: false,
+      progress: null,
+    }));
+  }, [activeResultTab, importTargetTables, selectedTable, tablesBySchema, toggleSchema]);
+
+  const closeImportDialog = useCallback(() => {
+    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null }));
+  }, []);
+
+  const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
+    setImportDataState((current) => ({
+      ...current,
+      mode,
+      csvText: mode === 'csv' ? text : current.csvText,
+      jsonText: mode === 'json' ? text : current.jsonText,
+      progress: null,
+    }));
+    refreshImportPreview(mode, text);
+  }, [refreshImportPreview]);
+
+  const handleImportFileSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      const mode: ImportDataState['mode'] = file.name.endsWith('.json') ? 'json' : 'csv';
+      setImportDataState((current) => ({
+        ...current,
+        mode,
+        csvText: mode === 'csv' ? text : current.csvText,
+        jsonText: mode === 'json' ? text : current.jsonText,
+        progress: null,
+      }));
+      refreshImportPreview(mode, text);
+    };
+    reader.readAsText(file);
+
+    event.target.value = '';
+  }, [refreshImportPreview]);
+
+  const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
+    setImportDataState((current) => ({ ...current, mode, progress: null }));
+    refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
+  }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
+
+  const getImportTargetTable = useCallback((): TableInfo | null => {
+    if (importDataState.targetTable === importEditorTarget) {
+      return selectedTable ?? activeResultTab?.table ?? null;
+    }
+    return parseImportTarget(importDataState.targetTable);
+  }, [activeResultTab, importDataState.targetTable, selectedTable]);
+
+  const handleExecuteImport = useCallback(async () => {
+    if (!api || !postgresId) return;
+
+    const table = getImportTargetTable();
+    const text = importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText;
+
+    if (!table) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoTable') });
+      return;
+    }
+    if (!text.trim()) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoData') });
+      return;
+    }
+
+    let parsed: { columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, string>[] };
+    try {
+      parsed = importDataState.mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
+    } catch (error) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importParseError', { error: getErrorMessage(error) }) });
+      return;
+    }
+
+    if (parsed.columns.length === 0 || parsed.rows.length === 0) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoData') });
+      return;
+    }
+
+    const batchSize = parsed.rows.length > 50 ? 100 : parsed.rows.length;
+    const startTime = performance.now();
+    let importedRows = 0;
+    let lastResult: ShellDeskPostgresQueryResult = { columns: [], rows: [], rowCount: 0 };
+    const sqlStatements: string[] = [];
+
+    setMessage(null);
+    setError('');
+    setImportDataState((current) => ({
+      ...current,
+      executing: true,
+      progress: { current: 0, total: parsed.rows.length },
+      preview: parsed.preview,
+      columns: parsed.columns,
+    }));
+
+    try {
+      for (let index = 0; index < parsed.rows.length; index += batchSize) {
+        const batch = parsed.rows.slice(index, index + batchSize);
+        const sqlText = buildPgInsertSql(table.schema, table.name, parsed.columns, batch);
+        sqlStatements.push(sqlText);
+        lastResult = await api.postgresQuery(connectionId, postgresId, sqlText);
+        importedRows += batch.length;
+        setImportDataState((current) => ({ ...current, progress: { current: importedRows, total: parsed.rows.length } }));
+      }
+
+      const queryTime = Math.round(performance.now() - startTime);
+      const result: ShellDeskPostgresQueryResult = { ...lastResult, rowCount: importedRows };
+      addResultTab({
+        id: createId('pg-result'),
+        title: table.name,
+        subtitle: `${database} · ${table.schema}`,
+        sql: sqlStatements.join('\n'),
+        status: 'success',
+        result,
+        queryTime,
+        createdAt: Date.now(),
+        table,
+        columns: createGenericColumns(result.columns, 'postgres'),
+      });
+      addHistoryItem({
+        sql: sqlStatements.join('\n'),
+        status: 'success',
+        rowCount: importedRows,
+        queryTime,
+      });
+      setMessage({ type: 'success', text: tCurrent('auto.remotePostgres.importSuccess', { count: importedRows, table: formatImportTarget(table) }) });
+      setImportDataState((current) => ({ ...current, executing: false, progress: { current: importedRows, total: parsed.rows.length } }));
+    } catch (error) {
+      const text = getErrorMessage(error);
+      const queryTime = Math.round(performance.now() - startTime);
+      addResultTab({
+        id: createId('pg-result'),
+        title: tCurrent('auto.remotePostgres.wq5uqu'),
+        subtitle: database,
+        sql: sqlStatements.join('\n'),
+        status: 'error',
+        error: text,
+        queryTime,
+        createdAt: Date.now(),
+        columns: [],
+      });
+      addHistoryItem({
+        sql: sqlStatements.join('\n'),
+        status: 'error',
+        error: text,
+        queryTime,
+      });
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importFailed', { error: text }) });
+      setImportDataState((current) => ({ ...current, executing: false }));
+    }
+  }, [addHistoryItem, addResultTab, api, connectionId, database, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, postgresId]);
+
+  const updateCreateTableColumn = useCallback(<Key extends keyof PgSchemaColumn,>(
+    columnId: string,
+    key: Key,
+    value: PgSchemaColumn[Key],
+  ) => {
+    setCreateTableState((current) => {
+      const previousColumn = current.columns.find((column) => column.id === columnId);
+      const previousName = previousColumn?.name.trim() ?? '';
+      const nextName = key === 'name' ? String(value).trim() : previousName;
+      const nextColumns = current.columns.map((column) => (column.id === columnId ? { ...column, [key]: value } : column));
+
+      if (key !== 'name' || !previousName || previousName === nextName) {
+        return { ...current, columns: nextColumns };
+      }
+
+      return {
+        ...current,
+        columns: nextColumns,
+        primaryKeyColumns: current.primaryKeyColumns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        indexes: current.indexes.map((index) => ({
+          ...index,
+          columns: index.columns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        })),
+        foreignKeys: current.foreignKeys.map((foreignKey) => ({
+          ...foreignKey,
+          columns: foreignKey.columns.map((column) => (column === previousName ? nextName : column)).filter(Boolean),
+        })),
+      };
+    });
+  }, []);
+
+  const addCreateTableColumn = useCallback(() => {
+    setCreateTableState((current) => ({ ...current, columns: [...current.columns, createPgSchemaColumn()] }));
+  }, []);
+
+  const removeCreateTableColumn = useCallback((columnId: string) => {
+    setCreateTableState((current) => {
+      const removed = current.columns.find((column) => column.id === columnId);
+      const removedName = removed?.name.trim() ?? '';
+
+      return {
+        ...current,
+        columns: current.columns.filter((column) => column.id !== columnId),
+        primaryKeyColumns: current.primaryKeyColumns.filter((column) => column !== removedName),
+        indexes: current.indexes.map((index) => ({ ...index, columns: index.columns.filter((column) => column !== removedName) })),
+        foreignKeys: current.foreignKeys.map((foreignKey) => ({ ...foreignKey, columns: foreignKey.columns.filter((column) => column !== removedName) })),
+      };
+    });
+  }, []);
+
+  const toggleCreateTablePrimaryKey = useCallback((columnName: string, checked: boolean) => {
+    if (!columnName) return;
+
+    setCreateTableState((current) => ({
+      ...current,
+      primaryKeyColumns: checked
+        ? Array.from(new Set([...current.primaryKeyColumns, columnName]))
+        : current.primaryKeyColumns.filter((column) => column !== columnName),
+    }));
+  }, []);
+
+  const updateSchemaIndex = useCallback((indexId: string, patch: Partial<PgSchemaIndex>) => {
+    setCreateTableState((current) => ({
+      ...current,
+      indexes: current.indexes.map((index) => (index.id === indexId ? { ...index, ...patch } : index)),
+    }));
+  }, []);
+
+  const updateSchemaForeignKey = useCallback((foreignKeyId: string, patch: Partial<PgSchemaForeignKey>) => {
+    setCreateTableState((current) => ({
+      ...current,
+      foreignKeys: current.foreignKeys.map((foreignKey) => (foreignKey.id === foreignKeyId ? { ...foreignKey, ...patch } : foreignKey)),
+    }));
+  }, []);
+
+  const handleExecuteCreateTable = useCallback(async () => {
+    if (!api || !postgresId) return;
+
+    if (!createTableState.tableName.trim()) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.pleaseFillTableName') });
+      return;
+    }
+    if (createTableState.columns.length === 0) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.pleaseAddColumns') });
+      return;
+    }
+    if (createTableState.columns.some((column) => !column.name.trim())) {
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.invalidColumnName') });
+      return;
+    }
+    const validationError = validateCreateTableState(createTableState);
+    if (validationError) {
+      setMessage({ type: 'error', text: validationError });
+      return;
+    }
+
+    const statements = generateCreateTableStatements(createTableState);
+    const sqlText = statements.join('\n');
+    const startTime = performance.now();
+    setCreateTableState((current) => ({ ...current, executing: true }));
+    setMessage(null);
+    setError('');
+
+    try {
+      let result: ShellDeskPostgresQueryResult = { columns: [], rows: [], rowCount: 0 };
+      for (const statement of statements) {
+        result = await api.postgresQuery(connectionId, postgresId, statement);
+      }
+      const queryTime = Math.round(performance.now() - startTime);
+      addResultTab({
+        id: createId('pg-result'),
+        title: createTableState.tableName.trim(),
+        subtitle: createTableState.schema || database,
+        sql: sqlText,
+        status: 'success',
+        result,
+        queryTime,
+        createdAt: Date.now(),
+        columns: createGenericColumns(result.columns, 'postgres'),
+      });
+      addHistoryItem({
+        sql: sqlText,
+        status: 'success',
+        rowCount: result.rowCount ?? result.rows.length,
+        queryTime,
+      });
+      const schema = createTableState.schema || 'public';
+      setExpandedSchemas((current) => new Set(current).add(schema));
+      const tables = await api.postgresTables(connectionId, postgresId, schema);
+      setTablesBySchema((current) => ({ ...current, [schema]: tables }));
+      setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+      setMessage({ type: 'success', text: tCurrent('auto.remotePostgres.tableCreated', { table: createTableState.tableName.trim() }) });
+    } catch (error) {
+      const text = getErrorMessage(error);
+      const queryTime = Math.round(performance.now() - startTime);
+      addResultTab({
+        id: createId('pg-result'),
+        title: tCurrent('auto.remotePostgres.createTable'),
+        subtitle: createTableState.schema || database,
+        sql: sqlText,
+        status: 'error',
+        error: text,
+        queryTime,
+        createdAt: Date.now(),
+        columns: [],
+      });
+      addHistoryItem({
+        sql: sqlText,
+        status: 'error',
+        error: text,
+        queryTime,
+      });
+      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.createTableFailed', { error: text }) });
+      setCreateTableState((current) => ({ ...current, executing: false }));
+    }
+  }, [addHistoryItem, addResultTab, api, connectionId, createTableState, database, postgresId]);
+
   const editorExtensions = useMemo<Extension[]>(() => [
     keymap.of([
       indentWithTab,
@@ -1012,6 +1818,56 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!createTableState.open) return undefined;
+
+    return () => {
+      const previousFocus = createTablePreviousFocusRef.current;
+      createTablePreviousFocusRef.current = null;
+      if (previousFocus instanceof HTMLElement) {
+        previousFocus.focus();
+      }
+    };
+  }, [createTableState.open]);
+
+  useEffect(() => {
+    if (!createTableState.open || typeof document === 'undefined') return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || createTableState.executing) return;
+      event.preventDefault();
+      closeCreateTableDialog();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeCreateTableDialog, createTableState.executing, createTableState.open]);
+
+  useEffect(() => {
+    if (!importDataState.open) return undefined;
+
+    return () => {
+      const previousFocus = importPreviousFocusRef.current;
+      importPreviousFocusRef.current = null;
+      if (previousFocus instanceof HTMLElement) {
+        previousFocus.focus();
+      }
+    };
+  }, [importDataState.open]);
+
+  useEffect(() => {
+    if (!importDataState.open || typeof document === 'undefined') return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || importDataState.executing) return;
+      event.preventDefault();
+      closeImportDialog();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeImportDialog, importDataState.executing, importDataState.open]);
+
   useContextMenu(contextMenu, setContextMenu);
 
   if (!api) {
@@ -1059,9 +1915,17 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
             <strong>{tCurrent('auto.remotePostgres.1r1l7i2')}</strong>
             <span>{database} · {databases.length} DB</span>
           </div>
-          <button type="button" onClick={() => void loadSchemas(postgresId)} disabled={schemaLoading}>
-            {schemaLoading ? '...' : tCurrent('auto.remotePostgres.12qo56a')}
-          </button>
+          <div className="postgres-editor-actions">
+            <button type="button" onClick={() => openCreateTableDialog()} disabled={!isConnected} title={tCurrent('auto.remotePostgres.createTable')}>
+              +
+            </button>
+            <button type="button" onClick={openImportDialog} disabled={!isConnected} title={tCurrent('auto.remotePostgres.importData')}>
+              ⇧
+            </button>
+            <button type="button" onClick={() => void loadSchemas(postgresId)} disabled={schemaLoading}>
+              {schemaLoading ? '...' : tCurrent('auto.remotePostgres.12qo56a')}
+            </button>
+          </div>
         </div>
         {databases.length > 0 ? (
           <div className="postgres-database-list" aria-label="PostgreSQL 数据库">
@@ -1272,6 +2136,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                   </span>
                 </div>
                 <div className="database-export-actions" aria-label={tCurrent('db.query.exportAria')}>
+                  <button type="button" className="database-export-button" onClick={openImportDialog}>{tCurrent('auto.remotePostgres.importData')}</button>
                   <button type="button" className="database-export-button" onClick={() => void exportQueryResult('json')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportJson')}</button>
                   <button type="button" className="database-export-button" onClick={() => void exportQueryResult('csv')} disabled={activeResult.rows.length === 0}>{tCurrent('db.query.exportCsv')}</button>
                 </div>
@@ -1374,6 +2239,457 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
           ) : null}
         </section>
       </main>
+
+      {createTableState.open ? createPortal(
+        <div className="schema-dialog-overlay" role="presentation">
+          <div className="schema-dialog" role="dialog" aria-modal="true" aria-labelledby="postgres-create-table-title">
+            <div className="schema-dialog-header">
+              <h3 id="postgres-create-table-title">
+                {tCurrent('auto.remotePostgres.createTableTitle', { schema: createTableState.schema || 'public' })}
+              </h3>
+              <button
+                type="button"
+                onClick={closeCreateTableDialog}
+                disabled={createTableState.executing}
+                aria-label={tCurrent('auto.remotePostgres.cancel')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="schema-form-grid">
+              <label className="schema-field">
+                <span>{tCurrent('auto.remotePostgres.schema')}</span>
+                <select
+                  value={createTableState.schema}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, schema: event.target.value }))}
+                >
+                  {(schemas.length > 0 ? schemas : ['public']).map((schema) => (
+                    <option key={schema} value={schema}>{schema}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="schema-field">
+                <span>{tCurrent('auto.remotePostgres.tableName')}</span>
+                <input
+                  type="text"
+                  value={createTableState.tableName}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, tableName: event.target.value }))}
+                  placeholder={tCurrent('auto.remotePostgres.tableName')}
+                  autoFocus
+                />
+              </label>
+              <label className="schema-field schema-field-wide">
+                <span>{tCurrent('auto.remotePostgres.comment')}</span>
+                <input
+                  type="text"
+                  value={createTableState.comment}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, comment: event.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="schema-section">
+              <div className="schema-section-header">
+                <strong>{tCurrent('auto.remotePostgres.columnName')}</strong>
+                <button type="button" onClick={addCreateTableColumn}>{tCurrent('auto.remotePostgres.addColumn')}</button>
+              </div>
+              <div className="schema-columns-scroll">
+                <table className="schema-columns-table">
+                  <thead>
+                    <tr>
+                      <th>{tCurrent('auto.remotePostgres.primaryKey')}</th>
+                      <th>{tCurrent('auto.remotePostgres.columnName')}</th>
+                      <th>{tCurrent('auto.remotePostgres.columnType')}</th>
+                      <th>{tCurrent('auto.remotePostgres.columnLength')}</th>
+                      <th>{tCurrent('auto.remotePostgres.nullable')}</th>
+                      <th>{tCurrent('auto.remotePostgres.defaultValue')}</th>
+                      <th>{tCurrent('auto.remotePostgres.comment')}</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {createTableState.columns.map((column) => {
+                      const columnName = column.name.trim();
+
+                      return (
+                        <tr key={column.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={columnName ? createTableState.primaryKeyColumns.includes(columnName) : false}
+                              onChange={(event) => toggleCreateTablePrimaryKey(columnName, event.target.checked)}
+                              disabled={!columnName}
+                              title={tCurrent('auto.remotePostgres.primaryKey')}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.name}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'name', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <select value={column.type} onChange={(event) => updateCreateTableColumn(column.id, 'type', event.target.value)}>
+                              {postgresColumnTypes.map((type) => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.length}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'length', event.target.value)}
+                              disabled={postgresTypesWithoutLength.has(column.type.toUpperCase())}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={column.nullable}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'nullable', event.target.checked)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.defaultValue}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'defaultValue', event.target.value)}
+                              placeholder={column.type === 'INTEGER' ? 'SERIAL' : ''}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={column.comment}
+                              onChange={(event) => updateCreateTableColumn(column.id, 'comment', event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <button type="button" onClick={() => removeCreateTableColumn(column.id)}>
+                              {tCurrent('auto.remotePostgres.removeColumn')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="schema-collapse-toggle"
+              onClick={() => setCreateTableState((current) => ({ ...current, showAdvanced: !current.showAdvanced }))}
+            >
+              {createTableState.showAdvanced ? '▾' : '▸'} {tCurrent('auto.remotePostgres.index')} / {tCurrent('auto.remotePostgres.foreignKey')}
+            </button>
+
+            {createTableState.showAdvanced ? (
+              <div className="schema-relations-grid">
+                <section className="schema-subsection">
+                  <div className="schema-section-header">
+                    <strong>{tCurrent('auto.remotePostgres.index')}</strong>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTableState((current) => ({ ...current, indexes: [...current.indexes, createPgSchemaIndex()] }))}
+                      title={tCurrent('auto.remotePostgres.addIndex')}
+                    >
+                      {tCurrent('auto.remotePostgres.addIndex')}
+                    </button>
+                  </div>
+                  {createTableState.indexes.map((index) => (
+                    <div key={index.id} className="schema-inline-editor">
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.indexType')}</span>
+                        <select value={index.type} onChange={(event) => updateSchemaIndex(index.id, { type: event.target.value as PgSchemaIndex['type'] })}>
+                          <option value="INDEX">{tCurrent('auto.remotePostgres.index')}</option>
+                          <option value="UNIQUE">{tCurrent('auto.remotePostgres.unique')}</option>
+                        </select>
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.columnName')}</span>
+                        <select
+                          multiple
+                          value={index.columns}
+                          onChange={(event) => updateSchemaIndex(index.id, {
+                            columns: Array.from(event.target.selectedOptions, (option) => option.value),
+                          })}
+                        >
+                          {createTableState.columns.filter((column) => column.name.trim()).map((column) => (
+                            <option key={column.id} value={column.name.trim()}>{column.name.trim()}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.indexName')}</span>
+                        <input type="text" value={index.name} onChange={(event) => updateSchemaIndex(index.id, { name: event.target.value })} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCreateTableState((current) => ({ ...current, indexes: current.indexes.filter((item) => item.id !== index.id) }))}
+                      >
+                        {tCurrent('auto.remotePostgres.removeIndex')}
+                      </button>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="schema-subsection">
+                  <div className="schema-section-header">
+                    <strong>{tCurrent('auto.remotePostgres.foreignKey')}</strong>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTableState((current) => ({ ...current, foreignKeys: [...current.foreignKeys, createPgSchemaForeignKey()] }))}
+                      title={tCurrent('auto.remotePostgres.addForeignKey')}
+                    >
+                      {tCurrent('auto.remotePostgres.addForeignKey')}
+                    </button>
+                  </div>
+                  {createTableState.foreignKeys.map((foreignKey) => (
+                    <div key={foreignKey.id} className="schema-inline-editor">
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.columnName')}</span>
+                        <select
+                          multiple
+                          value={foreignKey.columns}
+                          onChange={(event) => updateSchemaForeignKey(foreignKey.id, {
+                            columns: Array.from(event.target.selectedOptions, (option) => option.value),
+                          })}
+                        >
+                          {createTableState.columns.filter((column) => column.name.trim()).map((column) => (
+                            <option key={column.id} value={column.name.trim()}>{column.name.trim()}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.referenceSchema')}</span>
+                        <select value={foreignKey.refSchema} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { refSchema: event.target.value })}>
+                          {(schemas.length > 0 ? schemas : ['public']).map((schema) => (
+                            <option key={schema} value={schema}>{schema}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.referenceTable')}</span>
+                        <input type="text" value={foreignKey.refTable} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { refTable: event.target.value })} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => updateSchemaForeignKey(foreignKey.id, {
+                          refSchema: createTableState.schema || 'public',
+                          refTable: createTableState.tableName.trim(),
+                        })}
+                        disabled={!createTableState.tableName.trim()}
+                      >
+                        {tCurrent('auto.remotePostgres.selfReference')}
+                      </button>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.referenceColumn')}</span>
+                        <input
+                          type="text"
+                          value={foreignKey.refColumns.join(', ')}
+                          onChange={(event) => updateSchemaForeignKey(foreignKey.id, {
+                            refColumns: event.target.value.split(',').map((column) => column.trim()).filter(Boolean),
+                          })}
+                        />
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.onDelete')}</span>
+                        <select value={foreignKey.onDelete} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { onDelete: event.target.value })}>
+                          {postgresForeignKeyActions.map((action) => (
+                            <option key={action} value={action}>{translateForeignKeyAction(action)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="schema-field">
+                        <span>{tCurrent('auto.remotePostgres.onUpdate')}</span>
+                        <select value={foreignKey.onUpdate} onChange={(event) => updateSchemaForeignKey(foreignKey.id, { onUpdate: event.target.value })}>
+                          {postgresForeignKeyActions.map((action) => (
+                            <option key={action} value={action}>{translateForeignKeyAction(action)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCreateTableState((current) => ({ ...current, foreignKeys: current.foreignKeys.filter((item) => item.id !== foreignKey.id) }))}
+                      >
+                        {tCurrent('auto.remotePostgres.removeForeignKey')}
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              </div>
+            ) : null}
+
+            <label className="schema-field schema-preview-field">
+              <span>{tCurrent('auto.remotePostgres.sqlPreview')}</span>
+              <textarea className="schema-preview" value={createTableSqlPreview} readOnly rows={8} />
+            </label>
+
+            <div className="schema-actions">
+              <button type="button" onClick={closeCreateTableDialog} disabled={createTableState.executing}>
+                {tCurrent('auto.remotePostgres.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void handleExecuteCreateTable()}
+                disabled={createTableState.executing}
+              >
+                {createTableState.executing ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.executeCreate')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
+      {importDataState.open ? createPortal(
+        <div className="schema-dialog-overlay" role="presentation">
+          <div className="schema-dialog mysql-import-dialog" role="dialog" aria-modal="true" aria-labelledby="postgres-import-title">
+            <div className="schema-dialog-header">
+              <h3 id="postgres-import-title">
+                {tCurrent('auto.remotePostgres.importDialogTitle', { table: formatImportTarget(getImportTargetTable()) || '-' })}
+              </h3>
+              <button
+                type="button"
+                onClick={closeImportDialog}
+                disabled={importDataState.executing}
+                aria-label={tCurrent('auto.remotePostgres.cancel')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="schema-form-grid">
+              <label className="schema-field schema-field-wide">
+                <span>{tCurrent('auto.remotePostgres.importTargetTable')}</span>
+                <select
+                  value={importDataState.targetTable}
+                  onChange={(event) => setImportDataState((current) => ({ ...current, targetTable: event.target.value, progress: null }))}
+                  disabled={importDataState.executing}
+                >
+                  <option value="">{tCurrent('auto.remotePostgres.importNoTable')}</option>
+                  <option value={importEditorTarget}>{tCurrent('auto.remotePostgres.importFromSqlEditor')}</option>
+                  {importTargetTables.map((table) => {
+                    const value = serializeImportTarget(table);
+                    const label = formatImportTarget(table);
+                    return <option key={value} value={value}>{label}</option>;
+                  })}
+                </select>
+              </label>
+            </div>
+
+            <div className="mysql-import-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={importDataState.mode === 'csv'}
+                className={importDataState.mode === 'csv' ? 'active' : ''}
+                onClick={() => updateImportMode('csv')}
+                disabled={importDataState.executing}
+              >
+                {tCurrent('auto.remotePostgres.importCsvTab')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={importDataState.mode === 'json'}
+                className={importDataState.mode === 'json' ? 'active' : ''}
+                onClick={() => updateImportMode('json')}
+                disabled={importDataState.executing}
+              >
+                {tCurrent('auto.remotePostgres.importJsonTab')}
+              </button>
+            </div>
+
+            <div className="schema-import-file-row">
+              <input
+                type="file"
+                ref={importFileInputRef}
+                style={{ display: 'none' }}
+                accept=".csv,.json"
+                onChange={handleImportFileSelected}
+              />
+              <button type="button" onClick={() => importFileInputRef.current?.click()} disabled={importDataState.executing}>
+                {tCurrent('auto.remotePostgres.importSelectFile')}
+              </button>
+            </div>
+
+            <label className="schema-field schema-preview-field">
+              <span>
+                {importDataState.mode === 'csv'
+                  ? tCurrent('auto.remotePostgres.importPasteCsv')
+                  : tCurrent('auto.remotePostgres.importPasteJson')}
+              </span>
+              <textarea
+                value={importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText}
+                onChange={(event) => updateImportText(importDataState.mode, event.target.value)}
+                disabled={importDataState.executing}
+                rows={8}
+                autoFocus
+              />
+            </label>
+
+            <div className="schema-section">
+              <div className="schema-section-header">
+                <strong>{tCurrent('auto.remotePostgres.importPreview')}</strong>
+                {importDataState.progress ? (
+                  <span className="mysql-import-progress">
+                    {tCurrent('auto.remotePostgres.importProgress', {
+                      current: importDataState.progress.current,
+                      total: importDataState.progress.total,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mysql-import-preview">
+                {importDataState.columns.length > 0 && importDataState.preview.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        {importDataState.columns.map((column) => (
+                          <th key={column}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importDataState.preview.map((row, rowIndex) => (
+                        <tr key={`${rowIndex}-${importDataState.columns.join('|')}`}>
+                          {importDataState.columns.map((column) => (
+                            <td key={column}>{row[column] ?? ''}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="mysql-import-empty">{tCurrent('auto.remotePostgres.importNoData')}</div>
+                )}
+              </div>
+            </div>
+
+            <div className="schema-actions">
+              <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
+                {tCurrent('auto.remotePostgres.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void handleExecuteImport()}
+                disabled={importDataState.executing}
+              >
+                {importDataState.executing ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.importExecute')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
 
       {pendingEdit ? createPortal(
         <div className="postgres-modal-backdrop" role="presentation">

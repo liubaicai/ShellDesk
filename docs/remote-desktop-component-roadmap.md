@@ -30,7 +30,7 @@
 | 04 | `notepad` | 记事本 | [记事本组件重设计](./remote-desktop-components/04-notepad-redesign.md) | 远程文本编辑、多标签、语法高亮、冲突提示、自定义模态 |
 | 05 | `vnc` | VNC Viewer | [VNC Viewer 组件重设计](./remote-desktop-components/05-vnc-viewer-redesign.md) | VNC 探测、SSH 隧道、noVNC、缩放和输入控制 |
 | 06 | `monitor` | 系统监视器 | [系统监视器组件重设计](./remote-desktop-components/06-system-monitor-redesign.md) | 系统指标、采样、进程管理器跳转 |
-| 07 | `mysql` | MySQL | [MySQL 管理器组件重设计](./remote-desktop-components/07-mysql-redesign.md) | SSH 隧道连接、schema 浏览、SQL 查询、结果查看和编辑 |
+| 07 | `mysql` | MySQL | [MySQL 管理器组件重设计](./remote-desktop-components/07-mysql-redesign.md) | SSH 隧道连接、schema 浏览、SQL 查询、结果查看、编辑和 CSV/JSON 导入导出 |
 | 08 | `redis` | Redis | [Redis 管理器组件重设计](./remote-desktop-components/08-redis-redesign.md) | SCAN 浏览、类型化值查看、命令执行和风险操作 |
 | 09 | `sqlite` | SQLite | [SQLite 管理器组件重设计](./remote-desktop-components/09-sqlite-redesign.md) | 远程 SQLite 文件入口、对象树、查询、表预览和单元格编辑 |
 | 10 | `procmanager` | 进程管理器 | [进程管理器组件重设计](./remote-desktop-components/10-process-manager-redesign.md) | 进程搜索、资源排序、详情、终止操作、端口联动 |
@@ -43,7 +43,7 @@
 | 17 | `disk-analyzer` | 磁盘空间分析器 | [磁盘空间分析器](./remote-desktop-components/17-disk-space-analyzer.md) | 目录体积扫描、大文件定位、文件管理器联动 |
 | 18 | `package-manager` | 包管理器中心 | [包管理器中心](./remote-desktop-components/18-package-manager-center.md) | apt/yum/dnf/pacman/zypper/apk/winget/choco 检测、搜索和操作命令 |
 | 19 | `scheduled-tasks` | 计划任务管理器 | [计划任务管理器](./remote-desktop-components/19-scheduled-task-manager.md) | crontab、systemd timer、Windows Task Scheduler |
-| 20 | `postgres` | PostgreSQL 管理器 | [PostgreSQL 管理器](./remote-desktop-components/20-postgresql-manager.md) | PostgreSQL 连接、schema/表浏览、SQL 查询 |
+| 20 | `postgres` | PostgreSQL 管理器 | [PostgreSQL 管理器](./remote-desktop-components/20-postgresql-manager.md) | PostgreSQL 连接、schema/表浏览、SQL 查询、CSV/JSON 导入 |
 | 21 | `firewall-manager` | 防火墙管理器 | [防火墙管理器](./remote-desktop-components/21-firewall-manager.md) | ufw、firewalld、Windows Firewall 状态、规则、新增/删除确认 |
 | 22 | `security-audit` | 安全巡检面板 | [安全巡检面板](./remote-desktop-components/22-security-audit-panel.md) | SSH 配置、高权限账号、失败登录、端口、敏感权限和报告复制 |
 | 23 | 设置页 `loginsessions` | 登录会话设置面板 | [登录会话查看器](./remote-desktop-components/23-login-session-viewer.md) | 已迁入系统设置页，提供在线用户、成功登录、失败登录、来源聚合和详情复制 |
@@ -56,7 +56,7 @@
 | 30 | `nginx-manager` | Nginx 管理器 | [Nginx 管理器](./remote-desktop-components/30-nginx-apache-caddy-manager.md) | Nginx 站点扫描、模板、可视化编辑、配置测试和 reload |
 | 31 | `s3-browser` | MinIO / S3 浏览器 | [MinIO / S3 浏览器](./remote-desktop-components/31-minio-s3-browser.md) | 远程 `mc` / `aws` CLI 浏览 bucket、prefix、对象，删除和下载 |
 | 32 | `disk-manager` | 磁盘管理器 | [磁盘管理器](./remote-desktop-components/32-disk-manager.md) | 物理磁盘、分区、挂载/卸载、格式化、分区维护和 Linux LVM |
-| 33 | `clickhouse` | ClickHouse 管理器 | [ClickHouse 管理器](./remote-desktop-components/33-clickhouse-manager.md) | ClickHouse HTTP 接口、库表列浏览、SQL 查询和只读表预览 |
+| 33 | `clickhouse` | ClickHouse 管理器 | [ClickHouse 管理器](./remote-desktop-components/33-clickhouse-manager.md) | ClickHouse HTTP 接口、库表列浏览、SQL 查询、CSV/JSON 导入、只读表预览和可视化表结构编辑 |
 | 34 | `code-editor` | 代码编辑器 | [代码编辑器](./remote-desktop-components/34-code-editor.md) | 远程项目树、多标签编辑、内嵌终端、远程变更提示和 SD-Agent |
 | 35 | `cert-manager` | 证书管理器 | [证书管理器](./remote-desktop-components/35-certificate-manager.md) | TLS 证书扫描、Certbot 续期、续期任务、受信任根证书维护 |
 | 36 | `caddy-manager` | Caddy 管理器 | [Caddy 管理器](./remote-desktop-components/36-caddy-manager.md) | Caddyfile 站点块、模板、配置测试、保存和 reload |
