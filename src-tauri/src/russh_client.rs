@@ -540,10 +540,10 @@ async fn open_agent_client(
 ) -> Result<AgentClient<Box<dyn AgentStream + Send + Unpin + 'static>>, String> {
     #[cfg(unix)]
     {
-        return AgentClient::connect_env()
+        AgentClient::connect_env()
             .await
             .map(AgentClient::dynamic)
-            .map_err(|error| format!("连接 SSH agent 失败：{error}"));
+            .map_err(|error| format!("连接 SSH agent 失败：{error}"))
     }
 
     #[cfg(windows)]

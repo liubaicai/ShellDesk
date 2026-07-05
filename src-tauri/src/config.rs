@@ -342,7 +342,7 @@ fn write_text_file_private(path: &Path, content: &str) -> Result<(), String> {
             .open(path)
             .map_err(error_string)?;
         file.write_all(content.as_bytes()).map_err(error_string)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(unix))]
     {

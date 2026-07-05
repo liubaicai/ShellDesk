@@ -80,7 +80,7 @@ fn write_log_entries(state: &AppState, entries: &[Value]) -> Result<(), String> 
             .open(path)
             .map_err(error_string)?;
         file.write_all(content.as_bytes()).map_err(error_string)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(unix))]
     {

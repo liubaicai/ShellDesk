@@ -5,7 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{error_string, prevent_process_window, string_arg};
+#[cfg(windows)]
+use crate::prevent_process_window;
+use crate::{error_string, string_arg};
 
 const MAX_REMOTE_TEXT_FILE_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_REMOTE_TEXT_WRITE_BYTES: usize = 10 * 1024 * 1024;
