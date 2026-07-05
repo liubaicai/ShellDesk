@@ -2,6 +2,8 @@
 
 > **Scope:** 只实现计划中的代码时才修改应用源码。本文件是实现计划，不是本次改动的实现。
 >
+> **Historical note, 2026-07-05:** 本文件保留为原始实现方案。当前代码已经模块化到 `src-tauri/src/database/`，隧道和数据库会话逻辑位于 `src-tauri/src/database/tunnel.rs`，SSH 转发位于 `src-tauri/src/ssh_tunnel.rs`。通用 SSH 命令、终端、主机密钥和密钥生成路径已迁移到 `docs/ssh-architecture.md` 描述的纯 Rust russh 栈；旧文中的 `database.rs`、`database_tunnel.rs`、系统 OpenSSH 或 fallback 表述不再代表当前架构。
+>
 > **Goal:** 为 ShellDesk 添加 SSH 隧道模式，通过 `russh` 在本地建立 TCP 代理隧道，使用原生数据库驱动连接远程数据库，保留现有远程 CLI 调用方式作为默认/回退路径。
 
 ShellDesk 当前数据库能力集中在 `src-tauri/src/database.rs`，IPC 通过 `src-tauri/src/ipc/database_channels.rs` 暴露为 `connection:mysql-*`、`connection:postgres-*`、`connection:redis-*`、`connection:clickhouse-*` 等通道。前端统一通过 `src/tauriBridge.ts` 的 `window.guiSSH.connections.*` 调用，类型定义在 `src/vite-env.d.ts`。

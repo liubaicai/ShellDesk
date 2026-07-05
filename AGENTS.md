@@ -30,7 +30,7 @@ pnpm pack:linux-arm64 # Linux arm64
 ## AI 开发测试变量
 
 - 如果仓库根目录存在 `.env` 文件，AI Agent 在需要连接测试服务器进行开发、调试或验证时，应先读取其中的测试 SSH 变量，用于自动填充测试服务器连接信息。
-- 推荐变量名：`SHELLDESK_TEST_SSH_HOST`、`SHELLDESK_TEST_SSH_PORT`、`SHELLDESK_TEST_SSH_USERNAME`、`SHELLDESK_TEST_SSH_PASSWORD`。
+- 推荐变量名：`SHELLDESK_TEST_SSH_HOST`、`SHELLDESK_TEST_SSH_PORT`、`SHELLDESK_TEST_SSH_USERNAME`、`SHELLDESK_TEST_SSH_PASSWORD`、`SHELLDESK_TEST_SSH_KEY_PATH`。
 - `.env` 只用于本地测试凭据，不要提交到仓库；提交的样例请使用 `.env.example`，并只放占位值。
 - 不要在日志、终端输出、提交信息或回复中明文展示 `SHELLDESK_TEST_SSH_PASSWORD`。如果 `.env` 不存在或变量为空，应跳过自动连接并说明缺少测试凭据，不要臆造服务器信息。
 
@@ -45,13 +45,20 @@ src-tauri/
     modules.rs         # Rust 后端模块声明与共享 re-export
     bootstrap.rs       # Tauri builder、插件、状态与 command 注册
     ipc.rs             # window.guiSSH 使用的频道分发器
+    state.rs           # 共享应用状态、活跃会话和 UI prompt 通道
     connection.rs      # SSH/本地连接生命周期和连接信息
-    ssh_transport.rs   # SSH 命令、转发、代理 helper、终端传输
+    connection/host_keys.rs # 主机密钥扫描、分类、信任与 known_hosts 同步
+    russh_client.rs    # 纯 Rust SSH 客户端、认证、host key 校验、exec、跳板/代理传输
+    ssh_transport.rs   # runCommand 高层包装、提权、重试与 host key 刷新
+    ssh_tunnel.rs      # russh direct-tcpip 隧道（数据库、浏览器、VNC、HTTP）
+    terminal.rs        # 远程 russh PTY 终端和本地 shell 终端生命周期
     remote_fs.rs       # SFTP、文件读写/传输、压缩解压、权限操作
-    database.rs        # MySQL/PostgreSQL/ClickHouse/MongoDB/Redis/SQLite 管理
+    database/          # MySQL/PostgreSQL/ClickHouse/MongoDB/Redis/SQLite 管理
     browser_proxy.rs   # 远程浏览器 URL 解析与本地反向代理
+    http_tunnel.rs     # 基于 SSH 转发的远程 HTTP 请求隧道
     vnc.rs             # VNC 探测、SSH 隧道、noVNC/WebSocket 代理
     vault.rs           # 本地 vault/config/bookmark/settings 存取与校验
+    vault_storage.rs   # config/secrets 拆分存储和平台密钥保护
     vault/normalize.rs # 设置、主机、密钥、代理、known_hosts 规范化
     sync_backend.rs    # WebDAV 同步
     updater.rs         # GitHub release 检查与 Tauri updater 安装
@@ -115,6 +122,13 @@ src/
 - **渲染进程**：通过 `window.guiSSH.connections.xxx()`、`window.guiSSH.vault.xxx()` 等调用，不要直接使用 Node/Tauri API
 - **类型定义**：`src/vite-env.d.ts` 维护 `ShellDeskApi`、`ShellDeskConnectionControls`、数据库/VNC/AI/vault 等全局类型
 - 新增 IPC 需同步修改：`src-tauri/src/ipc.rs` 或相关 Rust handler + `src/tauriBridge.ts` bridge + `src/vite-env.d.ts` 类型；如涉及远程桌面应用，再同步组件调用和错误文案
+
+### SSH 后端架构
+- 当前 SSH 协议路径统一使用 Rust `russh` / `russh-keys`，详见 `docs/ssh-architecture.md`。
+- 不要新增系统 OpenSSH、`sshpass`、`SSHPASS`、askpass、`ssh-keyscan`、`ssh-keygen`、`portable-pty` 或 `ssh -L` fallback。
+- 新增远程命令能力优先复用 `russh_client.rs` 与 `ssh_transport.rs`；新增隧道能力优先复用 `ssh_tunnel.rs`；新增终端能力在 `terminal.rs` 中通过 russh PTY 实现。
+- 主机密钥扫描/信任放在 `connection/host_keys.rs`，密钥导入/生成放在 `vault/ssh_keys.rs`，不要 shell out 到系统工具。
+- 用户配置的 ProxyCommand 或 proxy helper 可以启动对应 helper 进程，但不能作为系统 SSH fallback。
 
 ### 远程桌面窗口系统
 - `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/code-editor/browser/vnc/log-viewer/monitor/mysql/clickhouse/redis/service-manager/container-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/cert-manager/nginx-manager/caddy-manager/apache-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/frp-manager/frps-manager/security-audit/api-debugger/procmanager/ai-chat/settings/sqlite

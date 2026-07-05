@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, and xterm.js.<br/>
+  ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, russh, and xterm.js.<br/>
   It brings SSH and local host management, key management, terminals, SFTP, remote editing, code editing, AI assistance, browser and VNC access, databases, WebDAV sync, and operations tools into one desktop-style workspace.
 </p>
 
@@ -45,6 +45,7 @@
   - [Databases and System Tools](#databases-and-system-tools)
   - [App Settings, Logs, Backup, and Language](#app-settings-logs-backup-and-language)
 - [Data and Security](#data-and-security)
+- [SSH Architecture](#ssh-architecture)
 - [Compatibility Notes](#compatibility-notes)
 - [Quick Start](#quick-start)
 - [Scripts](#scripts)
@@ -73,15 +74,15 @@ ShellDesk is useful for:
 ### Hosts and Credentials
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
-- Supports password login, private-key login, proxy/jump-host settings, local mode, and credential prompts before connecting
+- Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint
-- Settings control whether SSH passwords and key passphrases are saved by default, and known-hosts trust decisions are handled by the Rust backend
+- Settings control whether SSH passwords and key passphrases are saved by default, and known-hosts trust decisions are handled by the Rust backend through russh
 
 ### Connection Desktop
 
 - Each SSH or local connection opens in an independent connection window with the current host and local SOCKS port in the title bar when available
-- Built-in SOCKS proxy, Tauri-backed browser proxy, and noVNC viewer cover remote web and desktop access
+- Built-in SOCKS proxy, Tauri-backed browser proxy, and noVNC viewer cover remote web and desktop access through Rust-side SSH tunnels
 - Remote desktop windows support drag, resize, maximize, minimize, z-order management, and a Dock
 - File Manager, Terminal, and Browser are pinned to the Dock; other apps join the Dock dynamically while open
 - Desktop icons support custom layout, folders, sorting modes, and custom wallpaper
@@ -89,6 +90,8 @@ ShellDesk is useful for:
 ### Terminal, Files, and Editing
 
 - xterm.js terminal supports multiple sessions, title synchronization, scrollback, copy/paste, and theme presets
+- Remote terminal sessions use russh PTY channels for shell/exec startup, resize, initial command, working directory, and auto-sudo flows
+- Local terminal sessions stay on a separate local-shell path and do not require an SSH loopback host
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
 - Font selection reads the local system font list instead of bundling font files
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
@@ -138,6 +141,21 @@ ShellDesk stores local data in the Tauri app data directory. The Settings page s
 - Exported config JSON may include hosts, passwords, private keys, and key passphrases, so it should only be stored in trusted locations
 - The React renderer accesses controlled backend APIs through the `window.guiSSH` Tauri bridge
 - Native dialog limitations around `prompt`, `confirm`, and `alert` are handled with custom modals
+- SSH protocol operations are implemented in Rust with `russh`; ShellDesk does not require `openssh-client`, `sshpass`, `ssh-keyscan`, `ssh-keygen`, or `portable-pty` on the client machine
+
+---
+
+## SSH Architecture
+
+ShellDesk's remote SSH paths are pure Rust:
+
+- `russh_client.rs` owns SSH connection setup, host-key verification, password/private-key/agent/keyboard-interactive authentication, jump-host/proxy transports, and command exec channels
+- `terminal.rs` owns remote terminal PTY sessions through russh `request_pty`, shell/exec startup, terminal input, and resize events
+- `ssh_tunnel.rs` owns `direct-tcpip` tunnels used by database tools, browser proxy, VNC, and HTTP tunnel flows, without an OpenSSH fallback
+- `connection/host_keys.rs` scans and classifies host keys through russh instead of `ssh-keyscan`
+- `vault/ssh_keys.rs` imports and generates key pairs without calling `ssh-keygen`
+
+See [SSH Architecture](docs/ssh-architecture.md) for the backend module map, security boundaries, and maintenance rules.
 
 ---
 
@@ -149,7 +167,7 @@ See [Compatibility Matrix](docs/compatibility.md) for tested systems and per-env
 
 ## Quick Start
 
-Requirements: Node.js 20+, pnpm 11+ (the repo pins `pnpm@11.8.0`), Rust stable, and the Tauri 2 platform prerequisites for your OS.
+Requirements: Node.js 20+, pnpm 11+ (the repo pins `pnpm@11.8.0`), Rust stable, and the Tauri 2 platform prerequisites for your OS. ShellDesk does not require a system OpenSSH client for its SSH protocol paths.
 
 ```bash
 pnpm install
@@ -215,15 +233,23 @@ ShellDesk/
 │       ├── main.rs                      # Thin Rust entrypoint
 │       ├── bootstrap.rs                 # Tauri builder, state, updater plugin, and command registration
 │       ├── ipc.rs                       # Channel dispatcher used by window.guiSSH
-│       ├── connection.rs                # SSH/local connection lifecycle
-│       ├── ssh_transport.rs             # SSH commands, forwarding, proxy helpers, and terminal transport
+│       ├── state.rs                     # Shared application state, active sessions, and UI prompt channels
+│       ├── connection.rs                # SSH/local connection lifecycle and profile normalization
+│       ├── connection/host_keys.rs      # Host-key scanning, classification, trust, and known_hosts sync
+│       ├── russh_client.rs              # Pure Rust SSH client, auth, host-key verification, exec, jump/proxy transport
+│       ├── ssh_transport.rs             # High-level runCommand wrapper, privilege handling, retry, host-key refresh
+│       ├── ssh_tunnel.rs                # russh direct-tcpip tunnels for DB, browser, VNC, and HTTP tools
+│       ├── terminal.rs                  # Remote russh PTY terminal and local shell terminal lifecycle
 │       ├── remote_fs.rs                 # SFTP and remote file operations
-│       ├── database.rs                  # MySQL / PostgreSQL / ClickHouse / MongoDB / Redis / SQLite handlers
-│       ├── database_tunnel.rs           # SSH tunnel lifecycle, timeout, and cleanup helpers for database tools
+│       ├── database/mod.rs              # MySQL / PostgreSQL / ClickHouse / MongoDB / Redis / SQLite handlers
+│       ├── database/tunnel.rs           # Native database tunnel sessions, timeout, and cleanup helpers
 │       ├── browser_proxy.rs             # Remote browser URL parsing and local reverse proxy
-│       ├── vnc.rs                       # VNC probing, SSH tunnel, and noVNC WebSocket proxy
+│       ├── http_tunnel.rs               # Remote HTTP request tunnel over SSH forwarding
+│       ├── vnc.rs                       # VNC probing, russh tunnel, and noVNC WebSocket proxy
+│       ├── ui_prompts.rs                # Window-backed keyboard-interactive prompt routing
 │       ├── system.rs                    # System fonts and known_hosts helpers
 │       ├── vault.rs                     # Local vault, settings, bookmarks, and import/export normalization
+│       ├── vault_storage.rs             # Split config/secrets storage and platform secret protection
 │       ├── vault/normalize.rs           # Vault settings, host, key, proxy, and known_hosts normalization
 │       ├── sync_backend.rs              # WebDAV sync backend
 │       └── updater.rs                   # GitHub release checks and Tauri updater install path

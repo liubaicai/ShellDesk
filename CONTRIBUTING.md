@@ -2,7 +2,7 @@
 
 Thanks for taking the time to improve ShellDesk. Issues and pull requests in English or Chinese are welcome.
 
-ShellDesk is a Tauri 2 + Rust + React 19 + TypeScript + Vite desktop SSH client. It includes local vault storage, SSH connection management, SFTP, terminal sessions, remote desktop-style tools, database tools, VNC, sync, auto-update, and packaging workflows.
+ShellDesk is a Tauri 2 + Rust + React 19 + TypeScript + Vite desktop SSH client. It includes local vault storage, pure Rust russh-based SSH connection management, SFTP, terminal sessions, remote desktop-style tools, database tools, VNC, sync, auto-update, and packaging workflows.
 
 ## Before You Start
 
@@ -46,6 +46,7 @@ Do not kill all Node.js processes.
 Important areas:
 
 - `src-tauri/src/`: Rust backend modules for Tauri bootstrap, IPC dispatch, SSH/local connections, vault storage, remote command/SFTP/database/VNC logic, sync, and updater flows.
+- `src-tauri/src/russh_client.rs`, `ssh_transport.rs`, `ssh_tunnel.rs`, and `terminal.rs`: pure Rust SSH client, command, tunnel, and terminal paths. See [SSH Architecture](docs/ssh-architecture.md).
 - `src/tauriBridge.ts`: Tauri bridge exposed to the renderer as `window.guiSSH`.
 - `src/App.tsx`: main app shell, host/key/log/settings pages, vault sync, connection entry points.
 - `src/RemoteDesktopShell.tsx`: remote desktop window system, app registry, Dock, Launchpad, layout persistence.
@@ -75,6 +76,16 @@ When adding or changing IPC APIs, update all relevant layers:
 
 Use the existing `ipc::dispatch` channel pattern unless the local Tauri command pattern intentionally requires a separate command.
 
+## SSH Backend Changes
+
+ShellDesk's SSH protocol paths are implemented with `russh`. Do not add new system OpenSSH, `sshpass`, `ssh-keyscan`, `ssh-keygen`, askpass, or `portable-pty` dependencies.
+
+- Use `src-tauri/src/russh_client.rs` for new SSH auth, exec, jump/proxy, or host-key behavior.
+- Use `src-tauri/src/ssh_transport.rs` for high-level `runCommand` behavior, privilege wrapping, retry, and host-key refresh.
+- Use `src-tauri/src/ssh_tunnel.rs` for new local-forward or `direct-tcpip` tunnel flows.
+- Use `src-tauri/src/terminal.rs` for terminal lifecycle changes; remote PTY allocation belongs to russh `request_pty`.
+- Update [SSH Architecture](docs/ssh-architecture.md) when changing these boundaries.
+
 ## Remote Desktop Apps
 
 When adding a remote desktop application, check all required registration points:
@@ -97,6 +108,7 @@ SHELLDESK_TEST_SSH_HOST=
 SHELLDESK_TEST_SSH_PORT=
 SHELLDESK_TEST_SSH_USERNAME=
 SHELLDESK_TEST_SSH_PASSWORD=
+SHELLDESK_TEST_SSH_KEY_PATH=
 ```
 
 Never print or commit `SHELLDESK_TEST_SSH_PASSWORD`. If credentials are missing, skip live SSH verification and mention that in the pull request.

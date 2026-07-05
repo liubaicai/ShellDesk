@@ -4,6 +4,28 @@ This matrix tracks compatibility checks for ShellDesk remote system tools.
 
 该矩阵用于记录 ShellDesk 远程系统工具的兼容性验证状态。
 
+## Client-side baseline / 客户端基线
+
+- ShellDesk desktop builds require the normal Tauri 2 platform prerequisites, Node.js, pnpm, and Rust for development builds.
+- SSH protocol features are implemented in Rust with `russh`; the client machine does not need `openssh-client`, `sshpass`, `ssh-keyscan`, `ssh-keygen`, or `portable-pty`.
+- Local mode uses local OS commands and a local shell process, not an SSH loopback host.
+
+- ShellDesk 桌面端开发构建需要常规 Tauri 2 平台依赖、Node.js、pnpm 和 Rust。
+- SSH 协议能力由 Rust `russh` 实现，客户端系统不需要安装 `openssh-client`、`sshpass`、`ssh-keyscan`、`ssh-keygen` 或 `portable-pty`。
+- 本地模式使用本机系统命令和本地 shell 进程，不需要创建 SSH 回环主机。
+
+## Remote target assumptions / 远端目标假设
+
+- SSH connections require a reachable SSH server on the target host.
+- The file manager requires SFTP support on the target SSH server.
+- Individual operations tools may require target-side commands such as `systemctl`, `journalctl`, `ss`, `ip`, PowerShell cmdlets, database CLIs, `mc`, `aws`, `frpc`, or `frps`.
+- The status below is about remote OS/tool behavior, not client-side OpenSSH availability.
+
+- SSH 连接要求目标主机可访问 SSH server。
+- 文件管理器要求目标 SSH server 支持 SFTP。
+- 单个运维工具可能依赖远端命令，例如 `systemctl`、`journalctl`、`ss`、`ip`、PowerShell cmdlet、数据库 CLI、`mc`、`aws`、`frpc` 或 `frps`。
+- 下表记录的是远端系统和工具行为，不表示客户端需要系统 OpenSSH。
+
 Legend / 图例:
 
 - ✅ Supported / 已支持

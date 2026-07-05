@@ -77,7 +77,7 @@ interface PostgresQueryResult {
 
 ## IPC 与 Rust 后端设计
 
-当前 Tauri 版本把数据库能力放在 Rust 后端。PostgreSQL 首版通过远程 `psql`/CLI 路径执行结构查询和 SQL 查询，并由 `src-tauri/src/database.rs` 维护会话配置，模式参考当前 MySQL 实现。
+当前 Tauri 版本把数据库能力放在 Rust 后端。PostgreSQL 通过 `src-tauri/src/database/postgres.rs` 和 `src-tauri/src/database/tunnel.rs` 维护会话配置、隧道连接、结构查询和 SQL 查询，模式参考当前 MySQL 实现。
 
 新增 IPC：
 
@@ -92,7 +92,8 @@ interface PostgresQueryResult {
 
 同步修改：
 
-- `src-tauri/src/database.rs`
+- `src-tauri/src/database/postgres.rs`
+- `src-tauri/src/database/tunnel.rs`
 - `src-tauri/src/ipc.rs`
 - `src/tauriBridge.ts`
 - `src/vite-env.d.ts`
@@ -140,7 +141,8 @@ ORDER BY ordinal_position;
 - `src/components/remote-desktop/index.ts`
 - `src/RemoteDesktopShell.tsx`
 - `src/styles/index.scss`
-- `src-tauri/src/database.rs`
+- `src-tauri/src/database/postgres.rs`
+- `src-tauri/src/database/tunnel.rs`
 - `src-tauri/src/ipc.rs`
 - `src/tauriBridge.ts`
 - `src/vite-env.d.ts`

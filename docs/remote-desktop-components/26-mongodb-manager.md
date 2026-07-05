@@ -67,7 +67,7 @@ interface MongoQueryRequest {
 
 ## IPC 与 Rust 后端设计
 
-当前 Tauri 版本把数据库能力放在 Rust 后端。MongoDB 首版通过远程 `mongosh`/CLI 路径执行数据库、集合、索引和查询操作，并由 `src-tauri/src/database.rs` 维护会话配置。
+当前 Tauri 版本把数据库能力放在 Rust 后端。MongoDB 通过 `src-tauri/src/database/mongo.rs` 和 `src-tauri/src/database/tunnel.rs` 维护会话配置、隧道连接、数据库/集合/索引查询和文档操作。
 
 新增 IPC：
 
@@ -78,11 +78,12 @@ interface MongoQueryRequest {
 - `connection:mongo-indexes`
 - `connection:mongo-query`
 
-同步修改 `src-tauri/src/database.rs`、`src-tauri/src/ipc.rs`、`src/tauriBridge.ts`、`src/vite-env.d.ts`。
+同步修改 `src-tauri/src/database/mongo.rs`、`src-tauri/src/database/tunnel.rs`、`src-tauri/src/ipc/database_channels.rs`、`src/tauriBridge.ts`、`src/vite-env.d.ts`。
 
 ## 代码落点
 
-- `src-tauri/src/database.rs`
+- `src-tauri/src/database/mongo.rs`
+- `src-tauri/src/database/tunnel.rs`
 - `src-tauri/src/ipc.rs`
 - `src/tauriBridge.ts`
 - `src/vite-env.d.ts`

@@ -1,6 +1,6 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-06-28，ShellDesk 远程桌面已经接入 40 个内置应用。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
+截至 2026-07-05，ShellDesk 远程桌面已经接入 39 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
 
 ## 事实源
 
@@ -14,7 +14,7 @@
   - `desktopAppCatalogVersion`
   - `appCatalogMigrationKeys`
 - `src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`
-- `src-tauri/src/vault/normalize.rs` 与 `src-tauri/src/vault/remote_profiles.rs` 的远程组件白名单
+- `src-tauri/src/vault.rs` 默认远程桌面布局和 `src-tauri/src/vault/normalize.rs` 的远程组件白名单
 - `src/components/remote-desktop/index.ts` 的组件导出
 - `src/styles/index.scss` 的远程桌面样式入口
 
@@ -24,7 +24,7 @@
 
 | 编号 | appKey | 组件 | 文档 | 当前设计重点 |
 | --- | --- | --- | --- | --- |
-| 01 | `terminal` | 终端 | [终端组件重设计](./remote-desktop-components/01-terminal-redesign.md) | xterm.js 会话、终端工具菜单、命令请求、文件/记事本/AI 协作 |
+| 01 | `terminal` | 终端 | [终端组件重设计](./remote-desktop-components/01-terminal-redesign.md) | xterm.js 会话、russh PTY 后端、终端工具菜单、命令请求、文件/记事本/AI 协作 |
 | 02 | `files` | 文件管理器 | [文件管理器组件重设计](./remote-desktop-components/02-file-explorer-redesign.md) | SFTP 导航、传输、压缩解压、权限、打开方式和路径联动 |
 | 03 | `browser` | 浏览器 | [浏览器组件重设计](./remote-desktop-components/03-browser-redesign.md) | Tauri 代理、远程网络上下文、书签、错误诊断 |
 | 04 | `notepad` | 记事本 | [记事本组件重设计](./remote-desktop-components/04-notepad-redesign.md) | 远程文本编辑、多标签、语法高亮、冲突提示、自定义模态 |

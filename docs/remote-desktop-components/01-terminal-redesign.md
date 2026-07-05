@@ -1,6 +1,6 @@
 # 终端组件重设计文档
 
-> 当前状态：已接入远程桌面（appKey: `terminal`），实现入口为 `src/components/remote-desktop/RemoteTerminal.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+> 当前状态：已接入远程桌面（appKey: `terminal`）。渲染入口为 `src/components/remote-desktop/RemoteTerminal.tsx`，后端会话入口为 `src-tauri/src/terminal.rs`，SSH 连接与认证复用 `src-tauri/src/russh_client.rs`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
 ## 定位
 
@@ -17,10 +17,19 @@
 
 ### 会话层
 
-- 单窗口单会话，窗口标题可展示当前会话 title 和连接状态。
-- 新建终端窗口可选择默认 shell、初始命令或工作目录提示。
+- 单窗口单会话，窗口标题展示当前会话 title 和连接状态。
+- 新建终端窗口支持默认 shell、初始命令和工作目录。
 - 连接断开时保留终端壳和输出，重连后允许重新创建恢复会话。
 - 关闭运行中的终端窗口时给出确认，避免误关长任务。
+
+### 当前后端实现范围
+
+- 远程 SSH 终端不再启动系统 `ssh -tt`，而是通过 russh `channel_open_session`、`request_pty`、`request_shell` / `exec` 直接连接远端 SSHD。
+- 终端 resize 由 `connection:resize-terminal` 转换为 russh `window_change(columns, rows, 0, 0)`。
+- 初始命令、工作目录、自定义 shell 和 su-root 自动化由后端统一生成启动输入或远程 shell command。
+- auto-sudo / su-root 密码提示检测基于远端 PTY 输出，密码只写回当前 russh channel，不进入日志。
+- 本地模式终端走本机 shell 进程和独立输入/输出管道，不需要 SSH 回环连接。
+- 后端已移除 `portable-pty`、`sshpass`、askpass broker 和系统 OpenSSH fallback。
 
 ### 交互层
 
@@ -58,19 +67,19 @@ interface TerminalSessionState {
 
 ## 能力与集成设计
 
-- SSH shell 会话仍应由 Rust 后端维护，渲染层只消费终端流事件。
-- 若支持初始命令和指定工作目录，需要扩展终端启动参数。
+- SSH shell 会话由 Rust 后端维护，渲染层只消费终端流事件。
+- 初始命令和指定工作目录已通过终端启动参数传入。
 - 终端输出事件需要可选订阅策略，避免录制与 UI 都无限保存完整输出。
 - 不把数据库、文件上传等高层动作塞进终端组件，只保留入口协作。
 
 ## 开发计划
 
-1. 抽出单终端会话状态，统一连接、断线、退出和关闭流程。
-2. 增加搜索输出、暂停跟随和标题栏终端菜单。
-3. 扩展新建会话参数，支持 title 和初始命令。
-4. 接入文件管理器与命令收藏夹跳转。
-5. 接入会话录制事件回调。
-6. 补断线、重连、关闭终端窗口时的生命周期测试。
+1. 已完成单终端会话状态、连接、退出、关闭和多窗口隔离。
+2. 已完成标题栏终端菜单、搜索输出、清屏、自动跟随和滚动到底部。
+3. 已完成启动参数，支持初始命令、工作目录和自定义 shell。
+4. 后续继续完善文件管理器、命令收藏夹和 AI 助手的上下文跳转。
+5. 后续再评估会话录制事件回调和可选输出订阅。
+6. 持续补充断线、重连、关闭终端窗口时的生命周期测试。
 
 ## 验收标准
 
@@ -78,6 +87,7 @@ interface TerminalSessionState {
 - 大量输出时 UI 仍可滚动和搜索。
 - 连接关闭后终端显示明确状态，不悄悄丢内容。
 - 与文件管理器和命令模板的跳转 payload 可用。
+- 远程终端不依赖系统 OpenSSH 或本地 PTY 库，resize 能传递到远端 PTY。
 
 ## 设计取舍
 

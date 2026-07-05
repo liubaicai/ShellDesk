@@ -6,7 +6,7 @@
 
 - 组件注册：`src/RemoteDesktopShell.tsx` 的 `desktopApps`、`desktopAppIconSources`、`defaultWindowFrames`、`renderWindowContent`。
 - 类型白名单：`src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`。
-- 持久化白名单：`src-tauri/src/vault/normalize.rs` 与 `src-tauri/src/vault/remote_profiles.rs`。
+- 持久化白名单：`src-tauri/src/vault.rs` 默认布局与 `src-tauri/src/vault/normalize.rs`。
 - 默认布局与迁移：`src/App.tsx`、`src/RemoteDesktopShell.tsx` 的 `remoteDesktopAppCatalogVersion` / `desktopAppCatalogVersion` 和 migration key。
 - 导出入口：`src/components/remote-desktop/index.ts`。
 - 样式入口：`src/styles/index.scss`。
@@ -102,7 +102,7 @@
 - 在 `src/assets/desktop-icons/` 增加图标。
 - 在 `src/styles/remote-desktop/` 增加样式，并在 `src/styles/index.scss` 中 `@use`。
 - 在 `src/i18nCatalog.ts` 增加中英文 label、description 和组件文案。
-- 在 `src-tauri/src/vault/normalize.rs` 与 `src-tauri/src/vault/remote_profiles.rs` 更新白名单。
+- 在 `src-tauri/src/vault.rs` 与 `src-tauri/src/vault/normalize.rs` 更新默认布局和白名单。
 - 如果默认要迁移到现有用户布局，更新 `src/App.tsx` 和 `src/RemoteDesktopShell.tsx` 的 catalog version 与 migration key。
 - 更新本文、单组件文档、`../remote-desktop-component-roadmap.md` 和 README。
 - 跑 `pnpm check:desktop-apps`，涉及类型或文案时再跑对应检查。
