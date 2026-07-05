@@ -89,6 +89,7 @@ interface PendingCellEdit {
   oldValue: unknown;
   newValue: unknown;
   target: ShellDeskSqliteUpdateTarget;
+  error?: string;
 }
 
 interface PendingWriteSql {
@@ -985,6 +986,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
 
     setEditSaving(true);
     setMessage(null);
+    setPendingEdit((current) => (current ? { ...current, error: '' } : current));
 
     try {
       const result = await runWithSudoRetry(
@@ -1024,7 +1026,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       }
       setPendingEdit(null);
     } catch (error) {
-      setMessage({ type: 'error', text: getErrorMessage(error) });
+      setPendingEdit((current) => (current ? { ...current, error: getErrorMessage(error) } : current));
     } finally {
       setEditSaving(false);
     }
@@ -1576,6 +1578,15 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
               </div>
             </div>
             <p className="sqlite-edit-warning">{tCurrent('auto.remoteSqlite.gyrwjf')}</p>
+            {pendingEdit.error ? (
+              <DismissibleAlert
+                className="sqlite-message-banner error"
+                onDismiss={() => setPendingEdit((current) => (current ? { ...current, error: '' } : current))}
+                role="alert"
+              >
+                {pendingEdit.error}
+              </DismissibleAlert>
+            ) : null}
             <div className="sqlite-edit-actions">
               <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>{tCurrent('auto.remoteSqlite.1589w37')}</button>
               <button type="button" className="primary" onClick={() => void handleConfirmCellSave()} disabled={editSaving}>

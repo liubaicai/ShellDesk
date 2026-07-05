@@ -40,6 +40,7 @@ interface PendingS3Action {
   object: S3ObjectEntry;
   command?: RemoteCommandInput;
   danger?: boolean;
+  error?: string;
 }
 
 interface S3UploadItem {
@@ -481,6 +482,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
     setActionRunning(true);
     setError('');
     setNotice('');
+    setPendingAction((current) => (current ? { ...current, error: '' } : current));
 
     try {
       let output = tCurrent('auto.remoteS3Browser.1m6h6ak');
@@ -510,7 +512,7 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
         await loadObjects(pendingAction.bucket, prefix);
       }
     } catch (error) {
-      setError(getErrorMessage(error));
+      setPendingAction((current) => (current ? { ...current, error: getErrorMessage(error) } : current));
     } finally {
       setActionRunning(false);
     }
@@ -747,6 +749,15 @@ function RemoteS3Browser({ connectionId, hostId, systemType }: RemoteS3BrowserPr
             </dl>
             <div className="s3-confirm-note">
               {tCurrent('auto.remoteS3Browser.14cndvr')}</div>
+            {pendingAction.error ? (
+              <DismissibleAlert
+                className="s3-alert danger"
+                onDismiss={() => setPendingAction((current) => (current ? { ...current, error: '' } : current))}
+                role="alert"
+              >
+                {pendingAction.error}
+              </DismissibleAlert>
+            ) : null}
             <div className="s3-confirm-actions">
               <button type="button" onClick={() => setPendingAction(null)}>{tCurrent('auto.remoteS3Browser.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={executePendingAction} disabled={actionRunning}>

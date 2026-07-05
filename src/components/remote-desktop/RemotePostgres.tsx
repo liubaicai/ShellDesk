@@ -102,6 +102,7 @@ interface PendingEdit {
   newValue: unknown;
   pkColumns: string[];
   pkValues: unknown[];
+  error?: string;
 }
 
 type PostgresContextMenuTarget =
@@ -152,6 +153,7 @@ interface PgCreateTableState {
   foreignKeys: PgSchemaForeignKey[];
   showAdvanced: boolean;
   executing: boolean;
+  dialogError: string;
 }
 
 interface ImportDataState {
@@ -164,6 +166,7 @@ interface ImportDataState {
   columns: string[];
   executing: boolean;
   progress: { current: number; total: number } | null;
+  error: string;
 }
 
 const tablePreviewLimit = 50;
@@ -644,6 +647,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     foreignKeys: [],
     showAdvanced: false,
     executing: false,
+    dialogError: '',
   });
   const [importDataState, setImportDataState] = useState<ImportDataState>({
     open: false,
@@ -655,6 +659,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     columns: [],
     executing: false,
     progress: null,
+    error: '',
   });
 
   const isConnected = status === 'connected';
@@ -758,8 +763,8 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setPendingEdit(null);
     setMessage(null);
     setContextMenu(null);
-    setCreateTableState((current) => ({ ...current, open: false, executing: false }));
-    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null }));
+    setCreateTableState((current) => ({ ...current, open: false, executing: false, dialogError: '' }));
+    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null, error: '' }));
   }, []);
 
   const addHistoryItem = useCallback((item: Omit<PostgresHistoryItem, 'id' | 'createdAt'>) => {
@@ -1266,6 +1271,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setEditSaving(true);
     setMessage(null);
     setError('');
+    setPendingEdit((current) => (current ? { ...current, error: '' } : current));
 
     try {
       const result = await api.postgresUpdateCell(
@@ -1302,7 +1308,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       setMessage({ type: result.affectedRows === 1 ? 'success' : 'info', text: `已更新 ${result.affectedRows ?? 0} 行` });
       setPendingEdit(null);
     } catch (error) {
-      setError(getErrorMessage(error));
+      setPendingEdit((current) => (current ? { ...current, error: getErrorMessage(error) } : current));
     } finally {
       setEditSaving(false);
     }
@@ -1371,11 +1377,12 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       foreignKeys: [],
       showAdvanced: false,
       executing: false,
+      dialogError: '',
     });
   }, [schemas]);
 
   const closeCreateTableDialog = useCallback(() => {
-    setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+    setCreateTableState((current) => ({ ...current, open: false, executing: false, dialogError: '' }));
   }, []);
 
   const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
@@ -1406,11 +1413,12 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       targetTable: targetValue,
       executing: false,
       progress: null,
+      error: '',
     }));
   }, [activeResultTab, importTargetTables, selectedTable, tablesBySchema, toggleSchema]);
 
   const closeImportDialog = useCallback(() => {
-    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null }));
+    setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null, error: '' }));
   }, []);
 
   const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
@@ -1420,6 +1428,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       csvText: mode === 'csv' ? text : current.csvText,
       jsonText: mode === 'json' ? text : current.jsonText,
       progress: null,
+      error: '',
     }));
     refreshImportPreview(mode, text);
   }, [refreshImportPreview]);
@@ -1438,6 +1447,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         csvText: mode === 'csv' ? text : current.csvText,
         jsonText: mode === 'json' ? text : current.jsonText,
         progress: null,
+        error: '',
       }));
       refreshImportPreview(mode, text);
     };
@@ -1447,7 +1457,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   }, [refreshImportPreview]);
 
   const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
-    setImportDataState((current) => ({ ...current, mode, progress: null }));
+    setImportDataState((current) => ({ ...current, mode, progress: null, error: '' }));
     refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
   }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
 
@@ -1465,11 +1475,11 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     const text = importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText;
 
     if (!table) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoTable') });
+      setImportDataState((current) => ({ ...current, error: tCurrent('auto.remotePostgres.importNoTable') }));
       return;
     }
     if (!text.trim()) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoData') });
+      setImportDataState((current) => ({ ...current, error: tCurrent('auto.remotePostgres.importNoData') }));
       return;
     }
 
@@ -1477,12 +1487,15 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     try {
       parsed = importDataState.mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
     } catch (error) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importParseError', { error: getErrorMessage(error) }) });
+      setImportDataState((current) => ({
+        ...current,
+        error: tCurrent('auto.remotePostgres.importParseError', { error: getErrorMessage(error) }),
+      }));
       return;
     }
 
     if (parsed.columns.length === 0 || parsed.rows.length === 0) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importNoData') });
+      setImportDataState((current) => ({ ...current, error: tCurrent('auto.remotePostgres.importNoData') }));
       return;
     }
 
@@ -1500,6 +1513,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       progress: { current: 0, total: parsed.rows.length },
       preview: parsed.preview,
       columns: parsed.columns,
+      error: '',
     }));
 
     try {
@@ -1554,8 +1568,11 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         error: text,
         queryTime,
       });
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.importFailed', { error: text }) });
-      setImportDataState((current) => ({ ...current, executing: false }));
+      setImportDataState((current) => ({
+        ...current,
+        executing: false,
+        error: tCurrent('auto.remotePostgres.importFailed', { error: text }),
+      }));
     }
   }, [addHistoryItem, addResultTab, api, connectionId, database, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, postgresId]);
 
@@ -1638,27 +1655,27 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     if (!api || !postgresId) return;
 
     if (!createTableState.tableName.trim()) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.pleaseFillTableName') });
+      setCreateTableState((current) => ({ ...current, dialogError: tCurrent('auto.remotePostgres.pleaseFillTableName') }));
       return;
     }
     if (createTableState.columns.length === 0) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.pleaseAddColumns') });
+      setCreateTableState((current) => ({ ...current, dialogError: tCurrent('auto.remotePostgres.pleaseAddColumns') }));
       return;
     }
     if (createTableState.columns.some((column) => !column.name.trim())) {
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.invalidColumnName') });
+      setCreateTableState((current) => ({ ...current, dialogError: tCurrent('auto.remotePostgres.invalidColumnName') }));
       return;
     }
     const validationError = validateCreateTableState(createTableState);
     if (validationError) {
-      setMessage({ type: 'error', text: validationError });
+      setCreateTableState((current) => ({ ...current, dialogError: validationError }));
       return;
     }
 
     const statements = generateCreateTableStatements(createTableState);
     const sqlText = statements.join('\n');
     const startTime = performance.now();
-    setCreateTableState((current) => ({ ...current, executing: true }));
+    setCreateTableState((current) => ({ ...current, executing: true, dialogError: '' }));
     setMessage(null);
     setError('');
 
@@ -1689,30 +1706,22 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       setExpandedSchemas((current) => new Set(current).add(schema));
       const tables = await api.postgresTables(connectionId, postgresId, schema);
       setTablesBySchema((current) => ({ ...current, [schema]: tables }));
-      setCreateTableState((current) => ({ ...current, open: false, executing: false }));
+      setCreateTableState((current) => ({ ...current, open: false, executing: false, dialogError: '' }));
       setMessage({ type: 'success', text: tCurrent('auto.remotePostgres.tableCreated', { table: createTableState.tableName.trim() }) });
     } catch (error) {
       const text = getErrorMessage(error);
       const queryTime = Math.round(performance.now() - startTime);
-      addResultTab({
-        id: createId('pg-result'),
-        title: tCurrent('auto.remotePostgres.createTable'),
-        subtitle: createTableState.schema || database,
-        sql: sqlText,
-        status: 'error',
-        error: text,
-        queryTime,
-        createdAt: Date.now(),
-        columns: [],
-      });
       addHistoryItem({
         sql: sqlText,
         status: 'error',
         error: text,
         queryTime,
       });
-      setMessage({ type: 'error', text: tCurrent('auto.remotePostgres.createTableFailed', { error: text }) });
-      setCreateTableState((current) => ({ ...current, executing: false }));
+      setCreateTableState((current) => ({
+        ...current,
+        executing: false,
+        dialogError: tCurrent('auto.remotePostgres.createTableFailed', { error: text }),
+      }));
     }
   }, [addHistoryItem, addResultTab, api, connectionId, createTableState, database, postgresId]);
 
@@ -2262,7 +2271,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                 <span>{tCurrent('auto.remotePostgres.schema')}</span>
                 <select
                   value={createTableState.schema}
-                  onChange={(event) => setCreateTableState((current) => ({ ...current, schema: event.target.value }))}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, schema: event.target.value, dialogError: '' }))}
                 >
                   {(schemas.length > 0 ? schemas : ['public']).map((schema) => (
                     <option key={schema} value={schema}>{schema}</option>
@@ -2274,7 +2283,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                 <input
                   type="text"
                   value={createTableState.tableName}
-                  onChange={(event) => setCreateTableState((current) => ({ ...current, tableName: event.target.value }))}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, tableName: event.target.value, dialogError: '' }))}
                   placeholder={tCurrent('auto.remotePostgres.tableName')}
                   autoFocus
                 />
@@ -2284,7 +2293,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                 <input
                   type="text"
                   value={createTableState.comment}
-                  onChange={(event) => setCreateTableState((current) => ({ ...current, comment: event.target.value }))}
+                  onChange={(event) => setCreateTableState((current) => ({ ...current, comment: event.target.value, dialogError: '' }))}
                 />
               </label>
             </div>
@@ -2530,18 +2539,37 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
               <textarea className="schema-preview" value={createTableSqlPreview} readOnly rows={8} />
             </label>
 
-            <div className="schema-actions">
-              <button type="button" onClick={closeCreateTableDialog} disabled={createTableState.executing}>
-                {tCurrent('auto.remotePostgres.cancel')}
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void handleExecuteCreateTable()}
-                disabled={createTableState.executing}
-              >
-                {createTableState.executing ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.executeCreate')}
-              </button>
+            <div className="schema-actions schema-actions-stacked">
+              {createTableState.dialogError ? (
+                <div
+                  className="dismissible-alert mysql-message-banner error schema-actions-alert schema-local-alert"
+                  role="alert"
+                >
+                  <span className="dismissible-alert-content">{createTableState.dialogError}</span>
+                  <button
+                    type="button"
+                    className="dismissible-alert-close"
+                    onClick={() => setCreateTableState((current) => ({ ...current, dialogError: '' }))}
+                    aria-label={tCurrent('common.closeAlert')}
+                    title={tCurrent('common.closeAlert')}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <div className="schema-action-buttons">
+                <button type="button" onClick={closeCreateTableDialog} disabled={createTableState.executing}>
+                  {tCurrent('auto.remotePostgres.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => void handleExecuteCreateTable()}
+                  disabled={createTableState.executing}
+                >
+                  {createTableState.executing ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.executeCreate')}
+                </button>
+              </div>
             </div>
           </div>
         </div>,
@@ -2570,7 +2598,12 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
                 <span>{tCurrent('auto.remotePostgres.importTargetTable')}</span>
                 <select
                   value={importDataState.targetTable}
-                  onChange={(event) => setImportDataState((current) => ({ ...current, targetTable: event.target.value, progress: null }))}
+                  onChange={(event) => setImportDataState((current) => ({
+                    ...current,
+                    targetTable: event.target.value,
+                    progress: null,
+                    error: '',
+                  }))}
                   disabled={importDataState.executing}
                 >
                   <option value="">{tCurrent('auto.remotePostgres.importNoTable')}</option>
@@ -2673,6 +2706,24 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
               </div>
             </div>
 
+            {importDataState.error ? (
+              <div
+                className="dismissible-alert mysql-message-banner error schema-dialog-alert schema-local-alert"
+                role="alert"
+              >
+                <span className="dismissible-alert-content">{importDataState.error}</span>
+                <button
+                  type="button"
+                  className="dismissible-alert-close"
+                  onClick={() => setImportDataState((current) => ({ ...current, error: '' }))}
+                  aria-label={tCurrent('common.closeAlert')}
+                  title={tCurrent('common.closeAlert')}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+
             <div className="schema-actions">
               <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
                 {tCurrent('auto.remotePostgres.cancel')}
@@ -2717,6 +2768,15 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
               </div>
             </div>
             <p className="postgres-edit-warning">将通过主键条件执行 UPDATE，请确认当前行仍然是目标记录。</p>
+            {pendingEdit.error ? (
+              <DismissibleAlert
+                className="postgres-error-banner"
+                onDismiss={() => setPendingEdit((current) => (current ? { ...current, error: '' } : current))}
+                role="alert"
+              >
+                {pendingEdit.error}
+              </DismissibleAlert>
+            ) : null}
             <div className="postgres-edit-actions">
               <button type="button" onClick={() => setPendingEdit(null)} disabled={editSaving}>取消</button>
               <button type="button" className="primary" onClick={() => void handleConfirmCellSave()} disabled={editSaving}>

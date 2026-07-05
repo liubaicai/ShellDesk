@@ -4,7 +4,7 @@ use serde_json::{json, Map, Value};
 use sqlx::{
     mysql::{MySqlArguments, MySqlRow},
     postgres::PgRow,
-    Column, MySql, MySqlPool, PgPool, Row, TypeInfo,
+    Column, Executor, MySql, PgPool, Row, TypeInfo,
 };
 
 use super::{core::DbTunnelError, MAX_QUERY_ROWS};
@@ -44,11 +44,14 @@ fn pg_row_to_json(row: PgRow) -> Value {
     Value::Object(object)
 }
 
-pub(super) async fn fetch_mysql_rows_limited(
-    pool: &MySqlPool,
-    sql: &str,
-) -> Result<Vec<MySqlRow>, String> {
-    let mut stream = sqlx::raw_sql(sql).fetch_many(pool);
+pub(super) async fn fetch_mysql_rows_limited<'executor, ExecutorType>(
+    executor: ExecutorType,
+    sql: &'executor str,
+) -> Result<Vec<MySqlRow>, String>
+where
+    ExecutorType: Executor<'executor, Database = MySql>,
+{
+    let mut stream = sqlx::raw_sql(sql).fetch_many(executor);
     let mut rows = Vec::new();
     while let Some(result) = stream
         .try_next()

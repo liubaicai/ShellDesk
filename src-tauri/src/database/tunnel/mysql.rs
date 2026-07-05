@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use sqlx::{mysql::MySqlPoolOptions, Executor, MySqlPool};
+use sqlx::{mysql::MySqlPoolOptions, MySql, MySqlPool};
 use std::time::Instant;
 
 use super::{
@@ -142,10 +142,41 @@ pub(crate) async fn mysql_columns(state: &AppState, args: Vec<Value>) -> Result<
 pub(crate) async fn mysql_query(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
     let pool = mysql_pool(state, &args)?;
     let sql = string_arg(&args, 2)?;
+    let database = args
+        .get(3)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     tokio::time::timeout(QUERY_TIMEOUT, async {
+        if let Some(database) = database {
+            let mut connection = pool
+                .acquire()
+                .await
+                .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+            use_mysql_database(&mut connection, database).await?;
+            if is_write_statement(&sql) && !has_returning_clause(&sql) {
+                let result = sqlx::raw_sql(sql.as_str())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+                let mut value = json!({
+                    "columns": [],
+                    "rows": [],
+                    "affectedRows": result.rows_affected()
+                });
+                let insert_id = result.last_insert_id();
+                if insert_id != 0 {
+                    value["insertId"] = json!(insert_id.to_string());
+                }
+                return Ok(value);
+            }
+            let rows = fetch_mysql_rows_limited(&mut *connection, &sql).await?;
+            return Ok(rows_to_json_mysql(rows));
+        }
+
         if is_write_statement(&sql) && !has_returning_clause(&sql) {
-            let result = pool
-                .execute(sql.as_str())
+            let result = sqlx::raw_sql(sql.as_str())
+                .execute(&pool)
                 .await
                 .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
             let mut value = json!({
@@ -164,6 +195,18 @@ pub(crate) async fn mysql_query(state: &AppState, args: Vec<Value>) -> Result<Va
     })
     .await
     .map_err(|_| DbTunnelError::QueryTimeout.user_message())?
+}
+
+async fn use_mysql_database(
+    connection: &mut sqlx::pool::PoolConnection<MySql>,
+    database: &str,
+) -> Result<(), String> {
+    let sql = format!("USE {}", mysql_identifier(database));
+    sqlx::raw_sql(&sql)
+        .execute(&mut **connection)
+        .await
+        .map_err(|error| DbTunnelError::MysqlQuery(error).user_message())?;
+    Ok(())
 }
 
 pub(crate) async fn mysql_update_cell(state: &AppState, args: Vec<Value>) -> Result<Value, String> {

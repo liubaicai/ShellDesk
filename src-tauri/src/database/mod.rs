@@ -22,7 +22,7 @@ pub(crate) use mongo::{
     mongo_collections, mongo_connect, mongo_databases, mongo_indexes, mongo_query,
 };
 #[cfg(test)]
-use mysql::mysql_cli_commands;
+use mysql::{is_mysql_authentication_error, mysql_cli_commands, should_fallback_to_mysql_cli};
 pub(crate) use mysql::{
     mysql_columns, mysql_connect, mysql_databases, mysql_query, mysql_tables, mysql_update_cell,
 };
@@ -343,6 +343,24 @@ mod tests {
         assert!(windows.starts_with("mysql --batch --raw "));
         assert!(!posix.contains("MYSQL_PWD"));
         assert!(!windows.contains("MYSQL_PWD"));
+    }
+
+    #[test]
+    fn mysql_authentication_errors_skip_cli_fallback() {
+        let auth_error = "MySQL 连接失败：error returned from database: 1045 (28000): Access denied for user 'root'@'127.0.0.1' (using password: YES)";
+        assert!(is_mysql_authentication_error(auth_error));
+        assert!(!should_fallback_to_mysql_cli(
+            &json!({ "mode": "auto" }),
+            auth_error
+        ));
+        assert!(!should_fallback_to_mysql_cli(
+            &json!({ "mode": "tunnel" }),
+            "SSH 隧道连接超时。"
+        ));
+        assert!(should_fallback_to_mysql_cli(
+            &json!({ "mode": "auto" }),
+            "SSH 隧道连接超时。"
+        ));
     }
 
     #[test]

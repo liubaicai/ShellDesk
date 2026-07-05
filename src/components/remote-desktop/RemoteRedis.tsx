@@ -32,6 +32,7 @@ interface PendingRedisAction {
   message: string;
   confirmText: string;
   danger?: boolean;
+  error?: string;
   onConfirm: () => Promise<void>;
 }
 
@@ -798,12 +799,13 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
     if (!pendingAction) return;
 
     setPendingRunning(true);
+    setPendingAction((current) => (current ? { ...current, error: '' } : current));
 
     try {
       await pendingAction.onConfirm();
       setPendingAction(null);
     } catch (error) {
-      setMessage({ type: 'error', text: getErrorMessage(error) });
+      setPendingAction((current) => (current ? { ...current, error: getErrorMessage(error) } : current));
     } finally {
       setPendingRunning(false);
     }
@@ -1289,6 +1291,15 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
               <span>{pendingAction.danger ? tCurrent('auto.remoteRedis.5n03rt') : tCurrent('auto.remoteRedis.1gm39ou')}</span>
             </div>
             <p>{pendingAction.message}</p>
+            {pendingAction.error ? (
+              <DismissibleAlert
+                className="redis-message-banner error"
+                onDismiss={() => setPendingAction((current) => (current ? { ...current, error: '' } : current))}
+                role="alert"
+              >
+                {pendingAction.error}
+              </DismissibleAlert>
+            ) : null}
             <div className="redis-confirm-actions">
               <button type="button" onClick={() => setPendingAction(null)} disabled={pendingRunning}>{tCurrent('auto.remoteRedis.1589w37')}</button>
               <button type="button" className={pendingAction.danger ? 'danger' : 'primary'} onClick={() => void handleConfirmPendingAction()} disabled={pendingRunning}>

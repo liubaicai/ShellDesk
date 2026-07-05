@@ -6,7 +6,20 @@ use crate::{
     run_connection_command_stream, terminal, vnc, zmodem, AppState,
 };
 use serde_json::{json, Value};
+use std::{future::Future, pin::Pin, sync::OnceLock};
 use tauri::Manager;
+use tokio::sync::{mpsc, oneshot};
+
+const DATABASE_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
+
+type DatabaseJobFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
+type DatabaseJob = Box<dyn FnOnce() -> DatabaseJobFuture + Send + 'static>;
+
+struct DatabaseRuntimeDispatcher {
+    sender: mpsc::UnboundedSender<DatabaseJob>,
+}
+
+static DATABASE_RUNTIME: OnceLock<Result<DatabaseRuntimeDispatcher, String>> = OnceLock::new();
 
 pub(crate) async fn dispatch(
     state: AppState,
@@ -107,21 +120,61 @@ async fn dispatch_database(
     channel: String,
     args: Vec<Value>,
 ) -> Option<Result<Value, String>> {
-    match tokio::task::spawn_blocking(move || {
-        let runtime = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(error) => return Some(Err(crate::error_string(error))),
-        };
-        runtime.block_on(database_channels::dispatch(state, window, channel, args))
-    })
-    .await
-    {
+    let sender = match database_runtime_sender() {
+        Ok(sender) => sender,
+        Err(error) => return Some(Err(error)),
+    };
+    let (result_sender, result_receiver) = oneshot::channel();
+    let job: DatabaseJob = Box::new(move || {
+        Box::pin(async move {
+            let result = database_channels::dispatch(state, window, channel, args).await;
+            let _ = result_sender.send(result);
+        })
+    });
+
+    if sender.send(job).is_err() {
+        return Some(Err("数据库运行时不可用。".to_string()));
+    }
+
+    match result_receiver.await {
         Ok(result) => result,
         Err(error) => Some(Err(crate::error_string(error))),
     }
+}
+
+fn database_runtime_sender() -> Result<mpsc::UnboundedSender<DatabaseJob>, String> {
+    DATABASE_RUNTIME
+        .get_or_init(start_database_runtime)
+        .as_ref()
+        .map(|dispatcher| dispatcher.sender.clone())
+        .map_err(Clone::clone)
+}
+
+fn start_database_runtime() -> Result<DatabaseRuntimeDispatcher, String> {
+    let (sender, mut receiver) = mpsc::unbounded_channel::<DatabaseJob>();
+    std::thread::Builder::new()
+        .name("shelldesk-db-runtime".to_string())
+        .stack_size(DATABASE_RUNTIME_STACK_SIZE)
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    eprintln!("[database-runtime] failed to start: {error}");
+                    return;
+                }
+            };
+            runtime.block_on(async move {
+                while let Some(job) = receiver.recv().await {
+                    job().await;
+                }
+            });
+        })
+        .map_err(crate::error_string)?;
+
+    Ok(DatabaseRuntimeDispatcher { sender })
 }
 
 async fn dispatch_monitor(

@@ -169,6 +169,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const [updateDraft, setUpdateDraft] = useState('{\n  "$set": {\n    \n  }\n}');
   const [selectedDocumentDraft, setSelectedDocumentDraft] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmError, setDeleteConfirmError] = useState('');
   const [limit, setLimit] = useState(String(defaultLimit));
   const [queryResult, setQueryResult] = useState<ShellDeskMongoQueryResult | null>(null);
   const [indexes, setIndexes] = useState<ShellDeskMongoIndex[]>([]);
@@ -588,17 +589,22 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
 
   const runWriteOperation = useCallback(async (operation: MongoWriteOperation) => {
     if (!api || !mongoId || !selectedCollection) {
-      setError(tCurrent('auto.remoteMongo.1muzwis'));
+      const text = tCurrent('auto.remoteMongo.1muzwis');
+      if (operation === 'deleteOne') setDeleteConfirmError(text);
+      else setError(text);
       return;
     }
 
     if ((operation === 'replaceOne' || operation === 'updateOne' || operation === 'deleteOne') && !selectedDocumentFilter) {
-      setError('选中文档缺少 _id，无法安全执行写入操作。');
+      const text = '选中文档缺少 _id，无法安全执行写入操作。';
+      if (operation === 'deleteOne') setDeleteConfirmError(text);
+      else setError(text);
       return;
     }
 
     setWriteRunning(operation);
     setError('');
+    setDeleteConfirmError('');
     setNotice('');
 
     try {
@@ -620,10 +626,13 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       }
       if (operation === 'deleteOne') {
         setDeleteConfirmOpen(false);
+        setDeleteConfirmError('');
       }
       await runCollectionQuery();
     } catch (error) {
-      setError(getErrorMessage(error));
+      const text = getErrorMessage(error);
+      if (operation === 'deleteOne') setDeleteConfirmError(text);
+      else setError(text);
     } finally {
       setWriteRunning(null);
     }
@@ -878,7 +887,15 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
             <button type="button" className="primary" onClick={() => void runWriteOperation('replaceOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
               {writeRunning === 'replaceOne' ? '保存中...' : '保存文档'}
             </button>
-            <button type="button" className="danger" onClick={() => setDeleteConfirmOpen(true)} disabled={!canWriteSelectedDocument || writeRunning !== null}>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => {
+                setDeleteConfirmError('');
+                setDeleteConfirmOpen(true);
+              }}
+              disabled={!canWriteSelectedDocument || writeRunning !== null}
+            >
               删除文档
             </button>
           </div>
@@ -933,8 +950,22 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
             </div>
             <p>将按当前文档的 `_id` 删除 1 条记录，此操作不可撤销。</p>
             <code>{selectedDocumentFilter || '缺少 _id'}</code>
+            {deleteConfirmError ? (
+              <DismissibleAlert className="mongo-alert danger" onDismiss={() => setDeleteConfirmError('')} role="alert">
+                {deleteConfirmError}
+              </DismissibleAlert>
+            ) : null}
             <div className="mongo-confirm-actions">
-              <button type="button" onClick={() => setDeleteConfirmOpen(false)} disabled={writeRunning !== null}>取消</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setDeleteConfirmError('');
+                }}
+                disabled={writeRunning !== null}
+              >
+                取消
+              </button>
               <button type="button" className="danger" onClick={() => void runWriteOperation('deleteOne')} disabled={!canWriteSelectedDocument || writeRunning !== null}>
                 {writeRunning === 'deleteOne' ? '删除中...' : '确认删除'}
               </button>

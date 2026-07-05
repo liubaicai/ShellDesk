@@ -24,7 +24,7 @@ pub(crate) async fn mysql_connect(
     if should_try_database_tunnel(state, &connection_id, &config)? {
         match tunnel::mysql_connect(state, window, args.clone()).await {
             Ok(result) => return Ok(result),
-            Err(error) if should_fallback_to_database_cli(&config) => {
+            Err(error) if should_fallback_to_mysql_cli(&config, &error) => {
                 eprintln!(
                     "[database] MySQL TCP tunnel unavailable, using SSH command fallback: {error}"
                 );
@@ -41,6 +41,17 @@ pub(crate) async fn mysql_connect(
         "transport": "ssh-exec",
         "fallbackReason": fallback_reason,
     }))
+}
+
+pub(super) fn should_fallback_to_mysql_cli(config: &Value, error: &str) -> bool {
+    should_fallback_to_database_cli(config) && !is_mysql_authentication_error(error)
+}
+
+pub(super) fn is_mysql_authentication_error(error: &str) -> bool {
+    let normalized = error.to_ascii_lowercase();
+    normalized.contains("access denied for user")
+        || normalized.contains("er_access_denied_error")
+        || (normalized.contains("1045") && normalized.contains("28000"))
 }
 
 pub(crate) async fn mysql_databases(state: &AppState, args: Vec<Value>) -> Result<Value, String> {
