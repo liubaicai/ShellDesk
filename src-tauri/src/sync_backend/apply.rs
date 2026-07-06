@@ -1,7 +1,9 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use crate::vault::{default_settings, read_store, to_snapshot, write_store};
+use crate::vault::{
+    default_settings, normalize_ssh_keys_for_import, read_store, to_snapshot, write_store,
+};
 use crate::{error_string, now, AppState};
 
 fn records_array(document: &Value, record_type: &str) -> Vec<Value> {
@@ -107,6 +109,26 @@ pub(super) fn apply_sync_document_to_vault(
             .to_string()
     });
 
+    let raw_ssh_keys = records_array(document, "sshKey")
+        .into_iter()
+        .filter(|key| {
+            !key.get("privateKey")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+        })
+        .collect::<Vec<_>>();
+    let mut ssh_keys = normalize_ssh_keys_for_import(&Value::Array(raw_ssh_keys))?;
+    if let Some(keys) = ssh_keys.as_array_mut() {
+        keys.sort_by_key(|item| {
+            item.get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        });
+    }
+
     let mut known_hosts = records_array(document, "knownHost");
     known_hosts.sort_by_key(|item| {
         format!(
@@ -170,10 +192,82 @@ pub(super) fn apply_sync_document_to_vault(
 
     let mut next = current.clone();
     next["hosts"] = json!(hosts);
+    next["sshKeys"] = ssh_keys;
     next["settings"] = settings;
     next["proxyProfiles"] = json!(proxy_profiles);
     next["knownHosts"] = json!(known_hosts);
     next["browserBookmarks"] = json!(browser_bookmarks);
     write_store(state, &next)?;
     Ok(to_snapshot(state, next))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_state(name: &str) -> AppState {
+        let dir = std::env::temp_dir().join(format!(
+            "shelldesk-sync-apply-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        AppState::new(dir)
+    }
+
+    #[test]
+    fn applies_synced_ssh_keys_to_vault() {
+        let state = temp_state("ssh-keys");
+        write_store(
+            &state,
+            &json!({
+                "hosts": [],
+                "sshKeys": [],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": default_settings(),
+                "browserBookmarks": []
+            }),
+        )
+        .unwrap();
+
+        let snapshot = apply_sync_document_to_vault(
+            &state,
+            &json!({
+                "records": {
+                    "sshKey:key-1": {
+                        "id": "sshKey:key-1",
+                        "type": "sshKey",
+                        "updatedAt": "2026-01-02T00:00:00.000Z",
+                        "hash": "hash-1",
+                        "payload": {
+                            "id": "key-1",
+                            "name": "Deploy",
+                            "source": "imported",
+                            "algorithm": "SSH",
+                            "fingerprint": "SHA256:test",
+                            "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7",
+                            "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----",
+                            "passphrase": "key-passphrase",
+                            "createdAt": "2026-01-01T00:00:00.000Z",
+                            "updatedAt": "2026-01-02T00:00:00.000Z"
+                        }
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot["sshKeys"][0]["id"], "key-1");
+        assert!(snapshot["sshKeys"][0].get("privateKey").is_none());
+
+        let store = read_store(&state).unwrap();
+        assert_eq!(
+            store["sshKeys"][0]["privateKey"],
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----"
+        );
+        assert_eq!(store["sshKeys"][0]["passphrase"], "key-passphrase");
+
+        let _ = fs::remove_dir_all(&state.data_dir);
+    }
 }

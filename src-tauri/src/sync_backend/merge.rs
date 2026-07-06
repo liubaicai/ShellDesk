@@ -26,6 +26,12 @@ fn conflict_name(record: &Value) -> String {
             .and_then(Value::as_str)
             .unwrap_or_else(|| record.get("id").and_then(Value::as_str).unwrap_or(""))
             .to_string(),
+        "sshKey" => payload
+            .get("name")
+            .or_else(|| payload.get("fingerprint"))
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| record.get("id").and_then(Value::as_str).unwrap_or(""))
+            .to_string(),
         "knownHost" => format!(
             "{}:{}",
             payload

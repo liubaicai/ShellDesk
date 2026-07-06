@@ -1259,7 +1259,7 @@ type ShellDeskSyncStatus = 'idle' | 'success' | 'warning' | 'error';
 type ShellDeskSyncConflictResolution = 'local' | 'remote';
 type ShellDeskSyncEmptyVaultResolution = 'restoreRemote' | 'keepEmpty';
 type ShellDeskSyncShrinkResolution = 'allow';
-type ShellDeskSyncEntityType = 'host' | 'bookmark' | 'settings' | 'proxyProfile' | 'knownHost';
+type ShellDeskSyncEntityType = 'host' | 'bookmark' | 'settings' | 'proxyProfile' | 'knownHost' | 'sshKey';
 
 interface ShellDeskSyncPublicConfig {
   enabled: boolean;

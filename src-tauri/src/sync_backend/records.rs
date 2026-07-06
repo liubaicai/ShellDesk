@@ -100,6 +100,10 @@ fn public_proxy_payload(profile: &Value) -> Value {
     Value::Object(payload)
 }
 
+fn ssh_key_payload(key: &Value) -> Value {
+    key.clone()
+}
+
 fn create_sync_record(
     id: String,
     record_type: &str,
@@ -165,6 +169,38 @@ fn create_records_from_vault(vault: &Value, sync_state: &Value, now_value: &str)
                 "proxyProfile",
                 payload,
                 valid_datetime(profile.get("updatedAt").and_then(Value::as_str), now_value),
+                device_id,
+            ),
+        );
+    }
+
+    for key in vault
+        .get("sshKeys")
+        .and_then(Value::as_array)
+        .unwrap_or(&Vec::new())
+    {
+        let id = key.get("id").and_then(Value::as_str).unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        if key
+            .get("privateKey")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            continue;
+        }
+        let entity_id = format!("sshKey:{id}");
+        let payload = ssh_key_payload(key);
+        records.insert(
+            entity_id.clone(),
+            create_sync_record(
+                entity_id,
+                "sshKey",
+                payload,
+                valid_datetime(key.get("updatedAt").and_then(Value::as_str), now_value),
                 device_id,
             ),
         );
@@ -367,7 +403,10 @@ pub(super) fn create_sync_footprint(records: &Value, tombstones: &Value) -> Stri
 }
 
 pub(super) fn synced_content_type(value: &str) -> bool {
-    matches!(value, "host" | "bookmark" | "proxyProfile" | "knownHost")
+    matches!(
+        value,
+        "host" | "bookmark" | "proxyProfile" | "knownHost" | "sshKey"
+    )
 }
 
 pub(super) fn count_records_by_type(records: &Value) -> Map<String, Value> {
@@ -496,4 +535,57 @@ pub(super) fn sanitize_remote_document(raw: Value) -> Value {
     document["updatedAt"] = json!(now());
     document["records"] = create_records_from_vault(&raw, &sync_state, &now());
     document
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_sync_records_include_ssh_key_private_material() {
+        let records = create_records_from_vault(
+            &json!({
+                "hosts": [],
+                "sshKeys": [{
+                    "id": "key-1",
+                    "name": "Deploy",
+                    "source": "imported",
+                    "algorithm": "SSH",
+                    "fingerprint": "SHA256:test",
+                    "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7",
+                    "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----",
+                    "passphrase": "key-passphrase",
+                    "createdAt": "2026-01-01T00:00:00.000Z",
+                    "updatedAt": "2026-01-02T00:00:00.000Z"
+                }, {
+                    "id": "key-public-only",
+                    "name": "Public Only",
+                    "source": "imported",
+                    "algorithm": "SSH",
+                    "fingerprint": "SHA256:public",
+                    "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7",
+                    "createdAt": "2026-01-01T00:00:00.000Z",
+                    "updatedAt": "2026-01-02T00:00:00.000Z"
+                }],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": default_settings(),
+                "browserBookmarks": []
+            }),
+            &json!({ "deviceId": "device-1", "lastRecords": {}, "lastTombstones": {} }),
+            "2026-01-03T00:00:00.000Z",
+        );
+
+        let record = records
+            .pointer("/sshKey:key-1")
+            .expect("ssh key record should be present");
+        assert!(records.pointer("/sshKey:key-public-only").is_none());
+        assert_eq!(record["type"], "sshKey");
+        assert_eq!(
+            record["payload"]["privateKey"],
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----"
+        );
+        assert_eq!(record["payload"]["passphrase"], "key-passphrase");
+        assert_eq!(count_content_records(&records), 1);
+    }
 }
