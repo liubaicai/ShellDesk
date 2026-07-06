@@ -165,12 +165,12 @@ function FileExplorerContextMenu({
               </div>
             </div>
             <div className="context-menu-sep" />
-            <button type="button" role="menuitem" className="context-menu-icon-button danger-text" onClick={() => onDeleteSelectedEntries(targetEntry ? [targetEntry] : undefined)}>
+            <button type="button" role="menuitem" className="context-menu-icon-button danger-text" data-testid="explorer-context-delete" onClick={() => onDeleteSelectedEntries(targetEntry ? [targetEntry] : undefined)}>
               <ContextMenuIcon name="trash" />
               {t('fileExplorer.context.delete', language)}
             </button>
             <div className="context-menu-sep" />
-            <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => onShowProperties(targetEntry)}>
+            <button type="button" role="menuitem" className="context-menu-icon-button" data-testid="explorer-context-properties" onClick={() => onShowProperties(targetEntry)}>
               <ContextMenuIcon name="info" />
               {t('fileExplorer.context.properties', language)}
             </button>

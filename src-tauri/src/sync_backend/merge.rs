@@ -425,3 +425,235 @@ pub(super) fn create_sync_state_from_document(
         "lastRemoteEtag": etag
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn host_record(id: &str, hash: &str, updated_at: &str, name: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "host",
+            "hash": hash,
+            "updatedAt": updated_at,
+            "payload": {
+                "name": name,
+                "address": format!("{name}.example.test")
+            }
+        })
+    }
+
+    #[test]
+    fn tombstones_for_records_includes_only_synced_content_types() {
+        let records = json!({
+            "host-1": host_record("host-1", "hash-1", "2026-01-01T00:00:00Z", "alpha"),
+            "debug-1": {
+                "id": "debug-1",
+                "type": "debugOnly",
+                "hash": "ignored"
+            }
+        });
+        let tombstones = tombstones_for_records(
+            &records,
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-02T00:00:00Z",
+        );
+
+        assert_eq!(
+            tombstones,
+            json!({
+                "host-1": {
+                    "id": "host-1",
+                    "type": "host",
+                    "deletedAt": "2026-01-02T00:00:00Z",
+                    "deviceId": "device-a",
+                    "hash": "hash-1"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn merge_sync_documents_uploads_new_local_records() {
+        let result = merge_sync_documents(
+            &json!({ "records": {}, "tombstones": {}, "devices": {} }),
+            &json!({ "host-1": host_record("host-1", "local-hash", "2026-01-02T00:00:00Z", "alpha") }),
+            &json!({}),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-03T00:00:00Z",
+            "",
+        );
+
+        assert_eq!(result["uploaded"], json!(1));
+        assert_eq!(result["downloaded"], json!(0));
+        assert_eq!(
+            result.pointer("/document/records/host-1/hash"),
+            Some(&json!("local-hash"))
+        );
+        assert!(result.pointer("/document/devices/device-a").is_some());
+    }
+
+    #[test]
+    fn merge_sync_documents_reports_local_delete_remote_modify_conflict() {
+        let result = merge_sync_documents(
+            &json!({
+                "records": {
+                    "host-1": host_record("host-1", "remote-hash", "2026-01-03T00:00:00Z", "alpha")
+                },
+                "tombstones": {}
+            }),
+            &json!({}),
+            &json!({
+                "host-1": {
+                    "id": "host-1",
+                    "type": "host",
+                    "deletedAt": "2026-01-02T00:00:00Z",
+                    "deviceId": "device-a",
+                    "hash": "old-hash"
+                }
+            }),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-04T00:00:00Z",
+            "",
+        );
+
+        assert_eq!(result["uploaded"], json!(0));
+        assert_eq!(result["deleted"], json!(0));
+        assert_eq!(
+            result.pointer("/document/records/host-1/hash"),
+            Some(&json!("remote-hash"))
+        );
+        assert_eq!(result.pointer("/conflicts/0/name"), Some(&json!("alpha")));
+    }
+
+    #[test]
+    fn merge_sync_documents_keep_local_applies_local_delete_over_remote_modify() {
+        let result = merge_sync_documents(
+            &json!({
+                "records": {
+                    "host-1": host_record("host-1", "remote-hash", "2026-01-03T00:00:00Z", "alpha")
+                },
+                "tombstones": {}
+            }),
+            &json!({}),
+            &json!({
+                "host-1": {
+                    "id": "host-1",
+                    "type": "host",
+                    "deletedAt": "2026-01-02T00:00:00Z",
+                    "deviceId": "device-a",
+                    "hash": "old-hash"
+                }
+            }),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-04T00:00:00Z",
+            "local",
+        );
+
+        assert_eq!(result["uploaded"], json!(1));
+        assert_eq!(result["deleted"], json!(1));
+        assert!(result.pointer("/document/records/host-1").is_none());
+        assert!(result.pointer("/document/tombstones/host-1").is_some());
+        assert_eq!(result.pointer("/conflicts/0/name"), Some(&json!("alpha")));
+    }
+
+    #[test]
+    fn merge_sync_documents_keep_remote_applies_remote_delete_over_local_modify() {
+        let local_record = host_record("host-1", "local-hash", "2026-01-03T00:00:00Z", "alpha");
+        let result = merge_sync_documents(
+            &json!({
+                "records": {},
+                "tombstones": {
+                    "host-1": {
+                        "id": "host-1",
+                        "type": "host",
+                        "deletedAt": "2026-01-04T00:00:00Z",
+                        "deviceId": "device-b",
+                        "hash": "old-hash"
+                    }
+                }
+            }),
+            &json!({ "host-1": local_record }),
+            &json!({}),
+            &json!({
+                "deviceId": "device-a",
+                "lastRecords": {
+                    "host-1": {
+                        "type": "host",
+                        "hash": "old-hash",
+                        "updatedAt": "2026-01-01T00:00:00Z"
+                    }
+                }
+            }),
+            "2026-01-05T00:00:00Z",
+            "remote",
+        );
+
+        assert_eq!(result["downloaded"], json!(1));
+        assert_eq!(result["deleted"], json!(1));
+        assert!(result.pointer("/document/records/host-1").is_none());
+        assert_eq!(result.pointer("/conflicts/0/name"), Some(&json!("alpha")));
+    }
+
+    #[test]
+    fn detect_suspicious_shrink_reports_large_record_loss_by_type() {
+        let previous_records = (0..12)
+            .map(|index| {
+                (
+                    format!("host-{index}"),
+                    host_record(
+                        &format!("host-{index}"),
+                        &format!("hash-{index}"),
+                        "2026-01-01T00:00:00Z",
+                        &format!("host-{index}"),
+                    ),
+                )
+            })
+            .collect::<Map<String, Value>>();
+        let shrink = detect_suspicious_shrink(
+            &json!({ "lastRecords": Value::Object(previous_records) }),
+            &json!({}),
+            &json!({ "records": {} }),
+            &json!({ "records": {} }),
+        )
+        .unwrap();
+
+        assert_eq!(shrink["baselineRecords"], json!(12));
+        assert_eq!(shrink["lostRecords"], json!(12));
+        assert_eq!(shrink.pointer("/lostByType/host"), Some(&json!(12)));
+    }
+
+    #[test]
+    fn create_sync_state_from_document_snapshots_records_and_tombstones() {
+        let document = json!({
+            "records": {
+                "host-1": host_record("host-1", "hash-1", "2026-01-01T00:00:00Z", "alpha")
+            },
+            "tombstones": {
+                "host-2": {
+                    "id": "host-2",
+                    "type": "host",
+                    "deletedAt": "2026-01-02T00:00:00Z"
+                }
+            }
+        });
+        let state = create_sync_state_from_document(
+            &document,
+            "device-a",
+            "\"etag-1\"",
+            "2026-01-03T00:00:00Z",
+        );
+
+        assert_eq!(state["deviceId"], json!("device-a"));
+        assert_eq!(
+            state.pointer("/lastRecords/host-1/hash"),
+            Some(&json!("hash-1"))
+        );
+        assert_eq!(
+            state.pointer("/lastTombstones/host-2/deletedAt"),
+            Some(&json!("2026-01-02T00:00:00Z"))
+        );
+        assert_eq!(state["lastRemoteEtag"], json!("\"etag-1\""));
+    }
+}

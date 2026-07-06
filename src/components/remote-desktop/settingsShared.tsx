@@ -2,6 +2,7 @@ import { createContext, useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { t, getCurrentAppLanguage, useCurrentAppLanguage, type AppLanguage } from '../../i18n';
+import { getErrorMessage } from './desktopUtils';
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
 import type { RemoteSystemType } from './types';
 import type { RemoteSettingsCommandContext as RemoteSettingsCommandContextType, SettingsConfirmDialogConfig, SysInfoItem } from './settingsTypes';
@@ -231,14 +232,18 @@ export function SettingsConfirmDialog({
   onClose: () => void;
 }) {
   const [isApplying, setIsApplying] = useState(false);
+  const [applyError, setApplyError] = useState('');
   const language = useCurrentAppLanguage();
   const tone = config.tone ?? 'primary';
 
   const handleConfirm = async () => {
     setIsApplying(true);
+    setApplyError('');
     try {
       await config.onConfirm();
       onClose();
+    } catch (error) {
+      setApplyError(getErrorMessage(error));
     } finally {
       setIsApplying(false);
     }
@@ -251,6 +256,7 @@ export function SettingsConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="settings-confirm-title"
+        data-testid="settings-confirm-dialog"
         onClick={(event) => event.stopPropagation()}
       >
         <div id="settings-confirm-title" className="settings-modal-title">{config.title}</div>
@@ -259,6 +265,7 @@ export function SettingsConfirmDialog({
           {config.detail ? <small>{config.detail}</small> : null}
         </div>
         {config.preview ? <SettingsCommandPreview label={t('remoteSettings.common.preview', language)} content={config.preview} /> : null}
+        {applyError ? <div className="settings-modal-error" role="alert" data-testid="settings-confirm-error">{applyError}</div> : null}
         <div className="settings-modal-actions">
           <button type="button" className="settings-modal-btn" onClick={onClose} disabled={isApplying}>{t('remoteSettings.common.cancel', language)}</button>
           <button

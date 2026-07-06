@@ -66,7 +66,7 @@ function BrowserViewport({
         title={pageTitle || browserAddress || tCurrent('auto.remoteBrowser.1vu0k2a')}
       />
       {loadError && errorDiagnosis ? (
-        <section className="browser-error-page" role="alert" aria-live="polite">
+        <section className="browser-error-page" role="alert" aria-live="polite" data-testid="browser-error-page">
           <div>
             <span>{errorDiagnosis.title}</span>
             <strong>{errorDiagnosis.summary}</strong>
@@ -80,6 +80,7 @@ function BrowserViewport({
                 <button
                   type="button"
                   className="browser-warning-action"
+                  data-testid="browser-trust-certificate"
                   disabled={isTrustingCertificate}
                   onClick={() => onTrustCertificate(loadError.url)}
                 >

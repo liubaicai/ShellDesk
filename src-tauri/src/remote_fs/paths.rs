@@ -79,3 +79,72 @@ fn is_windows_reserved_local_file_name(file_name: &str) -> bool {
             | "lpt9"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn default_transfer_name_uses_file_name_or_fallback() {
+        assert_eq!(default_transfer_name("/var/log/syslog"), "syslog");
+        assert_eq!(default_transfer_name("/"), "transfer");
+        assert_eq!(default_transfer_name(""), "transfer");
+    }
+
+    #[test]
+    fn remote_file_name_handles_unix_and_windows_separators() {
+        assert_eq!(remote_file_name("/var/log/syslog", "fallback"), "syslog");
+        assert_eq!(
+            remote_file_name("C:\\Temp\\report.txt", "fallback"),
+            "report.txt"
+        );
+        assert_eq!(remote_file_name("/var/log/", "fallback"), "log");
+        assert_eq!(remote_file_name("", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn sanitize_local_file_name_replaces_invalid_characters_and_trims_suffixes() {
+        assert_eq!(
+            sanitize_local_file_name(r#"bad<>:"/\|?*.txt"#, "fallback"),
+            "bad_________.txt"
+        );
+        assert_eq!(
+            sanitize_local_file_name(" report.txt. ", "fallback"),
+            "report.txt"
+        );
+        assert_eq!(
+            sanitize_local_file_name("line\nbreak.txt", "fallback"),
+            "line_break.txt"
+        );
+    }
+
+    #[test]
+    fn sanitize_local_file_name_rejects_empty_and_windows_reserved_names() {
+        assert_eq!(sanitize_local_file_name("...", "fallback"), "fallback");
+        assert_eq!(sanitize_local_file_name("CON", "fallback"), "fallback");
+        assert_eq!(sanitize_local_file_name("com1.txt", "fallback"), "fallback");
+        assert_eq!(
+            sanitize_local_file_name("normal.txt", "fallback"),
+            "normal.txt"
+        );
+    }
+
+    #[test]
+    fn upload_remote_name_prefers_sanitized_remote_name_then_local_path() {
+        let item = json!({ "remoteName": " unsafe:name.txt " });
+        assert_eq!(
+            upload_remote_name(&item, Path::new(r"C:\Temp\local.txt")),
+            "unsafe_name.txt"
+        );
+
+        let item = json!({ "remoteName": "" });
+        assert_eq!(
+            upload_remote_name(&item, Path::new(r"C:\Temp\local.txt")),
+            "local.txt"
+        );
+
+        let item = json!({ "remoteName": "NUL" });
+        assert_eq!(upload_remote_name(&item, Path::new("local.txt")), "upload");
+    }
+}

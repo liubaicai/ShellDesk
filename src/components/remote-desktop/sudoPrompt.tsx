@@ -375,6 +375,7 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
         role="dialog"
         aria-modal="true"
         aria-labelledby="sudo-prompt-title"
+        data-testid="sudo-prompt-dialog"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
@@ -390,6 +391,7 @@ export function useSudoCommand(connectionId: string, systemType?: RemoteSystemTy
           <input
             ref={passwordInputRef}
             className="sudo-prompt-input"
+            data-testid="sudo-prompt-password"
             type="password"
             autoComplete="current-password"
             value={sudoPrompt.password}

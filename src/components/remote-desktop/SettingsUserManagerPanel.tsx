@@ -293,7 +293,7 @@ function UsersView({
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.username} className={selectedUser === user.username ? 'selected' : ''} onClick={() => onLoadDetail(user)}>
+                <tr key={user.username} className={selectedUser === user.username ? 'selected' : ''} data-testid={`user-manager-row-${user.username}`} onClick={() => onLoadDetail(user)}>
                   <td><strong>{user.username}</strong>{user.isSystemUser ? <span>{t('remoteSettings.users.systemUser', language)}</span> : null}</td>
                   <td>{user.uid}</td>
                   <td>{user.gid}</td>
@@ -465,7 +465,9 @@ export default function SettingsUserManagerPanel() {
       setSuccess(successMessage);
       await refresh();
     } catch (err) {
-      setError(getErrorMessage(err));
+      const message = getErrorMessage(err);
+      setError(message);
+      throw new Error(message);
     } finally {
       setRunning(false);
     }

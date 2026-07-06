@@ -1,8 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
+import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
+import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import '../../src/styles/index.scss';
 
@@ -19,7 +22,45 @@ function createMysqlResult(columns: string[], rows: Record<string, unknown>[]) {
   };
 }
 
+function createCommandResult(stdout = '', stderr = '', code = 0) {
+  return { stdout, stderr, code };
+}
+
+function createUserSnapshot() {
+  return [
+    '__SHELLDESK_PASSWD__',
+    'root:x:0:0:root:/root:/bin/bash',
+    'demo:x:1000:1000:Demo User:/home/demo:/bin/bash',
+    '__SHELLDESK_GROUP__',
+    'root:x:0:',
+    'demo:x:1000:',
+    'sudo:x:27:demo',
+    '__SHELLDESK_PASSWD_STATUS__',
+    'root L',
+    'demo P',
+    '__SHELLDESK_SUDOERS__',
+    '%sudo ALL=(ALL:ALL) ALL',
+    '',
+  ].join('\n');
+}
+
+function createUserDetail() {
+  return [
+    '__SHELLDESK_DETAIL_GROUPS__',
+    'demo sudo',
+    '__SHELLDESK_DETAIL_SSH_KEYS__',
+    '1',
+    '__SHELLDESK_DETAIL_LASTLOG__',
+    'demo pts/0 192.0.2.10 Mon Jan 1 00:00:00 +0000 2026',
+    '__SHELLDESK_DETAIL_CHAGE__',
+    'Password expires : never',
+    '',
+  ].join('\n');
+}
+
 function installGuiSshMock() {
+  const params = new URLSearchParams(window.location.search);
+  const scenario = params.get('scenario') ?? '';
   const mysqlColumns = [
     { name: 'id', type: 'INT', nullable: false, key: 'PRI', default: null },
     { name: 'name', type: 'VARCHAR(64)', nullable: true, key: '', default: null },
@@ -31,9 +72,86 @@ function installGuiSshMock() {
     size: 5,
     scannedAt: now,
   };
+  let sudoPromptShown = false;
 
   (window as any).guiSSH = {
     connections: {
+      runCommand: async (_connectionId: string, command: string, _stdin?: string, options?: { sudoPassword?: string }) => {
+        if (scenario === 'sudo-prompt' && !sudoPromptShown && !options?.sudoPassword) {
+          sudoPromptShown = true;
+          return createCommandResult('', 'sudo: a password is required', 1);
+        }
+        if (command.includes('__SHELLDESK_PASSWD__')) {
+          return createCommandResult(createUserSnapshot());
+        }
+        if (command.includes('__SHELLDESK_DETAIL_GROUPS__')) {
+          return createCommandResult(createUserDetail());
+        }
+        if (/userdel\b/.test(command)) {
+          return createCommandResult('', 'mock delete user failure', 1);
+        }
+        if (/^w\s+-h\b/.test(command.trim())) {
+          return createCommandResult('demo pts/0 192.0.2.10 00:00 1:23 0.01s 0.01s bash\n');
+        }
+        if (command.includes('PRIV=')) {
+          return createCommandResult('USER=demo\nUID=1000\nPRIV=user\n');
+        }
+        return createCommandResult('');
+      },
+      resolveBrowserUrl: async (_connectionId: string, url: string) => {
+        if (url.includes('badcert')) {
+          throw new Error('CERT_AUTHORITY_INVALID mock certificate failure');
+        }
+        if (url.includes('proxy-fail')) {
+          throw new Error('PROXY_TUNNEL_FAILED mock proxy failure');
+        }
+        return { browserUrl: url };
+      },
+      trustBrowserCertificate: async () => true,
+      listDirectory: async () => ({
+        path: '/tmp',
+        entries: [
+          {
+            name: 'secure.txt',
+            longname: '-rw-r--r-- 1 demo demo 12 Jan 1 00:00 secure.txt',
+            type: 'file',
+            size: 12,
+            modifiedAt: now,
+          },
+        ],
+      }),
+      statPath: async () => ({
+        type: 'file',
+        size: 12,
+        mode: 0o644,
+        owner: 1000,
+        group: 1000,
+        modifiedAt: now,
+        accessedAt: now,
+      }),
+      setPathPermissions: async () => {
+        throw new Error('mock chmod permission failure');
+      },
+      deletePath: async () => {
+        throw new Error('mock delete failure');
+      },
+      createDirectory: async () => true,
+      createFile: async () => true,
+      renamePath: async () => true,
+      downloadFile: async () => ({ path: 'secure.txt' }),
+      downloadPaths: async () => ({ path: 'secure.zip' }),
+      uploadLocalPaths: async () => true,
+      selectUploadFiles: async () => null,
+      selectUploadFolders: async () => null,
+      cancelTransfer: async () => true,
+      compress: async () => true,
+      decompress: async () => true,
+      getSystemInfo: async () => ({
+        items: [
+          { key: 'hostname', label: 'Hostname', value: 'ui-test-host', icon: 'H' },
+          { key: 'os', label: 'OS', value: 'Ubuntu 24.04', icon: 'O' },
+        ],
+      }),
       mysqlConnect: async () => ({ mysqlId: 'mysql-ui-test', transport: 'tunnel' }),
       mysqlDisconnect: async () => true,
       mysqlDatabases: async () => ['test'],
@@ -74,9 +192,14 @@ function installGuiSshMock() {
     vault: {
       getRemoteConnectionProfile: async () => null,
       saveRemoteConnectionProfile: async () => null,
+      getBookmarks: async () => [],
+      saveBookmarks: async (_scope: string, bookmarks: unknown[]) => bookmarks,
     },
     events: {
       onDatabaseTunnelIdleTimeout: () => () => undefined,
+      onVaultChanged: () => () => undefined,
+      onTransferProgress: () => () => undefined,
+      onTransferEnd: () => () => undefined,
     },
   };
 }
@@ -87,6 +210,39 @@ function App() {
 
   if (component === 'redis') {
     return <RemoteRedis connectionId={connectionId} hostId={hostId} />;
+  }
+
+  if (component === 'file-explorer') {
+    return <RemoteFileExplorer connectionId={connectionId} systemType="ubuntu" initialPath="/tmp" />;
+  }
+
+  if (component === 'browser') {
+    return (
+      <RemoteBrowser
+        connectionId={connectionId}
+        partition="persist:ui-test"
+        bookmarkScope="ui-test"
+        context={{
+          name: 'UI Test Host',
+          address: '127.0.0.1',
+          port: 22,
+          username: 'demo',
+          proxyPort: 0,
+        }}
+      />
+    );
+  }
+
+  if (component === 'settings-users') {
+    return <RemoteSettings connectionId={connectionId} systemType="ubuntu" initialTab="users" />;
+  }
+
+  if (component === 'settings-loginsessions') {
+    return <RemoteSettings connectionId={connectionId} systemType="ubuntu" initialTab="loginsessions" />;
+  }
+
+  if (component === 'settings-sudo') {
+    return <RemoteSettings connectionId={connectionId} systemType="ubuntu" initialTab="systeminfo" />;
   }
 
   return <RemoteMySQL connectionId={connectionId} hostId={hostId} />;

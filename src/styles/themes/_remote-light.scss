@@ -241,6 +241,12 @@
   color: #656d76;
 }
 
+[data-theme="light"] .settings-modal-error {
+  border-color: rgba(207, 34, 46, 0.2);
+  background: rgba(207, 34, 46, 0.06);
+  color: #a40e26;
+}
+
 [data-theme="light"] .settings-modal-btn {
   border-color: rgba(16, 32, 51, 0.12);
   background: var(--surface);

@@ -302,3 +302,137 @@ fn redis_integer_reply_command(command: &str) -> bool {
             | "XTRIM"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_csv_query_preserves_quoted_commas_and_empty_cells() {
+        let (columns, rows) =
+            parse_csv_query("id,name,note\n1,Alice,\"hello, world\"\n2,Bob,\n").unwrap();
+
+        assert_eq!(columns, vec!["id", "name", "note"]);
+        assert_eq!(
+            rows,
+            vec![
+                json!({ "id": "1", "name": "Alice", "note": "hello, world" }),
+                json!({ "id": "2", "name": "Bob", "note": "" }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_clickhouse_response_uses_meta_statistics_and_row_count() {
+        let response = parse_clickhouse_response(
+            r#"{
+                "meta": [{"name": "id"}, {"name": "name"}],
+                "data": [{"id": 1, "name": "alice"}],
+                "rows": 7,
+                "statistics": {"elapsed": 0.25, "rows_read": 10, "bytes_read": 128}
+            }"#,
+        );
+
+        assert_eq!(response["columns"], json!(["id", "name"]));
+        assert_eq!(response["rows"], json!([{ "id": 1, "name": "alice" }]));
+        assert_eq!(response["rowCount"], json!(7));
+        assert_eq!(
+            response["statistics"],
+            json!({ "elapsed": 0.25, "rowsRead": 10, "bytesRead": 128 })
+        );
+    }
+
+    #[test]
+    fn parse_clickhouse_response_wraps_plain_text_as_response_row() {
+        let response = parse_clickhouse_response("Syntax error near FROM");
+
+        assert_eq!(response["columns"], json!(["response"]));
+        assert_eq!(
+            response["rows"],
+            json!([{ "response": "Syntax error near FROM" }])
+        );
+        assert_eq!(response["rowCount"], json!(1));
+    }
+
+    #[test]
+    fn parse_mysql_write_metadata_reads_last_metadata_table() {
+        let (affected_rows, insert_id) = parse_mysql_write_metadata(
+            "affectedRows\tinsertId\n1\t12\nnoise\tvalue\naffectedRows\tinsertId\n3\t42\n",
+        );
+
+        assert_eq!(affected_rows, 3);
+        assert_eq!(insert_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn parse_mysql_write_metadata_ignores_empty_or_zero_insert_id() {
+        assert_eq!(
+            parse_mysql_write_metadata("affectedRows\tinsertId\n5\t0\n"),
+            (5, None)
+        );
+        assert_eq!(
+            parse_mysql_write_metadata("affectedRows\tinsertId\n2\t\n"),
+            (2, None)
+        );
+    }
+
+    #[test]
+    fn parse_postgres_command_tag_row_count_handles_write_and_ddl_tags() {
+        assert_eq!(
+            parse_postgres_command_tag_row_count("INSERT 0 4"),
+            Some(Some(4))
+        );
+        assert_eq!(
+            parse_postgres_command_tag_row_count("UPDATE 12"),
+            Some(Some(12))
+        );
+        assert_eq!(
+            parse_postgres_command_tag_row_count("CREATE TABLE"),
+            Some(None)
+        );
+        assert_eq!(
+            parse_postgres_command_tag_row_count("SELECT 1\nSELECT 2"),
+            None
+        );
+        assert_eq!(parse_postgres_command_tag_row_count("NOTICE created"), None);
+    }
+
+    #[test]
+    fn redis_pairs_and_zset_outputs_keep_odd_trailing_values() {
+        assert_eq!(
+            redis_pairs_to_object("name\nalice\nrole\nadmin\nmissing\n"),
+            json!({ "name": "alice", "role": "admin", "missing": "" })
+        );
+        assert_eq!(
+            redis_zset_items("alice\n1.5\nbob\nnot-a-number\ncarol\n"),
+            json!([
+                { "member": "alice", "score": 1.5 },
+                { "member": "bob", "score": "not-a-number" },
+                { "member": "carol", "score": "" }
+            ])
+        );
+    }
+
+    #[test]
+    fn redis_cli_json_unsupported_detects_common_cli_errors() {
+        assert!(redis_cli_json_unsupported(
+            "redis-cli: unrecognized option '--json'"
+        ));
+        assert!(redis_cli_json_unsupported("ERR unknown option --json"));
+        assert!(redis_cli_json_unsupported("usage: redis-cli --json"));
+        assert!(!redis_cli_json_unsupported(
+            "NOAUTH Authentication required"
+        ));
+    }
+
+    #[test]
+    fn parse_redis_raw_command_output_coerces_integer_reply_commands_only() {
+        assert_eq!(parse_redis_raw_command_output("del", "3\n"), json!(3));
+        assert_eq!(parse_redis_raw_command_output("get", "3\n"), json!("3"));
+        assert_eq!(
+            parse_redis_raw_command_output("lrange", "a\nb\n"),
+            json!(["a", "b"])
+        );
+        assert_eq!(parse_redis_raw_command_output("get", ""), Value::Null);
+    }
+}

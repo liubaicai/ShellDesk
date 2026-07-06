@@ -1602,6 +1602,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     <div
                       key={`${entry.type}:${entry.name}`}
                       className={`explorer-row ${selectedNames.has(entry.name) ? 'selected' : ''}`}
+                      data-testid={`explorer-row-${entry.name}`}
                       onClick={(e) => handleRowClick(entry, e)}
                       onDoubleClick={() => handleRowDoubleClick(entry)}
                       onContextMenu={(e) => handleRowContextMenu(entry, e)}
@@ -1879,6 +1880,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="explorer-delete-confirm-title"
+            data-testid="explorer-delete-confirm-dialog"
             onClick={(event) => event.stopPropagation()}
           >
             <div id="explorer-delete-confirm-title" className="notepad-modal-title">{t('fileExplorer.delete.title', language)}</div>
@@ -1901,6 +1903,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             role="dialog"
             aria-modal="true"
             aria-labelledby="explorer-sudo-title"
+            data-testid="explorer-sudo-dialog"
             onSubmit={(event) => {
               event.preventDefault();
               resolveSudoPrompt(sudoPrompt.password);
@@ -1920,6 +1923,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
               <input
                 ref={sudoPasswordInputRef}
                 className="notepad-modal-input"
+                data-testid="explorer-sudo-password"
                 type="password"
                 value={sudoPrompt.password}
                 autoComplete="current-password"

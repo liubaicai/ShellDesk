@@ -61,7 +61,7 @@ function LoginRecordDetailDialog({
 
   return createPortal(
     <div className="login-detail-modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="login-record-detail login-detail-modal" role="dialog" aria-modal="true" aria-label={tCurrent('auto.remoteLoginSessions.detailTitle')} onClick={(event) => event.stopPropagation()}>
+      <section className="login-record-detail login-detail-modal" role="dialog" aria-modal="true" aria-label={tCurrent('auto.remoteLoginSessions.detailTitle')} data-testid="login-detail-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="login-detail-title">
           <span>{isHistoryEntry(record) ? (record.success ? tCurrent('auto.remoteLoginSessions.1c45v7w2') : tCurrent('auto.remoteLoginSessions.72f95b3')) : tCurrent('auto.remoteLoginSessions.17fvhtt2')}</span>
           <strong>{record.user}</strong>
@@ -245,7 +245,7 @@ export default function SettingsLoginSessionsPanel({ systemType }: SettingsLogin
                 </thead>
                 <tbody>
                   {activeEntries.map((entry) => (
-                    <tr key={entry.id} onClick={() => setDetailRecord(entry)}>
+                    <tr key={entry.id} data-testid={`login-session-row-${entry.user}`} onClick={() => setDetailRecord(entry)}>
                       <td><strong>{entry.user}</strong></td>
                       <td title={entry.source}>{entry.source || '-'}</td>
                       <td>{isHistoryEntry(entry) ? entry.startedAt || '-' : entry.tty || '-'}</td>

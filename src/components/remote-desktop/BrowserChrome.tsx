@@ -107,6 +107,7 @@ function BrowserChrome({
             <em>{addressProtocolLabel}</em>
           </span>
           <input
+            data-testid="browser-address-input"
             value={browserAddress}
             onChange={(event) => setBrowserAddress(event.target.value)}
             placeholder={tCurrent('auto.remoteBrowser.1isrg1t')}

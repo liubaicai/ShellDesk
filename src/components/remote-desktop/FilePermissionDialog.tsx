@@ -97,6 +97,7 @@ function FilePermissionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="explorer-properties-title"
+        data-testid="explorer-properties-dialog"
         onSubmit={onSubmit}
         onClick={(event) => event.stopPropagation()}
       >
@@ -131,6 +132,7 @@ function FilePermissionDialog({
                   <label className="permission-mode-field">
                     <span>{t('fileExplorer.properties.octal', language)}</span>
                     <input
+                      data-testid="explorer-permission-mode"
                       value={draft}
                       maxLength={3}
                       inputMode="numeric"
@@ -174,13 +176,13 @@ function FilePermissionDialog({
                   ) : null}
                 </div>
               ) : null}
-              {error ? <div className="properties-error">{error}</div> : null}
             </>
           )}
         </div>
+        {error ? <div className="properties-error" role="alert" data-testid="explorer-properties-error">{error}</div> : null}
         <div className="properties-footer">
           <button type="button" className="properties-close-btn" onClick={onClose} disabled={saving}>{t('common.cancel', language)}</button>
-          <button type="submit" className="properties-save-btn" disabled={!canSave}>
+          <button type="submit" className="properties-save-btn" data-testid="explorer-permission-save" disabled={!canSave}>
             {saving ? t('fileExplorer.properties.saving', language) : t('fileExplorer.properties.savePermissions', language)}
           </button>
         </div>
