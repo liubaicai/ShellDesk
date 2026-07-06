@@ -200,21 +200,163 @@
 
 .mac-dock {
   bottom: 6px;
-  gap: 9px;
-  border-radius: 14px;
-  padding: 8px 10px;
+  gap: var(--dock-gap, 9px);
+  border-radius: var(--dock-radius, 14px);
+  padding: var(--dock-padding-y, 8px) var(--dock-padding-x, 10px);
 }
 
 .mac-dock button {
-  width: 42px;
-  height: 42px;
+  width: var(--dock-button-size, 42px);
+  height: var(--dock-button-size, 42px);
 }
 
 .dock-separator {
-  height: 28px;
+  height: calc(var(--dock-button-size, 42px) - 14px);
 }
 
 .dock-app-icon .desktop-app-icon {
   width: 100%;
   height: 100%;
+}
+
+.remote-desktop-dock-size-small {
+  --dock-button-size: 34px;
+  --dock-gap: 7px;
+  --dock-padding-y: 7px;
+  --dock-padding-x: 8px;
+  --dock-radius: 12px;
+  --desktop-dock-safe-area: 60px;
+}
+
+.remote-desktop-dock-size-medium {
+  --dock-button-size: 42px;
+  --dock-gap: 9px;
+  --dock-padding-y: 8px;
+  --dock-padding-x: 10px;
+  --dock-radius: 14px;
+  --desktop-dock-safe-area: 72px;
+}
+
+.remote-desktop-dock-size-large {
+  --dock-button-size: 52px;
+  --dock-gap: 11px;
+  --dock-padding-y: 10px;
+  --dock-padding-x: 12px;
+  --dock-radius: 16px;
+  --desktop-dock-safe-area: 88px;
+}
+
+.remote-desktop-dock-bottom .mac-dock {
+  top: auto;
+  right: auto;
+  bottom: 6px;
+  left: 50%;
+  flex-direction: row;
+  transform: translateX(-50%);
+}
+
+.remote-desktop-dock-top .mac-dock {
+  top: 6px;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  flex-direction: row;
+  transform: translateX(-50%);
+}
+
+.remote-desktop-dock-left .mac-dock,
+.remote-desktop-dock-right .mac-dock {
+  bottom: auto;
+  flex-direction: column;
+  transform: translateY(-50%);
+}
+
+.remote-desktop-dock-left .mac-dock {
+  top: 50%;
+  right: auto;
+  left: 8px;
+}
+
+.remote-desktop-dock-right .mac-dock {
+  top: 50%;
+  right: 8px;
+  left: auto;
+}
+
+.remote-desktop-dock-left .dock-separator,
+.remote-desktop-dock-right .dock-separator {
+  width: calc(var(--dock-button-size, 42px) - 14px);
+  height: 1px;
+}
+
+.remote-desktop-dock-top .mac-dock button.active,
+.remote-desktop-dock-top .mac-dock button:hover {
+  transform: translateY(5px) scale(1.04);
+}
+
+.remote-desktop-dock-left .mac-dock button.active,
+.remote-desktop-dock-left .mac-dock button:hover {
+  transform: translateX(5px) scale(1.04);
+}
+
+.remote-desktop-dock-right .mac-dock button.active,
+.remote-desktop-dock-right .mac-dock button:hover {
+  transform: translateX(-5px) scale(1.04);
+}
+
+.remote-desktop-dock-auto-hide-always .mac-dock,
+.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock {
+  opacity: 0.16;
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease;
+}
+
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-always .mac-dock,
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock {
+  transform: translate(-50%, calc(100% - 8px));
+}
+
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-always .mac-dock,
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock {
+  transform: translate(-50%, calc(-100% + 8px));
+}
+
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-always .mac-dock,
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock {
+  transform: translate(calc(-100% + 8px), -50%);
+}
+
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-always .mac-dock,
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock {
+  transform: translate(calc(100% - 8px), -50%);
+}
+
+.remote-desktop-dock-auto-hide-always .mac-dock:hover,
+.remote-desktop-dock-auto-hide-always .mac-dock:focus-within,
+.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:hover,
+.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:focus-within {
+  opacity: 1;
+}
+
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-always .mac-dock:hover,
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-always .mac-dock:focus-within,
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:hover,
+.remote-desktop-dock-bottom.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:focus-within,
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-always .mac-dock:hover,
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-always .mac-dock:focus-within,
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:hover,
+.remote-desktop-dock-top.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:focus-within {
+  transform: translateX(-50%);
+}
+
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-always .mac-dock:hover,
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-always .mac-dock:focus-within,
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:hover,
+.remote-desktop-dock-left.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:focus-within,
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-always .mac-dock:hover,
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-always .mac-dock:focus-within,
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:hover,
+.remote-desktop-dock-right.remote-desktop-dock-auto-hide-maximized.has-maximized-window .mac-dock:focus-within {
+  transform: translateY(-50%);
 }

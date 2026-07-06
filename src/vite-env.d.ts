@@ -239,6 +239,10 @@ interface ShellDeskRemoteDesktopLayout {
   removedAppKeys: ShellDeskDesktopAppKey[];
 }
 
+type ShellDeskRemoteDesktopDockPosition = 'bottom' | 'left' | 'right' | 'top';
+type ShellDeskRemoteDesktopDockSize = 'small' | 'medium' | 'large';
+type ShellDeskRemoteDesktopDockAutoHide = 'never' | 'always' | 'maximized';
+
 type ShellDeskAiProvider = 'openai' | 'anthropic' | 'openai-compatible' | 'custom';
 type ShellDeskAiApiFormat = 'openai' | 'anthropic';
 type ShellDeskWebSearchProvider = 'tavily' | 'exa' | 'zhipu';
@@ -341,6 +345,10 @@ interface ShellDeskAppSettings {
   desktopWallpaperPresetId: string;
   desktopWallpaperDataUrl: string;
   desktopWallpaperName: string;
+  remoteDesktopDockPosition: ShellDeskRemoteDesktopDockPosition;
+  remoteDesktopDockSize: ShellDeskRemoteDesktopDockSize;
+  remoteDesktopDockAutoHide: ShellDeskRemoteDesktopDockAutoHide;
+  remoteDesktopDockPinnedApps: ShellDeskDesktopAppKey[];
   remoteDesktopLayout: ShellDeskRemoteDesktopLayout;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;

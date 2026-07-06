@@ -68,6 +68,7 @@
 ## Dock 与桌面布局
 
 - Dock 固定应用：`files`、`terminal`、`browser`。
+- Dock 位置、大小、自动隐藏和固定应用由应用设置里的“桌面”子菜单配置；远程桌面窗口最大化和拖拽边界会按 Dock 所在边和大小预留空间。
 - 其他应用默认从桌面、Launchpad 或文件夹打开；窗口打开后会动态加入 Dock，关闭后消失。
 - 默认桌面布局仍只放 `files`、`terminal`、`browser`、`settings`，新增应用通过目录迁移进入可用应用集合。
 - 当前 app catalog version 为 `13`。新增 appKey 时必须同步迁移版本和白名单，避免用户拖到桌面的图标被 vault 清洗掉。
