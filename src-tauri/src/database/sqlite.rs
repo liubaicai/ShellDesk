@@ -77,7 +77,7 @@ pub(crate) async fn sqlite_columns(state: &AppState, args: Vec<Value>) -> Result
         .map(|row| json!({
             "name": row.get("name").cloned().unwrap_or_default(),
             "type": row.get("type").cloned().unwrap_or_default(),
-            "nullable": !row.get("notnull").is_some_and(|value| value == "1"),
+            "nullable": row.get("notnull").is_none_or(|value| value != "1"),
             "pk": row.get("pk").is_some_and(|value| value != "0"),
             "defaultValue": row.get("dflt_value").cloned()
         }))

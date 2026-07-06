@@ -376,8 +376,8 @@ fn contains_arch_token(lower_name: &str, tokens: &[&str]) -> bool {
         lower_name.match_indices(token).any(|(index, _)| {
             let before = lower_name[..index].chars().next_back();
             let after = lower_name[index + token.len()..].chars().next();
-            before.map_or(true, |ch| !ch.is_ascii_alphanumeric())
-                && after.map_or(true, |ch| !ch.is_ascii_alphanumeric())
+            before.is_none_or(|ch| !ch.is_ascii_alphanumeric())
+                && after.is_none_or(|ch| !ch.is_ascii_alphanumeric())
         })
     })
 }

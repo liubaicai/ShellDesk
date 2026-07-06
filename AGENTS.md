@@ -124,7 +124,7 @@ src/
 - 新增 IPC 需同步修改：`src-tauri/src/ipc.rs` 或相关 Rust handler + `src/tauriBridge.ts` bridge + `src/vite-env.d.ts` 类型；如涉及远程桌面应用，再同步组件调用和错误文案
 
 ### SSH 后端架构
-- 当前 SSH 协议路径统一使用 Rust `russh` / `russh-keys`，详见 `docs/ssh-architecture.md`。
+- 当前 SSH 协议路径统一使用 Rust `russh`，详见 `docs/ssh-architecture.md`。
 - 不要新增系统 OpenSSH、`sshpass`、`SSHPASS`、askpass、`ssh-keyscan`、`ssh-keygen`、`portable-pty` 或 `ssh -L` fallback。
 - 新增远程命令能力优先复用 `russh_client.rs` 与 `ssh_transport.rs`；新增隧道能力优先复用 `ssh_tunnel.rs`；新增终端能力在 `terminal.rs` 中通过 russh PTY 实现。
 - 主机密钥扫描/信任放在 `connection/host_keys.rs`，密钥导入/生成放在 `vault/ssh_keys.rs`，不要 shell out 到系统工具。

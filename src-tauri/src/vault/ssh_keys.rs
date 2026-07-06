@@ -1,6 +1,6 @@
 use base64::Engine;
-use rand::rngs::OsRng;
 use russh::keys::{
+    key::safe_rng,
     load_secret_key,
     ssh_key::{private::RsaKeypair, LineEnding, PrivateKey},
 };
@@ -146,7 +146,7 @@ pub(crate) async fn generate_key_pair(
         .and_then(Value::as_str)
         .unwrap_or("");
     let key_id = random_id("key");
-    let mut rng = OsRng;
+    let mut rng = safe_rng();
     let rsa_key = RsaKeypair::random(&mut rng, modulus_length).map_err(error_string)?;
     let mut private_key = PrivateKey::from(rsa_key);
     private_key.set_comment(name.clone());

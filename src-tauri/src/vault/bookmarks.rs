@@ -48,10 +48,10 @@ pub(crate) fn save_bookmarks_to_store(
         collections
             .iter()
             .filter(|collection| {
-                !collection
+                collection
                     .get("scope")
                     .and_then(Value::as_str)
-                    .is_some_and(|value| value == scope)
+                    .is_none_or(|value| value != scope)
             })
             .cloned(),
     );

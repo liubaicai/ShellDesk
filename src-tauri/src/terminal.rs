@@ -113,9 +113,9 @@ impl SuRootAutomation {
     }
 
     fn flush_due_after_auth_input(&mut self) -> Vec<Vec<u8>> {
-        if !self
+        if self
             .delayed_after_auth_at
-            .is_some_and(|deadline| Instant::now() >= deadline)
+            .is_none_or(|deadline| Instant::now() < deadline)
         {
             return Vec::new();
         }

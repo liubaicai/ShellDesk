@@ -6,7 +6,10 @@ use base64::Engine;
 use russh::{
     client,
     keys::{
-        agent::client::{AgentClient, AgentStream},
+        agent::{
+            client::{AgentClient, AgentStream},
+            AgentIdentity,
+        },
         key::PrivateKeyWithHashAlg,
         Algorithm, HashAlg, PublicKey,
     },
@@ -519,16 +522,31 @@ async fn authenticate_agent(
         .best_supported_rsa_hash()
         .await
         .map_err(|error| format!("读取 SSH RSA 签名能力失败：{error}"))?;
-    for key in identities {
-        let hash_alg = if matches!(key.algorithm(), Algorithm::Rsa { .. }) {
+    for identity in identities {
+        let public_key = identity.public_key();
+        let hash_alg = if matches!(public_key.algorithm(), Algorithm::Rsa { .. }) {
             rsa_hash.flatten()
         } else {
             None
         };
-        let result = session
-            .authenticate_publickey_with(&profile.username, key, hash_alg, &mut agent)
-            .await
-            .map_err(|error| format!("SSH agent 认证失败：{error}"))?;
+        let result = match identity {
+            AgentIdentity::PublicKey { key, .. } => {
+                session
+                    .authenticate_publickey_with(&profile.username, key, hash_alg, &mut agent)
+                    .await
+            }
+            AgentIdentity::Certificate { certificate, .. } => {
+                session
+                    .authenticate_certificate_with(
+                        &profile.username,
+                        certificate,
+                        hash_alg,
+                        &mut agent,
+                    )
+                    .await
+            }
+        }
+        .map_err(|error| format!("SSH agent 认证失败：{error}"))?;
         if result.success() {
             return Ok(());
         }
@@ -558,8 +576,10 @@ async fn open_agent_client(
                 }
             }
         }
-        let agent = AgentClient::connect_pageant().await;
-        Ok(agent.dynamic())
+        AgentClient::connect_pageant()
+            .await
+            .map(AgentClient::dynamic)
+            .map_err(|error| format!("连接 SSH agent 失败：{error}"))
     }
 
     #[cfg(not(any(unix, windows)))]

@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-- SSH 协议路径使用 Rust `russh` / `russh-keys` 实现。
+- SSH 协议路径使用 Rust `russh` 实现；密钥解析、agent、known_hosts 等能力通过 `russh::keys` 使用。
 - 远程命令、流式命令、远程终端 PTY、主机密钥扫描、密钥生成、数据库/VNC/浏览器/HTTP 隧道都不调用系统 OpenSSH。
 - 客户端系统不需要安装 `openssh-client`、`sshpass`、`ssh-keyscan`、`ssh-keygen` 或 `portable-pty`。
 - 远程主机仍需要可达的 SSH server；文件管理器依赖远端 SFTP 能力；各运维工具还会按功能依赖远端系统命令。

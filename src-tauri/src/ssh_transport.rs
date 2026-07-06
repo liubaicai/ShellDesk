@@ -796,7 +796,7 @@ mod tests {
             == Some("1");
         let Some(profile) = live_ssh_profile_from_env_or_dotenv() else {
             if require_live_smoke {
-                panic!("live SSH backend smoke requires SHELLDESK_TEST_SSH_HOST, SHELLDESK_TEST_SSH_USERNAME, and either SHELLDESK_TEST_SSH_PASSWORD or SHELLDESK_TEST_SSH_KEY_PATH");
+                panic!("live SSH backend smoke requires SHELLDESK_TEST_SSH_HOST, SHELLDESK_TEST_SSH_USERNAME, SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH, and either SHELLDESK_TEST_SSH_PASSWORD or SHELLDESK_TEST_SSH_KEY_PATH");
             }
             return;
         };
@@ -892,6 +892,15 @@ mod tests {
             );
             return None;
         }
+        let known_hosts_path =
+            test_env_value(&values, "SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH").unwrap_or_default();
+        if known_hosts_path.trim().is_empty() || !std::path::Path::new(&known_hosts_path).is_file()
+        {
+            eprintln!(
+                "skipping live SSH backend smoke: missing SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH"
+            );
+            return None;
+        }
 
         Some(SshProfile {
             address,
@@ -904,8 +913,7 @@ mod tests {
             },
             password,
             key_path,
-            known_hosts_path: test_env_value(&values, "SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH")
-                .unwrap_or_default(),
+            known_hosts_path,
             proxy_helper_exe: String::new(),
             proxy: None,
             jump: None,

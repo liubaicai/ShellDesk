@@ -452,7 +452,7 @@ fn export_remote_connection_profiles(profiles: Option<&Value>, config_values: bo
         };
         for (app_key, values) in app_profiles {
             let values = split_remote_connection_profile_values(values, config_values);
-            if !config_values && values.as_object().map_or(true, |object| object.is_empty()) {
+            if !config_values && values.as_object().is_none_or(|object| object.is_empty()) {
                 continue;
             }
             exported.push(json!({
