@@ -57,6 +57,20 @@
   width: auto;
 }
 
+.remote-desktop-dock-top .desktop-icons {
+  top: calc(var(--desktop-dock-safe-area, 72px) + 14px);
+  max-height: calc(100% - var(--desktop-dock-safe-area, 72px) - 32px);
+}
+
+.remote-desktop-dock-left .desktop-icons {
+  left: calc(var(--desktop-dock-safe-area, 72px) + 16px);
+}
+
+.remote-desktop-dock-right .desktop-icons {
+  right: calc(var(--desktop-dock-safe-area, 72px) + 16px);
+  max-width: calc(100% - var(--desktop-dock-safe-area, 72px) - 32px);
+}
+
 .desktop-icon-button {
   display: grid;
   width: 74px;

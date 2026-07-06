@@ -125,11 +125,10 @@ const desktopApps = [
   { key: 'sqlite', group: 'data', labelId: 'desktop.app.sqlite.label', descriptionId: 'desktop.app.sqlite.description' },
 ] as const satisfies ReadonlyArray<{ key: string; group: DesktopAppGroupKey; labelId: MessageId; descriptionId: MessageId }>;
 
-/** Apps always pinned in the Dock. Other apps stay on the desktop and appear in the Dock only while open. */
-const dockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
-
 type DesktopAppInfo = (typeof desktopApps)[number];
 type DesktopAppKey = DesktopAppInfo['key'];
+
+const defaultDockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
 
 const desktopAppIconSources: Record<DesktopAppKey, string> = {
   files: new URL('./assets/desktop-icons/files.png', import.meta.url).href,
@@ -375,7 +374,11 @@ interface DesktopWindowTitlebarClickState {
 }
 
 const windowEdgePadding = 14;
-const windowDockSafeArea = 72;
+const windowDockSafeAreas: Record<ShellDeskRemoteDesktopDockSize, number> = {
+  small: 60,
+  medium: 72,
+  large: 88,
+};
 const windowMinWidth = 360;
 const windowMinHeight = 260;
 const titlebarDoubleClickDelayMs = 500;
@@ -423,17 +426,55 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   sqlite: { x: 100, y: 40, width: 1020, height: 620 },
 };
 
-function clampWindowFrame(frame: DesktopWindowFrame, surfaceWidth: number, surfaceHeight: number): DesktopWindowFrame {
-  const maxWidth = Math.max(windowMinWidth, surfaceWidth - windowEdgePadding * 2);
-  const maxHeight = Math.max(windowMinHeight, surfaceHeight - windowEdgePadding - windowDockSafeArea);
-  const width = Math.min(Math.max(frame.width, windowMinWidth), maxWidth);
-  const height = Math.min(Math.max(frame.height, windowMinHeight), maxHeight);
-  const maxX = Math.max(windowEdgePadding, surfaceWidth - windowEdgePadding - width);
-  const maxY = Math.max(windowEdgePadding, surfaceHeight - windowDockSafeArea - height);
+interface DesktopWindowWorkspace {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function getDesktopWindowWorkspace(
+  surfaceWidth: number,
+  surfaceHeight: number,
+  dockPosition: ShellDeskRemoteDesktopDockPosition,
+  dockSize: ShellDeskRemoteDesktopDockSize,
+  reserveDockSpace: boolean,
+): DesktopWindowWorkspace {
+  const dockSafeArea = reserveDockSpace ? windowDockSafeAreas[dockSize] : 0;
+  const leftInset = dockPosition === 'left' ? dockSafeArea : 0;
+  const rightInset = dockPosition === 'right' ? dockSafeArea : 0;
+  const topInset = dockPosition === 'top' ? dockSafeArea : 0;
+  const bottomInset = dockPosition === 'bottom' ? dockSafeArea : 0;
 
   return {
-    x: Math.min(Math.max(frame.x, windowEdgePadding), maxX),
-    y: Math.min(Math.max(frame.y, windowEdgePadding), maxY),
+    x: leftInset,
+    y: topInset,
+    width: Math.max(windowMinWidth, surfaceWidth - leftInset - rightInset),
+    height: Math.max(windowMinHeight, surfaceHeight - topInset - bottomInset),
+  };
+}
+
+function clampWindowFrame(
+  frame: DesktopWindowFrame,
+  surfaceWidth: number,
+  surfaceHeight: number,
+  dockPosition: ShellDeskRemoteDesktopDockPosition,
+  dockSize: ShellDeskRemoteDesktopDockSize,
+  reserveDockSpace: boolean,
+): DesktopWindowFrame {
+  const workspace = getDesktopWindowWorkspace(surfaceWidth, surfaceHeight, dockPosition, dockSize, reserveDockSpace);
+  const minX = workspace.x + windowEdgePadding;
+  const minY = workspace.y + windowEdgePadding;
+  const maxWidth = Math.max(windowMinWidth, workspace.width - windowEdgePadding * 2);
+  const maxHeight = Math.max(windowMinHeight, workspace.height - windowEdgePadding * 2);
+  const width = Math.min(Math.max(frame.width, windowMinWidth), maxWidth);
+  const height = Math.min(Math.max(frame.height, windowMinHeight), maxHeight);
+  const maxX = Math.max(minX, workspace.x + workspace.width - windowEdgePadding - width);
+  const maxY = Math.max(minY, workspace.y + workspace.height - windowEdgePadding - height);
+
+  return {
+    x: Math.min(Math.max(frame.x, minX), maxX),
+    y: Math.min(Math.max(frame.y, minY), maxY),
     width,
     height,
   };
@@ -452,12 +493,20 @@ function applyWindowFrameToElement(element: HTMLElement, frame: DesktopWindowFra
   element.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0)`;
 }
 
-function getMaximizedWindowFrame(surfaceWidth: number, surfaceHeight: number) {
+function getMaximizedWindowFrame(
+  surfaceWidth: number,
+  surfaceHeight: number,
+  dockPosition: ShellDeskRemoteDesktopDockPosition,
+  dockSize: ShellDeskRemoteDesktopDockSize,
+  reserveDockSpace: boolean,
+) {
+  const workspace = getDesktopWindowWorkspace(surfaceWidth, surfaceHeight, dockPosition, dockSize, reserveDockSpace);
+
   return {
-    x: 0,
-    y: 0,
-    width: Math.max(windowMinWidth, surfaceWidth),
-    height: Math.max(windowMinHeight, surfaceHeight - windowDockSafeArea),
+    x: workspace.x,
+    y: workspace.y,
+    width: Math.max(windowMinWidth, workspace.width),
+    height: Math.max(windowMinHeight, workspace.height),
   };
 }
 
@@ -488,6 +537,14 @@ function createDesktopWindow(appKey: DesktopAppKey, sequence: number, zIndex: nu
 
 function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
+}
+
+function normalizeDockPinnedApps(appKeys: ShellDeskDesktopAppKey[] | undefined): DesktopAppKey[] {
+  const nextAppKeys = (appKeys && appKeys.length > 0 ? appKeys : defaultDockPinnedApps)
+    .filter((appKey): appKey is DesktopAppKey => desktopAppKeySet.has(appKey as DesktopAppKey))
+    .filter((appKey, index, allAppKeys) => allAppKeys.indexOf(appKey) === index);
+
+  return nextAppKeys.length > 0 ? nextAppKeys : defaultDockPinnedApps;
 }
 
 function getAppLabel(app: DesktopAppInfo, language: ShellDeskAppSettings['language']) {
@@ -1622,6 +1679,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
   const desktopWallpaperStyle = getDesktopWallpaperStyle(settings, presetWallpaperUrl, customWallpaperUrl);
   const hasCustomWallpaper = hasCustomDesktopWallpaper(settings);
+  const dockPosition = settings.remoteDesktopDockPosition;
+  const dockSize = settings.remoteDesktopDockSize;
+  const dockAutoHide = settings.remoteDesktopDockAutoHide;
+  const hasMaximizedDesktopWindow = desktopWindows.some((desktopWindow) => desktopWindow.isMaximized && !desktopWindow.isMinimized);
+  const shouldReserveDockSpace = (isMaximized: boolean) => (
+    dockAutoHide === 'never' || (dockAutoHide === 'maximized' && !isMaximized)
+  );
   const remoteConnectionProfileHostId = getRemoteConnectionProfileHostId(connection);
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
@@ -1890,17 +1954,38 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       const { width, height } = entry.contentRect;
       setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => {
         if (desktopWindow.isMaximized) {
-          return { ...desktopWindow, frame: getMaximizedWindowFrame(width, height) };
+          return {
+            ...desktopWindow,
+            frame: getMaximizedWindowFrame(width, height, dockPosition, dockSize, shouldReserveDockSpace(true)),
+          };
         }
 
-        return { ...desktopWindow, frame: clampWindowFrame(desktopWindow.frame, width, height) };
+        return {
+          ...desktopWindow,
+          frame: clampWindowFrame(desktopWindow.frame, width, height, dockPosition, dockSize, shouldReserveDockSpace(false)),
+        };
       }));
     });
+
+    const surfaceRect = surface.getBoundingClientRect();
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => {
+      if (desktopWindow.isMaximized) {
+        return {
+          ...desktopWindow,
+          frame: getMaximizedWindowFrame(surfaceRect.width, surfaceRect.height, dockPosition, dockSize, shouldReserveDockSpace(true)),
+        };
+      }
+
+      return {
+        ...desktopWindow,
+        frame: clampWindowFrame(desktopWindow.frame, surfaceRect.width, surfaceRect.height, dockPosition, dockSize, shouldReserveDockSpace(false)),
+      };
+    }));
 
     resizeObserver.observe(surface);
 
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [dockAutoHide, dockPosition, dockSize]);
 
   const commitDesktopLayout = (nextLayout: ShellDeskRemoteDesktopLayout) => {
     const normalizedLayout = normalizeRemoteDesktopLayout(nextLayout);
@@ -2275,7 +2360,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (surface) {
       const surfaceRect = surface.getBoundingClientRect();
-      nextWindow.frame = clampWindowFrame(nextWindow.frame, surfaceRect.width, surfaceRect.height);
+      nextWindow.frame = clampWindowFrame(
+        nextWindow.frame,
+        surfaceRect.width,
+        surfaceRect.height,
+        dockPosition,
+        dockSize,
+        shouldReserveDockSpace(false),
+      );
     }
 
     setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
@@ -2614,7 +2706,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       if (desktopWindow.isMaximized) {
         return {
           ...desktopWindow,
-          frame: clampWindowFrame(desktopWindow.previousFrame ?? defaultWindowFrames[desktopWindow.appKey], surfaceRect.width, surfaceRect.height),
+          frame: clampWindowFrame(
+            desktopWindow.previousFrame ?? defaultWindowFrames[desktopWindow.appKey],
+            surfaceRect.width,
+            surfaceRect.height,
+            dockPosition,
+            dockSize,
+            shouldReserveDockSpace(false),
+          ),
           previousFrame: undefined,
           isMaximized: false,
           zIndex: nextZIndex,
@@ -2624,12 +2723,12 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return {
         ...desktopWindow,
         previousFrame: desktopWindow.frame,
-        frame: getMaximizedWindowFrame(surfaceRect.width, surfaceRect.height),
+        frame: getMaximizedWindowFrame(surfaceRect.width, surfaceRect.height, dockPosition, dockSize, shouldReserveDockSpace(true)),
         isMaximized: true,
         zIndex: nextZIndex,
       };
     }));
-  }, []);
+  }, [dockAutoHide, dockPosition, dockSize]);
 
   const startWindowInteraction = useCallback((event: ReactPointerEvent<HTMLElement>, windowId: string, mode: DesktopWindowInteractionMode) => {
     if (event.button !== 0) {
@@ -2644,7 +2743,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     const surfaceRect = surface.getBoundingClientRect();
-    const startFrame = clampWindowFrame(desktopWindow.frame, surfaceRect.width, surfaceRect.height);
+    const startFrame = clampWindowFrame(
+      desktopWindow.frame,
+      surfaceRect.width,
+      surfaceRect.height,
+      dockPosition,
+      dockSize,
+      shouldReserveDockSpace(false),
+    );
     const windowElement = event.currentTarget.closest('.desktop-window') as HTMLElement | null;
 
     if (!windowElement) {
@@ -2667,7 +2773,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     windowElement.classList.add('interacting', mode === 'move' ? 'moving' : 'resizing');
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
-  }, []);
+  }, [dockAutoHide, dockPosition, dockSize]);
 
   const handleWindowTitlebarPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, windowId: string) => {
     if (event.button !== 0) {
@@ -2731,12 +2837,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           width: pointerState.startFrame.width + deltaX,
           height: pointerState.startFrame.height + deltaY,
         };
-    const clampedFrame = clampWindowFrame(nextFrame, pointerState.surfaceWidth, pointerState.surfaceHeight);
+    const clampedFrame = clampWindowFrame(
+      nextFrame,
+      pointerState.surfaceWidth,
+      pointerState.surfaceHeight,
+      dockPosition,
+      dockSize,
+      shouldReserveDockSpace(false),
+    );
 
     pointerState.latestFrame = clampedFrame;
     applyWindowFrameToElement(pointerState.element, clampedFrame);
     event.preventDefault();
-  }, []);
+  }, [dockAutoHide, dockPosition, dockSize]);
 
   const finishWindowInteraction = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const pointerState = windowPointerStateRef.current;
@@ -3134,7 +3247,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       <main className="remote-desktop-page">
         <section
           ref={desktopSurfaceRef}
-          className={`remote-desktop-surface no-drag ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'} ${isConnectionGateBlocking ? 'connection-locked' : ''}`}
+          className={`remote-desktop-surface no-drag remote-desktop-dock-${dockPosition} remote-desktop-dock-size-${dockSize} remote-desktop-dock-auto-hide-${dockAutoHide} ${hasMaximizedDesktopWindow ? 'has-maximized-window' : ''} ${hasCustomWallpaper ? 'has-custom-wallpaper' : 'has-default-wallpaper'} ${isConnectionGateBlocking ? 'connection-locked' : ''}`}
           style={desktopWallpaperStyle}
           onContextMenu={handleSurfaceContextMenu}
           data-desktop-drop-kind="desktop"
@@ -3279,9 +3392,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           <span className="dock-separator" aria-hidden="true" />
           {(() => {
             const openAppKeys = new Set(desktopWindows.map((w) => w.appKey));
+            const pinnedAppKeys = normalizeDockPinnedApps(settings.remoteDesktopDockPinnedApps);
             const dockApps = [
-              ...desktopApps.filter((app) => dockPinnedApps.includes(app.key as DesktopAppKey)),
-              ...desktopApps.filter((app) => !dockPinnedApps.includes(app.key as DesktopAppKey) && openAppKeys.has(app.key)),
+              ...desktopApps.filter((app) => pinnedAppKeys.includes(app.key as DesktopAppKey)),
+              ...desktopApps.filter((app) => !pinnedAppKeys.includes(app.key as DesktopAppKey) && openAppKeys.has(app.key)),
             ];
 
             return dockApps.map((app) => {

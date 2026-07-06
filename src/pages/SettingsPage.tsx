@@ -19,6 +19,7 @@ import { getCurrentAppLocale, t, type MessageId } from '../i18n';
 const settingsSections = [
   { key: 'general', labelId: 'settings.section.general.label', summaryId: 'settings.section.general.summary' },
   { key: 'appearance', labelId: 'settings.section.appearance.label', summaryId: 'settings.section.appearance.summary' },
+  { key: 'desktop', labelId: 'settings.section.desktop.label', summaryId: 'settings.section.desktop.summary' },
   { key: 'terminal', labelId: 'settings.section.terminal.label', summaryId: 'settings.section.terminal.summary' },
   { key: 'ai', labelId: 'settings.section.ai.label', summaryId: 'settings.section.ai.summary' },
   { key: 'security', labelId: 'settings.section.security.label', summaryId: 'settings.section.security.summary' },
@@ -85,6 +86,63 @@ const terminalContrastChoices = [
   { value: 4.5, labelId: 'settings.terminal.minimumContrast.aa45' },
   { value: 7, labelId: 'settings.terminal.minimumContrast.aaa7' },
 ] as const satisfies ReadonlyArray<{ value: number; labelId: MessageId }>;
+const desktopDockPositionChoices = [
+  { value: 'bottom', labelId: 'settings.desktop.dock.position.bottom' },
+  { value: 'left', labelId: 'settings.desktop.dock.position.left' },
+  { value: 'right', labelId: 'settings.desktop.dock.position.right' },
+  { value: 'top', labelId: 'settings.desktop.dock.position.top' },
+] as const satisfies ReadonlyArray<{ value: ShellDeskRemoteDesktopDockPosition; labelId: MessageId }>;
+const desktopDockSizeChoices = [
+  { value: 'small', labelId: 'settings.desktop.dock.size.small' },
+  { value: 'medium', labelId: 'settings.desktop.dock.size.medium' },
+  { value: 'large', labelId: 'settings.desktop.dock.size.large' },
+] as const satisfies ReadonlyArray<{ value: ShellDeskRemoteDesktopDockSize; labelId: MessageId }>;
+const desktopDockAutoHideChoices = [
+  { value: 'never', labelId: 'settings.desktop.dock.autoHide.never' },
+  { value: 'always', labelId: 'settings.desktop.dock.autoHide.always' },
+  { value: 'maximized', labelId: 'settings.desktop.dock.autoHide.maximized' },
+] as const satisfies ReadonlyArray<{ value: ShellDeskRemoteDesktopDockAutoHide; labelId: MessageId }>;
+const desktopDockPinnedAppChoices = [
+  { key: 'files', labelId: 'desktop.app.files.label' },
+  { key: 'terminal', labelId: 'desktop.app.terminal.label' },
+  { key: 'browser', labelId: 'desktop.app.browser.label' },
+  { key: 'notepad', labelId: 'desktop.app.notepad.label' },
+  { key: 'code-editor', labelId: 'desktop.app.codeEditor.label' },
+  { key: 'monitor', labelId: 'desktop.app.monitor.label' },
+  { key: 'procmanager', labelId: 'desktop.app.processManager.label' },
+  { key: 'settings', labelId: 'desktop.app.settings.label' },
+  { key: 'service-manager', labelId: 'desktop.app.serviceManager.label' },
+  { key: 'container-manager', labelId: 'desktop.app.containerManager.label' },
+  { key: 'disk-analyzer', labelId: 'desktop.app.diskAnalyzer.label' },
+  { key: 'disk-manager', labelId: 'desktop.app.diskManager.label' },
+  { key: 'package-manager', labelId: 'desktop.app.packageManager.label' },
+  { key: 'git-manager', labelId: 'desktop.app.gitManager.label' },
+  { key: 'scheduled-tasks', labelId: 'desktop.app.scheduledTasks.label' },
+  { key: 'mysql', labelId: 'desktop.app.mysql.label' },
+  { key: 'postgres', labelId: 'desktop.app.postgres.label' },
+  { key: 'redis', labelId: 'desktop.app.redis.label' },
+  { key: 'sqlite', labelId: 'desktop.app.sqlite.label' },
+  { key: 'mongo', labelId: 'desktop.app.mongo.label' },
+  { key: 'clickhouse', labelId: 'desktop.app.clickhouse.label' },
+  { key: 'search-cluster', labelId: 'desktop.app.searchCluster.label' },
+  { key: 'message-queue', labelId: 'desktop.app.messageQueue.label' },
+  { key: 's3-browser', labelId: 'desktop.app.s3Browser.label' },
+  { key: 'vnc', labelId: 'desktop.app.vnc.label' },
+  { key: 'log-viewer', labelId: 'desktop.app.logViewer.label' },
+  { key: 'network-diagnostics', labelId: 'desktop.app.networkDiagnostics.label' },
+  { key: 'port-manager', labelId: 'desktop.app.portManager.label' },
+  { key: 'firewall-manager', labelId: 'desktop.app.firewallManager.label' },
+  { key: 'iptables-manager', labelId: 'desktop.app.iptablesManager.label' },
+  { key: 'cert-manager', labelId: 'desktop.app.certManager.label' },
+  { key: 'nginx-manager', labelId: 'desktop.app.nginxManager.label' },
+  { key: 'caddy-manager', labelId: 'desktop.app.caddyManager.label' },
+  { key: 'apache-manager', labelId: 'desktop.app.apacheManager.label' },
+  { key: 'frp-manager', labelId: 'desktop.app.frpManager.label' },
+  { key: 'frps-manager', labelId: 'desktop.app.frpsManager.label' },
+  { key: 'security-audit', labelId: 'desktop.app.securityAudit.label' },
+  { key: 'api-debugger', labelId: 'desktop.app.apiDebugger.label' },
+  { key: 'ai-chat', labelId: 'desktop.app.aiChat.label' },
+] as const satisfies ReadonlyArray<{ key: ShellDeskDesktopAppKey; labelId: MessageId }>;
 const aiProviderChoices: Array<{
   value: ShellDeskAiProvider;
   labelId: MessageId;
@@ -484,6 +542,18 @@ function SettingsPage({
       minimizeToTrayPromptedOnClose: true,
     });
   };
+
+  const updateDockPinnedApp = (appKey: ShellDeskDesktopAppKey, isPinned: boolean) => {
+    const currentPinnedApps = settings.remoteDesktopDockPinnedApps.filter((pinnedAppKey) => (
+      desktopDockPinnedAppChoices.some((choice) => choice.key === pinnedAppKey)
+    ));
+    const nextPinnedApps = isPinned
+      ? [...currentPinnedApps, appKey].filter((pinnedAppKey, index, appKeys) => appKeys.indexOf(pinnedAppKey) === index)
+      : currentPinnedApps.filter((pinnedAppKey) => pinnedAppKey !== appKey);
+
+    updateSetting('remoteDesktopDockPinnedApps', nextPinnedApps);
+  };
+
   const selectedTerminalTheme = getTerminalThemeChoice(settings.terminalTheme);
   const visibleAiProvider = isCustomAiProvider(settings.aiProvider) ? 'custom' : settings.aiProvider;
   const selectedAiProvider = aiProviderChoices.find((choice) => choice.value === visibleAiProvider) ?? aiProviderChoices[0];
@@ -527,6 +597,11 @@ function SettingsPage({
       ? `linear-gradient(180deg, rgba(8, 13, 20, 0.16), rgba(8, 13, 20, 0.34)), url(${JSON.stringify(wallpaperPreviewUrl)})`
       : 'linear-gradient(180deg, rgba(8, 13, 20, 0.16), rgba(8, 13, 20, 0.34))',
   };
+  const pinnedDockAppLabels = desktopDockPinnedAppChoices
+    .filter((appChoice) => settings.remoteDesktopDockPinnedApps.includes(appChoice.key))
+    .map((appChoice) => t(appChoice.labelId, settings.language));
+  const pinnedDockAppPreviewLabels = pinnedDockAppLabels.slice(0, 4);
+  const pinnedDockAppMoreCount = Math.max(0, pinnedDockAppLabels.length - pinnedDockAppPreviewLabels.length);
 
   useEffect(() => {
     let isCurrent = true;
@@ -1451,6 +1526,109 @@ function SettingsPage({
                 </div>
               </section>
             </>
+          ) : null}
+
+          {activeSection === 'desktop' ? (
+            <section className="settings-section">
+              <h2>{t('settings.desktop.dock.title', settings.language)}</h2>
+              <div className="settings-card">
+                <div className="settings-row">
+                  <span>
+                    <strong>{t('settings.desktop.dock.position.label', settings.language)}</strong>
+                    <small>{t('settings.desktop.dock.position.summary', settings.language)}</small>
+                  </span>
+                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.position.label', settings.language)}>
+                    {desktopDockPositionChoices.map((positionChoice) => (
+                      <button
+                        key={positionChoice.value}
+                        type="button"
+                        className={settings.remoteDesktopDockPosition === positionChoice.value ? 'active' : ''}
+                        onClick={() => updateSetting('remoteDesktopDockPosition', positionChoice.value)}
+                      >
+                        {t(positionChoice.labelId, settings.language)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="settings-row">
+                  <span>
+                    <strong>{t('settings.desktop.dock.size.label', settings.language)}</strong>
+                    <small>{t('settings.desktop.dock.size.summary', settings.language)}</small>
+                  </span>
+                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.size.label', settings.language)}>
+                    {desktopDockSizeChoices.map((sizeChoice) => (
+                      <button
+                        key={sizeChoice.value}
+                        type="button"
+                        className={settings.remoteDesktopDockSize === sizeChoice.value ? 'active' : ''}
+                        onClick={() => updateSetting('remoteDesktopDockSize', sizeChoice.value)}
+                      >
+                        {t(sizeChoice.labelId, settings.language)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="settings-row">
+                  <span>
+                    <strong>{t('settings.desktop.dock.autoHide.label', settings.language)}</strong>
+                    <small>{t('settings.desktop.dock.autoHide.summary', settings.language)}</small>
+                  </span>
+                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.autoHide.label', settings.language)}>
+                    {desktopDockAutoHideChoices.map((autoHideChoice) => (
+                      <button
+                        key={autoHideChoice.value}
+                        type="button"
+                        className={settings.remoteDesktopDockAutoHide === autoHideChoice.value ? 'active' : ''}
+                        onClick={() => updateSetting('remoteDesktopDockAutoHide', autoHideChoice.value)}
+                      >
+                        {t(autoHideChoice.labelId, settings.language)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="settings-row desktop-dock-pinned-row">
+                  <span>
+                    <strong>{t('settings.desktop.dock.pinnedApps.label', settings.language)}</strong>
+                    <small>{t('settings.desktop.dock.pinnedApps.summary', settings.language)}</small>
+                  </span>
+                  <details className="desktop-dock-pinned-picker">
+                    <summary>
+                      <span className="desktop-dock-pinned-summary-copy">
+                        <strong>{t('settings.desktop.dock.pinnedApps.count', settings.language, { count: pinnedDockAppLabels.length })}</strong>
+                        <span>
+                          {pinnedDockAppPreviewLabels.length > 0
+                            ? pinnedDockAppPreviewLabels.join(' / ')
+                            : t('settings.desktop.dock.pinnedApps.none', settings.language)}
+                          {pinnedDockAppMoreCount > 0
+                            ? ` +${pinnedDockAppMoreCount}`
+                            : ''}
+                        </span>
+                      </span>
+                      <span className="desktop-dock-pinned-summary-caret" aria-hidden="true" />
+                    </summary>
+                    <div className="desktop-dock-pinned-panel" aria-label={t('settings.desktop.dock.pinnedApps.label', settings.language)}>
+                      {desktopDockPinnedAppChoices.map((appChoice) => {
+                        const isPinned = settings.remoteDesktopDockPinnedApps.includes(appChoice.key);
+
+                        return (
+                          <label key={appChoice.key} className={`desktop-dock-pinned-choice ${isPinned ? 'selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={isPinned}
+                              onChange={(event) => updateDockPinnedApp(appChoice.key, event.target.checked)}
+                            />
+                            <span>{t(appChoice.labelId, settings.language)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </section>
           ) : null}
 
           {activeSection === 'terminal' ? (

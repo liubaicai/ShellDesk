@@ -72,6 +72,10 @@ const TERMINAL_SNIPPET_LANGUAGE_CHOICES: &[&str] = &[
 ];
 const AI_API_FORMAT_CHOICES: &[&str] = &["openai", "anthropic"];
 const WEB_SEARCH_PROVIDER_CHOICES: &[&str] = &["tavily", "exa", "zhipu"];
+const REMOTE_DESKTOP_DOCK_POSITION_CHOICES: &[&str] = &["bottom", "left", "right", "top"];
+const REMOTE_DESKTOP_DOCK_SIZE_CHOICES: &[&str] = &["small", "medium", "large"];
+const REMOTE_DESKTOP_DOCK_AUTO_HIDE_CHOICES: &[&str] = &["never", "always", "maximized"];
+const MAX_REMOTE_DESKTOP_DOCK_PINNED_APPS: usize = 12;
 const MAX_DESKTOP_WALLPAPER_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DESKTOP_WALLPAPER_DATA_URL_LENGTH: usize =
     ((MAX_DESKTOP_WALLPAPER_BYTES as f64) * 1.4) as usize + 128;
@@ -150,6 +154,34 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         true,
         true,
     )?;
+    let remote_desktop_dock_position = read_choice(
+        settings.get("remoteDesktopDockPosition"),
+        REMOTE_DESKTOP_DOCK_POSITION_CHOICES,
+        defaults["remoteDesktopDockPosition"]
+            .as_str()
+            .unwrap_or("bottom"),
+    );
+    let remote_desktop_dock_size = read_choice(
+        settings.get("remoteDesktopDockSize"),
+        REMOTE_DESKTOP_DOCK_SIZE_CHOICES,
+        defaults["remoteDesktopDockSize"]
+            .as_str()
+            .unwrap_or("medium"),
+    );
+    let remote_desktop_dock_auto_hide = read_choice(
+        settings.get("remoteDesktopDockAutoHide"),
+        REMOTE_DESKTOP_DOCK_AUTO_HIDE_CHOICES,
+        defaults["remoteDesktopDockAutoHide"]
+            .as_str()
+            .unwrap_or("never"),
+    );
+    let remote_desktop_dock_pinned_apps = read_remote_desktop_dock_pinned_apps(
+        settings.get("remoteDesktopDockPinnedApps"),
+        defaults
+            .get("remoteDesktopDockPinnedApps")
+            .cloned()
+            .unwrap_or_else(|| json!(["files", "terminal", "browser"])),
+    );
     let remote_desktop_layout = read_remote_desktop_layout(settings.get("remoteDesktopLayout"))?;
     let ai_provider_name = read_optional_bounded_string(
         settings.get("aiProviderName"),
@@ -216,6 +248,10 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "desktopWallpaperPresetId": desktop_wallpaper_preset_id,
         "desktopWallpaperDataUrl": desktop_wallpaper_data_url,
         "desktopWallpaperName": desktop_wallpaper_name,
+        "remoteDesktopDockPosition": remote_desktop_dock_position,
+        "remoteDesktopDockSize": remote_desktop_dock_size,
+        "remoteDesktopDockAutoHide": remote_desktop_dock_auto_hide,
+        "remoteDesktopDockPinnedApps": remote_desktop_dock_pinned_apps,
         "remoteDesktopLayout": remote_desktop_layout,
         "rememberPasswords": read_bool(settings.get("rememberPasswords"), defaults["rememberPasswords"].as_bool().unwrap_or(true)),
         "rememberKeyPassphrases": read_bool(settings.get("rememberKeyPassphrases"), defaults["rememberKeyPassphrases"].as_bool().unwrap_or(true)),
@@ -429,6 +465,25 @@ fn read_desktop_wallpaper_data_url(
         return Err("桌面壁纸为空或超过大小限制。".to_string());
     }
     Ok(value.to_string())
+}
+
+fn read_remote_desktop_dock_pinned_apps(value: Option<&Value>, fallback: Value) -> Value {
+    let Some(raw_app_keys) = value.and_then(Value::as_array) else {
+        return fallback;
+    };
+    let mut app_keys = Vec::<String>::new();
+    for app_key in raw_app_keys.iter().filter_map(Value::as_str) {
+        if !REMOTE_DESKTOP_APP_KEYS.contains(&app_key)
+            || app_keys.iter().any(|seen| seen == app_key)
+        {
+            continue;
+        }
+        app_keys.push(app_key.to_string());
+        if app_keys.len() >= MAX_REMOTE_DESKTOP_DOCK_PINNED_APPS {
+            break;
+        }
+    }
+    json!(app_keys)
 }
 
 fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {

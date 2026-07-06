@@ -375,6 +375,22 @@
   box-shadow: inset 0 0 0 1px rgba(16, 32, 51, 0.14);
 }
 
+[data-theme="light"] .desktop-dock-pinned-choice {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: var(--surface-control);
+}
+
+[data-theme="light"] .desktop-dock-pinned-picker summary,
+[data-theme="light"] .desktop-dock-pinned-panel {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: var(--surface-control);
+}
+
+[data-theme="light"] .desktop-dock-pinned-choice.selected {
+  border-color: rgba(15, 107, 255, 0.28);
+  background: rgba(15, 107, 255, 0.08);
+}
+
 [data-theme="light"] .settings-toggle {
   background: #dfe3e8;
 }

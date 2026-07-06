@@ -49,6 +49,10 @@ pub(crate) fn default_settings() -> Value {
         "desktopWallpaperPresetId": "default",
         "desktopWallpaperDataUrl": "",
         "desktopWallpaperName": "",
+        "remoteDesktopDockPosition": "bottom",
+        "remoteDesktopDockSize": "medium",
+        "remoteDesktopDockAutoHide": "never",
+        "remoteDesktopDockPinnedApps": ["files", "terminal", "browser"],
         "remoteDesktopLayout": {
             "appCatalogVersion": 13,
             "sortMode": "custom",
@@ -545,6 +549,10 @@ mod tests {
             "desktopWallpaperMode": "custom",
             "desktopWallpaperPresetId": "missing",
             "desktopWallpaperDataUrl": "",
+            "remoteDesktopDockPosition": "floating",
+            "remoteDesktopDockSize": "huge",
+            "remoteDesktopDockAutoHide": "sometimes",
+            "remoteDesktopDockPinnedApps": ["terminal", "bad-app", "terminal", "files"],
             "remoteDesktopLayout": {
                 "appCatalogVersion": 9,
                 "sortMode": "bad",
@@ -592,6 +600,13 @@ mod tests {
         assert_eq!(settings["autoUpdateEnabled"], false);
         assert_eq!(settings["desktopWallpaperMode"], "preset");
         assert_eq!(settings["desktopWallpaperPresetId"], "default");
+        assert_eq!(settings["remoteDesktopDockPosition"], "bottom");
+        assert_eq!(settings["remoteDesktopDockSize"], "medium");
+        assert_eq!(settings["remoteDesktopDockAutoHide"], "never");
+        assert_eq!(
+            settings["remoteDesktopDockPinnedApps"],
+            json!(["terminal", "files"])
+        );
         assert_eq!(settings["remoteDesktopLayout"]["sortMode"], "custom");
         assert_eq!(
             settings["remoteDesktopLayout"]["items"]
