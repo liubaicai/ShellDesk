@@ -355,13 +355,89 @@
   text-align: center;
 }
 
+.k8s-manager-install-callout {
+  display: grid;
+  max-width: 560px;
+  min-height: 150px;
+  align-content: center;
+  gap: 10px;
+  margin: auto;
+  border: 1px solid rgba(255, 207, 90, 0.26);
+  border-radius: 12px;
+  padding: 22px 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 207, 90, 0.11), rgba(255, 255, 255, 0.035)),
+    var(--k8s-panel);
+  color: var(--k8s-muted-strong);
+  text-align: left;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.k8s-manager-install-callout strong {
+  color: var(--k8s-warning);
+  font-size: 14px;
+  font-weight: 860;
+}
+
+.k8s-manager-install-callout span {
+  color: var(--k8s-muted-strong);
+  font-size: 12.5px;
+  font-weight: 720;
+  line-height: 1.55;
+}
+
+.k8s-manager-install-callout button {
+  width: fit-content;
+  border: 1px solid rgba(90, 167, 255, 0.3);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(90, 167, 255, 0.1);
+  color: var(--k8s-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.k8s-manager-install-callout button:hover {
+  border-color: rgba(90, 167, 255, 0.5);
+  background: var(--k8s-panel-hover);
+  color: var(--k8s-text);
+}
+
 td.k8s-manager-empty {
   display: table-cell;
   height: 120px;
 }
 
 .k8s-manager-error {
+  max-width: min(560px, calc(100vw - 36px));
   margin: 10px 12px 0;
+  border: 1px solid;
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.k8s-manager-error.danger {
+  border-color: rgba(255, 143, 163, 0.28);
+  background: var(--k8s-danger-soft);
+  color: var(--k8s-danger);
+}
+
+.k8s-manager-error.info {
+  border-color: rgba(90, 167, 255, 0.24);
+  background: rgba(90, 167, 255, 0.1);
+  color: var(--k8s-accent);
+}
+
+.k8s-manager-error .dismissible-alert-close {
+  color: inherit;
 }
 
 .k8s-manager-key-values,

@@ -11,6 +11,7 @@ export interface RemoteBrowserProps {
   partition: string;
   bookmarkScope: string;
   context: RemoteBrowserContext;
+  initialUrl?: string;
   onChromeChange?: (payload: { title: string; status: string; tone: 'idle' | 'loading' | 'error' }) => void;
 }
 

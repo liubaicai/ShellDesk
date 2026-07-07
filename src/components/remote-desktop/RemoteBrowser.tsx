@@ -47,7 +47,7 @@ import {
   resolveBrowserUrl,
 } from './browserUrlUtils';
 
-function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChromeChange }: RemoteBrowserProps) {
+function RemoteBrowser({ connectionId, partition, bookmarkScope, context, initialUrl, onChromeChange }: RemoteBrowserProps) {
   const [browserAddress, setBrowserAddress] = useState(browserStartAddress);
   const [browserSrc, setBrowserSrc] = useState(browserBlankUrl);
   const [currentUrl, setCurrentUrl] = useState(browserBlankUrl);
@@ -81,6 +81,7 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
   const areBookmarksReadyRef = useRef(false);
   const areRecentVisitsReadyRef = useRef(false);
   const browserNavigationRequestRef = useRef(0);
+  const initialUrlRequestRef = useRef('');
 
   const currentBookmark = showStartPage
     ? null
@@ -515,6 +516,17 @@ function RemoteBrowser({ connectionId, partition, bookmarkScope, context, onChro
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    const nextInitialUrl = initialUrl?.trim();
+
+    if (!nextInitialUrl || initialUrlRequestRef.current === nextInitialUrl) {
+      return;
+    }
+
+    initialUrlRequestRef.current = nextInitialUrl;
+    void loadBrowserUrl(nextInitialUrl);
+  }, [initialUrl]);
 
   const openStartPage = () => {
     browserNavigationRequestRef.current += 1;

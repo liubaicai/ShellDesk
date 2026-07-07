@@ -80,6 +80,7 @@ type ScaleDialogState = { workload: WorkloadActionTarget; replicas: number } | n
 type OutputDialogState = { title: string; output: string } | null;
 type YamlEditorState = { kind: ResourceKind; name: string; namespace: string; yaml: string } | null;
 type PendingRestartWorkload = WorkloadActionTarget | null;
+const kubectlInstallDocsUrl = 'https://kubernetes.io/docs/tasks/tools/';
 type K8sResourceDetail =
   | { kind: 'service'; title: string; name: string; namespace: string; service: K8sService; manifest: RawRecord }
   | { kind: 'configmap'; title: string; name: string; namespace: string; values: Record<string, string>; manifest: RawRecord }
@@ -298,7 +299,7 @@ function statusLabel(status: string) {
   return translated === labelId ? (status || 'Unknown') : translated;
 }
 
-function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
+function RemoteK8sManager({ connectionId, systemType, onOpenBrowser }: RemoteK8sManagerProps) {
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const [kubectlStatus, setKubectlStatus] = useState<K8sRuntimeStatus>('checking');
   const [kubectlVersion, setKubectlVersion] = useState('');
@@ -392,7 +393,7 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       const detectResult = await runCommand(getKubectlDetectCommand());
       if (detectResult.code !== 0 || (detectResult.stdout || '').includes('KUBECTL_NOT_FOUND')) {
         setKubectlStatus('unavailable');
-        setError(`${tCurrent('auto.remoteK8sManager.kubectlNotFound')} https://kubernetes.io/docs/tasks/tools/`);
+        setError(tCurrent('auto.remoteK8sManager.kubectlNotFound'));
         return;
       }
 
@@ -878,7 +879,13 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       <nav className="k8s-manager-tabs" role="tablist">{tabs.map((tab) => <button key={tab.key} type="button" className={activeTab === tab.key ? 'active' : ''} onClick={() => setActiveTab(tab.key)}>{tCurrent(tab.labelId)}</button>)}</nav>
 
       <main className="k8s-manager-content">
-        {kubectlStatus === 'unavailable' ? <div className="k8s-manager-empty">{tCurrent('auto.remoteK8sManager.kubectlNotFound')}</div> : null}
+        {kubectlStatus === 'unavailable' ? (
+          <div className="k8s-manager-install-callout">
+            <strong>{tCurrent('auto.remoteK8sManager.kubectlStatus.unavailable')}</strong>
+            <span>{tCurrent('auto.remoteK8sManager.kubectlNotFound')}</span>
+            <button type="button" onClick={() => onOpenBrowser?.(kubectlInstallDocsUrl)}>{tCurrent('auto.remoteK8sManager.kubectlInstallDocs')}</button>
+          </div>
+        ) : null}
         {kubectlStatus !== 'unavailable' && activeTab === 'pods' ? renderPods() : null}
         {kubectlStatus !== 'unavailable' && activeTab === 'workloads' ? renderWorkloads() : null}
         {kubectlStatus !== 'unavailable' && activeTab === 'services' ? renderServices() : null}

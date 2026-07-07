@@ -197,7 +197,7 @@ const desktopAppAssetContracts = {
 
 const remoteDesktopSource = readWorkspaceFile('src/RemoteDesktopShell.tsx');
 const appSource = readWorkspaceFile('src/App.tsx');
-const styleIndexSource = readWorkspaceFile('src/styles/index.scss');
+const deferredStyleSource = readWorkspaceFile('src/styles/deferred.scss');
 const viteEnvSource = readWorkspaceFile('src/vite-env.d.ts');
 const vaultRemoteProfilesSource = readWorkspaceFile('src-tauri/src/vault/remote_profiles.rs');
 const vaultNormalizeSource = readWorkspaceFile('src-tauri/src/vault/normalize.rs');
@@ -239,7 +239,7 @@ const zhCNMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'zhCN
 const enUSMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'enUS'));
 const lazyComponents = extractLazyComponents(remoteDesktopSource);
 const iconSourcePaths = extractIconSourcePaths(remoteDesktopSource);
-const remoteDesktopStyleUses = new Set(extractStyleUses(styleIndexSource));
+const remoteDesktopStyleUses = new Set(extractStyleUses(deferredStyleSource));
 for (const entry of desktopAppEntries) {
   for (const messageId of [entry.labelId, entry.descriptionId]) {
     if (!zhCNMessageIds.has(messageId)) {
@@ -278,7 +278,7 @@ for (const entry of desktopAppEntries) {
     errors.push(`Desktop app ${entry.key} SCSS partial is missing: ${stylePartial}`);
   }
   if (!remoteDesktopStyleUses.has(assetContract.style)) {
-    errors.push(`Desktop app ${entry.key} SCSS partial is not imported by src/styles/index.scss: ${assetContract.style}`);
+    errors.push(`Desktop app ${entry.key} SCSS partial is not imported by src/styles/deferred.scss: ${assetContract.style}`);
   }
 }
 

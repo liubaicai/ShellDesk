@@ -17,6 +17,7 @@
 @use "./remote-desktop/process-manager" as *;
 @use "./remote-desktop/service-manager" as *;
 @use "./remote-desktop/container-manager" as *;
+@use "./remote-desktop/k8s-manager" as *;
 @use "./remote-desktop/port-manager" as *;
 @use "./remote-desktop/network-diagnostics" as *;
 @use "./remote-desktop/disk-analyzer" as *;

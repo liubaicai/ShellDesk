@@ -167,4 +167,5 @@ export type PodFilter = 'all' | 'running' | 'pending' | 'succeeded' | 'failed';
 export interface RemoteK8sManagerProps {
   connectionId: string;
   systemType: RemoteSystemType;
+  onOpenBrowser?: (url: string) => void;
 }

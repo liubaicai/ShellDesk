@@ -97,8 +97,8 @@ const desktopApps = [
   { key: 'clickhouse', group: 'data', labelId: 'desktop.app.clickhouse.label', descriptionId: 'desktop.app.clickhouse.description' },
   { key: 'redis', group: 'data', labelId: 'desktop.app.redis.label', descriptionId: 'desktop.app.redis.description' },
   { key: 'service-manager', group: 'basic', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
-  { key: 'container-manager', group: 'operations', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
-  { key: 'k8s-manager', group: 'operations', labelId: 'desktop.app.k8sManager.label', descriptionId: 'desktop.app.k8sManager.description' },
+  { key: 'container-manager', group: 'development', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
+  { key: 'k8s-manager', group: 'development', labelId: 'desktop.app.k8sManager.label', descriptionId: 'desktop.app.k8sManager.description' },
   { key: 'port-manager', group: 'network-security', labelId: 'desktop.app.portManager.label', descriptionId: 'desktop.app.portManager.description' },
   { key: 'firewall-manager', group: 'network-security', labelId: 'desktop.app.firewallManager.label', descriptionId: 'desktop.app.firewallManager.description' },
   { key: 'iptables-manager', group: 'network-security', labelId: 'desktop.app.iptablesManager.label', descriptionId: 'desktop.app.iptablesManager.description' },
@@ -314,6 +314,7 @@ interface DesktopWindowState {
   chromeTitle?: string;
   chromeStatus?: string;
   chromeTone?: 'idle' | 'loading' | 'error';
+  browserInitialUrl?: string;
   notepadInitialPath?: string;
   notepadInitialContent?: string;
   notepadInitialTitle?: string;
@@ -2395,6 +2396,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     appendDesktopWindow(appKey);
   };
 
+  const openBrowserWindow = (initialUrl?: string) => {
+    appendDesktopWindow('browser', (desktopWindow) => {
+      if (!initialUrl) {
+        return;
+      }
+
+      desktopWindow.browserInitialUrl = initialUrl;
+      desktopWindow.chromeTitle = initialUrl;
+      desktopWindow.chromeStatus = t('desktop.browser.status.loading', settings.language);
+      desktopWindow.chromeTone = 'loading';
+    });
+  };
+
   const openSettingsWindow = (initialTab: SettingsTab = 'systeminfo') => {
     const existingSettingsWindow = desktopWindows.find((desktopWindow) => desktopWindow.appKey === 'settings');
 
@@ -3070,6 +3084,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             username: connection.host.username,
             proxyPort: connection.proxyPort,
           }}
+          initialUrl={desktopWindow.browserInitialUrl}
           onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
         />
       );
@@ -3145,7 +3160,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'k8s-manager') {
-      return <RemoteK8sManager connectionId={connection.id} systemType={connection.host.systemType ?? 'unknown'} />;
+      return <RemoteK8sManager connectionId={connection.id} systemType={connection.host.systemType ?? 'unknown'} onOpenBrowser={openBrowserWindow} />;
     }
 
     if (desktopWindow.appKey === 'frp-manager') {
