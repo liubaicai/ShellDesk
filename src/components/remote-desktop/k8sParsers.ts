@@ -5,6 +5,7 @@ import type {
   K8sNamespace,
   K8sNode,
   K8sNodeCondition,
+  K8sNodeTaint,
   K8sPod,
   K8sPodCondition,
   K8sPodContainer,
@@ -226,6 +227,11 @@ export function parseNode(raw: Record<string, unknown>): K8sNode {
   const allocatable = toRecord(get(status, 'allocatable'));
   const conditions = toRecordArray(get(status, 'conditions'));
   const labels = toStringRecord(get(metadata, 'labels'));
+  const taints: K8sNodeTaint[] = toRecordArray(get(spec, 'taints')).map((taint) => ({
+    key: getStr(taint, 'key'),
+    value: getStr(taint, 'value'),
+    effect: getStr(taint, 'effect'),
+  }));
   const roles: string[] = [];
 
   if (labels['node-role.kubernetes.io/control-plane'] !== undefined) roles.push('control-plane');
@@ -265,6 +271,8 @@ export function parseNode(raw: Record<string, unknown>): K8sNode {
     memoryAllocatable: toStringOrEmpty(allocatable?.memory),
     podAllocatable: toStringOrEmpty(allocatable?.pods),
     conditions: nodeConditions,
+    labels,
+    taints,
   };
 }
 

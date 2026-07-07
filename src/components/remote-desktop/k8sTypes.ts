@@ -93,6 +93,8 @@ export interface K8sNode {
   memoryAllocatable: string;
   podAllocatable: string;
   conditions: K8sNodeCondition[];
+  labels: Record<string, string>;
+  taints: K8sNodeTaint[];
 }
 
 export interface K8sNodeCondition {
@@ -101,6 +103,19 @@ export interface K8sNodeCondition {
   reason?: string;
   message?: string;
   lastHeartbeatTime?: string;
+}
+
+export interface K8sNodeTaint {
+  key: string;
+  value: string;
+  effect: string;
+}
+
+export interface K8sNodeUsageSummary {
+  cpuPercent: number;
+  memoryPercent: number;
+  podsUsed: number;
+  podsCapacity: number;
 }
 
 export interface K8sContext {

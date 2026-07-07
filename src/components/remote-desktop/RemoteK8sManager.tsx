@@ -5,6 +5,8 @@ import DismissibleAlert from './DismissibleAlert';
 import { getErrorMessage, formatDateTime } from './desktopUtils';
 import {
   getConfigMapListCommand,
+  getConfigMapDeleteCommand,
+  getConfigMapEditCommand,
   getConfigMapGetYamlCommand,
   getConfigViewCommand,
   getDaemonSetListCommand,
@@ -12,14 +14,20 @@ import {
   getKubectlDetectCommand,
   getKubectlVersionCommand,
   getNamespaceListCommand,
+  getNodeDetailCommand,
   getNodeListCommand,
+  getNodeTopCommand,
   getPodDeleteCommand,
   getPodDetailCommand,
   getPodEventsCommand,
   getPodListCommand,
   getPodLogsCommand,
   getSecretListCommand,
+  getSecretDeleteCommand,
+  getSecretEditCommand,
   getSecretGetYamlCommand,
+  getServiceDeleteCommand,
+  getServiceEditCommand,
   getServiceGetYamlCommand,
   getServiceListCommand,
   getStatefulSetListCommand,
@@ -47,6 +55,7 @@ import type {
   K8sManagerTab,
   K8sNamespace,
   K8sNode,
+  K8sNodeUsageSummary,
   K8sPod,
   K8sPodDetail,
   K8sRuntimeStatus,
@@ -64,14 +73,17 @@ type RawRecord = Record<string, unknown>;
 type K8sConfigMapRow = K8sConfigMap & { data: Record<string, string> };
 type K8sSecretRow = K8sSecret & { data: Record<string, string> };
 type PendingDeletePod = { name: string; namespace: string } | null;
+type ResourceKind = 'service' | 'configmap' | 'secret';
+type PendingDeleteResource = { kind: ResourceKind; name: string; namespace: string } | null;
 type WorkloadActionTarget = K8sWorkloadSummary;
 type ScaleDialogState = { workload: WorkloadActionTarget; replicas: number } | null;
 type OutputDialogState = { title: string; output: string } | null;
+type YamlEditorState = { kind: ResourceKind; name: string; namespace: string; yaml: string } | null;
 type PendingRestartWorkload = WorkloadActionTarget | null;
 type K8sResourceDetail =
-  | { kind: 'service'; title: string; service: K8sService }
-  | { kind: 'configmap'; title: string; values: Record<string, string> }
-  | { kind: 'secret'; title: string; values: Record<string, string> };
+  | { kind: 'service'; title: string; name: string; namespace: string; service: K8sService; manifest: RawRecord }
+  | { kind: 'configmap'; title: string; name: string; namespace: string; values: Record<string, string>; manifest: RawRecord }
+  | { kind: 'secret'; title: string; name: string; namespace: string; values: Record<string, string>; manifest: RawRecord };
 
 const tabs: Array<{ key: K8sManagerTab; labelId: string }> = [
   { key: 'pods', labelId: 'auto.remoteK8sManager.podsTab' },
@@ -163,6 +175,92 @@ function decodeBase64Record(values: Record<string, string>) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, decodeBase64Value(value)]));
 }
 
+function encodeBase64Value(value: string) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function encodeBase64Record(values: Record<string, string>) {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, encodeBase64Value(value)]));
+}
+
+function cloneResourceManifest(raw: RawRecord) {
+  const copy = JSON.parse(JSON.stringify(raw || {})) as RawRecord;
+  const metadata = toRecord(copy.metadata);
+  if (metadata) {
+    delete metadata.managedFields;
+    delete metadata.resourceVersion;
+    delete metadata.uid;
+    delete metadata.selfLink;
+    delete metadata.creationTimestamp;
+    delete metadata.generation;
+  }
+  delete copy.status;
+  return copy;
+}
+
+function getEditableManifest(detail: K8sResourceDetail) {
+  const manifest = cloneResourceManifest(detail.manifest);
+  if (detail.kind === 'secret') {
+    const data = toStringRecord(manifest.data);
+    manifest.data = decodeBase64Record(data);
+  }
+  return JSON.stringify(manifest, null, 2);
+}
+
+function prepareManifestForApply(kind: ResourceKind, yaml: string) {
+  const manifest = JSON.parse(yaml) as RawRecord;
+  if (kind === 'secret') {
+    manifest.data = encodeBase64Record(toStringRecord(manifest.data));
+  }
+  return JSON.stringify(manifest, null, 2);
+}
+
+function parseCpuQuantity(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+  if (trimmed.endsWith('n')) return Number.parseFloat(trimmed) / 1_000_000_000;
+  if (trimmed.endsWith('u')) return Number.parseFloat(trimmed) / 1_000_000;
+  if (trimmed.endsWith('m')) return Number.parseFloat(trimmed) / 1000;
+  return Number.parseFloat(trimmed) || 0;
+}
+
+function parseMemoryQuantity(value: string) {
+  const trimmed = value.trim();
+  const match = /^([0-9.]+)([KMGTEP]i?|[kmgtep])?$/u.exec(trimmed);
+  if (!match) return Number.parseFloat(trimmed) || 0;
+  const amount = Number.parseFloat(match[1] ?? '0') || 0;
+  const unit = match[2] ?? '';
+  const binary: Record<string, number> = { Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5 };
+  const decimal: Record<string, number> = { K: 1000, M: 1000 ** 2, G: 1000 ** 3, T: 1000 ** 4, P: 1000 ** 5, k: 1000, m: 0.001 };
+  return amount * (binary[unit] ?? decimal[unit] ?? 1);
+}
+
+function parseNodeTopSummary(stdout: string, nodes: K8sNode[], pods: K8sPod[]): K8sNodeUsageSummary | null {
+  try {
+    const parsed = toRecord(JSON.parse(stdout || '{}'));
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!items.length) return null;
+    let cpuUsed = 0;
+    let memoryUsed = 0;
+    for (const item of items) {
+      const usage = toRecord(toRecord(item)?.usage);
+      cpuUsed += parseCpuQuantity(String(usage?.cpu ?? ''));
+      memoryUsed += parseMemoryQuantity(String(usage?.memory ?? ''));
+    }
+    const cpuCapacity = nodes.reduce((total, node) => total + parseCpuQuantity(node.cpuCapacity), 0);
+    const memoryCapacity = nodes.reduce((total, node) => total + parseMemoryQuantity(node.memoryCapacity), 0);
+    const podsCapacity = nodes.reduce((total, node) => total + (Number.parseInt(node.podCapacity, 10) || 0), 0);
+    return {
+      cpuPercent: cpuCapacity > 0 ? Math.round((cpuUsed / cpuCapacity) * 100) : 0,
+      memoryPercent: memoryCapacity > 0 ? Math.round((memoryUsed / memoryCapacity) * 100) : 0,
+      podsUsed: pods.length,
+      podsCapacity,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function statusClass(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === 'running' || normalized === 'true') return 'is-running';
@@ -197,12 +295,16 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
   const [configMaps, setConfigMaps] = useState<K8sConfigMapRow[]>([]);
   const [secrets, setSecrets] = useState<K8sSecretRow[]>([]);
   const [nodes, setNodes] = useState<K8sNode[]>([]);
+  const [nodeUsageSummary, setNodeUsageSummary] = useState<K8sNodeUsageSummary | null>(null);
   const [detailWorkload, setDetailWorkload] = useState<K8sWorkloadSummary | null>(null);
   const [resourceDetail, setResourceDetail] = useState<K8sResourceDetail | null>(null);
+  const [detailNode, setDetailNode] = useState<K8sNode | null>(null);
   const [scaleDialog, setScaleDialog] = useState<ScaleDialogState>(null);
   const [pendingRestartWorkload, setPendingRestartWorkload] = useState<PendingRestartWorkload>(null);
   const [outputDialog, setOutputDialog] = useState<OutputDialogState>(null);
+  const [yamlEditor, setYamlEditor] = useState<YamlEditorState>(null);
   const [pendingDeletePod, setPendingDeletePod] = useState<PendingDeletePod>(null);
+  const [pendingDeleteResource, setPendingDeleteResource] = useState<PendingDeleteResource>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -347,17 +449,23 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const result = await runCommand(getNodeListCommand());
+      const [result, topResult] = await Promise.all([
+        runCommand(getNodeListCommand()),
+        runCommand(getNodeTopCommand()),
+      ]);
       const failure = commandError(result);
       if (failure) throw new Error(failure);
-      setNodes(parseKubectlList<RawRecord>(result.stdout).map(parseNode));
+      const nextNodes = parseKubectlList<RawRecord>(result.stdout).map(parseNode);
+      setNodes(nextNodes);
+      setNodeUsageSummary(parseNodeTopSummary(topResult.stdout, nextNodes, pods));
     } catch (err) {
       setError(getErrorMessage(err));
       setNodes([]);
+      setNodeUsageSummary(null);
     } finally {
       setLoading(false);
     }
-  }, [runCommand]);
+  }, [pods, runCommand]);
 
   useEffect(() => {
     if (kubectlStatus !== 'available') return;
@@ -513,11 +621,11 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       if (!raw) throw new Error(msg('auto.remoteK8sManager.commandFailed'));
       const title = `${item.namespace}/${item.name}`;
       if (kind === 'service') {
-        setResourceDetail({ kind, title, service: parseService(raw) });
+        setResourceDetail({ kind, title, name: item.name, namespace: item.namespace, service: parseService(raw), manifest: raw });
       } else if (kind === 'configmap') {
-        setResourceDetail({ kind, title, values: getRawData(raw) });
+        setResourceDetail({ kind, title, name: item.name, namespace: item.namespace, values: getRawData(raw), manifest: raw });
       } else {
-        setResourceDetail({ kind, title, values: decodeBase64Record(getRawData(raw)) });
+        setResourceDetail({ kind, title, name: item.name, namespace: item.namespace, values: decodeBase64Record(getRawData(raw)), manifest: raw });
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -525,6 +633,96 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       setLoading(false);
     }
   }, [runCommand]);
+
+  const loadNodeDetail = useCallback(async (node: K8sNode) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await runCommand(getNodeDetailCommand(node.name));
+      const failure = formatCommandFailure(result, 'auto.remoteK8sManager.commandFailed', { resource: 'nodes', verb: 'get' });
+      if (failure) throw new Error(failure);
+      const raw = parseKubectlItem<RawRecord>(result.stdout);
+      if (!raw) throw new Error(msg('auto.remoteK8sManager.commandFailed'));
+      setDetailNode(parseNode(raw));
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [runCommand]);
+
+  const refreshResourceTab = useCallback(async (kind: ResourceKind) => {
+    if (kind === 'service') await loadServices();
+    if (kind === 'configmap') await loadConfigMaps();
+    if (kind === 'secret') await loadSecrets();
+  }, [loadConfigMaps, loadSecrets, loadServices]);
+
+  const openYamlEditor = useCallback((detail: K8sResourceDetail) => {
+    setYamlEditor({
+      kind: detail.kind,
+      name: detail.name,
+      namespace: detail.namespace,
+      yaml: getEditableManifest(detail),
+    });
+  }, []);
+
+  async function applyResourceYaml(kind: ResourceKind, name: string, namespace: string, yaml: string) {
+    const command = kind === 'service'
+      ? getServiceEditCommand(name, namespace, yaml)
+      : kind === 'configmap'
+        ? getConfigMapEditCommand(name, namespace, yaml)
+        : getSecretEditCommand(name, namespace, yaml);
+    return await runCommand(command);
+  }
+
+  const saveYamlEditor = useCallback(async () => {
+    if (!yamlEditor) return;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const yaml = prepareManifestForApply(yamlEditor.kind, yamlEditor.yaml);
+      const result = await applyResourceYaml(yamlEditor.kind, yamlEditor.name, yamlEditor.namespace, yaml);
+      const resourceName = yamlEditor.kind === 'service' ? 'services' : yamlEditor.kind === 'configmap' ? 'configmaps' : 'secrets';
+      const failure = formatCommandFailure(result, 'auto.remoteK8sManager.saveFailed', { resource: resourceName, verb: 'patch' });
+      if (failure) throw new Error(failure);
+      setNotice(msg('auto.remoteK8sManager.saveSuccess'));
+      setYamlEditor(null);
+      setResourceDetail(null);
+      await refreshResourceTab(yamlEditor.kind);
+    } catch (err) {
+      setError(`${msg('auto.remoteK8sManager.saveFailed')}: ${getErrorMessage(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshResourceTab, runCommand, yamlEditor]);
+
+  const deleteResource = useCallback(async () => {
+    if (!pendingDeleteResource) return;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const command = pendingDeleteResource.kind === 'service'
+        ? getServiceDeleteCommand(pendingDeleteResource.name, pendingDeleteResource.namespace)
+        : pendingDeleteResource.kind === 'configmap'
+          ? getConfigMapDeleteCommand(pendingDeleteResource.name, pendingDeleteResource.namespace)
+          : getSecretDeleteCommand(pendingDeleteResource.name, pendingDeleteResource.namespace);
+      const result = await runCommand(command);
+      const resourceName = pendingDeleteResource.kind === 'service' ? 'services' : pendingDeleteResource.kind === 'configmap' ? 'configmaps' : 'secrets';
+      const failure = formatCommandFailure(result, 'auto.remoteK8sManager.deleteFailed', { resource: resourceName, verb: 'delete' });
+      if (failure) throw new Error(failure);
+      setNotice(msg('auto.remoteK8sManager.deleteSuccess'));
+      const deletedKind = pendingDeleteResource.kind;
+      setPendingDeleteResource(null);
+      setResourceDetail(null);
+      await refreshResourceTab(deletedKind);
+    } catch (err) {
+      setError(`${msg('auto.remoteK8sManager.deleteFailed')}: ${getErrorMessage(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [pendingDeleteResource, refreshResourceTab, runCommand]);
 
   const renderPods = () => (
     <table className="k8s-manager-table">
@@ -572,10 +770,13 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
   );
 
   const renderNodes = () => (
-    <table className="k8s-manager-table"><thead><tr><th>{msg('auto.remoteK8sManager.podName')}</th><th>{msg('auto.remoteK8sManager.podStatus')}</th><th>{msg('auto.remoteK8sManager.roles')}</th><th>{msg('auto.remoteK8sManager.internalIp')}</th><th>{msg('auto.remoteK8sManager.osImage')}</th><th>{msg('auto.remoteK8sManager.kubeletVersion')}</th><th>{msg('auto.remoteK8sManager.podAge')}</th></tr></thead><tbody>
-      {nodes.map((node) => <tr key={node.name}><td><strong>{node.name}</strong></td><td><span className={`k8s-manager-status-badge ${statusClass(node.status)}`}>{statusLabel(node.status)}</span></td><td>{node.roles}</td><td>{node.internalIP}</td><td>{node.osImage}</td><td>{node.kubeletVersion}</td><td>{node.age}</td></tr>)}
-      {!nodes.length ? <tr><td colSpan={7} className="k8s-manager-empty">{msg('auto.remoteK8sManager.emptyNodes')}</td></tr> : null}
-    </tbody></table>
+    <>
+      {nodeUsageSummary ? <div className="k8s-manager-usage-bar"><strong>{msg('auto.remoteK8sManager.resourceUsage')}</strong><span>{msg('auto.remoteK8sManager.cpu')}: {nodeUsageSummary.cpuPercent}% | {msg('auto.remoteK8sManager.memory')}: {nodeUsageSummary.memoryPercent}% | {msg('auto.remoteK8sManager.pods')}: {nodeUsageSummary.podsUsed}/{nodeUsageSummary.podsCapacity || msg('auto.remoteK8sManager.notAvailable')}</span></div> : null}
+      <table className="k8s-manager-table"><thead><tr><th>{msg('auto.remoteK8sManager.podName')}</th><th>{msg('auto.remoteK8sManager.podStatus')}</th><th>{msg('auto.remoteK8sManager.roles')}</th><th>{msg('auto.remoteK8sManager.internalIp')}</th><th>{msg('auto.remoteK8sManager.osImage')}</th><th>{msg('auto.remoteK8sManager.kubeletVersion')}</th><th>{msg('auto.remoteK8sManager.podAge')}</th></tr></thead><tbody>
+        {nodes.map((node) => <tr key={node.name} onClick={() => void loadNodeDetail(node)}><td><strong>{node.name}</strong></td><td><span className={`k8s-manager-status-badge ${statusClass(node.status)}`}>{statusLabel(node.status)}</span></td><td>{node.roles}</td><td>{node.internalIP}</td><td>{node.osImage}</td><td>{node.kubeletVersion}</td><td>{node.age}</td></tr>)}
+        {!nodes.length ? <tr><td colSpan={7} className="k8s-manager-empty">{msg('auto.remoteK8sManager.emptyNodes')}</td></tr> : null}
+      </tbody></table>
+    </>
   );
 
   return (
@@ -615,7 +816,8 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       </main>
 
       {detailWorkload ? <K8sWorkloadDetailPanel workload={detailWorkload} loading={loading} onClose={() => setDetailWorkload(null)} onScale={(workload) => setScaleDialog({ workload, replicas: workload.desired })} onRestart={setPendingRestartWorkload} onRolloutStatus={(workload) => void showWorkloadRolloutStatus(workload)} onViewYaml={(workload) => void showWorkloadYaml(workload)} /> : null}
-      {resourceDetail ? <K8sResourceDetailPanel detail={resourceDetail} loading={loading} onClose={() => setResourceDetail(null)} /> : null}
+      {resourceDetail ? <K8sResourceDetailPanel detail={resourceDetail} loading={loading} onClose={() => setResourceDetail(null)} onEdit={openYamlEditor} onDelete={(detail) => setPendingDeleteResource({ kind: detail.kind, name: detail.name, namespace: detail.namespace })} /> : null}
+      {detailNode ? <K8sNodeDetailPanel node={detailNode} onClose={() => setDetailNode(null)} /> : null}
 
       <footer className="k8s-manager-footer">
         <span>{msg('auto.remoteK8sManager.contextLabel', { value0: currentContext || '-' })}</span>
@@ -628,7 +830,9 @@ function RemoteK8sManager({ connectionId, systemType }: RemoteK8sManagerProps) {
       {scaleDialog ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setScaleDialog(null)}><div className="k8s-manager-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{msg('auto.remoteK8sManager.scaleTitle')}</strong><p>{scaleDialog.workload.namespace}/{scaleDialog.workload.name}</p><label className="k8s-manager-modal-field"><span>{msg('auto.remoteK8sManager.scaleCurrent')}</span><input value={scaleDialog.workload.desired} readOnly /></label><label className="k8s-manager-modal-field"><span>{msg('auto.remoteK8sManager.scaleNew')}</span><input type="number" min={0} step={1} value={scaleDialog.replicas} onChange={(event) => setScaleDialog((current) => current ? { ...current, replicas: Math.max(0, Number.parseInt(event.target.value || '0', 10)) } : current)} /></label><div><button type="button" onClick={() => setScaleDialog(null)} disabled={loading}>{msg('common.cancel')}</button><button type="button" onClick={() => void confirmScaleWorkload()} disabled={loading}>{msg('auto.remoteK8sManager.scaleConfirm')}</button></div></div></div>, document.body) : null}
       {pendingRestartWorkload ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setPendingRestartWorkload(null)}><div className="k8s-manager-modal" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{msg('auto.remoteK8sManager.restartButton')}</strong><p>{msg('auto.remoteK8sManager.restartConfirm', { value0: `${pendingRestartWorkload.namespace}/${pendingRestartWorkload.name}` })}</p><div><button type="button" onClick={() => setPendingRestartWorkload(null)} disabled={loading}>{msg('common.cancel')}</button><button type="button" onClick={() => void restartWorkload()} disabled={loading}>{msg('auto.remoteK8sManager.restartButton')}</button></div></div></div>, document.body) : null}
       {outputDialog ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setOutputDialog(null)}><div className="k8s-manager-modal k8s-manager-output-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{outputDialog.title}</strong><textarea className="k8s-manager-logs" readOnly value={outputDialog.output} aria-label={outputDialog.title} /><div><button type="button" onClick={() => setOutputDialog(null)}>{msg('auto.remoteK8sManager.close')}</button></div></div></div>, document.body) : null}
+      {yamlEditor ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setYamlEditor(null)}><div className="k8s-manager-modal k8s-manager-output-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{msg('auto.remoteK8sManager.editYaml')} · {yamlEditor.namespace}/{yamlEditor.name}</strong><label className="k8s-manager-editor-label"><span>{msg('auto.remoteK8sManager.yamlEditor')}</span><textarea className="k8s-manager-logs" value={yamlEditor.yaml} onChange={(event) => setYamlEditor((current) => current ? { ...current, yaml: event.target.value } : current)} aria-label={msg('auto.remoteK8sManager.yamlEditor')} /></label><div><button type="button" onClick={() => setYamlEditor(null)} disabled={loading}>{msg('auto.remoteK8sManager.cancelButton')}</button><button type="button" onClick={() => void saveYamlEditor()} disabled={loading}>{msg('auto.remoteK8sManager.saveButton')}</button></div></div></div>, document.body) : null}
       {pendingDeletePod ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setPendingDeletePod(null)}><div className="k8s-manager-modal" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{msg('auto.remoteK8sManager.deletePod')}</strong><p>{msg('auto.remoteK8sManager.confirmDelete', { value0: pendingDeletePod.name })}</p><div><button type="button" onClick={() => setPendingDeletePod(null)}>{msg('auto.remoteK8sManager.close')}</button><button type="button" className="danger" onClick={() => void deletePod()} disabled={loading}>{msg('auto.remoteK8sManager.deletePod')}</button></div></div></div>, document.body) : null}
+      {pendingDeleteResource ? createPortal(<div className="k8s-manager-modal-overlay" role="presentation" onClick={() => setPendingDeleteResource(null)}><div className="k8s-manager-modal" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><strong>{msg('auto.remoteK8sManager.deleteButton')}</strong><p>{msg('auto.remoteK8sManager.confirmDelete', { value0: `${pendingDeleteResource.namespace}/${pendingDeleteResource.name}` })}</p><div><button type="button" onClick={() => setPendingDeleteResource(null)}>{msg('auto.remoteK8sManager.cancelButton')}</button><button type="button" className="danger" onClick={() => void deleteResource()} disabled={loading}>{msg('auto.remoteK8sManager.deleteButton')}</button></div></div></div>, document.body) : null}
       {sudoPrompt}
     </div>
   );
@@ -680,10 +884,12 @@ function K8sWorkloadDetailPanel({ workload, loading, onClose, onScale, onRestart
   );
 }
 
-function K8sResourceDetailPanel({ detail, loading, onClose }: {
+function K8sResourceDetailPanel({ detail, loading, onClose, onEdit, onDelete }: {
   detail: K8sResourceDetail;
   loading: boolean;
   onClose: () => void;
+  onEdit: (detail: K8sResourceDetail) => void;
+  onDelete: (detail: K8sResourceDetail) => void;
 }) {
   const titleId = detail.kind === 'service'
     ? 'auto.remoteK8sManager.serviceDetail'
@@ -699,6 +905,32 @@ function K8sResourceDetailPanel({ detail, loading, onClose }: {
       ) : (
         <section><h3>{detail.kind === 'secret' ? msg('auto.remoteK8sManager.secretDetail') : msg('auto.remoteK8sManager.configMapDetail')}</h3><KeyValueTable values={detail.values} emptyId="auto.remoteK8sManager.noData" /></section>
       )}
+      <footer><button type="button" onClick={() => onEdit(detail)} disabled={loading}>{msg('auto.remoteK8sManager.editButton')}</button><button type="button" className="danger" onClick={() => onDelete(detail)} disabled={loading}>{msg('auto.remoteK8sManager.deleteButton')}</button></footer>
+    </aside>
+  );
+}
+
+function K8sNodeDetailPanel({ node, onClose }: {
+  node: K8sNode;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="k8s-manager-pod-detail" aria-label={msg('auto.remoteK8sManager.nodesTab')}>
+      <header><strong>{node.name}</strong><button type="button" onClick={onClose} aria-label={msg('auto.remoteK8sManager.close')}>×</button></header>
+      <section>
+        <h3>{msg('auto.remoteK8sManager.conditions')}</h3>
+        <table className="k8s-manager-table"><thead><tr><th>{msg('auto.remoteK8sManager.type')}</th><th>{msg('auto.remoteK8sManager.podStatus')}</th><th>{msg('auto.remoteK8sManager.reason')}</th><th>{msg('auto.remoteK8sManager.message')}</th><th>{msg('auto.remoteK8sManager.lastSeen')}</th></tr></thead><tbody>{node.conditions.map((condition) => <tr key={condition.type}><td>{condition.type}</td><td>{statusLabel(condition.status)}</td><td>{condition.reason || '-'}</td><td>{condition.message || '-'}</td><td>{formatDateTime(condition.lastHeartbeatTime || '')}</td></tr>)}</tbody></table>
+      </section>
+      <section>
+        <h3>{msg('auto.remoteK8sManager.capacity')} / {msg('auto.remoteK8sManager.allocatable')}</h3>
+        <dl className="k8s-manager-info-grid"><div><dt>{msg('auto.remoteK8sManager.cpu')}</dt><dd>{node.cpuCapacity || '-'} / {node.cpuAllocatable || '-'}</dd></div><div><dt>{msg('auto.remoteK8sManager.memory')}</dt><dd>{node.memoryCapacity || '-'} / {node.memoryAllocatable || '-'}</dd></div><div><dt>{msg('auto.remoteK8sManager.pods')}</dt><dd>{node.podCapacity || '-'} / {node.podAllocatable || '-'}</dd></div></dl>
+      </section>
+      <section>
+        <h3>{msg('auto.remoteK8sManager.systemInfo')}</h3>
+        <dl className="k8s-manager-info-grid"><div><dt>{msg('auto.remoteK8sManager.osImage')}</dt><dd>{node.osImage || '-'}</dd></div><div><dt>{msg('auto.remoteK8sManager.systemInfo')}</dt><dd>{node.kernelVersion || '-'}</dd></div><div><dt>{msg('auto.remoteK8sManager.type')}</dt><dd>{node.containerRuntime || '-'}</dd></div><div><dt>{msg('auto.remoteK8sManager.kubeletVersion')}</dt><dd>{node.kubeletVersion || '-'}</dd></div></dl>
+      </section>
+      <section><h3>{msg('auto.remoteK8sManager.labels')}</h3><KeyValueTable values={node.labels} /></section>
+      <section><h3>{msg('auto.remoteK8sManager.taints')}</h3>{node.taints.length ? <table className="k8s-manager-table"><thead><tr><th>{msg('auto.remoteK8sManager.dataKey')}</th><th>{msg('auto.remoteK8sManager.dataValue')}</th><th>{msg('auto.remoteK8sManager.type')}</th></tr></thead><tbody>{node.taints.map((taint) => <tr key={`${taint.key}/${taint.effect}`}><td>{taint.key}</td><td>{taint.value || '-'}</td><td>{taint.effect || '-'}</td></tr>)}</tbody></table> : <div className="k8s-manager-empty">{msg('auto.remoteK8sManager.noData')}</div>}</section>
     </aside>
   );
 }
