@@ -9,18 +9,6 @@ export function getKubectlVersionCommand(): RemoteCommandInput {
   return { command: 'kubectl version --client -o json 2>/dev/null || echo "{}"' };
 }
 
-export function getContextListCommand(): RemoteCommandInput {
-  return { command: "kubectl config get-contexts -o json 2>/dev/null || echo '{\"contexts\":[]}'" };
-}
-
-export function getCurrentContextCommand(): RemoteCommandInput {
-  return { command: 'kubectl config current-context 2>/dev/null || echo "none"' };
-}
-
-export function getSwitchContextCommand(contextName: string): RemoteCommandInput {
-  return { command: `kubectl config use-context ${shellSingleQuote(contextName)}` };
-}
-
 export function getConfigViewCommand(): RemoteCommandInput {
   return { command: 'kubectl config view -o json 2>/dev/null || echo "{}"' };
 }
@@ -45,14 +33,6 @@ export function getPodLogsCommand(name: string, namespace: string, container?: s
   const tailFlag = tail ? `--tail=${tail}` : '';
   return {
     command: `kubectl logs ${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} ${containerFlag} ${tailFlag}`.trim(),
-  };
-}
-
-export function getPodExecCommand(name: string, namespace: string, container?: string, shellCmd?: string): RemoteCommandInput {
-  const containerFlag = container ? `-c ${shellSingleQuote(container)}` : '';
-  const cmd = shellCmd || '/bin/sh';
-  return {
-    command: `kubectl exec -it ${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} ${containerFlag} -- ${cmd}`,
   };
 }
 
@@ -171,21 +151,4 @@ export function getConfigMapListCommand(namespace?: string): RemoteCommandInput 
 export function getSecretListCommand(namespace?: string): RemoteCommandInput {
   const ns = namespace ? `-n ${shellSingleQuote(namespace)}` : '--all-namespaces';
   return { command: `kubectl get secrets ${ns} -o json 2>/dev/null || echo "{\\"items\\":[]}"` };
-}
-
-export function getAuthCanICommand(verb: string, resource: string, namespace?: string): RemoteCommandInput {
-  const ns = namespace ? `-n ${shellSingleQuote(namespace)}` : '';
-  return { command: `kubectl auth can-i ${shellSingleQuote(verb)} ${shellSingleQuote(resource)} ${ns} 2>/dev/null || echo "no"`.trim() };
-}
-
-export function getPodsAccessCheckCommand(namespace?: string): RemoteCommandInput {
-  return getAuthCanICommand('get', 'pods', namespace);
-}
-
-export function getDeploymentsAccessCheckCommand(namespace?: string): RemoteCommandInput {
-  return getAuthCanICommand('get', 'deployments', namespace);
-}
-
-export function getServicesAccessCheckCommand(namespace?: string): RemoteCommandInput {
-  return getAuthCanICommand('get', 'services', namespace);
 }

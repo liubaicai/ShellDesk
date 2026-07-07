@@ -1,15 +1,5 @@
 import type { RemoteSystemType } from './types';
 
-export interface KubectlList<T> {
-  apiVersion: string;
-  items: T[];
-}
-
-export interface KubectlItem<T> {
-  apiVersion: string;
-  data: T;
-}
-
 export type K8sRuntimeStatus = 'available' | 'unavailable' | 'checking';
 
 export interface K8sNamespace {
@@ -141,17 +131,6 @@ export interface K8sWorkloadSummary {
   creationTimestamp: string;
   images: string[];
   selector: string;
-}
-
-export interface K8sWorkloadDetail {
-  summary: K8sWorkloadSummary;
-  labels: Record<string, string>;
-  annotations: Record<string, string>;
-  strategy: string;
-  minReadySeconds: number;
-  revisionHistoryLimit: number;
-  conditions: string[];
-  containers: K8sPodContainer[];
 }
 
 export interface K8sService {

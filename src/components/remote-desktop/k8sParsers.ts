@@ -13,7 +13,6 @@ import type {
   K8sPodEvent,
   K8sSecret,
   K8sService,
-  K8sWorkloadDetail,
   K8sWorkloadSummary,
   WorkloadKind,
 } from './k8sTypes';
@@ -308,28 +307,6 @@ export function parseWorkload(raw: Record<string, unknown>, kind: WorkloadKind):
     creationTimestamp: getStr(metadata, 'creationTimestamp'),
     images: containers.map((container) => getStr(container, 'image')).filter(Boolean),
     selector: formatSelector(matchLabels),
-  };
-}
-
-export function parseWorkloadDetail(raw: Record<string, unknown>, kind: WorkloadKind): K8sWorkloadDetail {
-  const metadata = toRecord(get(raw, 'metadata'));
-  const spec = toRecord(get(raw, 'spec'));
-  const strategy = toRecord(get(spec, 'strategy'));
-  const updateStrategy = toRecord(get(spec, 'updateStrategy'));
-  const status = toRecord(get(raw, 'status'));
-  const conditions = toRecordArray(get(status, 'conditions'));
-  const template = toRecord(get(spec, 'template'));
-  const podSpec = toRecord(get(template, 'spec'));
-
-  return {
-    summary: parseWorkload(raw, kind),
-    labels: toStringRecord(get(metadata, 'labels')),
-    annotations: toStringRecord(get(metadata, 'annotations')),
-    strategy: getStr(strategy, 'type') || getStr(updateStrategy, 'type'),
-    minReadySeconds: getNum(spec, 'minReadySeconds'),
-    revisionHistoryLimit: getNum(spec, 'revisionHistoryLimit'),
-    conditions: conditions.map((condition) => [getStr(condition, 'type'), getStr(condition, 'status'), getStr(condition, 'reason')].filter(Boolean).join(': ')),
-    containers: parsePodContainers({ spec: podSpec }),
   };
 }
 
