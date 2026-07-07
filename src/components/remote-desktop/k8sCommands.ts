@@ -109,6 +109,18 @@ export function getWorkloadGetYamlCommand(kind: string, name: string, namespace:
   return { command: `kubectl get ${kind}/${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} -o yaml` };
 }
 
+export function getServiceGetYamlCommand(name: string, namespace: string): RemoteCommandInput {
+  return { command: `kubectl get svc/${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} -o json` };
+}
+
+export function getConfigMapGetYamlCommand(name: string, namespace: string): RemoteCommandInput {
+  return { command: `kubectl get cm/${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} -o json` };
+}
+
+export function getSecretGetYamlCommand(name: string, namespace: string): RemoteCommandInput {
+  return { command: `kubectl get secret/${shellSingleQuote(name)} -n ${shellSingleQuote(namespace)} -o json` };
+}
+
 export function getServiceListCommand(namespace?: string): RemoteCommandInput {
   const ns = namespace ? `-n ${shellSingleQuote(namespace)}` : '--all-namespaces';
   return { command: `kubectl get svc ${ns} -o json 2>/dev/null || echo "{\\"items\\":[]}"` };

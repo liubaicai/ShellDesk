@@ -331,13 +331,18 @@ export function parseService(raw: Record<string, unknown>): K8sService {
   const ports = toRecordArray(get(spec, 'ports'));
   const selector = toStringRecord(get(spec, 'selector'));
   const externalIPs = get(spec, 'externalIPs');
+  const loadBalancerIngress = toRecordArray(get(raw, 'status', 'loadBalancer', 'ingress'));
+  const externalIP = [
+    ...(Array.isArray(externalIPs) ? externalIPs.map(toStringOrEmpty).filter(Boolean) : []),
+    ...loadBalancerIngress.map((ingress) => getStr(ingress, 'ip') || getStr(ingress, 'hostname')).filter(Boolean),
+  ].join(', ');
 
   return {
     name: getStr(metadata, 'name'),
     namespace: getStr(metadata, 'namespace'),
     type: getStr(spec, 'type'),
     clusterIP: getStr(spec, 'clusterIP'),
-    externalIP: Array.isArray(externalIPs) ? externalIPs.map(toStringOrEmpty).filter(Boolean).join(', ') : undefined,
+    externalIP: externalIP || undefined,
     ports: ports.map((portRecord) => {
       const port = getNum(portRecord, 'port');
       const targetPort = get(portRecord, 'targetPort');

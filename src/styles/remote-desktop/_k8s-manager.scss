@@ -89,9 +89,11 @@
 .k8s-manager-toolbar button,
 .k8s-manager-toolbar select,
 .k8s-manager-searchbar input,
+.k8s-manager-modal-field input,
 .k8s-manager-filters button,
 .k8s-manager-tabs button,
 .k8s-manager-sub-tabs button,
+.k8s-manager-row-actions button,
 .k8s-manager-key-values button,
 .k8s-manager-pod-detail button,
 .k8s-manager-modal button {
@@ -111,6 +113,7 @@
 .k8s-manager-filters button,
 .k8s-manager-tabs button,
 .k8s-manager-sub-tabs button,
+.k8s-manager-row-actions button,
 .k8s-manager-key-values button,
 .k8s-manager-pod-detail button,
 .k8s-manager-modal button {
@@ -127,6 +130,7 @@
 .k8s-manager-filters button:hover:not(:disabled),
 .k8s-manager-tabs button:hover:not(:disabled),
 .k8s-manager-sub-tabs button:hover:not(:disabled),
+.k8s-manager-row-actions button:hover:not(:disabled),
 .k8s-manager-key-values button:hover:not(:disabled),
 .k8s-manager-pod-detail button:hover:not(:disabled),
 .k8s-manager-modal button:hover:not(:disabled) {
@@ -255,6 +259,18 @@
   font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.k8s-manager-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.k8s-manager-row-actions button {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .k8s-manager-table tr.is-warning td {
@@ -481,6 +497,31 @@ td.k8s-manager-empty {
   padding: 16px;
   background: var(--k8s-panel-strong);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46);
+  color: var(--k8s-text);
+}
+
+.k8s-manager-output-modal {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.k8s-manager-output-modal .k8s-manager-logs {
+  width: 100%;
+  min-height: 420px;
+  margin: 12px 0;
+}
+
+.k8s-manager-modal-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--k8s-muted);
+  font-size: 11.5px;
+  font-weight: 760;
+}
+
+.k8s-manager-modal-field input {
+  width: 100%;
+  padding: 0 10px;
   color: var(--k8s-text);
 }
 
