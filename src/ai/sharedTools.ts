@@ -18,6 +18,7 @@ const SHELLDESK_APP_KEYS = [
   'redis',
   'service-manager',
   'container-manager',
+  'k8s-manager',
   'port-manager',
   'firewall-manager',
   'iptables-manager',

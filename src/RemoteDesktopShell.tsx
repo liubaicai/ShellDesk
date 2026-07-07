@@ -39,6 +39,7 @@ const RemoteFrpManager = lazy(() => import('./components/remote-desktop/RemoteFr
 const RemoteFrpsManager = lazy(() => import('./components/remote-desktop/RemoteFrpsManager'));
 const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
 const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
+const RemoteK8sManager = lazy(() => import('./components/remote-desktop/RemoteK8sManager'));
 const RemoteLogViewer = lazy(() => import('./components/remote-desktop/RemoteLogViewer'));
 const RemoteMessageQueuePanel = lazy(() => import('./components/remote-desktop/RemoteMessageQueuePanel'));
 const RemoteMonitor = lazy(() => import('./components/remote-desktop/RemoteMonitor'));
@@ -97,6 +98,7 @@ const desktopApps = [
   { key: 'redis', group: 'data', labelId: 'desktop.app.redis.label', descriptionId: 'desktop.app.redis.description' },
   { key: 'service-manager', group: 'basic', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
   { key: 'container-manager', group: 'operations', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
+  { key: 'k8s-manager', group: 'operations', labelId: 'desktop.app.k8sManager.label', descriptionId: 'desktop.app.k8sManager.description' },
   { key: 'port-manager', group: 'network-security', labelId: 'desktop.app.portManager.label', descriptionId: 'desktop.app.portManager.description' },
   { key: 'firewall-manager', group: 'network-security', labelId: 'desktop.app.firewallManager.label', descriptionId: 'desktop.app.firewallManager.description' },
   { key: 'iptables-manager', group: 'network-security', labelId: 'desktop.app.iptablesManager.label', descriptionId: 'desktop.app.iptablesManager.description' },
@@ -144,6 +146,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   redis: new URL('./assets/desktop-icons/redis.png', import.meta.url).href,
   'service-manager': new URL('./assets/desktop-icons/service-manager.png', import.meta.url).href,
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
+  'k8s-manager': new URL('./assets/desktop-icons/k8s-manager.png', import.meta.url).href,
   'port-manager': new URL('./assets/desktop-icons/port-manager.png', import.meta.url).href,
   'firewall-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
   'iptables-manager': new URL('./assets/desktop-icons/iptables-manager.png', import.meta.url).href,
@@ -174,7 +177,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 13;
+const desktopAppCatalogVersion = 14;
 const defaultDesktopAppKeys: DesktopAppKey[] = [
   'files',
   'terminal',
@@ -183,6 +186,7 @@ const defaultDesktopAppKeys: DesktopAppKey[] = [
   'browser',
   'service-manager',
   'container-manager',
+  'k8s-manager',
   'procmanager',
   'ai-chat',
   'settings',
@@ -203,6 +207,7 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'clickhouse',
   'ai-chat',
   'code-editor',
+  'k8s-manager',
 ];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
@@ -398,6 +403,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
+  'k8s-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'frp-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'frps-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
@@ -1055,6 +1061,17 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M8.5 8.5v8.25M12 8.5v8.25M15.5 8.5v8.25" />
         <path d="M7 5h10v3.5H7V5Z" />
         <path d="M6.25 19h11.5" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'k8s-manager') {
+    return (
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="7.5" />
+        <path d="M12 5.5v13M5.5 12h13" />
+        <path d="m7.4 7.4 9.2 9.2M16.6 7.4l-9.2 9.2" />
+        <circle cx="12" cy="12" r="2.2" />
       </svg>
     );
   }
@@ -3125,6 +3142,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'container-manager') {
       return <RemoteContainerManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'k8s-manager') {
+      return <RemoteK8sManager connectionId={connection.id} systemType={connection.host.systemType ?? 'unknown'} />;
     }
 
     if (desktopWindow.appKey === 'frp-manager') {

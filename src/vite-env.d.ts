@@ -193,6 +193,7 @@ type ShellDeskDesktopAppKey =
   | 'port-manager'
   | 'firewall-manager'
   | 'iptables-manager'
+  | 'k8s-manager'
   | 'network-diagnostics'
   | 'disk-analyzer'
   | 'disk-manager'

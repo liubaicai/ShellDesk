@@ -13,7 +13,7 @@ const DESKTOP_WALLPAPER_PRESET_IDS: &[&str] = &[
     "green-health",
     "indigo-traces",
 ];
-const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 13;
+const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 14;
 const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "git-manager",
     "cert-manager",
@@ -30,6 +30,7 @@ const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "clickhouse",
     "ai-chat",
     "code-editor",
+    "k8s-manager",
 ];
 const TERMINAL_THEME_CHOICES: &[&str] = &[
     "shelldesk-dark",

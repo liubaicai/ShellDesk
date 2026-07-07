@@ -28,7 +28,7 @@ function isTauriRuntime() {
 
 function createPreviewRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
   return {
-    appCatalogVersion: 13,
+    appCatalogVersion: 14,
     sortMode: 'custom',
     items: [
       { id: 'app:files', type: 'app', appKey: 'files' },
@@ -38,6 +38,7 @@ function createPreviewRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
       { id: 'app:browser', type: 'app', appKey: 'browser' },
       { id: 'app:service-manager', type: 'app', appKey: 'service-manager' },
       { id: 'app:container-manager', type: 'app', appKey: 'container-manager' },
+      { id: 'app:k8s-manager', type: 'app', appKey: 'k8s-manager' },
       { id: 'app:procmanager', type: 'app', appKey: 'procmanager' },
       { id: 'app:ai-chat', type: 'app', appKey: 'ai-chat' },
       { id: 'app:settings', type: 'app', appKey: 'settings' },

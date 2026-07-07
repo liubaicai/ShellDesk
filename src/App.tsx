@@ -84,7 +84,7 @@ const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
 const ungroupedKey = '__ungrouped__';
 const hostPageSizeOptions = [10, 20, 50, 100] as const;
 type HostPageSize = (typeof hostPageSizeOptions)[number];
-const remoteDesktopAppCatalogVersion = 13;
+const remoteDesktopAppCatalogVersion = 14;
 const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'git-manager',
   'cert-manager',
@@ -101,6 +101,7 @@ const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'clickhouse',
   'ai-chat',
   'code-editor',
+  'k8s-manager',
 ];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,
@@ -113,6 +114,7 @@ const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
     { id: 'app:browser', type: 'app', appKey: 'browser' },
     { id: 'app:service-manager', type: 'app', appKey: 'service-manager' },
     { id: 'app:container-manager', type: 'app', appKey: 'container-manager' },
+    { id: 'app:k8s-manager', type: 'app', appKey: 'k8s-manager' },
     { id: 'app:procmanager', type: 'app', appKey: 'procmanager' },
     { id: 'app:ai-chat', type: 'app', appKey: 'ai-chat' },
     { id: 'app:settings', type: 'app', appKey: 'settings' },
