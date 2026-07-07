@@ -166,6 +166,7 @@ const desktopAppAssetContracts = {
   redis: { component: 'RemoteRedis', style: 'redis' },
   'service-manager': { component: 'RemoteServiceManager', style: 'service-manager' },
   'container-manager': { component: 'RemoteContainerManager', style: 'container-manager' },
+  'k8s-manager': { component: 'RemoteK8sManager', style: 'k8s-manager' },
   'port-manager': { component: 'RemotePortManager', style: 'port-manager' },
   'firewall-manager': { component: 'RemoteFirewallManager', style: 'firewall-manager' },
   'iptables-manager': { component: 'RemoteIptablesManager', style: 'iptables-manager' },
