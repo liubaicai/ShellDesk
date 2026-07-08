@@ -75,6 +75,7 @@ function RemoteTerminal({
   const autoReconnectTimerFiringRef = useRef(false);
   const lastSizeRef = useRef({ columns: 0, rows: 0 });
   const isTerminalReadyRef = useRef(false);
+  const disconnectedRef = useRef(false);
   const useLegacyTerminalIpcRef = useRef(false);
   const sftpAvailabilityRef = useRef<{ available: boolean; checkedAt: number } | null>(null);
   const activeSftpTransferRef = useRef(false);
@@ -447,6 +448,7 @@ function RemoteTerminal({
       reconnectCountRef.current = 0;
       autoReconnectActiveRef.current = false;
       autoReconnectTimerFiringRef.current = false;
+      disconnectedRef.current = false;
     };
 
     const cancelAutoReconnect = (notify: boolean) => {
@@ -644,6 +646,7 @@ function RemoteTerminal({
         }
 
         isTerminalReadyRef.current = true;
+        disconnectedRef.current = false;
         setSessionStatus('running');
         resetAutoReconnect();
         fitAndSyncSize();
@@ -732,6 +735,7 @@ function RemoteTerminal({
       }
 
       isTerminalReadyRef.current = false;
+      disconnectedRef.current = true;
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
       foregroundTaskSourceRef.current = null;
@@ -765,6 +769,7 @@ function RemoteTerminal({
       setSessionError(payload.reason ?? '');
       setSessionStatus('disconnected');
       terminal.writeln(`\r\n${payload.reason ? t('terminal.message.connectionClosedWithReason', settings.language, { reason: payload.reason }) : t('terminal.message.connectionClosed', settings.language)}`);
+      terminal.writeln(t('terminal.message.pressRToReconnect', settings.language));
       scheduleAutoReconnect();
     });
     const removeConnectionRestored = api.events.onConnectionRestored((payload) => {
@@ -779,6 +784,13 @@ function RemoteTerminal({
     const removeTransferProgress = api.events.onTransferProgress(renderSftpProgress);
     const removeTransferEnd = api.events.onTransferEnd(finishSftpProgress);
     const inputDisposable = terminal.onData((data) => {
+      if (disconnectedRef.current && (data === 'r' || data === 'R')) {
+        disconnectedRef.current = false;
+        cancelAutoReconnect(false);
+        restartTerminalRef.current?.();
+        return;
+      }
+
       if (autoReconnectActiveRef.current) {
         cancelAutoReconnect(true);
         return;
@@ -875,6 +887,7 @@ function RemoteTerminal({
     return () => {
       disposed = true;
       isTerminalReadyRef.current = false;
+      disconnectedRef.current = false;
       window.clearTimeout(startWarningTimer);
       resetAutoReconnect();
       window.cancelAnimationFrame(animationFrame);
