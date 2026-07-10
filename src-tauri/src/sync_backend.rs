@@ -499,6 +499,8 @@ where
             .unwrap_or(false);
         let remote_count =
             count_content_records(remote_document.get("records").unwrap_or(&Value::Null));
+        let empty_vault_resolution_applies =
+            applies_empty_vault_resolution(&empty_vault_resolution, local_count, remote_count);
 
         if empty_vault_resolution.is_empty() && local_count == 0 && remote_count > 0 {
             let result = pending_empty_vault_result(state, &mut store, &local, &remote_document)?;
@@ -524,11 +526,12 @@ where
             );
         }
 
-        if is_initial_sync_divergence(
+        if should_request_initial_sync_resolution(
             store.get("state").unwrap_or(&Value::Null),
             &local,
             &remote_document,
             remote_exists,
+            empty_vault_resolution_applies,
         ) {
             let conflicts = initial_sync_conflicts();
             let initial_merged = json!({
@@ -633,7 +636,7 @@ where
             return Ok(result);
         }
 
-        let merged = merge_sync_documents(
+        let mut merged = merge_sync_documents(
             &remote_document,
             &effective_local_records,
             &effective_local_tombstones,
@@ -641,6 +644,9 @@ where
             &now_value,
             &conflict_resolution,
         );
+        if empty_vault_resolution == "restoreRemote" && empty_vault_resolution_applies {
+            merged["downloaded"] = json!(remote_count);
+        }
         let merged_document = merged
             .get("document")
             .cloned()
@@ -870,6 +876,21 @@ fn is_initial_sync_divergence(
         && !has_sync_baseline(sync_state)
         && local.get("footprint").and_then(Value::as_str).unwrap_or("")
             != remote_document_footprint(remote)
+}
+
+fn applies_empty_vault_resolution(resolution: &str, local_count: i64, remote_count: i64) -> bool {
+    matches!(resolution, "restoreRemote" | "keepEmpty") && local_count == 0 && remote_count > 0
+}
+
+fn should_request_initial_sync_resolution(
+    sync_state: &Value,
+    local: &Value,
+    remote: &Value,
+    remote_exists: bool,
+    empty_vault_resolution_applies: bool,
+) -> bool {
+    !empty_vault_resolution_applies
+        && is_initial_sync_divergence(sync_state, local, remote, remote_exists)
 }
 
 fn local_sync_document(local: &Value, updated_at: &str) -> Value {
@@ -1418,6 +1439,24 @@ mod tests {
             &remote,
             true
         ));
+        assert!(should_request_initial_sync_resolution(
+            &empty_state,
+            &local,
+            &remote,
+            true,
+            false
+        ));
+        assert!(!should_request_initial_sync_resolution(
+            &empty_state,
+            &local,
+            &remote,
+            true,
+            true
+        ));
+        assert!(applies_empty_vault_resolution("restoreRemote", 0, 135));
+        assert!(applies_empty_vault_resolution("keepEmpty", 0, 135));
+        assert!(!applies_empty_vault_resolution("", 0, 135));
+        assert!(!applies_empty_vault_resolution("restoreRemote", 1, 135));
 
         remote["records"] = json!({
             "host:local": {
