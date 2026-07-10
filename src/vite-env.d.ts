@@ -671,6 +671,50 @@ interface ShellDeskRemoteMetricsReport {
   netTxBytes: number | null;
 }
 
+interface ShellDeskMonitorThresholds {
+  cpu: number;
+  memory: number;
+  disk: number;
+}
+
+interface ShellDeskMonitorPersistenceStatus {
+  configured: boolean;
+  enabled: boolean;
+  databasePath: string | null;
+  sampleCount: number;
+  lastSampleAt: number | null;
+  intervalMinutes: number;
+  retentionDays: number;
+  thresholds: ShellDeskMonitorThresholds;
+}
+
+interface ShellDeskMonitorHistorySample {
+  timestamp: number;
+  cpuPercent: number | null;
+  memoryPercent: number | null;
+  diskPercent: number | null;
+  netRxBytesPerSec: number | null;
+  netTxBytesPerSec: number | null;
+  serviceStatus: 'healthy' | 'warning' | 'unknown';
+  serviceFailedCount: number | null;
+  serviceDetails: string[];
+}
+
+interface ShellDeskMonitorAlertEvent {
+  id: number;
+  metric: 'cpu' | 'memory' | 'disk';
+  startedAt: number;
+  endedAt: number | null;
+  threshold: number;
+  peakValue: number;
+}
+
+interface ShellDeskMonitorHistoryReport {
+  samples: ShellDeskMonitorHistorySample[];
+  alerts: ShellDeskMonitorAlertEvent[];
+  thresholds: ShellDeskMonitorThresholds;
+}
+
 interface ShellDeskIpcCapabilities {
   terminalSessions: boolean;
   terminalBinary?: boolean;
@@ -814,6 +858,10 @@ interface ShellDeskConnectionControls {
   getStatus: (connectionId: string) => Promise<ShellDeskRemoteStatusReport>;
   getSystemInfo: (connectionId: string) => Promise<ShellDeskRemoteSystemInfoReport>;
   getMetrics: (connectionId: string) => Promise<ShellDeskRemoteMetricsReport>;
+  getMonitorPersistenceStatus: (connectionId: string) => Promise<ShellDeskMonitorPersistenceStatus>;
+  setMonitorPersistenceEnabled: (connectionId: string, enabled: boolean) => Promise<ShellDeskMonitorPersistenceStatus>;
+  getMonitorHistory: (connectionId: string, sinceMs: number, limit?: number) => Promise<ShellDeskMonitorHistoryReport>;
+  setMonitorThresholds: (connectionId: string, thresholds: ShellDeskMonitorThresholds) => Promise<{ ok: boolean; thresholds: ShellDeskMonitorThresholds }>;
   runCommand: (connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => Promise<{ stdout: string; stderr: string; code: number }>;
   runCommandStream: (
     connectionId: string,

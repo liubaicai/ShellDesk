@@ -514,14 +514,24 @@
     0 12px 28px rgba(31, 35, 40, 0.08);
 }
 
-[data-theme="light"] .monitor-interval-control {
+[data-theme="light"] .monitor-interval-control,
+[data-theme="light"] .monitor-mode-control {
   background: rgba(16, 32, 51, 0.035);
 }
 
-[data-theme="light"] .monitor-interval-control button.active {
+[data-theme="light"] .monitor-interval-control button.active,
+[data-theme="light"] .monitor-mode-control button.active {
   background: rgba(38, 111, 232, 0.12);
   color: #1559cc;
   box-shadow: inset 0 0 0 1px rgba(38, 111, 232, 0.18);
+}
+
+[data-theme="light"] .monitor-persistence-toggle {
+  color: #1559cc;
+}
+
+[data-theme="light"] .monitor-persistence-toggle.enabled {
+  color: #17724b;
 }
 
 [data-theme="light"] .monitor-error-strip {

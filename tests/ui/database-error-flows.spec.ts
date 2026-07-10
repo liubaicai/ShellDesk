@@ -49,6 +49,65 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
+test('Monitor persistence remains opt-in and can return to real-time only', async ({ page }) => {
+  await gotoHarness(page, 'component=monitor');
+
+  const dialog = page.getByRole('dialog', { name: '开启持久化分析？' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: '仅使用实时监控' }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('实时采样')).toBeVisible();
+  await expect(page.getByRole('button', { name: '开启持久化' })).toBeVisible();
+});
+
+test('Monitor persistence places sample count in the control bar and combines network traffic', async ({ page }) => {
+  await gotoHarness(page, 'component=monitor');
+
+  const optInDialog = page.getByRole('dialog', { name: '开启持久化分析？' });
+  await expect(optInDialog).toBeVisible();
+  await optInDialog.getByRole('button', { name: '开启持久化' }).click();
+
+  await expect(optInDialog).toBeHidden();
+  await expect(page.getByText('持久化分析')).toBeVisible();
+  await expect(page.getByText('24 个采样点', { exact: true })).toBeVisible();
+  await expect(page.locator('.monitor-observability-summary')).toHaveCount(0);
+  await expect(page.getByText('根磁盘使用率')).toBeVisible();
+
+  const chartCards = page.locator('.monitor-chart-card');
+  await expect(chartCards).toHaveCount(4);
+  const networkCard = page.locator('.monitor-chart-card[data-series-key="network"]');
+  await expect(networkCard).toHaveCount(1);
+  await expect(networkCard).toContainText('网络流量');
+  await expect(networkCard).toContainText('↑');
+  await expect(networkCard).toContainText('↓');
+
+  await page.getByRole('button', { name: '设置阈值' }).click();
+  const thresholdDialog = page.getByRole('dialog', { name: '配置告警阈值' });
+  await expect(thresholdDialog).toBeVisible();
+  await expect(thresholdDialog.getByRole('spinbutton')).toHaveCount(3);
+});
+
+test('Monitor persistence remains usable in a compact window', async ({ page }) => {
+  await page.setViewportSize({ width: 620, height: 720 });
+  await gotoHarness(page, 'component=monitor');
+
+  const optInDialog = page.getByRole('dialog', { name: '开启持久化分析？' });
+  await optInDialog.getByRole('button', { name: '开启持久化' }).click();
+  await expect(page.getByText('24 个采样点', { exact: true })).toBeVisible();
+
+  const horizontalOverflow = await page.locator('.monitor-shell').evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+
+  await page.getByRole('button', { name: '设置阈值' }).click();
+  const dialog = page.getByRole('dialog', { name: '配置告警阈值' });
+  await expect(dialog).toBeVisible();
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(620);
+});
+
 test('MySQL create-table backend errors stay visible inside the modal', async ({ page }) => {
   await gotoHarness(page, 'component=mysql');
 

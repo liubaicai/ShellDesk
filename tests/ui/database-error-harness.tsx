@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
+import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import { loadFullMessageCatalog } from '../../src/i18n';
@@ -73,6 +74,12 @@ function installGuiSshMock() {
     scannedAt: now,
   };
   let sudoPromptShown = false;
+  let monitorEnabled = false;
+  let monitorConfigured = false;
+  let monitorThresholds = { cpu: 90, memory: 90, disk: 85 };
+  let metricsCounter = 1_000_000;
+
+  window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
 
   (window as any).guiSSH = {
     connections: {
@@ -152,6 +159,66 @@ function installGuiSshMock() {
           { key: 'os', label: 'OS', value: 'Ubuntu 24.04', icon: 'O' },
         ],
       }),
+      getMetrics: async () => {
+        metricsCounter += 12_000;
+        return {
+          refreshedAt: new Date().toISOString(),
+          cpuPercent: 31,
+          memoryPercent: 57,
+          netRxBytes: metricsCounter,
+          netTxBytes: metricsCounter / 2,
+        };
+      },
+      getMonitorPersistenceStatus: async () => ({
+        configured: monitorConfigured,
+        enabled: monitorEnabled,
+        databasePath: monitorConfigured ? '/home/demo/.shelldesk/monitor/monitor.sqlite3' : null,
+        sampleCount: monitorConfigured ? 288 : 0,
+        lastSampleAt: monitorConfigured ? Date.now() : null,
+        intervalMinutes: 5,
+        retentionDays: 30,
+        thresholds: monitorThresholds,
+      }),
+      setMonitorPersistenceEnabled: async (_connectionId: string, enabled: boolean) => {
+        monitorEnabled = enabled;
+        monitorConfigured = true;
+        return {
+          configured: true,
+          enabled,
+          databasePath: '/home/demo/.shelldesk/monitor/monitor.sqlite3',
+          sampleCount: 288,
+          lastSampleAt: Date.now(),
+          intervalMinutes: 5,
+          retentionDays: 30,
+          thresholds: monitorThresholds,
+        };
+      },
+      getMonitorHistory: async () => ({
+        samples: Array.from({ length: 24 }, (_, index) => ({
+          timestamp: Date.now() - (23 - index) * 5 * 60 * 1000,
+          cpuPercent: 28 + index * 0.8,
+          memoryPercent: 52 + index * 0.25,
+          diskPercent: 63,
+          netRxBytesPerSec: 24_000 + index * 500,
+          netTxBytesPerSec: 12_000 + index * 300,
+          serviceStatus: 'healthy',
+          serviceFailedCount: 0,
+          serviceDetails: [],
+        })),
+        alerts: [{
+          id: 1,
+          metric: 'cpu',
+          startedAt: Date.now() - 60 * 60 * 1000,
+          endedAt: Date.now() - 45 * 60 * 1000,
+          threshold: 90,
+          peakValue: 94.2,
+        }],
+        thresholds: monitorThresholds,
+      }),
+      setMonitorThresholds: async (_connectionId: string, thresholds: typeof monitorThresholds) => {
+        monitorThresholds = thresholds;
+        return { ok: true, thresholds };
+      },
       mysqlConnect: async () => ({ mysqlId: 'mysql-ui-test', transport: 'tunnel' }),
       mysqlDisconnect: async () => true,
       mysqlDatabases: async () => ['test'],
@@ -245,6 +312,14 @@ function App() {
     return <RemoteSettings connectionId={connectionId} systemType="ubuntu" initialTab="systeminfo" />;
   }
 
+  if (component === 'monitor') {
+    return (
+      <div style={{ display: 'grid', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemoteMonitor connectionId={connectionId} hostId={hostId} systemType="ubuntu" />
+      </div>
+    );
+  }
+
   return <RemoteMySQL connectionId={connectionId} hostId={hostId} />;
 }
 
@@ -252,4 +327,7 @@ installGuiSshMock();
 document.documentElement.setAttribute('data-language', 'zh-CN');
 await loadFullMessageCatalog();
 
-createRoot(document.getElementById('root')!).render(<App />);
+const harnessWindow = window as typeof window & { __shellDeskUiHarnessRoot?: ReturnType<typeof createRoot> };
+const harnessRoot = harnessWindow.__shellDeskUiHarnessRoot ?? createRoot(document.getElementById('root')!);
+harnessWindow.__shellDeskUiHarnessRoot = harnessRoot;
+harnessRoot.render(<App />);

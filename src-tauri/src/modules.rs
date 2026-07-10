@@ -24,6 +24,8 @@ pub(crate) mod ipc;
 pub(crate) mod local_fs;
 #[path = "logs.rs"]
 pub(crate) mod logs;
+#[path = "monitor_persistence.rs"]
+pub(crate) mod monitor_persistence;
 #[path = "proxy.rs"]
 pub(crate) mod proxy;
 #[path = "remote_fs.rs"]

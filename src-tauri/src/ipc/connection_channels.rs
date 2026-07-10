@@ -2,8 +2,8 @@
 mod database_channels;
 
 use crate::{
-    browser_proxy, connection, connection_monitor, http_tunnel, remote_fs, run_connection_command,
-    run_connection_command_stream, terminal, vnc, zmodem, AppState,
+    browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, remote_fs,
+    run_connection_command, run_connection_command_stream, terminal, vnc, zmodem, AppState,
 };
 use serde_json::{json, Value};
 use std::{future::Future, pin::Pin, sync::OnceLock};
@@ -54,7 +54,13 @@ pub(crate) async fn dispatch(
         "connection:get-system-info" => {
             dispatch_monitor(state.clone(), channel.clone(), args).await
         }
-        "connection:get-metrics" => dispatch_monitor(state.clone(), channel.clone(), args).await,
+        "connection:get-metrics"
+        | "connection:get-monitor-persistence-status"
+        | "connection:set-monitor-persistence-enabled"
+        | "connection:get-monitor-history"
+        | "connection:set-monitor-thresholds" => {
+            dispatch_monitor(state.clone(), channel.clone(), args).await
+        }
         "connection:start-terminal" => terminal::start_terminal(state.clone(), window, args).await,
         "connection:write-terminal" => terminal::write_terminal(&state, args),
         "connection:write-terminal-binary" => terminal::write_terminal_bytes(&state, args),
@@ -197,6 +203,18 @@ async fn dispatch_monitor(
                 }
                 "connection:get-metrics" => {
                     connection_monitor::get_connection_metrics(state, args).await
+                }
+                "connection:get-monitor-persistence-status" => {
+                    monitor_persistence::get_status(state, args).await
+                }
+                "connection:set-monitor-persistence-enabled" => {
+                    monitor_persistence::set_enabled(state, args).await
+                }
+                "connection:get-monitor-history" => {
+                    monitor_persistence::get_history(state, args).await
+                }
+                "connection:set-monitor-thresholds" => {
+                    monitor_persistence::set_thresholds(state, args).await
                 }
                 _ => Err(format!("Unsupported monitor IPC channel: {channel}")),
             }

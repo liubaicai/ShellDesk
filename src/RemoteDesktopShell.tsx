@@ -3132,7 +3132,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'monitor') {
-      return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
+      return <RemoteMonitor connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
     }
 
     if (desktopWindow.appKey === 'settings') {
@@ -3275,7 +3275,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return <RemoteSqlite connectionId={connection.id} initialFilePath={desktopWindow.notepadInitialPath} systemType={connection.host.systemType} />;
     }
 
-    return <RemoteMonitor connectionId={connection.id} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
+    return <RemoteMonitor connectionId={connection.id} hostId={remoteConnectionProfileHostId} systemType={connection.host.systemType} onOpenProcessManager={openProcessManager} />;
   };
 
   return (

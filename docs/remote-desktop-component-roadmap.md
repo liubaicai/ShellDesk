@@ -29,7 +29,7 @@
 | 03 | `browser` | 浏览器 | [浏览器组件重设计](./remote-desktop-components/03-browser-redesign.md) | Tauri 代理、远程网络上下文、书签、错误诊断 |
 | 04 | `notepad` | 记事本 | [记事本组件重设计](./remote-desktop-components/04-notepad-redesign.md) | 远程文本编辑、多标签、语法高亮、冲突提示、自定义模态 |
 | 05 | `vnc` | VNC Viewer | [VNC Viewer 组件重设计](./remote-desktop-components/05-vnc-viewer-redesign.md) | VNC 探测、SSH 隧道、noVNC、缩放和输入控制 |
-| 06 | `monitor` | 系统监视器 | [系统监视器组件重设计](./remote-desktop-components/06-system-monitor-redesign.md) | 系统指标、采样、进程管理器跳转 |
+| 06 | `monitor` | 系统监视器 | [系统监视器组件重设计](./remote-desktop-components/06-system-monitor-redesign.md) | 实时指标、SQLite 历史、阈值告警、服务健康、进程管理器跳转 |
 | 07 | `mysql` | MySQL | [MySQL 管理器组件重设计](./remote-desktop-components/07-mysql-redesign.md) | SSH 隧道连接、schema 浏览、SQL 查询、结果查看、编辑和 CSV/JSON 导入导出 |
 | 08 | `redis` | Redis | [Redis 管理器组件重设计](./remote-desktop-components/08-redis-redesign.md) | SCAN 浏览、类型化值查看、命令执行和风险操作 |
 | 09 | `sqlite` | SQLite | [SQLite 管理器组件重设计](./remote-desktop-components/09-sqlite-redesign.md) | 远程 SQLite 文件入口、对象树、查询、表预览和单元格编辑 |

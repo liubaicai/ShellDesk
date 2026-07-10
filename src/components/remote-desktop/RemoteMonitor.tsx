@@ -2,12 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import {
+  MonitorPersistenceDialog,
+  type MonitorPersistenceDialogMode,
+} from './MonitorPersistenceViews';
 import type { RemoteProcessManagerLaunchOptions } from './RemoteProcessManager';
 import type { RemoteSystemType } from './types';
 import { tCurrent } from '../../i18n';
 
 interface RemoteMonitorProps {
   connectionId: string;
+  hostId?: string;
   systemType?: RemoteSystemType;
   onOpenProcessManager?: (options?: RemoteProcessManagerLaunchOptions) => void;
 }
@@ -16,6 +21,7 @@ interface MonitorSample {
   timestamp: number;
   cpuPercent: number | null;
   memoryPercent: number | null;
+  diskPercent: number | null;
   netRxBytesPerSec: number | null;
   netTxBytesPerSec: number | null;
 }
@@ -25,12 +31,19 @@ interface ChartPoint {
   value: number | null;
 }
 
-interface ChartSeries {
+interface ChartLine {
   key: string;
   label: string;
+  shortLabel: string;
   data: ChartPoint[];
   color: string;
   fillColor: string;
+}
+
+interface ChartSeries {
+  key: string;
+  label: string;
+  lines: ChartLine[];
   yMin: number;
   yMax: number;
   axisFormatter: (value: number) => string;
@@ -47,11 +60,42 @@ interface HoverState {
 
 const MAX_SAMPLES = 90;
 const BACKGROUND_POLL_INTERVAL_MS = 5000;
+const HISTORY_REFRESH_INTERVAL_MS = 60_000;
 const POLL_INTERVAL_OPTIONS = [2000, 5000, 10000] as const;
 const DEFAULT_POLL_INTERVAL_MS = POLL_INTERVAL_OPTIONS[0];
+const PERSISTENCE_PROMPT_KEY_PREFIX = 'shelldesk.monitor.persistencePrompt.v1';
+const HISTORY_RANGE_OPTIONS = [
+  { value: 60 * 60 * 1000, label: '1h', limit: 24 },
+  { value: 6 * 60 * 60 * 1000, label: '6h', limit: 96 },
+  { value: 24 * 60 * 60 * 1000, label: '24h', limit: 360 },
+  { value: 7 * 24 * 60 * 60 * 1000, label: '7d', limit: 2200 },
+] as const;
+const DEFAULT_HISTORY_RANGE_MS = HISTORY_RANGE_OPTIONS[2].value;
 
 type PollIntervalMs = (typeof POLL_INTERVAL_OPTIONS)[number];
-type NullableMetricKey = keyof Omit<MonitorSample, 'timestamp'>;
+type HistoryRangeMs = (typeof HISTORY_RANGE_OPTIONS)[number]['value'];
+type MonitorDataMode = 'realtime' | 'history';
+type NullableMetricKey = 'cpuPercent' | 'memoryPercent' | 'diskPercent' | 'netRxBytesPerSec' | 'netTxBytesPerSec';
+
+function getPersistencePromptKey(hostId: string) {
+  return `${PERSISTENCE_PROMPT_KEY_PREFIX}.${hostId}`;
+}
+
+function hasPersistencePromptDecision(hostId: string) {
+  try {
+    return window.localStorage.getItem(getPersistencePromptKey(hostId)) === 'decided';
+  } catch {
+    return false;
+  }
+}
+
+function rememberPersistencePromptDecision(hostId: string) {
+  try {
+    window.localStorage.setItem(getPersistencePromptKey(hostId), 'decided');
+  } catch {
+    // Local preference storage is best-effort; monitoring still works without it.
+  }
+}
 
 function appendSample(samples: MonitorSample[], sample: MonitorSample) {
   return [...samples.slice(-(MAX_SAMPLES - 1)), sample];
@@ -125,8 +169,8 @@ function getNiceCeiling(value: number) {
   return nice * magnitude;
 }
 
-function getNetworkScale(data: ChartPoint[]) {
-  const maxValue = Math.max(1, ...getNumericValues(data));
+function getNetworkScale(...dataSets: ChartPoint[][]) {
+  const maxValue = Math.max(1, ...dataSets.flatMap(getNumericValues));
   return getNiceCeiling(maxValue * 1.12);
 }
 
@@ -217,6 +261,7 @@ function drawChart(
   const emptyColor = getCssColor(canvas, '--monitor-chart-empty', '#748296');
   const crosshairColor = getCssColor(canvas, '--monitor-chart-crosshair', 'rgba(238, 244, 255, 0.34)');
   const fontFamily = getCssColor(canvas, '--interface-font-family', 'system-ui, sans-serif');
+  const timeline = series.lines[0]?.data ?? [];
 
   ctx.lineWidth = 1;
   ctx.strokeStyle = gridColor;
@@ -244,131 +289,129 @@ function drawChart(
   ctx.lineTo(width - padding.right, height - padding.bottom);
   ctx.stroke();
 
-  if (series.data.length > 1) {
-    const labelIndexes = Array.from(new Set([0, Math.floor((series.data.length - 1) / 2), series.data.length - 1]));
+  if (timeline.length > 1) {
+    const labelIndexes = Array.from(new Set([0, Math.floor((timeline.length - 1) / 2), timeline.length - 1]));
 
     ctx.fillStyle = mutedColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     labelIndexes.forEach((dataIndex) => {
-      const x = padding.left + (plotWidth / (series.data.length - 1)) * dataIndex;
-      ctx.fillText(formatTimeLabel(series.data[dataIndex].time), x, height - 6);
+      const x = padding.left + (plotWidth / (timeline.length - 1)) * dataIndex;
+      ctx.fillText(formatTimeLabel(timeline[dataIndex].time), x, height - 6);
     });
   }
 
-  const points = series.data.map((point, index) => {
-    const x = series.data.length > 1
-      ? padding.left + (plotWidth / (series.data.length - 1)) * index
-      : padding.left + plotWidth;
-    const y = point.value === null
-      ? null
-      : padding.top + plotHeight - ((point.value - series.yMin) / yRange) * plotHeight;
-
+  const chartLines = series.lines.map((line) => {
+    const points = line.data.map((point, index) => {
+      const x = line.data.length > 1
+        ? padding.left + (plotWidth / (line.data.length - 1)) * index
+        : padding.left + plotWidth;
+      const y = point.value === null
+        ? null
+        : padding.top + plotHeight - ((point.value - series.yMin) / yRange) * plotHeight;
+      return { x, y, value: point.value };
+    });
     return {
-      x,
-      y,
-      value: point.value,
+      line,
+      points,
+      numericPoints: points.filter((point) => point.value !== null && point.y !== null),
     };
   });
+  const numericPointCount = chartLines.reduce((count, line) => count + line.numericPoints.length, 0);
 
-  const numericPoints = points.filter((point) => point.value !== null && point.y !== null);
-
-  if (numericPoints.length < 2) {
+  if (!chartLines.some((line) => line.numericPoints.length >= 2)) {
     ctx.fillStyle = emptyColor;
     ctx.font = `12px ${fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(numericPoints.length === 1 ? tCurrent('auto.remoteMonitor.yf2cti') : tCurrent('auto.remoteMonitor.tx52m'), width / 2, padding.top + plotHeight / 2);
-
-    if (numericPoints.length === 1) {
-      const point = numericPoints[0];
-      ctx.beginPath();
-      ctx.arc(point.x, point.y ?? padding.top + plotHeight, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = series.color;
-      ctx.fill();
-    }
+    ctx.fillText(numericPointCount ? tCurrent('auto.remoteMonitor.yf2cti') : tCurrent('auto.remoteMonitor.tx52m'), width / 2, padding.top + plotHeight / 2);
+    chartLines.forEach(({ line, numericPoints }) => {
+      numericPoints.forEach((point) => {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y ?? padding.top + plotHeight, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = line.color;
+        ctx.fill();
+      });
+    });
 
     return;
   }
 
-  const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-  gradient.addColorStop(0, series.fillColor);
-  gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  chartLines.forEach(({ line, points }) => {
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+    gradient.addColorStop(0, line.fillColor);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    let segment: Array<{ x: number; y: number }> = [];
+    const flushSegment = () => {
+      if (segment.length < 2) {
+        segment = [];
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(segment[0].x, height - padding.bottom);
+      segment.forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.lineTo(segment[segment.length - 1].x, height - padding.bottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
 
-  let segment: Array<{ x: number; y: number }> = [];
-
-  const flushSegment = () => {
-    if (segment.length < 2) {
+      ctx.beginPath();
+      segment.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
       segment = [];
-      return;
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(segment[0].x, height - padding.bottom);
-    segment.forEach((point) => ctx.lineTo(point.x, point.y));
-    ctx.lineTo(segment[segment.length - 1].x, height - padding.bottom);
-    ctx.closePath();
-    ctx.fillStyle = gradient;
-    ctx.fill();
-
-    ctx.beginPath();
-    segment.forEach((point, index) => {
-      if (index === 0) {
-        ctx.moveTo(point.x, point.y);
+    };
+    points.forEach((point) => {
+      if (point.value === null || point.y === null) {
+        flushSegment();
       } else {
-        ctx.lineTo(point.x, point.y);
+        segment.push({ x: point.x, y: point.y });
       }
     });
-    ctx.strokeStyle = series.color;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.stroke();
+    flushSegment();
 
-    segment = [];
-  };
-
-  points.forEach((point) => {
-    if (point.value === null || point.y === null) {
-      flushSegment();
-      return;
+    const latestNumericPoint = [...points].reverse().find((point) => point.value !== null && point.y !== null);
+    if (latestNumericPoint?.y !== null && latestNumericPoint?.y !== undefined) {
+      ctx.beginPath();
+      ctx.arc(latestNumericPoint.x, latestNumericPoint.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = line.color;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = line.color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
-
-    segment.push({ x: point.x, y: point.y });
   });
-  flushSegment();
 
-  const latestNumericPoint = [...points].reverse().find((point) => point.value !== null && point.y !== null);
-  if (latestNumericPoint?.y !== null && latestNumericPoint?.y !== undefined) {
-    ctx.beginPath();
-    ctx.arc(latestNumericPoint.x, latestNumericPoint.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = series.color;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = series.color;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  if (hoverIndex !== null && points[hoverIndex]) {
-    const hoverPoint = points[hoverIndex];
+  if (hoverIndex !== null && timeline[hoverIndex]) {
+    const hoverX = timeline.length > 1
+      ? padding.left + (plotWidth / (timeline.length - 1)) * hoverIndex
+      : padding.left + plotWidth;
 
     ctx.strokeStyle = crosshairColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(hoverPoint.x, padding.top);
-    ctx.lineTo(hoverPoint.x, height - padding.bottom);
+    ctx.moveTo(hoverX, padding.top);
+    ctx.lineTo(hoverX, height - padding.bottom);
     ctx.stroke();
 
-    if (hoverPoint.value !== null && hoverPoint.y !== null) {
+    chartLines.forEach(({ line, points }) => {
+      const hoverPoint = points[hoverIndex];
+      if (!hoverPoint || hoverPoint.value === null || hoverPoint.y === null) return;
       ctx.beginPath();
       ctx.arc(hoverPoint.x, hoverPoint.y, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.beginPath();
       ctx.arc(hoverPoint.x, hoverPoint.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = series.color;
+      ctx.fillStyle = line.color;
       ctx.fill();
-    }
+    });
   }
 }
 
@@ -377,16 +420,14 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [hoverState, setHoverState] = useState<HoverState | null>(null);
 
-  const latestPoint = getLatestPoint(series.data);
-  const latestLabel = latestPoint?.value === null || latestPoint?.value === undefined
-    ? tCurrent('auto.remoteMonitor.6tzr61')
-    : series.valueFormatter(latestPoint.value);
-  const hasData = getNumericValues(series.data).length > 0;
-  const hoveredPoint = hoverState ? series.data[hoverState.index] : null;
+  const timeline = series.lines[0]?.data ?? [];
+  const latestLines = series.lines.map((line) => ({ line, point: getLatestPoint(line.data) }));
+  const hasData = series.lines.some((line) => getNumericValues(line.data).length > 0);
+  const hoveredTime = hoverState ? timeline[hoverState.index]?.time : null;
   const tooltipStyle: CSSProperties | undefined = hoverState
     ? {
-        left: clamp(hoverState.x + 12, 8, Math.max(8, hoverState.width - 136)),
-        top: clamp(hoverState.y - 46, 8, Math.max(8, hoverState.height - 58)),
+        left: clamp(hoverState.x + 12, 8, Math.max(8, hoverState.width - 188)),
+        top: clamp(hoverState.y - 46 - Math.max(0, series.lines.length - 1) * 23, 8, Math.max(8, hoverState.height - 82)),
       }
     : undefined;
 
@@ -423,7 +464,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
   }, [canvasSize, hoverState?.index, series]);
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!series.data.length) {
+    if (!timeline.length) {
       setHoverState(null);
       return;
     }
@@ -434,7 +475,7 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
     const pointerX = clamp(event.clientX - rect.left, 0, rect.width);
     const pointerY = clamp(event.clientY - rect.top, 0, rect.height);
     const ratio = clamp((pointerX - padding.left) / plotWidth, 0, 1);
-    const nextIndex = Math.round(ratio * (series.data.length - 1));
+    const nextIndex = Math.round(ratio * (timeline.length - 1));
 
     setHoverState({
       index: nextIndex,
@@ -443,18 +484,28 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
       width: rect.width,
       height: rect.height,
     });
-  }, [series.data]);
+  }, [timeline]);
 
   return (
     <article
       className={`monitor-chart-card ${hasData ? '' : 'is-empty'}`}
-      style={{ '--series-color': series.color } as CSSProperties}
+      data-series-key={series.key}
+      style={{ '--series-color': series.lines[0]?.color ?? '#67b7ff' } as CSSProperties}
     >
       <div className="chart-card-head">
         <span className="chart-card-label">{series.label}</span>
-        <span className={latestPoint?.value === null || latestPoint?.value === undefined ? 'chart-card-value muted' : 'chart-card-value'}>
-          {latestLabel}
-        </span>
+        <div className="chart-card-values">
+          {latestLines.map(({ line, point }) => {
+            const value = point?.value;
+            const hasValue = value !== null && value !== undefined;
+            return (
+              <span key={line.key} className={hasValue ? 'chart-card-value' : 'chart-card-value muted'} style={{ color: hasValue ? line.color : undefined }}>
+                {line.shortLabel ? <b>{line.shortLabel}</b> : null}
+                {hasValue ? series.valueFormatter(value) : tCurrent('auto.remoteMonitor.6tzr61')}
+              </span>
+            );
+          })}
+        </div>
       </div>
       <div className="monitor-chart-body">
         <canvas
@@ -464,20 +515,27 @@ function MetricLineChart({ series }: { series: ChartSeries }) {
           onPointerLeave={() => setHoverState(null)}
           onPointerMove={handlePointerMove}
         />
-        {hoverState && hoveredPoint && (
+        {hoverState && hoveredTime ? (
           <div className="monitor-chart-tooltip" style={tooltipStyle}>
-            <span>{formatTimeLabel(hoveredPoint.time)}</span>
-            <strong>
-              {hoveredPoint.value === null ? tCurrent('auto.remoteMonitor.13dbhhl') : series.valueFormatter(hoveredPoint.value)}
-            </strong>
+            <span>{formatTimeLabel(hoveredTime)}</span>
+            {series.lines.map((line) => {
+              const point = line.data[hoverState.index];
+              return (
+                <strong key={line.key} style={{ color: line.color }}>
+                  {line.label}: {point?.value === null || point?.value === undefined
+                    ? tCurrent('auto.remoteMonitor.13dbhhl')
+                    : series.valueFormatter(point.value)}
+                </strong>
+              );
+            })}
           </div>
-        )}
+        ) : null}
       </div>
     </article>
   );
 }
 
-export default function RemoteMonitor({ connectionId, systemType, onOpenProcessManager }: RemoteMonitorProps) {
+export default function RemoteMonitor({ connectionId, hostId, systemType, onOpenProcessManager }: RemoteMonitorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
   const isPollingRef = useRef(false);
@@ -488,6 +546,15 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
   const [isWindowActive, setIsWindowActive] = useState(true);
   const [lastSampleAt, setLastSampleAt] = useState<number | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<MonitorDataMode>('realtime');
+  const [persistenceStatus, setPersistenceStatus] = useState<ShellDeskMonitorPersistenceStatus | null>(null);
+  const [historySamples, setHistorySamples] = useState<ShellDeskMonitorHistorySample[]>([]);
+  const [historyRangeMs, setHistoryRangeMs] = useState<HistoryRangeMs>(DEFAULT_HISTORY_RANGE_MS);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [persistencePending, setPersistencePending] = useState(false);
+  const [persistenceDialog, setPersistenceDialog] = useState<MonitorPersistenceDialogMode>(null);
+  const [thresholdDraft, setThresholdDraft] = useState<ShellDeskMonitorThresholds>({ cpu: 90, memory: 90, disk: 85 });
+  const persistenceHostId = hostId || connectionId;
 
   const effectivePollIntervalMs = isWindowActive
     ? pollIntervalMs
@@ -507,6 +574,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         timestamp: sampleTime,
         cpuPercent: null,
         memoryPercent: null,
+        diskPercent: null,
         netRxBytesPerSec: null,
         netTxBytesPerSec: null,
       }));
@@ -535,6 +603,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         timestamp: sampleTime,
         cpuPercent: readPercent(metrics.cpuPercent),
         memoryPercent: readPercent(metrics.memoryPercent),
+        diskPercent: null,
         netRxBytesPerSec: previousNetwork ? getRatePerSecond(rx, previousNetwork.rx, seconds) : null,
         netTxBytesPerSec: previousNetwork ? getRatePerSecond(tx, previousNetwork.tx, seconds) : null,
       };
@@ -555,6 +624,7 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         timestamp: sampleTime,
         cpuPercent: null,
         memoryPercent: null,
+        diskPercent: null,
         netRxBytesPerSec: null,
         netTxBytesPerSec: null,
       }));
@@ -566,6 +636,28 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
       }
     }
   }, [connectionId]);
+
+  const loadHistory = useCallback(async () => {
+    const api = window.guiSSH?.connections;
+    if (!api?.getMonitorHistory) {
+      setPersistenceError(tCurrent('monitor.persistence.apiUnavailable'));
+      return;
+    }
+    const range = HISTORY_RANGE_OPTIONS.find((option) => option.value === historyRangeMs) ?? HISTORY_RANGE_OPTIONS[2];
+    try {
+      const report = await api.getMonitorHistory(connectionId, Date.now() - historyRangeMs, range.limit);
+      if (!isMountedRef.current) {
+        return;
+      }
+      setHistorySamples(Array.isArray(report.samples) ? report.samples : []);
+      setThresholdDraft(report.thresholds);
+      setPersistenceError(null);
+    } catch (error) {
+      if (isMountedRef.current) {
+        setPersistenceError(getErrorMessage(error));
+      }
+    }
+  }, [connectionId, historyRangeMs]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -584,7 +676,107 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
     setSamples([]);
     setLastSampleAt(null);
     setMetricsError(null);
+    setDataMode('realtime');
+    setPersistenceStatus(null);
+    setHistorySamples([]);
+    setPersistenceError(null);
+    setPersistenceDialog(null);
   }, [connectionId]);
+
+  useEffect(() => {
+    if (dataMode !== 'realtime') {
+      return undefined;
+    }
+    let canceled = false;
+    const api = window.guiSSH?.connections;
+
+    if (!api?.getMonitorPersistenceStatus) {
+      setPersistenceError(tCurrent('monitor.persistence.apiUnavailable'));
+      return undefined;
+    }
+
+    void api.getMonitorPersistenceStatus(connectionId).then((status) => {
+      if (canceled || !isMountedRef.current) {
+        return;
+      }
+      setPersistenceStatus(status);
+      setThresholdDraft(status.thresholds);
+      setPersistenceError(null);
+      if (status.enabled) {
+        rememberPersistencePromptDecision(persistenceHostId);
+        setDataMode('history');
+      } else if (!status.configured && !hasPersistencePromptDecision(persistenceHostId)) {
+        setPersistenceDialog('intro');
+      }
+    }).catch((error) => {
+      if (!canceled && isMountedRef.current) {
+        setPersistenceError(getErrorMessage(error));
+      }
+    });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionId, persistenceHostId]);
+
+  const setPersistentCollectionEnabled = useCallback(async (enabled: boolean) => {
+    const api = window.guiSSH?.connections;
+    if (!api?.setMonitorPersistenceEnabled) {
+      setPersistenceError(tCurrent('monitor.persistence.apiUnavailable'));
+      return;
+    }
+    setPersistencePending(true);
+    setPersistenceError(null);
+    try {
+      const status = await api.setMonitorPersistenceEnabled(connectionId, enabled);
+      if (!isMountedRef.current) {
+        return;
+      }
+      setPersistenceStatus(status);
+      setThresholdDraft(status.thresholds);
+      rememberPersistencePromptDecision(persistenceHostId);
+      setPersistenceDialog(null);
+      if (enabled) {
+        setDataMode('history');
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        setPersistenceError(getErrorMessage(error));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPersistencePending(false);
+      }
+    }
+  }, [connectionId, persistenceHostId]);
+
+  const saveThresholds = useCallback(async () => {
+    const api = window.guiSSH?.connections;
+    if (!api?.setMonitorThresholds) {
+      setPersistenceError(tCurrent('monitor.persistence.apiUnavailable'));
+      return;
+    }
+    setPersistencePending(true);
+    setPersistenceError(null);
+    try {
+      const result = await api.setMonitorThresholds(connectionId, thresholdDraft);
+      if (!isMountedRef.current) {
+        return;
+      }
+      setPersistenceStatus((current) => current ? { ...current, thresholds: result.thresholds } : current);
+      setThresholdDraft(result.thresholds);
+      setPersistenceDialog(null);
+      await loadHistory();
+    } catch (error) {
+      if (isMountedRef.current) {
+        setPersistenceError(getErrorMessage(error));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setPersistencePending(false);
+      }
+    }
+  }, [connectionId, loadHistory, thresholdDraft]);
 
   useEffect(() => {
     const readWindowActiveState = () => {
@@ -648,21 +840,52 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
         window.clearTimeout(timerId);
       }
     };
-  }, [collectMetrics, effectivePollIntervalMs]);
+  }, [collectMetrics, dataMode, effectivePollIntervalMs]);
+
+  useEffect(() => {
+    if (dataMode !== 'history' || !persistenceStatus?.configured) {
+      return undefined;
+    }
+    let canceled = false;
+    let timerId: number | undefined;
+
+    const tick = async () => {
+      await loadHistory();
+      if (!canceled) {
+        timerId = window.setTimeout(() => void tick(), HISTORY_REFRESH_INTERVAL_MS);
+      }
+    };
+    void tick();
+
+    return () => {
+      canceled = true;
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [dataMode, loadHistory, persistenceStatus?.configured]);
+
+  const displayedSamples: MonitorSample[] = dataMode === 'history' ? historySamples : samples;
 
   const chartSeries = useMemo<ChartSeries[]>(() => {
-    const cpuData = getMetricData(samples, 'cpuPercent');
-    const memoryData = getMetricData(samples, 'memoryPercent');
-    const rxData = getMetricData(samples, 'netRxBytesPerSec');
-    const txData = getMetricData(samples, 'netTxBytesPerSec');
+    const cpuData = getMetricData(displayedSamples, 'cpuPercent');
+    const memoryData = getMetricData(displayedSamples, 'memoryPercent');
+    const diskData = getMetricData(displayedSamples, 'diskPercent');
+    const rxData = getMetricData(displayedSamples, 'netRxBytesPerSec');
+    const txData = getMetricData(displayedSamples, 'netTxBytesPerSec');
 
-    return [
+    const series: ChartSeries[] = [
       {
         key: 'cpu',
         label: tCurrent('auto.remoteMonitor.rvar35'),
-        data: cpuData,
-        color: '#67b7ff',
-        fillColor: 'rgba(103, 183, 255, 0.2)',
+        lines: [{
+          key: 'cpu',
+          label: tCurrent('auto.remoteMonitor.rvar35'),
+          shortLabel: '',
+          data: cpuData,
+          color: '#67b7ff',
+          fillColor: 'rgba(103, 183, 255, 0.2)',
+        }],
         yMin: 0,
         yMax: 100,
         axisFormatter: formatPercent,
@@ -671,50 +894,110 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
       {
         key: 'memory',
         label: tCurrent('auto.remoteMonitor.ryd6gw'),
-        data: memoryData,
-        color: '#f08cc8',
-        fillColor: 'rgba(240, 140, 200, 0.18)',
+        lines: [{
+          key: 'memory',
+          label: tCurrent('auto.remoteMonitor.ryd6gw'),
+          shortLabel: '',
+          data: memoryData,
+          color: '#f08cc8',
+          fillColor: 'rgba(240, 140, 200, 0.18)',
+        }],
         yMin: 0,
         yMax: 100,
         axisFormatter: formatPercent,
         valueFormatter: formatPercent,
       },
       {
-        key: 'net-tx',
-        label: tCurrent('auto.remoteMonitor.1jwv6je'),
-        data: txData,
-        color: '#ffcf5a',
-        fillColor: 'rgba(255, 207, 90, 0.16)',
+        key: 'network',
+        label: tCurrent('monitor.network.traffic'),
+        lines: [
+          {
+            key: 'net-tx',
+            label: tCurrent('auto.remoteMonitor.1jwv6je'),
+            shortLabel: '↑',
+            data: txData,
+            color: '#ffcf5a',
+            fillColor: 'rgba(255, 207, 90, 0.12)',
+          },
+          {
+            key: 'net-rx',
+            label: tCurrent('auto.remoteMonitor.tnorfo'),
+            shortLabel: '↓',
+            data: rxData,
+            color: '#6ee7a8',
+            fillColor: 'rgba(110, 231, 168, 0.1)',
+          },
+        ],
         yMin: 0,
-        yMax: getNetworkScale(txData),
-        axisFormatter: formatBytesPerSecond,
-        valueFormatter: formatBytesPerSecond,
-      },
-      {
-        key: 'net-rx',
-        label: tCurrent('auto.remoteMonitor.tnorfo'),
-        data: rxData,
-        color: '#6ee7a8',
-        fillColor: 'rgba(110, 231, 168, 0.16)',
-        yMin: 0,
-        yMax: getNetworkScale(rxData),
+        yMax: getNetworkScale(txData, rxData),
         axisFormatter: formatBytesPerSecond,
         valueFormatter: formatBytesPerSecond,
       },
     ];
-  }, [samples]);
+    if (dataMode === 'history') {
+      series.splice(2, 0, {
+        key: 'disk',
+        label: tCurrent('monitor.alert.metric.disk'),
+        lines: [{
+          key: 'disk',
+          label: tCurrent('monitor.alert.metric.disk'),
+          shortLabel: '',
+          data: diskData,
+          color: '#a78bfa',
+          fillColor: 'rgba(167, 139, 250, 0.18)',
+        }],
+        yMin: 0,
+        yMax: 100,
+        axisFormatter: formatPercent,
+        valueFormatter: formatPercent,
+      });
+    }
+    return series;
+  }, [dataMode, displayedSamples]);
+
+  const latestHistorySample = historySamples.length ? historySamples[historySamples.length - 1] : null;
+  const activeError = dataMode === 'history' ? persistenceError : metricsError;
+  const activeSampleAt = dataMode === 'history' ? latestHistorySample?.timestamp ?? persistenceStatus?.lastSampleAt ?? null : lastSampleAt;
+  const samplingStateClass = activeError
+    ? 'error'
+    : dataMode === 'history'
+      ? persistenceStatus?.enabled ? 'active' : 'idle'
+      : isWindowActive ? 'active' : 'idle';
+  const samplingStateLabel = activeError
+    ? tCurrent('auto.remoteMonitor.1x0ix9t')
+    : dataMode === 'history'
+      ? persistenceStatus?.enabled ? tCurrent('monitor.persistence.scheduledAnalysis') : tCurrent('monitor.persistence.paused')
+      : isWindowActive ? tCurrent('auto.remoteMonitor.5dpl6b') : tCurrent('auto.remoteMonitor.9a9ara');
+  const samplePointCount = dataMode === 'history' ? historySamples.length : samples.length;
+
+  const closePersistenceDialog = () => {
+    setPersistenceDialog(null);
+    setPersistenceError(null);
+  };
 
   return (
     <div ref={rootRef} className="monitor-pane">
-      <div className="monitor-shell">
+      <div className={`monitor-shell mode-${dataMode} ${activeError ? 'has-error' : ''}`}>
         <div className="monitor-control-bar">
           <div className="monitor-sampling-state">
-            <span className={`monitor-sampling-dot ${metricsError ? 'error' : isWindowActive ? 'active' : 'idle'}`} />
-            <strong>{metricsError ? tCurrent('auto.remoteMonitor.1x0ix9t') : isWindowActive ? tCurrent('auto.remoteMonitor.5dpl6b') : tCurrent('auto.remoteMonitor.9a9ara')}</strong>
-            <small>{lastSampleAt ? formatTimeLabel(lastSampleAt) : getSystemLabel(systemType)}</small>
+            <span className={`monitor-sampling-dot ${samplingStateClass}`} />
+            <strong>{samplingStateLabel}</strong>
+            <small>{activeSampleAt ? formatTimeLabel(activeSampleAt) : getSystemLabel(systemType)}</small>
+            <small className="monitor-sample-count">{tCurrent('monitor.persistence.sampleCount', { count: samplePointCount })}</small>
           </div>
 
           <div className="monitor-control-actions">
+            {persistenceStatus?.configured ? (
+              <div className="monitor-mode-control" aria-label={tCurrent('monitor.persistence.dataSource')}>
+                <button type="button" className={dataMode === 'realtime' ? 'active' : ''} onClick={() => setDataMode('realtime')}>
+                  {tCurrent('monitor.persistence.realtime')}
+                </button>
+                <button type="button" className={dataMode === 'history' ? 'active' : ''} onClick={() => setDataMode('history')}>
+                  {tCurrent('monitor.persistence.history')}
+                </button>
+              </div>
+            ) : null}
+
             {onOpenProcessManager ? (
               <>
                 <button
@@ -722,39 +1005,100 @@ export default function RemoteMonitor({ connectionId, systemType, onOpenProcessM
                   className="monitor-proc-button"
                   onClick={() => onOpenProcessManager({ sortKey: 'cpu', sortDir: 'desc', viewMode: 'table' })}
                 >
-                  {tCurrent('auto.remoteMonitor.7cjarl')}</button>
+                  {tCurrent('auto.remoteMonitor.7cjarl')}
+                </button>
                 <button
                   type="button"
                   className="monitor-proc-button"
                   onClick={() => onOpenProcessManager({ sortKey: 'memory', sortDir: 'desc', viewMode: 'table' })}
                 >
-                  {tCurrent('auto.remoteMonitor.1ph5hdy')}</button>
+                  {tCurrent('auto.remoteMonitor.1ph5hdy')}
+                </button>
               </>
             ) : null}
 
-            <div className="monitor-interval-control" aria-label={tCurrent('auto.remoteMonitor.qnrx5f')}>
-              {POLL_INTERVAL_OPTIONS.map((interval) => (
-                <button
-                  key={interval}
-                  type="button"
-                  className={pollIntervalMs === interval ? 'active' : ''}
-                  onClick={() => setPollIntervalMs(interval)}
-                >
-                  {interval / 1000}s
-                </button>
-              ))}
-            </div>
+            {dataMode === 'realtime' ? (
+              <div className="monitor-interval-control" aria-label={tCurrent('auto.remoteMonitor.qnrx5f')}>
+                {POLL_INTERVAL_OPTIONS.map((interval) => (
+                  <button
+                    key={interval}
+                    type="button"
+                    className={pollIntervalMs === interval ? 'active' : ''}
+                    onClick={() => setPollIntervalMs(interval)}
+                  >
+                    {interval / 1000}s
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="monitor-interval-control" aria-label={tCurrent('monitor.persistence.historyRange')}>
+                {HISTORY_RANGE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={historyRangeMs === option.value ? 'active' : ''}
+                    onClick={() => setHistoryRangeMs(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {dataMode === 'history' && persistenceStatus?.configured ? (
+              <button
+                type="button"
+                className="monitor-proc-button"
+                onClick={() => {
+                  setPersistenceError(null);
+                  setThresholdDraft(persistenceStatus.thresholds);
+                  setPersistenceDialog('thresholds');
+                }}
+              >
+                {tCurrent('monitor.alert.configure')}
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              className={`monitor-persistence-toggle ${persistenceStatus?.enabled ? 'enabled' : ''}`}
+              disabled={persistencePending || !persistenceStatus}
+              onClick={() => {
+                setPersistenceError(null);
+                setPersistenceDialog(persistenceStatus?.enabled ? 'disable' : 'intro');
+              }}
+            >
+              {persistenceStatus?.enabled
+                ? tCurrent('monitor.persistence.disable')
+                : tCurrent('monitor.persistence.enable')}
+            </button>
           </div>
         </div>
 
-        {metricsError && <div className="monitor-error-strip">{metricsError}</div>}
+        {activeError && <div className="monitor-error-strip">{activeError}</div>}
 
-        <section className="monitor-charts-grid" aria-label={tCurrent('auto.remoteMonitor.1svf0iv')}>
+        <section className={`monitor-charts-grid mode-${dataMode}`} aria-label={tCurrent('auto.remoteMonitor.1svf0iv')}>
           {chartSeries.map((series) => (
             <MetricLineChart key={series.key} series={series} />
           ))}
         </section>
       </div>
+
+      <MonitorPersistenceDialog
+        mode={persistenceDialog}
+        pending={persistencePending}
+        error={persistenceError}
+        thresholds={thresholdDraft}
+        onThresholdsChange={setThresholdDraft}
+        onDeclineIntro={() => {
+          rememberPersistencePromptDecision(persistenceHostId);
+          closePersistenceDialog();
+        }}
+        onEnable={() => void setPersistentCollectionEnabled(true)}
+        onCancel={closePersistenceDialog}
+        onDisable={() => void setPersistentCollectionEnabled(false)}
+        onSaveThresholds={() => void saveThresholds()}
+      />
     </div>
   );
 }
