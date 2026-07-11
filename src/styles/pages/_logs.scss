@@ -39,6 +39,47 @@
   gap: 6px;
 }
 
+.logs-host-filter-group {
+  width: 100%;
+  min-width: 0;
+}
+
+.logs-host-filter-row {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+}
+
+.logs-host-filter-chips {
+  min-width: 0;
+  flex: 1;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.logs-host-overflow-select {
+  height: 30px;
+  max-width: min(250px, 38vw);
+  flex: 0 1 250px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 28px 0 10px;
+  outline: 0;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.logs-host-overflow-select.active {
+  border-color: var(--focus-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .logs-filter-chip {
   display: inline-flex;
   align-items: center;

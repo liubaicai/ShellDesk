@@ -20,15 +20,41 @@ pub(crate) async fn dispatch(
             app_handlers::open_connection_window(&app, &state, args.to_vec())?
         }
         "app:open-main-ai-settings" => app_handlers::open_main_ai_settings(&app)?,
-        "app:check-for-updates" => check_release_info(app.clone()).await?,
+        "app:check-for-updates" => {
+            let result = check_release_info(app.clone()).await;
+            match &result {
+                Ok(value) => append_update_log_entry(&state, &app, value, "check"),
+                Err(error) => append_update_log_entry(
+                    &state,
+                    &app,
+                    &json!({ "success": false, "error": error }),
+                    "check",
+                ),
+            }
+            result?
+        }
         "app:get-update-status" => read_update_state(&state, &app),
         "app:check-for-update-download" => {
             check_for_update_download(state.clone(), window.clone(), app.clone()).await?
         }
         "app:download-update" => {
-            download_update(state.clone(), window.clone(), app.clone()).await?
+            let result = download_update(state.clone(), window.clone(), app.clone()).await?;
+            append_update_log_entry(&state, &app, &result, "download");
+            result
         }
-        "app:install-update" => install_update(state.clone(), app.clone()).await?,
+        "app:install-update" => {
+            let result = install_update(state.clone(), app.clone()).await;
+            match &result {
+                Ok(value) => append_update_log_entry(&state, &app, value, "install"),
+                Err(error) => append_update_log_entry(
+                    &state,
+                    &app,
+                    &json!({ "success": false, "error": error }),
+                    "install",
+                ),
+            }
+            result?
+        }
 
         "window:show" => {
             window.show().map_err(error_string)?;
@@ -65,4 +91,50 @@ pub(crate) async fn dispatch(
     };
 
     Ok(Some(value))
+}
+
+fn append_update_log_entry(state: &AppState, app: &tauri::AppHandle, result: &Value, action: &str) {
+    let success = result
+        .get("success")
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            result
+                .get("updateAvailable")
+                .and_then(Value::as_bool)
+                .map(|_| true)
+        })
+        .unwrap_or(true);
+    let (level, message) = match action {
+        "check" if !success => ("error", "软件更新检查失败。"),
+        "check" => (
+            "info",
+            if result
+                .get("updateAvailable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                "软件更新检查完成：发现新版本。"
+            } else {
+                "软件更新检查完成：当前已是最新版本。"
+            },
+        ),
+        "download" if success => ("success", "软件更新下载完成。"),
+        "install" if success => ("success", "已请求安装软件更新。"),
+        "download" => ("error", "软件更新下载失败。"),
+        _ => ("error", "软件更新安装失败。"),
+    };
+    let detail = result.get("error").and_then(Value::as_str).unwrap_or("");
+    let entry = json!({
+        "id": crate::random_id("update-log"),
+        "timestamp": crate::now(),
+        "category": "system",
+        "level": level,
+        "message": message,
+        "detail": detail,
+        "component": "updater"
+    });
+
+    if crate::logs::append_entry(state, entry.clone()).is_ok() {
+        let _ = app.emit("logs:changed", json!({ "kind": "append", "entry": entry }));
+    }
 }

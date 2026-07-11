@@ -30,6 +30,7 @@ const levelIcons: Record<LogLevel, string> = {
 };
 
 const noHostFilterKey = '__none__';
+const visibleHostFilterOptionCount = 5;
 
 function formatTimestamp(isoString: string) {
   try {
@@ -121,6 +122,11 @@ function LogsPage({ logs, onClearLogs }: LogsPageProps) {
       .map(([key, option]) => ({ key, ...option }))
       .sort((first, second) => first.label.localeCompare(second.label, language === 'zh-CN' ? 'zh-CN' : 'en-US'));
   }, [logs, language]);
+  const visibleHostOptions = hostOptions.slice(0, visibleHostFilterOptionCount);
+  const overflowHostOptions = hostOptions.slice(visibleHostFilterOptionCount);
+  const selectedOverflowHost = overflowHostOptions.some((option) => option.key === hostFilter)
+    ? hostFilter
+    : '';
 
   return (
     <>
@@ -190,26 +196,41 @@ function LogsPage({ logs, onClearLogs }: LogsPageProps) {
             </div>
           </div>
           {hostOptions.length ? (
-            <div className="logs-filter-group">
+            <div className="logs-filter-group logs-host-filter-group">
               <span className="logs-filter-label">{t('logs.host.label', language)}</span>
-              <div className="logs-filter-chips">
-                <button
-                  type="button"
-                  className={`logs-filter-chip ${hostFilter === 'all' ? 'active' : ''}`}
-                  onClick={() => setHostFilter('all')}
-                >
-                  {t('logs.filter.all', language)} <small>{logs.length}</small>
-                </button>
-                {hostOptions.map((option) => (
+              <div className="logs-host-filter-row">
+                <div className="logs-filter-chips logs-host-filter-chips">
                   <button
-                    key={option.key}
                     type="button"
-                    className={`logs-filter-chip ${hostFilter === option.key ? 'active' : ''}`}
-                    onClick={() => setHostFilter(option.key)}
+                    className={`logs-filter-chip ${hostFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setHostFilter('all')}
                   >
-                    {option.label} <small>{option.count}</small>
+                    {t('logs.filter.all', language)} <small>{logs.length}</small>
                   </button>
-                ))}
+                  {visibleHostOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`logs-filter-chip ${hostFilter === option.key ? 'active' : ''}`}
+                      onClick={() => setHostFilter(option.key)}
+                    >
+                      {option.label} <small>{option.count}</small>
+                    </button>
+                  ))}
+                </div>
+                {overflowHostOptions.length ? (
+                  <select
+                    className={`logs-host-overflow-select ${selectedOverflowHost ? 'active' : ''}`}
+                    aria-label={t('logs.host.more', language, { count: String(overflowHostOptions.length) })}
+                    value={selectedOverflowHost}
+                    onChange={(event) => setHostFilter(event.target.value)}
+                  >
+                    <option value="" disabled>{t('logs.host.more', language, { count: String(overflowHostOptions.length) })}</option>
+                    {overflowHostOptions.map((option) => (
+                      <option key={option.key} value={option.key}>{option.label} ({option.count})</option>
+                    ))}
+                  </select>
+                ) : null}
               </div>
             </div>
           ) : null}

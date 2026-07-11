@@ -2434,6 +2434,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     setDesktopWindows((currentWindows) => [...currentWindows, nextWindow]);
     setFocusedWindowId(nextWindow.id);
+    const app = getAppInfo(appKey);
+    void window.guiSSH?.logs?.appendEntry({
+      id: `desktop-app-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: new Date().toISOString(),
+      category: 'system',
+      level: 'info',
+      message: t('desktop.app.openLog', settings.language, { name: getAppLabel(app, settings.language) }),
+      detail: `appKey: ${appKey}`,
+      component: appKey,
+      hostId: connection.host.id,
+      hostName: connection.host.name,
+      hostAddress: connection.host.address,
+    }).catch(() => undefined);
   };
 
   const openBrowserWindow = (initialUrl?: string) => {

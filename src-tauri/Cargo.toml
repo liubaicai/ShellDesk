@@ -26,6 +26,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rfd = "0.15"
 async-trait = "0.1"
 russh = "0.61.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "mysql", "postgres", "chrono"] }
 fred = { version = "10", features = ["enable-rustls"] }
 clickhouse = { version = "0.14", features = ["rustls-tls"] }

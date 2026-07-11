@@ -1,12 +1,17 @@
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Map, Value};
 use std::{collections::HashSet, fs, path::PathBuf};
 
 use crate::{error_string, now, AppState};
 
-const MAX_LOG_ENTRIES: usize = 500;
+const MAX_LOG_ENTRIES: usize = 5_000;
 
 fn logs_path(state: &AppState) -> PathBuf {
     state.data_dir.join("logs.json")
+}
+
+fn logs_database_path(state: &AppState) -> PathBuf {
+    state.data_dir.join("logs.sqlite")
 }
 
 pub(crate) fn get_entries(state: &AppState) -> Result<Value, String> {
@@ -36,56 +41,162 @@ pub(crate) fn append_entry(state: &AppState, entry: Value) -> Result<Value, Stri
     let Some(parsed_entry) = read_log_entry(&entry)? else {
         return Err("日志条目无效。".to_string());
     };
-    let existing_entries = read_log_entries(state);
-    let existing_entries = Value::Array(existing_entries);
-    let existing_entries = read_log_entry_list(&existing_entries)?;
-    let merged = merge_log_entries(&[parsed_entry], &existing_entries);
-    write_log_entries(state, &merged)?;
+    let connection = open_logs_database(state)?;
+    upsert_log_entry(&connection, &parsed_entry)?;
+    prune_log_entries(&connection)?;
     get_entries(state)
 }
 
 fn read_log_entries(state: &AppState) -> Vec<Value> {
-    let path = logs_path(state);
-    let Ok(content) = fs::read_to_string(path) else {
+    let Ok(connection) = open_logs_database(state) else {
         return Vec::new();
     };
-    let Ok(Value::Array(entries)) = serde_json::from_str::<Value>(&content) else {
+    let Ok(mut statement) = connection.prepare(
+        "SELECT id, timestamp, category, level, message, detail, component, host_id, host_name, host_address
+         FROM log_entries ORDER BY timestamp DESC, rowid DESC LIMIT ?1",
+    ) else {
         return Vec::new();
     };
-    entries.into_iter().take(MAX_LOG_ENTRIES).collect()
+    let Ok(entries) = statement.query_map([MAX_LOG_ENTRIES as i64], log_entry_from_row) else {
+        return Vec::new();
+    };
+    entries.filter_map(Result::ok).collect()
 }
 
 fn write_log_entries(state: &AppState, entries: &[Value]) -> Result<(), String> {
-    let path = logs_path(state);
-    if let Some(parent) = path.parent() {
+    let connection = open_logs_database(state)?;
+    connection
+        .execute("DELETE FROM log_entries", [])
+        .map_err(error_string)?;
+    for entry in entries.iter().take(MAX_LOG_ENTRIES).rev() {
+        upsert_log_entry(&connection, entry)?;
+    }
+    Ok(())
+}
+
+fn open_logs_database(state: &AppState) -> Result<Connection, String> {
+    if let Some(parent) = logs_database_path(state).parent() {
         fs::create_dir_all(parent).map_err(error_string)?;
     }
-    let content = serde_json::to_string_pretty(
-        &entries
-            .iter()
-            .take(MAX_LOG_ENTRIES)
-            .cloned()
-            .collect::<Vec<_>>(),
-    )
-    .map_err(error_string)?;
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(error_string)?;
-        file.write_all(content.as_bytes()).map_err(error_string)?;
-        Ok(())
+    let connection = Connection::open(logs_database_path(state)).map_err(error_string)?;
+    connection
+        .execute_batch(
+            "PRAGMA busy_timeout = 5000;
+             PRAGMA journal_mode = WAL;
+             CREATE TABLE IF NOT EXISTS log_entries (
+               id TEXT PRIMARY KEY NOT NULL,
+               timestamp TEXT NOT NULL,
+               category TEXT NOT NULL,
+               level TEXT NOT NULL,
+               message TEXT NOT NULL,
+               detail TEXT NOT NULL,
+               component TEXT NOT NULL DEFAULT '',
+               host_id TEXT NOT NULL DEFAULT '',
+               host_name TEXT NOT NULL DEFAULT '',
+               host_address TEXT NOT NULL DEFAULT ''
+             );
+             CREATE INDEX IF NOT EXISTS idx_log_entries_timestamp ON log_entries(timestamp DESC);
+             CREATE TABLE IF NOT EXISTS log_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);",
+        )
+        .map_err(error_string)?;
+    migrate_legacy_log_entries(&connection, state)?;
+    Ok(connection)
+}
+
+fn migrate_legacy_log_entries(connection: &Connection, state: &AppState) -> Result<(), String> {
+    let migrated = connection
+        .query_row(
+            "SELECT value FROM log_metadata WHERE key = 'legacy-json-migrated'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(error_string)?;
+    if migrated.is_some() {
+        return Ok(());
     }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, content).map_err(error_string)
+
+    let legacy_entries = read_legacy_log_entries(state);
+    for entry in legacy_entries.iter().take(MAX_LOG_ENTRIES).rev() {
+        upsert_log_entry(connection, entry)?;
     }
+    connection
+        .execute(
+            "INSERT INTO log_metadata (key, value) VALUES ('legacy-json-migrated', '1')",
+            [],
+        )
+        .map_err(error_string)?;
+    Ok(())
+}
+
+fn read_legacy_log_entries(state: &AppState) -> Vec<Value> {
+    let Ok(content) = fs::read_to_string(logs_path(state)) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return Vec::new();
+    };
+    read_log_entry_list(&value).unwrap_or_default()
+}
+
+fn upsert_log_entry(connection: &Connection, entry: &Value) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT INTO log_entries (id, timestamp, category, level, message, detail, component, host_id, host_name, host_address)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+               timestamp = excluded.timestamp, category = excluded.category, level = excluded.level,
+               message = excluded.message, detail = excluded.detail, component = excluded.component,
+               host_id = excluded.host_id, host_name = excluded.host_name, host_address = excluded.host_address",
+            params![
+                entry["id"].as_str().unwrap_or_default(),
+                entry["timestamp"].as_str().unwrap_or_default(),
+                entry["category"].as_str().unwrap_or("system"),
+                entry["level"].as_str().unwrap_or("info"),
+                entry["message"].as_str().unwrap_or_default(),
+                entry["detail"].as_str().unwrap_or_default(),
+                entry["component"].as_str().unwrap_or_default(),
+                entry["hostId"].as_str().unwrap_or_default(),
+                entry["hostName"].as_str().unwrap_or_default(),
+                entry["hostAddress"].as_str().unwrap_or_default(),
+            ],
+        )
+        .map_err(error_string)?;
+    Ok(())
+}
+
+fn prune_log_entries(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM log_entries WHERE id NOT IN (
+               SELECT id FROM log_entries ORDER BY timestamp DESC, rowid DESC LIMIT ?1
+             )",
+            [MAX_LOG_ENTRIES as i64],
+        )
+        .map_err(error_string)?;
+    Ok(())
+}
+
+fn log_entry_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    let mut entry = Map::new();
+    entry.insert("id".to_string(), json!(row.get::<_, String>(0)?));
+    entry.insert("timestamp".to_string(), json!(row.get::<_, String>(1)?));
+    entry.insert("category".to_string(), json!(row.get::<_, String>(2)?));
+    entry.insert("level".to_string(), json!(row.get::<_, String>(3)?));
+    entry.insert("message".to_string(), json!(row.get::<_, String>(4)?));
+    entry.insert("detail".to_string(), json!(row.get::<_, String>(5)?));
+    for (column, key) in [
+        (6, "component"),
+        (7, "hostId"),
+        (8, "hostName"),
+        (9, "hostAddress"),
+    ] {
+        let value = row.get::<_, String>(column)?;
+        if !value.is_empty() {
+            entry.insert(key.to_string(), json!(value));
+        }
+    }
+    Ok(Value::Object(entry))
 }
 
 fn read_log_entry_list(entries: &Value) -> Result<Vec<Value>, String> {
@@ -339,6 +450,36 @@ mod tests {
         assert!(get_entries(&state).unwrap().as_array().unwrap().is_empty());
         fs::write(logs_path(&state), "{}").unwrap();
         assert!(get_entries(&state).unwrap().as_array().unwrap().is_empty());
+        fs::remove_dir_all(&state.data_dir).ok();
+    }
+
+    #[test]
+    fn legacy_json_entries_are_imported_once_into_sqlite() {
+        let state = temp_state();
+        fs::create_dir_all(&state.data_dir).unwrap();
+        fs::write(
+            logs_path(&state),
+            serde_json::to_string(&json!([
+                {
+                    "id": "legacy-entry",
+                    "timestamp": "2026-01-01T00:00:00.000Z",
+                    "category": "connection",
+                    "level": "success",
+                    "message": "legacy entry"
+                }
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let imported = get_entries(&state).unwrap();
+        assert_eq!(imported[0]["id"], "legacy-entry");
+        assert!(logs_database_path(&state).exists());
+
+        write_log_entries(&state, &[]).unwrap();
+        let after_clear = get_entries(&state).unwrap();
+        assert!(after_clear.as_array().unwrap().is_empty());
+
         fs::remove_dir_all(&state.data_dir).ok();
     }
 }

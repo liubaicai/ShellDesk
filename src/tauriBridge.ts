@@ -658,6 +658,7 @@ window.guiSSH = {
     onWindowMaximizedChange: (callback) => onTauriEvent('window:maximize-state-changed', callback),
     onCloseToTrayPrompt: (callback) => onTauriEvent('window:close-to-tray-prompt', callback),
     onOpenAiSettings: (callback) => onTauriEvent('app:open-ai-settings', callback),
+    onLogsChanged: (callback) => onTauriEvent('logs:changed', callback),
     onVaultChanged: (callback) => onTauriEvent('vault:changed', callback),
     onSyncChanged: (callback) => onTauriEvent('sync:changed', callback),
     onTransferProgress: (callback) => onTauriEvent('transfer:progress', callback),

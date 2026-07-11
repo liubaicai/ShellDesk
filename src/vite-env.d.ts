@@ -1294,6 +1294,11 @@ interface ShellDeskLogEntry {
   hostAddress?: string;
 }
 
+interface ShellDeskLogsChangedPayload {
+  kind: 'append' | 'clear' | 'reload';
+  entry?: ShellDeskLogEntry;
+}
+
 interface ShellDeskLogsControls {
   getEntries: () => Promise<ShellDeskLogEntry[]>;
   clearEntries: () => Promise<ShellDeskLogEntry[]>;
@@ -1494,6 +1499,7 @@ interface ShellDeskEventControls {
   onWindowMaximizedChange: (callback: (payload: { maximized: boolean }) => void) => () => void;
   onCloseToTrayPrompt: (callback: () => void) => () => void;
   onOpenAiSettings: (callback: () => void) => () => void;
+  onLogsChanged: (callback: (payload: ShellDeskLogsChangedPayload) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference' | 'hostKeyTrust'; scope?: string; key?: string }) => void) => () => void;
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;

@@ -81,6 +81,7 @@ const themePreloadStorageKey = 'shelldesk:theme-preload';
 const dismissedUpdateReadyVersionStorageKey = 'shelldesk:update-ready-dismissed-version';
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
+const maxRenderedLogEntries = 5_000;
 const ungroupedKey = '__ungrouped__';
 const hostPageSizeOptions = [10, 20, 50, 100] as const;
 type HostPageSize = (typeof hostPageSizeOptions)[number];
@@ -2395,7 +2396,6 @@ function App() {
   ));
   const [isVaultReady, setIsVaultReady] = useState(Boolean(initialPublicSnapshot) || !window.guiSSH?.vault);
   const [isVaultHydrated, setIsVaultHydrated] = useState(!window.guiSSH?.vault);
-  const [isLogsReady, setIsLogsReady] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
   const [windowConnectionId] = useState(readWindowConnectionId);
@@ -2440,7 +2440,6 @@ function App() {
   const collectionsSaveInFlightSerializedRef = useRef('');
   const collectionsSavePromiseRef = useRef<Promise<void> | null>(null);
   const pendingCollectionsSaveRef = useRef<{ payload: VaultCollectionsSavePayload; serialized: string } | null>(null);
-  const lastPersistedLogsRef = useRef('');
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const vaultControls = window.guiSSH?.vault;
@@ -3156,11 +3155,7 @@ function App() {
 
     void logsControls.getEntries().then((entries) => {
       setLogs(entries as unknown as LogEntry[]);
-      lastPersistedLogsRef.current = JSON.stringify(entries);
-      setIsLogsReady(true);
-    }).catch(() => {
-      setIsLogsReady(true);
-    });
+    }).catch(() => undefined);
   }, [isConnectionWindow, isVaultReady]);
 
   useEffect(() => {
@@ -3221,22 +3216,34 @@ function App() {
   }, [hostInfoDialogHostId]);
 
   useEffect(() => {
-    const logsControls = window.guiSSH?.logs;
-
-    if (!logsControls || !isLogsReady || isConnectionWindow) {
-      return;
+    if (isConnectionWindow || !window.guiSSH?.events.onLogsChanged) {
+      return undefined;
     }
 
-    const serialized = JSON.stringify(logs);
+    return window.guiSSH.events.onLogsChanged((payload) => {
+      if (payload.kind === 'clear') {
+        setLogs([]);
+        return;
+      }
 
-    if (serialized === lastPersistedLogsRef.current) {
-      return;
-    }
+      if (payload.kind === 'append' && payload.entry) {
+        const entry = payload.entry as LogEntry;
+        setLogs((current) => {
+          if (current.some((currentEntry) => currentEntry.id === entry.id)) {
+            return current;
+          }
 
-    lastPersistedLogsRef.current = serialized;
+          const next = [entry, ...current];
+          return next.length > maxRenderedLogEntries ? next.slice(0, maxRenderedLogEntries) : next;
+        });
+        return;
+      }
 
-    void logsControls.saveEntries(logs as unknown as ShellDeskLogEntry[]).catch(() => undefined);
-  }, [logs, isConnectionWindow, isLogsReady]);
+      void window.guiSSH?.logs?.getEntries().then((entries) => {
+        setLogs(entries as unknown as LogEntry[]);
+      }).catch(() => undefined);
+    });
+  }, [isConnectionWindow]);
 
   useEffect(() => {
     const handleExternalLogEntry = (event: Event) => {
@@ -3252,7 +3259,7 @@ function App() {
         }
 
         const next = [entry, ...current];
-        return next.length > 500 ? next.slice(0, 500) : next;
+        return next.length > maxRenderedLogEntries ? next.slice(0, maxRenderedLogEntries) : next;
       });
     };
 
@@ -3554,14 +3561,13 @@ function App() {
 
     setLogs((current) => {
       const next = [entry, ...current];
-      return next.length > 500 ? next.slice(0, 500) : next;
+      return next.length > maxRenderedLogEntries ? next.slice(0, maxRenderedLogEntries) : next;
     });
 
     void window.guiSSH?.logs?.appendEntry(entry as unknown as ShellDeskLogEntry).catch(() => undefined);
   };
 
   const clearLogs = () => {
-    lastPersistedLogsRef.current = JSON.stringify([]);
     setLogs([]);
     void window.guiSSH?.logs?.clearEntries().catch(() => undefined);
   };
@@ -3663,6 +3669,22 @@ function App() {
       requestId: request.requestId,
       accept,
       addToKnownHosts,
+    }).then(() => {
+      if (!accept || !addToKnownHosts) {
+        return;
+      }
+
+      const host = request.port ? `${request.hostname}:${request.port}` : request.hostname;
+      addLog(
+        'key',
+        'success',
+        t('app.hostKey.trustedLog', appLanguage, { host }),
+        request.fingerprint ? `${request.keyType || 'SSH'} ${request.fingerprint}` : '',
+        {
+          hostName: request.hostname,
+          hostAddress: request.hostname,
+        },
+      );
     }).catch((error) => {
       setStatusMessage(getErrorMessage(error, appLanguage));
     }).finally(() => {
