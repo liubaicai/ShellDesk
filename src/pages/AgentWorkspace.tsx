@@ -213,6 +213,8 @@ function AgentWorkspace({ hosts, settings, language, onOpenSettings, onReturnToH
   const hostsRef = useRef(hosts);
   const connectionByHostIdRef = useRef(new Map<string, ShellDeskConnectionInfo>());
   const requestedTaskTitleIdsRef = useRef(new Set<string>());
+  const deletedSessionIdsRef = useRef(new Set<string>());
+  const sessionPersistenceQueueRef = useRef(new Map<string, Promise<void>>());
   const isWorkspaceMountedRef = useRef(true);
   hostsRef.current = hosts;
   const selectedHost = hosts.find((host) => host.id === selectedHostId) ?? null;
@@ -287,19 +289,48 @@ function AgentWorkspace({ hosts, settings, language, onOpenSettings, onReturnToH
     return () => { isDisposed = true; };
   }, [language]);
 
+  const enqueueSessionPersistence = useCallback((sessionId: string, operation: () => Promise<unknown>) => {
+    const previous = sessionPersistenceQueueRef.current.get(sessionId) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => { await operation(); })
+      .catch(() => undefined);
+    sessionPersistenceQueueRef.current.set(sessionId, next);
+    void next.finally(() => {
+      if (sessionPersistenceQueueRef.current.get(sessionId) === next) {
+        sessionPersistenceQueueRef.current.delete(sessionId);
+      }
+    });
+  }, []);
+
+  const saveAgentSession = useCallback((session: AgentConversationSession, kind: ShellDeskAgentSession['kind'], hostId?: string) => {
+    if (deletedSessionIdsRef.current.has(session.id)) return;
+    const api = window.guiSSH?.agentSessions;
+    if (!api) return;
+    const snapshot = toStoredSession(session, kind, hostId);
+    enqueueSessionPersistence(session.id, () => api.save(snapshot));
+  }, [enqueueSessionPersistence]);
+
+  const deleteAgentSession = useCallback((sessionId: string) => {
+    deletedSessionIdsRef.current.add(sessionId);
+    const api = window.guiSSH?.agentSessions;
+    if (!api) return;
+    enqueueSessionPersistence(sessionId, () => api.delete(sessionId));
+  }, [enqueueSessionPersistence]);
+
   useEffect(() => {
     if (!areSessionsHydrated || !window.guiSSH?.agentSessions) return;
     for (const task of tasks) {
-      void window.guiSSH.agentSessions.save(toStoredSession(task, 'task')).catch(() => undefined);
+      saveAgentSession(task, 'task');
     }
-  }, [areSessionsHydrated, tasks]);
+  }, [areSessionsHydrated, saveAgentSession, tasks]);
 
   useEffect(() => {
     if (!areSessionsHydrated || !window.guiSSH?.agentSessions) return;
     for (const [hostId, session] of Object.entries(hostSessions)) {
-      void window.guiSSH.agentSessions.save(toStoredSession(session, 'host', hostId)).catch(() => undefined);
+      saveAgentSession(session, 'host', hostId);
     }
-  }, [areSessionsHydrated, hostSessions]);
+  }, [areSessionsHydrated, hostSessions, saveAgentSession]);
 
   const connectHosts = useCallback(async (hostIds: string[]): Promise<AgentWorkspaceConnectionResult[]> => {
     const api = window.guiSSH?.connections;
@@ -573,14 +604,14 @@ function AgentWorkspace({ hosts, settings, language, onOpenSettings, onReturnToH
     const remainingTasks = tasks.filter((task) => task.id !== taskId);
     const nextTasks = remainingTasks.length ? remainingTasks : [createTaskSession(language)];
     setTasks(nextTasks);
-    void window.guiSSH?.agentSessions?.delete(taskId).catch(() => undefined);
+    deleteAgentSession(taskId);
     if (activeTaskId === taskId) {
       setActiveTaskId(nextTasks[0].id);
       setSelectedHostId(null);
       setConnection(null);
     }
     setTaskContextMenu(null);
-  }, [activeTaskId, language, tasks]);
+  }, [activeTaskId, deleteAgentSession, language, tasks]);
 
   const retryFromUserMessage = useCallback((messageId: string) => {
     const message = messages.find((candidate) => candidate.id === messageId && candidate.role === 'user');

@@ -40,8 +40,17 @@ pub(crate) async fn dispatch(
             check_for_update_download(state.clone(), window.clone(), app.clone()).await?
         }
         "app:download-update" => {
-            let result = download_update(state.clone(), window.clone(), app.clone()).await?;
-            append_update_log_entry(&state, &app, &result, "download");
+            let result = download_update(state.clone(), window.clone(), app.clone()).await;
+            match &result {
+                Ok(value) => append_update_log_entry(&state, &app, value, "download"),
+                Err(error) => append_update_log_entry(
+                    &state,
+                    &app,
+                    &json!({ "success": false, "error": error }),
+                    "download",
+                ),
+            }
+            let result = result?;
             result
         }
         "app:install-update" => {
