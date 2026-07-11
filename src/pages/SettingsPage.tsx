@@ -1323,12 +1323,7 @@ function SettingsPage({
   };
 
   return (
-    <>
-      <div className="command-bar no-drag simple-command-bar settings-command-bar">
-        <strong>{t('settings.title', settings.language)}</strong>
-      </div>
-
-      <section className="settings-page no-drag">
+    <section className="settings-page no-drag">
         <aside className="settings-section-nav" aria-label={t('settings.nav.aria', settings.language)}>
           <div className="settings-section-nav-header">
             <span>{t('settings.nav.title', settings.language)}</span>
@@ -2833,8 +2828,7 @@ function SettingsPage({
             </div>
           ) : null}
         </div>
-      </section>
-    </>
+    </section>
   );
 }
 

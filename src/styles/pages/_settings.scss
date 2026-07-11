@@ -1,10 +1,7 @@
-.settings-command-bar {
-  color: var(--text);
-}
-
 .settings-page {
   display: grid;
   min-height: 0;
+  grid-row: 1 / -1;
   grid-template-columns: 258px minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg);
