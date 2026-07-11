@@ -102,6 +102,7 @@ function RemoteTerminal({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sessionStatus, setSessionStatus] = useState<RemoteTerminalSessionStatus>('idle');
   const [sessionError, setSessionError] = useState('');
+  const [terminalReportedTitle, setTerminalReportedTitle] = useState('');
   const [lastExitCode, setLastExitCode] = useState<number | null>(null);
   const [hasForegroundTask, setHasForegroundTask] = useState(false);
   const [followOutput, setFollowOutput] = useState(true);
@@ -119,6 +120,7 @@ function RemoteTerminal({
   });
   const terminalTheme = getTerminalTheme(settings.terminalTheme);
   const sessionTitle = getTerminalSessionTitle(terminalId, launchOptions);
+  const chromeTitle = terminalReportedTitle || sessionTitle;
   const shellChoices = useMemo(() => getShellChoices(systemType), [systemType]);
   const localWindowsPty = useMemo(
     () => getLocalWindowsPtyOption(connectionKind === 'local' && isWindowsSystem(systemType)),
@@ -300,9 +302,13 @@ function RemoteTerminal({
   }, [showSearch]);
 
   useEffect(() => {
+    setTerminalReportedTitle('');
+  }, [sessionTitle]);
+
+  useEffect(() => {
     const status = getTerminalStatusLabel(sessionStatus, Boolean(sessionError), settings.language);
     const payload = {
-      title: sessionTitle,
+      title: chromeTitle,
       status,
       tone: getTerminalChromeTone(sessionStatus, Boolean(sessionError)),
     };
@@ -314,7 +320,7 @@ function RemoteTerminal({
       lastExitCode,
       hasForegroundTask,
     });
-  }, [hasForegroundTask, lastExitCode, sessionError, sessionStatus, sessionTitle, settings.language]);
+  }, [chromeTitle, hasForegroundTask, lastExitCode, sessionError, sessionStatus, sessionTitle, settings.language]);
 
   useEffect(() => {
     const host = terminalHostRef.current;
@@ -339,6 +345,11 @@ function RemoteTerminal({
 
     isTerminalReadyRef.current = false;
     terminalRef.current = terminal;
+    const titleDisposable = terminal.onTitleChange((title) => {
+      if (launchOptionsRef.current?.mode === 'tmux') {
+        setTerminalReportedTitle(title.trim());
+      }
+    });
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
     terminal.loadAddon(fitAddon);
@@ -926,6 +937,7 @@ function RemoteTerminal({
       zmodemSessionRef.current?.abort?.();
       zmodemSessionRef.current = null;
       zmodemSentryRef.current = null;
+      titleDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;

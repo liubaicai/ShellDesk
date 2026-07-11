@@ -21,6 +21,7 @@ import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import { getAppLocale, t, type MessageId } from './i18n';
 
 const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
+const defaultTmuxSessionName = 'sd-tmux';
 
 const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
 const RemoteAiChat = lazy(() => import('./components/remote-desktop/RemoteAiChat'));
@@ -1348,6 +1349,10 @@ function createTmuxListCommand() {
   ].join('; ');
 }
 
+function createTmuxAvailabilityCommand() {
+  return 'command -v tmux >/dev/null 2>&1';
+}
+
 function parseTmuxSessions(output: string): TmuxSessionInfo[] {
   return output
     .split(/\r?\n/u)
@@ -1376,16 +1381,44 @@ function createTmuxSessionName() {
   return `shelldesk-${stamp}`;
 }
 
-function createTmuxLaunchOptions(sessionName: string, command: 'attach' | 'new' = 'attach'): RemoteTerminalLaunchOptions {
+function createTmuxLaunchOptions(
+  sessionName: string,
+  language: ShellDeskAppSettings['language'],
+  command: 'attach' | 'new' = 'attach',
+): RemoteTerminalLaunchOptions {
   const quotedSessionName = quotePosixShellArg(sessionName);
+  const windowLabel = language === 'zh-CN' ? '窗口' : 'Window';
+  const startedLabel = language === 'zh-CN' ? '创建于' : 'Started';
+  const quotedTitleFormat = quotePosixShellArg(`#S · ${windowLabel} #I:#W · ${startedLabel} #{t:session_created}`);
+  const ensureSessionCommand = command === 'new'
+    ? `tmux new-session -d -s ${quotedSessionName} 2>/dev/null || true`
+    : `tmux has-session -t ${quotedSessionName} 2>/dev/null || tmux new-session -d -s ${quotedSessionName}`;
+
   return {
     mode: 'tmux',
     tmuxSessionName: sessionName,
     title: `tmux: ${sessionName}`,
-    initialCommand: command === 'new'
-      ? `tmux new-session -A -s ${quotedSessionName}`
-      : `tmux attach-session -t ${quotedSessionName} || tmux new-session -A -s ${quotedSessionName}`,
+    initialCommand: [
+      ensureSessionCommand,
+      `tmux set-option -t ${quotedSessionName} status off`,
+      `tmux set-option -t ${quotedSessionName} set-titles on`,
+      `tmux set-option -t ${quotedSessionName} set-titles-string ${quotedTitleFormat}`,
+      `tmux attach-session -t ${quotedSessionName}`,
+    ].join('; '),
   };
+}
+
+function hasTerminalLaunchOverrides(launchOptions?: RemoteTerminalLaunchOptions) {
+  if (!launchOptions || launchOptions.mode === 'tmux') {
+    return Boolean(launchOptions?.mode);
+  }
+
+  return [
+    launchOptions.title,
+    launchOptions.shell,
+    launchOptions.initialCommand,
+    launchOptions.workingDirectory,
+  ].some((value) => Boolean(value?.trim()));
 }
 
 function parseSimpleCommandWords(command: string) {
@@ -1553,7 +1586,7 @@ const DesktopWindow = memo(function DesktopWindow({
           <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
             <DesktopAppIcon appKey={desktopWindow.appKey} />
           </span>
-          {desktopWindow.appKey === 'browser' || desktopWindow.appKey === 'terminal' ? (
+          {desktopWindow.appKey === 'browser' ? (
             <>
               <span className="desktop-window-kicker">{appLabel}</span>
               {desktopWindow.chromeTitle ? (
@@ -1562,6 +1595,17 @@ const DesktopWindow = memo(function DesktopWindow({
                 </strong>
               ) : null}
               {desktopWindow.chromeStatus ? (
+                <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
+                  {desktopWindow.chromeStatus}
+                </span>
+              ) : null}
+            </>
+          ) : desktopWindow.appKey === 'terminal' ? (
+            <>
+              <strong title={desktopWindow.chromeTitle || appLabel}>
+                {desktopWindow.chromeTitle || appLabel}
+              </strong>
+              {desktopWindow.chromeStatus && desktopWindow.chromeTone !== 'idle' ? (
                 <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
                   {desktopWindow.chromeStatus}
                 </span>
@@ -2392,10 +2436,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     setFocusedWindowId(nextWindow.id);
   };
 
-  const openDesktopWindow = (appKey: DesktopAppKey) => {
-    appendDesktopWindow(appKey);
-  };
-
   const openBrowserWindow = (initialUrl?: string) => {
     appendDesktopWindow('browser', (desktopWindow) => {
       if (!initialUrl) {
@@ -2432,10 +2472,42 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
-  const openTerminalWindow = (launchOptions?: RemoteTerminalLaunchOptions) => {
+  const resolveDefaultTerminalLaunchOptions = async () => {
+    if (!settings.terminalPreferTmux || connection.host.systemType === 'windows') {
+      return undefined;
+    }
+
+    const runCommand = window.guiSSH?.connections?.runCommand;
+
+    if (!runCommand) {
+      return undefined;
+    }
+
+    try {
+      const result = await runCommand(connection.id, createTmuxAvailabilityCommand());
+      return result.code === 0 ? createTmuxLaunchOptions(defaultTmuxSessionName, settings.language) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const openTerminalWindow = async (launchOptions?: RemoteTerminalLaunchOptions) => {
+    const resolvedLaunchOptions = hasTerminalLaunchOverrides(launchOptions)
+      ? launchOptions
+      : await resolveDefaultTerminalLaunchOptions();
+
     appendDesktopWindow('terminal', (nextWindow) => {
-      nextWindow.terminalLaunchOptions = launchOptions;
+      nextWindow.terminalLaunchOptions = resolvedLaunchOptions;
     });
+  };
+
+  const openDesktopWindow = (appKey: DesktopAppKey) => {
+    if (appKey === 'terminal') {
+      void openTerminalWindow();
+      return;
+    }
+
+    appendDesktopWindow(appKey);
   };
 
   const refreshTmuxSessions = useCallback(async () => {
@@ -2530,7 +2602,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   const openTmuxTerminal = (sessionName: string, command: 'attach' | 'new' = 'attach') => {
     rememberTmuxSession(sessionName);
-    openTerminalWindow(createTmuxLaunchOptions(sessionName, command));
+    void openTerminalWindow(createTmuxLaunchOptions(sessionName, settings.language, command));
     setTerminalTitlebarMenu(null);
     window.setTimeout(() => {
       void refreshTmuxSessions();
@@ -2634,7 +2706,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   };
 
   const openTerminalAtPath = (directoryPath: string) => {
-    openTerminalWindow({
+    void openTerminalWindow({
       title: directoryPath,
       workingDirectory: directoryPath,
     });
@@ -2931,7 +3003,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
 
     const desktopWindow = desktopWindowsRef.current.find((currentWindow) => currentWindow.id === windowId);
-    if (desktopWindow?.terminalLaunchOptions?.mode !== 'tmux') {
+    if (connection.host.systemType !== 'windows') {
       void refreshTmuxSessions();
     }
   }, [refreshTmuxSessions, terminalTitlebarMenu]);
@@ -3940,17 +4012,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           role="menu"
           aria-label={t('terminal.titlebar.tools', settings.language)}
         >
-          {terminalTitlebarMenuWindow.terminalLaunchOptions?.mode === 'tmux' ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="danger-text"
-              onClick={() => void killTmuxSession(terminalTitlebarMenuWindow)}
-            >
-              {t('terminal.tmux.killCurrent', settings.language)}
-            </button>
-          ) : (
-            <>
+          <>
               <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal')}>
                 {t('terminal.titlebar.newWindow', settings.language)}
               </button>
@@ -4068,8 +4130,20 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                   </button>
                 </>
               ) : null}
-            </>
-          )}
+              {terminalTitlebarMenuWindow.terminalLaunchOptions?.mode === 'tmux' ? (
+                <>
+                  <div className="context-menu-sep" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger-text"
+                    onClick={() => void killTmuxSession(terminalTitlebarMenuWindow)}
+                  >
+                    {t('terminal.tmux.killCurrent', settings.language)}
+                  </button>
+                </>
+              ) : null}
+          </>
         </div>
       </>,
       document.body,

@@ -395,6 +395,7 @@ interface ShellDeskAppSettings {
   terminalBracketedPasteMode: boolean;
   terminalMinimumContrastRatio: number;
   terminalScreenReaderMode: boolean;
+  terminalPreferTmux: boolean;
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 

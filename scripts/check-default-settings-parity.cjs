@@ -51,6 +51,7 @@ const checkedKeys = [
   'terminalBracketedPasteMode',
   'terminalMinimumContrastRatio',
   'terminalScreenReaderMode',
+  'terminalPreferTmux',
 ];
 
 function readWorkspaceFile(relativePath) {

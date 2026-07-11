@@ -289,6 +289,7 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalBracketedPasteMode": read_bool(settings.get("terminalBracketedPasteMode"), defaults["terminalBracketedPasteMode"].as_bool().unwrap_or(true)),
         "terminalMinimumContrastRatio": read_f64_range(settings.get("terminalMinimumContrastRatio"), 1.0, 7.0, defaults["terminalMinimumContrastRatio"].as_f64().unwrap_or(1.0)),
         "terminalScreenReaderMode": read_bool(settings.get("terminalScreenReaderMode"), defaults["terminalScreenReaderMode"].as_bool().unwrap_or(false)),
+        "terminalPreferTmux": read_bool(settings.get("terminalPreferTmux"), defaults["terminalPreferTmux"].as_bool().unwrap_or(false)),
         "terminalSnippets": terminal_snippets
     }))
 }

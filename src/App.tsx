@@ -218,6 +218,7 @@ const defaultAppSettings: ShellDeskAppSettings = {
   terminalBracketedPasteMode: true,
   terminalMinimumContrastRatio: 1,
   terminalScreenReaderMode: false,
+  terminalPreferTmux: false,
   terminalSnippets: createDefaultTerminalSnippets(defaultAppLanguage),
 };
 

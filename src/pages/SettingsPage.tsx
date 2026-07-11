@@ -1686,6 +1686,24 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
+                <h2>{t('settings.terminal.session.title', settings.language)}</h2>
+                <div className="settings-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>{t('settings.terminal.preferTmux.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.preferTmux.summary', settings.language)}</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalPreferTmux}
+                      onChange={(event) => updateSetting('terminalPreferTmux', event.target.checked)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="settings-section">
                 <h2>{t('settings.terminal.typography.title', settings.language)}</h2>
                 <div className="settings-card">
                   <label className="settings-row">

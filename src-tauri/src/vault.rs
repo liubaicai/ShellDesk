@@ -106,6 +106,7 @@ pub(crate) fn default_settings() -> Value {
         "terminalBracketedPasteMode": true,
         "terminalMinimumContrastRatio": 1,
         "terminalScreenReaderMode": false,
+        "terminalPreferTmux": false,
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

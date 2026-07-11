@@ -104,6 +104,7 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalBracketedPasteMode: true,
     terminalMinimumContrastRatio: 1,
     terminalScreenReaderMode: false,
+    terminalPreferTmux: false,
     terminalSnippets: [],
   };
 }
