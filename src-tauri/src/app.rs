@@ -106,12 +106,23 @@ pub(crate) fn open_connection_window(
             connection.proxy_port
         )
     };
+    let requested_app = args
+        .get(1)
+        .and_then(Value::as_str)
+        .filter(|value| is_supported_desktop_app(value));
     let label = format!("connection-{}", sanitize_window_label(&connection_id));
-    let url = format!("index.html?connectionId={}", url_component(&connection_id));
+    let mut url = format!("index.html?connectionId={}", url_component(&connection_id));
+    if let Some(app_key) = requested_app {
+        url.push_str("&desktopApp=");
+        url.push_str(&url_component(app_key));
+    }
 
     if let Some(window) = app.get_webview_window(&label) {
         window.show().map_err(error_string)?;
         window.set_focus().map_err(error_string)?;
+        if let Some(app_key) = requested_app {
+            let _ = window.emit("desktop:open-app", json!({ "appKey": app_key }));
+        }
         return Ok(json!({ "ok": true, "label": label }));
     }
 
@@ -146,6 +157,39 @@ pub(crate) fn open_connection_window(
     Ok(json!({ "ok": true, "label": label }))
 }
 
+pub(crate) fn open_agent_window(app: &tauri::AppHandle) -> Result<Value, String> {
+    const AGENT_WINDOW_LABEL: &str = "agent-workspace";
+
+    if let Some(window) = app.get_webview_window(AGENT_WINDOW_LABEL) {
+        window.show().map_err(error_string)?;
+        window.unminimize().map_err(error_string)?;
+        window.set_focus().map_err(error_string)?;
+        return Ok(json!({ "ok": true, "label": AGENT_WINDOW_LABEL }));
+    }
+
+    let window = WebviewWindowBuilder::new(
+        app,
+        AGENT_WINDOW_LABEL,
+        WebviewUrl::App("index.html?agentWorkspace=1".into()),
+    )
+    .title("ShellDesk Agent")
+    .inner_size(1260.0, 820.0)
+    .min_inner_size(960.0, 640.0)
+    .background_color(Color(10, 14, 20, 255))
+    .decorations(cfg!(target_os = "macos"))
+    .resizable(true)
+    .visible(true)
+    .build()
+    .map_err(error_string)?;
+
+    let _ = window.emit(
+        "window:maximize-state-changed",
+        json!({ "maximized": false }),
+    );
+
+    Ok(json!({ "ok": true, "label": AGENT_WINDOW_LABEL }))
+}
+
 pub(crate) fn open_main_ai_settings(app: &tauri::AppHandle) -> Result<Value, String> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
@@ -158,6 +202,17 @@ pub(crate) fn open_main_ai_settings(app: &tauri::AppHandle) -> Result<Value, Str
         .emit("app:open-ai-settings", Value::Null)
         .map_err(error_string)?;
 
+    Ok(Value::Null)
+}
+
+pub(crate) fn show_main_window(app: &tauri::AppHandle) -> Result<Value, String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "主窗口不可用。".to_string())?;
+
+    window.show().map_err(error_string)?;
+    window.unminimize().map_err(error_string)?;
+    window.set_focus().map_err(error_string)?;
     Ok(Value::Null)
 }
 
@@ -184,6 +239,52 @@ fn url_component(value: &str) -> String {
             _ => format!("%{byte:02X}").chars().collect(),
         })
         .collect()
+}
+
+fn is_supported_desktop_app(value: &str) -> bool {
+    matches!(
+        value,
+        "files"
+            | "terminal"
+            | "notepad"
+            | "code-editor"
+            | "browser"
+            | "vnc"
+            | "log-viewer"
+            | "monitor"
+            | "mysql"
+            | "clickhouse"
+            | "redis"
+            | "service-manager"
+            | "container-manager"
+            | "k8s-manager"
+            | "port-manager"
+            | "firewall-manager"
+            | "iptables-manager"
+            | "network-diagnostics"
+            | "disk-analyzer"
+            | "disk-manager"
+            | "package-manager"
+            | "git-manager"
+            | "cert-manager"
+            | "nginx-manager"
+            | "caddy-manager"
+            | "apache-manager"
+            | "scheduled-tasks"
+            | "postgres"
+            | "mongo"
+            | "search-cluster"
+            | "message-queue"
+            | "s3-browser"
+            | "frp-manager"
+            | "frps-manager"
+            | "security-audit"
+            | "api-debugger"
+            | "procmanager"
+            | "ai-chat"
+            | "settings"
+            | "sqlite"
+    )
 }
 
 fn is_safe_external_url(raw_url: &str) -> bool {

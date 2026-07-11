@@ -1,10 +1,20 @@
-export type NavIconName = 'hosts' | 'keys' | 'snippets' | 'proxies' | 'known-hosts' | 'logs' | 'settings';
+export type NavIconName = 'hosts' | 'agent' | 'keys' | 'snippets' | 'proxies' | 'known-hosts' | 'logs' | 'settings';
 
 interface NavIconProps {
   name: NavIconName;
 }
 
 function NavIcon({ name }: NavIconProps) {
+  if (name === 'agent') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 7.25A2.75 2.75 0 0 1 7.25 4.5h7.5a2.75 2.75 0 0 1 2.75 2.75v7.5a2.75 2.75 0 0 1-2.75 2.75h-7.5a2.75 2.75 0 0 1-2.75-2.75v-7.5Z" />
+        <path d="m8 9.5 2.5 2.5L8 14.5M12.5 14.5h2.5" />
+        <path d="M18.5 2v3M17 3.5h3M20.5 18v4M18.5 20h4" />
+      </svg>
+    );
+  }
+
   if (name === 'hosts') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">

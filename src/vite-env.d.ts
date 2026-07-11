@@ -15,6 +15,7 @@ type WebviewProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, H
 declare global {
 interface ShellDeskWindowControls {
   show: () => Promise<void>;
+  startDragging: () => Promise<void>;
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<boolean>;
   isMaximized: () => Promise<boolean>;
@@ -158,8 +159,10 @@ interface ShellDeskAppControls {
   installUpdate: () => Promise<boolean>;
   getUpdateStatus: () => Promise<ShellDeskUpdateStatus>;
   openExternal: (url: string) => Promise<boolean>;
-  openConnectionWindow: (connectionId: string) => Promise<{ ok?: boolean; label?: string }>;
+  openConnectionWindow: (connectionId: string, desktopApp?: ShellDeskDesktopAppKey) => Promise<{ ok?: boolean; label?: string }>;
+  openAgentWindow: () => Promise<{ ok?: boolean; label?: string }>;
   openMainAiSettings: () => Promise<void>;
+  showMainWindow: () => Promise<void>;
 }
 
 interface ShellDeskFileControls {
@@ -1325,6 +1328,34 @@ interface ShellDeskAiControls {
   webSearch: (request: ShellDeskWebSearchRequest) => Promise<ShellDeskWebSearchResult>;
 }
 
+interface ShellDeskAgentSessionMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+interface ShellDeskAgentSession {
+  id: string;
+  kind: 'task' | 'host';
+  hostId?: string;
+  title: string;
+  messages: ShellDeskAgentSessionMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ShellDeskAgentSessionsSnapshot {
+  tasks: ShellDeskAgentSession[];
+  hostSessions: Record<string, ShellDeskAgentSession>;
+}
+
+interface ShellDeskAgentSessionsControls {
+  get: () => Promise<ShellDeskAgentSessionsSnapshot>;
+  save: (session: ShellDeskAgentSession) => Promise<ShellDeskAgentSession>;
+  delete: (sessionId: string) => Promise<boolean>;
+}
+
 type ShellDeskSyncStatus = 'idle' | 'success' | 'warning' | 'error';
 type ShellDeskSyncConflictResolution = 'local' | 'remote';
 type ShellDeskSyncEmptyVaultResolution = 'restoreRemote' | 'keepEmpty';
@@ -1499,6 +1530,7 @@ interface ShellDeskEventControls {
   onWindowMaximizedChange: (callback: (payload: { maximized: boolean }) => void) => () => void;
   onCloseToTrayPrompt: (callback: () => void) => () => void;
   onOpenAiSettings: (callback: () => void) => () => void;
+  onDesktopAppOpen: (callback: (payload: { appKey: ShellDeskDesktopAppKey }) => void) => () => void;
   onLogsChanged: (callback: (payload: ShellDeskLogsChangedPayload) => void) => () => void;
   onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference' | 'hostKeyTrust'; scope?: string; key?: string }) => void) => () => void;
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
@@ -1522,6 +1554,7 @@ interface ShellDeskApi {
   preferences: ShellDeskPreferenceControls;
   system: ShellDeskSystemControls;
   ai: ShellDeskAiControls;
+  agentSessions: ShellDeskAgentSessionsControls;
   sync: ShellDeskSyncControls;
   connections: ShellDeskConnectionControls;
   events: ShellDeskEventControls;

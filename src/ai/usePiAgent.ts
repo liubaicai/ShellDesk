@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Api,
   AssistantMessage,
@@ -30,6 +30,8 @@ interface UsePiAgentConfig {
   systemPrompt: string;
   tools?: AgentTool[];
   connectionId?: string;
+  conversationId?: string;
+  initialMessages?: AiMessage[];
 }
 
 const AI_PROVIDER_TIMEOUT_MS = 45000;
@@ -42,6 +44,34 @@ type BackendMessageCommit = (message: AssistantMessage, options?: BackendMessage
 
 interface SendMessageOptions {
   retryFromMessageId?: string;
+}
+
+export interface AiToolActivity {
+  id: string;
+  name: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+}
+
+export type AiConversationStatus = 'idle' | 'running' | 'success' | 'error';
+
+interface AgentConversationState {
+  messages: AiMessage[];
+  isBusy: boolean;
+  busyText: string;
+  error: string;
+  tokenUsage: AiTokenUsage | null;
+  toolActivities: AiToolActivity[];
+  status: AiConversationStatus;
+}
+
+interface AgentRuntime {
+  agent: Agent;
+  unsubscribe: () => void;
+  assistantMessageIds: WeakMap<AssistantMessage, string>;
+  messageIdToAgentMessage: Map<string, AgentMessage>;
+  modelId: string;
 }
 
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
@@ -104,7 +134,7 @@ function createAgent(
   const model = getAiModel(config.settings, models);
   const apiKey = getAiApiKey(config.settings);
 
-  return new Agent({
+  const agent = new Agent({
     initialState: {
       systemPrompt: config.systemPrompt,
       model,
@@ -120,6 +150,20 @@ function createAgent(
     getApiKey: () => apiKey,
     convertToLlm: (messages) => messages.filter(isLlmMessage),
   });
+
+  if (config.initialMessages?.length) {
+    agent.state.messages = config.initialMessages.flatMap((message): AgentMessage[] => {
+      if (message.role === 'user') {
+        return [{ role: 'user', content: message.content, timestamp: Date.parse(message.createdAt) || Date.now() } satisfies UserMessage];
+      }
+      if (message.role === 'assistant') {
+        return [createAssistantMessage(model, message.content, [])];
+      }
+      return [];
+    });
+  }
+
+  return agent;
 }
 
 function usageZero(): Usage {
@@ -417,180 +461,161 @@ function createBackendStreamFn(
   };
 }
 
+function createConversationState(initialMessages: AiMessage[] = []): AgentConversationState {
+  return {
+    messages: initialMessages,
+    isBusy: false,
+    busyText: '',
+    error: '',
+    tokenUsage: null,
+    toolActivities: [],
+    status: 'idle',
+  };
+}
+
 export function usePiAgent(config: UsePiAgentConfig) {
-  const [messages, setMessages] = useState<AiMessage[]>([]);
-  const [isBusy, setIsBusy] = useState(false);
-  const [busyText, setBusyText] = useState('');
-  const [error, setError] = useState('');
-  const [tokenUsage, setTokenUsage] = useState<AiTokenUsage | null>(null);
-  const agentRef = useRef<Agent | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const assistantMessageIdsRef = useRef(new WeakMap<AssistantMessage, string>());
-  const messageIdToAgentMessageRef = useRef(new Map<string, AgentMessage>());
+  const conversationId = config.conversationId ?? '__default__';
+  const configRef = useRef(config);
+  configRef.current = config;
+  const [conversationStates, setConversationStates] = useState<Record<string, AgentConversationState>>(() => ({
+    [conversationId]: createConversationState(config.initialMessages ?? []),
+  }));
+  const conversationStatesRef = useRef(conversationStates);
+  const runtimesRef = useRef(new Map<string, AgentRuntime>());
   const isMountedRef = useRef(true);
   const isConfigured = isAiConfigured(config.settings);
 
-  const agentKey = useMemo(() => JSON.stringify({
-    provider: config.settings.aiProvider,
-    apiFormat: config.settings.aiApiFormat,
-    apiBaseUrl: config.settings.aiApiBaseUrl,
-    apiKey: config.settings.aiApiKey,
-    model: config.settings.aiModel,
-    webSearchEnabled: config.settings.webSearchEnabled,
-    webSearchProvider: config.settings.webSearchProvider,
-    webSearchApiBaseUrl: config.settings.webSearchApiBaseUrl,
-    webSearchApiKey: config.settings.webSearchApiKey,
-    webSearchMaxResults: config.settings.webSearchMaxResults,
-    systemPrompt: config.systemPrompt,
-    connectionId: config.connectionId,
-    toolNames: (config.tools ?? []).map((tool) => tool.name),
-  }), [config.connectionId, config.settings, config.systemPrompt, config.tools]);
-
-  const disposeAgent = useCallback(() => {
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    agentRef.current?.abort();
-    agentRef.current = null;
-    assistantMessageIdsRef.current = new WeakMap();
-    messageIdToAgentMessageRef.current = new Map();
+  const updateConversationState = useCallback((id: string, updater: (current: AgentConversationState) => AgentConversationState) => {
+    setConversationStates((current) => {
+      const next = { ...current, [id]: updater(current[id] ?? createConversationState()) };
+      conversationStatesRef.current = next;
+      return next;
+    });
   }, []);
 
-  const commitAssistantMessage = useCallback((message: AssistantMessage, options?: BackendMessageCommitOptions) => {
-    const id = assistantMessageIdsRef.current.get(message) ?? createMessageId();
-    assistantMessageIdsRef.current.set(message, id);
-    const content = getMessageText(message);
-
-    if (content.trim()) {
-      messageIdToAgentMessageRef.current.set(id, message);
-      setMessages((prev) => upsertMessage(prev, {
-        id,
-        role: 'assistant',
-        content,
-        createdAt: new Date(message.timestamp || Date.now()).toISOString(),
-      }));
-    }
-
-    if (options?.partial) {
-      return;
-    }
-
-    if (message.usage) {
-      setTokenUsage(usageToTokenUsage(message.usage));
-    }
-
-    if (message.stopReason === 'error' && message.errorMessage) {
-      setError(message.errorMessage);
-      setIsBusy(false);
-      setBusyText('');
-      return;
-    }
-
-    if (!hasToolCalls(message)) {
-      setIsBusy(false);
-      setBusyText('');
-    }
+  const disposeRuntime = useCallback((id: string) => {
+    const runtime = runtimesRef.current.get(id);
+    if (!runtime) return;
+    runtime.unsubscribe();
+    runtime.agent.abort();
+    runtimesRef.current.delete(id);
   }, []);
 
-  const ensureAgent = useCallback(() => {
-    if (agentRef.current) {
-      return agentRef.current;
+  const ensureAgent = useCallback((id: string, initialState: AgentConversationState) => {
+    const existing = runtimesRef.current.get(id);
+    const requestedModelId = configRef.current.settings.aiModel.trim();
+    if (existing?.modelId === requestedModelId) return existing;
+    if (existing) {
+      if (initialState.isBusy) return existing;
+      disposeRuntime(id);
     }
 
-    const agent = createAgent(config, commitAssistantMessage);
+    const runtimeConfig = { ...configRef.current, conversationId: id, initialMessages: initialState.messages };
+    const commitAssistantMessage: BackendMessageCommit = (message, options) => {
+      const runtime = runtimesRef.current.get(id);
+      if (!runtime) return;
+      const messageId = runtime.assistantMessageIds.get(message) ?? createMessageId();
+      runtime.assistantMessageIds.set(message, messageId);
+      const content = getMessageText(message);
 
-    if (!agent) {
-      return null;
+      updateConversationState(id, (current) => {
+        const next = content.trim() ? {
+          ...current,
+          messages: upsertMessage(current.messages, {
+            id: messageId,
+            role: 'assistant',
+            content,
+            createdAt: new Date(message.timestamp || Date.now()).toISOString(),
+          }),
+        } : current;
+
+        if (options?.partial) return next;
+        if (message.stopReason === 'error' && message.errorMessage) {
+          return { ...next, error: message.errorMessage, isBusy: false, busyText: '', status: 'error' };
+        }
+        if (!hasToolCalls(message)) {
+          return { ...next, tokenUsage: message.usage ? usageToTokenUsage(message.usage) : next.tokenUsage, isBusy: false, busyText: '', status: 'success' };
+        }
+        return message.usage ? { ...next, tokenUsage: usageToTokenUsage(message.usage) } : next;
+      });
+      if (content.trim()) runtime.messageIdToAgentMessage.set(messageId, message);
+    };
+
+    const agent = createAgent(runtimeConfig, commitAssistantMessage);
+    if (!agent) return null;
+
+    const runtime: AgentRuntime = {
+      agent,
+      unsubscribe: () => undefined,
+      assistantMessageIds: new WeakMap(),
+      messageIdToAgentMessage: new Map(),
+      modelId: requestedModelId,
+    };
+    const restoredMessages = runtimeConfig.initialMessages.filter((message) => message.role === 'user' || message.role === 'assistant');
+    for (const [index, message] of restoredMessages.entries()) {
+      const agentMessage = agent.state.messages[index];
+      if (agentMessage) runtime.messageIdToAgentMessage.set(message.id, agentMessage);
     }
-
-    unsubscribeRef.current = agent.subscribe((event: AgentEvent) => {
-      if (!isMountedRef.current) {
-        return;
-      }
+    runtime.unsubscribe = agent.subscribe((event: AgentEvent) => {
+      if (!isMountedRef.current) return;
 
       if (event.type === 'agent_start') {
-        setIsBusy(true);
-        setBusyText(t('auto.aiChat.thinking', config.language));
-        setError('');
-        return;
-      }
-
-      if (event.type === 'message_start' && isAssistantMessage(event.message)) {
-        if (!assistantMessageIdsRef.current.has(event.message)) {
-          assistantMessageIdsRef.current.set(event.message, createMessageId());
-        }
-        return;
-      }
-
-      if (event.type === 'message_update' && isAssistantMessage(event.message)) {
+        updateConversationState(id, (current) => ({ ...current, isBusy: true, busyText: t('auto.aiChat.thinking', runtimeConfig.language), error: '', status: 'running' }));
+      } else if (event.type === 'message_start' && isAssistantMessage(event.message)) {
+        if (!runtime.assistantMessageIds.has(event.message)) runtime.assistantMessageIds.set(event.message, createMessageId());
+      } else if ((event.type === 'message_update' || event.type === 'message_end') && isAssistantMessage(event.message)) {
         commitAssistantMessage(event.message);
-        return;
-      }
-
-      if (event.type === 'message_end' && isAssistantMessage(event.message)) {
-        commitAssistantMessage(event.message);
-        return;
-      }
-
-      if (event.type === 'tool_execution_start') {
-        setIsBusy(true);
-        setBusyText(t('auto.aiChat.toolRunning', config.language, { value0: event.toolName }));
-        return;
-      }
-
-      if (event.type === 'tool_execution_end' && event.isError) {
-        setError(t('auto.aiChat.toolFailed', config.language, { value0: event.toolName }));
-        setBusyText('');
-        setIsBusy(false);
-        return;
-      }
-
-      if (event.type === 'tool_execution_end') {
-        setBusyText(t('auto.aiChat.thinking', config.language));
-        return;
-      }
-
-      if (event.type === 'agent_end') {
-        setIsBusy(false);
-        setBusyText('');
+      } else if (event.type === 'tool_execution_start') {
+        updateConversationState(id, (current) => ({
+          ...current,
+          isBusy: true,
+          busyText: t('auto.aiChat.toolRunning', runtimeConfig.language, { value0: event.toolName }),
+          status: 'running',
+          toolActivities: [...current.toolActivities, { id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: event.toolName, status: 'running', startedAt: new Date().toISOString() }],
+        }));
+      } else if (event.type === 'tool_execution_end') {
+        updateConversationState(id, (current) => event.isError
+          ? { ...current, toolActivities: updateLatestToolActivity(current.toolActivities, event.toolName, 'failed'), error: t('auto.aiChat.toolFailed', runtimeConfig.language, { value0: event.toolName }), isBusy: false, busyText: '', status: 'error' }
+          : { ...current, toolActivities: updateLatestToolActivity(current.toolActivities, event.toolName, 'completed'), busyText: t('auto.aiChat.thinking', runtimeConfig.language), status: 'running' });
+      } else if (event.type === 'agent_end') {
+        updateConversationState(id, (current) => ({ ...current, isBusy: false, busyText: '', status: current.status === 'error' ? 'error' : 'success' }));
       }
     });
-
-    agentRef.current = agent;
-    return agent;
-  }, [commitAssistantMessage, config]);
+    runtimesRef.current.set(id, runtime);
+    return runtime;
+  }, [disposeRuntime, updateConversationState]);
 
   useEffect(() => {
-    disposeAgent();
-    setMessages([]);
-    setError('');
-    setIsBusy(false);
-    setBusyText('');
-    setTokenUsage(null);
-
-    return disposeAgent;
-  }, [agentKey, disposeAgent]);
+    if (conversationStatesRef.current[conversationId]) return;
+    updateConversationState(conversationId, () => createConversationState(config.initialMessages ?? []));
+  }, [config.initialMessages, conversationId, updateConversationState]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
-    disposeAgent();
-  }, [disposeAgent]);
+    for (const runtime of runtimesRef.current.values()) {
+      runtime.unsubscribe();
+      runtime.agent.abort();
+    }
+    runtimesRef.current.clear();
+  }, []);
 
   const sendMessage = useCallback(async (content: string, options?: SendMessageOptions) => {
     const trimmedContent = content.trim();
+    const currentState = conversationStatesRef.current[conversationId] ?? createConversationState(configRef.current.initialMessages ?? []);
 
-    if (!trimmedContent || isBusy) {
+    if (!trimmedContent || currentState.isBusy) {
       return;
     }
 
     if (!isConfigured) {
-      setError(t('auto.aiChat.notConfiguredError', config.language));
+      updateConversationState(conversationId, (current) => ({ ...current, error: t('auto.aiChat.notConfiguredError', config.language), status: 'error' }));
       return;
     }
 
-    const agent = ensureAgent();
+    const runtime = ensureAgent(conversationId, currentState);
 
-    if (!agent) {
-      setError(t('auto.aiChat.notConfiguredError', config.language));
+    if (!runtime) {
+      updateConversationState(conversationId, (current) => ({ ...current, error: t('auto.aiChat.notConfiguredError', config.language), status: 'error' }));
       return;
     }
 
@@ -608,66 +633,84 @@ export function usePiAgent(config: UsePiAgentConfig) {
     };
 
     if (options?.retryFromMessageId) {
-      const targetAgentMessage = messageIdToAgentMessageRef.current.get(options.retryFromMessageId);
-      const targetAgentIndex = targetAgentMessage ? agent.state.messages.indexOf(targetAgentMessage) : -1;
+      const targetAgentMessage = runtime.messageIdToAgentMessage.get(options.retryFromMessageId);
+      const targetAgentIndex = targetAgentMessage ? runtime.agent.state.messages.indexOf(targetAgentMessage) : -1;
 
       if (targetAgentIndex >= 0) {
-        agent.state.messages = agent.state.messages.slice(0, targetAgentIndex);
+        runtime.agent.state.messages = runtime.agent.state.messages.slice(0, targetAgentIndex);
       } else {
-        agent.state.messages = [];
+        runtime.agent.state.messages = [];
       }
     }
 
-    messageIdToAgentMessageRef.current.set(userMessage.id, agentUserMessage);
-    setMessages((prev) => {
+    runtime.messageIdToAgentMessage.set(userMessage.id, agentUserMessage);
+    updateConversationState(conversationId, (current) => {
       const targetUiIndex = options?.retryFromMessageId
-        ? prev.findIndex((message) => message.id === options.retryFromMessageId)
+        ? current.messages.findIndex((message) => message.id === options.retryFromMessageId)
         : -1;
-      const nextMessages = targetUiIndex >= 0 ? prev.slice(0, targetUiIndex) : prev;
-      return [...nextMessages, userMessage];
+      const nextMessages = targetUiIndex >= 0 ? current.messages.slice(0, targetUiIndex) : current.messages;
+      return { ...current, messages: [...nextMessages, userMessage], error: '', isBusy: true, busyText: t('auto.aiChat.thinking', config.language), status: 'running' };
     });
-    setError('');
-    setIsBusy(true);
-    setBusyText(t('auto.aiChat.thinking', config.language));
 
     try {
-      await agent.prompt(agentUserMessage);
+      await runtime.agent.prompt(agentUserMessage);
     } catch (err) {
       if (isMountedRef.current) {
-        setError(err instanceof Error ? err.message : String(err));
+        updateConversationState(conversationId, (current) => ({ ...current, error: err instanceof Error ? err.message : String(err), isBusy: false, busyText: '', status: 'error' }));
       }
     } finally {
       if (isMountedRef.current) {
-        setIsBusy(false);
-        setBusyText('');
+        updateConversationState(conversationId, (current) => ({ ...current, isBusy: false, busyText: '', status: current.status === 'error' ? 'error' : 'success' }));
       }
     }
-  }, [config.language, ensureAgent, isBusy, isConfigured]);
+  }, [config.language, conversationId, ensureAgent, isConfigured, updateConversationState]);
 
   const cancelRequest = useCallback(() => {
-    agentRef.current?.abort();
-    setIsBusy(false);
-    setBusyText('');
-  }, []);
+    runtimesRef.current.get(conversationId)?.agent.abort();
+    updateConversationState(conversationId, (current) => ({ ...current, isBusy: false, busyText: '', status: 'idle' }));
+  }, [conversationId, updateConversationState]);
 
   const clearHistory = useCallback(() => {
-    disposeAgent();
-    setMessages([]);
-    setError('');
-    setIsBusy(false);
-    setBusyText('');
-    setTokenUsage(null);
-  }, [disposeAgent]);
+    disposeRuntime(conversationId);
+    updateConversationState(conversationId, () => createConversationState());
+  }, [conversationId, disposeRuntime, updateConversationState]);
+
+  const activeState = conversationStates[conversationId] ?? createConversationState(config.initialMessages ?? []);
+  const conversationStatuses = Object.fromEntries(Object.entries(conversationStates).map(([id, state]) => [id, state.status]));
+  const conversationMessages = Object.fromEntries(Object.entries(conversationStates).map(([id, state]) => [id, state.messages]));
 
   return {
-    messages,
-    isBusy,
-    busyText,
-    error,
+    messages: activeState.messages,
+    messageConversationId: conversationId,
+    isBusy: activeState.isBusy,
+    busyText: activeState.busyText,
+    error: activeState.error,
     isConfigured,
     sendMessage,
     cancelRequest,
     clearHistory,
-    tokenUsage,
+    tokenUsage: activeState.tokenUsage,
+    toolActivities: activeState.toolActivities,
+    conversationStatuses,
+    conversationMessages,
   };
+}
+
+function updateLatestToolActivity(
+  activities: AiToolActivity[],
+  name: string,
+  status: Extract<AiToolActivity['status'], 'completed' | 'failed'>,
+) {
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index];
+    if (activity.name === name && activity.status === 'running') {
+      return activities.map((current, currentIndex) => (
+        currentIndex === index
+          ? { ...current, status, completedAt: new Date().toISOString() }
+          : current
+      ));
+    }
+  }
+
+  return activities;
 }

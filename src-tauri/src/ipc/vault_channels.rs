@@ -6,7 +6,7 @@ use crate::vault::{
 };
 use crate::{string_arg, AppState};
 use serde_json::{json, Value};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 pub(crate) async fn dispatch(
     state: AppState,
@@ -25,7 +25,11 @@ pub(crate) async fn dispatch(
                 upsert_vault_collections(store, payload)?;
                 Ok(to_snapshot(&state, store.clone()))
             })?;
-            let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
+            let event = json!({ "kind": "vault" });
+            let _ = window.emit("vault:changed", event.clone());
+            if let Some(agent_window) = window.app_handle().get_webview_window("agent-workspace") {
+                let _ = agent_window.emit("vault:changed", event);
+            }
             snapshot
         }
         "vault:get-bookmarks" => {

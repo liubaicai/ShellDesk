@@ -225,6 +225,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
       return false as T;
 
     case 'window:show':
+    case 'window:start-dragging':
     case 'window:minimize':
     case 'window:close':
       return null as T;
@@ -483,11 +484,14 @@ window.guiSSH = {
     installUpdate: () => ipc('app:install-update'),
     getUpdateStatus: () => ipc('app:get-update-status'),
     openExternal: (url) => ipc('app:open-external', url),
-    openConnectionWindow: (connectionId) => ipc('app:open-connection-window', connectionId),
+    openConnectionWindow: (connectionId, desktopApp) => ipc('app:open-connection-window', connectionId, desktopApp),
+    openAgentWindow: () => ipc('app:open-agent-window'),
     openMainAiSettings: () => ipc('app:open-main-ai-settings'),
+    showMainWindow: () => ipc('app:show-main-window'),
   },
   window: {
     show: () => ipc('window:show'),
+    startDragging: () => ipc('window:start-dragging'),
     minimize: () => ipc('window:minimize'),
     toggleMaximize: () => ipc('window:toggle-maximize'),
     isMaximized: () => ipc('window:is-maximized'),
@@ -533,6 +537,11 @@ window.guiSSH = {
     chat: (request) => ipc('ai:chat', request),
     chatStream,
     webSearch: (request) => ipc('ai:web-search', request),
+  },
+  agentSessions: {
+    get: () => ipc('agent-sessions:get'),
+    save: (session) => ipc('agent-sessions:save', session),
+    delete: (sessionId) => ipc('agent-sessions:delete', sessionId),
   },
   sync: {
     getConfig: () => ipc('sync:get-config'),
@@ -658,6 +667,7 @@ window.guiSSH = {
     onWindowMaximizedChange: (callback) => onTauriEvent('window:maximize-state-changed', callback),
     onCloseToTrayPrompt: (callback) => onTauriEvent('window:close-to-tray-prompt', callback),
     onOpenAiSettings: (callback) => onTauriEvent('app:open-ai-settings', callback),
+    onDesktopAppOpen: (callback) => onTauriEvent('desktop:open-app', callback),
     onLogsChanged: (callback) => onTauriEvent('logs:changed', callback),
     onVaultChanged: (callback) => onTauriEvent('vault:changed', callback),
     onSyncChanged: (callback) => onTauriEvent('sync:changed', callback),

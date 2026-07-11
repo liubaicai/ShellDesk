@@ -1,3 +1,7 @@
+use crate::agent_sessions::{
+    delete_session as delete_agent_session, get_sessions as get_agent_sessions,
+    save_session as save_agent_session,
+};
 use crate::ai::{ai_chat, ai_chat_stream, ai_list_models, ai_web_search};
 use crate::logs::{
     append_entry as append_log_entry, clear_entries as clear_log_entries,
@@ -17,6 +21,11 @@ pub(crate) async fn dispatch(
     args: &[Value],
 ) -> Result<Option<Value>, String> {
     let value = match channel.as_str() {
+        "agent-sessions:get" => get_agent_sessions(&state)?,
+        "agent-sessions:save" => {
+            save_agent_session(&state, args.first().cloned().unwrap_or_else(|| json!({})))?
+        }
+        "agent-sessions:delete" => delete_agent_session(&state, args)?,
         "logs:get-entries" => get_log_entries(&state)?,
         "logs:clear-entries" => {
             let result = clear_log_entries(&state)?;

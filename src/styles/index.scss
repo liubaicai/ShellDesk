@@ -5,6 +5,7 @@
 @use "./pages/snippets" as *;
 @use "./pages/network-assets" as *;
 @use "./pages/settings" as *;
+@use "./pages/agent-workspace" as *;
 @use "./remote-desktop/shell" as *;
 @use "./remote-desktop/dismissible-alert" as *;
 @use "./remote-desktop/sudo-prompt" as *;

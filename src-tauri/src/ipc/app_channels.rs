@@ -19,7 +19,9 @@ pub(crate) async fn dispatch(
         "app:open-connection-window" => {
             app_handlers::open_connection_window(&app, &state, args.to_vec())?
         }
+        "app:open-agent-window" => app_handlers::open_agent_window(&app)?,
         "app:open-main-ai-settings" => app_handlers::open_main_ai_settings(&app)?,
+        "app:show-main-window" => app_handlers::show_main_window(&app)?,
         "app:check-for-updates" => {
             let result = check_release_info(app.clone()).await;
             match &result {
@@ -58,6 +60,10 @@ pub(crate) async fn dispatch(
 
         "window:show" => {
             window.show().map_err(error_string)?;
+            Value::Null
+        }
+        "window:start-dragging" => {
+            window.start_dragging().map_err(error_string)?;
             Value::Null
         }
         "window:minimize" => {

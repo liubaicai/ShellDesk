@@ -1,3 +1,5 @@
+#[path = "agent_sessions.rs"]
+pub(crate) mod agent_sessions;
 #[path = "ai.rs"]
 pub(crate) mod ai;
 #[path = "app.rs"]
