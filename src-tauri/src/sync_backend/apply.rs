@@ -176,16 +176,6 @@ pub(super) fn apply_sync_document_to_vault(
                 .cloned()
                 .unwrap_or_else(default_settings)
         });
-    if let Some(object) = settings.as_object_mut() {
-        object.insert(
-            "aiApiKey".to_string(),
-            current
-                .pointer("/settings/aiApiKey")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .into(),
-        );
-    }
     preserve_local_close_to_tray_decision(&mut settings, &current);
 
     let mut bookmarks_by_scope: HashMap<String, Vec<Value>> = HashMap::new();
@@ -285,6 +275,58 @@ mod tests {
 
         assert_eq!(snapshot["settings"]["minimizeToTrayOnClose"], true);
         assert_eq!(snapshot["settings"]["minimizeToTrayPromptedOnClose"], true);
+
+        let _ = fs::remove_dir_all(&state.data_dir);
+    }
+
+    #[test]
+    fn applies_synced_ai_provider_credentials() {
+        let state = temp_state("ai-provider-credentials");
+        let mut current_settings = default_settings();
+        current_settings["aiApiKey"] = json!("local-api-key");
+        write_store(
+            &state,
+            &json!({
+                "hosts": [],
+                "sshKeys": [],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": current_settings,
+                "browserBookmarks": []
+            }),
+        )
+        .unwrap();
+
+        let mut remote_settings = default_settings();
+        remote_settings["aiProvider"] = json!("custom");
+        remote_settings["aiProviderName"] = json!("Company gateway");
+        remote_settings["aiApiBaseUrl"] = json!("https://ai.example.com/v1");
+        remote_settings["aiApiKey"] = json!("synced-api-key");
+        remote_settings["aiModel"] = json!("gateway-model");
+        let snapshot = apply_sync_document_to_vault(
+            &state,
+            &json!({
+                "records": {
+                    "settings:app": {
+                        "id": "settings:app",
+                        "type": "settings",
+                        "updatedAt": "2026-01-02T00:00:00.000Z",
+                        "hash": "hash-settings",
+                        "payload": remote_settings
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot["settings"]["aiProvider"], "custom");
+        assert_eq!(snapshot["settings"]["aiProviderName"], "Company gateway");
+        assert_eq!(
+            snapshot["settings"]["aiApiBaseUrl"],
+            "https://ai.example.com/v1"
+        );
+        assert_eq!(snapshot["settings"]["aiApiKey"], "synced-api-key");
+        assert_eq!(snapshot["settings"]["aiModel"], "gateway-model");
 
         let _ = fs::remove_dir_all(&state.data_dir);
     }

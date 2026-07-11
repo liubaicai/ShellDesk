@@ -82,10 +82,10 @@ fn public_host_payload(host: &Value) -> Value {
     Value::Object(payload)
 }
 
-fn public_settings_payload(settings: &Value) -> Value {
-    let mut payload = settings.as_object().cloned().unwrap_or_default();
-    payload.insert("aiApiKey".to_string(), json!(""));
-    Value::Object(payload)
+fn sync_settings_payload(settings: &Value) -> Value {
+    // The WebDAV document is always encrypted with the user's sync passphrase
+    // before upload, so AI credentials can travel with the provider settings.
+    settings.clone()
 }
 
 fn public_proxy_payload(profile: &Value) -> Value {
@@ -244,7 +244,7 @@ fn create_records_from_vault(vault: &Value, sync_state: &Value, now_value: &str)
         .get("settings")
         .cloned()
         .unwrap_or_else(default_settings);
-    let settings_payload = public_settings_payload(&settings);
+    let settings_payload = sync_settings_payload(&settings);
     let settings_hash = hash_payload(&settings_payload);
     let settings_previous = sync_state.pointer("/lastRecords/settings:app");
     let settings_updated_at = if settings_previous
@@ -587,5 +587,36 @@ mod tests {
         );
         assert_eq!(record["payload"]["passphrase"], "key-passphrase");
         assert_eq!(count_content_records(&records), 1);
+    }
+
+    #[test]
+    fn local_sync_records_include_ai_provider_credentials() {
+        let mut settings = default_settings();
+        settings["aiProvider"] = json!("custom");
+        settings["aiProviderName"] = json!("Company gateway");
+        settings["aiApiBaseUrl"] = json!("https://ai.example.com/v1");
+        settings["aiApiKey"] = json!("sync-test-api-key");
+        settings["aiModel"] = json!("gateway-model");
+        let records = create_records_from_vault(
+            &json!({
+                "hosts": [],
+                "sshKeys": [],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": settings,
+                "browserBookmarks": []
+            }),
+            &json!({ "deviceId": "device-1", "lastRecords": {}, "lastTombstones": {} }),
+            "2026-01-03T00:00:00.000Z",
+        );
+
+        let settings = records
+            .pointer("/settings:app/payload")
+            .expect("settings record should be present");
+        assert_eq!(settings["aiProvider"], "custom");
+        assert_eq!(settings["aiProviderName"], "Company gateway");
+        assert_eq!(settings["aiApiBaseUrl"], "https://ai.example.com/v1");
+        assert_eq!(settings["aiApiKey"], "sync-test-api-key");
+        assert_eq!(settings["aiModel"], "gateway-model");
     }
 }
