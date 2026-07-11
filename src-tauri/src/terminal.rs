@@ -380,9 +380,7 @@ async fn start_local_terminal_session(
     let mut command = local_terminal_command(&launch_options);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
-    if !launch_options.working_directory.is_empty() {
-        command.current_dir(PathBuf::from(&launch_options.working_directory));
-    }
+    command.current_dir(local_terminal_working_directory(&launch_options));
     command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -509,6 +507,16 @@ fn local_terminal_command(launch_options: &TerminalLaunchOptions) -> Command {
     let mut cmd = Command::new(shell);
     cmd.arg("-l");
     cmd
+}
+
+fn local_terminal_working_directory(launch_options: &TerminalLaunchOptions) -> PathBuf {
+    if !launch_options.working_directory.is_empty() {
+        return PathBuf::from(&launch_options.working_directory);
+    }
+
+    dirs::home_dir()
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn read_terminal_launch_options(
@@ -981,6 +989,35 @@ mod tests {
         assert_eq!(
             create_terminal_startup_input(&connection, &launch_options),
             "cd \"C:\\Users\\root\"\rpowershell\rWrite-Host ok\r"
+        );
+    }
+
+    #[test]
+    fn local_terminal_defaults_to_the_user_home_directory() {
+        let launch_options = TerminalLaunchOptions {
+            shell: String::new(),
+            initial_command: String::new(),
+            working_directory: String::new(),
+        };
+
+        let expected = dirs::home_dir()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        assert_eq!(local_terminal_working_directory(&launch_options), expected);
+    }
+
+    #[test]
+    fn local_terminal_preserves_an_explicit_working_directory() {
+        let launch_options = TerminalLaunchOptions {
+            shell: String::new(),
+            initial_command: String::new(),
+            working_directory: r"D:\workspace".to_string(),
+        };
+
+        assert_eq!(
+            local_terminal_working_directory(&launch_options),
+            PathBuf::from(r"D:\workspace")
         );
     }
 
