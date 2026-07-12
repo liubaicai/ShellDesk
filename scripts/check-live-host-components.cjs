@@ -34,6 +34,7 @@ if (missing.length) {
 
 const password = values.SHELLDESK_TEST_SSH_PASSWORD;
 const keyPath = values.SHELLDESK_TEST_SSH_KEY_PATH;
+const resultPrefix = '__SHELLDESK_SMOKE_RESULT__|';
 const cargo = process.platform === 'win32' ? 'cargo.exe' : 'cargo';
 const result = spawnSync(cargo, [
   'test',
@@ -59,8 +60,47 @@ function redact(text) {
   return result;
 }
 
-if (result.stdout) process.stdout.write(redact(result.stdout));
-if (result.stderr) process.stderr.write(redact(result.stderr));
-if (result.status !== 0) process.exit(result.status ?? 1);
+function color(code, text) {
+  return `\x1b[${code}m${text}\x1b[0m`;
+}
 
-console.log('Live host component smoke passed.');
+function printStructuredResults(text) {
+  const rows = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(resultPrefix))
+    .map((line) => line.slice(resultPrefix.length).split('|', 3));
+
+  if (!rows.length) return 0;
+  console.log('Host component smoke results:');
+  for (const [name, status, detail = ''] of rows) {
+    const suffix = detail ? ` — ${detail}` : '';
+    if (status === 'ok') {
+      console.log(color(32, `  ✓ ${name}${suffix}`));
+    } else if (status === 'skip') {
+      console.log(color(33, `  - ${name} (skipped)${suffix}`));
+    } else {
+      console.log(color(31, `  ✗ ${name}${suffix}`));
+    }
+  }
+  return rows.length;
+}
+
+const stdout = redact(result.stdout ?? '');
+const stderr = redact(result.stderr ?? '');
+const structuredCount = printStructuredResults(stdout);
+if (result.status !== 0) {
+  console.error(color(31, 'Host component smoke failed.'));
+  const diagnostics = [stdout, stderr]
+    .filter(Boolean)
+    .map((text) => text.split(/\r?\n/).filter((line) => !line.startsWith(resultPrefix)).join('\n'))
+    .filter(Boolean)
+    .join('\n');
+  if (diagnostics) console.error(color(31, diagnostics));
+  process.exit(result.status ?? 1);
+}
+if (!structuredCount) {
+  console.error(color(31, 'Host component smoke returned no structured results.'));
+  process.exit(1);
+}
+
+console.log(color(32, 'Host component smoke passed.'));

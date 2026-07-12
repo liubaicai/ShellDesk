@@ -586,6 +586,21 @@ mod tests {
     }
 
     const HOST_COMPONENT_PREFIX: &str = "__SHELLDESK_COMPONENT__";
+    const HOST_SMOKE_RESULT_PREFIX: &str = "__SHELLDESK_SMOKE_RESULT__";
+    const ALL_HOST_COMPONENTS: [&str; 12] = [
+        "terminal",
+        "files",
+        "processes",
+        "services",
+        "network",
+        "disks",
+        "users",
+        "firewall",
+        "scheduledTasks",
+        "eventLog",
+        "packages",
+        "containers",
+    ];
     const WINDOWS_HOST_COMPONENT_PROBE: &str = r#"
 $ErrorActionPreference = 'Stop'
 function Test-ShellDeskComponent([string]$Key, [scriptblock]$Probe, [bool]$Optional = $false) {
@@ -665,19 +680,8 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
         .await
         .expect("live Windows system information command should run");
 
-        assert_eq!(system_info.code, 0, "stderr: {}", system_info.stderr);
         let values = parse_batch_output(&system_info.stdout);
-        assert_eq!(
-            values.len(),
-            items.len(),
-            "stdout: {}; stderr: {}",
-            system_info.stdout,
-            system_info.stderr
-        );
-        assert!(values.iter().all(|(_, value)| !value.trim().is_empty()));
-        assert!(values
-            .iter()
-            .any(|(key, value)| key == "hostname" && value != "No output"));
+        assert_system_info_payload("windows", &items, &values, &system_info);
 
         let metrics = crate::russh_client::run_exec_command(
             None,
@@ -689,9 +693,7 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
         )
         .await
         .expect("live Windows metrics command should run");
-        assert_eq!(metrics.code, 0, "stderr: {}", metrics.stderr);
-        assert!(metrics.stdout.contains("cpu="));
-        assert!(metrics.stdout.contains("mem="));
+        assert_metrics_payload(&metrics);
 
         let (component_command, component_stdin) =
             create_powershell_stdin_command(WINDOWS_HOST_COMPONENT_PROBE);
@@ -712,29 +714,18 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
             component_probe.stderr
         );
 
-        let component_statuses = parse_component_statuses(&component_probe.stdout);
-        for component in [
-            "terminal",
-            "files",
-            "processes",
-            "services",
-            "network",
-            "disks",
-            "users",
-        ] {
-            assert_eq!(
-                component_statuses.get(component).map(String::as_str),
-                Some("ok"),
-                "component {component} output: {}",
-                component_probe.stdout
-            );
-        }
-        let summary = component_statuses
-            .iter()
-            .map(|(component, status)| format!("{component}={status}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("Live Windows host component smoke passed: {summary}");
+        assert_component_payload(
+            &component_probe.stdout,
+            &[
+                "terminal",
+                "files",
+                "processes",
+                "services",
+                "network",
+                "disks",
+                "users",
+            ],
+        );
     }
 
     async fn run_live_linux_host_components_smoke() {
@@ -767,9 +758,8 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
         )
         .await
         .expect("live Linux system information command should run");
-        assert_eq!(system_info.code, 0, "stderr: {}", system_info.stderr);
         let values = parse_batch_output(&system_info.stdout);
-        assert_eq!(values.len(), items.len(), "stdout: {}", system_info.stdout);
+        assert_system_info_payload("linux", &items, &values, &system_info);
 
         let metrics = crate::russh_client::run_exec_command(
             None,
@@ -781,9 +771,7 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
         )
         .await
         .expect("live Linux metrics command should run");
-        assert_eq!(metrics.code, 0, "stderr: {}", metrics.stderr);
-        assert!(metrics.stdout.contains("cpu="));
-        assert!(metrics.stdout.contains("mem="));
+        assert_metrics_payload(&metrics);
 
         let component_probe = crate::russh_client::run_exec_command(
             None,
@@ -804,28 +792,17 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
             component_probe.stderr
         );
 
-        let component_statuses = parse_component_statuses(&component_probe.stdout);
-        for component in [
-            "terminal",
-            "files",
-            "processes",
-            "network",
-            "disks",
-            "users",
-        ] {
-            assert_eq!(
-                component_statuses.get(component).map(String::as_str),
-                Some("ok"),
-                "component {component} output: {}",
-                component_probe.stdout
-            );
-        }
-        let summary = component_statuses
-            .iter()
-            .map(|(component, status)| format!("{component}={status}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("Live Linux host component smoke passed: {summary}");
+        assert_component_payload(
+            &component_probe.stdout,
+            &[
+                "terminal",
+                "files",
+                "processes",
+                "network",
+                "disks",
+                "users",
+            ],
+        );
     }
 
     #[tokio::test]
@@ -853,12 +830,119 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
         assert_eq!(platform.code, 0, "stderr: {}", platform.stderr);
 
         if platform.stdout.trim().eq_ignore_ascii_case("windows_nt") {
-            println!("Live host platform: Windows");
+            report_host_smoke_result("platform", "ok", "windows");
             run_live_windows_host_components_smoke().await;
         } else {
-            println!("Live host platform: Linux/Unix");
+            report_host_smoke_result("platform", "ok", "linux");
             run_live_linux_host_components_smoke().await;
         }
+    }
+
+    fn assert_system_info_payload(
+        platform: &str,
+        items: &[MonitorItem],
+        values: &[(String, String)],
+        output: &crate::russh_client::RusshExecOutput,
+    ) {
+        assert_eq!(output.code, 0, "stderr: {}", output.stderr);
+        assert_eq!(
+            values.len(),
+            items.len(),
+            "system-info response must contain every requested item; stdout: {}",
+            output.stdout
+        );
+        for item in items {
+            assert!(
+                values.iter().any(|(key, _)| key == item.key),
+                "system-info response is missing key {}",
+                item.key
+            );
+        }
+        for key in ["os", "hostname", "cpu", "memory", "disk", "user"] {
+            let value = values
+                .iter()
+                .find(|(item_key, _)| item_key == key)
+                .map(|(_, value)| value.trim())
+                .unwrap_or_default();
+            assert!(
+                !value.is_empty()
+                    && !matches!(value, "No output" | "Unavailable" | "获取失败" | "无输出"),
+                "system-info key {key} did not return usable data: {value}"
+            );
+        }
+        report_host_smoke_result(
+            "system-info",
+            "ok",
+            &format!("platform={platform}; items={}", values.len()),
+        );
+    }
+
+    fn assert_metrics_payload(output: &crate::russh_client::RusshExecOutput) {
+        assert_eq!(output.code, 0, "stderr: {}", output.stderr);
+        let cpu = parse_metric_number(&output.stdout, "cpu")
+            .expect("metrics response must include a numeric cpu value");
+        let memory = parse_metric_number(&output.stdout, "mem")
+            .expect("metrics response must include a numeric memory value");
+        assert!(
+            (0.0..=100.0).contains(&cpu),
+            "cpu metric out of range: {cpu}"
+        );
+        assert!(
+            (0.0..=100.0).contains(&memory),
+            "memory metric out of range: {memory}"
+        );
+        let network_parts = output
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("net="))
+            .map(str::split_whitespace)
+            .map(|parts| parts.collect::<Vec<_>>())
+            .expect("metrics response must include a net value pair");
+        assert_eq!(
+            network_parts.len(),
+            2,
+            "net metric must contain receive and transmit values"
+        );
+        assert!(network_parts
+            .iter()
+            .all(|value| { *value == "nan" || value.parse::<u64>().is_ok() }));
+        report_host_smoke_result(
+            "metrics",
+            "ok",
+            &format!("cpu={cpu:.1}%; memory={memory:.1}%"),
+        );
+    }
+
+    fn assert_component_payload(output: &str, required: &[&str]) {
+        let component_statuses = parse_component_statuses(output);
+        for component in ALL_HOST_COMPONENTS {
+            let status = component_statuses
+                .get(component)
+                .map(String::as_str)
+                .unwrap_or_else(|| {
+                    panic!("component response is missing {component}; output: {output}")
+                });
+            assert!(
+                matches!(status, "ok" | "skip"),
+                "component {component} returned invalid status {status}; output: {output}"
+            );
+        }
+        let mut rows = component_statuses.iter().collect::<Vec<_>>();
+        rows.sort_unstable_by_key(|(component, _)| *component);
+        for (component, status) in rows {
+            report_host_smoke_result(&format!("component/{component}"), status, "");
+        }
+        for component in required {
+            assert_eq!(
+                component_statuses.get(*component).map(String::as_str),
+                Some("ok"),
+                "required component {component} did not return ok; output: {output}"
+            );
+        }
+    }
+
+    fn report_host_smoke_result(name: &str, status: &str, detail: &str) {
+        println!("{HOST_SMOKE_RESULT_PREFIX}|{name}|{status}|{detail}");
     }
 
     fn parse_component_statuses(output: &str) -> HashMap<String, String> {
