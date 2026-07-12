@@ -20,6 +20,11 @@
 
 `docs/remote-desktop-components/_example.md` 是新增或更新组件文档时的模板与检查清单。
 
+## 连接启动
+
+- 初次 SSH 连接通过一条短命令同时完成登录验证和 Windows shell 识别，避免额外的认证往返。
+- 远程桌面启动门禁只验证远端能回显连接标记；磁盘、网络和 CIM 系统信息由后台 `connection:get-system-info` 采集，不阻塞桌面首屏。
+
 ## 当前已接入组件
 
 | 编号 | appKey | 组件 | 文档 | 当前设计重点 |

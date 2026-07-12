@@ -3,10 +3,9 @@ use crate::ssh_tunnel::spawn_tunnel_shutdown;
 use crate::vault::read_store;
 use crate::{
     error_string, https_url_origin, now, prevent_process_window, random_id, read_string_field,
-    read_u16_field, remote_fs,
-    russh_client::{connect_authenticated, run_exec_command},
-    sanitize_file_name, string_arg, terminal, unavailable_password_auth_error, whoami,
-    ActiveConnection, AppState, ConnectionKind, PrivilegeConfig, SshProfile, UiWindowRef,
+    read_u16_field, remote_fs, russh_client::run_exec_command, sanitize_file_name, string_arg,
+    terminal, unavailable_password_auth_error, whoami, ActiveConnection, AppState, ConnectionKind,
+    PrivilegeConfig, SshProfile, UiWindowRef,
 };
 use host_keys::prepare_ssh_host_key_trust;
 use serde_json::{json, Value};
@@ -485,11 +484,11 @@ fn remote_system_type_from_probe_output(output: &str) -> Option<&'static str> {
         .then_some("windows")
 }
 
-async fn probe_remote_system_type(
+async fn validate_login_and_probe_remote_system_type(
     state: AppState,
     window: &tauri::Window,
     profile: SshProfile,
-) -> Option<&'static str> {
+) -> Result<Option<&'static str>, String> {
     // `echo %OS%` is parsed by cmd.exe on the standard Windows OpenSSH shell and
     // stays a harmless literal on POSIX shells. Do this before any platform-specific
     // status command so a Windows host never receives a Unix redirect such as /dev/null.
@@ -501,9 +500,11 @@ async fn probe_remote_system_type(
         String::new(),
         Duration::from_secs(8),
     )
-    .await
-    .ok()?;
-    remote_system_type_from_probe_output(&format!("{}{}", output.stdout, output.stderr))
+    .await?;
+    Ok(remote_system_type_from_probe_output(&format!(
+        "{}{}",
+        output.stdout, output.stderr
+    )))
 }
 
 pub(crate) fn respond_keyboard_interactive(
@@ -558,27 +559,21 @@ pub(crate) async fn connect_ssh(
         return Ok(json!({ "ok": false, "error": error }));
     }
 
-    // A host-key scan only proves that an SSH server is reachable. Authenticate before
-    // declaring the connection successful so invalid credentials and server-side policy
-    // rejections are reported by the connection dialog instead of a later desktop action.
-    let mut authentication_probe = match connect_authenticated(
-        Some(state.clone()),
-        Some(UiWindowRef::from_window(&window)),
-        profile.clone(),
-    )
-    .await
-    {
-        Ok(session) => session,
-        Err(error) => {
-            return Ok(json!({
-                "ok": false,
-                "error": login_validation_error_message(error)
-            }));
-        }
-    };
-    authentication_probe.disconnect().await;
+    // Running this one short command both validates the login and determines whether the
+    // standard Windows OpenSSH shell is in use. This avoids a separate authentication-only
+    // SSH session before opening the desktop.
     let detected_system_type =
-        probe_remote_system_type(state.clone(), &window, profile.clone()).await;
+        match validate_login_and_probe_remote_system_type(state.clone(), &window, profile.clone())
+            .await
+        {
+            Ok(system_type) => system_type,
+            Err(error) => {
+                return Ok(json!({
+                    "ok": false,
+                    "error": login_validation_error_message(error)
+                }));
+            }
+        };
 
     let id = random_id("ssh");
     let connection = ActiveConnection {

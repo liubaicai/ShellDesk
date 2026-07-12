@@ -9,6 +9,7 @@ use std::time::Duration;
 
 const BATCH_BEGIN_PREFIX: &str = "__SHELLDESK_BATCH_BEGIN__";
 const BATCH_END_PREFIX: &str = "__SHELLDESK_BATCH_END__";
+const CONNECTION_STATUS_MARKER: &str = "__SHELLDESK_CONNECTION_READY__";
 
 struct MonitorItem {
     key: &'static str,
@@ -17,15 +18,39 @@ struct MonitorItem {
     command: &'static str,
 }
 
+fn connection_status_command() -> String {
+    format!("echo {CONNECTION_STATUS_MARKER}")
+}
+
 pub(crate) async fn get_connection_status(
     state: AppState,
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let connection_id = string_arg(&args, 0)?;
     let connection = get_connection(&state, &connection_id)?;
-    let is_windows = connection_is_windows(&connection);
-    let items = status_items(is_windows);
-    run_command_report(state, connection, &items, is_windows).await
+    let output = run_monitor_command(
+        state,
+        connection,
+        connection_status_command(),
+        Duration::from_secs(8),
+    )
+    .await?;
+    if output.get("code").and_then(Value::as_i64).unwrap_or(1) != 0 {
+        return Err(output
+            .get("stderr")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("目标主机未响应连接探测。")
+            .to_string());
+    }
+    if !output
+        .get("stdout")
+        .and_then(Value::as_str)
+        .is_some_and(|stdout| stdout.contains(CONNECTION_STATUS_MARKER))
+    {
+        return Err("目标主机未返回连接探测标记。".to_string());
+    }
+    Ok(json!({ "refreshedAt": now(), "items": [] }))
 }
 
 pub(crate) async fn get_connection_system_info(
@@ -152,66 +177,6 @@ fn connection_is_windows(connection: &ActiveConnection) -> bool {
         .get("systemType")
         .and_then(Value::as_str)
         .is_some_and(|value| value.eq_ignore_ascii_case("windows"))
-}
-
-fn status_items(is_windows: bool) -> Vec<MonitorItem> {
-    if is_windows {
-        vec![
-            MonitorItem { key: "hostname", label: "主机名", icon: None, command: "[System.Net.Dns]::GetHostName()" },
-            MonitorItem { key: "user", label: "当前用户", icon: None, command: "[System.Security.Principal.WindowsIdentity]::GetCurrent().Name" },
-            MonitorItem { key: "kernel", label: "系统版本", icon: None, command: "[Environment]::OSVersion.VersionString" },
-            MonitorItem { key: "uptime", label: "运行时间", icon: None, command: "$os = Get-CimInstance Win32_OperatingSystem; ((Get-Date) - $os.LastBootUpTime).ToString()" },
-            MonitorItem { key: "disk", label: "本地磁盘", icon: None, command: "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, FileSystem, @{Name='SizeGB'; Expression={[math]::Round($_.Size / 1GB, 2)}}, @{Name='FreeGB'; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}} | Format-Table -AutoSize | Out-String -Width 200" },
-            MonitorItem { key: "memory", label: "内存", icon: None, command: "$os = Get-CimInstance Win32_OperatingSystem; $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2); $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2); $used = [math]::Round($total - $free, 2); 'Total: {0} GB, Used: {1} GB, Free: {2} GB' -f $total, $used, $free" },
-            MonitorItem { key: "network", label: "网络接口", icon: None, command: "Get-NetIPConfiguration | Format-List | Out-String -Width 220" },
-        ]
-    } else {
-        vec![
-            MonitorItem {
-                key: "hostname",
-                label: "主机名",
-                icon: None,
-                command: "hostname 2>/dev/null || uname -n",
-            },
-            MonitorItem {
-                key: "user",
-                label: "当前用户",
-                icon: None,
-                command: "whoami 2>/dev/null || id -un",
-            },
-            MonitorItem {
-                key: "kernel",
-                label: "系统内核",
-                icon: None,
-                command: "uname -a",
-            },
-            MonitorItem {
-                key: "uptime",
-                label: "运行时间",
-                icon: None,
-                command: "uptime",
-            },
-            MonitorItem {
-                key: "disk",
-                label: "根分区",
-                icon: None,
-                command: "df -h / 2>/dev/null || df -h",
-            },
-            MonitorItem {
-                key: "memory",
-                label: "内存",
-                icon: None,
-                command: "LC_ALL=C free -m 2>/dev/null || vm_stat 2>/dev/null || echo unavailable",
-            },
-            MonitorItem {
-                key: "network",
-                label: "网络接口",
-                icon: None,
-                command:
-                    "ip -brief address 2>/dev/null || ifconfig 2>/dev/null || echo unavailable",
-            },
-        ]
-    }
 }
 
 fn system_info_items(is_windows: bool) -> Vec<MonitorItem> {
@@ -532,8 +497,16 @@ mod tests {
     }
 
     #[test]
+    fn connection_status_command_is_a_lightweight_shell_echo() {
+        assert_eq!(
+            connection_status_command(),
+            "echo __SHELLDESK_CONNECTION_READY__"
+        );
+    }
+
+    #[test]
     fn windows_batch_command_uses_encoded_powershell() {
-        let items = status_items(true);
+        let items = system_info_items(true);
         let command = create_windows_batch_command(&items);
 
         assert!(command
@@ -543,10 +516,10 @@ mod tests {
 
     #[test]
     fn unix_batch_command_preserves_item_keys() {
-        let items = status_items(false);
+        let items = system_info_items(false);
         let command = create_unix_batch_command(&items);
 
-        assert!(command.contains("run_item 'hostname'"));
+        assert!(command.contains("run_item 'os'"));
         assert!(command.contains(BATCH_BEGIN_PREFIX));
         assert!(command.contains(BATCH_END_PREFIX));
     }
@@ -566,13 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn unix_memory_commands_force_c_locale() {
-        let status_memory = status_items(false)
-            .into_iter()
-            .find(|item| item.key == "memory")
-            .expect("status memory item");
-        assert!(status_memory.command.contains("LC_ALL=C free -m"));
-
+    fn unix_system_info_memory_commands_force_c_locale() {
         let system_items = system_info_items(false);
         let memory_total = system_items
             .iter()
