@@ -1,4 +1,4 @@
-import { Fragment, type FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type FormEvent, lazy, type PointerEvent as ReactPointerEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
@@ -2418,6 +2418,7 @@ function App() {
   const [connection, setConnection] = useState<RemoteConnectionInfo | null>(null);
   const [windowConnectionId] = useState(readWindowConnectionId);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const titlebarPointerGestureRef = useRef<{ pointerId: number; originX: number; originY: number } | null>(null);
   const [windowConnectionError, setWindowConnectionError] = useState('');
   const [connectingHostId, setConnectingHostId] = useState<string | null>(null);
   const [isQuickConnecting, setIsQuickConnecting] = useState(false);
@@ -3632,6 +3633,49 @@ function App() {
 
   const startWindowDragging = () => {
     void windowControls?.startDragging().catch(() => undefined);
+  };
+
+  const handleTitlebarPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    titlebarPointerGestureRef.current = {
+      pointerId: event.pointerId,
+      originX: event.clientX,
+      originY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleTitlebarPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = titlebarPointerGestureRef.current;
+
+    if (!gesture || gesture.pointerId !== event.pointerId || (event.buttons & 1) === 0) {
+      return;
+    }
+
+    if (Math.hypot(event.clientX - gesture.originX, event.clientY - gesture.originY) < 4) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    titlebarPointerGestureRef.current = null;
+    startWindowDragging();
+    event.preventDefault();
+  };
+
+  const finishTitlebarPointerGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (titlebarPointerGestureRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    titlebarPointerGestureRef.current = null;
   };
 
   const toggleMaximizeWindow = () => {
@@ -4851,7 +4895,15 @@ function App() {
   return (
     <div className={isMacOS ? 'app-shell app-shell-macos' : 'app-shell'}>
       <header className="top-chrome drag-region">
-        <div className="titlebar-drag-surface no-drag" aria-hidden="true" onPointerDown={(event) => { if (event.button === 0) startWindowDragging(); }} />
+        <div
+          className="titlebar-drag-surface no-drag"
+          aria-hidden="true"
+          onPointerDown={handleTitlebarPointerDown}
+          onPointerMove={handleTitlebarPointerMove}
+          onPointerUp={finishTitlebarPointerGesture}
+          onPointerCancel={finishTitlebarPointerGesture}
+          onDoubleClick={toggleMaximizeWindow}
+        />
         <div className={`workspace-title ${connection ? 'has-connection' : 'app-only'}`} aria-label={connection ? undefined : 'ShellDesk'}>
           <img className="app-window-icon" src={appIconUrl} alt="" />
           {connection ? (
