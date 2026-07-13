@@ -1402,6 +1402,7 @@ function createTmuxLaunchOptions(
     initialCommand: [
       ensureSessionCommand,
       `tmux set-option -t ${quotedSessionName} status off`,
+      `tmux set-option -t ${quotedSessionName} mouse on`,
       `tmux set-option -t ${quotedSessionName} set-titles on`,
       `tmux set-option -t ${quotedSessionName} set-titles-string ${quotedTitleFormat}`,
       `tmux attach-session -t ${quotedSessionName}`,
