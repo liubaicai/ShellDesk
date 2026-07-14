@@ -258,6 +258,7 @@ fn is_supported_desktop_app(value: &str) -> bool {
             | "service-manager"
             | "container-manager"
             | "k8s-manager"
+            | "vm-manager"
             | "port-manager"
             | "firewall-manager"
             | "iptables-manager"

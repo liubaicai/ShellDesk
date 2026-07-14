@@ -167,6 +167,7 @@ const desktopAppAssetContracts = {
   'service-manager': { component: 'RemoteServiceManager', style: 'service-manager' },
   'container-manager': { component: 'RemoteContainerManager', style: 'container-manager' },
   'k8s-manager': { component: 'RemoteK8sManager', style: 'k8s-manager' },
+  'vm-manager': { component: 'RemoteVirtualMachineManager', style: 'vm-manager' },
   'port-manager': { component: 'RemotePortManager', style: 'port-manager' },
   'firewall-manager': { component: 'RemoteFirewallManager', style: 'firewall-manager' },
   'iptables-manager': { component: 'RemoteIptablesManager', style: 'iptables-manager' },
@@ -202,6 +203,7 @@ const viteEnvSource = readWorkspaceFile('src/vite-env.d.ts');
 const vaultRemoteProfilesSource = readWorkspaceFile('src-tauri/src/vault/remote_profiles.rs');
 const vaultNormalizeSource = readWorkspaceFile('src-tauri/src/vault/normalize.rs');
 const i18nCatalogSource = readWorkspaceFile('src/i18nCatalog.ts');
+const sharedToolsSource = readWorkspaceFile('src/ai/sharedTools.ts');
 
 const desktopAppEntries = extractDesktopApps(remoteDesktopSource);
 const desktopAppKeys = desktopAppEntries.map((entry) => entry.key);
@@ -213,6 +215,7 @@ if (desktopAppKeys.length !== unique(desktopAppKeys).length) {
 
 compareOrdered('vite-env ShellDeskDesktopAppKey', desktopAppKeys, extractTypeUnion(viteEnvSource, 'ShellDeskDesktopAppKey'), errors);
 compareOrdered('Rust REMOTE_DESKTOP_APP_KEYS', desktopAppKeys, extractRustStringArray(vaultRemoteProfilesSource, 'REMOTE_DESKTOP_APP_KEYS'), errors);
+compareOrdered('AI SHELLDESK_APP_KEYS', desktopAppKeys, extractStringArray(sharedToolsSource, 'SHELLDESK_APP_KEYS'), errors);
 compareSets('desktopAppIconSources', desktopAppKeys, extractRecordKeys(remoteDesktopSource, 'desktopAppIconSources'), errors);
 compareSets('defaultWindowFrames', desktopAppKeys, extractRecordKeys(remoteDesktopSource, 'defaultWindowFrames'), errors);
 compareSets('renderWindowContent branches', desktopAppKeys, extractRenderBranches(remoteDesktopSource), errors);

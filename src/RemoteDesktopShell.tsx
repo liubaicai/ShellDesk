@@ -41,6 +41,7 @@ const RemoteFrpsManager = lazy(() => import('./components/remote-desktop/RemoteF
 const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
 const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
 const RemoteK8sManager = lazy(() => import('./components/remote-desktop/RemoteK8sManager'));
+const RemoteVirtualMachineManager = lazy(() => import('./components/remote-desktop/RemoteVirtualMachineManager'));
 const RemoteLogViewer = lazy(() => import('./components/remote-desktop/RemoteLogViewer'));
 const RemoteMessageQueuePanel = lazy(() => import('./components/remote-desktop/RemoteMessageQueuePanel'));
 const RemoteMonitor = lazy(() => import('./components/remote-desktop/RemoteMonitor'));
@@ -100,6 +101,7 @@ const desktopApps = [
   { key: 'service-manager', group: 'basic', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
   { key: 'container-manager', group: 'development', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
   { key: 'k8s-manager', group: 'development', labelId: 'desktop.app.k8sManager.label', descriptionId: 'desktop.app.k8sManager.description' },
+  { key: 'vm-manager', group: 'operations', labelId: 'desktop.app.vmManager.label', descriptionId: 'desktop.app.vmManager.description' },
   { key: 'port-manager', group: 'network-security', labelId: 'desktop.app.portManager.label', descriptionId: 'desktop.app.portManager.description' },
   { key: 'firewall-manager', group: 'network-security', labelId: 'desktop.app.firewallManager.label', descriptionId: 'desktop.app.firewallManager.description' },
   { key: 'iptables-manager', group: 'network-security', labelId: 'desktop.app.iptablesManager.label', descriptionId: 'desktop.app.iptablesManager.description' },
@@ -148,6 +150,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'service-manager': new URL('./assets/desktop-icons/service-manager.png', import.meta.url).href,
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
   'k8s-manager': new URL('./assets/desktop-icons/k8s-manager.png', import.meta.url).href,
+  'vm-manager': new URL('./assets/desktop-icons/vm-manager.png', import.meta.url).href,
   'port-manager': new URL('./assets/desktop-icons/port-manager.png', import.meta.url).href,
   'firewall-manager': new URL('./assets/desktop-icons/firewall-manager.png', import.meta.url).href,
   'iptables-manager': new URL('./assets/desktop-icons/iptables-manager.png', import.meta.url).href,
@@ -178,7 +181,7 @@ const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const launchpadAnimationMs = 180;
-const desktopAppCatalogVersion = 14;
+const desktopAppCatalogVersion = 16;
 const defaultDesktopAppKeys: DesktopAppKey[] = [
   'files',
   'terminal',
@@ -209,7 +212,9 @@ const appCatalogMigrationKeys: DesktopAppKey[] = [
   'ai-chat',
   'code-editor',
   'k8s-manager',
+  'vm-manager',
 ];
+const latestAppCatalogMigrationKeys: DesktopAppKey[] = ['vm-manager'];
 const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
   .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));
@@ -325,6 +330,7 @@ interface DesktopWindowState {
   fileExplorerInitialPath?: string;
   settingsInitialTab?: SettingsTab;
   settingsTabRequestId?: number;
+  vncInitialTarget?: { host: string; port: number };
 }
 
 type DesktopWindowInteractionMode = 'move' | 'resize';
@@ -407,6 +413,7 @@ const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'k8s-manager': { x: 104, y: 42, width: 1100, height: 660 },
+  'vm-manager': { x: 72, y: 30, width: 1220, height: 720 },
   'frp-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'frps-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'port-manager': { x: 116, y: 48, width: 1120, height: 650 },
@@ -624,14 +631,24 @@ function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersio
   const appKeys = getLayoutAppKeys(items);
   const shouldAppendNewApps = legacyAllDesktopAppKeys.every((appKey) => appKeys.has(appKey));
 
-  if (!shouldAppendNewApps) {
-    return items;
-  }
+  const migratedItems = shouldAppendNewApps
+    ? [
+        ...items,
+        ...appCatalogMigrationKeys
+          .filter((appKey) => !appKeys.has(appKey) && !removedAppKeys.has(appKey))
+          .map((appKey): DesktopLayoutItem => ({
+            id: `app:${appKey}`,
+            type: 'app',
+            appKey,
+          })),
+      ]
+    : items;
+  const migratedAppKeys = getLayoutAppKeys(migratedItems);
 
   return [
-    ...items,
-    ...appCatalogMigrationKeys
-      .filter((appKey) => !appKeys.has(appKey) && !removedAppKeys.has(appKey))
+    ...migratedItems,
+    ...latestAppCatalogMigrationKeys
+      .filter((appKey) => !migratedAppKeys.has(appKey) && !removedAppKeys.has(appKey))
       .map((appKey): DesktopLayoutItem => ({
         id: `app:${appKey}`,
         type: 'app',
@@ -1075,6 +1092,16 @@ function DesktopAppIcon({ appKey }: { appKey: DesktopAppKey }) {
         <path d="M12 5.5v13M5.5 12h13" />
         <path d="m7.4 7.4 9.2 9.2M16.6 7.4l-9.2 9.2" />
         <circle cx="12" cy="12" r="2.2" />
+      </svg>
+    );
+  }
+
+  if (appKey === 'vm-manager') {
+    return (
+      <svg {...iconProps}>
+        <rect x="4" y="6.5" width="16" height="12" rx="2" />
+        <path d="M7 10h10M7 14h4" />
+        <path d="m14.5 12 3 1.6v3.2l-3 1.7-3-1.7v-3.2l3-1.6Z" />
       </svg>
     );
   }
@@ -2465,6 +2492,12 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
+  const openVncWindow = (target: { host: string; port: number }) => {
+    appendDesktopWindow('vnc', (desktopWindow) => {
+      desktopWindow.vncInitialTarget = target;
+    });
+  };
+
   const openSettingsWindow = (initialTab: SettingsTab = 'systeminfo') => {
     const existingSettingsWindow = desktopWindows.find((desktopWindow) => desktopWindow.appKey === 'settings');
 
@@ -3236,7 +3269,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'vnc') {
-      return <RemoteVncViewer connectionId={connection.id} hostId={remoteConnectionProfileHostId} />;
+      return <RemoteVncViewer connectionId={connection.id} hostId={remoteConnectionProfileHostId} initialTarget={desktopWindow.vncInitialTarget} />;
     }
 
     if (desktopWindow.appKey === 'log-viewer') {
@@ -3273,6 +3306,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'k8s-manager') {
       return <RemoteK8sManager connectionId={connection.id} systemType={connection.host.systemType ?? 'unknown'} onOpenBrowser={openBrowserWindow} />;
+    }
+
+    if (desktopWindow.appKey === 'vm-manager') {
+      return <RemoteVirtualMachineManager connectionId={connection.id} systemType={connection.host.systemType} onOpenTerminal={openTerminalWindow} onOpenVnc={openVncWindow} />;
     }
 
     if (desktopWindow.appKey === 'frp-manager') {

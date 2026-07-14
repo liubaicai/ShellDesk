@@ -131,7 +131,7 @@ src/
 - 用户配置的 ProxyCommand 或 proxy helper 可以启动对应 helper 进程，但不能作为系统 SSH fallback。
 
 ### 远程桌面窗口系统
-- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/code-editor/browser/vnc/log-viewer/monitor/mysql/clickhouse/redis/service-manager/container-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/cert-manager/nginx-manager/caddy-manager/apache-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/frp-manager/frps-manager/security-audit/api-debugger/procmanager/ai-chat/settings/sqlite
+- `RemoteDesktopShell.tsx` 管理 `DesktopWindowState[]`，每个窗口有 `appKey`；当前应用包括 files/terminal/notepad/code-editor/browser/vnc/log-viewer/monitor/mysql/clickhouse/redis/service-manager/container-manager/k8s-manager/vm-manager/port-manager/firewall-manager/iptables-manager/network-diagnostics/disk-analyzer/disk-manager/package-manager/git-manager/cert-manager/nginx-manager/caddy-manager/apache-manager/scheduled-tasks/postgres/mongo/search-cluster/message-queue/s3-browser/frp-manager/frps-manager/security-audit/api-debugger/procmanager/ai-chat/settings/sqlite
 - `desktopApps`、`desktopAppIconSources`、`defaultWindowFrames`、`renderWindowContent` 是新增远程桌面应用时必须检查的核心位置
 - `ShellDeskRemoteDesktopLayout` 保存桌面排序、应用图标和文件夹布局；默认桌面应用为 files/terminal/browser/settings
 - 窗口支持拖拽移动、缩放、最大化，使用 `transform: translate3d` 定位

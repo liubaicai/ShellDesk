@@ -16,6 +16,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "service-manager",
     "container-manager",
     "k8s-manager",
+    "vm-manager",
     "port-manager",
     "firewall-manager",
     "iptables-manager",

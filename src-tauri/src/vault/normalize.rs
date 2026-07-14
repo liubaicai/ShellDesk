@@ -13,7 +13,7 @@ const DESKTOP_WALLPAPER_PRESET_IDS: &[&str] = &[
     "green-health",
     "indigo-traces",
 ];
-const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 14;
+const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 16;
 const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "git-manager",
     "cert-manager",
@@ -31,7 +31,9 @@ const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "ai-chat",
     "code-editor",
     "k8s-manager",
+    "vm-manager",
 ];
+const LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &["vm-manager"];
 const TERMINAL_THEME_CHOICES: &[&str] = &[
     "shelldesk-dark",
     "netcatty-dark",
@@ -621,6 +623,16 @@ fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {
                     );
                     seen_app_keys.push(app_key.to_string());
                 }
+            }
+        }
+        for app_key in LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS {
+            if !seen_app_keys.iter().any(|seen| seen == app_key)
+                && !removed_app_keys.iter().any(|removed| removed == app_key)
+            {
+                items.push(
+                    json!({ "id": format!("app:{app_key}"), "type": "app", "appKey": app_key }),
+                );
+                seen_app_keys.push(app_key.to_string());
             }
         }
     }

@@ -7,6 +7,7 @@ import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
+import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import '../../src/styles/index.scss';
 
@@ -25,6 +26,81 @@ function createMysqlResult(columns: string[], rows: Record<string, unknown>[]) {
 
 function createCommandResult(stdout = '', stderr = '', code = 0) {
   return { stdout, stderr, code };
+}
+
+const virshSection = '__SHELLDESK_VIRSH_SECTION__=';
+
+function createVirshOverview() {
+  const domains = [
+    ['web-01', 'running', '2', '4194304', 'yes', '192.168.122.101'],
+    ['db-01', 'running', '4', '8388608', 'yes', '192.168.122.102'],
+    ['app-01', 'running', '2', '4194304', 'yes', '192.168.122.103'],
+    ['cache-01', 'shut off', '2', '2097152', 'no', ''],
+    ['jumpserver', 'shut off', '1', '1048576', 'no', ''],
+    ['backup-01', 'paused', '2', '4194304', 'yes', '192.168.122.120'],
+    ['test-win10', 'shut off', '4', '8388608', 'no', ''],
+    ['old-centos7', 'shut off', '2', '4194304', 'no', ''],
+  ];
+  return [
+    `${virshSection}meta`,
+    'virshVersion=11.3.0',
+    'uri=qemu:///system',
+    'hostname=home-ldev.example.com',
+    'hypervisor=QEMU 10.0.1',
+    'cpuModel=x86_64',
+    'cpuCount=96',
+    'memoryKiB=67108864',
+    ...domains.flatMap(([name, state, vcpus, memory, autostart, ip], index) => [
+      `${virshSection}domain`,
+      `uuid=00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      `name=${name}`,
+      `state=${state}`,
+      `id=${state === 'running' ? index + 1 : '-'}`,
+      `vcpus=${vcpus}`,
+      `maxMemoryKiB=${memory}`,
+      `usedMemoryKiB=${memory}`,
+      'persistent=yes',
+      `autostart=${autostart}`,
+      'managedSave=no',
+      `ipAddresses=${ip}`,
+    ]),
+  ].join('\n');
+}
+
+function createVirshResources() {
+  return [
+    `${virshSection}network`,
+    'uuid=10000000-0000-4000-8000-000000000001',
+    'name=default',
+    'active=yes',
+    'persistent=yes',
+    'autostart=yes',
+    'bridge=virbr0',
+    `${virshSection}pool`,
+    'uuid=20000000-0000-4000-8000-000000000001',
+    'name=default',
+    'state=running',
+    'persistent=yes',
+    'autostart=yes',
+    'capacityBytes=2.8 TiB',
+    'allocationBytes=1.2 TiB',
+    'availableBytes=1.6 TiB',
+  ].join('\n');
+}
+
+function createVirshDetail() {
+  return [
+    `${virshSection}xml`,
+    '<domain type="kvm"><name>db-01</name><uuid>00000000-0000-4000-8000-000000000002</uuid><os><type arch="x86_64" machine="pc-q35-10.0">hvm</type><boot dev="hd"/></os><vcpu current="4">4</vcpu><memory unit="KiB">8388608</memory><currentMemory unit="KiB">8388608</currentMemory><devices><emulator>/usr/bin/qemu-system-x86_64</emulator><disk type="file" device="disk"><driver type="qcow2"/><source file="/var/lib/libvirt/images/db-01.qcow2"/><target dev="vda" bus="virtio"/></disk><interface type="network"><mac address="52:54:00:ab:cd:ef"/><source network="default"/><model type="virtio"/><target dev="vnet1"/></interface></devices></domain>',
+    `${virshSection}stats`,
+    'cpu.time=7200000000000',
+    'balloon.current=8388608',
+    `${virshSection}addresses`,
+    'vnet1 52:54:00:ab:cd:ef ipv4 192.168.122.102/24',
+    `${virshSection}display`,
+    'vnc://192.168.122.1:5902',
+    `${virshSection}snapshots`,
+  ].join('\n');
 }
 
 function createUserSnapshot() {
@@ -95,6 +171,15 @@ function installGuiSshMock() {
         }
         if (command.includes('__SHELLDESK_PASSWD__')) {
           return createCommandResult(createUserSnapshot());
+        }
+        if (command.includes('shelldesk_virsh nodeinfo')) {
+          return createCommandResult(createVirshOverview());
+        }
+        if (command.includes('network_uuids=')) {
+          return createCommandResult(createVirshResources());
+        }
+        if (command.includes('shelldesk_virsh dumpxml')) {
+          return createCommandResult(createVirshDetail());
         }
         if (command.includes('__SHELLDESK_DETAIL_GROUPS__')) {
           return createCommandResult(createUserDetail());
@@ -280,6 +365,14 @@ function installGuiSshMock() {
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
+
+  if (component === 'vm-manager') {
+    return (
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemoteVirtualMachineManager connectionId={connectionId} systemType="ubuntu" onOpenTerminal={() => undefined} onOpenVnc={() => undefined} />
+      </div>
+    );
+  }
 
   if (component === 'redis') {
     return <RemoteRedis connectionId={connectionId} hostId={hostId} />;

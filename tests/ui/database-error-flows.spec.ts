@@ -49,6 +49,45 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
+test('Virtual machine manager follows the dense split-pane reference layout', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1584, height: 992 });
+  await gotoHarness(page, 'component=vm-manager');
+
+  await expect(page.getByText('home-ldev.example.com')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /新建虚拟机/ })).toBeVisible();
+  await expect(page.locator('.vm-manager-table tbody tr')).toHaveCount(8);
+  await page.locator('.vm-manager-table tbody tr').filter({ hasText: 'db-01' }).click();
+  await expect(page.locator('.vm-manager-detail-header')).toContainText('db-01');
+
+  const [layoutBox, tableBox, detailBox] = await Promise.all([
+    page.locator('.vm-manager-domain-layout').boundingBox(),
+    page.locator('.vm-manager-table-panel').boundingBox(),
+    page.locator('.vm-manager-detail').boundingBox(),
+  ]);
+  expect(layoutBox).not.toBeNull();
+  expect(tableBox).not.toBeNull();
+  expect(detailBox).not.toBeNull();
+  expect(tableBox!.width / layoutBox!.width).toBeGreaterThan(0.65);
+  expect(tableBox!.width / layoutBox!.width).toBeLessThan(0.7);
+  expect(detailBox!.width / layoutBox!.width).toBeGreaterThan(0.3);
+
+  const selectedColor = await page.locator('.vm-manager-table tbody tr.selected').evaluate((node) => getComputedStyle(node).backgroundImage);
+  expect(selectedColor).toContain('linear-gradient');
+  await page.getByRole('button', { name: /新建虚拟机/ }).click();
+  await expect(page.getByText('新建虚拟机将在 P2 阶段提供。')).toBeVisible();
+});
+
+test('Virtual machine manager remains usable at a compact desktop width', async ({ page }) => {
+  await page.setViewportSize({ width: 980, height: 760 });
+  await gotoHarness(page, 'component=vm-manager');
+
+  await expect(page.locator('.vm-manager-table tbody tr')).toHaveCount(8);
+  const horizontalOverflow = await page.locator('.vm-manager-container').evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expect(page.locator('.vm-manager-detail')).toBeVisible();
+});
+
 test('Monitor persistence remains opt-in and can return to real-time only', async ({ page }) => {
   await gotoHarness(page, 'component=monitor');
 

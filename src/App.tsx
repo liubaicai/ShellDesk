@@ -88,7 +88,7 @@ const maxRenderedLogEntries = 5_000;
 const ungroupedKey = '__ungrouped__';
 const hostPageSizeOptions = [10, 20, 50, 100] as const;
 type HostPageSize = (typeof hostPageSizeOptions)[number];
-const remoteDesktopAppCatalogVersion = 14;
+const remoteDesktopAppCatalogVersion = 16;
 const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'git-manager',
   'cert-manager',
@@ -106,6 +106,7 @@ const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'ai-chat',
   'code-editor',
   'k8s-manager',
+  'vm-manager',
 ];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,

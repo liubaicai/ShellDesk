@@ -996,7 +996,16 @@ component containers true sh -c 'command -v docker >/dev/null || command -v podm
                     return None;
                 }
                 let (key, value) = line.split_once('=')?;
-                Some((key.trim().to_string(), value.trim().to_string()))
+                let value = value.trim();
+                let value = if value.len() >= 2
+                    && ((value.starts_with('"') && value.ends_with('"'))
+                        || (value.starts_with('\'') && value.ends_with('\'')))
+                {
+                    &value[1..value.len() - 1]
+                } else {
+                    value
+                };
+                Some((key.trim().to_string(), value.to_string()))
             })
             .collect::<HashMap<_, _>>();
         let optional_value = |key: &str| {

@@ -10,6 +10,7 @@ import { tCurrent } from '../../i18n';
 interface RemoteVncViewerProps {
   connectionId: string;
   hostId: string;
+  initialTarget?: { host: string; port: number };
 }
 
 type VncStatus = 'idle' | 'probing' | 'starting' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -222,7 +223,7 @@ function getFailureCopy(failureKind: VncFailureKind, errorMessage: string) {
   }
 }
 
-function RemoteVncViewer({ connectionId, hostId }: RemoteVncViewerProps) {
+function RemoteVncViewer({ connectionId, hostId, initialTarget }: RemoteVncViewerProps) {
   const api = window.guiSSH;
   const screenRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -273,6 +274,12 @@ function RemoteVncViewer({ connectionId, hostId }: RemoteVncViewerProps) {
     let disposed = false;
 
     void (async () => {
+      if (initialTarget) {
+        setHost(initialTarget.host);
+        setPort(String(initialTarget.port));
+        return;
+      }
+
       const profile = await loadRemoteConnectionProfile(hostId, 'vnc');
 
       if (disposed) {
@@ -303,7 +310,7 @@ function RemoteVncViewer({ connectionId, hostId }: RemoteVncViewerProps) {
     return () => {
       disposed = true;
     };
-  }, [hostId]);
+  }, [hostId, initialTarget?.host, initialTarget?.port]);
 
   useEffect(() => {
     let disposed = false;

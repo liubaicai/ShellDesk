@@ -15,6 +15,7 @@ export { default as RemoteFrpsManager } from './RemoteFrpsManager';
 export { default as RemoteGitManager } from './RemoteGitManager';
 export { default as RemoteIptablesManager } from './RemoteIptablesManager';
 export { default as RemoteK8sManager } from './RemoteK8sManager';
+export { default as RemoteVirtualMachineManager } from './RemoteVirtualMachineManager';
 export { default as RemoteLoginSessions } from './RemoteLoginSessions';
 export { default as RemoteLogViewer } from './RemoteLogViewer';
 export { default as RemoteMonitor } from './RemoteMonitor';
