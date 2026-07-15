@@ -964,7 +964,7 @@
 }
 
 [data-theme="light"] .desktop-folder-icon-shell::before {
-  background: url("../../assets/desktop-icons/folder-bg.png") center / contain no-repeat;
+  background: url("../../assets/desktop-icons/folder-bg.png") center / 100% 100% no-repeat;
 }
 
 [data-theme="light"] .explorer-pane {
