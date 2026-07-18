@@ -1,4 +1,14 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react';
+
+import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -15,6 +25,7 @@ import { t, useCurrentAppLanguage } from '../../i18n';
 import FilePermissionDialog, { formatMode, formatOctalMode, parseOctalModeDraft } from './FilePermissionDialog';
 import FileExplorerContextMenu from './FileExplorerContextMenu';
 import FileExplorerSidebar from './FileExplorerSidebar';
+import { FileIcon } from './FileIcon';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import DismissibleAlert from './DismissibleAlert';
 import {
@@ -35,7 +46,6 @@ import {
 } from './fileExplorerPaths';
 import {
   getEffectiveEntryType,
-  getFileIcon,
   getFileIconClass,
   getFileTypeLabel,
   getOpenActionLabel,
@@ -90,6 +100,8 @@ export {
 const EXPLORER_HEADER_HEIGHT = 44;
 const EXPLORER_ROW_HEIGHT = 42;
 const EXPLORER_ROW_OVERSCAN = 12;
+const newFileEntry: RemoteFileEntry = { name: '', longname: '', type: 'file', size: 0, modifiedAt: '' };
+const newFolderEntry: RemoteFileEntry = { name: '', longname: '', type: 'directory', size: 0, modifiedAt: '' };
 const elevationErrorPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
@@ -148,6 +160,11 @@ function ExplorerSearchIcon() {
       <path d="m15.25 15.25 4.25 4.25" />
     </svg>
   );
+}
+
+function ExplorerSortIndicator({ active, direction }: { active: boolean; direction: SortDirection }) {
+  const Icon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return <Icon className="sort-indicator" size={14} aria-hidden="true" focusable="false" />;
 }
 
 function getTrackedTableScrollTop(scrollTop: number) {
@@ -1421,11 +1438,6 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     (permissionDraftMode !== originalPermissionMode || (propertiesEntry.type === 'directory' && permissionRecursive)),
   );
 
-  const sortIndicator = useCallback((field: SortField) => {
-    if (sortField !== field) return '';
-    return sortDirection === 'asc' ? ' \u25B2' : ' \u25BC';
-  }, [sortField, sortDirection]);
-
   return (
     <div className="file-pane explorer-pane" onKeyDown={handleKeydown} tabIndex={-1}>
       <form className="explorer-addressbar" onSubmit={submitRemotePath}>
@@ -1444,13 +1456,13 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           </button>
         </div>
         <div className="addressbar-breadcrumb-input">
-          <div className="breadcrumb-trail">
+          <div className="breadcrumb-trail path-breadcrumb">
             {breadcrumbSegments.map((segment, index) => (
               <span key={`${segment.path}-${index}`} className="breadcrumb-segment">
-                {index > 0 && <span className="breadcrumb-sep">/</span>}
+                {index > 0 && <ChevronRight className="breadcrumb-sep path-breadcrumb-chevron" size={14} aria-hidden="true" focusable="false" />}
                 <button
                   type="button"
-                  className="breadcrumb-btn"
+                  className="breadcrumb-btn path-segment"
                   onClick={() => handleBreadcrumbClick(segment.path)}
                 >
                   {segment.label}
@@ -1468,15 +1480,27 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             <ExplorerNavIcon icon="forward" />
           </button>
         </div>
-        <label className="explorer-search">
+        <div className="explorer-search">
           <ExplorerSearchIcon />
           <input
             value={fileSearchQuery}
             onChange={(event) => setFileSearchQuery(event.target.value)}
             placeholder={t('fileExplorer.search.placeholder', language)}
+            aria-label={t('fileExplorer.search.placeholder', language)}
             spellCheck={false}
           />
-        </label>
+          {fileSearchQuery ? (
+            <button
+              type="button"
+              className="search-clear-button"
+              onClick={() => setFileSearchQuery('')}
+              aria-label={t('fileExplorer.search.clear', language)}
+              title={t('fileExplorer.search.clear', language)}
+            >
+              <X size={14} aria-hidden="true" focusable="false" />
+            </button>
+          ) : null}
+        </div>
       </form>
 
       <div className="explorer-commandbar" aria-label={t('fileExplorer.toolbar.aria', language)}>
@@ -1553,9 +1577,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           {isCreatingNew ? (
             <div className="explorer-row new-item-row">
               <span className="explorer-name-cell">
-                <b className={`file-kind-icon ${isCreatingNew === 'folder' ? 'directory' : 'file'}`}>
-                  {isCreatingNew === 'folder' ? '\u{1F4C1}' : '\u{1F4C4}'}
-                </b>
+                <FileIcon entry={isCreatingNew === 'folder' ? newFolderEntry : newFileEntry} size={18} className="file-icon" />
                 <input
                   ref={newItemInputRef}
                   className="inline-rename-input"
@@ -1577,17 +1599,41 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
 
           <div className="explorer-table" role="table" aria-busy={isFilesLoading} ref={tableRef} onScroll={handleTableScroll}>
             <div className="explorer-row explorer-header" role="row">
-              <button type="button" className="sort-header" onClick={() => handleSort('name')}>
-                {t('fileExplorer.table.name', language)}{sortIndicator('name')}
+              <button
+                type="button"
+                className="sort-header"
+                onClick={() => handleSort('name')}
+                aria-sort={sortField === 'name' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span>{t('fileExplorer.table.name', language)}</span>
+                <ExplorerSortIndicator active={sortField === 'name'} direction={sortDirection} />
               </button>
-              <button type="button" className="sort-header" onClick={() => handleSort('modifiedAt')}>
-                {t('fileExplorer.table.modifiedAt', language)}{sortIndicator('modifiedAt')}
+              <button
+                type="button"
+                className="sort-header column-size"
+                onClick={() => handleSort('size')}
+                aria-sort={sortField === 'size' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span>{t('fileExplorer.table.size', language)}</span>
+                <ExplorerSortIndicator active={sortField === 'size'} direction={sortDirection} />
               </button>
-              <button type="button" className="sort-header" onClick={() => handleSort('type')}>
-                {t('fileExplorer.table.type', language)}{sortIndicator('type')}
+              <button
+                type="button"
+                className="sort-header column-modified"
+                onClick={() => handleSort('modifiedAt')}
+                aria-sort={sortField === 'modifiedAt' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span>{t('fileExplorer.table.modifiedAt', language)}</span>
+                <ExplorerSortIndicator active={sortField === 'modifiedAt'} direction={sortDirection} />
               </button>
-              <button type="button" className="sort-header" onClick={() => handleSort('size')}>
-                {t('fileExplorer.table.size', language)}{sortIndicator('size')}
+              <button
+                type="button"
+                className="sort-header"
+                onClick={() => handleSort('type')}
+                aria-sort={sortField === 'type' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span>{t('fileExplorer.table.type', language)}</span>
+                <ExplorerSortIndicator active={sortField === 'type'} direction={sortDirection} />
               </button>
             </div>
             <div className="explorer-virtual-body" style={{ height: virtualEntryWindow.totalHeight }}>
@@ -1601,7 +1647,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                   return (
                     <div
                       key={`${entry.type}:${entry.name}`}
-                      className={`explorer-row ${selectedNames.has(entry.name) ? 'selected' : ''}`}
+                      className={`explorer-row ${isDirectoryEntry(entry) ? 'directory' : ''} ${selectedNames.has(entry.name) ? 'selected' : ''}`}
                       data-testid={`explorer-row-${entry.name}`}
                       onClick={(e) => handleRowClick(entry, e)}
                       onDoubleClick={() => handleRowDoubleClick(entry)}
@@ -1610,7 +1656,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                     >
                       {isRenaming ? (
                         <span className="explorer-name-cell">
-                          <b className={`file-kind-icon ${getFileIconClass(entry)}`}>{getFileIcon(entry)}</b>
+                          <FileIcon entry={entry} size={18} className={`file-icon ${getFileIconClass(entry)}`} />
                           <input
                             ref={renameInputRef}
                             className="inline-rename-input"
@@ -1627,13 +1673,32 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                         </span>
                       ) : (
                         <span className="explorer-name-cell">
-                          <b className={`file-kind-icon ${getFileIconClass(entry)}`}>{getFileIcon(entry)}</b>
-                          {entry.name}
+                          <FileIcon entry={entry} size={18} className={`file-icon ${getFileIconClass(entry)}`} />
+                          <span className="explorer-entry-name" title={entry.name}>{entry.name}</span>
+                          <span className="row-actions">
+                            <button
+                              type="button"
+                              onClick={(event) => { event.stopPropagation(); startRename(entry); }}
+                              aria-label={t('fileExplorer.context.rename', language)}
+                              title={t('fileExplorer.context.rename', language)}
+                            >
+                              <Pencil size={14} aria-hidden="true" focusable="false" />
+                            </button>
+                            <button
+                              type="button"
+                              className="row-action-delete"
+                              onClick={(event) => { event.stopPropagation(); void deleteSelectedEntries([entry]); }}
+                              aria-label={t('fileExplorer.context.delete', language)}
+                              title={t('fileExplorer.context.delete', language)}
+                            >
+                              <Trash2 size={14} aria-hidden="true" focusable="false" />
+                            </button>
+                          </span>
                         </span>
                       )}
-                      <span>{formatDateTime(entry.modifiedAt)}</span>
-                      <span>{getFileTypeLabel(entry, language)}</span>
-                      <span>{isDirectoryEntry(entry) ? '' : formatBytes(entry.size)}</span>
+                      <span className="file-size-cell">{isDirectoryEntry(entry) ? '' : formatBytes(entry.size)}</span>
+                      <span className="file-modified-cell">{formatDateTime(entry.modifiedAt)}</span>
+                      <span className="file-type-cell">{getFileTypeLabel(entry, language)}</span>
                     </div>
                   );
                 })}
@@ -1642,11 +1707,18 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
           </div>
 
           {isFilesLoading ? (
-            <div className="explorer-table-loading" role="status" aria-live="polite">
-              <div className="explorer-loading-card">
-                <span className="explorer-loading-spinner" aria-hidden="true" />
-                <strong>{t('fileExplorer.loading.directory', language)}</strong>
-                <span title={remotePath}>{remotePath}</span>
+            <div className="explorer-table-loading">
+              <div className="explorer-skeleton-list" role="status" aria-live="polite" aria-label={t('fileExplorer.loading.directory', language)}>
+                <span className="visually-hidden">{t('fileExplorer.loading.directory', language)}</span>
+                {Array.from({ length: 8 }, (_, index) => (
+                  <div className="skeleton-row" key={index}>
+                    <span className="skeleton-icon" />
+                    <span className="skeleton-bar skeleton-name" />
+                    <span className="skeleton-bar skeleton-size" />
+                    <span className="skeleton-bar skeleton-date" />
+                    <span className="skeleton-bar skeleton-type" />
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}
@@ -1668,7 +1740,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
             {primarySelectedEntry && selectedEntries.length === 1 ? (
               <>
                 <div className="explorer-details-hero">
-                  <b className={`file-kind-icon ${getFileIconClass(primarySelectedEntry)}`}>{getFileIcon(primarySelectedEntry)}</b>
+                  <FileIcon entry={primarySelectedEntry} size={24} className={`file-icon file-icon-detail ${getFileIconClass(primarySelectedEntry)}`} />
                   <div>
                     <strong>{primarySelectedEntry.name}</strong>
                     <span>{getFileTypeLabel(primarySelectedEntry, language)}</span>

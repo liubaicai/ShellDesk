@@ -1988,3 +1988,264 @@ button.explorer-row {
 .context-submenu button.danger-text:hover {
   background: rgba(232, 17, 35, 0.16) !important;
 }
+
+/* Lucide file icon and table interaction polish. */
+.file-icon {
+  flex: 0 0 auto;
+  color: var(--explorer-file-icon, #b8c5d8);
+  stroke-width: 1.8;
+}
+
+.file-icon--Folder,
+.file-icon.directory {
+  color: var(--explorer-folder-icon, #f4c45b);
+}
+
+.file-icon--FileSymlink,
+.file-icon.symlink {
+  color: var(--explorer-symlink-icon, #7dc4f7);
+}
+
+.file-icon--FileCode,
+.file-icon--FileJson,
+.file-icon--FileTerminal {
+  color: var(--explorer-code-icon, #92c5ff);
+}
+
+.file-icon--FileText,
+.file-icon--FileSpreadsheet {
+  color: var(--explorer-text-icon, #a9d4a0);
+}
+
+.file-icon--FileImage,
+.file-icon--FileAudio,
+.file-icon--FileVideo {
+  color: var(--explorer-media-icon, #d5a8f8);
+}
+
+.file-icon--FileArchive,
+.file-icon--FileCog,
+.file-icon--FileKey,
+.file-icon--FileLock,
+.file-icon--FileDatabase {
+  color: var(--explorer-special-icon, #eeb87f);
+}
+
+.explorer-main .explorer-row,
+.explorer-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(84px, 116px) minmax(136px, 172px) minmax(102px, 132px);
+  gap: 12px;
+  border-bottom: 1px solid var(--explorer-row-border, rgba(255, 255, 255, 0.055));
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.explorer-row.directory {
+  background: var(--explorer-directory-row, rgba(244, 196, 91, 0.035));
+}
+
+.explorer-row:hover {
+  background: var(--explorer-hover);
+}
+
+.explorer-row.selected {
+  background: var(--explorer-selected);
+  box-shadow: inset 3px 0 0 var(--explorer-selection-indicator, #74b6ff);
+}
+
+.explorer-name-cell {
+  min-width: 0;
+  gap: 9px;
+}
+
+.explorer-entry-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size-cell,
+.file-modified-cell,
+.file-type-cell {
+  color: var(--explorer-muted);
+  text-align: right;
+}
+
+.file-type-cell {
+  text-align: left;
+}
+
+.sort-header {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.sort-header.column-size,
+.sort-header.column-modified {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.sort-indicator {
+  flex: 0 0 auto;
+  color: var(--explorer-muted);
+  stroke-width: 2;
+}
+
+.row-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.explorer-row:hover .row-actions,
+.explorer-row.selected .row-actions,
+.explorer-row:focus-within .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.row-actions button,
+.search-clear-button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--explorer-muted);
+  cursor: pointer;
+}
+
+.row-actions button:hover,
+.search-clear-button:hover {
+  background: var(--explorer-hover);
+  color: var(--explorer-text);
+}
+
+.row-actions .row-action-delete:hover {
+  color: #ff9da7;
+}
+
+.path-breadcrumb {
+  gap: 1px;
+}
+
+.path-breadcrumb-chevron {
+  margin: 0 1px;
+  stroke-width: 2;
+}
+
+.path-segment {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-search {
+  min-width: 0;
+}
+
+.explorer-search input {
+  min-width: 0;
+}
+
+.search-clear-button {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.explorer-table-loading {
+  inset: 32px 0 0;
+  display: block;
+  padding: 0;
+  background: var(--explorer-loading-overlay, rgba(32, 35, 43, 0.72));
+  backdrop-filter: blur(2px);
+}
+
+.explorer-skeleton-list {
+  display: grid;
+  gap: 1px;
+  padding: 2px 11px;
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .skeleton-row {
+    display: grid;
+    min-height: 34px;
+    grid-template-columns: 20px minmax(120px, 1fr) minmax(84px, 116px) minmax(136px, 172px) minmax(102px, 132px);
+    gap: 9px;
+    align-items: center;
+    border-bottom: 1px solid var(--explorer-row-border, rgba(255, 255, 255, 0.055));
+  }
+
+  .skeleton-icon,
+  .skeleton-bar {
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--explorer-skeleton-base, rgba(255, 255, 255, 0.06)) 20%, var(--explorer-skeleton-highlight, rgba(255, 255, 255, 0.14)) 50%, var(--explorer-skeleton-base, rgba(255, 255, 255, 0.06)) 80%);
+    background-size: 220% 100%;
+    animation: explorer-skeleton-shimmer 1.35s ease-in-out infinite;
+  }
+
+  .skeleton-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .skeleton-bar {
+    height: 10px;
+  }
+
+  .skeleton-name { max-width: 58%; }
+  .skeleton-size { justify-self: end; width: 56px; }
+  .skeleton-date { justify-self: end; width: 94px; }
+  .skeleton-type { width: 66px; }
+}
+
+@keyframes explorer-skeleton-shimmer {
+  to { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explorer-skeleton-list .skeleton-bar,
+  .explorer-skeleton-list .skeleton-icon {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .explorer-main .explorer-row,
+  .explorer-row {
+    grid-template-columns: minmax(140px, 1fr) 76px 104px;
+  }
+
+  .file-type-cell,
+  .explorer-header > :last-child,
+  .explorer-skeleton-list .skeleton-type {
+    display: none;
+  }
+
+  .explorer-skeleton-list .skeleton-row {
+    grid-template-columns: 20px minmax(100px, 1fr) 76px 104px;
+  }
+}
