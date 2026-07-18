@@ -733,6 +733,22 @@
   background: var(--bg);
 }
 
+[data-theme="light"] .explorer-pane {
+  --explorer-file-icon: #64748b;
+  --explorer-folder-icon: #d99222;
+  --explorer-symlink-icon: #0f7fbf;
+  --explorer-code-icon: #2563eb;
+  --explorer-text-icon: #3f7c42;
+  --explorer-media-icon: #8b5bc8;
+  --explorer-special-icon: #a85d14;
+  --explorer-directory-row: rgba(217, 146, 34, 0.055);
+  --explorer-row-border: rgba(16, 32, 51, 0.075);
+  --explorer-selection-indicator: #2563eb;
+  --explorer-loading-overlay: rgba(248, 250, 252, 0.78);
+  --explorer-skeleton-base: rgba(100, 116, 139, 0.1);
+  --explorer-skeleton-highlight: rgba(100, 116, 139, 0.2);
+}
+
 [data-theme="light"] .explorer-sidebar,
 [data-theme="light"] .explorer-table {
   background: var(--surface);

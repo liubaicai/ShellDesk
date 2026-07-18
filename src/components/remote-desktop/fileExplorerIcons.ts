@@ -2,22 +2,26 @@ import { t, type AppLanguage } from '../../i18n';
 import { getFileExtension, isTextFile } from './textFileUtils';
 import type { RemoteFileEntry, RemoteFileEntryType } from './fileExplorerTypes';
 
+export { getFileExtension } from './textFileUtils';
+
 const FILE_ICON_MAP: Record<string, string> = {
-  js: '\u{1F4DC}', ts: '\u{1F4D8}', tsx: '\u{1F4D8}', jsx: '\u{1F4DC}',
-  py: '\u{1F40D}', rb: '\u{1F48E}', go: '\u{1F535}', rs: '\u{1F980}',
-  java: '\u2615', c: '\u{1F527}', cpp: '\u{1F527}', h: '\u{1F527}',
-  html: '\u{1F310}', htm: '\u{1F310}', css: '\u{1F3A8}', scss: '\u{1F3A8}',
-  json: '\u{1F4CB}', xml: '\u{1F4CB}', yaml: '\u{1F4CB}', yml: '\u{1F4CB}', toml: '\u{1F4CB}',
-  md: '\u{1F4DD}', txt: '\u{1F4DD}', log: '\u{1F4DD}', csv: '\u{1F4CA}',
-  sh: '\u2699\uFE0F', bash: '\u2699\uFE0F', zsh: '\u2699\uFE0F',
-  png: '\u{1F5BC}\uFE0F', jpg: '\u{1F5BC}\uFE0F', jpeg: '\u{1F5BC}\uFE0F', gif: '\u{1F5BC}\uFE0F', svg: '\u{1F5BC}\uFE0F', webp: '\u{1F5BC}\uFE0F',
-  mp3: '\u{1F3B5}', wav: '\u{1F3B5}', flac: '\u{1F3B5}',
-  mp4: '\u{1F3AC}', avi: '\u{1F3AC}', mkv: '\u{1F3AC}', mov: '\u{1F3AC}',
-  zip: '\u{1F4E6}', tar: '\u{1F4E6}', gz: '\u{1F4E6}', '7z': '\u{1F4E6}', rar: '\u{1F4E6}',
-  pdf: '\u{1F4D5}', doc: '\u{1F4D8}', docx: '\u{1F4D8}',
-  conf: '\u2699\uFE0F', cfg: '\u2699\uFE0F', ini: '\u2699\uFE0F', env: '\u2699\uFE0F',
-  pem: '\u{1F511}', key: '\u{1F511}',
-  sql: '\u{1F5C3}\uFE0F', db: '\u{1F5C3}\uFE0F',
+  js: 'FileCode', ts: 'FileCode', tsx: 'FileCode', jsx: 'FileCode',
+  py: 'FileCode', rb: 'FileCode', go: 'FileCode', rs: 'FileCode',
+  java: 'FileCode', c: 'FileCode', cpp: 'FileCode', h: 'FileCode',
+  html: 'FileCode', htm: 'FileCode', css: 'FileCode', scss: 'FileCode', sass: 'FileCode',
+  json: 'FileJson', xml: 'FileJson', yaml: 'FileJson', yml: 'FileJson', toml: 'FileJson',
+  md: 'FileText', txt: 'FileText', log: 'FileText', doc: 'FileText', docx: 'FileText',
+  csv: 'FileSpreadsheet', xlsx: 'FileSpreadsheet', xls: 'FileSpreadsheet',
+  sh: 'FileTerminal', bash: 'FileTerminal', zsh: 'FileTerminal',
+  png: 'FileImage', jpg: 'FileImage', jpeg: 'FileImage', gif: 'FileImage', svg: 'FileImage', webp: 'FileImage', ico: 'FileImage',
+  mp3: 'FileAudio', wav: 'FileAudio', flac: 'FileAudio', aac: 'FileAudio', ogg: 'FileAudio',
+  mp4: 'FileVideo', avi: 'FileVideo', mkv: 'FileVideo', mov: 'FileVideo', webm: 'FileVideo',
+  zip: 'FileArchive', tar: 'FileArchive', gz: 'FileArchive', '7z': 'FileArchive', rar: 'FileArchive', bz2: 'FileArchive', xz: 'FileArchive',
+  pdf: 'File',
+  conf: 'FileCog', cfg: 'FileCog', ini: 'FileCog', env: 'FileCog',
+  pem: 'FileKey', key: 'FileKey', cert: 'FileKey',
+  sql: 'FileDatabase', db: 'FileDatabase', sqlite: 'FileDatabase',
+  lock: 'FileLock',
 };
 
 const SQLITE_EXTENSIONS = new Set(['db', 'sqlite', 'sqlite3', 's3db', 'sl3', 'sqlitedb']);
@@ -59,14 +63,14 @@ export function getFileIconClass(entry: RemoteFileEntry) {
 
 export function getFileIcon(entry: RemoteFileEntry) {
   if (isDirectoryEntry(entry)) {
-    return '\u{1F4C1}';
+    return 'Folder';
   }
 
   if (entry.type === 'symlink') {
-    return '\u{1F517}';
+    return 'FileSymlink';
   }
 
-  return FILE_ICON_MAP[getFileExtension(entry.name)] ?? '\u{1F4C4}';
+  return FILE_ICON_MAP[getFileExtension(entry.name)] ?? 'File';
 }
 
 export function getFileTypeLabel(entry: RemoteFileEntry, language: AppLanguage) {
