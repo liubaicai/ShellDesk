@@ -133,7 +133,7 @@ assert.equal(tauriConfig.bundle.windows.nsis.installMode, 'both');
 assert.equal(tauriConfig.bundle.macOS.minimumSystemVersion, '10.15');
 assertFile('src-tauri/icons/icon.png');
 assertFile('src-tauri/icons/icon.ico');
-assert.deepEqual(defaultCapability.windows, ['main', 'connection-*']);
+assert.deepEqual(defaultCapability.windows, ['main', 'connection-*', 'sftp-transfer-*']);
 assert.ok(defaultCapability.permissions.includes('core:default'));
 assert.ok(defaultCapability.permissions.includes('updater:default'));
 assert.match(readText('src-tauri/src/app.rs'), /open_connection_window/);

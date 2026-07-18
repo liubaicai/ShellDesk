@@ -5,6 +5,7 @@
 ## 当前结论
 
 - SSH 协议路径使用 Rust `russh` 实现；密钥解析、agent、known_hosts 等能力通过 `russh::keys` 使用。
+- 文件传输窗口使用 `russh-sftp` 在 russh session channel 上请求 `sftp` subsystem，目录操作和文件流不通过远端 shell 命令。
 - 远程命令、流式命令、远程终端 PTY、主机密钥扫描、密钥生成、数据库/VNC/浏览器/HTTP 隧道都不调用系统 OpenSSH。
 - 客户端系统不需要安装 `openssh-client`、`sshpass`、`ssh-keyscan`、`ssh-keygen` 或 `portable-pty`。
 - 远程主机仍需要可达的 SSH server；文件管理器依赖远端 SFTP 能力；各运维工具还会按功能依赖远端系统命令。
@@ -18,6 +19,7 @@
 | `src-tauri/src/ssh_transport.rs` | `connection:run-command` 的高层包装。负责本地/远程分流、sudo/su-root 包装、重试、host key 刷新和输出格式。 |
 | `src-tauri/src/terminal.rs` | 终端生命周期。远程终端通过 russh `channel_open_session`、`request_pty`、`request_shell`/`exec` 运行；resize 通过 `window_change` 转发。 |
 | `src-tauri/src/ssh_tunnel.rs` | russh `direct-tcpip` 隧道。数据库、浏览器代理、VNC 和 HTTP tunnel 复用该能力，不保留 OpenSSH `ssh -L` fallback。 |
+| `src-tauri/src/remote_fs/sftp.rs` | 独立文件传输窗口的原生 SFTP 实现。复用 russh 认证会话，负责目录读取、元数据、增删改、权限和流式上传/下载。 |
 | `src-tauri/src/connection/host_keys.rs` | 主机密钥预检、分类、信任确认、known_hosts 写入和 vault known-hosts 记录同步。扫描由 russh 握手捕获 server public key。 |
 | `src-tauri/src/vault/ssh_keys.rs` | SSH 密钥导入、生成、fingerprint 和 public key 推导。生成路径使用 Rust key API，不调用 `ssh-keygen`。 |
 | `src-tauri/src/ui_prompts.rs` | 记录可用 UI 窗口，路由键盘交互认证 prompt 和用户响应。 |
@@ -44,6 +46,16 @@
 7. su-root 自动化只观察远端 PTY 输出中的密码提示，并把 root 密码写回同一个 PTY channel。
 
 本地模式终端不走 SSH。它使用本地 shell 进程和独立的输入/输出管道，避免为本机工具创建 SSH loopback host。
+
+## SFTP 文件传输流程
+
+1. 主机列表的文件传输入口复用标准连接认证，打开带 `sftpTransfer=1` 的独立 Tauri 窗口。
+2. 前端经 `connection:sftp-*` IPC 进入 `remote_fs/sftp.rs`，本地侧文件操作经 `files:*` 进入 `local_fs.rs`。
+3. 后端调用 `connect_authenticated` 完成与终端、命令执行一致的主机密钥校验和认证。
+4. russh 打开 session channel 并请求 `sftp` subsystem；`russh-sftp` 在 channel stream 上处理 SFTP 协议。
+5. 上传和下载使用固定大小缓冲区流式复制，进度通过现有 `remote-transfer-progress` 事件上报，取消通过 transfer client id 协作终止。
+
+SFTP 普通操作不得回退到 `exec`、系统 `sftp` 或系统 `ssh`。需要 sudo 的远程文件操作属于原远程文件管理器的显式命令能力，不属于纯 SFTP 文件传输窗口。
 
 ## 隧道流程
 
@@ -72,6 +84,7 @@
 - 不要新增 `Command::new("ssh")`、`sshpass`、`SSHPASS`、`SSH_ASKPASS`、`ssh-keyscan`、`ssh-keygen` 或 OpenSSH fallback。
 - 不要重新加入 `portable-pty`；远程 PTY 由 SSH server 通过 russh `request_pty` 分配。
 - 新增 SSH 命令能力时，优先复用 `russh_client.rs` 和 `ssh_transport.rs`。
+- 新增纯 SFTP 能力时，放在 `remote_fs/sftp.rs` 并复用 `connect_authenticated`，不要用远端 shell 命令模拟文件协议。
 - 新增隧道能力时，优先复用 `ssh_tunnel.rs` 的 russh `direct-tcpip` 模型。
 - 新增 host key 或密钥管理能力时，更新 `connection/host_keys.rs` 或 `vault/ssh_keys.rs`，不要 shell out 到系统工具。
 - 新增 IPC 时同步 Rust dispatcher、`src/tauriBridge.ts`、`src/vite-env.d.ts`、前端调用和错误文案。
@@ -92,6 +105,7 @@ SHELLDESK_TEST_SSH_PORT=
 SHELLDESK_TEST_SSH_USERNAME=
 SHELLDESK_TEST_SSH_PASSWORD=
 SHELLDESK_TEST_SSH_KEY_PATH=
+SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH=
 ```
 
 不要打印 `SHELLDESK_TEST_SSH_PASSWORD`。如果没有测试凭据，跳过 live SSH 验证并在 PR 中说明。

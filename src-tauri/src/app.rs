@@ -157,6 +157,69 @@ pub(crate) fn open_connection_window(
     Ok(json!({ "ok": true, "label": label }))
 }
 
+pub(crate) fn open_sftp_transfer_window(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let connection_id = string_arg(&args, 0)?;
+    let connection = connection::get_connection(state, &connection_id)?;
+    if connection.kind == crate::state::ConnectionKind::Local {
+        return Err("SFTP 文件传输窗口需要远程 SSH 连接。".to_string());
+    }
+    let host = &connection.host;
+    let username = host.get("username").and_then(Value::as_str).unwrap_or("");
+    let address = host.get("address").and_then(Value::as_str).unwrap_or("SSH");
+    let port = host.get("port").and_then(Value::as_u64).unwrap_or(22);
+    let endpoint = if username.trim().is_empty() {
+        format!("{address}:{port}")
+    } else {
+        format!("{username}@{address}:{port}")
+    };
+    let label = format!("sftp-transfer-{}", sanitize_window_label(&connection_id));
+    let url = format!(
+        "index.html?connectionId={}&sftpTransfer=1",
+        url_component(&connection_id)
+    );
+
+    if let Some(window) = app.get_webview_window(&label) {
+        window.show().map_err(error_string)?;
+        window.unminimize().map_err(error_string)?;
+        window.set_focus().map_err(error_string)?;
+        return Ok(json!({ "ok": true, "label": label }));
+    }
+
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title(format!("ShellDesk SFTP - {endpoint}"))
+        .inner_size(1440.0, 900.0)
+        .min_inner_size(1060.0, 680.0)
+        .background_color(Color(13, 18, 27, 255))
+        .decorations(cfg!(target_os = "macos"))
+        .resizable(true)
+        .visible(true)
+        .build()
+        .map_err(error_string)?;
+
+    let state = state.clone();
+    let connection_id_for_close = connection_id.clone();
+    let window_for_close = window.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            let _ = connection::close_connection_by_id(&state, &connection_id_for_close);
+            let _ = window_for_close.emit(
+                "connection:closed",
+                json!({ "connectionId": connection_id_for_close, "reason": "文件传输窗口已关闭。" }),
+            );
+        }
+    });
+    let _ = window.emit(
+        "window:maximize-state-changed",
+        json!({ "maximized": false }),
+    );
+
+    Ok(json!({ "ok": true, "label": label }))
+}
+
 pub(crate) fn open_agent_window(app: &tauri::AppHandle) -> Result<Value, String> {
     const AGENT_WINDOW_LABEL: &str = "agent-workspace";
 

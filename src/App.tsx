@@ -47,6 +47,7 @@ const SettingsPage = lazy(() =>
   Promise.all([loadFullMessageCatalog(), import('./pages/SettingsPage')]).then(([, module]) => module));
 const AgentWorkspace = lazy(() =>
   Promise.all([loadFullMessageCatalog(), import('./pages/AgentWorkspace')]).then(([, module]) => module));
+const SftpTransferWindow = lazy(() => import('./components/sftp-transfer/SftpTransferWindow'));
 
 const hostsStorageKey = 'shelldesk:hosts';
 const terminalSnippetsStorageKey = 'shelldesk:terminal-snippets';
@@ -976,6 +977,7 @@ interface ConnectionErrorNotice {
 }
 
 type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
+type ConnectionLaunchTarget = 'desktop' | 'sftp-transfer';
 
 type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'systemType' | 'systemName' | 'hostInfo' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
   Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>> & {
@@ -2199,6 +2201,10 @@ function isAgentWorkspaceWindow() {
   return new URLSearchParams(window.location.search).get('agentWorkspace') === '1';
 }
 
+function isSftpTransferWorkspaceWindow() {
+  return new URLSearchParams(window.location.search).get('sftpTransfer') === '1';
+}
+
 function readDesktopAppRequest(): ShellDeskDesktopAppKey | undefined {
   const value = new URLSearchParams(window.location.search).get('desktopApp')?.trim();
   return value ? value as ShellDeskDesktopAppKey : undefined;
@@ -2349,6 +2355,7 @@ function parseQuickConnectCommand(value: string) {
 
 function App() {
   const isAgentWorkspace = isAgentWorkspaceWindow();
+  const isSftpTransferWorkspace = isSftpTransferWorkspaceWindow();
   const desktopAppRequest = readDesktopAppRequest();
   const initialPublicSnapshotRef = useRef<ShellDeskVaultSnapshot | null>(window.guiSSH?.vault?.initialPublicSnapshot ?? null);
   const initialPublicSnapshot = initialPublicSnapshotRef.current;
@@ -2445,6 +2452,7 @@ function App() {
   const [settingsUpdateCheckRequestId, setSettingsUpdateCheckRequestId] = useState(0);
   const [settingsSectionRequest, setSettingsSectionRequest] = useState<{ section: 'ai'; id: number } | null>(null);
   const [credentialHost, setCredentialHost] = useState<ConnectionHost | null>(null);
+  const [credentialLaunchTarget, setCredentialLaunchTarget] = useState<ConnectionLaunchTarget>('desktop');
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm);
   const [credentialError, setCredentialError] = useState('');
   const [isConfigTransferPending, setIsConfigTransferPending] = useState(false);
@@ -4205,11 +4213,12 @@ function App() {
     setCredentialError('');
   };
 
-  const openCredentialDialog = (host: ConnectionHost, message = '') => {
+  const openCredentialDialog = (host: ConnectionHost, message = '', launchTarget: ConnectionLaunchTarget = 'desktop') => {
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
     const authMethod: AuthMethod = host.authMethod === 'key' ? 'key' : 'password';
 
     setCredentialHost(host);
+    setCredentialLaunchTarget(launchTarget);
     setCredentialForm({
       authMethod,
       password: host.password,
@@ -4222,6 +4231,7 @@ function App() {
 
   const closeCredentialDialog = () => {
     setCredentialHost(null);
+    setCredentialLaunchTarget('desktop');
     setCredentialForm(emptyCredentialForm);
     setCredentialError('');
   };
@@ -4389,6 +4399,7 @@ function App() {
     host: ConnectionHost,
     credentials?: CredentialFormState,
     launchSource: ConnectionLaunchSource = 'host-card',
+    launchTarget: ConnectionLaunchTarget = 'desktop',
   ) => {
     if (isConnectionPending) {
       return false;
@@ -4502,13 +4513,21 @@ function App() {
         setStatusMessage(t('app.connection.successStatus', appLanguage, { host: host.name }));
       } else {
         try {
-          if (!window.guiSSH.app?.openConnectionWindow) {
+          const openWindow = launchTarget === 'sftp-transfer'
+            ? window.guiSSH.app?.openSftpTransferWindow
+            : window.guiSSH.app?.openConnectionWindow;
+          if (!openWindow) {
             throw new Error(t('app.connection.windowUnsupported', appLanguage));
           }
-          await window.guiSSH.app.openConnectionWindow(nextConnection.id);
+          await openWindow(nextConnection.id);
         } catch (windowError) {
-          setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
-          console.error('[shelldesk] failed to open connection window; falling back to current window:', windowError);
+          if (launchTarget === 'desktop') {
+            setConnection({ ...nextConnection, host: nextConnection.host ?? hostForConnection });
+            console.error('[shelldesk] failed to open connection window; falling back to current window:', windowError);
+          } else {
+            void window.guiSSH.connections.disconnect(nextConnection.id).catch(() => undefined);
+            throw windowError;
+          }
         }
         addLog('connection', 'success', t('app.connection.openWindowLog', appLanguage, { host: host.name }), `${host.username}@${host.address}:${host.port}`, getLogHostMeta(host));
         setStatusMessage(t('app.connection.openWindowStatus', appLanguage, { host: host.name }));
@@ -4524,7 +4543,7 @@ function App() {
       showConnectionError(hostForConnection, message);
 
       if (isAuthFailureMessage(message)) {
-        openCredentialDialog(hostForConnection, message);
+        openCredentialDialog(hostForConnection, message, launchTarget);
       }
 
       return false;
@@ -4591,11 +4610,24 @@ function App() {
     }
 
     if (host.authMethod === 'password' && !host.password) {
-      openCredentialDialog(host, t('app.connection.passwordPrompt', appLanguage));
+      openCredentialDialog(host, t('app.connection.passwordPrompt', appLanguage), 'desktop');
       return;
     }
 
     void connectHost(host, undefined, 'host-card');
+  };
+
+  const openSftpTransferFromList = (host: ConnectionHost) => {
+    if (isConnectionPending) {
+      return;
+    }
+
+    if (host.authMethod === 'password' && !host.password) {
+      openCredentialDialog(host, t('app.connection.passwordPrompt', appLanguage), 'sftp-transfer');
+      return;
+    }
+
+    void connectHost(host, undefined, 'host-card', 'sftp-transfer');
   };
 
   const connectCommandBarInput = async () => {
@@ -4675,7 +4707,7 @@ function App() {
       return;
     }
 
-    await connectHost(credentialHost, credentialForm, 'credential');
+    await connectHost(credentialHost, credentialForm, 'credential', credentialLaunchTarget);
   };
 
   const toggleHostGroupPanel = () => {
@@ -5196,6 +5228,10 @@ function App() {
             onReturnToHostManagement={() => void window.guiSSH?.app?.showMainWindow?.()}
           />
         </Suspense>
+      ) : connection && isSftpTransferWorkspace ? (
+        <Suspense fallback={<LazyContentFallback language={appLanguage} />}>
+          <SftpTransferWindow connection={connection} language={appLanguage} />
+        </Suspense>
       ) : connection ? (
         <Suspense fallback={<RemoteDesktopLoadingFallback language={appLanguage} />}>
           <RemoteDesktop connection={connection} settings={settings} onSettingsChange={updateRemoteDesktopSettings} initialAppKey={desktopAppRequest} />
@@ -5443,6 +5479,7 @@ function App() {
                     selectedHostId={selectedHost?.id ?? null}
                     onSelectHost={setSelectedHostId}
                     onOpenHost={openHostFromList}
+                    onOpenSftp={openSftpTransferFromList}
                     onDeleteHost={deleteHost}
                     onEditHost={startEditingHost}
                     hostPage={currentHostPage}

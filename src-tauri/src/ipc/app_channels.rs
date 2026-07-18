@@ -19,6 +19,9 @@ pub(crate) async fn dispatch(
         "app:open-connection-window" => {
             app_handlers::open_connection_window(&app, &state, args.to_vec())?
         }
+        "app:open-sftp-transfer-window" => {
+            app_handlers::open_sftp_transfer_window(&app, &state, args.to_vec())?
+        }
         "app:open-agent-window" => app_handlers::open_agent_window(&app)?,
         "app:open-main-ai-settings" => app_handlers::open_main_ai_settings(&app)?,
         "app:show-main-window" => app_handlers::show_main_window(&app)?,

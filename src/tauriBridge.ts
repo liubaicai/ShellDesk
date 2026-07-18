@@ -3,6 +3,12 @@ import { listen } from '@tauri-apps/api/event';
 
 type EventCallback<T = unknown> = (payload: T) => void;
 
+const previewEventListeners = new Map<string, Set<EventCallback>>();
+
+function emitPreviewEvent<T>(channel: string, payload: T) {
+  previewEventListeners.get(channel)?.forEach((callback) => callback(payload));
+}
+
 type TauriRuntimeWindow = Window & {
   __TAURI_INTERNALS__?: unknown;
 };
@@ -167,6 +173,45 @@ function createPreviewUpdateStatus(): ShellDeskUpdateStatus {
 
 function unsupportedPreviewIpc(channel: string): Promise<never> {
   return Promise.reject(new Error(`${previewUnsupportedMessage}（${channel}）`));
+}
+
+function createPreviewDirectory(remote: boolean): ShellDeskRemoteDirectoryResult {
+  const modifiedAt = new Date(Date.now() - 18 * 60 * 1000).toISOString();
+  const names = remote
+    ? [
+        ['releases', 'directory', 0, 'rwxr-xr-x'],
+        ['shared', 'directory', 0, 'rwxr-xr-x'],
+        ['storage', 'directory', 0, 'rwxrwxr-x'],
+        ['.env.example', 'file', 1284, 'rw-r--r--'],
+        ['Caddyfile', 'file', 3268, 'rw-r--r--'],
+        ['compose.yaml', 'file', 5960, 'rw-r--r--'],
+        ['package.json', 'file', 4728, 'rw-r--r--'],
+        ['server.log', 'file', 14281042, 'rw-r-----'],
+      ] as const
+    : [
+        ['Documents', 'directory', 0, ''],
+        ['Downloads', 'directory', 0, ''],
+        ['Projects', 'directory', 0, ''],
+        ['assets', 'directory', 0, ''],
+        ['backup-2026-07-18.zip', 'file', 86234816, ''],
+        ['deployment-notes.md', 'file', 18440, ''],
+        ['ShellDesk-1.0.0.exe', 'file', 68210840, ''],
+        ['website-assets.tar.gz', 'file', 24890512, ''],
+      ] as const;
+  return {
+    path: remote ? '/var/www/shelldesk' : (detectPlatform() === 'win32' ? 'C:\\Users\\demo\\Downloads' : '/home/demo/Downloads'),
+    entries: names.map(([name, type, size, permissions]) => ({
+      name,
+      longname: permissions,
+      type,
+      size,
+      modifiedAt,
+      permissions: permissions || undefined,
+      mode: permissions ? 0o644 : undefined,
+      owner: remote ? 1000 : undefined,
+      group: remote ? 1000 : undefined,
+    })),
+  };
 }
 
 async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promise<T> {
@@ -351,6 +396,151 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
     case 'connection:get-ipc-capabilities':
       return { terminalSessions: false, terminalBinary: false } satisfies ShellDeskIpcCapabilities as T;
 
+    case 'connection:get-info':
+      return {
+        id: typeof args[0] === 'string' ? args[0] : 'sftp-preview',
+        kind: 'ssh',
+        partition: 'preview',
+        proxyPort: 0,
+        connectedAt: new Date().toISOString(),
+        host: {
+          id: 'preview-host',
+          name: 'Production Web',
+          address: '192.0.2.24',
+          port: 22,
+          username: 'deploy',
+          authMethod: 'key',
+          systemType: 'ubuntu',
+          systemName: 'Ubuntu 24.04 LTS',
+        },
+      } as T;
+
+    case 'files:list-local-directory':
+      return createPreviewDirectory(false) as T;
+
+    case 'connection:sftp-list-directory':
+      return createPreviewDirectory(true) as T;
+
+    case 'connection:sftp-compare-directory':
+      return {
+        localPath: typeof args[1] === 'string' ? args[1] : 'C:\\Users\\demo\\Downloads',
+        remotePath: typeof args[2] === 'string' ? args[2] : '/var/www/shelldesk',
+        differenceCount: 6,
+        localDifferences: ['assets/app.js', 'assets/styles/app.css', 'Documents/guide.md', 'deployment-notes.md'],
+        remoteDifferences: ['assets/app.js', 'releases/legacy.zip', 'server.log'],
+        localTransferItems: [
+          { name: 'assets', size: 6_291_456, fileCount: 12 },
+          { name: 'Documents', size: 42_000, fileCount: 2 },
+          { name: 'deployment-notes.md', size: 18_440, fileCount: 1 },
+        ],
+        remoteTransferItems: [
+          { name: 'assets', size: 4_194_304, fileCount: 8 },
+          { name: 'releases', size: 82_200_000, fileCount: 3 },
+          { name: 'server.log', size: 13_600_000, fileCount: 1 },
+        ],
+      } satisfies ShellDeskSftpDirectoryComparison as T;
+
+    case 'files:stat-local-path':
+    case 'connection:sftp-stat-path':
+      return {
+        type: 'file',
+        size: 18440,
+        mode: 0o644,
+        owner: 1000,
+        group: 1000,
+        modifiedAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+      } satisfies ShellDeskRemotePathStat as T;
+
+    case 'files:create-local-directory':
+    case 'files:create-local-file':
+    case 'files:delete-local-path':
+    case 'files:rename-local-path':
+    case 'connection:sftp-create-directory':
+    case 'connection:sftp-create-file':
+    case 'connection:sftp-delete-path':
+    case 'connection:sftp-rename-path':
+    case 'connection:sftp-set-path-permissions':
+      return true as T;
+
+    case 'connection:sftp-download-paths':
+    case 'connection:sftp-upload-local-paths': {
+      const options = (args[3] ?? {}) as ShellDeskSftpTransferOptions;
+      const total = Math.max(1, options.expectedTotal ?? 8_388_608);
+      const totalFiles = Math.max(1, options.expectedFileCount ?? 4);
+      const clientId = options.transferClientId;
+      if (options.expectedFileCount === undefined) {
+        emitPreviewEvent<ShellDeskTransferProgress>('transfer:progress', {
+          connectionId: typeof args[0] === 'string' ? args[0] : 'sftp-preview',
+          clientId,
+          queueId: clientId,
+          type: channel.includes('upload') ? 'upload' : 'download',
+          fileName: channel.includes('upload') ? 'upload' : 'download',
+          transferred: 0,
+          total: 0,
+          completedFiles: 0,
+          totalFiles: 0,
+          completedItems: 0,
+          totalItems: 0,
+          phase: 'planning',
+          discoveredFiles: totalFiles,
+          discoveredDirectories: 2,
+        });
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+      }
+      for (const preparedDirectories of [0, 1, 2]) {
+        emitPreviewEvent<ShellDeskTransferProgress>('transfer:progress', {
+          connectionId: typeof args[0] === 'string' ? args[0] : 'sftp-preview',
+          clientId,
+          queueId: clientId,
+          type: channel.includes('upload') ? 'upload' : 'download',
+          fileName: channel.includes('upload') ? 'upload' : 'download',
+          transferred: 0,
+          total,
+          completedFiles: 0,
+          totalFiles,
+          completedItems: 0,
+          totalItems: totalFiles,
+          phase: 'preparing',
+          discoveredFiles: totalFiles,
+          discoveredDirectories: 2,
+          preparedDirectories,
+          totalDirectories: 2,
+        });
+        if (preparedDirectories < 2) await new Promise((resolve) => window.setTimeout(resolve, 400));
+      }
+      for (const ratio of [0, 0.12, 0.34, 0.61, 0.84, 1]) {
+        const transferred = Math.round(total * ratio);
+        emitPreviewEvent<ShellDeskTransferProgress>('transfer:progress', {
+          connectionId: typeof args[0] === 'string' ? args[0] : 'sftp-preview',
+          clientId,
+          queueId: clientId,
+          type: channel.includes('upload') ? 'upload' : 'download',
+          fileName: channel.includes('upload') ? 'upload' : 'download',
+          transferred,
+          total,
+          currentFileTransferred: transferred,
+          currentFileTotal: total,
+          completedFiles: Math.min(totalFiles, Math.floor(totalFiles * ratio)),
+          totalFiles,
+          completedItems: Math.min(totalFiles, Math.floor(totalFiles * ratio)),
+          totalItems: totalFiles,
+          phase: 'transferring',
+          discoveredFiles: totalFiles,
+          discoveredDirectories: options.expectedFileCount === undefined ? 2 : 0,
+          preparedDirectories: 2,
+          totalDirectories: 2,
+        });
+        if (ratio < 1) await new Promise((resolve) => window.setTimeout(resolve, 800));
+      }
+      return {
+        canceled: false,
+        size: total,
+        fileCount: totalFiles,
+        itemCount: totalFiles,
+      } as T;
+    }
+
     case 'connection:browser-resolve-url': {
       const url = typeof args[1] === 'string' ? args[1] : 'about:blank';
       return { url, browserUrl: url, proxied: false, mode: 'direct' } as T;
@@ -377,9 +567,13 @@ async function ipc<T = unknown>(channel: string, ...args: unknown[]): Promise<T>
 
 function onTauriEvent<T = unknown>(channel: string, callback: EventCallback<T>) {
   if (!isTauriRuntime()) {
-    void channel;
-    void callback;
-    return () => {};
+    const listeners = previewEventListeners.get(channel) ?? new Set<EventCallback>();
+    listeners.add(callback as EventCallback);
+    previewEventListeners.set(channel, listeners);
+    return () => {
+      listeners.delete(callback as EventCallback);
+      if (!listeners.size) previewEventListeners.delete(channel);
+    };
   }
 
   let disposed = false;
@@ -500,6 +694,7 @@ window.guiSSH = {
     getUpdateStatus: () => ipc('app:get-update-status'),
     openExternal: (url) => ipc('app:open-external', url),
     openConnectionWindow: (connectionId, desktopApp) => ipc('app:open-connection-window', connectionId, desktopApp),
+    openSftpTransferWindow: (connectionId) => ipc('app:open-sftp-transfer-window', connectionId),
     openAgentWindow: () => ipc('app:open-agent-window'),
     openMainAiSettings: () => ipc('app:open-main-ai-settings'),
     showMainWindow: () => ipc('app:show-main-window'),
@@ -518,6 +713,12 @@ window.guiSSH = {
     importConfig: () => ipc('config:import'),
     exportConfig: () => ipc('config:export'),
     saveTextFile: (payload) => ipc('dialog:save-text-file', payload),
+    listLocalDirectory: (path) => ipc('files:list-local-directory', path),
+    statLocalPath: (path) => ipc('files:stat-local-path', path),
+    createLocalDirectory: (path) => ipc('files:create-local-directory', path),
+    createLocalFile: (path) => ipc('files:create-local-file', path),
+    deleteLocalPath: (path, entryType) => ipc('files:delete-local-path', path, entryType),
+    renameLocalPath: (oldPath, newPath) => ipc('files:rename-local-path', oldPath, newPath),
   },
   vault: {
     initialPublicSnapshot: null,
@@ -583,6 +784,16 @@ window.guiSSH = {
     resizeTerminal: (connectionId, terminalId, columns, rows, options) => ipc('connection:resize-terminal', connectionId, terminalId, columns, rows, options),
     closeTerminal: (connectionId, terminalId) => ipc<boolean>('connection:close-terminal', connectionId, terminalId).catch(() => false),
     listDirectory: (connectionId, remotePath, options) => ipc('connection:list-directory', connectionId, remotePath, options),
+    sftpListDirectory: (connectionId, remotePath) => ipc('connection:sftp-list-directory', connectionId, remotePath),
+    sftpCompareDirectory: (connectionId, localPath, remotePath) => ipc('connection:sftp-compare-directory', connectionId, localPath, remotePath),
+    sftpStatPath: (connectionId, remotePath) => ipc('connection:sftp-stat-path', connectionId, remotePath),
+    sftpCreateDirectory: (connectionId, remotePath) => ipc('connection:sftp-create-directory', connectionId, remotePath),
+    sftpCreateFile: (connectionId, remotePath) => ipc('connection:sftp-create-file', connectionId, remotePath),
+    sftpDeletePath: (connectionId, remotePath, entryType) => ipc('connection:sftp-delete-path', connectionId, remotePath, entryType),
+    sftpRenamePath: (connectionId, oldPath, newPath) => ipc('connection:sftp-rename-path', connectionId, oldPath, newPath),
+    sftpSetPathPermissions: (connectionId, remotePath, options) => ipc('connection:sftp-set-path-permissions', connectionId, remotePath, options),
+    sftpDownloadPaths: (connectionId, remotePaths, localDirectory, options) => ipc('connection:sftp-download-paths', connectionId, remotePaths, localDirectory, options),
+    sftpUploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:sftp-upload-local-paths', connectionId, remotePath, items, options),
     createDirectory: (connectionId, remotePath, options) => ipc('connection:create-directory', connectionId, remotePath, options),
     deletePath: (connectionId, remotePath, entryType, options) => ipc('connection:delete-path', connectionId, remotePath, entryType, options),
     renamePath: (connectionId, oldPath, newPath, options) => ipc('connection:rename-path', connectionId, oldPath, newPath, options),

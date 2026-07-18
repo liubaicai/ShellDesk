@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Allow the main ShellDesk window to use Tauri core window/event APIs and updater APIs.",
+  "description": "Allow ShellDesk main, connection, and SFTP transfer windows to use Tauri core window/event APIs and updater APIs.",
   "windows": [
     "main",
-    "connection-*"
+    "connection-*",
+    "sftp-transfer-*"
   ],
   "permissions": [
     "core:default",

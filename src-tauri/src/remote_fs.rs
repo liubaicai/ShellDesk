@@ -24,6 +24,8 @@ mod local_transfer;
 mod paths;
 #[path = "remote_fs/remote_io.rs"]
 mod remote_io;
+#[path = "remote_fs/sftp.rs"]
+mod sftp;
 #[path = "remote_fs/transfer.rs"]
 mod transfer;
 
@@ -52,6 +54,11 @@ use remote_io::{
     download_remote_directory_archive_with_options, read_remote_file_bytes_with_options,
     remote_path_kind, remote_path_size, upload_local_directory_to_remote,
     write_remote_file_bytes_with_options,
+};
+pub(crate) use sftp::{
+    compare_sftp_directory, create_sftp_directory, create_sftp_file, delete_sftp_path,
+    download_sftp_paths, list_sftp_directory, rename_sftp_path, set_sftp_path_permissions,
+    stat_sftp_path, upload_sftp_paths,
 };
 use transfer::TransferReporter;
 pub(crate) use transfer::{cancel_transfer, cancel_transfers_for_connection};

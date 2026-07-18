@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  FolderSync,
   MoreHorizontal,
   Network,
   Pencil,
@@ -54,6 +55,7 @@ interface HostListPanelProps<THost extends HostListPanelHost> {
   selectedHostId: string | null;
   onSelectHost: (hostId: string) => void;
   onOpenHost: (host: THost) => void;
+  onOpenSftp: (host: THost) => void;
   onDeleteHost: (host: THost) => void;
   onEditHost: (host: THost) => void;
   hostPage: number;
@@ -105,6 +107,7 @@ function HostListPanel<THost extends HostListPanelHost>({
   selectedHostId,
   onSelectHost,
   onOpenHost,
+  onOpenSftp,
   onDeleteHost,
   onEditHost,
   hostPage,
@@ -175,6 +178,10 @@ function HostListPanel<THost extends HostListPanelHost>({
                               <MoreHorizontal aria-hidden="true" />
                             </summary>
                             <div className="host-card-menu-panel">
+                              <button type="button" onClick={(event) => { closeHostCardMenu(event.currentTarget); onOpenSftp(host); }}>
+                                <FolderSync aria-hidden="true" />
+                                {appLanguage === 'zh-CN' ? '文件传输' : 'File transfer'}
+                              </button>
                               <button type="button" onClick={(event) => { closeHostCardMenu(event.currentTarget); onEditHost(host); }}>{t('app.host.edit', appLanguage)}</button>
                               <button type="button" className="danger-text" onClick={(event) => { closeHostCardMenu(event.currentTarget); onDeleteHost(host); }}>{t('app.host.delete', appLanguage)}</button>
                             </div>
@@ -267,6 +274,9 @@ function HostListPanel<THost extends HostListPanelHost>({
                         <td>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</td>
                         <td className="host-table-actions" onClick={(event) => event.stopPropagation()}>
                           <div className="host-table-action-buttons">
+                            <button type="button" className="table-icon-button sftp-action" onClick={() => onOpenSftp(host)} aria-label={appLanguage === 'zh-CN' ? '打开文件传输' : 'Open file transfer'} title={appLanguage === 'zh-CN' ? '文件传输' : 'File transfer'}>
+                              <FolderSync aria-hidden="true" />
+                            </button>
                             <button type="button" className="table-icon-button" onClick={() => onEditHost(host)} aria-label={t('app.host.edit', appLanguage)}>
                               <Pencil aria-hidden="true" />
                             </button>

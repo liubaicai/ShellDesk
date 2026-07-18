@@ -98,6 +98,16 @@ pub(crate) async fn dispatch(
         "connection:select-upload-folders" => remote_fs::select_upload_items(true),
         "connection:download-file"
         | "connection:download-paths"
+        | "connection:sftp-list-directory"
+        | "connection:sftp-compare-directory"
+        | "connection:sftp-stat-path"
+        | "connection:sftp-create-directory"
+        | "connection:sftp-create-file"
+        | "connection:sftp-delete-path"
+        | "connection:sftp-rename-path"
+        | "connection:sftp-set-path-permissions"
+        | "connection:sftp-download-paths"
+        | "connection:sftp-upload-local-paths"
         | "connection:upload-local-paths"
         | "connection:upload-file"
         | "connection:upload-files"
@@ -266,6 +276,38 @@ async fn dispatch_remote_fs(
                 "connection:list-directory" => {
                     remote_fs::list_connection_directory(state, args).await
                 }
+                "connection:sftp-list-directory" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::list_sftp_directory(state, window, args).await
+                }
+                "connection:sftp-compare-directory" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::compare_sftp_directory(state, window, args).await
+                }
+                "connection:sftp-stat-path" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::stat_sftp_path(state, window, args).await
+                }
+                "connection:sftp-create-directory" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::create_sftp_directory(state, window, args).await
+                }
+                "connection:sftp-create-file" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::create_sftp_file(state, window, args).await
+                }
+                "connection:sftp-delete-path" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::delete_sftp_path(state, window, args).await
+                }
+                "connection:sftp-rename-path" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::rename_sftp_path(state, window, args).await
+                }
+                "connection:sftp-set-path-permissions" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::set_sftp_path_permissions(state, window, args).await
+                }
                 "connection:stat-path" => remote_fs::stat_connection_path(state, args).await,
                 "connection:read-file" => remote_fs::read_connection_file(state, args).await,
                 "connection:write-file" => remote_fs::write_connection_file(state, args).await,
@@ -290,6 +332,14 @@ async fn dispatch_remote_fs(
                 "connection:download-paths" => {
                     let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
                     remote_fs::download_connection_paths(state, window, args).await
+                }
+                "connection:sftp-download-paths" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::download_sftp_paths(state, window, args).await
+                }
+                "connection:sftp-upload-local-paths" => {
+                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+                    remote_fs::upload_sftp_paths(state, window, args).await
                 }
                 "connection:upload-local-paths" => {
                     let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;

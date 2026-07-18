@@ -3,8 +3,15 @@ use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use tauri::Emitter;
+
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(100);
+
+fn progress_emit_due(last: Option<Instant>, now: Instant, force: bool) -> bool {
+    force || last.is_none_or(|last| now.duration_since(last) >= PROGRESS_EMIT_INTERVAL)
+}
 
 pub(super) struct TransferReporter {
     window: tauri::Window,
@@ -27,6 +34,12 @@ struct TransferReporterState {
     total_files: u64,
     completed_items: u64,
     total_items: u64,
+    phase: &'static str,
+    discovered_files: u64,
+    discovered_directories: u64,
+    prepared_directories: u64,
+    total_directories: u64,
+    last_progress_emit: Option<Instant>,
     started: bool,
     ended: bool,
     registered: bool,
@@ -75,6 +88,12 @@ impl TransferReporter {
                 total_files: 0,
                 completed_items: 0,
                 total_items: 0,
+                phase: "transferring",
+                discovered_files: 0,
+                discovered_directories: 0,
+                prepared_directories: 0,
+                total_directories: 0,
+                last_progress_emit: None,
                 started: false,
                 ended: false,
                 registered: false,
@@ -82,15 +101,75 @@ impl TransferReporter {
         }
     }
 
+    pub(super) fn start_planning(&self) {
+        self.register_active();
+        if let Ok(mut state) = self.state.lock() {
+            state.phase = "planning";
+            state.started = true;
+        }
+        self.emit_progress(true);
+    }
+
+    pub(super) fn discover_file(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.discovered_files = state.discovered_files.saturating_add(1);
+            state.started = true;
+        }
+        self.emit_progress(false);
+    }
+
+    pub(super) fn discover_directory(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.discovered_directories = state.discovered_directories.saturating_add(1);
+            state.started = true;
+        }
+        self.emit_progress(false);
+    }
+
+    pub(super) fn set_scanning_path(&self, path: &str) {
+        let force = if let Ok(mut state) = self.state.lock() {
+            state.file_name = path.to_string();
+            state.started = true;
+            state.discovered_files == 0 && state.discovered_directories == 0
+        } else {
+            false
+        };
+        self.emit_progress(force);
+    }
+
+    pub(super) fn start_preparing(&self, total_directories: u64) {
+        self.register_active();
+        if let Ok(mut state) = self.state.lock() {
+            state.phase = "preparing";
+            state.prepared_directories = 0;
+            state.total_directories = total_directories;
+            state.started = true;
+        }
+        self.emit_progress(true);
+    }
+
+    pub(super) fn complete_directory(&self) {
+        let force = if let Ok(mut state) = self.state.lock() {
+            state.prepared_directories = state.prepared_directories.saturating_add(1);
+            state.started = true;
+            state.prepared_directories >= state.total_directories
+        } else {
+            false
+        };
+        self.emit_progress(force);
+    }
+
     pub(super) fn set_totals(&self, total: u64, total_files: u64, total_items: u64) {
         self.register_active();
         if let Ok(mut state) = self.state.lock() {
+            state.phase = "transferring";
             state.total = total;
             state.total_files = total_files;
             state.total_items = total_items;
+            state.discovered_files = total_files;
             state.started = true;
         }
-        self.emit_progress();
+        self.emit_progress(true);
     }
 
     pub(super) fn start_file(&self, file_name: &str, current_file_total: u64) {
@@ -104,7 +183,20 @@ impl TransferReporter {
             }
             state.started = true;
         }
-        self.emit_progress();
+        self.emit_progress(false);
+    }
+
+    pub(super) fn start_parallel_file(&self, file_name: &str) {
+        self.register_active();
+        if let Ok(mut state) = self.state.lock() {
+            state.file_name = file_name.to_string();
+            // A single current-file counter is misleading when several SFTP
+            // handles are active. Overall bytes and completedFiles remain exact.
+            state.current_file_transferred = 0;
+            state.current_file_total = 0;
+            state.started = true;
+        }
+        self.emit_progress(false);
     }
 
     pub(super) fn add_bytes(&self, bytes: u64) {
@@ -120,20 +212,35 @@ impl TransferReporter {
             }
             state.started = true;
         }
-        self.emit_progress();
+        self.emit_progress(false);
+    }
+
+    pub(super) fn add_parallel_bytes(&self, bytes: u64) {
+        self.register_active();
+        if let Ok(mut state) = self.state.lock() {
+            state.transferred = state.transferred.saturating_add(bytes);
+            if state.total < state.transferred {
+                state.total = state.transferred;
+            }
+            state.started = true;
+        }
+        self.emit_progress(false);
     }
 
     pub(super) fn complete_file(&self) {
         self.register_active();
-        if let Ok(mut state) = self.state.lock() {
+        let force = if let Ok(mut state) = self.state.lock() {
             state.completed_files = state.completed_files.saturating_add(1);
             state.completed_items = state.completed_items.saturating_add(1);
             if state.current_file_total > 0 {
                 state.current_file_transferred = state.current_file_total;
             }
             state.started = true;
-        }
-        self.emit_progress();
+            state.total_files > 0 && state.completed_files >= state.total_files
+        } else {
+            false
+        };
+        self.emit_progress(force);
     }
 
     pub(super) fn check_canceled(&self) -> Result<(), String> {
@@ -208,14 +315,22 @@ impl TransferReporter {
         }
     }
 
-    fn emit_progress(&self) {
-        if let Ok(state) = self.state.lock() {
+    fn emit_progress(&self, force: bool) {
+        let payload = if let Ok(mut state) = self.state.lock() {
             if state.ended {
                 return;
             }
-            let _ = self
-                .window
-                .emit("transfer:progress", state.payload(false, None));
+            let now = Instant::now();
+            if !progress_emit_due(state.last_progress_emit, now, force) {
+                return;
+            }
+            state.last_progress_emit = Some(now);
+            Some(state.payload(false, None))
+        } else {
+            None
+        };
+        if let Some(payload) = payload {
+            let _ = self.window.emit("transfer:progress", payload);
         }
     }
 
@@ -261,6 +376,11 @@ impl TransferReporterState {
             "totalFiles": self.total_files,
             "completedItems": self.completed_items,
             "totalItems": self.total_items,
+            "phase": self.phase,
+            "discoveredFiles": self.discovered_files,
+            "discoveredDirectories": self.discovered_directories,
+            "preparedDirectories": self.prepared_directories,
+            "totalDirectories": self.total_directories,
             "success": success,
         });
         if let Some(client_id) = &self.client_id {
@@ -331,4 +451,27 @@ pub(crate) fn cancel_transfers_for_connection(
         cancellations.insert(id);
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{progress_emit_due, PROGRESS_EMIT_INTERVAL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn progress_events_are_throttled_but_forced_boundaries_are_kept() {
+        let now = Instant::now();
+        assert!(progress_emit_due(None, now, false));
+        assert!(!progress_emit_due(
+            Some(now - Duration::from_millis(20)),
+            now,
+            false
+        ));
+        assert!(progress_emit_due(
+            Some(now - PROGRESS_EMIT_INTERVAL),
+            now,
+            false
+        ));
+        assert!(progress_emit_due(Some(now), now, true));
+    }
 }

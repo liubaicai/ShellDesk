@@ -8,13 +8,39 @@ import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
+import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import '../../src/styles/critical.scss';
 import '../../src/styles/deferred.scss';
 
+const harnessTheme = new URLSearchParams(window.location.search).get('theme');
+if (harnessTheme === 'light' || harnessTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', harnessTheme);
+}
+
 const connectionId = 'ui-test-connection';
 const hostId = 'ui-test-host';
 const now = new Date('2026-01-01T00:00:00Z').toISOString();
+
+function createSftpEntries(prefix: string) {
+  return [
+    { name: 'shared-folder', longname: 'drwxr-xr-x shared-folder', type: 'directory' as const, size: 0, modifiedAt: now },
+    ...Array.from({ length: 72 }, (_, index) => ({
+      name: `${prefix}-${String(index + 1).padStart(2, '0')}.txt`,
+      longname: `-rw-r--r-- ${prefix}-${String(index + 1).padStart(2, '0')}.txt`,
+      type: 'file' as const,
+      size: index + 1,
+      modifiedAt: now,
+    })),
+  ];
+}
+
+function createNestedSftpEntries(prefix: string) {
+  return [
+    { name: `${prefix}-nested-folder`, longname: `drwxr-xr-x ${prefix}-nested-folder`, type: 'directory' as const, size: 0, modifiedAt: now },
+    { name: `${prefix}-nested-file.txt`, longname: `-rw-r--r-- ${prefix}-nested-file.txt`, type: 'file' as const, size: 12, modifiedAt: now },
+  ];
+}
 
 function createMysqlResult(columns: string[], rows: Record<string, unknown>[]) {
   return {
@@ -159,6 +185,7 @@ function installGuiSshMock() {
   let virshRequestCount = 0;
   let lastVirshCommand = '';
   let lastVirshStdin = '';
+  let lastSftpTransferOptions: ShellDeskSftpTransferOptions | undefined;
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -171,8 +198,25 @@ function installGuiSshMock() {
   });
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshCommand', { configurable: true, get: () => lastVirshCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastSftpTransferOptions', { configurable: true, get: () => lastSftpTransferOptions });
 
   (window as any).guiSSH = {
+    platform: 'win32',
+    files: {
+      listLocalDirectory: async (path: string) => {
+        const normalizedPath = path.replaceAll('\\', '/');
+        if (normalizedPath.endsWith('/local-nested-folder')) {
+          return { path: normalizedPath, entries: [{ name: 'local-deep-folder', longname: 'drwxr-xr-x local-deep-folder', type: 'directory' as const, size: 0, modifiedAt: now }] };
+        }
+        if (normalizedPath.endsWith('/shared-folder')) return { path: 'D:/ui-test/shared-folder', entries: createNestedSftpEntries('local') };
+        return { path: 'D:/ui-test', entries: createSftpEntries('local') };
+      },
+      statLocalPath: async () => ({ type: 'file', size: 1, mode: 0o644, owner: 0, group: 0, modifiedAt: now, accessedAt: now }),
+      createLocalDirectory: async () => true,
+      createLocalFile: async () => true,
+      deleteLocalPath: async () => true,
+      renameLocalPath: async () => true,
+    },
     connections: {
       runCommand: async (_connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => {
         if (command.includes('SHELLDESK_VIRSH_URI=')) {
@@ -258,6 +302,28 @@ function installGuiSshMock() {
       selectUploadFiles: async () => null,
       selectUploadFolders: async () => null,
       cancelTransfer: async () => true,
+      sftpListDirectory: async (_connectionId: string, path: string) => {
+        if (path.endsWith('/remote-nested-folder')) {
+          return { path, entries: [{ name: 'remote-deep-folder', longname: 'drwxr-xr-x remote-deep-folder', type: 'directory' as const, size: 0, modifiedAt: now }] };
+        }
+        if (path.endsWith('/shared-folder')) return { path: '/root/shared-folder', entries: createNestedSftpEntries('remote') };
+        return { path: '/root', entries: createSftpEntries('remote') };
+      },
+      sftpStatPath: async () => ({ type: 'file', size: 1, mode: 0o644, owner: 0, group: 0, modifiedAt: now, accessedAt: now }),
+      sftpCreateDirectory: async () => true,
+      sftpCreateFile: async () => true,
+      sftpDeletePath: async () => true,
+      sftpRenamePath: async () => true,
+      sftpSetPathPermissions: async () => true,
+      sftpCompareDirectories: async () => ({ localDifferences: [], remoteDifferences: [], transferItems: [], differenceCount: 0 }),
+      sftpUploadLocalPaths: async (_connectionId: string, _remotePath: string, _items: unknown[], options?: ShellDeskSftpTransferOptions) => {
+        lastSftpTransferOptions = options;
+        return { canceled: false, size: 0, fileCount: 0, itemCount: 1, skippedCount: 1 };
+      },
+      sftpDownloadPaths: async (_connectionId: string, _remotePaths: string[], _localPath: string, options?: ShellDeskSftpTransferOptions) => {
+        lastSftpTransferOptions = options;
+        return { canceled: false, size: 0, fileCount: 0, itemCount: 1, skippedCount: 1 };
+      },
       compress: async () => true,
       decompress: async () => true,
       getSystemInfo: async () => ({
@@ -387,6 +453,24 @@ function App() {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <RemoteVirtualMachineManager connectionId={connectionId} systemType="ubuntu" onOpenTerminal={() => undefined} onOpenVnc={() => undefined} />
+      </div>
+    );
+  }
+
+  if (component === 'sftp-transfer') {
+    return (
+      <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <SftpTransferWindow
+          connection={{
+            id: connectionId,
+            kind: 'ssh',
+            partition: 'persist:ui-test',
+            proxyPort: 0,
+            connectedAt: now,
+            host: { name: 'UI Test Host', address: '127.0.0.1', port: 22, username: 'demo', authMethod: 'password' },
+          }}
+          language="zh-CN"
+        />
       </div>
     );
   }

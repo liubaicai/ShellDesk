@@ -160,6 +160,7 @@ interface ShellDeskAppControls {
   getUpdateStatus: () => Promise<ShellDeskUpdateStatus>;
   openExternal: (url: string) => Promise<boolean>;
   openConnectionWindow: (connectionId: string, desktopApp?: ShellDeskDesktopAppKey) => Promise<{ ok?: boolean; label?: string }>;
+  openSftpTransferWindow: (connectionId: string) => Promise<{ ok?: boolean; label?: string }>;
   openAgentWindow: () => Promise<{ ok?: boolean; label?: string }>;
   openMainAiSettings: () => Promise<void>;
   showMainWindow: () => Promise<void>;
@@ -176,6 +177,12 @@ interface ShellDeskFileControls {
     content: string;
     filters?: Array<{ name: string; extensions: string[] }>;
   }) => Promise<string>;
+  listLocalDirectory: (path: string) => Promise<ShellDeskRemoteDirectoryResult>;
+  statLocalPath: (path: string) => Promise<ShellDeskRemotePathStat>;
+  createLocalDirectory: (path: string) => Promise<boolean>;
+  createLocalFile: (path: string) => Promise<boolean>;
+  deleteLocalPath: (path: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
+  renameLocalPath: (oldPath: string, newPath: string) => Promise<boolean>;
 }
 
 type ShellDeskDesktopSortMode = 'custom' | 'name-asc' | 'name-desc';
@@ -643,11 +650,31 @@ interface ShellDeskRemoteFileEntry {
   targetPath?: string;
   size: number;
   modifiedAt: string;
+  mode?: number;
+  owner?: string | number;
+  group?: string | number;
+  permissions?: string;
 }
 
 interface ShellDeskRemoteDirectoryResult {
   path: string;
   entries: ShellDeskRemoteFileEntry[];
+}
+
+interface ShellDeskSftpTransferSummary {
+  name: string;
+  size: number;
+  fileCount: number;
+}
+
+interface ShellDeskSftpDirectoryComparison {
+  localPath: string;
+  remotePath: string;
+  differenceCount: number;
+  localDifferences: string[];
+  remoteDifferences: string[];
+  localTransferItems: ShellDeskSftpTransferSummary[];
+  remoteTransferItems: ShellDeskSftpTransferSummary[];
 }
 
 interface ShellDeskRemotePathStat {
@@ -815,6 +842,14 @@ interface ShellDeskLocalUploadItem {
   remoteName?: string;
 }
 
+interface ShellDeskSftpTransferOptions {
+  transferClientId?: string;
+  queueId?: string;
+  expectedTotal?: number;
+  expectedFileCount?: number;
+  conflictPolicy?: 'overwrite' | 'skip';
+}
+
 interface ShellDeskConnectionControls {
   connect: (host: ShellDeskHostConnectionRequest) => Promise<ShellDeskConnectionInfo>;
   openLocal: () => Promise<ShellDeskConnectionInfo>;
@@ -852,6 +887,16 @@ interface ShellDeskConnectionControls {
   closeTerminal: (connectionId: string, terminalId: string) => Promise<boolean>;
   resolveBrowserUrl: (connectionId: string, url: string) => Promise<ShellDeskBrowserResolveResult>;
   listDirectory: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<ShellDeskRemoteDirectoryResult>;
+  sftpListDirectory: (connectionId: string, remotePath: string) => Promise<ShellDeskRemoteDirectoryResult>;
+  sftpCompareDirectory: (connectionId: string, localPath: string, remotePath: string) => Promise<ShellDeskSftpDirectoryComparison>;
+  sftpStatPath: (connectionId: string, remotePath: string) => Promise<ShellDeskRemotePathStat>;
+  sftpCreateDirectory: (connectionId: string, remotePath: string) => Promise<boolean>;
+  sftpCreateFile: (connectionId: string, remotePath: string) => Promise<boolean>;
+  sftpDeletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink') => Promise<boolean>;
+  sftpRenamePath: (connectionId: string, oldPath: string, newPath: string) => Promise<boolean>;
+  sftpSetPathPermissions: (connectionId: string, remotePath: string, options: ShellDeskRemotePathPermissionOptions) => Promise<boolean>;
+  sftpDownloadPaths: (connectionId: string, remotePaths: string[], localDirectory: string, options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; directoryPath?: string; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
+  sftpUploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
   createDirectory: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink', options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   renamePath: (connectionId: string, oldPath: string, newPath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
@@ -1507,6 +1552,11 @@ interface ShellDeskTransferProgress {
   totalFiles?: number;
   completedItems?: number;
   totalItems?: number;
+  phase?: 'planning' | 'preparing' | 'transferring';
+  discoveredFiles?: number;
+  discoveredDirectories?: number;
+  preparedDirectories?: number;
+  totalDirectories?: number;
 }
 
 interface ShellDeskTransferEndPayload {

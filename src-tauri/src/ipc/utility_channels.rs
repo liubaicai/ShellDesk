@@ -9,7 +9,7 @@ use crate::logs::{
 };
 use crate::proxy::test_proxy;
 use crate::system::{list_system_fonts, read_known_hosts};
-use crate::{config, mcp_server, sync_backend, AppState};
+use crate::{config, local_fs, mcp_server, sync_backend, AppState};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
@@ -48,6 +48,12 @@ pub(crate) async fn dispatch(
         "dialog:select-private-key" => config::select_key_file(&state, "private")?,
         "dialog:select-public-key" => config::select_key_file(&state, "public")?,
         "dialog:save-text-file" => config::save_text_file(&state, args.to_vec()).await?,
+        "files:list-local-directory" => local_fs::list_local_directory(local_fs_args(args))?,
+        "files:stat-local-path" => local_fs::stat_local_path(local_fs_args(args))?,
+        "files:create-local-directory" => local_fs::create_local_directory(local_fs_args(args))?,
+        "files:create-local-file" => local_fs::create_local_file(local_fs_args(args))?,
+        "files:delete-local-path" => local_fs::delete_local_path(local_fs_args(args))?,
+        "files:rename-local-path" => local_fs::rename_local_path(local_fs_args(args))?,
         "config:export" => config::export_config(&state).await?,
         "config:import" => config::import_config(&state, &window).await?,
 
@@ -94,6 +100,12 @@ pub(crate) async fn dispatch(
     };
 
     Ok(Some(value))
+}
+
+fn local_fs_args(args: &[Value]) -> Vec<Value> {
+    std::iter::once(Value::Null)
+        .chain(args.iter().cloned())
+        .collect()
 }
 
 fn append_sync_log_entry(state: &AppState, app: &tauri::AppHandle, result: &Value) {
