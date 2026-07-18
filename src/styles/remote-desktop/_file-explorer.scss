@@ -2093,15 +2093,15 @@ button.explorer-row {
   flex: 0 0 auto;
   color: var(--explorer-muted);
   stroke-width: 2;
-}
-
-.row-actions {
+.explorer-row .row-actions {
   display: inline-flex;
-  flex: 0 0 auto;
-  gap: 2px;
+  gap: 4px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.14s ease;
+  align-items: center;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease;
 }
 
 .explorer-row:hover .row-actions,
@@ -2111,7 +2111,7 @@ button.explorer-row {
   pointer-events: auto;
 }
 
-.row-actions button,
+.explorer-row .row-actions button,
 .search-clear-button {
   display: grid;
   width: 24px;
@@ -2125,13 +2125,18 @@ button.explorer-row {
   cursor: pointer;
 }
 
-.row-actions button:hover,
+.explorer-row .row-actions button:hover,
+.explorer-row .row-actions button:focus-visible {
+  background: var(--explorer-hover-bg, rgba(255, 255, 255, 0.08));
+  border-radius: 3px;
+}
+
 .search-clear-button:hover {
   background: var(--explorer-hover);
   color: var(--explorer-text);
 }
 
-.row-actions .row-action-delete:hover {
+.explorer-row .row-actions .row-action-delete:hover {
   color: #ff9da7;
 }
 
