@@ -1,11 +1,19 @@
 import type { RemoteCommandInput } from './remoteSystem';
 import { shellSingleQuote } from './shellUtils';
 import type {
+  VirshStorageVolumeForm,
   VirshNetworkAction,
   VirshStoragePoolAction,
   VirtualMachineAction,
+  VirtualMachineCreateForm,
+  VirtualMachineDeleteForm,
+  VirtualMachineDiskForm,
+  VirtualMachineInterfaceForm,
+  VirtualMachineMigrationForm,
+  VirtualMachineSettingsForm,
   VirtualMachineSnapshotForm,
 } from './virshTypes';
+import { buildDomainXml } from './virshDomainXml';
 
 export const VIRSH_SECTION_MARKER = '__SHELLDESK_VIRSH_SECTION__=';
 
@@ -184,4 +192,137 @@ export function getVirshStoragePoolActionCommand(uri: string, name: string, acti
 export function getVirshConsoleCommand(uri: string, uuid: string, useSudo: boolean, force = false) {
   const command = `virsh --connect ${shellSingleQuote(uri)} console ${shellSingleQuote(uuid)} ${force ? '--force' : '--safe'}`;
   return useSudo ? `sudo ${command}` : command;
+}
+
+export function getVirtualMachineCreateCommand(uri: string, form: VirtualMachineCreateForm): RemoteCommandInput {
+  const createsVolume = form.storageMode === 'new-volume';
+  const volumeCreate = createsVolume
+    ? `shelldesk_virsh vol-create-as ${shellSingleQuote(form.storagePool)} ${shellSingleQuote(form.volumeName)} ${Math.max(1, form.diskSizeGiB)}G --format qcow2\nvolume_created=1`
+    : '';
+  const rollback = createsVolume
+    ? `if [ "$volume_created" = 1 ]; then shelldesk_virsh vol-delete ${shellSingleQuote(form.volumeName)} --pool ${shellSingleQuote(form.storagePool)} >/dev/null 2>&1 || true; fi`
+    : ':';
+  const postCreate = [
+    form.autostart ? `shelldesk_virsh autostart ${shellSingleQuote(form.name.trim())}` : '',
+    form.startAfterCreate ? `shelldesk_virsh start ${shellSingleQuote(form.name.trim())}` : '',
+  ].filter(Boolean).join('\n');
+  return {
+    command: `${virshPrelude(uri)}
+set -e
+xml_file="$(mktemp)" || exit 1
+trap 'rm -f "$xml_file"' EXIT
+cat > "$xml_file"
+volume_created=0
+${volumeCreate}
+if ! shelldesk_virsh define "$xml_file" --validate; then
+  ${rollback}
+  exit 1
+fi
+${postCreate}`,
+    stdin: buildDomainXml(form),
+  };
+}
+
+export function getVirtualMachineCloneCommand(uri: string, uuid: string, name: string): RemoteCommandInput {
+  return {
+    command: `${virshPrelude(uri)}
+set -e
+if ! command -v virt-clone >/dev/null 2>&1; then
+  printf '%s\n' 'virt-clone is required to clone virtual machines.' >&2
+  exit 127
+fi
+virt-clone --connect "$SHELLDESK_VIRSH_URI" --original ${shellSingleQuote(uuid)} --name ${shellSingleQuote(name.trim())} --auto-clone`,
+  };
+}
+
+export function getVirtualMachineSettingsCommand(uri: string, uuid: string, form: VirtualMachineSettingsForm): RemoteCommandInput {
+  const quotedUuid = shellSingleQuote(uuid);
+  const vcpus = Math.max(1, Math.round(form.vcpus));
+  const memoryKiB = Math.max(128, Math.round(form.memoryMiB)) * 1024;
+  const live = form.applyLive
+    ? `
+shelldesk_virsh setvcpus ${quotedUuid} ${vcpus} --live
+shelldesk_virsh setmem ${quotedUuid} ${memoryKiB} --live`
+    : '';
+  const autostart = form.autostart
+    ? `shelldesk_virsh autostart ${quotedUuid}`
+    : `shelldesk_virsh autostart ${quotedUuid} --disable`;
+  return {
+    command: `${virshPrelude(uri)}
+set -e
+shelldesk_virsh setvcpus ${quotedUuid} ${vcpus} --config
+shelldesk_virsh setmaxmem ${quotedUuid} ${memoryKiB} --config
+shelldesk_virsh setmem ${quotedUuid} ${memoryKiB} --config${live}
+${autostart}`,
+  };
+}
+
+export function getVirtualMachineAttachDiskCommand(uri: string, uuid: string, form: VirtualMachineDiskForm): RemoteCommandInput {
+  const flags = ['--config', form.live ? '--live' : '', '--targetbus', form.bus, '--subdriver', form.format, form.readonly ? '--readonly' : ''].filter(Boolean);
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh attach-disk ${shellSingleQuote(uuid)} ${shellSingleQuote(form.source.trim())} ${shellSingleQuote(form.target.trim())} ${flags.join(' ')}` };
+}
+
+export function getVirtualMachineDetachDiskCommand(uri: string, uuid: string, target: string, live: boolean): RemoteCommandInput {
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh detach-disk ${shellSingleQuote(uuid)} ${shellSingleQuote(target)} --config ${live ? '--live' : ''}` };
+}
+
+export function getVirtualMachineAttachInterfaceCommand(uri: string, uuid: string, form: VirtualMachineInterfaceForm): RemoteCommandInput {
+  const flags = ['--config', form.live ? '--live' : '', '--model', form.model || 'virtio', form.mac.trim() ? `--mac ${shellSingleQuote(form.mac.trim())}` : ''].filter(Boolean);
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh attach-interface ${shellSingleQuote(uuid)} ${form.type} ${shellSingleQuote(form.source.trim())} ${flags.join(' ')}` };
+}
+
+export function getVirtualMachineDetachInterfaceCommand(uri: string, uuid: string, type: string, mac: string, live: boolean): RemoteCommandInput {
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh detach-interface ${shellSingleQuote(uuid)} ${shellSingleQuote(type)} --mac ${shellSingleQuote(mac)} --config ${live ? '--live' : ''}` };
+}
+
+export function getVirtualMachineDeleteCommand(uri: string, uuid: string, form: VirtualMachineDeleteForm): RemoteCommandInput {
+  const flags = [
+    '--managed-save',
+    form.removeSnapshotsMetadata ? '--snapshots-metadata' : '',
+    form.removeNvram ? '--nvram' : '',
+    form.removeStorage ? '--remove-all-storage --delete-storage-volume-snapshots' : '',
+  ].filter(Boolean).join(' ');
+  return {
+    command: `${virshPrelude(uri)}
+set -e
+${form.forceStop ? `if shelldesk_virsh domstate ${shellSingleQuote(uuid)} | grep -Eqi 'running|paused|idle'; then shelldesk_virsh destroy ${shellSingleQuote(uuid)}; fi` : ''}
+shelldesk_virsh undefine ${shellSingleQuote(uuid)} ${flags}`,
+  };
+}
+
+export function getVirtualMachineMigrationCommand(uri: string, uuid: string, form: VirtualMachineMigrationForm): RemoteCommandInput {
+  const flags = [
+    form.live ? '--live' : '--offline',
+    form.persistent ? '--persistent' : '',
+    form.undefineSource ? '--undefinesource' : '',
+    form.copyStorage === 'all' ? '--copy-storage-all' : '',
+    form.copyStorage === 'incremental' ? '--copy-storage-inc' : '',
+    form.peerToPeer ? '--p2p' : '--direct',
+    form.tunnelled ? '--tunnelled' : '',
+  ].filter(Boolean).join(' ');
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh migrate ${flags} ${shellSingleQuote(uuid)} ${shellSingleQuote(form.destinationUri.trim())}` };
+}
+
+export function getVirtualMachineDefineXmlCommand(uri: string, xml: string): RemoteCommandInput {
+  return {
+    command: `${virshPrelude(uri)}
+set -e
+xml_file="$(mktemp)" || exit 1
+trap 'rm -f "$xml_file"' EXIT
+cat > "$xml_file"
+shelldesk_virsh define "$xml_file" --validate`,
+    stdin: xml,
+  };
+}
+
+export function getVirshStorageVolumeCreateCommand(uri: string, form: VirshStorageVolumeForm): RemoteCommandInput {
+  const capacity = Math.max(0.1, form.capacityGiB);
+  const allocation = Math.max(0, Math.min(form.allocationGiB, capacity));
+  return {
+    command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh vol-create-as ${shellSingleQuote(form.pool)} ${shellSingleQuote(form.name.trim())} ${capacity}G --allocation ${allocation}G --format ${form.format}`,
+  };
+}
+
+export function getVirshStorageVolumeDeleteCommand(uri: string, pool: string, name: string): RemoteCommandInput {
+  return { command: `${virshPrelude(uri)}\nset -e\nshelldesk_virsh vol-delete ${shellSingleQuote(name)} --pool ${shellSingleQuote(pool)}` };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Database, Monitor, MoreHorizontal, Network, Pause, Play, Plus, Power, RefreshCw, Search, Server, Settings2, Terminal } from 'lucide-react';
+import { ChevronDown, Database, Monitor, Network, Pause, Play, Plus, Power, RefreshCw, Search, Server, Settings2, Terminal, Trash2 } from 'lucide-react';
 import DismissibleAlert from './DismissibleAlert';
 import { t, useCurrentAppLanguage, type MessageId } from '../../i18n';
 import { getErrorMessage } from './desktopUtils';
@@ -14,7 +14,19 @@ import {
   getVirshNetworkActionCommand,
   getVirshResourcesCommand,
   getVirshStoragePoolActionCommand,
+  getVirshStorageVolumeCreateCommand,
+  getVirshStorageVolumeDeleteCommand,
+  getVirtualMachineAttachDiskCommand,
+  getVirtualMachineAttachInterfaceCommand,
   getVirtualMachineActionCommand,
+  getVirtualMachineCloneCommand,
+  getVirtualMachineCreateCommand,
+  getVirtualMachineDefineXmlCommand,
+  getVirtualMachineDeleteCommand,
+  getVirtualMachineDetachDiskCommand,
+  getVirtualMachineDetachInterfaceCommand,
+  getVirtualMachineMigrationCommand,
+  getVirtualMachineSettingsCommand,
 } from './virshCommands';
 import { parseVirshDomainDetail, parseVirshOverview, parseVirshResources, parseVncDisplayTarget } from './virshParsers';
 import type {
@@ -29,6 +41,7 @@ import type {
   VirtualMachineDetail,
   VirtualMachineDetailTab,
   VirtualMachineManagerTab,
+  VirtualMachineManagementDialog,
   VirtualMachinePendingAction,
   VirtualMachineSnapshot,
   VirtualMachineSnapshotForm,
@@ -37,6 +50,7 @@ import type {
 } from './virshTypes';
 import { VirtualMachineActionDialog, VirtualMachineSnapshotDialog } from './VirtualMachineDialogs';
 import { VirtualMachineDetailPanel } from './VirtualMachineDetailPanel';
+import { VirtualMachineManagementDialog as VirtualMachineManagementModal } from './VirtualMachineManagementDialog';
 
 const managerTabs: Array<{ key: VirtualMachineManagerTab; labelId: MessageId; icon: typeof Monitor }> = [
   { key: 'domains', labelId: 'vm.tab.domains', icon: Monitor },
@@ -109,6 +123,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
   const [confirmationValue, setConfirmationValue] = useState('');
   const [dialogError, setDialogError] = useState('');
   const [snapshotForm, setSnapshotForm] = useState<VirtualMachineSnapshotForm | null>(null);
+  const [managementDialog, setManagementDialog] = useState<VirtualMachineManagementDialog | null>(null);
 
   const selectedDomain = useMemo(() => domains.find((domain) => domain.uuid === selectedDomainUuid) ?? null, [domains, selectedDomainUuid]);
   const visibleDomains = useMemo(() => domains.filter((domain) => {
@@ -238,6 +253,13 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
     let command;
     let refreshKind: 'domains' | 'resources' | 'detail' = 'domains';
     if (pendingAction.kind === 'domain') command = getVirtualMachineActionCommand(uri, pendingAction.domain.uuid, pendingAction.action);
+    else if (pendingAction.kind === 'disk-detach') {
+      command = getVirtualMachineDetachDiskCommand(uri, pendingAction.domain.uuid, pendingAction.disk.target, ['running', 'idle'].includes(pendingAction.domain.state));
+      refreshKind = 'detail';
+    } else if (pendingAction.kind === 'interface-detach') {
+      command = getVirtualMachineDetachInterfaceCommand(uri, pendingAction.domain.uuid, pendingAction.interface.type, pendingAction.interface.mac, ['running', 'idle'].includes(pendingAction.domain.state));
+      refreshKind = 'detail';
+    }
     else if (pendingAction.kind === 'snapshot-revert') {
       command = getSnapshotActionCommand(uri, pendingAction.domain.uuid, pendingAction.snapshot.name, 'revert');
       refreshKind = 'detail';
@@ -286,6 +308,64 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
     }
   };
 
+  const openCreateDialog = () => {
+    const pool = pools.find((item) => item.active)?.name ?? '';
+    const network = networks.find((item) => item.active)?.name ?? '';
+    setDialogError('');
+    setManagementDialog({
+      kind: 'create',
+      form: {
+        name: '', description: '', vcpus: 2, memoryMiB: 2048, architecture: 'x86_64',
+        storageMode: pool ? 'new-volume' : 'none', storagePool: pool, volumeName: '', diskSizeGiB: 40,
+        diskPath: '', diskFormat: 'qcow2', isoPath: '', networkName: network, autostart: false, startAfterCreate: false,
+      },
+    });
+  };
+
+  const openDomainManagement = (kind: 'settings' | 'clone' | 'delete' | 'migrate' | 'xml' | 'attach-disk' | 'attach-interface') => {
+    if (!selectedDomain) return;
+    const running = ['running', 'idle'].includes(selectedDomain.state);
+    setDialogError('');
+    if (kind === 'settings') setManagementDialog({ kind, domain: selectedDomain, form: { vcpus: detail?.currentVcpus || selectedDomain.vcpus || 1, memoryMiB: Math.max(128, Math.round((detail?.currentMemoryKiB || selectedDomain.maxMemoryKiB) / 1024)), applyLive: running, autostart: selectedDomain.autostart } });
+    else if (kind === 'clone') setManagementDialog({ kind, domain: selectedDomain, form: { name: `${selectedDomain.name}-clone` } });
+    else if (kind === 'delete') setManagementDialog({ kind, domain: selectedDomain, form: { confirmation: '', forceStop: false, removeStorage: false, removeNvram: false, removeSnapshotsMetadata: false } });
+    else if (kind === 'migrate') setManagementDialog({ kind, domain: selectedDomain, form: { destinationUri: '', live: running, persistent: true, undefineSource: true, copyStorage: 'none', peerToPeer: true, tunnelled: false } });
+    else if (kind === 'xml') setManagementDialog({ kind, domain: selectedDomain, form: { xml: detail?.xml ?? '' } });
+    else if (kind === 'attach-disk') setManagementDialog({ kind, domain: selectedDomain, form: { source: '', target: 'vdb', bus: 'virtio', format: 'qcow2', readonly: false, live: running } });
+    else setManagementDialog({ kind, domain: selectedDomain, form: { type: 'network', source: networks.find((item) => item.active)?.name ?? '', model: 'virtio', mac: '', live: running } });
+  };
+
+  const executeManagementDialog = async () => {
+    if (!managementDialog) return;
+    let command;
+    let refresh: 'all' | 'resources' | 'detail' = 'all';
+    if (managementDialog.kind === 'create') command = getVirtualMachineCreateCommand(uri, managementDialog.form);
+    else if (managementDialog.kind === 'settings') command = getVirtualMachineSettingsCommand(uri, managementDialog.domain.uuid, managementDialog.form);
+    else if (managementDialog.kind === 'clone') command = getVirtualMachineCloneCommand(uri, managementDialog.domain.uuid, managementDialog.form.name);
+    else if (managementDialog.kind === 'attach-disk') { command = getVirtualMachineAttachDiskCommand(uri, managementDialog.domain.uuid, managementDialog.form); refresh = 'detail'; }
+    else if (managementDialog.kind === 'attach-interface') { command = getVirtualMachineAttachInterfaceCommand(uri, managementDialog.domain.uuid, managementDialog.form); refresh = 'detail'; }
+    else if (managementDialog.kind === 'delete') command = getVirtualMachineDeleteCommand(uri, managementDialog.domain.uuid, managementDialog.form);
+    else if (managementDialog.kind === 'migrate') command = getVirtualMachineMigrationCommand(uri, managementDialog.domain.uuid, managementDialog.form);
+    else if (managementDialog.kind === 'xml') { command = getVirtualMachineDefineXmlCommand(uri, managementDialog.form.xml); refresh = 'detail'; }
+    else if (managementDialog.kind === 'create-volume') { command = getVirshStorageVolumeCreateCommand(uri, managementDialog.form); refresh = 'resources'; }
+    else { command = getVirshStorageVolumeDeleteCommand(uri, managementDialog.pool, managementDialog.volume.name); refresh = 'resources'; }
+    setActingKey(`manage-${managementDialog.kind}`);
+    setDialogError('');
+    try {
+      const result = await runCommand(command, undefined, { onSudoAttempt: () => setUsedSudo(true) });
+      if (result.code !== 0) throw new Error(result.stderr || result.stdout || t('vm.error.manage', language));
+      setManagementDialog(null);
+      setNotice(t('vm.notice.manageComplete', language));
+      if (refresh === 'resources') await refreshResources(true);
+      else if (refresh === 'detail' && selectedDomain) await loadDetail(selectedDomain);
+      else await refreshAll();
+    } catch (nextError) {
+      setDialogError(getErrorMessage(nextError));
+    } finally {
+      setActingKey('');
+    }
+  };
+
   const openConsole = () => {
     if (!selectedDomain || !onOpenTerminal) return;
     onOpenTerminal({
@@ -327,7 +407,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
           <button type="button" onClick={() => domainAction('reboot')} disabled={!running || Boolean(actingKey)}><RefreshCw size={14} />{t('vm.action.reboot', language)}</button>
           <button type="button" onClick={() => domainAction(paused ? 'resume' : 'suspend')} disabled={(!running && !paused) || Boolean(actingKey)}><Pause size={14} />{t(paused ? 'vm.action.resume' : 'vm.action.suspend', language)}</button>
           <button type="button" onClick={openConsole} disabled={!selectedDomain || Boolean(actingKey)}><Terminal size={14} />{t('vm.action.console', language)}</button>
-          <button type="button" disabled title={t('vm.action.moreUnavailable', language)}><MoreHorizontal size={14} />{t('vm.action.more', language)}<ChevronDown size={12} /></button>
+          <button type="button" onClick={() => openDomainManagement('settings')} disabled={!selectedDomain || Boolean(actingKey)}><Settings2 size={14} />{t('vm.manage.settings', language)}<ChevronDown size={12} /></button>
         </div>
       </footer>
     );
@@ -347,7 +427,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
         </div>
         {renderDomainFooter()}
       </section>
-      {selectedDomain ? <VirtualMachineDetailPanel language={language} domain={selectedDomain} detail={detail?.uuid === selectedDomain.uuid ? detail : null} activeTab={detailTab} loading={detailLoading} busy={Boolean(actingKey)} onTabChange={setDetailTab} onAction={domainAction} onOpenConsole={openConsole} onOpenVnc={openVnc} onCreateSnapshot={() => { setDialogError(''); setSnapshotForm({ name: `snapshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`, description: '', diskOnly: true, quiesce: false }); }} onSnapshotAction={snapshotAction} /> : null}
+      {selectedDomain ? <VirtualMachineDetailPanel language={language} domain={selectedDomain} detail={detail?.uuid === selectedDomain.uuid ? detail : null} activeTab={detailTab} loading={detailLoading} busy={Boolean(actingKey)} onTabChange={setDetailTab} onAction={domainAction} onOpenConsole={openConsole} onOpenVnc={openVnc} onCreateSnapshot={() => { setDialogError(''); setSnapshotForm({ name: `snapshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`, description: '', diskOnly: true, quiesce: false }); }} onSnapshotAction={snapshotAction} onOpenSettings={() => openDomainManagement('settings')} onClone={() => openDomainManagement('clone')} onDelete={() => openDomainManagement('delete')} onMigrate={() => openDomainManagement('migrate')} onEditXml={() => openDomainManagement('xml')} onAttachDisk={() => openDomainManagement('attach-disk')} onDetachDisk={(target) => { const disk = detail?.disks.find((item) => item.target === target); if (disk) openAction({ kind: 'disk-detach', domain: selectedDomain, disk }); }} onAttachInterface={() => openDomainManagement('attach-interface')} onDetachInterface={(_type, mac) => { const item = detail?.interfaces.find((candidate) => candidate.mac === mac); if (item) openAction({ kind: 'interface-detach', domain: selectedDomain, interface: item }); }} /> : null}
     </div>
   );
 
@@ -366,7 +446,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
     return <div className="vm-manager-storage-layout"><section className="vm-manager-resource-panel"><table className="vm-manager-table"><thead><tr><th>{t('vm.field.name', language)}</th><th>{t('vm.field.state', language)}</th><th>{t('vm.storage.capacity', language)}</th><th>{t('vm.storage.used', language)}</th><th>{t('vm.field.autostart', language)}</th><th>{t('vm.field.actions', language)}</th></tr></thead><tbody>
       {visiblePools.map((pool) => <tr key={pool.uuid} className={selectedPoolName === pool.name ? 'selected' : ''} onClick={() => setSelectedPoolName(pool.name)}><td><div className="vm-manager-name-cell"><Database size={17} /><span><strong>{pool.name}</strong><small>{pool.uuid}</small></span></div></td><td><span className={`vm-manager-state ${pool.active ? 'running' : 'stopped'}`}>{t(pool.active ? 'vm.state.active' : 'vm.state.inactive', language)}</span></td><td>{formatBytes(pool.capacityBytes, language)}</td><td>{formatBytes(pool.allocationBytes, language)}</td><td>{pool.autostart ? t('common.yes', language) : t('common.no', language)}</td><td><div className="vm-manager-row-actions">{pool.active ? <button type="button" onClick={(event) => { event.stopPropagation(); openAction({ kind: 'pool', action: 'destroy', pool }); }}><Power size={14} />{t('vm.action.destroy', language)}</button> : <button type="button" onClick={(event) => { event.stopPropagation(); openAction({ kind: 'pool', action: 'start', pool }); }}><Play size={14} />{t('vm.action.start', language)}</button>}<button type="button" onClick={(event) => { event.stopPropagation(); openAction({ kind: 'pool', action: 'refresh', pool }); }}><RefreshCw size={14} />{t('vm.action.refresh', language)}</button><button type="button" onClick={(event) => { event.stopPropagation(); openAction({ kind: 'pool', action: pool.autostart ? 'autostart-disable' : 'autostart-enable', pool }); }}><Settings2 size={14} />{t(pool.autostart ? 'vm.action.autostart-disable' : 'vm.action.autostart-enable', language)}</button></div></td></tr>)}
       {!visiblePools.length ? <tr><td colSpan={6}><div className="vm-manager-empty">{t('vm.empty.pools', language)}</div></td></tr> : null}
-    </tbody></table></section>{selectedPool ? <aside className="vm-manager-volume-panel"><header><div><strong>{selectedPool.name}</strong><small>{t('vm.storage.volumes', language, { count: volumes.length })}</small></div><span>{formatBytes(selectedPool.availableBytes, language)} {t('vm.storage.available', language)}</span></header><div>{volumes.length ? volumes.map((volume) => <article key={volume.name}><div><strong>{volume.name}</strong><small title={volume.path}>{volume.path || volume.type}</small></div><span>{formatBytes(volume.capacityBytes, language)}</span></article>) : <div className="vm-manager-empty">{t('vm.empty.volumes', language)}</div>}</div></aside> : null}</div>;
+    </tbody></table></section>{selectedPool ? <aside className="vm-manager-volume-panel"><header><div><strong>{selectedPool.name}</strong><small>{t('vm.storage.volumes', language, { count: volumes.length })}</small></div><div className="vm-manager-volume-header-actions"><span>{formatBytes(selectedPool.availableBytes, language)} {t('vm.storage.available', language)}</span><button type="button" onClick={() => { setDialogError(''); setManagementDialog({ kind: 'create-volume', form: { pool: selectedPool.name, name: '', capacityGiB: 20, allocationGiB: 0, format: 'qcow2' } }); }}><Plus size={14} />{t('vm.manage.createVolume', language)}</button></div></header><div>{volumes.length ? volumes.map((volume) => <article key={volume.name}><div><strong>{volume.name}</strong><small title={volume.path}>{volume.path || volume.type}</small></div><div className="vm-manager-volume-actions"><span>{formatBytes(volume.capacityBytes, language)}</span><button type="button" className="danger" onClick={() => { setDialogError(''); setManagementDialog({ kind: 'delete-volume', volume, pool: selectedPool.name, confirmation: '' }); }}><Trash2 size={13} /></button></div></article>) : <div className="vm-manager-empty">{t('vm.empty.volumes', language)}</div>}</div></aside> : null}</div>;
   };
 
   if (isWindowsHost) return <div className="vm-manager-container vm-manager-unsupported"><Server size={42} /><strong>{t('vm.unsupported.title', language)}</strong><p>{t('vm.unsupported.description', language)}</p></div>;
@@ -379,7 +459,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
         <div className="vm-manager-connection"><span className={error ? 'error' : 'ok'} /> <div><strong>{error ? t('vm.connection.error', language) : t('vm.connection.connected', language)}</strong><small>{[host.virshVersion && `virsh ${host.virshVersion}`, host.hypervisor, usedSudo ? 'sudo' : 'user'].filter(Boolean).join(' · ')}</small></div></div>
         <label className="vm-manager-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('vm.search.placeholder', language)} /></label>
         <button type="button" className="vm-manager-refresh" onClick={() => void refreshAll()} disabled={loading}><RefreshCw size={16} className={loading ? 'spinning' : ''} />{t('vm.action.refresh', language)}</button>
-        <button type="button" className="vm-manager-create" onClick={() => setNotice(t('vm.action.createUnavailable', language))}><Plus size={16} />{t('vm.action.create', language)}<ChevronDown size={13} /></button>
+        <button type="button" className="vm-manager-create" onClick={openCreateDialog}><Plus size={16} />{t('vm.action.create', language)}<ChevronDown size={13} /></button>
       </header>
       {activeTab === 'domains' ? <section className="vm-manager-summary"><div><span>{t('vm.summary.total', language)}</span><strong>{domainCounts.total}</strong><small>{t('vm.summary.totalUnit', language)}</small></div><div className="running"><span>{t('vm.summary.running', language)}</span><strong>{domainCounts.running}</strong></div><div><span>{t('vm.summary.stopped', language)}</span><strong>{domainCounts.stopped}</strong></div><div><span>{t('vm.summary.cpuAllocation', language)}</span><strong>{formatPercent(allocationSummary.cpuPercent)}</strong><small>{allocationSummary.assignedVcpus} / {host.cpuCount || '-'} {t('vm.summary.cores', language)}</small></div><div><span>{t('vm.summary.memoryAllocation', language)}</span><strong>{formatPercent(allocationSummary.memoryPercent)}</strong><small>{formatMemoryKiB(allocationSummary.assignedMemoryKiB, language)} / {formatMemoryKiB(host.memoryKiB, language)}</small></div><div><span>{t('vm.summary.storageAllocation', language)}</span><strong>{formatPercent(allocationSummary.storagePercent)}</strong><small>{formatBytes(allocationSummary.storageAllocationBytes, language)} / {formatBytes(allocationSummary.storageCapacityBytes, language)}</small></div></section> : null}
       {error ? <DismissibleAlert className="vm-manager-alert error" onDismiss={() => setError('')}>{error}</DismissibleAlert> : null}
@@ -388,6 +468,7 @@ function RemoteVirtualMachineManager({ connectionId, systemType, onOpenTerminal,
       {sudoPrompt}
       <VirtualMachineActionDialog language={language} pendingAction={pendingAction} confirmationValue={confirmationValue} busy={actingKey === 'pending-action'} error={dialogError} onConfirmationValueChange={setConfirmationValue} onCancel={() => { if (!actingKey) setPendingAction(null); }} onConfirm={() => void executePendingAction()} />
       <VirtualMachineSnapshotDialog language={language} domainName={selectedDomain?.name ?? ''} form={snapshotForm} busy={actingKey === 'snapshot-create'} error={dialogError} onChange={setSnapshotForm} onCancel={() => { if (!actingKey) setSnapshotForm(null); }} onSubmit={() => void createSnapshot()} />
+      <VirtualMachineManagementModal language={language} dialog={managementDialog} pools={pools} networks={networks} volumesByPool={volumesByPool} busy={actingKey.startsWith('manage-')} error={dialogError} onChange={setManagementDialog} onCancel={() => { if (!actingKey) setManagementDialog(null); }} onSubmit={() => void executeManagementDialog()} />
     </div>
   );
 }

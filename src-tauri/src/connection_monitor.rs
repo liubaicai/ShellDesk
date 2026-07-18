@@ -587,7 +587,7 @@ mod tests {
 
     const HOST_COMPONENT_PREFIX: &str = "__SHELLDESK_COMPONENT__";
     const HOST_SMOKE_RESULT_PREFIX: &str = "__SHELLDESK_SMOKE_RESULT__";
-    const ALL_HOST_COMPONENTS: [&str; 12] = [
+    const ALL_HOST_COMPONENTS: [&str; 13] = [
         "terminal",
         "files",
         "processes",
@@ -600,6 +600,7 @@ mod tests {
         "eventLog",
         "packages",
         "containers",
+        "vmManager",
     ];
     const WINDOWS_HOST_COMPONENT_PROBE: &str = r#"
 $ErrorActionPreference = 'Stop'
@@ -635,6 +636,7 @@ Test-ShellDeskComponent 'scheduledTasks' { Get-ScheduledTask | Select-Object -Fi
 Test-ShellDeskComponent 'eventLog' { Get-WinEvent -LogName System -MaxEvents 1 } $true
 Test-ShellDeskComponent 'packages' { Get-Command winget -ErrorAction Stop } $true
 Test-ShellDeskComponent 'containers' { Get-Command docker -ErrorAction Stop } $true
+Test-ShellDeskComponent 'vmManager' { & virsh --connect 'qemu:///system' list --all --name } $true
 "#;
     const LINUX_HOST_COMPONENT_PROBE: &str = r#"
 component() {
@@ -662,6 +664,7 @@ component scheduledTasks true sh -c 'command -v crontab >/dev/null || command -v
 component eventLog true sh -c 'command -v journalctl >/dev/null || test -d /var/log'
 component packages true sh -c 'command -v apt-get >/dev/null || command -v dnf >/dev/null || command -v yum >/dev/null || command -v zypper >/dev/null || command -v pacman >/dev/null || command -v apk >/dev/null'
 component containers true sh -c 'command -v docker >/dev/null || command -v podman >/dev/null'
+component vmManager true sh -c 'command -v virsh >/dev/null && LC_ALL=C virsh --connect qemu:///system list --all --name >/dev/null'
 "#;
 
     async fn run_live_windows_host_components_smoke() {

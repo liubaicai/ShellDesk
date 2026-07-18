@@ -16,6 +16,8 @@ interface ActionDialogProps {
 
 function getActionTarget(action: VirtualMachinePendingAction) {
   if (action.kind === 'domain') return action.domain.name;
+  if (action.kind === 'disk-detach') return `${action.domain.name} / ${action.disk.target}`;
+  if (action.kind === 'interface-detach') return `${action.domain.name} / ${action.interface.mac}`;
   if (action.kind === 'snapshot-delete' || action.kind === 'snapshot-revert') return `${action.domain.name} / ${action.snapshot.name}`;
   if (action.kind === 'network') return action.network.name;
   return action.pool.name;
@@ -23,6 +25,8 @@ function getActionTarget(action: VirtualMachinePendingAction) {
 
 function isDestructiveAction(action: VirtualMachinePendingAction) {
   return (action.kind === 'domain' && (action.action === 'destroy' || action.action === 'reset'))
+    || action.kind === 'disk-detach'
+    || action.kind === 'interface-detach'
     || action.kind === 'snapshot-delete'
     || action.kind === 'snapshot-revert'
     || (action.kind === 'network' && action.action === 'destroy')
@@ -32,6 +36,7 @@ function isDestructiveAction(action: VirtualMachinePendingAction) {
 function getActionLabel(action: VirtualMachinePendingAction, language: AppLanguage) {
   if (action.kind === 'snapshot-delete') return t('vm.snapshot.delete', language);
   if (action.kind === 'snapshot-revert') return t('vm.snapshot.revert', language);
+  if (action.kind === 'disk-detach' || action.kind === 'interface-detach') return t('vm.manage.detach', language);
   if (action.kind === 'network') return t(`vm.action.${action.action}` as Parameters<typeof t>[0], language);
   if (action.kind === 'pool') return t(`vm.action.${action.action}` as Parameters<typeof t>[0], language);
   return t(`vm.action.${action.action}` as Parameters<typeof t>[0], language);

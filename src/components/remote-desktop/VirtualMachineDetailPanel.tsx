@@ -1,4 +1,4 @@
-import { Camera, CircleStop, ExternalLink, Monitor, Pause, Play, Power, RefreshCw, RotateCcw, RotateCw, Settings2, Terminal, Trash2 } from 'lucide-react';
+import { Camera, CircleStop, Copy, ExternalLink, GitCompareArrows, Monitor, Pause, Play, Plus, Power, RefreshCw, RotateCcw, RotateCw, Settings2, Terminal, Trash2 } from 'lucide-react';
 import { t, type AppLanguage, type MessageId } from '../../i18n';
 import type {
   VirtualMachineAction,
@@ -21,6 +21,15 @@ interface VirtualMachineDetailPanelProps {
   onOpenVnc: () => void;
   onCreateSnapshot: () => void;
   onSnapshotAction: (snapshot: VirtualMachineSnapshot, action: 'revert' | 'delete') => void;
+  onOpenSettings: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+  onMigrate: () => void;
+  onEditXml: () => void;
+  onAttachDisk: () => void;
+  onDetachDisk: (target: string) => void;
+  onAttachInterface: () => void;
+  onDetachInterface: (type: string, mac: string) => void;
 }
 
 const detailTabs: Array<{ key: VirtualMachineDetailTab; labelId: MessageId }> = [
@@ -65,6 +74,15 @@ export function VirtualMachineDetailPanel({
   onOpenVnc,
   onCreateSnapshot,
   onSnapshotAction,
+  onOpenSettings,
+  onClone,
+  onDelete,
+  onMigrate,
+  onEditXml,
+  onAttachDisk,
+  onDetachDisk,
+  onAttachInterface,
+  onDetachInterface,
 }: VirtualMachineDetailPanelProps) {
   const running = domain.state === 'running' || domain.state === 'idle';
   const paused = domain.state === 'paused';
@@ -123,12 +141,14 @@ export function VirtualMachineDetailPanel({
         ) : null}
         {!loading && activeTab === 'disks' ? (
           <div className="vm-manager-stack-list">
-            {detail?.disks.length ? detail.disks.map((disk, index) => <article key={`${disk.target}-${index}`}><header><strong>{disk.target || disk.device}</strong><span>{disk.format || disk.type}</span></header><dl><div><dt>{t('vm.disk.source', language)}</dt><dd title={disk.source}>{disk.source || '-'}</dd></div><div><dt>{t('vm.disk.bus', language)}</dt><dd>{disk.bus || '-'}</dd></div><div><dt>{t('vm.disk.readonly', language)}</dt><dd>{disk.readonly ? t('common.yes', language) : t('common.no', language)}</dd></div></dl></article>) : <div className="vm-manager-empty">{t('vm.empty.disks', language)}</div>}
+            <button type="button" className="vm-manager-inline-primary" onClick={onAttachDisk} disabled={busy}><Plus size={15} />{t('vm.manage.attachDisk', language)}</button>
+            {detail?.disks.length ? detail.disks.map((disk, index) => <article key={`${disk.target}-${index}`}><header><strong>{disk.target || disk.device}</strong><span>{disk.format || disk.type}</span></header><dl><div><dt>{t('vm.disk.source', language)}</dt><dd title={disk.source}>{disk.source || '-'}</dd></div><div><dt>{t('vm.disk.bus', language)}</dt><dd>{disk.bus || '-'}</dd></div><div><dt>{t('vm.disk.readonly', language)}</dt><dd>{disk.readonly ? t('common.yes', language) : t('common.no', language)}</dd></div></dl>{disk.device === 'disk' && disk.target ? <button type="button" className="vm-manager-item-delete" onClick={() => onDetachDisk(disk.target)} disabled={busy}><Trash2 size={13} />{t('vm.manage.detach', language)}</button> : null}</article>) : <div className="vm-manager-empty">{t('vm.empty.disks', language)}</div>}
           </div>
         ) : null}
         {!loading && activeTab === 'network' ? (
           <div className="vm-manager-stack-list">
-            {detail?.interfaces.length ? detail.interfaces.map((item, index) => <article key={`${item.mac}-${index}`}><header><strong>{item.source || item.target || t('vm.network.interface', language)}</strong><span>{item.model || item.type}</span></header><dl><div><dt>MAC</dt><dd>{item.mac || '-'}</dd></div><div><dt>IP</dt><dd>{item.addresses.join(', ') || '-'}</dd></div><div><dt>{t('vm.network.target', language)}</dt><dd>{item.target || '-'}</dd></div></dl></article>) : <div className="vm-manager-empty">{t('vm.empty.interfaces', language)}</div>}
+            <button type="button" className="vm-manager-inline-primary" onClick={onAttachInterface} disabled={busy}><Plus size={15} />{t('vm.manage.attachInterface', language)}</button>
+            {detail?.interfaces.length ? detail.interfaces.map((item, index) => <article key={`${item.mac}-${index}`}><header><strong>{item.source || item.target || t('vm.network.interface', language)}</strong><span>{item.model || item.type}</span></header><dl><div><dt>MAC</dt><dd>{item.mac || '-'}</dd></div><div><dt>IP</dt><dd>{item.addresses.join(', ') || '-'}</dd></div><div><dt>{t('vm.network.target', language)}</dt><dd>{item.target || '-'}</dd></div></dl>{item.mac ? <button type="button" className="vm-manager-item-delete" onClick={() => onDetachInterface(item.type, item.mac)} disabled={busy}><Trash2 size={13} />{t('vm.manage.detach', language)}</button> : null}</article>) : <div className="vm-manager-empty">{t('vm.empty.interfaces', language)}</div>}
           </div>
         ) : null}
         {!loading && activeTab === 'snapshots' ? (
@@ -137,7 +157,7 @@ export function VirtualMachineDetailPanel({
             {detail?.snapshots.length ? detail.snapshots.map((snapshot) => <article key={snapshot.name}><div><strong>{snapshot.name}</strong>{snapshot.current ? <span className="current">{t('vm.snapshot.current', language)}</span> : null}<small>{snapshot.createdAt || snapshot.state}</small></div><div><button type="button" onClick={() => onSnapshotAction(snapshot, 'revert')} disabled={busy}><RotateCw size={14} />{t('vm.snapshot.revert', language)}</button><button type="button" className="danger" onClick={() => onSnapshotAction(snapshot, 'delete')} disabled={busy}><Trash2 size={14} />{t('vm.snapshot.delete', language)}</button></div></article>) : <div className="vm-manager-empty">{t('vm.empty.snapshots', language)}</div>}
           </div>
         ) : null}
-        {!loading && activeTab === 'xml' ? <textarea className="vm-manager-xml" readOnly value={detail?.xml ?? ''} aria-label={t('vm.detail.xml', language)} /> : null}
+        {!loading && activeTab === 'xml' ? <div className="vm-manager-xml-panel"><button type="button" className="vm-manager-inline-primary" onClick={onEditXml} disabled={busy || !detail}><Settings2 size={15} />{t('vm.manage.editXml', language)}</button><textarea className="vm-manager-xml" readOnly value={detail?.xml ?? ''} aria-label={t('vm.detail.xml', language)} /></div> : null}
       </section>
       <footer className="vm-manager-detail-actions">
         {canStart ? <button type="button" onClick={() => onAction('start')} disabled={busy}><Play size={15} />{t('vm.action.start', language)}</button> : null}
@@ -150,6 +170,10 @@ export function VirtualMachineDetailPanel({
         <button type="button" onClick={() => onAction(domain.autostart ? 'autostart-disable' : 'autostart-enable')} disabled={busy}><Settings2 size={15} />{t(domain.autostart ? 'vm.action.autostart-disable' : 'vm.action.autostart-enable', language)}</button>
         <button type="button" onClick={onOpenConsole} disabled={busy || !onOpenConsole}><Terminal size={15} />{t('vm.action.console', language)}</button>
         <button type="button" onClick={onOpenVnc} disabled={busy || !displayAvailable}><ExternalLink size={15} />VNC</button>
+        <button type="button" onClick={onOpenSettings} disabled={busy || !detail}><Settings2 size={15} />{t('vm.manage.settings', language)}</button>
+        <button type="button" onClick={onClone} disabled={busy || running || paused}><Copy size={15} />{t('vm.manage.clone', language)}</button>
+        <button type="button" onClick={onMigrate} disabled={busy}><GitCompareArrows size={15} />{t('vm.manage.migrate', language)}</button>
+        <button type="button" className="danger" onClick={onDelete} disabled={busy}><Trash2 size={15} />{t('vm.manage.delete', language)}</button>
       </footer>
     </aside>
   );

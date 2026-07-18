@@ -70,7 +70,7 @@
 | 39 | `frps-manager` | FRP 服务端 | [FRP 服务端](./remote-desktop-components/39-frp-server-manager.md) | frps 检测/安装、Dashboard、proxy 状态、日志、自启动和连接示例 |
 | 40 | `ai-chat` | AI 助手 | [AI 助手](./remote-desktop-components/40-ai-assistant.md) | 远程上下文对话、共享工具、Markdown 渲染、打开设置和组件 |
 | 41 | `k8s-manager` | Kubernetes 管理器 | [Kubernetes 管理器](./remote-desktop-components/41-k8s-manager.md) | 上下文/命名空间、Pod 与 Workload 管理、日志、Exec、YAML 和节点视图 |
-| 42 | `vm-manager` | 虚拟机管理器 | [虚拟机管理器](./remote-desktop-components/42-virtual-machine-manager.md) | 68:32 清单/详情布局、libvirt URI、生命周期、性能/磁盘/网卡/快照、网络与存储池 |
+| 42 | `vm-manager` | 虚拟机管理器 | [虚拟机管理器](./remote-desktop-components/42-virtual-machine-manager.md) | 68:32 清单/详情布局、生命周期、创建/克隆/设置/删除、设备挂载、迁移、快照、网络与存储池 |
 
 ## Dock 与桌面布局
 

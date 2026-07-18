@@ -75,7 +75,53 @@ test('Virtual machine manager follows the dense split-pane reference layout', as
   const selectedColor = await page.locator('.vm-manager-table tbody tr.selected').evaluate((node) => getComputedStyle(node).backgroundImage);
   expect(selectedColor).toContain('linear-gradient');
   await page.getByRole('button', { name: /新建虚拟机/ }).click();
-  await expect(page.getByText('新建虚拟机将在 P2 阶段提供。')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '创建虚拟机' })).toBeVisible();
+  await page.getByRole('dialog', { name: '创建虚拟机' }).getByRole('button', { name: '取消' }).click();
+});
+
+test('Virtual machine manager creates, configures, and guards deletion through custom dialogs', async ({ page }) => {
+  test.setTimeout(90_000);
+  await gotoHarness(page, 'component=vm-manager');
+  await expect(page.locator('.vm-manager-table tbody tr')).toHaveCount(8);
+
+  await page.getByRole('button', { name: /新建虚拟机/ }).click();
+  const createDialog = page.getByRole('dialog', { name: '创建虚拟机' });
+  await createDialog.getByLabel('名称').fill('ui-test-vm');
+  await createDialog.getByRole('textbox', { name: '存储卷', exact: true }).fill('ui-test-vm.qcow2');
+  await createDialog.getByRole('button', { name: '创建虚拟机' }).click();
+  await expect(createDialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshCommand as string)).toContain('vol-create-as');
+  expect(await page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshStdin as string)).toContain('<name>ui-test-vm</name>');
+
+  await page.locator('.vm-manager-table tbody tr').filter({ hasText: 'db-01' }).click();
+  const detailPanel = page.locator('.vm-manager-detail');
+  await detailPanel.getByRole('button', { name: '资源设置' }).click();
+  const settingsDialog = page.getByRole('dialog', { name: '资源设置' });
+  await settingsDialog.getByLabel('vCPU').fill('6');
+  await settingsDialog.getByRole('button', { name: '资源设置' }).click();
+  await expect(settingsDialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshCommand as string)).toContain('setvcpus');
+
+  await detailPanel.getByRole('button', { name: '删除虚拟机' }).click();
+  const deleteDialog = page.getByRole('alertdialog', { name: '删除虚拟机' });
+  const deleteButton = deleteDialog.getByRole('button', { name: '删除虚拟机' });
+  await expect(deleteButton).toBeDisabled();
+  await deleteDialog.getByLabel('输入“db-01”确认操作').fill('db-01');
+  await expect(deleteButton).toBeDisabled();
+  await deleteDialog.getByText('先强制停止运行中的虚拟机').click();
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.click();
+  await expect(deleteDialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshCommand as string)).toContain('undefine');
+  expect(await page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshCommand as string)).not.toContain('--remove-all-storage');
+
+  await page.locator('.vm-manager-table tbody tr').filter({ hasText: 'db-01' }).click();
+  await detailPanel.getByRole('button', { name: '迁移' }).click();
+  const migrationDialog = page.getByRole('dialog', { name: '迁移' });
+  await migrationDialog.getByLabel('目标 Libvirt URI').fill('qemu+ssh://target.example/system');
+  await migrationDialog.getByRole('button', { name: '迁移' }).click();
+  await expect(migrationDialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastVirshCommand as string)).toContain('migrate --live --persistent --undefinesource --p2p');
 });
 
 test('Virtual machine manager remains usable at a compact desktop width', async ({ page }) => {

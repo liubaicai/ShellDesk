@@ -1,0 +1,142 @@
+.vm-manager-management-modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(820px, calc(100vh - 32px));
+
+  .vm-manager-management-body {
+    min-height: 0;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  fieldset {
+    margin: 14px 0;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    border-radius: 8px;
+  }
+
+  legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
+}
+
+.vm-manager-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  > label {
+    display: grid;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  > label.wide { grid-column: 1 / -1; }
+
+  input,
+  select {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 78%, #07101b);
+    outline: none;
+  }
+
+  input:focus,
+  select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+}
+
+.vm-manager-management-modal .vm-manager-modal-field select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 78%, #07101b);
+}
+
+.vm-manager-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 12px 0;
+}
+
+.vm-manager-checkbox.danger { color: #ff8f8f; }
+
+.vm-manager-danger-box {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 14px;
+  padding: 11px 12px;
+  border: 1px solid rgb(239 82 82 / 35%);
+  border-radius: 7px;
+  color: #ffb3b3;
+  background: rgb(135 31 31 / 15%);
+  font-size: 12px;
+
+  span { color: var(--muted); overflow-wrap: anywhere; }
+}
+
+.vm-manager-xml-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; height: 100%; }
+
+.vm-manager-xml-editor {
+  width: 100%;
+  min-height: 420px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: #d7e6f9;
+  background: #08111d;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  outline: none;
+
+  &:focus { border-color: var(--accent); }
+}
+
+.vm-manager-item-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 9px;
+  padding: 4px 7px;
+  border: 1px solid rgb(239 82 82 / 28%);
+  border-radius: 5px;
+  color: #ff9b9b;
+  background: transparent;
+  font-size: 11px;
+}
+
+.vm-manager-volume-header-actions,
+.vm-manager-volume-actions { display: flex; align-items: center; gap: 8px; }
+
+.vm-manager-volume-header-actions button,
+.vm-manager-volume-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+}
+
+.vm-manager-volume-actions button.danger { color: #ff9292; border-color: rgb(239 82 82 / 28%); }
+
+[data-theme="light"] {
+  .vm-manager-form-grid input,
+  .vm-manager-form-grid select,
+  .vm-manager-management-modal .vm-manager-modal-field select { background: #f7f9fc; }
+  .vm-manager-xml-editor { color: #24344a; background: #f5f8fc; }
+  .vm-manager-danger-box { color: #a72b2b; background: #fff4f4; }
+}
+
+@media (max-width: 760px) {
+  .vm-manager-form-grid { grid-template-columns: 1fr; }
+}

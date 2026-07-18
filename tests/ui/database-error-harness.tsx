@@ -9,7 +9,8 @@ import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { loadFullMessageCatalog } from '../../src/i18n';
-import '../../src/styles/index.scss';
+import '../../src/styles/critical.scss';
+import '../../src/styles/deferred.scss';
 
 const connectionId = 'ui-test-connection';
 const hostId = 'ui-test-host';
@@ -156,6 +157,8 @@ function installGuiSshMock() {
   let metricsCounter = 1_000_000;
   let metricsRequestCount = 0;
   let virshRequestCount = 0;
+  let lastVirshCommand = '';
+  let lastVirshStdin = '';
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -166,12 +169,18 @@ function installGuiSshMock() {
     configurable: true,
     get: () => virshRequestCount,
   });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastVirshCommand', { configurable: true, get: () => lastVirshCommand });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
 
   (window as any).guiSSH = {
     connections: {
-      runCommand: async (_connectionId: string, command: string, _stdin?: string, options?: { sudoPassword?: string }) => {
+      runCommand: async (_connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => {
         if (command.includes('SHELLDESK_VIRSH_URI=')) {
           virshRequestCount += 1;
+          if (command.includes('\nset -e\n')) {
+            lastVirshCommand = command;
+            lastVirshStdin = stdin ?? '';
+          }
         }
         if (scenario === 'sudo-prompt' && !sudoPromptShown && !options?.sudoPassword) {
           sudoPromptShown = true;
