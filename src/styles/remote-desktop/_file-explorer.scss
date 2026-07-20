@@ -2095,7 +2095,7 @@ button.explorer-row {
   stroke-width: 2;
 }
 
-.row-actions {
+.explorer-row .row-actions {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 2px;
@@ -2111,7 +2111,7 @@ button.explorer-row {
   pointer-events: auto;
 }
 
-.row-actions button,
+.explorer-row .row-actions button,
 .search-clear-button {
   display: grid;
   width: 24px;
@@ -2125,13 +2125,13 @@ button.explorer-row {
   cursor: pointer;
 }
 
-.row-actions button:hover,
+.explorer-row .row-actions button:hover,
 .search-clear-button:hover {
   background: var(--explorer-hover);
   color: var(--explorer-text);
 }
 
-.row-actions .row-action-delete:hover {
+.explorer-row .row-actions .row-action-delete:hover {
   color: #ff9da7;
 }
 
