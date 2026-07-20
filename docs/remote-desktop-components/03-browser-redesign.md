@@ -34,6 +34,7 @@
 - 默认拒绝 webview 权限请求。
 - 外链打开策略清晰。
 - 对下载、弹窗、证书错误有明确状态。
+- iframe 画布跟随应用 `color-scheme` 使用系统 `Canvas` / `CanvasText` 颜色，确保未定义背景和文字颜色的纯文本或基础 HTML 在深浅主题下均可读，同时不覆盖页面自身样式。
 
 ## 交互设计
 
@@ -87,6 +88,7 @@ interface RemoteBrowserBookmark {
 - 书签按连接 scope 生效。
 - 非 http/https 导航被安全处理。
 - webview 页面不能越权获得主应用能力。
+- 未声明颜色样式的文本页面在深色和浅色主题下均有足够对比度。
 
 ## 设计取舍
 
