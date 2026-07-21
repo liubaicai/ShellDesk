@@ -45,6 +45,7 @@
 @use "./remote-desktop/security-audit" as *;
 @use "./remote-desktop/api-debugger" as *;
 @use "./remote-desktop/ai-chat" as *;
+@use "./themes/dark" as *;
 @use "./themes/light" as *;
 @use "./remote-desktop/database-tunnel" as *;
 @use "./remote-desktop/notepad" as *;

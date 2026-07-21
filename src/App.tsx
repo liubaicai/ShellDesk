@@ -499,9 +499,14 @@ function toRgba(hexColor: string, alpha: number) {
 
 function getReadableTextColor(hexColor: string) {
   const { red, green, blue } = readHexColorChannels(hexColor);
-  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  const backgroundLuminance = getRelativeLuminance(red, green, blue);
+  const darkTextLuminance = getRelativeLuminance(11, 18, 32);
+  const darkTextContrast =
+    (Math.max(backgroundLuminance, darkTextLuminance) + 0.05) /
+    (Math.min(backgroundLuminance, darkTextLuminance) + 0.05);
+  const lightTextContrast = 1.05 / (backgroundLuminance + 0.05);
 
-  return luminance > 0.72 ? '#0b1220' : '#ffffff';
+  return darkTextContrast > lightTextContrast ? '#0b1220' : '#ffffff';
 }
 
 function getRelativeLuminance(red: number, green: number, blue: number) {
@@ -3433,36 +3438,36 @@ function App() {
     root.style.setProperty('--accent', accentColor);
     root.style.setProperty('--accent-strong', accentColor);
     root.style.setProperty('--accent-contrast', accentContrast);
-    root.style.setProperty('--bg', isLightTheme ? '#eef2f5' : '#0e131c');
-    root.style.setProperty('--chrome', isLightTheme ? '#f8fafb' : '#22272f');
-    root.style.setProperty('--sidebar', isLightTheme ? '#f4f7f9' : '#22272f');
-    root.style.setProperty('--sidebar-active', isLightTheme ? '#e8eef2' : '#3a3f49');
-    root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111722');
-    root.style.setProperty('--surface-soft', isLightTheme ? '#f3f6f8' : '#151b26');
-    root.style.setProperty('--surface-strong', isLightTheme ? '#e3eaef' : '#202631');
-    root.style.setProperty('--surface-elevated', isLightTheme ? '#f8fafb' : '#111722');
-    root.style.setProperty('--surface-input', isLightTheme ? '#f9fbfc' : '#202631');
-    root.style.setProperty('--surface-control', isLightTheme ? '#ffffff' : '#151b25');
-    root.style.setProperty('--surface-hover', isLightTheme ? '#ebf1f4' : 'rgba(255, 255, 255, 0.06)');
+    root.style.setProperty('--bg', isLightTheme ? '#eef2f5' : '#080e16');
+    root.style.setProperty('--chrome', isLightTheme ? '#f8fafb' : '#1b222b');
+    root.style.setProperty('--sidebar', isLightTheme ? '#f4f7f9' : '#171f29');
+    root.style.setProperty('--sidebar-active', isLightTheme ? '#e8eef2' : '#263441');
+    root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111b28');
+    root.style.setProperty('--surface-soft', isLightTheme ? '#f3f6f8' : '#182433');
+    root.style.setProperty('--surface-strong', isLightTheme ? '#e3eaef' : '#1d2a39');
+    root.style.setProperty('--surface-elevated', isLightTheme ? '#f8fafb' : '#0f1823');
+    root.style.setProperty('--surface-input', isLightTheme ? '#f9fbfc' : '#1d2a39');
+    root.style.setProperty('--surface-control', isLightTheme ? '#ffffff' : '#141f2c');
+    root.style.setProperty('--surface-hover', isLightTheme ? '#ebf1f4' : 'rgba(137, 175, 204, 0.08)');
     root.style.setProperty('--surface-icon', isLightTheme ? '#e8f0f4' : '#143149');
-    root.style.setProperty('--surface-panel', isLightTheme ? '#ffffff' : 'rgba(17, 23, 34, 0.98)');
-    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(33, 50, 66, 0.035)' : 'rgba(255, 255, 255, 0.035)');
-    root.style.setProperty('--surface-pill', isLightTheme ? '#e3eaef' : '#171d28');
+    root.style.setProperty('--surface-panel', isLightTheme ? '#ffffff' : 'rgba(15, 24, 35, 0.98)');
+    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(33, 50, 66, 0.035)' : 'rgba(148, 163, 184, 0.04)');
+    root.style.setProperty('--surface-pill', isLightTheme ? '#e3eaef' : '#182433');
     root.style.setProperty('--surface-success-soft', isLightTheme ? 'rgba(34, 160, 90, 0.08)' : 'rgba(119, 244, 197, 0.08)');
     root.style.setProperty('--surface-success-border', isLightTheme ? 'rgba(34, 160, 90, 0.22)' : 'rgba(119, 244, 197, 0.22)');
     root.style.setProperty('--text-success', isLightTheme ? '#1a8a55' : '#d8fff1');
-    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(248, 250, 251, 0.97)' : 'rgba(17, 23, 34, 0.94)');
+    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(248, 250, 251, 0.97)' : 'rgba(15, 24, 35, 0.96)');
     root.style.setProperty('--toast-text', isLightTheme ? '#275f78' : '#d8f4ff');
-    root.style.setProperty('--text', isLightTheme ? '#23313d' : '#f4f7fb');
-    root.style.setProperty('--muted', isLightTheme ? '#6b7986' : '#939cab');
-    root.style.setProperty('--muted-strong', isLightTheme ? '#435361' : '#c3cad5');
-    root.style.setProperty('--text-secondary', isLightTheme ? '#526270' : '#aeb7c6');
-    root.style.setProperty('--text-muted', isLightTheme ? '#75828e' : '#778292');
-    root.style.setProperty('--border', isLightTheme ? 'rgba(45, 64, 80, 0.14)' : 'rgba(178, 188, 205, 0.13)');
-    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(45, 64, 80, 0.22)' : 'rgba(178, 188, 205, 0.24)');
-    root.style.setProperty('--window-border', isLightTheme ? 'rgba(45, 64, 80, 0.12)' : 'rgba(178, 188, 205, 0.18)');
-    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(45, 64, 80, 0.09)' : 'rgba(178, 188, 205, 0.12)');
-    root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(45, 64, 80, 0.07)' : 'rgba(255, 255, 255, 0.08)');
+    root.style.setProperty('--text', isLightTheme ? '#23313d' : '#e8eef5');
+    root.style.setProperty('--muted', isLightTheme ? '#6b7986' : '#8d9aaa');
+    root.style.setProperty('--muted-strong', isLightTheme ? '#435361' : '#bcc6d1');
+    root.style.setProperty('--text-secondary', isLightTheme ? '#526270' : '#a8b3c0');
+    root.style.setProperty('--text-muted', isLightTheme ? '#75828e' : '#96a3b3');
+    root.style.setProperty('--border', isLightTheme ? 'rgba(45, 64, 80, 0.14)' : 'rgba(151, 166, 184, 0.15)');
+    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(45, 64, 80, 0.22)' : 'rgba(151, 166, 184, 0.27)');
+    root.style.setProperty('--window-border', isLightTheme ? 'rgba(45, 64, 80, 0.12)' : 'rgba(151, 166, 184, 0.2)');
+    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(45, 64, 80, 0.09)' : 'rgba(151, 166, 184, 0.13)');
+    root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(45, 64, 80, 0.07)' : 'rgba(151, 166, 184, 0.1)');
     root.style.setProperty('--danger-hover-bg', isLightTheme ? 'rgba(200, 48, 78, 0.12)' : 'rgba(255, 111, 143, 0.18)');
     root.style.setProperty('--danger-hover-text', isLightTheme ? '#d63a5e' : '#ffd8e1');
     root.style.setProperty('--danger-soft', isLightTheme ? 'rgba(200, 48, 78, 0.08)' : 'rgba(255, 111, 143, 0.12)');
@@ -3474,11 +3479,11 @@ function App() {
     root.style.setProperty('--accent-border', toRgba(accentColor, isLightTheme ? 0.25 : 0.42));
     root.style.setProperty('--accent-strong-border', toRgba(accentColor, isLightTheme ? 0.38 : 0.58));
     root.style.setProperty('--shadow', isLightTheme ? 'rgba(33, 50, 66, 0.09)' : 'rgba(0, 0, 0, 0.34)');
-    root.style.setProperty('--shadow-soft', isLightTheme ? '0 1px 2px rgba(33, 50, 66, 0.05), 0 5px 16px rgba(33, 50, 66, 0.035)' : '0 18px 42px rgba(0, 0, 0, 0.18)');
-    root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(33, 50, 66, 0.1)' : '0 18px 36px rgba(0, 0, 0, 0.32)');
-    root.style.setProperty('--shadow-panel', isLightTheme ? '0 20px 52px rgba(33, 50, 66, 0.13)' : '0 24px 70px rgba(0, 0, 0, 0.42)');
-    root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 24px 64px rgba(33, 50, 66, 0.16)' : '0 24px 70px rgba(0, 0, 0, 0.46)');
-    root.style.setProperty('--toggle-off', isLightTheme ? '#dce5eb' : '#232b3b');
+    root.style.setProperty('--shadow-soft', isLightTheme ? '0 1px 2px rgba(33, 50, 66, 0.05), 0 5px 16px rgba(33, 50, 66, 0.035)' : '0 10px 28px rgba(0, 0, 0, 0.18)');
+    root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(33, 50, 66, 0.1)' : '0 16px 38px rgba(0, 0, 0, 0.28)');
+    root.style.setProperty('--shadow-panel', isLightTheme ? '0 20px 52px rgba(33, 50, 66, 0.13)' : '0 24px 64px rgba(0, 0, 0, 0.38)');
+    root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 24px 64px rgba(33, 50, 66, 0.16)' : '0 28px 76px rgba(0, 0, 0, 0.44)');
+    root.style.setProperty('--toggle-off', isLightTheme ? '#dce5eb' : '#263342');
     root.style.colorScheme = isLightTheme ? 'light' : 'dark';
     root.setAttribute('data-theme', effectiveTheme);
     try {
