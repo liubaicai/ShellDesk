@@ -9,6 +9,7 @@ import {
   Network,
   Pencil,
   Route,
+  Terminal,
   Trash2,
 } from 'lucide-react';
 
@@ -205,8 +206,22 @@ function HostListPanel<THost extends HostListPanelHost>({
                         </span>
                       </div>
 
-                      <div className="host-card-recent">
-                        <span>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</span>
+                      <div className="host-card-footer">
+                        <span className="host-card-recent">
+                          <span>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="host-card-connect"
+                          disabled={isConnecting}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpenHost(host);
+                          }}
+                        >
+                          <Terminal aria-hidden="true" />
+                          {t('app.host.card.connect', appLanguage)}
+                        </button>
                       </div>
                     </article>
                   );

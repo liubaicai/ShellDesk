@@ -380,3 +380,158 @@
   .agent-conversation,
   .agent-composer-wrap { padding-left: 14px; padding-right: 14px; }
 }
+
+/* Host-list visual alignment */
+
+.agent-workspace {
+  grid-template-columns: 248px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.agent-host-pane {
+  border-color: var(--border);
+  background: var(--surface-elevated);
+}
+
+.agent-pane-header,
+.agent-canvas-header {
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  flex-basis: 56px;
+  border-color: var(--border);
+}
+
+.agent-pane-header .agent-return-hosts,
+.agent-host-row strong,
+.agent-welcome h1,
+.agent-message-content,
+.agent-suggestion-copy strong {
+  color: var(--text);
+}
+
+.agent-host-list-heading {
+  padding: 16px 16px 7px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.agent-task-row,
+.agent-task-expand,
+.agent-host-row {
+  border-radius: 7px;
+}
+
+.agent-host-row:hover,
+.agent-task-expand:hover {
+  background: var(--surface-hover);
+}
+
+.agent-host-row.selected,
+.agent-task-row.selected,
+.agent-task-row:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.agent-host-icon {
+  border-color: var(--border);
+  border-radius: 7px;
+  background: var(--surface-control);
+}
+
+.agent-pane-footer,
+.agent-canvas-header {
+  border-color: var(--border);
+}
+
+.agent-canvas {
+  background:
+    radial-gradient(circle at 58% 12%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
+    var(--bg);
+}
+
+.agent-welcome-mark {
+  width: 54px;
+  height: 54px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.agent-welcome-mark svg {
+  width: 27px;
+  height: 27px;
+}
+
+.agent-welcome-context,
+.agent-suggestion-copy small,
+.agent-message-content > small,
+.agent-canvas-header small {
+  color: var(--muted);
+}
+
+.agent-suggestions {
+  gap: 10px;
+}
+
+.agent-suggestions button {
+  min-height: 118px;
+  gap: 18px;
+  border-color: var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+}
+
+.agent-suggestions button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--surface) 82%, var(--surface-soft));
+  box-shadow: var(--shadow-float);
+  transform: translateY(-1px);
+}
+
+.agent-context-bar {
+  border-color: var(--border);
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-elevated);
+  color: var(--muted);
+}
+
+.agent-composer {
+  border-color: var(--border-strong);
+  border-radius: 0 0 8px 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.agent-composer textarea {
+  color: var(--text);
+}
+
+.agent-composer textarea::placeholder,
+.agent-model-select,
+.agent-model-control > svg {
+  color: var(--muted);
+}
+
+.agent-composer button {
+  border-radius: 7px;
+}
+
+@media (max-width: 920px) {
+  .agent-workspace {
+    grid-template-columns: 216px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .agent-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

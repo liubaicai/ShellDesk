@@ -12,6 +12,8 @@ import {
   Monitor,
   MoreHorizontal,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightOpen,
   Plus,
   RefreshCw,
@@ -78,9 +80,9 @@ const terminalSnippetLanguageChoices = new Set([
   'dockerfile',
   'diff',
 ]);
-const hostGroupPanelCollapsedStorageKey = 'shelldesk:host-groups-collapsed';
 const hostListSortModeStorageKey = 'shelldesk:host-list-sort-mode';
 const hostPageSizeStorageKey = 'shelldesk:host-page-size';
+const sideNavCollapsedStorageKey = 'shelldesk:side-nav-collapsed';
 const themePreloadStorageKey = 'shelldesk:theme-preload';
 const dismissedUpdateReadyVersionStorageKey = 'shelldesk:update-ready-dismissed-version';
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
@@ -502,6 +504,49 @@ function getReadableTextColor(hexColor: string) {
   return luminance > 0.72 ? '#0b1220' : '#ffffff';
 }
 
+function getRelativeLuminance(red: number, green: number, blue: number) {
+  const toLinearChannel = (channel: number) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+
+  return 0.2126 * toLinearChannel(red) + 0.7152 * toLinearChannel(green) + 0.0722 * toLinearChannel(blue);
+}
+
+function getLightThemeAccentColor(hexColor: string) {
+  const channels = readHexColorChannels(hexColor);
+  const whiteContrast = 1.05 / (getRelativeLuminance(channels.red, channels.green, channels.blue) + 0.05);
+
+  if (whiteContrast >= 4.5) {
+    return hexColor;
+  }
+
+  let minimumScale = 0;
+  let maximumScale = 1;
+  let accessibleChannels = channels;
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const scale = (minimumScale + maximumScale) / 2;
+    const candidate = {
+      red: Math.round(channels.red * scale),
+      green: Math.round(channels.green * scale),
+      blue: Math.round(channels.blue * scale),
+    };
+    const contrast = 1.05 / (getRelativeLuminance(candidate.red, candidate.green, candidate.blue) + 0.05);
+
+    if (contrast >= 4.5) {
+      accessibleChannels = candidate;
+      minimumScale = scale;
+    } else {
+      maximumScale = scale;
+    }
+  }
+
+  return `#${[accessibleChannels.red, accessibleChannels.green, accessibleChannels.blue]
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
 function getRemoteDesktopLayoutAppKeys(items: ShellDeskDesktopLayoutItem[]) {
   return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
 }
@@ -906,6 +951,7 @@ function toKeyFormState(key: SshKey): KeyFormState {
 type AuthMethod = 'password' | 'key';
 type ConnectionAuthMethod = AuthMethod | 'agent';
 type HostConnectionStatus = 'unknown' | 'success' | 'failed';
+type HostStatusFilter = 'all' | 'ready' | 'failed' | 'never';
 type PrivilegeMode = 'sudo' | 'su-root';
 const defaultKeepaliveIntervalSeconds = 15;
 const defaultKeepaliveIntervalMs = defaultKeepaliveIntervalSeconds * 1000;
@@ -1800,6 +1846,22 @@ function storeHostPageSize(pageSize: HostPageSize) {
   }
 }
 
+function readSideNavCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(sideNavCollapsedStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function storeSideNavCollapsed(collapsed: boolean) {
+  try {
+    window.localStorage.setItem(sideNavCollapsedStorageKey, collapsed ? 'true' : 'false');
+  } catch {
+    // Ignore localStorage write failures in restricted environments.
+  }
+}
+
 function getUpdateReadyVersionKey(status: Pick<ShellDeskUpdateStatus, 'version'>) {
   return (status.version || 'unknown').trim() || 'unknown';
 }
@@ -1945,24 +2007,6 @@ function readStoredTerminalSnippets(fallbackSnippets: ShellDeskTerminalSnippet[]
 function storeTerminalSnippets(snippets: ShellDeskTerminalSnippet[]) {
   try {
     window.localStorage.setItem(terminalSnippetsStorageKey, JSON.stringify(snippets));
-  } catch {
-    // Ignore localStorage write failures in restricted environments.
-  }
-}
-
-function readHostGroupPanelCollapsed() {
-  try {
-    const storedValue = window.localStorage.getItem(hostGroupPanelCollapsedStorageKey);
-
-    return storedValue == null ? true : storedValue === 'true';
-  } catch {
-    return true;
-  }
-}
-
-function storeHostGroupPanelCollapsed(collapsed: boolean) {
-  try {
-    window.localStorage.setItem(hostGroupPanelCollapsedStorageKey, collapsed ? 'true' : 'false');
   } catch {
     // Ignore localStorage write failures in restricted environments.
   }
@@ -2383,11 +2427,12 @@ function App() {
   const [quickConnectInput, setQuickConnectInput] = useState('');
   const [keySearchQuery, setKeySearchQuery] = useState('');
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+  const [hostStatusFilter, setHostStatusFilter] = useState<HostStatusFilter>('all');
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
-  const [isHostGroupPanelCollapsed, setIsHostGroupPanelCollapsed] = useState(readHostGroupPanelCollapsed);
   const [hostListSortMode, setHostListSortMode] = useState<HostListSortMode>(readHostListSortMode);
   const [hostPageSize, setHostPageSize] = useState<HostPageSize>(readHostPageSize);
   const [hostPage, setHostPage] = useState(1);
+  const [isSideNavCollapsed, setIsSideNavCollapsed] = useState(readSideNavCollapsed);
   const [formError, setFormError] = useState('');
   const [keyFormError, setKeyFormError] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -2514,10 +2559,47 @@ function App() {
     return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name, appLocale));
   }, [appLanguage, appLocale, hosts]);
 
+  const hostStatusCounts = useMemo(() => {
+    const counts = { all: hosts.length, ready: 0, failed: 0, never: 0 };
+
+    for (const host of hosts) {
+      if (host.lastConnectionStatus === 'failed') {
+        counts.failed += 1;
+      } else if (host.lastConnectionStatus === 'success') {
+        counts.ready += 1;
+      } else {
+        counts.never += 1;
+      }
+    }
+
+    return counts;
+  }, [hosts]);
+
+  const latestConnectedHost = useMemo(() => {
+    let latest: Host | null = null;
+
+    for (const host of hosts) {
+      if (!host.lastConnectionAt) {
+        continue;
+      }
+
+      if (!latest || host.lastConnectionAt > latest.lastConnectionAt) {
+        latest = host;
+      }
+    }
+
+    return latest;
+  }, [hosts]);
+
   const filteredHosts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     return hosts.filter((host) => {
+      const matchesStatus =
+        hostStatusFilter === 'all' ||
+        (hostStatusFilter === 'failed' && host.lastConnectionStatus === 'failed') ||
+        (hostStatusFilter === 'ready' && host.lastConnectionStatus === 'success') ||
+        (hostStatusFilter === 'never' && host.lastConnectionStatus !== 'failed' && host.lastConnectionStatus !== 'success');
       const hostKey = sshKeyById.get(host.keyId) ?? null;
       const jumpHost = host.jumpHostId ? hostById.get(host.jumpHostId) ?? null : null;
       const proxyProfile = host.proxyProfileId ? proxyProfileById.get(host.proxyProfileId) ?? null : null;
@@ -2549,9 +2631,9 @@ function App() {
           .toLowerCase()
           .includes(query);
 
-      return matchesGroup && matchesQuery;
+      return matchesStatus && matchesGroup && matchesQuery;
     }).sort((left, right) => compareHostsByHostListSortMode(left, right, hostListSortMode, appLocale));
-  }, [activeGroupKey, appLanguage, appLocale, hostById, hostListSortMode, hosts, proxyProfileById, searchQuery, sshKeyById]);
+  }, [activeGroupKey, appLanguage, appLocale, hostById, hostListSortMode, hostStatusFilter, hosts, proxyProfileById, searchQuery, sshKeyById]);
   const hostPageCount = Math.max(1, Math.ceil(filteredHosts.length / hostPageSize));
   const currentHostPage = Math.min(hostPage, hostPageCount);
   const pagedHosts = useMemo(() => {
@@ -2581,7 +2663,6 @@ function App() {
     });
   }, [keySearchQuery, sshKeys]);
 
-  const activeGroupName = hostGroups.find((group) => group.key === activeGroupKey)?.name;
   const selectedHost = useMemo(() => {
     if (!selectedHostId) {
       return null;
@@ -3184,10 +3265,6 @@ function App() {
   }, [isConnectionWindow, showUpdateReadyNotice]);
 
   useEffect(() => {
-    storeHostGroupPanelCollapsed(isHostGroupPanelCollapsed);
-  }, [isHostGroupPanelCollapsed]);
-
-  useEffect(() => {
     storeHostListSortMode(hostListSortMode);
   }, [hostListSortMode]);
 
@@ -3196,8 +3273,12 @@ function App() {
   }, [hostPageSize]);
 
   useEffect(() => {
+    storeSideNavCollapsed(isSideNavCollapsed);
+  }, [isSideNavCollapsed]);
+
+  useEffect(() => {
     setHostPage(1);
-  }, [activeGroupKey, hostListSortMode, hostPageSize, hostViewMode, searchQuery]);
+  }, [activeGroupKey, hostListSortMode, hostPageSize, hostStatusFilter, hostViewMode, searchQuery]);
 
   useEffect(() => {
     if (selectedHostId && !filteredHosts.some((host) => host.id === selectedHostId)) {
@@ -3231,7 +3312,7 @@ function App() {
     const closeOpenHostCardMenus = (target: EventTarget | null) => {
       const targetNode = target instanceof Node ? target : null;
 
-      document.querySelectorAll<HTMLDetailsElement>('details.host-card-menu[open], details.host-group-select-menu[open], details.toolbar-more-menu[open]').forEach((menu) => {
+      document.querySelectorAll<HTMLDetailsElement>('details.host-card-menu[open], details.toolbar-more-menu[open]').forEach((menu) => {
         if (targetNode && menu.contains(targetNode)) {
           return;
         }
@@ -3346,58 +3427,58 @@ function App() {
     const prefersLight = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches;
     const effectiveTheme = settings.theme === 'system' ? (prefersLight ? 'light' : 'dark') : settings.theme;
     const isLightTheme = effectiveTheme === 'light';
-    const accentColor = settings.accentColor;
+    const accentColor = isLightTheme ? getLightThemeAccentColor(settings.accentColor) : settings.accentColor;
     const accentContrast = getReadableTextColor(accentColor);
 
     root.style.setProperty('--accent', accentColor);
     root.style.setProperty('--accent-strong', accentColor);
     root.style.setProperty('--accent-contrast', accentContrast);
-    root.style.setProperty('--bg', isLightTheme ? '#f6f7f8' : '#0e131c');
-    root.style.setProperty('--chrome', isLightTheme ? '#fafafa' : '#22272f');
-    root.style.setProperty('--sidebar', isLightTheme ? '#f7f8fa' : '#22272f');
-    root.style.setProperty('--sidebar-active', isLightTheme ? '#eef1f4' : '#3a3f49');
+    root.style.setProperty('--bg', isLightTheme ? '#eef2f5' : '#0e131c');
+    root.style.setProperty('--chrome', isLightTheme ? '#f8fafb' : '#22272f');
+    root.style.setProperty('--sidebar', isLightTheme ? '#f4f7f9' : '#22272f');
+    root.style.setProperty('--sidebar-active', isLightTheme ? '#e8eef2' : '#3a3f49');
     root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111722');
-    root.style.setProperty('--surface-soft', isLightTheme ? '#f3f4f6' : '#151b26');
-    root.style.setProperty('--surface-strong', isLightTheme ? '#e6e8ec' : '#202631');
-    root.style.setProperty('--surface-elevated', isLightTheme ? '#fafafa' : '#111722');
-    root.style.setProperty('--surface-input', isLightTheme ? '#ffffff' : '#202631');
+    root.style.setProperty('--surface-soft', isLightTheme ? '#f3f6f8' : '#151b26');
+    root.style.setProperty('--surface-strong', isLightTheme ? '#e3eaef' : '#202631');
+    root.style.setProperty('--surface-elevated', isLightTheme ? '#f8fafb' : '#111722');
+    root.style.setProperty('--surface-input', isLightTheme ? '#f9fbfc' : '#202631');
     root.style.setProperty('--surface-control', isLightTheme ? '#ffffff' : '#151b25');
-    root.style.setProperty('--surface-hover', isLightTheme ? '#eef1f4' : 'rgba(255, 255, 255, 0.06)');
-    root.style.setProperty('--surface-icon', isLightTheme ? '#eef3f8' : '#143149');
+    root.style.setProperty('--surface-hover', isLightTheme ? '#ebf1f4' : 'rgba(255, 255, 255, 0.06)');
+    root.style.setProperty('--surface-icon', isLightTheme ? '#e8f0f4' : '#143149');
     root.style.setProperty('--surface-panel', isLightTheme ? '#ffffff' : 'rgba(17, 23, 34, 0.98)');
-    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(31, 35, 40, 0.035)' : 'rgba(255, 255, 255, 0.035)');
-    root.style.setProperty('--surface-pill', isLightTheme ? '#dfe3e8' : '#171d28');
+    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(33, 50, 66, 0.035)' : 'rgba(255, 255, 255, 0.035)');
+    root.style.setProperty('--surface-pill', isLightTheme ? '#e3eaef' : '#171d28');
     root.style.setProperty('--surface-success-soft', isLightTheme ? 'rgba(34, 160, 90, 0.08)' : 'rgba(119, 244, 197, 0.08)');
     root.style.setProperty('--surface-success-border', isLightTheme ? 'rgba(34, 160, 90, 0.22)' : 'rgba(119, 244, 197, 0.22)');
     root.style.setProperty('--text-success', isLightTheme ? '#1a8a55' : '#d8fff1');
-    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(248, 249, 250, 0.96)' : 'rgba(17, 23, 34, 0.94)');
-    root.style.setProperty('--toast-text', isLightTheme ? '#1a6d94' : '#d8f4ff');
-    root.style.setProperty('--text', isLightTheme ? '#1f2328' : '#f4f7fb');
-    root.style.setProperty('--muted', isLightTheme ? '#687280' : '#939cab');
-    root.style.setProperty('--muted-strong', isLightTheme ? '#3f4a56' : '#c3cad5');
-    root.style.setProperty('--text-secondary', isLightTheme ? '#56616e' : '#aeb7c6');
-    root.style.setProperty('--text-muted', isLightTheme ? '#6e7781' : '#778292');
-    root.style.setProperty('--border', isLightTheme ? 'rgba(31, 35, 40, 0.12)' : 'rgba(178, 188, 205, 0.13)');
-    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(31, 35, 40, 0.2)' : 'rgba(178, 188, 205, 0.24)');
-    root.style.setProperty('--window-border', isLightTheme ? 'rgba(31, 35, 40, 0.1)' : 'rgba(178, 188, 205, 0.18)');
-    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(31, 35, 40, 0.08)' : 'rgba(178, 188, 205, 0.12)');
-    root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(31, 35, 40, 0.06)' : 'rgba(255, 255, 255, 0.08)');
+    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(248, 250, 251, 0.97)' : 'rgba(17, 23, 34, 0.94)');
+    root.style.setProperty('--toast-text', isLightTheme ? '#275f78' : '#d8f4ff');
+    root.style.setProperty('--text', isLightTheme ? '#23313d' : '#f4f7fb');
+    root.style.setProperty('--muted', isLightTheme ? '#6b7986' : '#939cab');
+    root.style.setProperty('--muted-strong', isLightTheme ? '#435361' : '#c3cad5');
+    root.style.setProperty('--text-secondary', isLightTheme ? '#526270' : '#aeb7c6');
+    root.style.setProperty('--text-muted', isLightTheme ? '#75828e' : '#778292');
+    root.style.setProperty('--border', isLightTheme ? 'rgba(45, 64, 80, 0.14)' : 'rgba(178, 188, 205, 0.13)');
+    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(45, 64, 80, 0.22)' : 'rgba(178, 188, 205, 0.24)');
+    root.style.setProperty('--window-border', isLightTheme ? 'rgba(45, 64, 80, 0.12)' : 'rgba(178, 188, 205, 0.18)');
+    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(45, 64, 80, 0.09)' : 'rgba(178, 188, 205, 0.12)');
+    root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(45, 64, 80, 0.07)' : 'rgba(255, 255, 255, 0.08)');
     root.style.setProperty('--danger-hover-bg', isLightTheme ? 'rgba(200, 48, 78, 0.12)' : 'rgba(255, 111, 143, 0.18)');
     root.style.setProperty('--danger-hover-text', isLightTheme ? '#d63a5e' : '#ffd8e1');
     root.style.setProperty('--danger-soft', isLightTheme ? 'rgba(200, 48, 78, 0.08)' : 'rgba(255, 111, 143, 0.12)');
     root.style.setProperty('--danger-border', isLightTheme ? 'rgba(200, 48, 78, 0.32)' : 'rgba(255, 111, 143, 0.42)');
     root.style.setProperty('--danger-text-soft', isLightTheme ? '#c8304e' : '#ffd3dc');
-    root.style.setProperty('--focus-border', toRgba(accentColor, isLightTheme ? 0.5 : 0.46));
-    root.style.setProperty('--focus-ring', toRgba(accentColor, isLightTheme ? 0.1 : 0.12));
-    root.style.setProperty('--accent-soft', toRgba(accentColor, isLightTheme ? 0.12 : 0.16));
-    root.style.setProperty('--accent-border', toRgba(accentColor, isLightTheme ? 0.36 : 0.42));
-    root.style.setProperty('--accent-strong-border', toRgba(accentColor, isLightTheme ? 0.5 : 0.58));
-    root.style.setProperty('--shadow', isLightTheme ? 'rgba(31, 35, 40, 0.1)' : 'rgba(0, 0, 0, 0.34)');
-    root.style.setProperty('--shadow-soft', isLightTheme ? '0 6px 18px rgba(31, 35, 40, 0.06)' : '0 18px 42px rgba(0, 0, 0, 0.18)');
-    root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(31, 35, 40, 0.12)' : '0 18px 36px rgba(0, 0, 0, 0.32)');
-    root.style.setProperty('--shadow-panel', isLightTheme ? '0 16px 48px rgba(31, 35, 40, 0.14)' : '0 24px 70px rgba(0, 0, 0, 0.42)');
-    root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 16px 48px rgba(31, 35, 40, 0.16)' : '0 24px 70px rgba(0, 0, 0, 0.46)');
-    root.style.setProperty('--toggle-off', isLightTheme ? '#dfe3e8' : '#232b3b');
+    root.style.setProperty('--focus-border', toRgba(accentColor, isLightTheme ? 0.42 : 0.46));
+    root.style.setProperty('--focus-ring', toRgba(accentColor, isLightTheme ? 0.11 : 0.12));
+    root.style.setProperty('--accent-soft', toRgba(accentColor, isLightTheme ? 0.09 : 0.16));
+    root.style.setProperty('--accent-border', toRgba(accentColor, isLightTheme ? 0.25 : 0.42));
+    root.style.setProperty('--accent-strong-border', toRgba(accentColor, isLightTheme ? 0.38 : 0.58));
+    root.style.setProperty('--shadow', isLightTheme ? 'rgba(33, 50, 66, 0.09)' : 'rgba(0, 0, 0, 0.34)');
+    root.style.setProperty('--shadow-soft', isLightTheme ? '0 1px 2px rgba(33, 50, 66, 0.05), 0 5px 16px rgba(33, 50, 66, 0.035)' : '0 18px 42px rgba(0, 0, 0, 0.18)');
+    root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(33, 50, 66, 0.1)' : '0 18px 36px rgba(0, 0, 0, 0.32)');
+    root.style.setProperty('--shadow-panel', isLightTheme ? '0 20px 52px rgba(33, 50, 66, 0.13)' : '0 24px 70px rgba(0, 0, 0, 0.42)');
+    root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 24px 64px rgba(33, 50, 66, 0.16)' : '0 24px 70px rgba(0, 0, 0, 0.46)');
+    root.style.setProperty('--toggle-off', isLightTheme ? '#dce5eb' : '#232b3b');
     root.style.colorScheme = isLightTheme ? 'light' : 'dark';
     root.setAttribute('data-theme', effectiveTheme);
     try {
@@ -4710,14 +4791,9 @@ function App() {
     await connectHost(credentialHost, credentialForm, 'credential', credentialLaunchTarget);
   };
 
-  const toggleHostGroupPanel = () => {
-    setIsHostGroupPanelCollapsed((current) => !current);
-  };
-
   const openNavigationItem = (item: NavigationItem) => {
     if (item.key === 'hosts') {
       setActivePage('hosts');
-      setIsHostGroupPanelCollapsed(true);
       return;
     }
 
@@ -4732,6 +4808,12 @@ function App() {
 
     return activePage === item.page;
   };
+
+  const toggleSideNav = () => {
+    setIsSideNavCollapsed((current) => !current);
+  };
+
+  const sideNavToggleLabel = t(isSideNavCollapsed ? 'app.nav.expand' : 'app.nav.collapse', appLanguage);
 
   const openUtilityPage = (page: AppPage) => {
     setActivePage(page);
@@ -4751,7 +4833,6 @@ function App() {
 
   const selectHostGroup = (groupKey: string | null) => {
     setActivePage('hosts');
-    setIsHostGroupPanelCollapsed(false);
     setActiveGroupKey(groupKey);
   };
 
@@ -4848,7 +4929,6 @@ function App() {
       ? t('app.credential.saveKeyPassphrase', appLanguage)
       : t('app.credential.rememberPassword', appLanguage);
   const maximizeWindowLabel = t(isWindowMaximized ? 'app.titlebar.restore' : 'app.titlebar.maximize', appLanguage);
-  const hostGroupToggleLabel = t(isHostGroupPanelCollapsed ? 'app.host.groupsShow' : 'app.host.groupsHide', appLanguage);
   const hostEditorTitle = t(editingHost ? 'app.host.editor.editAria' : 'app.host.editor.newAria', appLanguage);
   const hostFormUsesRootLogin = isRootLoginUsername(form.username);
   const keyEditorTitle = editingKey
@@ -5249,7 +5329,33 @@ function App() {
         </main>
       ) : (
       <div className="app-layout">
-        <aside className="side-nav">
+        <aside className={`side-nav ${isSideNavCollapsed ? 'collapsed' : ''}`}>
+          {isSideNavCollapsed ? (
+            <button
+              type="button"
+              className="side-nav-toggle"
+              onClick={toggleSideNav}
+              aria-label={sideNavToggleLabel}
+              title={sideNavToggleLabel}
+              aria-expanded={!isSideNavCollapsed}
+            >
+              <PanelLeftOpen aria-hidden="true" />
+            </button>
+          ) : (
+            <div className="side-nav-header">
+              <span className="side-nav-brand">ShellDesk</span>
+              <button
+                type="button"
+                className="side-nav-toggle"
+                onClick={toggleSideNav}
+                aria-label={sideNavToggleLabel}
+                title={sideNavToggleLabel}
+                aria-expanded={!isSideNavCollapsed}
+              >
+                <PanelLeftClose aria-hidden="true" />
+              </button>
+            </div>
+          )}
           <nav className="feature-nav" aria-label={t('app.nav.feature', appLanguage)}>
             {navigationItems.map((item) => (
               <Fragment key={item.key}>
@@ -5259,9 +5365,10 @@ function App() {
                   onClick={() => openNavigationItem(item)}
                   onFocus={item.key === 'hosts' ? undefined : preloadFullMessageCatalog}
                   onMouseEnter={item.key === 'hosts' ? undefined : preloadFullMessageCatalog}
+                  title={isSideNavCollapsed ? item.label[appLanguage] : undefined}
                 >
                   <span className="nav-icon"><ShellDeskNavIcon name={item.icon} /></span>
-                  {item.label[appLanguage]}
+                  {!isSideNavCollapsed ? item.label[appLanguage] : null}
                 </button>
                 {item.key === 'hosts' ? <button
                   type="button"
@@ -5269,9 +5376,10 @@ function App() {
                   onClick={openAgentWorkspace}
                   onFocus={preloadFullMessageCatalog}
                   onMouseEnter={preloadFullMessageCatalog}
+                  title={isSideNavCollapsed ? (appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace') : undefined}
                 >
                   <span className="nav-icon"><ShellDeskNavIcon name="agent" /></span>
-                  {appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace'}
+                  {!isSideNavCollapsed ? (appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace') : null}
                 </button> : null}
               </Fragment>
             ))}
@@ -5283,10 +5391,10 @@ function App() {
             onClick={() => setActivePage('settings')}
             onFocus={preloadFullMessageCatalog}
             onMouseEnter={preloadFullMessageCatalog}
-            title={syncConflictBadgeLabel || undefined}
+            title={isSideNavCollapsed ? t('app.nav.settings', appLanguage) : (syncConflictBadgeLabel || undefined)}
           >
             <span className="nav-icon"><ShellDeskNavIcon name="settings" /></span>
-            {t('app.nav.settings', appLanguage)}
+            {!isSideNavCollapsed ? t('app.nav.settings', appLanguage) : null}
             {syncConflictCount ? <span className="settings-sync-dot" aria-label={syncConflictBadgeLabel} /> : null}
           </button>
 
@@ -5295,42 +5403,40 @@ function App() {
         <main className="vault-page">
           {activePage === 'hosts' ? (
             <>
-              <div className="command-bar quick-command-bar no-drag">
-                <label className="quick-connect-field">
-                  <Terminal aria-hidden="true" />
-                  <input
-                    type="text"
-                    placeholder="ssh user@host -p 22 -i ~/.ssh/id_rsa"
-                    value={quickConnectInput}
-                    onChange={(event) => setQuickConnectInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        void connectCommandBarInput();
-                      }
-                    }}
-                  />
-                </label>
-
-                <button type="button" className="primary-action quick-connect-button" onClick={() => void connectCommandBarInput()} disabled={isConnectionPending}>
-                  {isQuickConnecting ? t('app.host.connectingButton', appLanguage) : t('app.host.connectButton', appLanguage)}
-                </button>
-
-                <button
-                  type="button"
-                  className="command-button local-connect-button"
-                  onClick={() => void openLocalDesktop()}
-                  disabled={isConnectionPending}
-                >
-                  <Monitor aria-hidden="true" />
-                  {isLocalOpening ? t('app.host.localOpeningButton', appLanguage) : (appLanguage === 'zh-CN' ? '本地连接' : 'Local connection')}
-                </button>
-              </div>
-
               <section className="vault-content hosts-content hosts-workbench">
                 <section className="hosts-table-area" aria-label={t('app.host.all', appLanguage)}>
                   <div className="hosts-list-controls">
                     <div className="hosts-list-toolbar">
+                      <label className="quick-connect-field">
+                        <Terminal aria-hidden="true" />
+                        <input
+                          type="text"
+                          placeholder="ssh user@host -p 22 -i ~/.ssh/id_rsa"
+                          value={quickConnectInput}
+                          onChange={(event) => setQuickConnectInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void connectCommandBarInput();
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <button type="button" className="primary-action quick-connect-button" onClick={() => void connectCommandBarInput()} disabled={isConnectionPending}>
+                        {isQuickConnecting ? t('app.host.connectingButton', appLanguage) : t('app.host.connectButton', appLanguage)}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="command-button local-connect-button"
+                        onClick={() => void openLocalDesktop()}
+                        disabled={isConnectionPending}
+                      >
+                        <Monitor aria-hidden="true" />
+                        {isLocalOpening ? t('app.host.localOpeningButton', appLanguage) : (appLanguage === 'zh-CN' ? '本地连接' : 'Local')}
+                      </button>
+
                       <label className="host-search-field">
                         <Search aria-hidden="true" />
                         <input
@@ -5340,41 +5446,6 @@ function App() {
                           onChange={(event) => setSearchQuery(event.target.value)}
                         />
                       </label>
-
-                      <details className="host-group-select-menu">
-                        <summary className="host-group-select" aria-label={t('app.host.group.title', appLanguage)}>
-                          <Folder aria-hidden="true" />
-                          <span>{activeGroupName ?? (appLanguage === 'zh-CN' ? '全部分组' : 'All groups')}</span>
-                          <ChevronDown aria-hidden="true" className="host-group-select-caret" />
-                        </summary>
-                        <div className="host-group-select-panel">
-                          <button
-                            type="button"
-                            className={!activeGroupKey ? 'active' : ''}
-                            onClick={(event) => {
-                              setActiveGroupKey(null);
-                              closeNearestDetailsMenu(event.currentTarget);
-                            }}
-                          >
-                            {!activeGroupKey ? <Check aria-hidden="true" /> : <span className="toolbar-menu-spacer" aria-hidden="true" />}
-                            {appLanguage === 'zh-CN' ? '全部分组' : 'All groups'}
-                          </button>
-                          {hostGroups.map((group) => (
-                            <button
-                              key={group.key}
-                              type="button"
-                              className={activeGroupKey === group.key ? 'active' : ''}
-                              onClick={(event) => {
-                                setActiveGroupKey(group.key);
-                                closeNearestDetailsMenu(event.currentTarget);
-                              }}
-                            >
-                              {activeGroupKey === group.key ? <Check aria-hidden="true" /> : <span className="toolbar-menu-spacer" aria-hidden="true" />}
-                              {group.name}
-                            </button>
-                          ))}
-                        </div>
-                      </details>
 
                       <span className="hosts-list-toolbar-spacer" />
 
@@ -5433,74 +5504,92 @@ function App() {
                       </details>
                     </div>
 
-                    {!isHostGroupPanelCollapsed ? (
-                      <div className="host-group-strip" aria-label={t('app.host.group.title', appLanguage)}>
+                    <div className="host-status-strip" role="group" aria-label={appLanguage === 'zh-CN' ? '主机状态总览' : 'Host status overview'}>
+                      {([
+                        ['all', hostStatusCounts.all, 'app.host.overview.all'],
+                        ['ready', hostStatusCounts.ready, 'app.host.overview.ready'],
+                        ['failed', hostStatusCounts.failed, 'app.host.overview.failed'],
+                        ['never', hostStatusCounts.never, 'app.host.overview.never'],
+                      ] as const).map(([filterKey, count, labelId]) => (
                         <button
+                          key={filterKey}
                           type="button"
-                          className={`host-group-pill ${activeGroupKey ? '' : 'active'}`}
-                          onClick={() => selectHostGroup(null)}
+                          className={`host-status-chip status-${filterKey} ${hostStatusFilter === filterKey ? 'active' : ''}`}
+                          aria-pressed={hostStatusFilter === filterKey}
+                          onClick={() => setHostStatusFilter((current) => (current === filterKey ? 'all' : filterKey))}
                         >
-                          <Folder aria-hidden="true" />
-                          <span>{appLanguage === 'zh-CN' ? '全部主机' : 'All hosts'}</span>
-                          <b>{hosts.length}</b>
+                          <i aria-hidden="true" />
+                          <span>{t(labelId, appLanguage)}</span>
+                          <b>{count}</b>
                         </button>
-                        {hostGroups.map((group) => (
-                          <button
-                            key={group.key}
-                            type="button"
-                            className={`host-group-pill ${activeGroupKey === group.key ? 'active' : ''}`}
-                            onClick={() => selectHostGroup(group.key)}
-                          >
-                            <Folder aria-hidden="true" />
-                            <span>{group.name}</span>
-                            <b>{group.count}</b>
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className="host-group-strip-close"
-                          onClick={toggleHostGroupPanel}
-                          aria-label={hostGroupToggleLabel}
-                          title={hostGroupToggleLabel}
-                        >
-                          <ChevronDown aria-hidden="true" />
-                        </button>
-                      </div>
-                    ) : null}
+                      ))}
+                      <span className="host-status-latest">
+                        {latestConnectedHost
+                          ? t('app.host.overview.latest', appLanguage, { name: latestConnectedHost.name })
+                          : t('app.host.info.neverConnected', appLanguage)}
+                      </span>
+                    </div>
                   </div>
 
-                  <HostListPanel
-                    hosts={hosts}
-                    filteredHosts={filteredHosts}
-                    pagedHosts={pagedHosts}
-                    isVaultReady={isVaultReady}
-                    appLanguage={appLanguage}
-                    hostViewMode={hostViewMode}
-                    selectedHostId={selectedHost?.id ?? null}
-                    onSelectHost={setSelectedHostId}
-                    onOpenHost={openHostFromList}
-                    onOpenSftp={openSftpTransferFromList}
-                    onDeleteHost={deleteHost}
-                    onEditHost={startEditingHost}
-                    hostPage={currentHostPage}
-                    hostPageCount={hostPageCount}
-                    hostPageNumbers={hostPageNumbers}
-                    hostPageSize={hostPageSize}
-                    hostPageSizeOptions={hostPageSizeOptions}
-                    onPageSizeChange={(pageSize) => setHostPageSize(isHostPageSize(pageSize) ? pageSize : 20)}
-                    onPageChange={goToHostPage}
-                    isHostConnecting={(hostId) => connectingHostId === hostId}
-                    proxyProfileById={proxyProfileById}
-                    closeHostCardMenu={closeHostCardMenu}
-                    formatRelativeTime={formatRelativeTime}
-                    getHostChipClassName={getHostChipClassName}
-                    getHostConnectionStateView={getHostConnectionStateView}
-                    getHostSystemLabel={getHostSystemLabel}
-                    getProxyConfigTypeLabel={getProxyConfigTypeLabel}
-                    renderHostSystemIcon={(host) => (
-                      <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
-                    )}
-                  />
+                  <div className="hosts-body">
+                    <aside className="host-group-rail" aria-label={t('app.host.group.title', appLanguage)}>
+                      <h3>{t('app.host.group.title', appLanguage)}</h3>
+                      <button
+                        type="button"
+                        className={`host-group-rail-item ${activeGroupKey ? '' : 'active'}`}
+                        onClick={() => selectHostGroup(null)}
+                      >
+                        <Folder aria-hidden="true" />
+                        <span>{appLanguage === 'zh-CN' ? '全部主机' : 'All hosts'}</span>
+                        <b>{hosts.length}</b>
+                      </button>
+                      {hostGroups.map((group) => (
+                        <button
+                          key={group.key}
+                          type="button"
+                          className={`host-group-rail-item ${activeGroupKey === group.key ? 'active' : ''}`}
+                          onClick={() => selectHostGroup(group.key)}
+                        >
+                          <Folder aria-hidden="true" />
+                          <span>{group.name}</span>
+                          <b>{group.count}</b>
+                        </button>
+                      ))}
+                    </aside>
+
+                    <HostListPanel
+                      hosts={hosts}
+                      filteredHosts={filteredHosts}
+                      pagedHosts={pagedHosts}
+                      isVaultReady={isVaultReady}
+                      appLanguage={appLanguage}
+                      hostViewMode={hostViewMode}
+                      selectedHostId={selectedHost?.id ?? null}
+                      onSelectHost={setSelectedHostId}
+                      onOpenHost={openHostFromList}
+                      onOpenSftp={openSftpTransferFromList}
+                      onDeleteHost={deleteHost}
+                      onEditHost={startEditingHost}
+                      hostPage={currentHostPage}
+                      hostPageCount={hostPageCount}
+                      hostPageNumbers={hostPageNumbers}
+                      hostPageSize={hostPageSize}
+                      hostPageSizeOptions={hostPageSizeOptions}
+                      onPageSizeChange={(pageSize) => setHostPageSize(isHostPageSize(pageSize) ? pageSize : 20)}
+                      onPageChange={goToHostPage}
+                      isHostConnecting={(hostId) => connectingHostId === hostId}
+                      proxyProfileById={proxyProfileById}
+                      closeHostCardMenu={closeHostCardMenu}
+                      formatRelativeTime={formatRelativeTime}
+                      getHostChipClassName={getHostChipClassName}
+                      getHostConnectionStateView={getHostConnectionStateView}
+                      getHostSystemLabel={getHostSystemLabel}
+                      getProxyConfigTypeLabel={getProxyConfigTypeLabel}
+                      renderHostSystemIcon={(host) => (
+                        <HostSystemIcon systemName={getHostSystemLabel(host, appLanguage)} systemType={host.systemType} />
+                      )}
+                    />
+                  </div>
                 </section>
 
                 <aside className="host-detail-panel" aria-label={appLanguage === 'zh-CN' ? '主机详情' : 'Host details'}>
@@ -5548,6 +5637,13 @@ function App() {
                           </button>
                         </header>
 
+                        <div className="host-detail-actions">
+                          <button type="button" className="primary-action" disabled={isConnectionPending} onClick={() => openHostFromList(selectedHost)}>
+                            <Terminal aria-hidden="true" />
+                            {appLanguage === 'zh-CN' ? '打开工作台' : 'Open workbench'}
+                          </button>
+                        </div>
+
                         <section className="host-detail-section">
                           <h3>{appLanguage === 'zh-CN' ? '基本信息' : 'Basic info'}<ChevronDown aria-hidden="true" /></h3>
                           <dl>
@@ -5591,13 +5687,6 @@ function App() {
                             ))}
                           </dl>
                         </section>
-
-                        <div className="host-detail-actions">
-                          <button type="button" className="primary-action" disabled={isConnectionPending} onClick={() => openHostFromList(selectedHost)}>
-                            <Terminal aria-hidden="true" />
-                            {appLanguage === 'zh-CN' ? '打开工作台' : 'Open workbench'}
-                          </button>
-                        </div>
                       </>
                     );
                   })() : (

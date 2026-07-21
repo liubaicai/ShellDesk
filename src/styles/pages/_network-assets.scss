@@ -45,11 +45,33 @@
 
 .network-assets-content {
   grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   overflow: hidden;
+  padding: 16px;
 }
 
 .network-list-panel {
+  --hosts-panel-inline-padding: 0;
   margin-top: 0;
+  padding: 0;
+}
+
+.network-list-panel .host-list-heading {
+  margin-bottom: 12px;
+  padding: 0 2px;
+}
+
+.network-list-panel .host-list-heading h2 {
+  font-size: 15px;
+}
+
+.network-list-panel .host-list-scroll {
+  padding-right: 0;
+}
+
+.network-list-panel .host-list-scroll > .host-grid,
+.network-list-panel .host-list-scroll > .empty-state {
+  width: 100%;
 }
 
 .network-card-grid {
@@ -270,8 +292,11 @@
 }
 
 .network-empty {
-  min-height: 240px;
+  min-height: 200px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
   padding: 24px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
 }
 
 .network-editor-popover {
