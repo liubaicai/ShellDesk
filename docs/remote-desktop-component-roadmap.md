@@ -1,6 +1,6 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-07-14，ShellDesk 远程桌面已经接入 41 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
+截至 2026-07-22，ShellDesk 远程桌面已经接入 41 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
 
 ## 事实源
 

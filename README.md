@@ -10,7 +10,7 @@
 
 <p align="center">
   ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, russh, and xterm.js.<br/>
-  It brings SSH and local host management, key management, terminals, SFTP, remote editing, code editing, AI assistance, browser and VNC access, databases, WebDAV sync, and operations tools into one desktop-style workspace.
+  It combines SSH and local host management, a native dual-pane SFTP workspace, SD-Agent, databases, VNC, private-network browsing, and 41 built-in remote desktop apps in one local-first operations workspace.
 </p>
 
 <p align="center">
@@ -31,12 +31,16 @@
 <p align="center">
   <img src="docs/images/screenshot-en2.png" alt="ShellDesk English interface screenshot" width="920">
 </p>
+<p align="center">
+  <img src="docs/images/screenshot-en3.png" alt="ShellDesk English interface screenshot" width="920">
+</p>
 
 ---
 
 ## Table of Contents
 
 - [Table of Contents](#table-of-contents)
+- [At a Glance](#at-a-glance)
 - [Purpose](#purpose)
 - [Feature Overview](#feature-overview)
   - [Hosts and Credentials](#hosts-and-credentials)
@@ -45,13 +49,28 @@
   - [Databases and System Tools](#databases-and-system-tools)
   - [App Settings, Logs, Backup, and Language](#app-settings-logs-backup-and-language)
 - [Data and Security](#data-and-security)
-- [SSH Architecture](#ssh-architecture)
+- [Architecture](#architecture)
 - [Compatibility Notes](#compatibility-notes)
 - [Quick Start](#quick-start)
 - [Scripts](#scripts)
+- [FAQ](#faq)
+  - [macOS says the app is damaged or cannot be opened](#macos-says-the-app-is-damaged-or-cannot-be-opened)
+  - [Can ShellDesk run on Intel Macs?](#can-shelldesk-run-on-intel-macs)
 - [Project Structure](#project-structure)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
+
+---
+
+## At a Glance
+
+| | Current capability |
+| :--- | :--- |
+| **41 built-in apps** | Terminal, files, code, AI, data, network, security, web-service, container, Kubernetes, and virtual-machine tools |
+| **6 database engines** | MySQL, PostgreSQL, ClickHouse, MongoDB, Redis, and SQLite |
+| **Native SSH + SFTP** | Rust `russh` / `russh-sftp`; no client-side OpenSSH, `sshpass`, or `ssh-keyscan` dependency |
+| **3 desktop platforms** | Windows, macOS, and Linux packages, with a shared React interface and Rust backend |
+| **Local-first data** | Local Vault, system-backed secret protection where available, import/export, WebDAV sync, and a loopback-only MCP service |
 
 ---
 
@@ -61,11 +80,12 @@ ShellDesk is designed for developers, operations engineers, and anyone who maint
 
 ShellDesk is useful for:
 
-- Maintaining an SSH host library with groups, tags, notes, system type detection, and authentication settings
+- Maintaining an SSH host library with card/list views, availability filters, groups, tags, notes, system detection, and authentication settings
 - Opening the same workspace against the local machine when you need local-mode tools without creating an SSH loopback host
-- Opening multiple remote tools side by side inside one connection window instead of switching between terminal, SFTP, database, and browser clients
+- Opening multiple remote tools side by side inside one connection window, or launching the dedicated SFTP transfer workspace directly from a host
 - Handling common server operations through a graphical interface while keeping a full terminal available as the fallback
-- Storing hosts, keys, app settings, bookmarks, and logs in a local vault, with import/export and WebDAV sync for backup and migration
+- Letting SD-Agent work across saved hosts and exposing controlled remote-host tools to other local AI clients through the optional MCP service
+- Storing hosts, keys, app settings, bookmarks, and logs in a local Vault, with import/export and WebDAV sync for backup and migration
 
 ---
 
@@ -74,6 +94,7 @@ ShellDesk is useful for:
 ### Hosts and Credentials
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
+- Switch between card and table views, filter hosts by connection state, sort recent activity, paginate large inventories, and inspect connection/system details without leaving the list
 - Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint
@@ -84,8 +105,8 @@ ShellDesk is useful for:
 - Each SSH or local connection opens in an independent connection window with the current host and local SOCKS port in the title bar when available
 - Built-in SOCKS proxy, Tauri-backed browser proxy, and noVNC viewer cover remote web and desktop access through Rust-side SSH tunnels
 - Remote desktop windows support drag, resize, maximize, minimize, z-order management, and a Dock
-- File Manager, Terminal, and Browser are pinned to the Dock; other apps join the Dock dynamically while open
-- Desktop icons support custom layout, folders, sorting modes, and custom wallpaper
+- The 41-app catalog is grouped in Launchpad; File Manager, Terminal, and Browser are pinned by default while Dock position, size, auto-hide, and pinned apps are configurable
+- Desktop icons support custom layout, folders, sorting modes, catalog migration, and custom wallpaper
 
 ### Terminal, Files, and Editing
 
@@ -95,6 +116,7 @@ ShellDesk is useful for:
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
 - Font selection reads the local system font list instead of bundling font files
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
+- A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, queued concurrent transfers, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, and streamed `russh-sftp` transfers
 - Remote Notepad supports tabs, remote read/write, find, go to line, syntax highlighting, language modes, and unsaved-change prompts
 - Notepad uses a binary extension blacklist to avoid opening images, archives, databases, executables, and other binary files by mistake
 - Code Editor adds a remote project tree, multi-tab editing, remote-change detection, embedded project terminals, and SD-Agent
@@ -105,15 +127,15 @@ ShellDesk is useful for:
 - Database access uses Rust-side SSH tunnels with request timeouts, cleanup for orphaned tunnels, bounded result previews, and sensitive-value redaction in diagnostic paths
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
-- System Monitor, Process Manager, Service Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener, and Disk Analyzer help with daily checks
-- Virtual Machine Manager uses remote `virsh` for libvirt URI discovery, domain lifecycle and snapshots, virtual networks, storage pools, serial console, and VNC handoff
+- System Monitor keeps live and SQLite-backed history; Process Manager, Service Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener, and Disk Analyzer cover daily checks
+- Kubernetes Manager covers contexts, namespaces, workloads, pods, logs, exec, YAML, and nodes; Virtual Machine Manager uses remote `virsh` for lifecycle, create/clone/edit/delete, device attachment, migration, snapshots, networks, storage pools, serial console, and VNC handoff
 - Disk Manager shows physical disks, partitions, and mounts, with mount/unmount, format, partition maintenance, and Linux LVM configuration
 - Git Repository Manager shows remote branch trees, remote branches, changed files, diffs, recent commits, branch create/delete/track, stage/unstage, commit, fetch, pull, push, and checkout
 - Nginx Manager, Caddy Manager, and Apache Manager are separate apps for site discovery, templates, config editing, config test, reload, and restart flows
 - Certificate Manager discovers TLS certificates, checks expiry, manages Certbot renewal state, and handles trusted root certificates
 - MinIO / S3 Browser uses remote `mc` or `aws` CLI to browse buckets, prefixes, objects, delete objects, copy object URLs, and download to a remote directory
 - FRP Client and FRP Server managers cover frpc/frps detection, installation, TOML config editing, service control, logs, autostart, and runtime status
-- Firewall, iptables, Network Diagnostics, Package Manager, Scheduled Tasks, Login Sessions, and Security Audit support operations troubleshooting
+- Firewall, iptables, Network Diagnostics, Package Manager, Scheduled Tasks, users/groups, Login Sessions, and Security Audit support operations troubleshooting
 - System Settings provides views for system information, network interfaces, DNS, mirrors, updates, Hosts, routes, disks, and mounts
 - Log Viewer supports journalctl, `/var/log`, Windows Event Log, and related sources
 - API Debugger sends HTTP requests from the remote host, which is useful for validating private-network services
@@ -124,6 +146,7 @@ ShellDesk is useful for:
 - Supports dark, light, and system themes
 - Supports accent color, system fonts, default host view, desktop wallpaper, and remote desktop layout
 - Supports AI provider, API format, base URL, API key, and model discovery settings for the AI Assistant and Code Editor
+- SD-Agent also has a main-window workspace for tasks that span saved hosts, with reusable host context and direct handoff into built-in tools
 - Can expose saved remote hosts to other local AI clients through a loopback-only MCP service, with a credential-free Skill ZIP export and built-in call examples
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing
@@ -148,17 +171,33 @@ ShellDesk stores local data in the Tauri app data directory. The Settings page s
 
 ---
 
-## SSH Architecture
+## Architecture
 
-ShellDesk's remote SSH paths are pure Rust:
+ShellDesk keeps the renderer and privileged operations behind a typed Tauri boundary:
 
-- `russh_client.rs` owns SSH connection setup, host-key verification, password/private-key/agent/keyboard-interactive authentication, jump-host/proxy transports, and command exec channels
-- `terminal.rs` owns remote terminal PTY sessions through russh `request_pty`, shell/exec startup, terminal input, and resize events
-- `ssh_tunnel.rs` owns `direct-tcpip` tunnels used by database tools, browser proxy, VNC, and HTTP tunnel flows, without an OpenSSH fallback
-- `connection/host_keys.rs` scans and classifies host keys through russh instead of `ssh-keyscan`
-- `vault/ssh_keys.rs` imports and generates key pairs without calling `ssh-keygen`
+```mermaid
+flowchart LR
+  UI["React 19 UI<br/>host library · SD-Agent · desktop apps · SFTP workspace"]
+  Bridge["window.guiSSH<br/>typed Tauri bridge"]
+  IPC["Rust IPC dispatcher"]
+  Core["Connection core<br/>russh client · host keys · PTY · SFTP"]
+  Tunnel["Tunnel services<br/>direct-tcpip · browser · VNC · HTTP · databases"]
+  Data["Local services<br/>Vault · logs · settings · WebDAV · updater · MCP"]
+  Target["SSH hosts / local machine / private services"]
 
-See [SSH Architecture](docs/ssh-architecture.md) for the backend module map, security boundaries, and maintenance rules.
+  UI --> Bridge --> IPC
+  IPC --> Core --> Target
+  IPC --> Tunnel --> Target
+  IPC --> Data
+```
+
+- `src/tauriBridge.ts` exposes the typed `window.guiSSH` API; React components do not call Node, Tauri internals, or system SSH tools directly
+- `ipc.rs` and the `ipc/` channel modules validate and route frontend requests into focused Rust handlers
+- `russh_client.rs`, `connection/host_keys.rs`, `terminal.rs`, and `remote_fs/sftp.rs` own authentication, trust, PTY, command, and native SFTP paths
+- `ssh_tunnel.rs`, `browser_proxy.rs`, `http_tunnel.rs`, `vnc.rs`, and `database/` reuse Rust `direct-tcpip` transport for private services
+- `vault/`, `vault_storage.rs`, `sync_backend.rs`, SQLite logs/monitoring, the updater, and the optional loopback-only MCP server stay on the backend side of the bridge
+
+See [SSH Architecture](docs/ssh-architecture.md), [SFTP Transfer Workspace](docs/sftp-transfer-window.md), [Local MCP Service](docs/local-mcp-service.md), and the [41-app catalog](docs/remote-desktop-component-roadmap.md) for detailed boundaries.
 
 ---
 
@@ -237,7 +276,7 @@ ShellDesk/
 │   └── src/
 │       ├── main.rs                      # Thin Rust entrypoint
 │       ├── bootstrap.rs                 # Tauri builder, state, updater plugin, and command registration
-│       ├── ipc.rs                       # Channel dispatcher used by window.guiSSH
+│       ├── ipc.rs + ipc/                # Channel dispatcher and focused channel routers
 │       ├── state.rs                     # Shared application state, active sessions, and UI prompt channels
 │       ├── connection.rs                # SSH/local connection lifecycle and profile normalization
 │       ├── connection/host_keys.rs      # Host-key scanning, classification, trust, and known_hosts sync
@@ -245,9 +284,9 @@ ShellDesk/
 │       ├── ssh_transport.rs             # High-level runCommand wrapper, privilege handling, retry, host-key refresh
 │       ├── ssh_tunnel.rs                # russh direct-tcpip tunnels for DB, browser, VNC, and HTTP tools
 │       ├── terminal.rs                  # Remote russh PTY terminal and local shell terminal lifecycle
-│       ├── remote_fs.rs                 # SFTP and remote file operations
-│       ├── database/mod.rs              # MySQL / PostgreSQL / ClickHouse / MongoDB / Redis / SQLite handlers
-│       ├── database/tunnel.rs           # Native database tunnel sessions, timeout, and cleanup helpers
+│       ├── remote_fs.rs + remote_fs/    # Remote commands plus native russh-sftp operations
+│       ├── local_fs.rs                  # Local side of the dual-pane transfer workspace
+│       ├── database/                    # Six database backends and tunnel lifecycle
 │       ├── browser_proxy.rs             # Remote browser URL parsing and local reverse proxy
 │       ├── http_tunnel.rs               # Remote HTTP request tunnel over SSH forwarding
 │       ├── vnc.rs                       # VNC probing, russh tunnel, and noVNC WebSocket proxy
@@ -259,12 +298,13 @@ ShellDesk/
 │       ├── sync_backend.rs              # WebDAV sync backend
 │       └── updater.rs                   # GitHub release checks and Tauri updater install path
 ├── src/
-│   ├── App.tsx                          # Host library, keys, logs, settings, and connection entry
+│   ├── App.tsx                          # Host library, SD-Agent, settings, connection and SFTP entrypoints
 │   ├── RemoteDesktopShell.tsx           # Remote desktop, multi-window manager, Dock, layout
 │   ├── i18n.ts                          # UI language selection and translation helpers
 │   ├── components/
 │   │   ├── navigation/                  # Main navigation icons
-│   │   └── remote-desktop/              # Built-in remote desktop apps
+│   │   ├── remote-desktop/              # 41 built-in remote desktop apps
+│   │   └── sftp-transfer/               # Native dual-pane SFTP workspace
 │   ├── pages/
 │   │   ├── KeysPage.tsx                 # SSH key management
 │   │   ├── LogsPage.tsx                 # Logs page
@@ -280,6 +320,7 @@ ShellDesk/
 │   └── vite-env.d.ts                    # window.guiSSH and global type definitions
 ├── docs/
 │   ├── local-mcp-service.md             # Local MCP service, tools, and Skill export
+│   ├── sftp-transfer-window.md           # Dual-pane SFTP behavior and backend boundary
 │   ├── remote-desktop-component-roadmap.md # Remote desktop app catalog and docs index
 │   └── remote-desktop-components/       # Per-component design and implementation notes
 ├── index.html
