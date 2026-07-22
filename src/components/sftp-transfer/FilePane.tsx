@@ -1,4 +1,16 @@
-import { memo, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowDownAZ,
@@ -22,7 +34,13 @@ import {
 
 import { formatBytes } from '../remote-desktop/fileExplorerUtils';
 import { formatDateTime } from '../remote-desktop/desktopUtils';
-import { getParentPanePath, joinPanePath } from './pathUtils';
+import {
+  getPaneTreePathChain,
+  getParentPanePath,
+  joinPanePath,
+  normalizePaneTreePath,
+  paneTreePathsEqual,
+} from './pathUtils';
 import type { FilePaneController } from './useFilePane';
 import type { SftpMessageKey } from './messages';
 import type { TransferFileEntry, TransferPaneKind } from './types';
@@ -48,6 +66,11 @@ const FILE_TABLE_HEADER_HEIGHT = 29;
 const FILE_TABLE_ROW_HEIGHT = 32;
 const FILE_TABLE_OVERSCAN_ROWS = 10;
 const FILE_TABLE_INITIAL_ROWS = 40;
+const DIRECTORY_TREE_MIN_WIDTH = 96;
+const DIRECTORY_TREE_MAX_WIDTH = 340;
+const FILE_TABLE_MIN_WIDTH = 240;
+const PANE_RESIZER_WIDTH = 5;
+const DIRECTORY_TREE_KEYBOARD_STEP = 12;
 
 interface DirectoryTreeNodeState {
   expanded: boolean;
@@ -59,19 +82,28 @@ interface DirectoryTreeNodeState {
 interface DirectoryTreeNodeProps {
   entry: TransferFileEntry;
   path: string;
+  currentPath: string;
   depth: number;
   nodes: Map<string, DirectoryTreeNodeState>;
+  isRoot?: boolean;
+  kind: TransferPaneKind;
+  windows: boolean;
   t: FilePaneProps['t'];
   onToggle: (path: string) => void;
   onOpen: (path: string) => void;
 }
 
-function DirectoryTreeNode({ entry, path, depth, nodes, t, onToggle, onOpen }: DirectoryTreeNodeProps) {
+function DirectoryTreeNode({ entry, path, currentPath, depth, nodes, isRoot = false, kind, windows, t, onToggle, onOpen }: DirectoryTreeNodeProps) {
   const state = nodes.get(path);
   const expanded = state?.expanded ?? false;
+  const selected = paneTreePathsEqual(kind, path, currentPath, windows);
   return (
     <>
-      <div className={`tree-row ${expanded ? 'expanded' : ''}`} style={{ paddingLeft: 4 + depth * 14 }}>
+      <div
+        className={`tree-row ${isRoot ? 'root' : ''} ${expanded ? 'expanded' : ''} ${selected ? 'selected' : ''}`}
+        style={{ paddingLeft: 4 + depth * 14 }}
+        aria-current={selected ? 'location' : undefined}
+      >
         <button
           type="button"
           className="tree-toggle"
@@ -83,12 +115,12 @@ function DirectoryTreeNode({ entry, path, depth, nodes, t, onToggle, onOpen }: D
           {state?.loading ? <RefreshCw className="spin" aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
         </button>
         <button type="button" className="tree-label" onClick={() => onOpen(path)} title={entry.name}>
-          {expanded ? <FolderOpen aria-hidden="true" /> : <Folder aria-hidden="true" />}
+          {isRoot && kind === 'local' ? <HardDrive aria-hidden="true" /> : expanded ? <FolderOpen aria-hidden="true" /> : <Folder aria-hidden="true" />}
           <span>{entry.name}</span>
         </button>
       </div>
       {expanded && state?.children?.map((child) => (
-        <DirectoryTreeNode key={child.entry.name} entry={child.entry} path={child.path} depth={depth + 1} nodes={nodes} t={t} onToggle={onToggle} onOpen={onOpen} />
+        <DirectoryTreeNode key={child.path} entry={child.entry} path={child.path} currentPath={currentPath} depth={depth + 1} nodes={nodes} kind={kind} windows={windows} t={t} onToggle={onToggle} onOpen={onOpen} />
       ))}
       {expanded && state?.children?.length === 0 ? <div className="tree-status" style={{ paddingLeft: 32 + depth * 14 }}>{t('empty')}</div> : null}
       {state?.error ? <div className="tree-status error" style={{ paddingLeft: 32 + depth * 14 }} title={state.error}>{state.error}</div> : null}
@@ -131,13 +163,26 @@ function FilePane({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [treeNodes, setTreeNodes] = useState<Map<string, DirectoryTreeNodeState>>(() => new Map());
+  const [treeWidth, setTreeWidth] = useState<number | null>(null);
+  const [resizingTree, setResizingTree] = useState(false);
   const tableFrameRef = useRef<HTMLDivElement | null>(null);
+  const paneContentRef = useRef<HTMLDivElement | null>(null);
+  const directoryTreeRef = useRef<HTMLElement | null>(null);
+  const treeResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const treeFilterGenerationRef = useRef(0);
   const isLocal = kind === 'local';
   const pathWindows = isLocal && windowsLocal;
   const displayEntries = useMemo(() => showHidden ? visibleEntries : visibleEntries.filter((entry) => !entry.name.startsWith('.')), [showHidden, visibleEntries]);
-  const currentDirectories = useMemo(() => state.entries
-    .filter((entry) => entry.type === 'directory' && (showHidden || !entry.name.startsWith('.')))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })), [showHidden, state.entries]);
+  const currentTreePath = useMemo(() => normalizePaneTreePath(kind, state.path, pathWindows), [kind, pathWindows, state.path]);
+  const treeRootPath = '/';
+  const treePathChain = useMemo(() => getPaneTreePathChain(kind, currentTreePath, pathWindows), [currentTreePath, kind, pathWindows]);
+  const treeRootEntry = useMemo<TransferFileEntry>(() => ({
+    name: treeRootPath,
+    longname: treeRootPath,
+    type: 'directory',
+    size: 0,
+    modifiedAt: '',
+  }), [treeRootPath]);
   const columns: Array<'name' | 'size' | 'type' | 'permissions' | 'modifiedAt'> = isLocal
     ? ['name', 'size', 'type', 'modifiedAt']
     : ['name', 'size', 'permissions', 'modifiedAt'];
@@ -165,9 +210,73 @@ function FilePane({
     return () => observer.disconnect();
   }, []);
 
+  const clampTreeWidth = useCallback((width: number) => {
+    const paneWidth = paneContentRef.current?.clientWidth ?? DIRECTORY_TREE_MAX_WIDTH + FILE_TABLE_MIN_WIDTH + PANE_RESIZER_WIDTH;
+    const responsiveMaximum = Math.max(
+      DIRECTORY_TREE_MIN_WIDTH,
+      Math.min(DIRECTORY_TREE_MAX_WIDTH, paneWidth - FILE_TABLE_MIN_WIDTH - PANE_RESIZER_WIDTH),
+    );
+    return Math.min(responsiveMaximum, Math.max(DIRECTORY_TREE_MIN_WIDTH, width));
+  }, []);
+
   useEffect(() => {
+    const element = paneContentRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      setTreeWidth((current) => current === null ? null : clampTreeWidth(current));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [clampTreeWidth]);
+
+  const loadTreePath = useCallback(async (path: string, expanded: boolean, generation: number) => {
+    setTreeNodes((nodes) => {
+      const next = new Map(nodes);
+      const current = next.get(path);
+      next.set(path, { ...current, expanded, loading: true, error: undefined });
+      return next;
+    });
+    try {
+      const result = await controller.listPath(path);
+      if (treeFilterGenerationRef.current !== generation) return;
+      const children = result.entries
+        .filter((entry) => entry.type === 'directory' && (showHidden || !entry.name.startsWith('.')))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+        .map((entry) => ({
+          entry,
+          path: normalizePaneTreePath(kind, joinPanePath(kind, result.path, entry.name, pathWindows), pathWindows),
+        }));
+      setTreeNodes((nodes) => {
+        const next = new Map(nodes);
+        const current = next.get(path);
+        next.set(path, { ...current, expanded, loading: false, children, error: undefined });
+        return next;
+      });
+    } catch (error) {
+      if (treeFilterGenerationRef.current !== generation) return;
+      setTreeNodes((nodes) => {
+        const next = new Map(nodes);
+        const current = next.get(path);
+        next.set(path, { ...current, expanded, loading: false, error: error instanceof Error ? error.message : String(error) });
+        return next;
+      });
+    }
+  }, [controller, kind, pathWindows, showHidden]);
+
+  useEffect(() => {
+    treeFilterGenerationRef.current += 1;
     setTreeNodes(new Map());
-  }, [showHidden, state.path]);
+  }, [showHidden]);
+
+  useEffect(() => {
+    const generation = treeFilterGenerationRef.current;
+    void Promise.all(treePathChain.map((path) => loadTreePath(path, true, generation)));
+  }, [loadTreePath, treePathChain]);
+
+  useEffect(() => {
+    const selected = directoryTreeRef.current?.querySelector<HTMLElement>('.tree-row[aria-current="location"]');
+    selected?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [currentTreePath, treeNodes]);
 
   useEffect(() => {
     const maxScrollTop = Math.max(0, FILE_TABLE_HEADER_HEIGHT + displayEntries.length * FILE_TABLE_ROW_HEIGHT - viewportHeight);
@@ -211,29 +320,38 @@ function FilePane({
       });
       return;
     }
-    setTreeNodes((nodes) => {
-      const next = new Map(nodes);
-      next.set(path, { expanded: true, loading: true });
-      return next;
-    });
-    void controller.listPath(path).then((result) => {
-      const children = result.entries
-        .filter((entry) => entry.type === 'directory' && (showHidden || !entry.name.startsWith('.')))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-        .map((entry) => ({ entry, path: joinPanePath(kind, result.path, entry.name, pathWindows) }));
-      setTreeNodes((nodes) => {
-        const next = new Map(nodes);
-        next.set(path, { expanded: true, loading: false, children });
-        return next;
-      });
-    }).catch((error) => {
-      setTreeNodes((nodes) => {
-        const next = new Map(nodes);
-        next.set(path, { expanded: true, loading: false, error: error instanceof Error ? error.message : String(error) });
-        return next;
-      });
-    });
-  }, [controller, kind, pathWindows, showHidden, treeNodes]);
+    void loadTreePath(path, true, treeFilterGenerationRef.current);
+  }, [loadTreePath, treeNodes]);
+
+  const startTreeResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    onActivate();
+    const startWidth = directoryTreeRef.current?.getBoundingClientRect().width ?? treeWidth ?? 154;
+    treeResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizingTree(true);
+  };
+
+  const moveTreeResize = (event: PointerEvent<HTMLDivElement>) => {
+    const resize = treeResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    setTreeWidth(clampTreeWidth(resize.startWidth + event.clientX - resize.startX));
+  };
+
+  const finishTreeResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (treeResizeRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    treeResizeRef.current = null;
+    setResizingTree(false);
+  };
+
+  const resizeTreeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const currentWidth = directoryTreeRef.current?.getBoundingClientRect().width ?? treeWidth ?? 154;
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    setTreeWidth(clampTreeWidth(currentWidth + direction * DIRECTORY_TREE_KEYBOARD_STEP));
+  };
 
   const openContextMenu = (event: MouseEvent, entry: TransferFileEntry) => {
     event.preventDefault();
@@ -270,20 +388,32 @@ function FilePane({
         </label>
       </div>
 
-      <div className="sftp-pane-content">
-        <aside className="sftp-directory-tree" aria-label={`${t(isLocal ? 'local' : 'remote')} ${t('directoryTree')}`}>
-          <div className="tree-row root selected">
-            <span className="tree-toggle-placeholder" />
-            <button type="button" className="tree-label" onClick={() => void controller.loadPath(state.path, 'none').catch(() => undefined)} title={state.path}>
-              {isLocal ? <HardDrive aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
-              <span>{state.path}</span>
-            </button>
-          </div>
-          {currentDirectories.map((entry) => {
-            const path = joinPanePath(kind, state.path, entry.name, pathWindows);
-            return <DirectoryTreeNode key={entry.name} entry={entry} path={path} depth={1} nodes={treeNodes} t={t} onToggle={toggleTreePath} onOpen={openTreePath} />;
-          })}
+      <div
+        ref={paneContentRef}
+        className={`sftp-pane-content ${resizingTree ? 'resizing-tree' : ''}`}
+        style={treeWidth === null ? undefined : ({ '--sftp-tree-user-width': `${treeWidth}px` } as CSSProperties)}
+      >
+        <aside ref={directoryTreeRef} className="sftp-directory-tree" aria-label={`${t(isLocal ? 'local' : 'remote')} ${t('directoryTree')}`}>
+          <DirectoryTreeNode entry={treeRootEntry} path={treeRootPath} currentPath={currentTreePath} depth={0} nodes={treeNodes} isRoot kind={kind} windows={pathWindows} t={t} onToggle={toggleTreePath} onOpen={openTreePath} />
         </aside>
+
+        <div
+          className="sftp-pane-resizer"
+          role="separator"
+          aria-label={`${t(isLocal ? 'local' : 'remote')} · ${t('resizeDirectoryTree')}`}
+          aria-orientation="vertical"
+          aria-valuemin={DIRECTORY_TREE_MIN_WIDTH}
+          aria-valuemax={DIRECTORY_TREE_MAX_WIDTH}
+          aria-valuenow={Math.round(treeWidth ?? 154)}
+          tabIndex={0}
+          onPointerDown={startTreeResize}
+          onPointerMove={moveTreeResize}
+          onPointerUp={finishTreeResize}
+          onPointerCancel={finishTreeResize}
+          onKeyDown={resizeTreeWithKeyboard}
+          onDoubleClick={() => setTreeWidth(null)}
+          title={t('resizeDirectoryTree')}
+        />
 
         <div className="sftp-file-table-frame" ref={tableFrameRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
           <table className="sftp-file-table" aria-rowcount={displayEntries.length}>

@@ -36,6 +36,52 @@ export function getParentPanePath(kind: 'local' | 'remote', path: string, window
   return kind === 'local' ? getParentLocalPath(path, windows) : getParentRemotePath(path);
 }
 
+export function normalizePaneTreePath(kind: 'local' | 'remote', path: string, windows: boolean) {
+  const normalized = path.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  if (!normalized) return kind === 'remote' ? '.' : '/';
+  if (kind === 'local' && windows) {
+    const driveMatch = normalized.match(/^([a-z]:)(?:\/(.*))?$/i);
+    if (!driveMatch) return normalized;
+    const remainder = driveMatch[2]?.replace(/^\/+|\/+$/g, '') ?? '';
+    return remainder ? `${driveMatch[1]}/${remainder}` : `${driveMatch[1]}/`;
+  }
+  if (normalized === '/') return '/';
+  return normalized.replace(/\/+$/, '');
+}
+
+export function getPaneTreePathChain(kind: 'local' | 'remote', path: string, windows: boolean) {
+  const normalized = normalizePaneTreePath(kind, path, windows);
+  const root = '/';
+  if (normalized === root) return [root];
+
+  if (kind === 'local' && windows) {
+    const driveMatch = normalized.match(/^([a-z]:)(?:\/(.*))?$/i);
+    if (!driveMatch) return [root];
+    const driveRoot = `${driveMatch[1]}/`;
+    const remainder = driveMatch[2]?.split('/').filter(Boolean) ?? [];
+    return remainder.reduce<string[]>((paths, segment) => {
+      const parent = paths.at(-1) ?? driveRoot;
+      paths.push(`${parent}${parent.endsWith('/') ? '' : '/'}${segment}`);
+      return paths;
+    }, [root, driveRoot]);
+  }
+
+  if (!normalized.startsWith('/')) return [root];
+  return normalized.split('/').filter(Boolean).reduce<string[]>((paths, segment) => {
+    const parent = paths.at(-1) ?? root;
+    paths.push(parent === '/' ? `/${segment}` : `${parent}/${segment}`);
+    return paths;
+  }, [root]);
+}
+
+export function paneTreePathsEqual(kind: 'local' | 'remote', left: string, right: string, windows: boolean) {
+  const normalizedLeft = normalizePaneTreePath(kind, left, windows);
+  const normalizedRight = normalizePaneTreePath(kind, right, windows);
+  return kind === 'local' && windows
+    ? normalizedLeft.toLocaleLowerCase() === normalizedRight.toLocaleLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
 export function getPathName(path: string) {
   const normalized = path.replace(/[\\/]+$/, '');
   return normalized.split(/[\\/]/).pop() || path;

@@ -49,8 +49,8 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
-test('SFTP directory trees expand independently from folder navigation', async ({ page }) => {
-  test.setTimeout(60_000);
+test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
+  test.setTimeout(90_000);
   const runtimeErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') runtimeErrors.push(message.text());
@@ -63,6 +63,15 @@ test('SFTP directory trees expand independently from folder navigation', async (
   const remotePane = page.locator('.sftp-file-pane.remote');
   const localPath = localPane.locator('.sftp-path-form input');
   const remotePath = remotePane.locator('.sftp-path-form input');
+
+  await expect(localPane.locator('.sftp-directory-tree').getByRole('button', { name: '/', exact: true })).toBeVisible();
+  await expect(remotePane.locator('.sftp-directory-tree').getByRole('button', { name: '/', exact: true })).toBeVisible();
+  await expect(localPane.locator('.tree-row[aria-current="location"] .tree-label')).toHaveText('/');
+  await expect(remotePane.locator('.tree-row[aria-current="location"] .tree-label')).toHaveText('root');
+
+  await localPane.getByRole('button', { name: 'D:', exact: true }).click();
+  await localPane.getByRole('button', { name: 'ui-test', exact: true }).click();
+  await expect(localPath).toHaveValue('D:/ui-test');
 
   await localPane.getByRole('button', { name: '展开 shared-folder' }).click();
   await expect(localPane.getByRole('button', { name: 'local-nested-folder', exact: true })).toBeVisible();
@@ -81,6 +90,15 @@ test('SFTP directory trees expand independently from folder navigation', async (
   await localPane.getByRole('button', { name: 'shared-folder', exact: true }).click();
   await expect(localPath).toHaveValue('D:/ui-test/shared-folder');
   await expect(localPane.getByText('local-nested-file.txt', { exact: true })).toBeVisible();
+  await expect(localPane.locator('.sftp-directory-tree').getByRole('button', { name: '/', exact: true })).toBeVisible();
+  await expect(localPane.locator('.tree-row[aria-current="location"] .tree-label')).toHaveText('shared-folder');
+  await expect(localPane.getByRole('button', { name: 'local-deep-folder', exact: true })).toBeVisible();
+
+  await remotePane.getByRole('button', { name: 'shared-folder', exact: true }).click();
+  await expect(remotePath).toHaveValue('/root/shared-folder');
+  await expect(remotePane.locator('.sftp-directory-tree').getByRole('button', { name: '/', exact: true })).toBeVisible();
+  await expect(remotePane.locator('.tree-row[aria-current="location"] .tree-label')).toHaveText('shared-folder');
+  await expect(remotePane.getByRole('button', { name: 'remote-deep-folder', exact: true })).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -111,6 +129,56 @@ test('SFTP transfer queue toolbar button toggles the queue and releases its spac
   await expect(page.locator('.sftp-transfer-workspace')).not.toHaveClass(/queue-hidden/);
 });
 
+test('SFTP directory tree dividers resize both panes independently', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHarness(page, 'component=sftp-transfer&theme=light');
+
+  const localPane = page.locator('.sftp-file-pane.local');
+  const remotePane = page.locator('.sftp-file-pane.remote');
+  const localTree = localPane.locator('.sftp-directory-tree');
+  const remoteTree = remotePane.locator('.sftp-directory-tree');
+  const localFileList = localPane.locator('.sftp-file-table-frame');
+  const remoteFileList = remotePane.locator('.sftp-file-table-frame');
+  const localDivider = localPane.getByRole('separator', { name: '本地 · 调整目录树宽度' });
+  const remoteDivider = remotePane.getByRole('separator', { name: '远程 · 调整目录树宽度' });
+  const localWidthBefore = (await localTree.boundingBox())!.width;
+  const remoteWidthBefore = (await remoteTree.boundingBox())!.width;
+  const [localTreeScrollbar, localFileScrollbar, remoteTreeScrollbar, remoteFileScrollbar] = await Promise.all([
+    localTree.evaluate((element) => getComputedStyle(element).scrollbarColor),
+    localFileList.evaluate((element) => getComputedStyle(element).scrollbarColor),
+    remoteTree.evaluate((element) => getComputedStyle(element).scrollbarColor),
+    remoteFileList.evaluate((element) => getComputedStyle(element).scrollbarColor),
+  ]);
+  expect(localTreeScrollbar).toBe(localFileScrollbar);
+  expect(remoteTreeScrollbar).toBe(remoteFileScrollbar);
+  expect(localTreeScrollbar).not.toBe('auto');
+  const [localTreeThumb, localFileThumb] = await Promise.all([
+    localTree.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor),
+    localFileList.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor),
+  ]);
+  expect(localTreeThumb).toBe(localFileThumb);
+  expect(localTreeThumb).toBe('rgb(51, 69, 90)');
+  const localDividerBox = await localDivider.boundingBox();
+  expect(localDividerBox).not.toBeNull();
+
+  await page.mouse.move(localDividerBox!.x + localDividerBox!.width / 2, localDividerBox!.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(localDividerBox!.x + 72, localDividerBox!.y + 80, { steps: 5 });
+  await page.mouse.up();
+
+  const localWidthAfter = (await localTree.boundingBox())!.width;
+  const remoteWidthAfterLocalDrag = (await remoteTree.boundingBox())!.width;
+  expect(localWidthAfter).toBeGreaterThan(localWidthBefore + 55);
+  expect(Math.abs(remoteWidthAfterLocalDrag - remoteWidthBefore)).toBeLessThan(2);
+  await expect(localDivider).toHaveAttribute('aria-valuenow', String(Math.round(localWidthAfter)));
+
+  await remoteDivider.press('ArrowRight');
+  const remoteWidthAfterKeyboard = (await remoteTree.boundingBox())!.width;
+  expect(remoteWidthAfterKeyboard).toBeGreaterThan(remoteWidthBefore + 10);
+  await expect(remotePane.locator('.sftp-file-table-frame')).toBeVisible();
+});
+
 test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches the backend', async ({ page }) => {
   test.setTimeout(60_000);
   const runtimeErrors: string[] = [];
@@ -138,6 +206,10 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(queueSelects.nth(1)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await commandToolbar.getByRole('button', { name: '传输队列', exact: true }).click();
   await expect(page.locator('#sftp-transfer-queue')).toHaveCount(0);
+
+  const localPane = page.locator('.sftp-file-pane.local');
+  await localPane.getByRole('button', { name: 'D:', exact: true }).click();
+  await localPane.getByRole('button', { name: 'ui-test', exact: true }).click();
 
   const frames = page.locator('.sftp-file-table-frame');
   await expect(frames).toHaveCount(2);

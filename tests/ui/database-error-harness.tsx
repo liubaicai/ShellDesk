@@ -205,6 +205,12 @@ function installGuiSshMock() {
     files: {
       listLocalDirectory: async (path: string) => {
         const normalizedPath = path.replaceAll('\\', '/');
+        if (normalizedPath === '/') {
+          return { path: '/', entries: [{ name: 'D:', longname: 'drwxr-xr-x D:', type: 'directory' as const, size: 0, modifiedAt: now }] };
+        }
+        if (/^[a-z]:\/?$/i.test(normalizedPath)) {
+          return { path: 'D:/', entries: [{ name: 'ui-test', longname: 'drwxr-xr-x ui-test', type: 'directory' as const, size: 0, modifiedAt: now }] };
+        }
         if (normalizedPath.endsWith('/local-nested-folder')) {
           return { path: normalizedPath, entries: [{ name: 'local-deep-folder', longname: 'drwxr-xr-x local-deep-folder', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
@@ -303,6 +309,9 @@ function installGuiSshMock() {
       selectUploadFolders: async () => null,
       cancelTransfer: async () => true,
       sftpListDirectory: async (_connectionId: string, path: string) => {
+        if (path === '/') {
+          return { path: '/', entries: [{ name: 'root', longname: 'drwxr-xr-x root', type: 'directory' as const, size: 0, modifiedAt: now }] };
+        }
         if (path.endsWith('/remote-nested-folder')) {
           return { path, entries: [{ name: 'remote-deep-folder', longname: 'drwxr-xr-x remote-deep-folder', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
