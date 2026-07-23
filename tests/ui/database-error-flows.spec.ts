@@ -179,6 +179,32 @@ test('SFTP directory tree dividers resize both panes independently', async ({ pa
   await expect(remotePane.locator('.sftp-file-table-frame')).toBeVisible();
 });
 
+test('Host table scrollbar corner follows the active theme surface', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 640, height: 480 });
+  await gotoHarness(page, 'component=host-table-scroll&theme=dark');
+
+  const tableScroll = page.locator('.host-table-scroll');
+  await expect(tableScroll).toBeVisible();
+  const darkThemeMetrics = await tableScroll.evaluate((element) => ({
+    horizontalOverflow: element.scrollWidth - element.clientWidth,
+    verticalOverflow: element.scrollHeight - element.clientHeight,
+    surface: getComputedStyle(element.closest('.host-table-frame')!).backgroundColor,
+    corner: getComputedStyle(element, '::-webkit-scrollbar-corner').backgroundColor,
+  }));
+  expect(darkThemeMetrics.horizontalOverflow).toBeGreaterThan(0);
+  expect(darkThemeMetrics.verticalOverflow).toBeGreaterThan(0);
+  expect(darkThemeMetrics.corner).toBe(darkThemeMetrics.surface);
+  expect(darkThemeMetrics.corner).not.toBe('rgb(255, 255, 255)');
+
+  await gotoHarness(page, 'component=host-table-scroll&theme=light');
+  const lightThemeMetrics = await tableScroll.evaluate((element) => ({
+    surface: getComputedStyle(element.closest('.host-table-frame')!).backgroundColor,
+    corner: getComputedStyle(element, '::-webkit-scrollbar-corner').backgroundColor,
+  }));
+  expect(lightThemeMetrics.corner).toBe(lightThemeMetrics.surface);
+});
+
 test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches the backend', async ({ page }) => {
   test.setTimeout(60_000);
   const runtimeErrors: string[] = [];

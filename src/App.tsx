@@ -2563,6 +2563,28 @@ function App() {
 
     return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name, appLocale));
   }, [appLanguage, appLocale, hosts]);
+  const hostGroupOptions = useMemo(
+    () => hostGroups.filter((group) => group.key !== ungroupedKey).map((group) => group.name),
+    [hostGroups],
+  );
+  const hostTagOptions = useMemo(() => {
+    const tags = new Set<string>();
+
+    for (const host of hosts) {
+      for (const tag of host.tags) {
+        if (tag.trim()) {
+          tags.add(tag.trim());
+        }
+      }
+    }
+
+    return Array.from(tags).sort((left, right) => left.localeCompare(right, appLocale));
+  }, [appLocale, hosts]);
+  const selectedHostFormTags = useMemo(() => parseTags(form.tags), [form.tags]);
+  const selectedHostFormTagKeys = useMemo(
+    () => new Set(selectedHostFormTags.map((tag) => tag.toLocaleLowerCase())),
+    [selectedHostFormTags],
+  );
 
   const hostStatusCounts = useMemo(() => {
     const counts = { all: hosts.length, ready: 0, failed: 0, never: 0 };
@@ -4121,6 +4143,22 @@ function App() {
     setFormError('');
   };
 
+  const addTagToHostForm = (tag: string) => {
+    setForm((currentForm) => {
+      const currentTags = parseTags(currentForm.tags);
+
+      if (currentTags.some((currentTag) => currentTag.toLocaleLowerCase() === tag.toLocaleLowerCase())) {
+        return currentForm;
+      }
+
+      return {
+        ...currentForm,
+        tags: formatTags([...currentTags, tag].slice(0, 8)),
+      };
+    });
+    setFormError('');
+  };
+
   const updateKeyFormField = <Field extends keyof KeyFormState>(field: Field, value: KeyFormState[Field]) => {
     setKeyForm((currentForm) => ({ ...currentForm, [field]: value }));
     setKeyFormError('');
@@ -4382,6 +4420,40 @@ function App() {
     setFormError('');
     setIsEditorOpen(true);
   };
+
+  const quickAssignHostGroup = useCallback((host: Host, group: string) => {
+    const nextGroup = group.trim();
+
+    if (!nextGroup || host.group === nextGroup) {
+      return;
+    }
+
+    commitHosts(hostsRef.current.map((currentHost) => (
+      currentHost.id === host.id
+        ? { ...currentHost, group: nextGroup, updatedAt: new Date().toISOString() }
+        : currentHost
+    )));
+    setStatusMessage(appLanguage === 'zh-CN'
+      ? `已将“${host.name}”加入分组“${nextGroup}”`
+      : `Moved "${host.name}" to group "${nextGroup}"`);
+  }, [appLanguage, commitHosts]);
+
+  const quickAddHostTag = useCallback((host: Host, tag: string) => {
+    const nextTag = tag.trim();
+
+    if (!nextTag || host.tags.some((currentTag) => currentTag.toLocaleLowerCase() === nextTag.toLocaleLowerCase())) {
+      return;
+    }
+
+    commitHosts(hostsRef.current.map((currentHost) => (
+      currentHost.id === host.id
+        ? { ...currentHost, tags: [...currentHost.tags, nextTag].slice(0, 8), updatedAt: new Date().toISOString() }
+        : currentHost
+    )));
+    setStatusMessage(appLanguage === 'zh-CN'
+      ? `已为“${host.name}”添加标签“${nextTag}”`
+      : `Added tag "${nextTag}" to "${host.name}"`);
+  }, [appLanguage, commitHosts]);
 
   const deleteHost = (host: Host) => {
     const dependentHosts = hostsRef.current.filter((currentHost) => currentHost.jumpHostId === host.id);
@@ -5575,6 +5647,10 @@ function App() {
                       onOpenSftp={openSftpTransferFromList}
                       onDeleteHost={deleteHost}
                       onEditHost={startEditingHost}
+                      onQuickAssignGroup={quickAssignHostGroup}
+                      onQuickAddTag={quickAddHostTag}
+                      groupOptions={hostGroupOptions}
+                      tagOptions={hostTagOptions}
                       hostPage={currentHostPage}
                       hostPageCount={hostPageCount}
                       hostPageNumbers={hostPageNumbers}
@@ -6015,23 +6091,65 @@ function App() {
                   </label>
                 ) : null}
 
-                <label className="field">
+                <div className="field">
                   <span>{t('app.host.field.group', appLanguage)}</span>
                   <input
+                    list="host-group-options"
+                    aria-label={t('app.host.field.group', appLanguage)}
                     value={form.group}
                     onChange={(event) => updateFormField('group', event.target.value)}
                     placeholder="AWS / Production / Lab"
                   />
-                </label>
+                  <datalist id="host-group-options">
+                    {hostGroupOptions.map((group) => <option key={group} value={group} />)}
+                  </datalist>
+                  {hostGroupOptions.length ? (
+                    <div className="host-field-suggestions" aria-label={appLanguage === 'zh-CN' ? '已有分组' : 'Existing groups'}>
+                      {hostGroupOptions.map((group) => (
+                        <button
+                          key={group}
+                          type="button"
+                          className={form.group === group ? 'active' : ''}
+                          onClick={() => updateFormField('group', group)}
+                        >
+                          {form.group === group ? <Check aria-hidden="true" /> : null}
+                          {group}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
 
-                <label className="field">
+                <div className="field">
                   <span>{t('app.host.field.tags', appLanguage)}</span>
                   <input
+                    aria-label={t('app.host.field.tags', appLanguage)}
                     value={form.tags}
                     onChange={(event) => updateFormField('tags', event.target.value)}
                     placeholder="linux, prod, db"
                   />
-                </label>
+                  {hostTagOptions.length ? (
+                    <div className="host-field-suggestions" aria-label={appLanguage === 'zh-CN' ? '已有标签' : 'Existing tags'}>
+                      {hostTagOptions.map((tag) => {
+                        const isSelected = selectedHostFormTagKeys.has(tag.toLocaleLowerCase());
+                        const isTagLimitReached = selectedHostFormTags.length >= 8;
+
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            className={isSelected ? 'active' : ''}
+                            disabled={isSelected || isTagLimitReached}
+                            onClick={() => addTagToHostForm(tag)}
+                          >
+                            {isSelected ? <Check aria-hidden="true" /> : null}
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
 
                 <label className="field">
                   <span>{t('app.host.field.note', appLanguage)}</span>

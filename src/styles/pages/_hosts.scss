@@ -1311,6 +1311,48 @@
   justify-content: flex-start;
 }
 
+.host-field-suggestions {
+  display: flex;
+  max-height: 84px;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: auto;
+  padding: 1px 0;
+}
+
+.host-field-suggestions button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 25px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.host-field-suggestions button:hover,
+.host-field-suggestions button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.host-field-suggestions button:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.host-field-suggestions button svg {
+  width: 12px;
+  height: 12px;
+}
+
 .key-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 300px));
@@ -2762,6 +2804,10 @@
   overflow: auto;
 }
 
+.host-table-scroll::-webkit-scrollbar-corner {
+  background: var(--surface);
+}
+
 .host-card-scroll {
   min-height: 0;
   overflow: auto;
@@ -3059,6 +3105,18 @@
   min-width: 128px;
 }
 
+.host-list-card .host-card-menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.host-list-card .host-card-menu-panel button svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
 .host-table {
   width: 100%;
   min-width: 900px;
@@ -3337,6 +3395,51 @@
   color: var(--muted);
   border-color: var(--border);
   background: var(--surface-soft);
+}
+
+.host-quick-metadata-select {
+  position: relative;
+  display: inline-flex;
+  min-height: 22px;
+  max-width: 100%;
+  align-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.host-quick-metadata-select:has(select:not(:disabled)):hover,
+.host-quick-metadata-select:has(select:focus-visible) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.host-quick-metadata-select select {
+  min-width: 0;
+  max-width: 100%;
+  height: 20px;
+  appearance: none;
+  border: 0;
+  outline: 0;
+  padding: 0 23px 0 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.host-quick-metadata-select select:disabled {
+  cursor: default;
+}
+
+.host-quick-metadata-select svg {
+  position: absolute;
+  right: 5px;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
 }
 
 .host-tag-cell {
