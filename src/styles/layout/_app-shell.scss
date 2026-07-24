@@ -147,7 +147,7 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  transition: grid-template-columns 200ms ease;
+  transition: grid-template-columns 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 
@@ -158,10 +158,11 @@
   border-right: 1px solid var(--window-divider);
   background: var(--sidebar);
   overflow: hidden;
+  transition: padding 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .side-nav.collapsed {
-  padding: 16px 6px 18px;
+  padding: 18px 6px 16px;
 }
 
 .side-nav-header {
@@ -172,9 +173,18 @@
   gap: 8px;
   margin-bottom: 8px;
   padding: 0 6px 0 12px;
+  transition:
+    gap 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav.collapsed .side-nav-header {
+  gap: 0;
+  padding-inline: 7.6px;
 }
 
 .side-nav-brand {
+  max-width: 120px;
   overflow: hidden;
   color: var(--text);
   font-size: 15px;
@@ -182,6 +192,16 @@
   letter-spacing: 0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    max-width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav.collapsed .side-nav-brand {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
 }
 
 .side-nav-toggle {
@@ -203,14 +223,37 @@
     color 140ms ease;
 }
 
-.side-nav.collapsed > .side-nav-toggle {
-  align-self: center;
+.side-nav-toggle-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  position: relative;
 }
 
-.side-nav-toggle svg {
+.side-nav-toggle-icon svg {
+  position: absolute;
+  inset: 0;
   width: 18px;
   height: 18px;
   stroke-width: 1.9;
+  transition:
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav-toggle-open {
+  opacity: 0;
+  transform: translateX(-4px) scale(0.9);
+}
+
+.side-nav.collapsed .side-nav-toggle-open {
+  opacity: 1;
+  transform: none;
+}
+
+.side-nav.collapsed .side-nav-toggle-close {
+  opacity: 0;
+  transform: translateX(4px) scale(0.9);
 }
 
 .side-nav-toggle:hover {
@@ -229,8 +272,8 @@
 
 .side-nav.collapsed .feature-nav-item,
 .side-nav.collapsed .settings-entry {
-  justify-content: center;
-  padding: 0;
+  gap: 0;
+  padding-inline: 10.6px;
 }
 
 .feature-nav {
@@ -248,6 +291,28 @@
   background: transparent;
   cursor: pointer;
   text-align: left;
+  transition:
+    gap 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav-label {
+  max-width: 140px;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    max-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav.collapsed .side-nav-label {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
 }
 
 .feature-nav-item::before,
@@ -618,6 +683,19 @@
 .app-status-footer button:hover {
   color: var(--accent);
   background: var(--surface-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-layout,
+  .side-nav,
+  .side-nav-header,
+  .side-nav-brand,
+  .side-nav-toggle-icon svg,
+  .feature-nav-item,
+  .settings-entry,
+  .side-nav-label {
+    transition: none;
+  }
 }
 
 @media (max-width: 980px) {

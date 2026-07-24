@@ -3743,7 +3743,8 @@ function App() {
       ) : (
       <div className="app-layout">
         <aside className={`side-nav ${isSideNavCollapsed ? 'collapsed' : ''}`}>
-          {isSideNavCollapsed ? (
+          <div className="side-nav-header">
+            <span className="side-nav-brand">ShellDesk</span>
             <button
               type="button"
               className="side-nav-toggle"
@@ -3752,23 +3753,12 @@ function App() {
               title={sideNavToggleLabel}
               aria-expanded={!isSideNavCollapsed}
             >
-              <PanelLeftOpen aria-hidden="true" />
+              <span className="side-nav-toggle-icon" aria-hidden="true">
+                <PanelLeftOpen className="side-nav-toggle-open" />
+                <PanelLeftClose className="side-nav-toggle-close" />
+              </span>
             </button>
-          ) : (
-            <div className="side-nav-header">
-              <span className="side-nav-brand">ShellDesk</span>
-              <button
-                type="button"
-                className="side-nav-toggle"
-                onClick={toggleSideNav}
-                aria-label={sideNavToggleLabel}
-                title={sideNavToggleLabel}
-                aria-expanded={!isSideNavCollapsed}
-              >
-                <PanelLeftClose aria-hidden="true" />
-              </button>
-            </div>
-          )}
+          </div>
           <nav className="feature-nav" aria-label={t('app.nav.feature', appLanguage)}>
             {navigationItems.map((item) => (
               <Fragment key={item.key}>
@@ -3781,7 +3771,7 @@ function App() {
                   title={isSideNavCollapsed ? item.label[appLanguage] : undefined}
                 >
                   <span className="nav-icon"><ShellDeskNavIcon name={item.icon} /></span>
-                  {!isSideNavCollapsed ? item.label[appLanguage] : null}
+                  <span className="side-nav-label">{item.label[appLanguage]}</span>
                 </button>
                 {item.key === 'hosts' ? <button
                   type="button"
@@ -3792,7 +3782,7 @@ function App() {
                   title={isSideNavCollapsed ? (appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace') : undefined}
                 >
                   <span className="nav-icon"><ShellDeskNavIcon name="agent" /></span>
-                  {!isSideNavCollapsed ? (appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace') : null}
+                  <span className="side-nav-label">{appLanguage === 'zh-CN' ? 'AI 工作台' : 'AI workspace'}</span>
                 </button> : null}
               </Fragment>
             ))}
@@ -3807,7 +3797,7 @@ function App() {
             title={isSideNavCollapsed ? t('app.nav.settings', appLanguage) : (syncConflictBadgeLabel || undefined)}
           >
             <span className="nav-icon"><ShellDeskNavIcon name="settings" /></span>
-            {!isSideNavCollapsed ? t('app.nav.settings', appLanguage) : null}
+            <span className="side-nav-label">{t('app.nav.settings', appLanguage)}</span>
             {syncConflictCount ? <span className="settings-sync-dot" aria-label={syncConflictBadgeLabel} /> : null}
           </button>
 
