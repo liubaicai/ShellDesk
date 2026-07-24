@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { MySQL, sql } from '@codemirror/lang-sql';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 
+import DatabaseImportDialog from './DatabaseImportDialog';
 import { getErrorMessage } from './desktopUtils';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
@@ -2918,169 +2919,45 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         document.body,
       ) : null}
 
-      {importDataState.open ? createPortal(
-        <div className="schema-dialog-overlay" role="presentation">
-          <div className="schema-dialog mysql-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mysql-import-title">
-            <div className="schema-dialog-header">
-              <h3 id="mysql-import-title">
-                {tCurrent('auto.remoteMySQL.importDialogTitle', { table: getImportTargetTable() || '-' })}
-              </h3>
-              <button
-                type="button"
-                onClick={closeImportDialog}
-                disabled={importDataState.executing}
-                aria-label={tCurrent('auto.remoteMySQL.cancel')}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="schema-form-grid">
-              <label className="schema-field schema-field-wide">
-                <span>{tCurrent('auto.remoteMySQL.importTargetTable')}</span>
-                <select
-                  value={importDataState.targetTable}
-                  onChange={(event) => setImportDataState((current) => ({
-                    ...current,
-                    targetTable: event.target.value,
-                    progress: null,
-                    error: '',
-                  }))}
-                  disabled={importDataState.executing}
-                >
-                  <option value="">{tCurrent('auto.remoteMySQL.importNoTable')}</option>
-                  <option value={importEditorTarget}>{tCurrent('auto.remoteMySQL.importFromSqlEditor')}</option>
-                  {importTargetTables.map((table) => (
-                    <option key={table} value={table}>{table}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="mysql-import-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'csv'}
-                className={importDataState.mode === 'csv' ? 'active' : ''}
-                onClick={() => updateImportMode('csv')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remoteMySQL.importCsvTab')}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'json'}
-                className={importDataState.mode === 'json' ? 'active' : ''}
-                onClick={() => updateImportMode('json')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remoteMySQL.importJsonTab')}
-              </button>
-            </div>
-
-            <div className="schema-import-file-row">
-              <input
-                type="file"
-                ref={importFileInputRef}
-                style={{ display: 'none' }}
-                accept=".csv,.json"
-                onChange={handleImportFileSelected}
-              />
-              <button type="button" onClick={() => importFileInputRef.current?.click()} disabled={importDataState.executing}>
-                {tCurrent('auto.remoteMySQL.importSelectFile')}
-              </button>
-            </div>
-
-            <label className="schema-field schema-preview-field">
-              <span>
-                {importDataState.mode === 'csv'
-                  ? tCurrent('auto.remoteMySQL.importPasteCsv')
-                  : tCurrent('auto.remoteMySQL.importPasteJson')}
-              </span>
-              <textarea
-                value={importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText}
-                onChange={(event) => updateImportText(importDataState.mode, event.target.value)}
-                disabled={importDataState.executing}
-                rows={8}
-                autoFocus
-              />
-            </label>
-
-            <div className="schema-section">
-              <div className="schema-section-header">
-                <strong>{tCurrent('auto.remoteMySQL.importPreview')}</strong>
-                {importDataState.progress ? (
-                  <span className="mysql-import-progress">
-                    {tCurrent('auto.remoteMySQL.importProgress', {
-                      current: importDataState.progress.current,
-                      total: importDataState.progress.total,
-                    })}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mysql-import-preview">
-                {importDataState.columns.length > 0 && importDataState.preview.length > 0 ? (
-                  <table>
-                    <thead>
-                      <tr>
-                        {importDataState.columns.map((column) => (
-                          <th key={column}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importDataState.preview.map((row, rowIndex) => (
-                        <tr key={`${rowIndex}-${importDataState.columns.join('|')}`}>
-                          {importDataState.columns.map((column) => (
-                            <td key={column}>{row[column] ?? ''}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="mysql-import-empty">{tCurrent('auto.remoteMySQL.importNoData')}</div>
-                )}
-              </div>
-            </div>
-
-            {importDataState.error ? (
-              <div
-                className="dismissible-alert mysql-message-banner error schema-dialog-alert schema-local-alert"
-                role="alert"
-              >
-                <span className="dismissible-alert-content">{importDataState.error}</span>
-                <button
-                  type="button"
-                  className="dismissible-alert-close"
-                  onClick={() => setImportDataState((current) => ({ ...current, error: '' }))}
-                  aria-label={tCurrent('common.closeAlert')}
-                  title={tCurrent('common.closeAlert')}
-                >
-                  ×
-                </button>
-              </div>
-            ) : null}
-
-            <div className="schema-actions">
-              <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
-                {tCurrent('auto.remoteMySQL.cancel')}
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void handleExecuteImport()}
-                disabled={importDataState.executing}
-              >
-                {importDataState.executing ? tCurrent('auto.remoteMySQL.e2byz1') : tCurrent('auto.remoteMySQL.importExecute')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
+      <DatabaseImportDialog
+        dialogId="mysql-import-title"
+        editorTargetValue={importEditorTarget}
+        fileInputRef={importFileInputRef}
+        labels={{
+          cancel: tCurrent('auto.remoteMySQL.cancel'),
+          closeAlert: tCurrent('common.closeAlert'),
+          csvTab: tCurrent('auto.remoteMySQL.importCsvTab'),
+          execute: tCurrent('auto.remoteMySQL.importExecute'),
+          executing: tCurrent('auto.remoteMySQL.e2byz1'),
+          fromSqlEditor: tCurrent('auto.remoteMySQL.importFromSqlEditor'),
+          jsonTab: tCurrent('auto.remoteMySQL.importJsonTab'),
+          noData: tCurrent('auto.remoteMySQL.importNoData'),
+          noTable: tCurrent('auto.remoteMySQL.importNoTable'),
+          pasteCsv: tCurrent('auto.remoteMySQL.importPasteCsv'),
+          pasteJson: tCurrent('auto.remoteMySQL.importPasteJson'),
+          preview: tCurrent('auto.remoteMySQL.importPreview'),
+          progress: importDataState.progress
+            ? tCurrent('auto.remoteMySQL.importProgress', importDataState.progress)
+            : '',
+          selectFile: tCurrent('auto.remoteMySQL.importSelectFile'),
+          targetTable: tCurrent('auto.remoteMySQL.importTargetTable'),
+          title: tCurrent('auto.remoteMySQL.importDialogTitle', { table: getImportTargetTable() || '-' }),
+        }}
+        onClearError={() => setImportDataState((current) => ({ ...current, error: '' }))}
+        onClose={closeImportDialog}
+        onExecute={() => void handleExecuteImport()}
+        onFileSelected={handleImportFileSelected}
+        onModeChange={updateImportMode}
+        onTargetChange={(targetTable) => setImportDataState((current) => ({
+          ...current,
+          targetTable,
+          progress: null,
+          error: '',
+        }))}
+        onTextChange={updateImportText}
+        state={importDataState}
+        targetOptions={importTargetTables.map((table) => ({ label: table, value: table }))}
+      />
 
       {pendingEdit ? createPortal(
         <div className="mysql-modal-backdrop" role="presentation">

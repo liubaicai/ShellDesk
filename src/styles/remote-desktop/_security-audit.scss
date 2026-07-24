@@ -225,7 +225,6 @@
 .security-check-list,
 .security-detail-panel {
   min-height: 0;
-  overflow: hidden;
   border: 1px solid var(--security-border);
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)), var(--security-panel);

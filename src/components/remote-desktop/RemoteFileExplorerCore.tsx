@@ -19,11 +19,11 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 
 import { t, useCurrentAppLanguage } from '../../i18n';
 import FilePermissionDialog, { formatMode, formatOctalMode, parseOctalModeDraft } from './FilePermissionDialog';
 import FileExplorerContextMenu from './FileExplorerContextMenu';
+import FileExplorerDialogs from './FileExplorerDialogs';
 import FileExplorerSidebar from './FileExplorerSidebar';
 import { FileIcon } from './FileIcon';
 import { formatDateTime, getErrorMessage, getShellDeskLocale } from './desktopUtils';
@@ -56,7 +56,6 @@ import {
 } from './fileExplorerIcons';
 import {
   formatBytes,
-  getDeleteEntriesLabel,
   getDownloadTaskLabel,
   getSortValue,
   isEditableShortcutTarget,
@@ -1893,120 +1892,21 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         onClose={closeContextMenu}
       />
 
-      {uploadConflictDialog ? createPortal(
-        <div className="notepad-modal-overlay" role="presentation" onClick={() => setUploadConflictDialog(null)}>
-          <div
-            className="notepad-modal explorer-conflict-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="explorer-upload-conflict-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div id="explorer-upload-conflict-title" className="notepad-modal-title">
-              {language === 'zh-CN' ? '上传冲突' : 'Upload conflicts'}
-            </div>
-            <div className="notepad-modal-message">
-              {language === 'zh-CN'
-                ? `有 ${uploadConflictDialog.conflicts.length} 个目标已存在，请选择处理方式。`
-                : `${uploadConflictDialog.conflicts.length} target item(s) already exist. Choose how to continue.`}
-            </div>
-            <div className="explorer-conflict-list">
-              {uploadConflictDialog.conflicts.slice(0, 8).map((conflict) => (
-                <div key={conflict.item.path} className="explorer-conflict-row">
-                  <strong>{conflict.item.name}</strong>
-                  <span title={conflict.remotePath}>{conflict.remotePath}</span>
-                </div>
-              ))}
-              {uploadConflictDialog.conflicts.length > 8 ? (
-                <div className="explorer-conflict-more">
-                  {language === 'zh-CN'
-                    ? `另有 ${uploadConflictDialog.conflicts.length - 8} 项未显示`
-                    : `${uploadConflictDialog.conflicts.length - 8} more item(s) hidden`}
-                </div>
-              ) : null}
-            </div>
-            <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setUploadConflictDialog(null)}>{t('common.cancel', language)}</button>
-              <button type="button" className="notepad-modal-btn" onClick={() => void resolveUploadConflicts('skip')}>
-                {language === 'zh-CN' ? '跳过冲突' : 'Skip'}
-              </button>
-              <button type="button" className="notepad-modal-btn" onClick={() => void resolveUploadConflicts('duplicate')}>
-                {language === 'zh-CN' ? '重命名上传' : 'Rename'}
-              </button>
-              <button type="button" className="notepad-modal-btn primary" onClick={() => void resolveUploadConflicts('replace')}>
-                {language === 'zh-CN' ? '覆盖' : 'Replace'}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
-
-      {deleteConfirmationEntries ? createPortal(
-        <div className="notepad-modal-overlay" role="presentation" onClick={() => setDeleteConfirmationEntries(null)}>
-          <div
-            className="notepad-modal"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="explorer-delete-confirm-title"
-            data-testid="explorer-delete-confirm-dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div id="explorer-delete-confirm-title" className="notepad-modal-title">{t('fileExplorer.delete.title', language)}</div>
-            <div className="notepad-modal-message">
-              {t('fileExplorer.delete.message', language, { target: getDeleteEntriesLabel(deleteConfirmationEntries, language) })}
-            </div>
-            <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => setDeleteConfirmationEntries(null)}>{t('common.cancel', language)}</button>
-              <button type="button" className="notepad-modal-btn danger" onClick={() => void confirmDeleteSelectedEntries()}>{t('fileExplorer.context.delete', language)}</button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
-
-      {sudoPrompt ? createPortal(
-        <div className="notepad-modal-overlay" role="presentation" onClick={() => resolveSudoPrompt(null)}>
-          <form
-            className="notepad-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="explorer-sudo-title"
-            data-testid="explorer-sudo-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              resolveSudoPrompt(sudoPrompt.password);
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div id="explorer-sudo-title" className="notepad-modal-title">{t('fileExplorer.sudo.title', language)}</div>
-            <div className="notepad-modal-message">
-              {t('fileExplorer.sudo.message', language, {
-                operation: sudoPrompt.operation,
-                target: sudoPrompt.target,
-              })}
-            </div>
-            {sudoPrompt.error ? <div className="notepad-modal-message">{sudoPrompt.error}</div> : null}
-            <label className="notepad-modal-field">
-              <span>{t('fileExplorer.sudo.password', language)}</span>
-              <input
-                ref={sudoPasswordInputRef}
-                className="notepad-modal-input"
-                data-testid="explorer-sudo-password"
-                type="password"
-                value={sudoPrompt.password}
-                autoComplete="current-password"
-                onChange={(event) => setSudoPrompt((current) => current ? { ...current, password: event.target.value } : current)}
-              />
-            </label>
-            <div className="notepad-modal-actions">
-              <button type="button" className="notepad-modal-btn" onClick={() => resolveSudoPrompt(null)}>{t('common.cancel', language)}</button>
-              <button type="submit" className="notepad-modal-btn primary">{t('fileExplorer.sudo.continue', language)}</button>
-            </div>
-          </form>
-        </div>,
-        document.body,
-      ) : null}
+      <FileExplorerDialogs
+        deleteConfirmationEntries={deleteConfirmationEntries}
+        language={language}
+        sudoPasswordInputRef={sudoPasswordInputRef}
+        sudoPrompt={sudoPrompt}
+        uploadConflictDialog={uploadConflictDialog}
+        onCloseDeleteConfirmation={() => setDeleteConfirmationEntries(null)}
+        onCloseUploadConflict={() => setUploadConflictDialog(null)}
+        onConfirmDelete={() => void confirmDeleteSelectedEntries()}
+        onResolveSudoPrompt={resolveSudoPrompt}
+        onResolveUploadConflicts={(strategy) => void resolveUploadConflicts(strategy)}
+        onUpdateSudoPassword={(password) => setSudoPrompt((current) => (
+          current ? { ...current, password } : current
+        ))}
+      />
 
       {propertiesEntry ? (
         <FilePermissionDialog

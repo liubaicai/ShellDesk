@@ -4,6 +4,7 @@ import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo,
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import DatabaseImportDialog from './DatabaseImportDialog';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import {
@@ -2316,169 +2317,47 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
           </section>
         </main>
       </div>
-      {importDataState.open ? createPortal(
-        <div className="schema-dialog-overlay" role="presentation">
-          <div className="schema-dialog mysql-import-dialog" role="dialog" aria-modal="true" aria-labelledby="clickhouse-import-title">
-            <div className="schema-dialog-header">
-              <h3 id="clickhouse-import-title">
-                {tCurrent('auto.remoteClickHouse.importDialogTitle', { table: getImportTargetTable()?.display || '-' })}
-              </h3>
-              <button
-                type="button"
-                onClick={closeImportDialog}
-                disabled={importDataState.executing}
-                aria-label={tCurrent('auto.remoteClickHouse.cancel')}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="schema-form-grid">
-              <label className="schema-field schema-field-wide">
-                <span>{tCurrent('auto.remoteClickHouse.importTargetTable')}</span>
-                <select
-                  value={importDataState.targetTable}
-                  onChange={(event) => setImportDataState((current) => ({
-                    ...current,
-                    targetTable: event.target.value,
-                    progress: null,
-                    error: '',
-                  }))}
-                  disabled={importDataState.executing}
-                >
-                  <option value="">{tCurrent('auto.remoteClickHouse.importNoTable')}</option>
-                  <option value={importEditorTarget}>{tCurrent('auto.remoteClickHouse.importFromSqlEditor')}</option>
-                  {importTargetTables.map((table) => (
-                    <option key={table.value} value={table.value}>{table.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="mysql-import-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'csv'}
-                className={importDataState.mode === 'csv' ? 'active' : ''}
-                onClick={() => updateImportMode('csv')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remoteClickHouse.importCsvTab')}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'json'}
-                className={importDataState.mode === 'json' ? 'active' : ''}
-                onClick={() => updateImportMode('json')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remoteClickHouse.importJsonTab')}
-              </button>
-            </div>
-
-            <div className="schema-import-file-row">
-              <input
-                type="file"
-                ref={importFileInputRef}
-                style={{ display: 'none' }}
-                accept=".csv,.json"
-                onChange={handleImportFileSelected}
-              />
-              <button type="button" onClick={() => importFileInputRef.current?.click()} disabled={importDataState.executing}>
-                {tCurrent('auto.remoteClickHouse.importSelectFile')}
-              </button>
-            </div>
-
-            <label className="schema-field schema-preview-field">
-              <span>
-                {importDataState.mode === 'csv'
-                  ? tCurrent('auto.remoteClickHouse.importPasteCsv')
-                  : tCurrent('auto.remoteClickHouse.importPasteJson')}
-              </span>
-              <textarea
-                value={importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText}
-                onChange={(event) => updateImportText(importDataState.mode, event.target.value)}
-                disabled={importDataState.executing}
-                rows={8}
-                autoFocus
-              />
-            </label>
-
-            <div className="schema-section">
-              <div className="schema-section-header">
-                <strong>{tCurrent('auto.remoteClickHouse.importPreview')}</strong>
-                {importDataState.progress ? (
-                  <span className="mysql-import-progress">
-                    {tCurrent('auto.remoteClickHouse.importProgress', {
-                      current: importDataState.progress.current,
-                      total: importDataState.progress.total,
-                    })}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mysql-import-preview">
-                {importDataState.columns.length > 0 && importDataState.preview.length > 0 ? (
-                  <table>
-                    <thead>
-                      <tr>
-                        {importDataState.columns.map((column) => (
-                          <th key={column}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importDataState.preview.map((row, rowIndex) => (
-                        <tr key={`${rowIndex}-${importDataState.columns.join('|')}`}>
-                          {importDataState.columns.map((column) => (
-                            <td key={column}>{row[column] ?? ''}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="mysql-import-empty">{tCurrent('auto.remoteClickHouse.importNoData')}</div>
-                )}
-              </div>
-            </div>
-
-            {importDataState.error ? (
-              <div
-                className="dismissible-alert mysql-message-banner error schema-dialog-alert schema-local-alert"
-                role="alert"
-              >
-                <span className="dismissible-alert-content">{importDataState.error}</span>
-                <button
-                  type="button"
-                  className="dismissible-alert-close"
-                  onClick={() => setImportDataState((current) => ({ ...current, error: '' }))}
-                  aria-label={tCurrent('common.closeAlert')}
-                  title={tCurrent('common.closeAlert')}
-                >
-                  ×
-                </button>
-              </div>
-            ) : null}
-
-            <div className="schema-actions">
-              <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
-                {tCurrent('auto.remoteClickHouse.cancel')}
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void handleExecuteImport()}
-                disabled={importDataState.executing}
-              >
-                {importDataState.executing ? tCurrent('clickhouse.query.runningButton') : tCurrent('auto.remoteClickHouse.importExecute')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
+      <DatabaseImportDialog
+        dialogId="clickhouse-import-title"
+        editorTargetValue={importEditorTarget}
+        fileInputRef={importFileInputRef}
+        labels={{
+          cancel: tCurrent('auto.remoteClickHouse.cancel'),
+          closeAlert: tCurrent('common.closeAlert'),
+          csvTab: tCurrent('auto.remoteClickHouse.importCsvTab'),
+          execute: tCurrent('auto.remoteClickHouse.importExecute'),
+          executing: tCurrent('clickhouse.query.runningButton'),
+          fromSqlEditor: tCurrent('auto.remoteClickHouse.importFromSqlEditor'),
+          jsonTab: tCurrent('auto.remoteClickHouse.importJsonTab'),
+          noData: tCurrent('auto.remoteClickHouse.importNoData'),
+          noTable: tCurrent('auto.remoteClickHouse.importNoTable'),
+          pasteCsv: tCurrent('auto.remoteClickHouse.importPasteCsv'),
+          pasteJson: tCurrent('auto.remoteClickHouse.importPasteJson'),
+          preview: tCurrent('auto.remoteClickHouse.importPreview'),
+          progress: importDataState.progress
+            ? tCurrent('auto.remoteClickHouse.importProgress', importDataState.progress)
+            : '',
+          selectFile: tCurrent('auto.remoteClickHouse.importSelectFile'),
+          targetTable: tCurrent('auto.remoteClickHouse.importTargetTable'),
+          title: tCurrent('auto.remoteClickHouse.importDialogTitle', {
+            table: getImportTargetTable()?.display || '-',
+          }),
+        }}
+        onClearError={() => setImportDataState((current) => ({ ...current, error: '' }))}
+        onClose={closeImportDialog}
+        onExecute={() => void handleExecuteImport()}
+        onFileSelected={handleImportFileSelected}
+        onModeChange={updateImportMode}
+        onTargetChange={(targetTable) => setImportDataState((current) => ({
+          ...current,
+          targetTable,
+          progress: null,
+          error: '',
+        }))}
+        onTextChange={updateImportText}
+        state={importDataState}
+        targetOptions={importTargetTables}
+      />
 
       {pendingEdit ? createPortal(
         <div className="mysql-modal-backdrop" role="presentation">

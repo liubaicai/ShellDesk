@@ -22,7 +22,7 @@
 - `src/components/remote-desktop/index.ts` 的组件导出
 - `src/styles/index.scss` 的远程桌面样式入口
 
-数据库工作台的组件状态与交互仍保留在各 `Remote*.tsx`；SQL 生成、导入解析和表结构模型分别放在 `mysqlWorkbenchModel.ts`、`postgresWorkbenchModel.ts`、`clickHouseWorkbenchModel.ts`，共享编辑器与导入逻辑放在 `databaseEditorExtensions.ts` 和 `databaseImportUtils.ts`。
+数据库工作台的组件状态与交互仍保留在各 `Remote*.tsx`；SQL 生成、导入解析和表结构模型分别放在 `mysqlWorkbenchModel.ts`、`postgresWorkbenchModel.ts`、`clickHouseWorkbenchModel.ts`，共享编辑器、导入逻辑和导入弹窗分别放在 `databaseEditorExtensions.ts`、`databaseImportUtils.ts` 和 `DatabaseImportDialog.tsx`。文件管理器的上传冲突、删除确认和 sudo 提示统一由 `FileExplorerDialogs.tsx` 渲染到 `document.body`。
 
 `docs/remote-desktop-components/_example.md` 是新增或更新组件文档时的模板与检查清单。
 

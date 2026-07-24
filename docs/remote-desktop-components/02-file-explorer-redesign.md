@@ -4,6 +4,8 @@
 
 样式入口为 `src/styles/remote-desktop/_file-explorer.scss`，按基础、工作台、Windows 模拟与交互抛光分层加载，避免继续在单文件末尾叠加覆盖。
 
+上传冲突、删除确认和 sudo 密码提示集中在 `FileExplorerDialogs.tsx`，由核心组件传入状态与操作回调，继续通过 Portal 渲染到 `document.body`。
+
 ## 定位
 
 文件管理器是 ShellDesk 远程桌面的文件工作台。重新设计时应覆盖浏览、传输、批量操作、预览、打开方式和与其他工具协作，而不是只做目录列表。

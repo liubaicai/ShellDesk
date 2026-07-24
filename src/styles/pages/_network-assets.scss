@@ -78,17 +78,7 @@
   grid-template-columns: repeat(auto-fill, minmax(276px, 1fr));
 }
 
-.network-card {
-  min-height: 106px;
-  align-items: flex-start;
-  padding: 12px 10px;
-}
 
-.network-card.active,
-.network-card:hover {
-  border-color: var(--accent-border);
-  background: var(--surface-soft);
-}
 
 .network-card.converted {
   opacity: 0.76;
@@ -120,7 +110,6 @@
 
 .network-card-main {
   cursor: pointer;
-  padding-right: 38px;
 }
 
 .known-host-card .network-card-main {
@@ -222,42 +211,20 @@
   color: #c9c2ff;
 }
 
-.network-summary {
-  display: grid;
-  gap: 3px;
-}
 
 .network-summary small {
-  display: block;
-  color: var(--muted-strong);
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
 }
 
 .network-card-tags {
-  display: flex !important;
-  flex-wrap: nowrap;
   align-items: center;
-  gap: 5px;
-  margin-top: 7px !important;
-  min-width: 0;
-  overflow: hidden;
-  padding-right: 3px;
 }
 
 .network-card-tags em {
   flex: 0 1 auto;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 21px !important;
-  overflow: hidden;
-  padding: 3px 7px !important;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .network-card-tags em:nth-child(2) {
-  max-width: min(100%, 210px);
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   font-size: 10.5px !important;
 }
 
@@ -281,10 +248,6 @@
   color: #ffb7bd !important;
 }
 
-.network-card-actions {
-  top: 7px;
-  right: 7px;
-}
 
 .network-clear-filter span {
   font-size: 22px;

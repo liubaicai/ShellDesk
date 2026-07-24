@@ -4,6 +4,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const stylesRoot = path.join(root, 'src', 'styles');
 const fix = process.argv.includes('--fix');
+const auditPartial = process.argv.includes('--audit-partial');
 
 function listScssFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -96,6 +97,55 @@ function normalizePrelude(value) {
     .replace(/\/\/[^\r\n]*/g, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+function splitSelectorList(selector) {
+  const selectors = [];
+  let start = 0;
+  let parentheses = 0;
+  let brackets = 0;
+  let interpolation = 0;
+  let cursor = 0;
+
+  while (cursor < selector.length) {
+    const char = selector[cursor];
+    if (char === '"' || char === "'") {
+      cursor = skipQuoted(selector, cursor, selector.length);
+      continue;
+    }
+    if (char === '#' && selector[cursor + 1] === '{') {
+      interpolation += 1;
+      cursor += 2;
+      continue;
+    }
+    if (char === '{' && interpolation > 0) interpolation += 1;
+    if (char === '}' && interpolation > 0) interpolation -= 1;
+    if (char === '(') parentheses += 1;
+    if (char === ')') parentheses -= 1;
+    if (char === '[') brackets += 1;
+    if (char === ']') brackets -= 1;
+    if (char === ',' && parentheses === 0 && brackets === 0 && interpolation === 0) {
+      const item = selector.slice(start, cursor).trim();
+      if (item) {
+        selectors.push(item);
+      }
+      start = cursor + 1;
+    }
+    cursor += 1;
+  }
+
+  const tail = selector.slice(start).trim();
+  if (tail) {
+    selectors.push(tail);
+  }
+  return [...new Set(selectors)];
+}
+
+function selectorKeysForRule(rule) {
+  return splitSelectorList(rule.selector).map((selector) => ({
+    key: `${rule.context}\u0000${selector}`,
+    selector,
+  }));
 }
 
 function readDeclarations(source, start, end) {
@@ -286,48 +336,73 @@ function removeEmptyStyleRules(source) {
 function findShadowedDeclarations(source) {
   const groups = new Map();
   for (const rule of parseRules(source)) {
-    const key = `${rule.context}\u0000${rule.selector}`;
-    if (!groups.has(key)) {
-      groups.set(key, []);
+    for (const selectorKey of selectorKeysForRule(rule)) {
+      if (!groups.has(selectorKey.key)) {
+        groups.set(selectorKey.key, []);
+      }
+      groups.get(selectorKey.key).push({
+        rule,
+        selector: selectorKey.selector,
+      });
     }
-    groups.get(key).push(rule);
   }
 
-  const shadowed = [];
+  const shadowedByDeclaration = new Map();
   for (const occurrences of groups.values()) {
     if (occurrences.length < 2) {
       continue;
     }
     const declarationsByProperty = new Map();
-    for (const rule of occurrences) {
-      for (const declaration of rule.declarations) {
+    for (const occurrence of occurrences) {
+      for (const declaration of occurrence.rule.declarations) {
         if (!declarationsByProperty.has(declaration.property)) {
           declarationsByProperty.set(declaration.property, []);
         }
-        declarationsByProperty.get(declaration.property).push(declaration);
+        declarationsByProperty.get(declaration.property).push({
+          ...occurrence,
+          declaration,
+        });
       }
     }
-    for (const declarations of declarationsByProperty.values()) {
-      if (declarations.length < 2) {
+    for (const entries of declarationsByProperty.values()) {
+      if (entries.length < 2) {
         continue;
       }
-      for (let index = 0; index < declarations.length - 1; index += 1) {
-        const declaration = declarations[index];
-        const later = declarations.slice(index + 1);
-        if (!declaration.important || later.some((candidate) => candidate.important)) {
-          shadowed.push(declaration);
+      for (let index = 0; index < entries.length - 1; index += 1) {
+        const entry = entries[index];
+        const later = entries.slice(index + 1);
+        if (!entry.declaration.important || later.some((candidate) => candidate.declaration.important)) {
+          const declarationKey = `${entry.declaration.start}\u0000${entry.declaration.end}`;
+          if (!shadowedByDeclaration.has(declarationKey)) {
+            shadowedByDeclaration.set(declarationKey, {
+              declaration: entry.declaration,
+              rule: entry.rule,
+              shadowedSelectors: new Set(),
+            });
+          }
+          shadowedByDeclaration.get(declarationKey).shadowedSelectors.add(entry.selector);
         }
       }
     }
   }
-  return shadowed;
+  return [...shadowedByDeclaration.values()].map((entry) => {
+    const selectorCount = selectorKeysForRule(entry.rule).length;
+    return {
+      ...entry.declaration,
+      selectors: [...entry.shadowedSelectors],
+      partialSelector: entry.shadowedSelectors.size < selectorCount,
+    };
+  });
 }
 
 const reports = [];
 const scssFiles = listScssFiles(stylesRoot);
 for (const filePath of scssFiles) {
   const source = fs.readFileSync(filePath, 'utf8');
-  const shadowed = findShadowedDeclarations(source);
+  const detectedShadowed = findShadowedDeclarations(source);
+  const shadowed = auditPartial
+    ? detectedShadowed
+    : detectedShadowed.filter((declaration) => !declaration.partialSelector);
   if (!shadowed.length) {
     continue;
   }
@@ -343,11 +418,20 @@ function findCrossFileRedeclarations() {
   for (const filePath of scssFiles) {
     const source = fs.readFileSync(filePath, 'utf8');
     for (const rule of parseRules(source)) {
-      const key = `${rule.context}\u0000${rule.selector}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
+      const selectorKeys = auditPartial
+        ? selectorKeysForRule(rule)
+        : [{ key: `${rule.context}\u0000${rule.selector}`, selector: rule.selector }];
+      for (const selectorKey of selectorKeys) {
+        if (!groups.has(selectorKey.key)) {
+          groups.set(selectorKey.key, []);
+        }
+        groups.get(selectorKey.key).push({
+          filePath,
+          source,
+          rule,
+          selector: selectorKey.selector,
+        });
       }
-      groups.get(key).push({ filePath, source, rule });
     }
   }
 
@@ -370,7 +454,10 @@ function findCrossFileRedeclarations() {
     }
     for (const declarations of declarationsByProperty.values()) {
       if (new Set(declarations.map((entry) => entry.filePath)).size > 1) {
-        redeclarations.push(declarations);
+        redeclarations.push({
+          declarations,
+          selector: declarations[0].selector,
+        });
       }
     }
   }
@@ -380,9 +467,14 @@ function findCrossFileRedeclarations() {
 const crossFileRedeclarations = findCrossFileRedeclarations();
 
 if (fix) {
+  let skippedPartialDeclarations = 0;
+  let removedDeclarations = 0;
   for (const report of reports) {
+    const safeDeclarations = report.shadowed.filter((declaration) => !declaration.partialSelector);
+    skippedPartialDeclarations += report.shadowed.length - safeDeclarations.length;
+    removedDeclarations += safeDeclarations.length;
     const ranges = mergeRanges(
-      report.shadowed.map((declaration) => (
+      safeDeclarations.map((declaration) => (
         expandRemovalRange(report.source, declaration.start, declaration.end)
       )),
     );
@@ -400,7 +492,11 @@ if (fix) {
       fs.writeFileSync(filePath, nextSource);
     }
   }
-  console.log(`Removed ${reports.reduce((sum, report) => sum + report.shadowed.length, 0)} shadowed SCSS declarations from ${reports.length} files.`);
+  console.log(`Removed ${removedDeclarations} fully shadowed SCSS declarations from ${reports.length} files.`);
+  if (skippedPartialDeclarations > 0) {
+    console.error(`Skipped ${skippedPartialDeclarations} partial-selector declarations because removing them would affect selectors that are not shadowed.`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 
@@ -411,19 +507,20 @@ if (reports.length || crossFileRedeclarations.length) {
       const relativePath = path.relative(root, report.filePath).replace(/\\/g, '/');
       return report.shadowed.map((declaration) => (
         `  - ${relativePath}:${lineNumberAt(report.source, declaration.start)}: ${declaration.property}`
+        + ` (${declaration.partialSelector ? 'partial ' : ''}${declaration.selectors.join(', ')})`
       ));
     }),
-    ...crossFileRedeclarations.map((declarations) => {
+    ...crossFileRedeclarations.map(({ declarations, selector }) => {
       const property = declarations[0].declaration.property;
       const locations = declarations.map((entry) => {
         const relativePath = path.relative(root, entry.filePath).replace(/\\/g, '/');
         return `${relativePath}:${lineNumberAt(entry.source, entry.declaration.start)}`;
       });
-      return `  - cross-file ${property}: ${locations.join(', ')}`;
+      return `  - cross-file ${property} (${selector}): ${locations.join(', ')}`;
     }),
-    'Run `node scripts/check-scss-cascade.cjs --fix` to remove declarations that are shadowed by later identical rules.',
+    'Run `node scripts/check-scss-cascade.cjs --fix` to remove fully shadowed declarations; partial selector overlaps require a manual split.',
   ].join('\n'));
   process.exit(1);
 }
 
-console.log('SCSS cascade ok: no identical selector redeclares the same property later in one context.');
+console.log('SCSS cascade ok: no logical selector redeclares the same property later in one context.');

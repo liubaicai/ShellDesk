@@ -5,6 +5,7 @@ import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
+import DatabaseImportDialog from './DatabaseImportDialog';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import {
@@ -2012,171 +2013,50 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         document.body,
       ) : null}
 
-      {importDataState.open ? createPortal(
-        <div className="schema-dialog-overlay" role="presentation">
-          <div className="schema-dialog mysql-import-dialog" role="dialog" aria-modal="true" aria-labelledby="postgres-import-title">
-            <div className="schema-dialog-header">
-              <h3 id="postgres-import-title">
-                {tCurrent('auto.remotePostgres.importDialogTitle', { table: formatImportTarget(getImportTargetTable()) || '-' })}
-              </h3>
-              <button
-                type="button"
-                onClick={closeImportDialog}
-                disabled={importDataState.executing}
-                aria-label={tCurrent('auto.remotePostgres.cancel')}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="schema-form-grid">
-              <label className="schema-field schema-field-wide">
-                <span>{tCurrent('auto.remotePostgres.importTargetTable')}</span>
-                <select
-                  value={importDataState.targetTable}
-                  onChange={(event) => setImportDataState((current) => ({
-                    ...current,
-                    targetTable: event.target.value,
-                    progress: null,
-                    error: '',
-                  }))}
-                  disabled={importDataState.executing}
-                >
-                  <option value="">{tCurrent('auto.remotePostgres.importNoTable')}</option>
-                  <option value={importEditorTarget}>{tCurrent('auto.remotePostgres.importFromSqlEditor')}</option>
-                  {importTargetTables.map((table) => {
-                    const value = serializeImportTarget(table);
-                    const label = formatImportTarget(table);
-                    return <option key={value} value={value}>{label}</option>;
-                  })}
-                </select>
-              </label>
-            </div>
-
-            <div className="mysql-import-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'csv'}
-                className={importDataState.mode === 'csv' ? 'active' : ''}
-                onClick={() => updateImportMode('csv')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remotePostgres.importCsvTab')}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={importDataState.mode === 'json'}
-                className={importDataState.mode === 'json' ? 'active' : ''}
-                onClick={() => updateImportMode('json')}
-                disabled={importDataState.executing}
-              >
-                {tCurrent('auto.remotePostgres.importJsonTab')}
-              </button>
-            </div>
-
-            <div className="schema-import-file-row">
-              <input
-                type="file"
-                ref={importFileInputRef}
-                style={{ display: 'none' }}
-                accept=".csv,.json"
-                onChange={handleImportFileSelected}
-              />
-              <button type="button" onClick={() => importFileInputRef.current?.click()} disabled={importDataState.executing}>
-                {tCurrent('auto.remotePostgres.importSelectFile')}
-              </button>
-            </div>
-
-            <label className="schema-field schema-preview-field">
-              <span>
-                {importDataState.mode === 'csv'
-                  ? tCurrent('auto.remotePostgres.importPasteCsv')
-                  : tCurrent('auto.remotePostgres.importPasteJson')}
-              </span>
-              <textarea
-                value={importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText}
-                onChange={(event) => updateImportText(importDataState.mode, event.target.value)}
-                disabled={importDataState.executing}
-                rows={8}
-                autoFocus
-              />
-            </label>
-
-            <div className="schema-section">
-              <div className="schema-section-header">
-                <strong>{tCurrent('auto.remotePostgres.importPreview')}</strong>
-                {importDataState.progress ? (
-                  <span className="mysql-import-progress">
-                    {tCurrent('auto.remotePostgres.importProgress', {
-                      current: importDataState.progress.current,
-                      total: importDataState.progress.total,
-                    })}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mysql-import-preview">
-                {importDataState.columns.length > 0 && importDataState.preview.length > 0 ? (
-                  <table>
-                    <thead>
-                      <tr>
-                        {importDataState.columns.map((column) => (
-                          <th key={column}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importDataState.preview.map((row, rowIndex) => (
-                        <tr key={`${rowIndex}-${importDataState.columns.join('|')}`}>
-                          {importDataState.columns.map((column) => (
-                            <td key={column}>{row[column] ?? ''}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="mysql-import-empty">{tCurrent('auto.remotePostgres.importNoData')}</div>
-                )}
-              </div>
-            </div>
-
-            {importDataState.error ? (
-              <div
-                className="dismissible-alert mysql-message-banner error schema-dialog-alert schema-local-alert"
-                role="alert"
-              >
-                <span className="dismissible-alert-content">{importDataState.error}</span>
-                <button
-                  type="button"
-                  className="dismissible-alert-close"
-                  onClick={() => setImportDataState((current) => ({ ...current, error: '' }))}
-                  aria-label={tCurrent('common.closeAlert')}
-                  title={tCurrent('common.closeAlert')}
-                >
-                  ×
-                </button>
-              </div>
-            ) : null}
-
-            <div className="schema-actions">
-              <button type="button" onClick={closeImportDialog} disabled={importDataState.executing}>
-                {tCurrent('auto.remotePostgres.cancel')}
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void handleExecuteImport()}
-                disabled={importDataState.executing}
-              >
-                {importDataState.executing ? tCurrent('auto.remotePostgres.6svkbt') : tCurrent('auto.remotePostgres.importExecute')}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      ) : null}
+      <DatabaseImportDialog
+        dialogId="postgres-import-title"
+        editorTargetValue={importEditorTarget}
+        fileInputRef={importFileInputRef}
+        labels={{
+          cancel: tCurrent('auto.remotePostgres.cancel'),
+          closeAlert: tCurrent('common.closeAlert'),
+          csvTab: tCurrent('auto.remotePostgres.importCsvTab'),
+          execute: tCurrent('auto.remotePostgres.importExecute'),
+          executing: tCurrent('auto.remotePostgres.6svkbt'),
+          fromSqlEditor: tCurrent('auto.remotePostgres.importFromSqlEditor'),
+          jsonTab: tCurrent('auto.remotePostgres.importJsonTab'),
+          noData: tCurrent('auto.remotePostgres.importNoData'),
+          noTable: tCurrent('auto.remotePostgres.importNoTable'),
+          pasteCsv: tCurrent('auto.remotePostgres.importPasteCsv'),
+          pasteJson: tCurrent('auto.remotePostgres.importPasteJson'),
+          preview: tCurrent('auto.remotePostgres.importPreview'),
+          progress: importDataState.progress
+            ? tCurrent('auto.remotePostgres.importProgress', importDataState.progress)
+            : '',
+          selectFile: tCurrent('auto.remotePostgres.importSelectFile'),
+          targetTable: tCurrent('auto.remotePostgres.importTargetTable'),
+          title: tCurrent('auto.remotePostgres.importDialogTitle', {
+            table: formatImportTarget(getImportTargetTable()) || '-',
+          }),
+        }}
+        onClearError={() => setImportDataState((current) => ({ ...current, error: '' }))}
+        onClose={closeImportDialog}
+        onExecute={() => void handleExecuteImport()}
+        onFileSelected={handleImportFileSelected}
+        onModeChange={updateImportMode}
+        onTargetChange={(targetTable) => setImportDataState((current) => ({
+          ...current,
+          targetTable,
+          progress: null,
+          error: '',
+        }))}
+        onTextChange={updateImportText}
+        state={importDataState}
+        targetOptions={importTargetTables.map((table) => ({
+          label: formatImportTarget(table),
+          value: serializeImportTarget(table),
+        }))}
+      />
 
       {pendingEdit ? createPortal(
         <div className="postgres-modal-backdrop" role="presentation">

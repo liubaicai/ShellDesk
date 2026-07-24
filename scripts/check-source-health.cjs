@@ -14,10 +14,9 @@ const fileLimits = new Map([
   ['src/App.tsx', 4_800],
   ['src/RemoteDesktopShell.tsx', 2_850],
   ['src/pages/SettingsPage.tsx', 2_650],
-  ['src/components/remote-desktop/RemoteMySQL.tsx', 3_200],
-  ['src/components/remote-desktop/RemoteClickHouse.tsx', 2_900],
-  ['src/components/remote-desktop/RemotePostgres.tsx', 2_300],
-  ['src/components/remote-desktop/RemoteFileExplorerCore.tsx', 2_050],
+  ['src/components/remote-desktop/RemoteMySQL.tsx', 3_100],
+  ['src/components/remote-desktop/RemoteClickHouse.tsx', 2_800],
+  ['src/components/remote-desktop/RemotePostgres.tsx', 2_200],
 ]);
 
 function collectFiles(directory) {

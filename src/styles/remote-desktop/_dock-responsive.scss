@@ -197,6 +197,17 @@
   gap: var(--dock-gap, 9px);
   border-radius: var(--dock-radius, 14px);
   padding: var(--dock-padding-y, 8px) var(--dock-padding-x, 10px);
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.mac-dock::-webkit-scrollbar {
+  display: none;
+}
+
+.mac-dock > button,
+.mac-dock > .dock-separator {
+  flex: 0 0 auto;
 }
 
 .mac-dock button {
@@ -245,7 +256,10 @@
   right: auto;
   bottom: 6px;
   left: 50%;
+  max-width: calc(100% - 12px);
   flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
   transform: translateX(-50%);
 }
 
@@ -254,14 +268,20 @@
   right: auto;
   bottom: auto;
   left: 50%;
+  max-width: calc(100% - 12px);
   flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
   transform: translateX(-50%);
 }
 
 .remote-desktop-dock-left .mac-dock,
 .remote-desktop-dock-right .mac-dock {
   bottom: auto;
+  max-height: calc(100% - 12px);
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
   transform: translateY(-50%);
 }
 

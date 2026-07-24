@@ -4,6 +4,19 @@ export interface ParsedDatabaseImport {
   preview: Record<string, string>[];
 }
 
+export interface DatabaseImportState {
+  open: boolean;
+  mode: 'csv' | 'json';
+  targetTable: string;
+  csvText: string;
+  jsonText: string;
+  preview: Record<string, string>[];
+  columns: string[];
+  executing: boolean;
+  progress: { current: number; total: number } | null;
+  error: string;
+}
+
 interface DatabaseImportJsonErrors {
   mustBeArray: string;
   itemsMustBeObjects: string;

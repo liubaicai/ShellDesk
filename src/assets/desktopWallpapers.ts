@@ -36,12 +36,12 @@ type WallpaperModule = { default: string };
 type WallpaperLoader = () => Promise<WallpaperModule>;
 
 const desktopWallpaperPresetLoaders: Record<DesktopWallpaperPresetId, WallpaperLoader> = {
-  default: () => import('./images/default-desktop-wallpaper.png'),
-  'midnight-ops': () => import('./images/desktop-wallpaper-midnight-ops.png'),
-  'amber-routes': () => import('./images/desktop-wallpaper-amber-routes.png'),
-  'mist-console': () => import('./images/desktop-wallpaper-mist-console.png'),
-  'green-health': () => import('./images/desktop-wallpaper-green-health.png'),
-  'indigo-traces': () => import('./images/desktop-wallpaper-indigo-traces.png'),
+  default: () => import('./images/default-desktop-wallpaper.webp'),
+  'midnight-ops': () => import('./images/desktop-wallpaper-midnight-ops.webp'),
+  'amber-routes': () => import('./images/desktop-wallpaper-amber-routes.webp'),
+  'mist-console': () => import('./images/desktop-wallpaper-mist-console.webp'),
+  'green-health': () => import('./images/desktop-wallpaper-green-health.webp'),
+  'indigo-traces': () => import('./images/desktop-wallpaper-indigo-traces.webp'),
 };
 
 const loadedDesktopWallpaperUrls = new Map<DesktopWallpaperPresetId, string>();

@@ -1037,10 +1037,11 @@ component vmManager true sh -c 'command -v virsh >/dev/null && LC_ALL=C virsh --
             })
             .collect::<HashMap<_, _>>();
         let optional_value = |key: &str| {
-            values
-                .get(key)
-                .filter(|value| !value.is_empty() && value.as_str() != "change-me")
-                .cloned()
+            let value = match std::env::var(key) {
+                Ok(value) => value,
+                Err(_) => values.get(key)?.clone(),
+            };
+            (!value.is_empty() && value != "change-me").then_some(value)
         };
         let value = |key: &str| {
             optional_value(key).unwrap_or_else(|| panic!("live Windows host smoke requires {key}"))

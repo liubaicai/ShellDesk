@@ -695,11 +695,6 @@
   background: rgba(217, 119, 6, 0.18);
 }
 
-[data-theme="light"] .explorer-pane,
-[data-theme="light"] .explorer-layout,
-[data-theme="light"] .explorer-main {
-  background: var(--bg);
-}
 
 [data-theme="light"] .explorer-pane {
   --explorer-file-icon: #64748b;
@@ -717,10 +712,6 @@
   --explorer-skeleton-highlight: rgba(100, 116, 139, 0.2);
 }
 
-[data-theme="light"] .explorer-sidebar,
-[data-theme="light"] .explorer-table {
-  background: var(--surface);
-}
 
 [data-theme="light"] .explorer-table-loading {
   background:
@@ -756,7 +747,6 @@
 }
 
 [data-theme="light"] .explorer-header {
-  background: var(--surface-soft);
   box-shadow: 0 1px 0 rgba(16, 32, 51, 0.1);
   color: #657489;
 }
@@ -764,8 +754,6 @@
 [data-theme="light"] .explorer-commandbar,
 [data-theme="light"] .explorer-details {
   border-color: rgba(16, 32, 51, 0.1);
-  background:
-    linear-gradient(180deg, rgba(251, 249, 246, 0.98), rgba(244, 240, 234, 0.98));
 }
 
 
@@ -779,10 +767,6 @@
   color: #657489;
 }
 
-[data-theme="light"] .explorer-transfer-card {
-  border-color: rgba(16, 32, 51, 0.1);
-  background: rgba(255, 255, 255, 0.72);
-}
 
 [data-theme="light"] .explorer-transfer-card.running {
   border-color: rgba(59, 130, 246, 0.22);

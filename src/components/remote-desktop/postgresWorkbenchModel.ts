@@ -1,5 +1,9 @@
 import { getShellDeskLocale } from './desktopUtils';
-import { parseDatabaseImportCsv, parseDatabaseImportJson } from './databaseImportUtils';
+import {
+  type DatabaseImportState,
+  parseDatabaseImportCsv,
+  parseDatabaseImportJson,
+} from './databaseImportUtils';
 import { createId, quoteIdentifier } from './databaseUtils';
 import { tCurrent } from '../../i18n';
 
@@ -135,18 +139,7 @@ export interface PgCreateTableState {
   dialogError: string;
 }
 
-export interface ImportDataState {
-  open: boolean;
-  mode: 'csv' | 'json';
-  targetTable: string;
-  csvText: string;
-  jsonText: string;
-  preview: Record<string, string>[];
-  columns: string[];
-  executing: boolean;
-  progress: { current: number; total: number } | null;
-  error: string;
-}
+export type ImportDataState = DatabaseImportState;
 
 export const tablePreviewLimit = 50;
 export const pageSize = 100;
