@@ -67,14 +67,6 @@ function formatProxyTarget(proxy: FrpcProxy) {
   return proxy.remotePort || '-';
 }
 
-function formatTraffic(value?: number) {
-  if (!value) return '-';
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
-  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
 function getStatusLabel(status?: FrpcProxyStatus) {
   if (status === 'active') return tCurrent('auto.frpManager.statusRunning');
   if (status === 'inactive') return tCurrent('auto.frpManager.statusStopped');

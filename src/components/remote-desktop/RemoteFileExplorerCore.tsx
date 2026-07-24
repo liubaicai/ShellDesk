@@ -1427,9 +1427,6 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     (!isWindowsHost || primarySelectedEntry.name.toLowerCase().endsWith('.zip'));
   const permissionDraftMode = parseOctalModeDraft(permissionDraft);
   const originalPermissionMode = propertiesData ? (propertiesData.mode & 0o777) : null;
-  const executableDraftChecked = permissionDraftMode !== null
-    ? (permissionDraftMode & 0o111) !== 0
-    : Boolean(propertiesData && (propertiesData.mode & 0o111));
   const canSaveProperties = Boolean(
     propertiesEntry &&
     propertiesData &&

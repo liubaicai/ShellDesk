@@ -2,6 +2,8 @@
 
 > 当前状态：已接入远程桌面（appKey: `mysql`），实现入口为 `src/components/remote-desktop/RemoteMySQL.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
+SQL 生成、建表解析、schema 差异与导入模型位于 `mysqlWorkbenchModel.ts`；数据库编辑器和 CSV/JSON 解析分别复用 `databaseEditorExtensions.ts`、`databaseImportUtils.ts`。
+
 ## 定位
 
 MySQL 管理器用于通过 SSH 安全访问远程 MySQL 或兼容数据库，完成库表浏览、查询、数据检查和受控编辑。它应是轻量数据库工作台，而不是只包一层 SQL 文本框。

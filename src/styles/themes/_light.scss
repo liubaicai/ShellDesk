@@ -26,6 +26,11 @@
   border-right-color: var(--window-divider);
 }
 
+[data-theme="light"] .side-nav,
+[data-theme="light"] .vault-page {
+  background: var(--surface-soft);
+}
+
 [data-theme="light"] .command-bar {
   border-bottom-color: var(--window-divider);
   background: var(--surface-elevated);
@@ -560,7 +565,7 @@
 
 [data-theme="light"] .feature-nav-item,
 [data-theme="light"] .settings-entry {
-  color: var(--muted-strong);
+  color: #182335;
   font-weight: 700;
 }
 

@@ -19,7 +19,6 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 0 14px 0 18px;
   border-bottom: 1px solid var(--window-divider);
   background: var(--chrome);
 }
@@ -148,20 +147,14 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 200px minmax(0, 1fr);
-  background: var(--sidebar);
   transition: grid-template-columns 200ms ease;
 }
 
-.app-layout:has(.side-nav.collapsed) {
-  grid-template-columns: 56px minmax(0, 1fr);
-}
 
 .side-nav {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  padding: 16px 10px 18px;
   border-right: 1px solid var(--window-divider);
   background: var(--sidebar);
   overflow: hidden;
@@ -242,7 +235,6 @@
 
 .feature-nav {
   display: grid;
-  gap: 8px;
 }
 
 .feature-nav-item,
@@ -250,17 +242,11 @@
   display: flex;
   width: 100%;
   position: relative;
-  height: 48px;
   align-items: center;
   gap: 13px;
   border: 0;
-  border-radius: 8px;
-  padding: 0 18px;
   background: transparent;
-  color: var(--text);
   cursor: pointer;
-  font-size: 16px;
-  font-weight: 800;
   text-align: left;
 }
 
@@ -278,21 +264,16 @@
 .feature-nav-item .nav-icon,
 .settings-entry .nav-icon {
   display: grid;
-  width: 21px;
-  height: 21px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--muted-strong);
 }
 
 .nav-icon svg {
-  width: 21px;
-  height: 21px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.9;
 }
 
 .feature-nav-item.active,

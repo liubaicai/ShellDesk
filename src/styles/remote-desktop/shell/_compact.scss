@@ -1,0 +1,25 @@
+/* Compact remote desktop density */
+
+.desktop-window {
+  border-radius: 8px;
+}
+
+
+
+.desktop-window-titlebar strong {
+  font-size: 15px;
+}
+
+.desktop-window-browser .desktop-window-titlebar strong {
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.desktop-window-kicker,
+.desktop-window-state-pill {
+  font-size: 11px;
+}
+
+.win-titlebar-controls .win-btn {
+  width: 46px;
+}

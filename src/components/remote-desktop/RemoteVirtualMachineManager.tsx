@@ -32,9 +32,7 @@ import { parseVirshDomainDetail, parseVirshOverview, parseVirshResources, parseV
 import type {
   RemoteVirtualMachineManagerProps,
   VirshHostSummary,
-  VirshNetworkAction,
   VirshNetworkSummary,
-  VirshStoragePoolAction,
   VirshStoragePoolSummary,
   VirshStorageVolume,
   VirtualMachineAction,

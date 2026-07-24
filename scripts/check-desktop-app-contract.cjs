@@ -197,6 +197,8 @@ const desktopAppAssetContracts = {
 };
 
 const remoteDesktopSource = readWorkspaceFile('src/RemoteDesktopShell.tsx');
+const remoteDesktopCatalogSource = readWorkspaceFile('src/remoteDesktopCatalog.ts');
+const remoteDesktopWindowModelSource = readWorkspaceFile('src/remoteDesktopWindowModel.ts');
 const appSource = readWorkspaceFile('src/App.tsx');
 const deferredStyleSource = readWorkspaceFile('src/styles/deferred.scss');
 const viteEnvSource = readWorkspaceFile('src/vite-env.d.ts');
@@ -205,7 +207,7 @@ const vaultNormalizeSource = readWorkspaceFile('src-tauri/src/vault/normalize.rs
 const i18nCatalogSource = readWorkspaceFile('src/i18nCatalog.ts');
 const sharedToolsSource = readWorkspaceFile('src/ai/sharedTools.ts');
 
-const desktopAppEntries = extractDesktopApps(remoteDesktopSource);
+const desktopAppEntries = extractDesktopApps(remoteDesktopCatalogSource);
 const desktopAppKeys = desktopAppEntries.map((entry) => entry.key);
 const errors = [];
 
@@ -216,24 +218,24 @@ if (desktopAppKeys.length !== unique(desktopAppKeys).length) {
 compareOrdered('vite-env ShellDeskDesktopAppKey', desktopAppKeys, extractTypeUnion(viteEnvSource, 'ShellDeskDesktopAppKey'), errors);
 compareOrdered('Rust REMOTE_DESKTOP_APP_KEYS', desktopAppKeys, extractRustStringArray(vaultRemoteProfilesSource, 'REMOTE_DESKTOP_APP_KEYS'), errors);
 compareOrdered('AI SHELLDESK_APP_KEYS', desktopAppKeys, extractStringArray(sharedToolsSource, 'SHELLDESK_APP_KEYS'), errors);
-compareSets('desktopAppIconSources', desktopAppKeys, extractRecordKeys(remoteDesktopSource, 'desktopAppIconSources'), errors);
-compareSets('defaultWindowFrames', desktopAppKeys, extractRecordKeys(remoteDesktopSource, 'defaultWindowFrames'), errors);
+compareSets('desktopAppIconSources', desktopAppKeys, extractRecordKeys(remoteDesktopCatalogSource, 'desktopAppIconSources'), errors);
+compareSets('defaultWindowFrames', desktopAppKeys, extractRecordKeys(remoteDesktopWindowModelSource, 'defaultWindowFrames'), errors);
 compareSets('renderWindowContent branches', desktopAppKeys, extractRenderBranches(remoteDesktopSource), errors);
 compareSets('desktop app asset contract table', desktopAppKeys, Object.keys(desktopAppAssetContracts), errors);
 
-const shellCatalogVersion = extractNumberConst(remoteDesktopSource, 'desktopAppCatalogVersion');
+const shellCatalogVersion = extractNumberConst(remoteDesktopCatalogSource, 'desktopAppCatalogVersion');
 const appCatalogVersion = extractNumberConst(appSource, 'remoteDesktopAppCatalogVersion');
 const rustCatalogVersion = extractRustNumberConst(vaultNormalizeSource, 'REMOTE_DESKTOP_APP_CATALOG_VERSION');
 if (shellCatalogVersion !== appCatalogVersion || shellCatalogVersion !== rustCatalogVersion) {
   errors.push(`remote desktop app catalog versions differ: shell=${shellCatalogVersion}, app=${appCatalogVersion}, rust=${rustCatalogVersion}`);
 }
 
-const migrationKeys = extractStringArray(remoteDesktopSource, 'appCatalogMigrationKeys');
+const migrationKeys = extractStringArray(remoteDesktopCatalogSource, 'appCatalogMigrationKeys');
 compareOrdered('App remoteDesktopAppCatalogMigrationKeys', migrationKeys, extractStringArray(appSource, 'remoteDesktopAppCatalogMigrationKeys'), errors);
 compareOrdered('Rust REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS', migrationKeys, extractRustStringArray(vaultNormalizeSource, 'REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS'), errors);
 compareSets('migration keys in desktopApps', migrationKeys, migrationKeys.filter((key) => desktopAppKeys.includes(key)), errors);
 
-const defaultDesktopAppKeys = extractStringArray(remoteDesktopSource, 'defaultDesktopAppKeys');
+const defaultDesktopAppKeys = extractStringArray(remoteDesktopCatalogSource, 'defaultDesktopAppKeys');
 const appDefaultLayoutBlock = extractBlock(appSource, /const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = \{/, /\n\};/);
 const appDefaultLayoutKeys = [...appDefaultLayoutBlock.matchAll(/appKey:\s*'([^']+)'/g)].map((entry) => entry[1]);
 compareOrdered('App default remote desktop layout', defaultDesktopAppKeys, appDefaultLayoutKeys, errors);
@@ -241,7 +243,7 @@ compareOrdered('App default remote desktop layout', defaultDesktopAppKeys, appDe
 const zhCNMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'zhCN'));
 const enUSMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'enUS'));
 const lazyComponents = extractLazyComponents(remoteDesktopSource);
-const iconSourcePaths = extractIconSourcePaths(remoteDesktopSource);
+const iconSourcePaths = extractIconSourcePaths(remoteDesktopCatalogSource);
 const remoteDesktopStyleUses = new Set(extractStyleUses(deferredStyleSource));
 for (const entry of desktopAppEntries) {
   for (const messageId of [entry.labelId, entry.descriptionId]) {

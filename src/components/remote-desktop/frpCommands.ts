@@ -120,13 +120,6 @@ frpc_systemctl() {
 `;
 }
 
-function unixSystemctlCommand(action: string) {
-  return `
-${unixSystemctlHelperCommand()}
-frpc_systemctl ${action} 2>&1
-`;
-}
-
 function unixSystemctlStatusCommand() {
   return `
 ${unixSystemctlHelperCommand()}

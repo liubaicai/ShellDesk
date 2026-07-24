@@ -36,6 +36,8 @@ pub(crate) mod proxy;
 pub(crate) mod remote_fs;
 #[path = "russh_client.rs"]
 pub(crate) mod russh_client;
+#[path = "russh_transport_io.rs"]
+pub(crate) mod russh_transport_io;
 #[path = "ssh_transport.rs"]
 pub(crate) mod ssh_transport;
 #[path = "ssh_tunnel.rs"]

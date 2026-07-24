@@ -1,7 +1,7 @@
 import { t, type AppLanguage } from '../../i18n';
 import { powershellCommand, powershellSingleQuote } from './remoteSystem';
 import { shellSingleQuote } from './shellUtils';
-import { getStateLabel, formatShortId } from './containerParsers';
+import { getStateLabel } from './containerParsers';
 import type {
   ComposeProjectAction,
   ComposeProjectSummary,

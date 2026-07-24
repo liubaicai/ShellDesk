@@ -1,12 +1,10 @@
-import { indentWithTab } from '@codemirror/commands';
 import { sql as sqlLanguage } from '@codemirror/lang-sql';
-import type { Extension } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
+import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import {
   createGenericColumns,
   createId,
@@ -814,60 +812,11 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
     void executeSql(createExplainSql(sql));
   }, [executeSql, sql]);
 
-  const sqliteEditorExtensions = useMemo<Extension[]>(() => [
-    keymap.of([
-      indentWithTab,
-      {
-        key: 'Mod-Enter',
-        run: () => {
-          handleExecuteSql();
-          return true;
-        },
-      },
-    ]),
-    sqlLanguage(),
-    EditorView.theme({
-      '&': {
-        height: '100%',
-        minHeight: '0',
-        backgroundColor: 'var(--surface-elevated)',
-        color: 'var(--text)',
-        fontSize: '13px',
-      },
-      '.cm-scroller': {
-        backgroundColor: 'var(--surface-elevated)',
-        fontFamily: '"Cascadia Mono", "JetBrains Mono", Consolas, monospace',
-        lineHeight: '20px',
-      },
-      '.cm-content': {
-        padding: '10px 0',
-        caretColor: 'var(--text)',
-      },
-      '.cm-line': {
-        padding: '0 12px',
-      },
-      '.cm-gutters': {
-        borderRight: '1px solid var(--border)',
-        backgroundColor: 'var(--surface)',
-        color: 'var(--text-muted)',
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: 'transparent',
-        color: 'var(--accent)',
-      },
-      '.cm-activeLine': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
-      },
-      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-        backgroundColor: 'rgba(67, 199, 255, 0.25)',
-      },
-      '&.cm-focused': {
-        outline: 'none',
-      },
-    }, {
-      dark: editorTheme === 'dark',
-    }),
-  ], [editorTheme, handleExecuteSql]);
+  const sqliteEditorExtensions = useMemo(() => createDatabaseEditorExtensions({
+    language: sqlLanguage(),
+    dark: editorTheme === 'dark',
+    onExecute: handleExecuteSql,
+  }), [editorTheme, handleExecuteSql]);
 
   const handleExportResult = useCallback(async (format: DatabaseExportFormat) => {
     if (!queryResult || queryResult.rows.length === 0) return;

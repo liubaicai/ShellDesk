@@ -2,6 +2,8 @@
 
 > 当前状态：已接入远程桌面（appKey: `files`），实现入口为 `src/components/remote-desktop/RemoteFileExplorer.tsx` 与 `RemoteFileExplorerCore.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
+样式入口为 `src/styles/remote-desktop/_file-explorer.scss`，按基础、工作台、Windows 模拟与交互抛光分层加载，避免继续在单文件末尾叠加覆盖。
+
 ## 定位
 
 文件管理器是 ShellDesk 远程桌面的文件工作台。重新设计时应覆盖浏览、传输、批量操作、预览、打开方式和与其他工具协作，而不是只做目录列表。

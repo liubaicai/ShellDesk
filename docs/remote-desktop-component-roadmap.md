@@ -1,22 +1,28 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-07-22，ShellDesk 远程桌面已经接入 41 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
+截至 2026-07-24，ShellDesk 远程桌面已经接入 41 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
 
 ## 事实源
 
 远程桌面组件是否真实接入，以代码里的注册表为准：
 
-- `src/RemoteDesktopShell.tsx`
+- `src/remoteDesktopCatalog.ts`
   - `desktopApps`
   - `desktopAppIconSources`
-  - `defaultWindowFrames`
-  - `renderWindowContent`
   - `desktopAppCatalogVersion`
   - `appCatalogMigrationKeys`
+- `src/remoteDesktopWindowModel.ts`
+  - `defaultWindowFrames`
+- `src/RemoteDesktopShell.tsx`
+  - lazy 组件注册
+  - `renderWindowContent`
+- `src/components/remote-desktop/RemoteDesktopAppIcon.tsx` 的桌面与 Dock 图标渲染
 - `src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`
 - `src-tauri/src/vault/remote_profiles.rs` 的远程组件白名单和 `src-tauri/src/vault/normalize.rs` 的目录迁移
 - `src/components/remote-desktop/index.ts` 的组件导出
 - `src/styles/index.scss` 的远程桌面样式入口
+
+数据库工作台的组件状态与交互仍保留在各 `Remote*.tsx`；SQL 生成、导入解析和表结构模型分别放在 `mysqlWorkbenchModel.ts`、`postgresWorkbenchModel.ts`、`clickHouseWorkbenchModel.ts`，共享编辑器与导入逻辑放在 `databaseEditorExtensions.ts` 和 `databaseImportUtils.ts`。
 
 `docs/remote-desktop-components/_example.md` 是新增或更新组件文档时的模板与检查清单。
 

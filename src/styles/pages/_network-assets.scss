@@ -575,7 +575,9 @@
   margin-top: 0;
 }
 
-.host-card-menu summary {
+.key-card .host-card-menu summary,
+.snippet-card .host-card-menu summary,
+.network-card .host-card-menu summary {
   display: inline-grid;
   place-items: center;
   color: var(--muted-strong);
@@ -605,11 +607,4 @@
 [data-theme="light"] .snippet-card.active,
 [data-theme="light"] .network-card.active {
   background: var(--surface-hover);
-}
-
-[data-theme="light"] .key-card-icon {
-  background:
-    radial-gradient(circle at 68% 22%, rgba(255, 255, 255, 0.72), transparent 42%),
-    linear-gradient(145deg, rgba(34, 160, 90, 0.16), rgba(255, 255, 255, 0.82));
-  color: #1a8a55;
 }

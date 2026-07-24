@@ -260,9 +260,6 @@
   background: rgba(103, 212, 178, 0.08);
 }
 
-.port-table tbody tr.selected td:first-child {
-  box-shadow: inset 3px 0 0 rgba(103, 212, 178, 0.72);
-}
 
 .port-table tbody tr.state-listen td:first-child {
   box-shadow: inset 3px 0 0 rgba(103, 212, 178, 0.58);

@@ -53,8 +53,9 @@ assertScript(packageJson, 'smoke:tauri-dev', 'node scripts/check-tauri-dev-start
 assertScript(packageJson, 'smoke:ssh-live', 'node scripts/check-live-ssh-smoke.cjs');
 assert.equal(
   packageJson.scripts['check:contracts'],
-  'node scripts/check-ipc-parity.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && node scripts/test-release-scripts.cjs',
+  'node scripts/check-ipc-parity.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && pnpm check:source-health && node scripts/check-scss-cascade.cjs && node scripts/test-release-scripts.cjs',
 );
+assertScript(packageJson, 'check:source-health', 'node scripts/check-source-health.cjs && tsc --noEmit --noUnusedLocals --noUnusedParameters');
 assert.match(packageJson.scripts.test, /pnpm check:contracts/);
 
 for (const removedAlias of ['start', 'release:dir', 'pack:win']) {

@@ -312,7 +312,6 @@
 }
 
 [data-theme="light"] .dns-server-item {
-  border-color: rgba(16, 32, 51, 0.06);
   background: #f6f8fa;
 }
 
@@ -332,7 +331,6 @@
 }
 
 [data-theme="light"] .sysinfo-card:hover {
-  border-color: var(--accent-border);
   background: var(--surface-elevated);
 }
 
@@ -346,26 +344,6 @@
 
 [data-theme="light"] .sysinfo-card-value {
   color: #1f2328;
-}
-
-/* Current light theme finishing rules */
-
-[data-theme="light"] .top-chrome {
-  background: var(--chrome);
-}
-
-[data-theme="light"] .side-nav,
-[data-theme="light"] .vault-page {
-  background: var(--surface-soft);
-}
-
-[data-theme="light"] .feature-nav-item,
-[data-theme="light"] .settings-entry {
-  color: #182335;
-}
-
-[data-theme="light"] .command-bar {
-  background: var(--surface-elevated);
 }
 
 [data-theme="light"] .remote-desktop-surface {
@@ -594,17 +572,7 @@
   border-color: rgba(16, 32, 51, 0.18);
 }
 
-[data-theme="light"] .desktop-folder-icon-shell {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(226, 219, 209, 0.96));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    0 8px 18px rgba(31, 35, 40, 0.16);
-}
 
-[data-theme="light"] .desktop-folder-icon-shell::before {
-  background: rgba(238, 244, 252, 0.98);
-}
 
 [data-theme="light"] .mac-dock button.minimized::after {
   background: rgba(82, 97, 120, 0.42);
@@ -800,20 +768,7 @@
     linear-gradient(180deg, rgba(251, 249, 246, 0.98), rgba(244, 240, 234, 0.98));
 }
 
-[data-theme="light"] .explorer-commandbar button,
-[data-theme="light"] .explorer-details-actions button {
-  border-color: rgba(16, 32, 51, 0.12);
-  background: rgba(255, 255, 255, 0.8);
-  color: #344054;
-}
 
-[data-theme="light"] .explorer-commandbar button:hover:not(:disabled),
-[data-theme="light"] .explorer-commandbar button.active,
-[data-theme="light"] .explorer-details-actions button:hover:not(:disabled) {
-  border-color: rgba(59, 130, 246, 0.28);
-  background: #dfeeff;
-  color: #172033;
-}
 
 [data-theme="light"] .explorer-sidebar-note,
 [data-theme="light"] .explorer-transfer-card,

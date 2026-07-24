@@ -1,8 +1,10 @@
 use crate::{
-    error_string, prevent_tokio_process_window, proxy::SshProxyConfig, shell_quote,
-    ui_prompts::request_keyboard_interactive_decision, AppState, SshProfile, UiWindowRef,
+    error_string,
+    proxy::SshProxyConfig,
+    russh_transport_io::{proxy_command_template, proxy_helper_command, RusshTransport},
+    ui_prompts::request_keyboard_interactive_decision,
+    AppState, SshProfile, UiWindowRef,
 };
-use base64::Engine;
 use encoding_rs::GBK;
 use russh::{
     client,
@@ -19,17 +21,10 @@ use russh::{
 use serde_json::json;
 use std::{
     path::Path,
-    pin::Pin,
-    process::Stdio,
     sync::{Arc, Mutex},
-    task::{Context, Poll},
     time::Duration,
 };
-use tokio::{
-    io::{self, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf},
-    net::TcpStream,
-    process::{Child, ChildStdin, ChildStdout, Command},
-};
+use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_KEEPALIVE_INTERVAL_MS: u64 = 15_000;
@@ -668,7 +663,7 @@ async fn open_transport(
     if profile.keepalive_enabled {
         configure_tcp_keepalive(&stream, profile.keepalive_interval_ms);
     }
-    Ok(RusshTransport::Tcp(stream))
+    Ok(RusshTransport::tcp(stream))
 }
 
 async fn open_jump_transport(
@@ -693,10 +688,7 @@ async fn open_jump_transport(
         .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
         .await
         .map_err(|error| format!("跳板机打开目标 SSH 通道失败：{error}"))?;
-    Ok(RusshTransport::Jump(JumpTransport {
-        stream: channel.into_stream(),
-        _session: jump_session,
-    }))
+    Ok(RusshTransport::jump(channel.into_stream(), jump_session))
 }
 
 async fn open_proxy_transport(
@@ -708,179 +700,15 @@ async fn open_proxy_transport(
             proxy_command_template(&proxy.command, &profile.address, profile.port),
             Vec::new(),
         ),
-        "http" | "socks5" => network_proxy_command(&profile, &proxy)?,
+        "http" | "socks5" => proxy_helper_command(
+            &profile.proxy_helper_exe,
+            &profile.address,
+            profile.port,
+            &proxy,
+        )?,
         _ => return Err("代理类型无效。".to_string()),
     };
-    ProxyCommandTransport::spawn(&command_line, envs).map(RusshTransport::ProxyCommand)
-}
-
-fn network_proxy_command(
-    profile: &SshProfile,
-    proxy: &SshProxyConfig,
-) -> Result<(String, Vec<(String, String)>), String> {
-    if profile.proxy_helper_exe.trim().is_empty() {
-        return Err("代理 helper 路径为空。".to_string());
-    }
-    let payload = serde_json::json!({
-        "type": proxy.proxy_type,
-        "host": proxy.host,
-        "port": proxy.port,
-        "username": proxy.username,
-        "password": proxy.password
-    });
-    let encoded = base64::engine::general_purpose::STANDARD
-        .encode(serde_json::to_vec(&payload).map_err(error_string)?);
-    let command = format!(
-        "{} --shelldesk-proxy-helper {} {} {}",
-        proxy_command_arg(&profile.proxy_helper_exe),
-        proxy_command_arg(&proxy.helper_id),
-        proxy_command_arg(&profile.address),
-        profile.port
-    );
-    Ok((
-        command,
-        vec![(
-            crate::proxy::proxy_helper_env_name(&proxy.helper_id),
-            encoded,
-        )],
-    ))
-}
-
-fn proxy_command_template(command: &str, host: &str, port: u16) -> String {
-    command
-        .replace("{host}", &proxy_command_arg(host))
-        .replace("%h", &proxy_command_arg(host))
-        .replace("{port}", &proxy_command_arg(&port.to_string()))
-        .replace("%p", &proxy_command_arg(&port.to_string()))
-}
-
-fn proxy_command_arg(value: &str) -> String {
-    let safe_unquoted = value.chars().all(|ch| {
-        ch.is_ascii_alphanumeric()
-            || matches!(ch, '.' | '_' | '-' | '/' | ':' | '@' | '=')
-            || (!cfg!(windows) && ch == '%')
-    });
-    if safe_unquoted {
-        value.to_string()
-    } else if cfg!(windows) {
-        cmd_quote(value)
-    } else {
-        shell_quote(value)
-    }
-}
-
-fn cmd_quote(value: &str) -> String {
-    let escaped = value
-        .replace('%', "%%")
-        .replace('"', "\\\"")
-        .replace('^', "^^")
-        .replace('&', "^&")
-        .replace('|', "^|")
-        .replace('<', "^<")
-        .replace('>', "^>");
-    format!("\"{escaped}\"")
-}
-
-enum RusshTransport {
-    Tcp(TcpStream),
-    ProxyCommand(ProxyCommandTransport),
-    Jump(JumpTransport),
-}
-
-struct ProxyCommandTransport {
-    stdin: ChildStdin,
-    stdout: ChildStdout,
-    _child: Child,
-}
-
-impl ProxyCommandTransport {
-    fn spawn(command_line: &str, envs: Vec<(String, String)>) -> Result<Self, String> {
-        if command_line.trim().is_empty() {
-            return Err("ProxyCommand 不能为空。".to_string());
-        }
-        let mut command = if cfg!(windows) {
-            let mut command = Command::new("cmd");
-            command.args(["/C", command_line]);
-            command
-        } else {
-            let mut command = Command::new("sh");
-            command.args(["-c", command_line]);
-            command
-        };
-        for (name, value) in envs {
-            command.env(name, value);
-        }
-        prevent_tokio_process_window(&mut command);
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(error_string)?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "ProxyCommand 标准输入不可写。".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "ProxyCommand 标准输出不可读。".to_string())?;
-        Ok(Self {
-            stdin,
-            stdout,
-            _child: child,
-        })
-    }
-}
-
-struct JumpTransport {
-    stream: russh::ChannelStream<client::Msg>,
-    _session: client::Handle<ShellDeskClientHandler>,
-}
-
-impl AsyncRead for RusshTransport {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        match &mut *self {
-            Self::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
-            Self::ProxyCommand(stream) => Pin::new(&mut stream.stdout).poll_read(cx, buf),
-            Self::Jump(stream) => Pin::new(&mut stream.stream).poll_read(cx, buf),
-        }
-    }
-}
-
-impl AsyncWrite for RusshTransport {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        match &mut *self {
-            Self::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
-            Self::ProxyCommand(stream) => Pin::new(&mut stream.stdin).poll_write(cx, buf),
-            Self::Jump(stream) => Pin::new(&mut stream.stream).poll_write(cx, buf),
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match &mut *self {
-            Self::Tcp(stream) => Pin::new(stream).poll_flush(cx),
-            Self::ProxyCommand(stream) => Pin::new(&mut stream.stdin).poll_flush(cx),
-            Self::Jump(stream) => Pin::new(&mut stream.stream).poll_flush(cx),
-        }
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match &mut *self {
-            Self::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
-            Self::ProxyCommand(stream) => Pin::new(&mut stream.stdin).poll_shutdown(cx),
-            Self::Jump(stream) => Pin::new(&mut stream.stream).poll_shutdown(cx),
-        }
-    }
+    RusshTransport::proxy_command(&command_line, envs)
 }
 
 #[cfg(test)]

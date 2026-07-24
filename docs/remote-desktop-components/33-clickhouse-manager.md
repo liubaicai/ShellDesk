@@ -2,6 +2,8 @@
 
 > 当前状态：已接入远程桌面（appKey: `clickhouse`），实现入口为 `src/components/remote-desktop/RemoteClickHouse.tsx`。本文保留当前实现范围和设计取舍，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
+SQL 生成、CREATE TABLE 解析、列差异与导入目标编码位于 `clickHouseWorkbenchModel.ts`；数据库编辑器和 CSV/JSON 解析分别复用 `databaseEditorExtensions.ts`、`databaseImportUtils.ts`。
+
 ## 定位
 
 ClickHouse 管理器用于通过当前 SSH 连接访问远程 ClickHouse HTTP 接口，完成数据库与表浏览、列信息查看、SQL 查询、表结构编辑、CSV/JSON 数据导入和表数据预览。它复用 MySQL 管理器的信息架构，但按 ClickHouse 的 HTTP API、列式存储和 mutation 特性保持结果集编辑边界。

@@ -26,7 +26,7 @@ import { getErrorMessage } from '../remote-desktop/desktopUtils';
 import FilePane from './FilePane';
 import TransferQueue from './TransferQueue';
 import { getSftpMessages } from './messages';
-import { getPathName, isWindowsPlatform, joinPanePath } from './pathUtils';
+import { isWindowsPlatform, joinPanePath } from './pathUtils';
 import type { FileOperationDialog, SftpTransferConflictDialog, TransferFileEntry, TransferPaneKind } from './types';
 import { useFilePane } from './useFilePane';
 import { useTransferQueue } from './useTransferQueue';

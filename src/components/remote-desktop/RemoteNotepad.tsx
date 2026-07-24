@@ -22,7 +22,6 @@ import {
   MAX_INTERACTIVE_LANGUAGE_DETECTION_CHARACTERS,
   normalizeLanguage,
 } from './notepadLanguageDetection';
-import NotepadModals from './NotepadModals';
 import type {
   EditorSelectionSnapshot,
   NotepadAiAction,
@@ -112,24 +111,6 @@ function countLogicalLines(content: string): number {
   }
 
   return count;
-}
-
-function getLineColumnAtPosition(content: string, position: number) {
-  const clampedPosition = Math.min(Math.max(position, 0), content.length);
-  let line = 1;
-  let lineStart = 0;
-  let newlineIndex = content.indexOf('\n');
-
-  while (newlineIndex >= 0 && newlineIndex < clampedPosition) {
-    line += 1;
-    lineStart = newlineIndex + 1;
-    newlineIndex = content.indexOf('\n', lineStart);
-  }
-
-  return {
-    line,
-    column: clampedPosition - lineStart + 1,
-  };
 }
 
 function getLineStartOffset(content: string, targetLine: number) {

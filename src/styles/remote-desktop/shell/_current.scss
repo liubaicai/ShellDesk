@@ -1,0 +1,231 @@
+/* Current remote desktop visuals */
+
+.remote-desktop-surface {
+  background:
+    radial-gradient(ellipse at 15% 8%, rgba(75, 129, 210, 0.24), transparent 38%),
+    radial-gradient(ellipse at 80% 18%, rgba(91, 114, 155, 0.18), transparent 42%),
+    linear-gradient(145deg, #101824 0%, #0b111a 100%);
+}
+
+.remote-desktop-surface::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    radial-gradient(ellipse at 50% 100%, rgba(58, 78, 112, 0.22), transparent 46%);
+  filter: none;
+}
+
+.remote-desktop-surface.has-default-wallpaper::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%),
+    radial-gradient(ellipse at 50% 100%, rgba(4, 8, 13, 0.22), transparent 54%);
+}
+
+.remote-desktop-surface.has-custom-wallpaper::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 26%),
+    radial-gradient(ellipse at 50% 100%, rgba(4, 8, 13, 0.34), transparent 52%);
+}
+
+[data-theme="light"] .remote-desktop-surface::before {
+  background: none;
+}
+
+[data-theme="light"] .remote-desktop-surface.has-default-wallpaper::before {
+  background: none;
+}
+
+[data-theme="light"] .remote-desktop-surface.has-custom-wallpaper::before {
+  background: none;
+}
+
+.remote-desktop-boot-surface {
+  position: relative;
+}
+
+.remote-desktop-boot-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.remote-desktop-boot-icons {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, 58px);
+  gap: 15px 10px;
+}
+
+.remote-desktop-boot-icons span {
+  position: relative;
+  display: block;
+  width: 58px;
+  height: 64px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 0.72;
+}
+
+.remote-desktop-boot-icons span::before {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04)),
+    rgba(67, 199, 255, 0.16);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.remote-desktop-boot-icons span::after {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  left: 9px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  content: "";
+}
+
+.remote-desktop-boot-window {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  width: min(520px, calc(100% - 132px));
+  height: min(310px, calc(100% - 178px));
+  min-height: 190px;
+  grid-template-rows: 46px repeat(2, 1fr);
+  gap: 18px;
+  border: 1px solid rgba(154, 177, 210, 0.22);
+  border-radius: 10px;
+  padding: 18px;
+  background: rgba(17, 25, 36, 0.74);
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translate(-50%, -52%);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.remote-desktop-boot-window span {
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.08));
+  background-size: 220% 100%;
+  opacity: 0.68;
+  animation: remote-desktop-boot-shimmer 1.15s ease-in-out infinite;
+}
+
+.remote-desktop-boot-window span:first-child {
+  width: 46%;
+  height: 16px;
+  align-self: center;
+}
+
+.remote-desktop-boot-window span:nth-child(2),
+.remote-desktop-boot-window span:nth-child(3) {
+  height: 100%;
+}
+
+.remote-desktop-boot-dock {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 10px 12px;
+  background: rgba(19, 27, 38, 0.68);
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px) saturate(1.5);
+}
+
+.remote-desktop-boot-dock span {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05)),
+    rgba(67, 199, 255, 0.14);
+  opacity: 0.78;
+  animation: remote-desktop-boot-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.remote-desktop-boot-dock span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.remote-desktop-boot-dock span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes remote-desktop-boot-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes remote-desktop-boot-pulse {
+  from {
+    opacity: 0.46;
+    transform: translateY(1px);
+  }
+
+  to {
+    opacity: 0.86;
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 720px) {
+  .remote-desktop-boot-icons {
+    grid-template-columns: 58px;
+  }
+
+  .remote-desktop-boot-window {
+    width: min(420px, calc(100% - 42px));
+    height: min(260px, calc(100% - 156px));
+    transform: translate(-50%, -50%);
+  }
+}
+
+
+
+
+
+.desktop-window-titlebar strong {
+  color: #eef4ff;
+  font-weight: 850;
+}
+
+
+.desktop-window-browser {
+  border-radius: 10px;
+}
+
+.desktop-window-browser .desktop-window-titlebar {
+  background:
+    linear-gradient(180deg, rgba(19, 28, 39, 0.98), rgba(14, 21, 31, 0.98));
+}

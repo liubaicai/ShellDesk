@@ -1,13 +1,9 @@
 .mac-dock {
   position: absolute;
-  bottom: 18px;
   left: 50%;
   z-index: 3;
   display: inline-flex;
-  gap: 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  padding: 10px 13px;
   background: rgba(255, 255, 255, 0.13);
   box-shadow: 0 18px 52px rgba(0, 0, 0, 0.26);
   transform: translateX(-50%);
@@ -16,8 +12,6 @@
 
 .mac-dock button {
   position: relative;
-  width: 48px;
-  height: 48px;
   border-radius: 9px;
   padding: 0;
   color: #ffffff;
