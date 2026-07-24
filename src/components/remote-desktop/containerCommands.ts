@@ -98,10 +98,89 @@ export function parseContainerCliTokens(value: string, fieldLabel: string, langu
   }
   return tokens;
 }
+function formatCliCommand(command: string, args: string[]) {
+  return `${command} ${args.map(shellSingleQuote).join(' ')}`;
+}
 export function formatRuntimeCommand(runtime: ContainerRuntime, args: string[]) {
-  return `${runtime} ${args.map(shellSingleQuote).join(' ')}`;
+  return formatCliCommand(runtime, args);
+}
+function getLegacyDockerComposeArgs(args: string[]) {
+  const composeArgs = args[0] === 'compose' ? args.slice(1) : args;
+  let commandIndex = 0;
+  while (
+    commandIndex < composeArgs.length
+    && ['--project-directory', '-f', '-p', '--env-file'].includes(composeArgs[commandIndex])
+  ) {
+    commandIndex += 2;
+  }
+  if (composeArgs[commandIndex] !== 'up') {
+    return { args: composeArgs, pullArgs: null };
+  }
+  const globalArgs = composeArgs.slice(0, commandIndex);
+  const upArgs = composeArgs.slice(commandIndex + 1);
+  const legacyUpArgs: string[] = [];
+  const services: string[] = [];
+  let pullAlways = false;
+  for (let index = 0; index < upArgs.length; index += 1) {
+    const value = upArgs[index];
+    if (value === '--pull' && upArgs[index + 1] === 'always') {
+      pullAlways = true;
+      index += 1;
+      continue;
+    }
+    legacyUpArgs.push(value);
+    if (!value.startsWith('-')) {
+      services.push(value);
+    }
+  }
+  return {
+    args: [...globalArgs, 'up', ...legacyUpArgs],
+    pullArgs: pullAlways ? [...globalArgs, 'pull', ...services] : null,
+  };
+}
+function getDockerComposeCliCommand(args: string[], isWindowsHost: boolean) {
+  const legacy = getLegacyDockerComposeArgs(args);
+  if (isWindowsHost) {
+    const dockerArgs = args.map(powershellSingleQuote).join(', ');
+    const legacyArgs = legacy.args.map(powershellSingleQuote).join(', ');
+    const legacyPullArgs = legacy.pullArgs?.map(powershellSingleQuote).join(', ') ?? '';
+    return powershellCommand(`
+$dockerArgs = @(${dockerArgs})
+$legacyArgs = @(${legacyArgs})
+$null = & docker compose version 2>&1
+if ($LASTEXITCODE -eq 0) {
+  & docker @dockerArgs 2>&1 | ForEach-Object { $_.ToString() }
+  exit $(if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 })
+}
+$legacy = Get-Command docker-compose -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($legacy) {
+${legacy.pullArgs ? `  $legacyPullArgs = @(${legacyPullArgs})
+  & $legacy.Source @legacyPullArgs 2>&1 | ForEach-Object { $_.ToString() }
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+` : ''}  & $legacy.Source @legacyArgs 2>&1 | ForEach-Object { $_.ToString() }
+  exit $(if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 })
+}
+& docker @dockerArgs 2>&1 | ForEach-Object { $_.ToString() }
+exit $(if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 })
+`);
+  }
+  const dockerCommand = formatCliCommand('docker', args);
+  const legacyCommand = formatCliCommand('docker-compose', legacy.args);
+  const legacyPullCommand = legacy.pullArgs ? `${formatCliCommand('docker-compose', legacy.pullArgs)} 2>&1 &&\n  ` : '';
+  return withUnixContainerPath(`
+if docker compose version >/dev/null 2>&1; then
+  ${dockerCommand} 2>&1
+elif command -v docker-compose >/dev/null 2>&1; then
+  ${legacyPullCommand}${legacyCommand} 2>&1
+else
+  ${dockerCommand} 2>&1
+fi
+`);
 }
 export function getRuntimeCliCommand(runtime: ContainerRuntime, args: string[], isWindowsHost: boolean) {
+  if (runtime === 'docker' && args[0] === 'compose') {
+    return getDockerComposeCliCommand(args, isWindowsHost);
+  }
   if (isWindowsHost) {
     const powershellArgs = args.map(powershellSingleQuote).join(', ');
     return powershellCommand(`
@@ -179,6 +258,17 @@ exit $exitCode
 }
 export function getComposeListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
+    if (runtime === 'docker') {
+      return powershellCommand(`
+$null = & docker compose version 2>&1
+if ($LASTEXITCODE -eq 0) {
+  & docker compose ls --format json 2>&1 | ForEach-Object { $_.ToString() }
+  exit $(if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 })
+}
+& docker ps -a --filter label=com.docker.compose.project --format '{{json .}}' 2>&1 | ForEach-Object { $_.ToString() }
+exit $(if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 })
+`);
+    }
     return powershellCommand(`
 $runtime = ${powershellSingleQuote(runtime)}
 & $runtime compose ls --format json 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -Variable composeOutput
@@ -191,6 +281,15 @@ if ($exitCode -ne 0 -and $runtime -eq "podman") {
   }
 }
 exit $exitCode
+`);
+  }
+  if (runtime === 'docker') {
+    return withUnixContainerPath(`
+if docker compose version >/dev/null 2>&1; then
+  docker compose ls --format json 2>&1
+else
+  docker ps -a --filter label=com.docker.compose.project --format '{{json .}}' 2>&1
+fi
 `);
   }
   if (runtime === 'podman') {

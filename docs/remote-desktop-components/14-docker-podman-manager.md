@@ -78,6 +78,7 @@ interface ImageSummary {
 - `command -v podman`
 - 优先 Docker，找不到则使用 Podman。
 - Unix 命令统一扩展 `/usr/local/bin`、群晖 DSM 7 `ContainerManager` 和 DSM 6 `Docker` 套件目录，确保非交互 SSH 的精简 `PATH` 也能检测并执行运行时。
+- Compose 自动区分 Docker Compose v2 插件和群晖常见的独立 `docker-compose` v1；v1 无全局 `ls` 时使用容器 Compose 标签发现项目，创建和项目操作自动切换到独立命令。
 
 容器列表：
 
@@ -134,6 +135,7 @@ interface ImageSummary {
 - Docker 主机能列出容器和镜像。
 - Podman 主机能正常展示基础信息。
 - 群晖 DSM 非交互 SSH 环境能检测套件安装的 Docker，并执行容器、镜像、网络、卷和 Compose 命令。
+- 群晖 Docker 20.10 + `docker-compose` 1.x 环境打开 Compose 页不报 `unknown flag: --format`，并能使用已有 Compose 文件执行项目操作。
 - 启停容器后列表状态刷新。
 - 权限不足时给出清晰错误，不吞掉 stderr。
 - 删除操作有二次确认。

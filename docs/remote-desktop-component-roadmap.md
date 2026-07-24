@@ -42,7 +42,7 @@
 | 11 | `settings` | 系统设置 | [系统设置组件重设计](./remote-desktop-components/11-system-settings-redesign.md) | 系统信息、网络、DNS、镜像源、更新、Hosts、路由、磁盘视图 |
 | 12 | `service-manager` | 服务管理器 | [服务管理器](./remote-desktop-components/12-service-manager.md) | systemd / Windows Services 列表、状态、日志、启停和 enable/disable |
 | 13 | `log-viewer` | 日志查看器 | [日志查看器](./remote-desktop-components/13-log-viewer.md) | journalctl、文件日志、手动路径、关注置顶、Windows Event Log、搜索和分页 |
-| 14 | `container-manager` | Docker / Podman 管理器 | [Docker / Podman 管理器](./remote-desktop-components/14-docker-podman-manager.md) | 容器、镜像、卷、网络、日志、inspect、常用操作和群晖 DSM 套件路径兼容 |
+| 14 | `container-manager` | Docker / Podman 管理器 | [Docker / Podman 管理器](./remote-desktop-components/14-docker-podman-manager.md) | 容器、镜像、卷、网络、日志、inspect、常用操作，以及群晖 DSM 套件路径和独立 `docker-compose` v1 兼容 |
 | 15 | `port-manager` | 端口与监听管理器 | [端口与监听管理器](./remote-desktop-components/15-port-listener-manager.md) | `ss` / `netstat` / PowerShell 端口列表、连接状态、进程跳转 |
 | 16 | `network-diagnostics` | 网络诊断工具箱 | [网络诊断工具箱](./remote-desktop-components/16-network-diagnostics.md) | Ping、DNS、Trace、HTTP、TCP、路由表诊断 |
 | 17 | `disk-analyzer` | 磁盘空间分析器 | [磁盘空间分析器](./remote-desktop-components/17-disk-space-analyzer.md) | 目录体积扫描、大文件定位、文件管理器联动 |
