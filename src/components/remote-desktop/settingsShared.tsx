@@ -12,6 +12,7 @@ export const SYSTEM_TYPE_LABELS: Record<RemoteSystemType, string> = {
   unknown: '',
   windows: 'Windows',
   macos: 'macOS',
+  synology: 'Synology DSM',
   ubuntu: 'Ubuntu',
   debian: 'Debian',
   redhat: 'Red Hat',

@@ -8,6 +8,9 @@ pub(crate) fn remote_sftp_probe_command() -> String {
         "for candidate in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/libexec/sftp-server /usr/local/libexec/sftp-server /usr/local/lib/sftp-server; do",
         "  if [ -x \"$candidate\" ]; then exit 0; fi",
         "done",
+        "for config in /etc/ssh/sshd_config /etc/sshd_config; do",
+        "  if [ -r \"$config\" ] && grep -Eq '^[[:space:]]*Subsystem[[:space:]]+sftp[[:space:]]+internal-sftp([[:space:]]|$)' \"$config\"; then exit 0; fi",
+        "done",
         "command -v sftp-server >/dev/null 2>&1",
     ]
     .join("\n")

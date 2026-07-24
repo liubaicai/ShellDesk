@@ -2,6 +2,7 @@ export type RemoteSystemType =
   | 'unknown'
   | 'windows'
   | 'macos'
+  | 'synology'
   | 'ubuntu'
   | 'debian'
   | 'redhat'

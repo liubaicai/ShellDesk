@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, useMemo, useRef, useState } from 'react';
 
 import { getErrorMessage } from '../components/remote-desktop/desktopUtils';
 import { useCurrentAppLanguage } from '../i18n';
@@ -13,8 +13,6 @@ interface KnownHostsPageProps {
 }
 
 type LoadStatus = 'idle' | 'loading' | 'saved' | 'error';
-
-let hasAutoScannedSystemKnownHosts = false;
 
 function text(language: ShellDeskAppSettings['language']) {
   return language === 'zh-CN'
@@ -241,21 +239,15 @@ function mergeKnownHosts(currentHosts: ShellDeskKnownHost[], incomingHosts: Shel
 
   for (const incoming of incomingHosts) {
     const key = getKnownHostEndpointKey(incoming);
-    const existing = byKey.get(key);
 
-    if (!existing) {
-      byKey.set(key, incoming);
-      importedCount += 1;
+    // Existing ShellDesk trust is authoritative. System/file imports may be
+    // stale, so they can add an endpoint but must never silently replace it.
+    if (byKey.has(key)) {
       continue;
     }
 
-    byKey.set(key, {
-      ...existing,
-      keyType: incoming.keyType || existing.keyType,
-      publicKey: incoming.publicKey || existing.publicKey,
-      fingerprint: incoming.fingerprint || existing.fingerprint,
-      lastSeen: incoming.lastSeen || incoming.discoveredAt,
-    });
+    byKey.set(key, incoming);
+    importedCount += 1;
   }
 
   return {
@@ -375,15 +367,6 @@ function KnownHostsPage({ hosts, knownHosts, onKnownHostsChange }: KnownHostsPag
       setStatusDetail(copy.failed.replace('{error}', getErrorMessage(error)));
     }
   };
-
-  useEffect(() => {
-    if (hasAutoScannedSystemKnownHosts) {
-      return;
-    }
-
-    hasAutoScannedSystemKnownHosts = true;
-    void scanSystemKnownHosts({ silentNoApi: true });
-  }, []);
 
   const handleFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

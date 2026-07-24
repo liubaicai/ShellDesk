@@ -207,14 +207,14 @@ fn system_info_items(is_windows: bool) -> Vec<MonitorItem> {
         ]
     } else {
         vec![
-            MonitorItem { key: "os", label: "操作系统", icon: Some("🖥️"), command: "cat /etc/os-release 2>/dev/null | grep -E \"^PRETTY_NAME|^NAME|^VERSION\" | head -5 || uname -s" },
+            MonitorItem { key: "os", label: "操作系统", icon: Some("🖥️"), command: "os_info=\"$(cat /etc/os-release 2>/dev/null | grep -E \"^PRETTY_NAME|^NAME|^VERSION\" | head -5)\"; if [ -n \"$os_info\" ]; then printf '%s\\n' \"$os_info\"; elif [ -r /etc.defaults/VERSION ]; then . /etc.defaults/VERSION; dsm_version=\"${productversion:-${majorversion:-0}.${minorversion:-0}}\"; [ -n \"${buildnumber:-}\" ] && dsm_version=\"$dsm_version-${buildnumber}\"; [ -n \"${smallfixnumber:-}\" ] && [ \"$smallfixnumber\" != \"0\" ] && dsm_version=\"$dsm_version Update ${smallfixnumber}\"; printf 'Synology DSM %s\\n' \"$dsm_version\"; else uname -s; fi" },
             MonitorItem { key: "kernel", label: "内核版本", icon: Some("⚙️"), command: "uname -r" },
             MonitorItem { key: "hostname", label: "主机名", icon: Some("🏠"), command: "hostname -f 2>/dev/null || hostname" },
             MonitorItem { key: "arch", label: "系统架构", icon: Some("🧩"), command: "uname -m" },
             MonitorItem { key: "cpuCores", label: "CPU 核心", icon: Some("🧮"), command: "getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo \"未检测到\"" },
             MonitorItem { key: "memoryTotal", label: "内存总量", icon: Some("🧠"), command: "LC_ALL=C free -b 2>/dev/null | awk '/^Mem:/ { printf \"%.1f GB\\n\", $2 / 1024 / 1024 / 1024; found=1 } END { if (!found) print \"未检测到\" }'" },
             MonitorItem { key: "diskTotal", label: "硬盘总量", icon: Some("💽"), command: "df -Pk -x tmpfs -x devtmpfs 2>/dev/null | awk 'NR > 1 && !seen[$1]++ { total += $2 } END { if (total > 0) printf \"%.1f GB\\n\", total / 1024 / 1024; else print \"未检测到\" }'" },
-            MonitorItem { key: "cpu", label: "CPU", icon: Some("💻"), command: "LC_ALL=C lscpu 2>/dev/null | grep -E '^(Model name|Socket\\(s\\)|Core\\(s\\) per socket|Thread\\(s\\) per core|CPU\\(s\\)):' | head -6 || grep -m1 'model name' /proc/cpuinfo 2>/dev/null || echo \"未检测到\"" },
+            MonitorItem { key: "cpu", label: "CPU", icon: Some("💻"), command: "cpu_info=\"\"; if command -v lscpu >/dev/null 2>&1; then cpu_info=\"$(LC_ALL=C lscpu 2>/dev/null | grep -E '^(Model name|Socket\\(s\\)|Core\\(s\\) per socket|Thread\\(s\\) per core|CPU\\(s\\)):' | head -6)\"; fi; if [ -z \"$cpu_info\" ]; then cpu_info=\"$(grep -m1 -E '^(model name|Processor|Hardware|cpu model|system type|machine)[[:space:]]*:' /proc/cpuinfo 2>/dev/null)\"; fi; if [ -n \"$cpu_info\" ]; then printf '%s\\n' \"$cpu_info\"; else echo \"未检测到\"; fi" },
             MonitorItem { key: "memory", label: "内存", icon: Some("🧠"), command: "LC_ALL=C free -h 2>/dev/null | grep \"^Mem:\" || vm_stat 2>/dev/null | head -5" },
             MonitorItem { key: "disk", label: "磁盘", icon: Some("💽"), command: "df -h -x tmpfs -x devtmpfs 2>/dev/null | head -12 || df -h 2>/dev/null | head -12 || echo \"未检测到\"" },
             MonitorItem { key: "uptime", label: "运行时间", icon: Some("⏱️"), command: "uptime -p 2>/dev/null || uptime" },
@@ -585,6 +585,31 @@ mod tests {
         assert!(metrics_command.contains("LC_ALL=C free | awk"));
     }
 
+    #[test]
+    fn unix_system_info_and_container_probes_support_synology_layouts() {
+        let system_items = system_info_items(false);
+        let os = system_items
+            .iter()
+            .find(|item| item.key == "os")
+            .expect("OS detail item");
+        assert!(os.command.contains("/etc.defaults/VERSION"));
+        assert!(os.command.contains("[ -n \"$os_info\" ]"));
+
+        let cpu = system_items
+            .iter()
+            .find(|item| item.key == "cpu")
+            .expect("CPU detail item");
+        assert!(cpu.command.contains("command -v lscpu"));
+        assert!(cpu.command.contains("[ -z \"$cpu_info\" ]"));
+        assert!(cpu.command.contains("/proc/cpuinfo"));
+
+        assert!(LINUX_HOST_COMPONENT_PROBE.contains("/usr/local/bin"));
+        assert!(
+            LINUX_HOST_COMPONENT_PROBE.contains("/var/packages/ContainerManager/target/usr/bin")
+        );
+        assert!(LINUX_HOST_COMPONENT_PROBE.contains("/var/packages/Docker/target/usr/bin"));
+    }
+
     const HOST_COMPONENT_PREFIX: &str = "__SHELLDESK_COMPONENT__";
     const HOST_SMOKE_RESULT_PREFIX: &str = "__SHELLDESK_SMOKE_RESULT__";
     const ALL_HOST_COMPONENTS: [&str; 13] = [
@@ -663,7 +688,7 @@ component firewall true sh -c 'command -v firewall-cmd >/dev/null || command -v 
 component scheduledTasks true sh -c 'command -v crontab >/dev/null || command -v systemctl >/dev/null'
 component eventLog true sh -c 'command -v journalctl >/dev/null || test -d /var/log'
 component packages true sh -c 'command -v apt-get >/dev/null || command -v dnf >/dev/null || command -v yum >/dev/null || command -v zypper >/dev/null || command -v pacman >/dev/null || command -v apk >/dev/null'
-component containers true sh -c 'command -v docker >/dev/null || command -v podman >/dev/null'
+component containers true sh -c 'PATH=/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:$PATH; export PATH; command -v docker >/dev/null || command -v podman >/dev/null'
 component vmManager true sh -c 'command -v virsh >/dev/null && LC_ALL=C virsh --connect qemu:///system list --all --name >/dev/null'
 "#;
 

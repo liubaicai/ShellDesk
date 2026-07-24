@@ -308,6 +308,7 @@ type HostSystemType =
   | 'unknown'
   | 'windows'
   | 'macos'
+  | 'synology'
   | 'ubuntu'
   | 'debian'
   | 'redhat'
@@ -375,6 +376,7 @@ const hostSystemLabels: Record<HostSystemType, string> = {
   unknown: '',
   windows: 'Windows',
   macos: 'macOS',
+  synology: 'Synology DSM',
   ubuntu: 'Ubuntu',
   debian: 'Debian',
   redhat: 'Red Hat Enterprise Linux',
@@ -402,6 +404,7 @@ const hostSystemLabels: Record<HostSystemType, string> = {
 const hostSystemNamePatterns: ReadonlyArray<[HostSystemType, RegExp]> = [
   ['windows', /windows/i],
   ['macos', /mac\s?os|darwin/i],
+  ['synology', /synology|diskstation|dsm(?:\s|$)/i],
   ['ubuntu', /ubuntu/i],
   ['debian', /debian/i],
   ['redhat', /red\s*hat|rhel/i],
@@ -745,6 +748,7 @@ const hostSystemIconUrls: Record<HostSystemType, string> = {
   unknown: new URL('./assets/os-icons/unknown.png', import.meta.url).href,
   windows: new URL('./assets/os-icons/windows.png', import.meta.url).href,
   macos: new URL('./assets/os-icons/macos.png', import.meta.url).href,
+  synology: new URL('./assets/os-icons/synology.png', import.meta.url).href,
   ubuntu: new URL('./assets/os-icons/ubuntu.png', import.meta.url).href,
   debian: new URL('./assets/os-icons/debian.png', import.meta.url).href,
   redhat: new URL('./assets/os-icons/redhat.png', import.meta.url).href,
@@ -1015,7 +1019,6 @@ interface VaultCollectionsSavePayload {
   hosts: Host[];
   sshKeys: SshKey[];
   proxyProfiles: ShellDeskProxyProfile[];
-  knownHosts: ShellDeskKnownHost[];
   settings: ShellDeskAppSettings;
 }
 
@@ -2739,7 +2742,6 @@ function App() {
           hosts: nextHosts,
           sshKeys: nextKeys,
           proxyProfiles: nextProxyProfiles,
-          knownHosts: nextKnownHosts,
           settings: shouldRepairPersistedSettings ? snapshot.settings : nextSettings,
         });
       }
@@ -2761,7 +2763,6 @@ function App() {
         hosts: hostsRef.current,
         sshKeys: sshKeysRef.current,
         proxyProfiles: proxyProfilesRef.current,
-        knownHosts: knownHostsRef.current,
         settings: nextSettings,
       });
     }
@@ -2846,7 +2847,6 @@ function App() {
       hosts: hostsRef.current,
       sshKeys: sshKeysRef.current,
       proxyProfiles: proxyProfilesRef.current,
-      knownHosts: knownHostsRef.current,
       settings: settingsRef.current,
     };
     const serializedPayload = JSON.stringify(payload);
@@ -2906,7 +2906,6 @@ function App() {
       hosts: orderedHosts,
       sshKeys: nextSshKeys,
       proxyProfiles: nextProxyProfiles,
-      knownHosts: nextKnownHosts,
       settings: nextSettings,
     });
   }, [queueCollectionsSaveIfChanged, vaultControls]);
@@ -2925,7 +2924,18 @@ function App() {
 
   const commitKnownHosts = useCallback((nextKnownHosts: ShellDeskKnownHost[], nextHosts: Host[] = hostsRef.current) => {
     commitCollectionsState(nextHosts, sshKeysRef.current, settingsRef.current, proxyProfilesRef.current, nextKnownHosts);
-  }, [commitCollectionsState]);
+    if (!vaultControls || !isVaultReady || !isVaultHydrated) {
+      return;
+    }
+
+    void vaultControls.saveCollections({ knownHosts: nextKnownHosts }).then((snapshot) => {
+      setStorageInfo(snapshot.storage);
+      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
+    }).catch((error: unknown) => {
+      const currentLanguage = getCurrentAppLanguage();
+      setStatusMessage(t('app.status.saveLocalFailed', currentLanguage, { error: getErrorMessage(error, currentLanguage) }));
+    });
+  }, [commitCollectionsState, isVaultHydrated, isVaultReady, vaultControls]);
 
   const refreshHosts = async () => {
     if (!vaultControls) {
@@ -3310,8 +3320,8 @@ function App() {
   }, [isConnectionWindow, isVaultReady]);
 
   useEffect(() => {
-    queueCollectionsSaveIfChanged({ hosts, sshKeys, proxyProfiles, knownHosts, settings });
-  }, [hosts, knownHosts, proxyProfiles, queueCollectionsSaveIfChanged, settings, sshKeys]);
+    queueCollectionsSaveIfChanged({ hosts, sshKeys, proxyProfiles, settings });
+  }, [hosts, proxyProfiles, queueCollectionsSaveIfChanged, settings, sshKeys]);
 
   useEffect(() => {
     const closeOpenHostCardMenus = (target: EventTarget | null) => {
@@ -3632,17 +3642,18 @@ function App() {
         return;
       }
 
-      if (payload.kind === 'hostKeyTrust') {
+      if (payload.kind === 'hostKeyTrust' || payload.kind === 'sync') {
         void vaultControls.getSnapshot().then((snapshot) => {
           knownHostsRef.current = snapshot.knownHosts;
-          lastPersistedCollectionsRef.current = JSON.stringify({
-            hosts: hostsRef.current,
-            sshKeys: sshKeysRef.current,
-            proxyProfiles: proxyProfilesRef.current,
-            knownHosts: snapshot.knownHosts,
-            settings: settingsRef.current,
-          });
           setKnownHosts(snapshot.knownHosts);
+
+          if (
+            payload.kind === 'sync'
+            && !collectionsSaveInFlightRef.current
+            && !pendingCollectionsSaveRef.current
+          ) {
+            applyVaultSnapshot(snapshot);
+          }
         }).catch(() => undefined);
         return;
       }

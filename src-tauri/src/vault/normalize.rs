@@ -756,6 +756,7 @@ const REMOTE_SYSTEM_TYPE_CHOICES: &[&str] = &[
     "unknown",
     "windows",
     "macos",
+    "synology",
     "ubuntu",
     "debian",
     "redhat",

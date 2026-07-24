@@ -377,8 +377,12 @@ pub(crate) fn upsert_vault_collections(
         );
     }
 
-    if let Some(value) = payload.get("knownHosts").filter(|value| value.is_array()) {
-        store_object.insert("knownHosts".to_string(), normalize_known_hosts(value)?);
+    // Host-key trust is backend-owned state. Only an explicit knownHosts-only
+    // request may replace it; broad collection saves can carry stale UI copies.
+    if payload.len() == 1 {
+        if let Some(value) = payload.get("knownHosts").filter(|value| value.is_array()) {
+            store_object.insert("knownHosts".to_string(), normalize_known_hosts(value)?);
+        }
     }
 
     if let Some(value) = payload.get("settings") {
@@ -871,6 +875,16 @@ mod tests {
     }
 
     #[test]
+    fn normalize_hosts_preserves_synology_system_type() {
+        let mut host = host_record("host-synology", "NAS", "2026-01-01T00:00:00Z");
+        host["systemType"] = json!("SYNOLOGY");
+
+        let hosts = normalize_hosts(&json!([host])).unwrap();
+
+        assert_eq!(hosts[0]["systemType"], "synology");
+    }
+
+    #[test]
     fn normalize_hosts_cleans_invalid_jump_host_references() {
         let jump = host_record("jump", "Jump", "2026-01-04T00:00:00Z");
         let mut via_jump = host_record("via-jump", "Via Jump", "2026-01-03T00:00:00Z");
@@ -1315,15 +1329,42 @@ mod tests {
         assert_eq!(store["proxyProfiles"][0]["id"], "proxy-1");
         assert_eq!(store["proxyProfiles"][0]["config"]["host"], "127.0.0.1");
         assert_eq!(store["proxyProfiles"][0]["config"]["port"], 1080);
-        assert_eq!(store["knownHosts"][0]["id"], "known-1");
-        assert_eq!(store["knownHosts"][0]["hostname"], "example.com");
-        assert_eq!(store["knownHosts"][0]["port"], 22);
+        assert!(store["knownHosts"].as_array().unwrap().is_empty());
         assert_eq!(
             store["sshKeys"][0]["privateKey"],
             "-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----"
         );
         assert_eq!(store["sshKeys"][0]["algorithm"], "SSH");
         assert_eq!(store["sshKeys"][0]["publicKey"], RSA_PUBLIC_KEY);
+    }
+
+    #[test]
+    fn upsert_vault_collections_only_updates_known_hosts_for_an_explicit_request() {
+        let mut store = json!({
+            "hosts": [],
+            "sshKeys": [],
+            "proxyProfiles": [],
+            "knownHosts": [{ "id": "known-old", "hostname": "old.example.com", "port": 22 }],
+            "settings": default_settings()
+        });
+
+        upsert_vault_collections(
+            &mut store,
+            json!({
+                "knownHosts": [{
+                    "id": " known-1 ",
+                    "hostname": " example.com ",
+                    "port": "22",
+                    "discoveredAt": "2026-01-01T00:00:00.000Z"
+                }]
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(store["knownHosts"].as_array().unwrap().len(), 1);
+        assert_eq!(store["knownHosts"][0]["id"], "known-1");
+        assert_eq!(store["knownHosts"][0]["hostname"], "example.com");
+        assert_eq!(store["knownHosts"][0]["port"], 22);
     }
 
     #[test]

@@ -1017,6 +1017,7 @@ mod tests {
 
         assert!(command.contains("command -v sftp-server"));
         assert!(command.contains("/usr/lib/openssh/sftp-server"));
+        assert!(command.contains("internal-sftp"));
         assert!(!command.contains("|| true"));
     }
 

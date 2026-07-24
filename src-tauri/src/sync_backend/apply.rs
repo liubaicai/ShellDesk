@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+use super::records::compare_time;
 use crate::vault::{
     default_settings, normalize_ssh_keys_for_import, read_store, to_snapshot, write_store,
 };
@@ -25,6 +26,64 @@ fn map_by_id(items: &[Value]) -> HashMap<String, Value> {
         .iter()
         .filter_map(|item| Some((item.get("id")?.as_str()?.to_string(), item.clone())))
         .collect()
+}
+
+fn known_host_endpoint_key(known_host: &Value) -> String {
+    format!(
+        "{}:{}",
+        known_host
+            .get("hostname")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_lowercase(),
+        known_host.get("port").and_then(Value::as_i64).unwrap_or(22)
+    )
+}
+
+fn synced_known_hosts(document: &Value) -> Vec<Value> {
+    let mut by_endpoint: HashMap<String, (String, String, Value)> = HashMap::new();
+
+    if let Some(records) = document.get("records").and_then(Value::as_object) {
+        for record in records
+            .values()
+            .filter(|record| record.get("type").and_then(Value::as_str) == Some("knownHost"))
+        {
+            let Some(payload) = record.get("payload") else {
+                continue;
+            };
+            let endpoint = known_host_endpoint_key(payload);
+            let updated_at = record
+                .get("updatedAt")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let record_id = record.get("id").and_then(Value::as_str).unwrap_or("");
+            let should_replace = by_endpoint.get(&endpoint).is_none_or(
+                |(current_updated_at, current_record_id, _)| {
+                    let time_order = compare_time(updated_at, current_updated_at);
+                    time_order > 0 || (time_order == 0 && record_id > current_record_id.as_str())
+                },
+            );
+
+            if should_replace {
+                by_endpoint.insert(
+                    endpoint,
+                    (
+                        updated_at.to_string(),
+                        record_id.to_string(),
+                        payload.clone(),
+                    ),
+                );
+            }
+        }
+    }
+
+    let mut known_hosts = by_endpoint
+        .into_values()
+        .map(|(_, _, known_host)| known_host)
+        .collect::<Vec<_>>();
+    known_hosts.sort_by_key(known_host_endpoint_key);
+    known_hosts
 }
 
 fn preserve_local_close_to_tray_decision(settings: &mut Value, current: &Value) {
@@ -158,14 +217,7 @@ pub(super) fn apply_sync_document_to_vault(
         });
     }
 
-    let mut known_hosts = records_array(document, "knownHost");
-    known_hosts.sort_by_key(|item| {
-        format!(
-            "{}:{}",
-            item.get("hostname").and_then(Value::as_str).unwrap_or(""),
-            item.get("port").and_then(Value::as_i64).unwrap_or(22)
-        )
-    });
+    let known_hosts = synced_known_hosts(document);
 
     let mut settings = document
         .pointer("/records/settings:app/payload")
@@ -383,6 +435,64 @@ mod tests {
             "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----"
         );
         assert_eq!(store["sshKeys"][0]["passphrase"], "key-passphrase");
+
+        let _ = fs::remove_dir_all(&state.data_dir);
+    }
+
+    #[test]
+    fn applies_only_the_newest_synced_known_host_per_endpoint() {
+        let state = temp_state("dedupe-known-hosts");
+        write_store(
+            &state,
+            &json!({
+                "hosts": [],
+                "sshKeys": [],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": default_settings(),
+                "browserBookmarks": []
+            }),
+        )
+        .unwrap();
+
+        let snapshot = apply_sync_document_to_vault(
+            &state,
+            &json!({
+                "records": {
+                    "knownHost:old-id": {
+                        "id": "knownHost:old-id",
+                        "type": "knownHost",
+                        "updatedAt": "2026-01-01T00:00:00.000Z",
+                        "payload": {
+                            "id": "old-id",
+                            "hostname": "EXAMPLE.com",
+                            "port": 22,
+                            "keyType": "ssh-ed25519",
+                            "publicKey": "ssh-ed25519 old",
+                            "fingerprint": "old"
+                        }
+                    },
+                    "knownHost:new-id": {
+                        "id": "knownHost:new-id",
+                        "type": "knownHost",
+                        "updatedAt": "2026-01-02T00:00:00.000Z",
+                        "payload": {
+                            "id": "new-id",
+                            "hostname": "example.COM",
+                            "port": 22,
+                            "keyType": "ssh-ed25519",
+                            "publicKey": "ssh-ed25519 new",
+                            "fingerprint": "new"
+                        }
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot["knownHosts"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["knownHosts"][0]["id"], "new-id");
+        assert_eq!(snapshot["knownHosts"][0]["fingerprint"], "new");
 
         let _ = fs::remove_dir_all(&state.data_dir);
     }

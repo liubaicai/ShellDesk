@@ -23,6 +23,14 @@ import type {
 const CONTAINER_INSPECT_MARKER = '__SHELLDESK_CONTAINER_INSPECT__';
 const CONTAINER_STATS_MARKER = '__SHELLDESK_CONTAINER_STATS__';
 const CONTAINER_LOGS_MARKER = '__SHELLDESK_CONTAINER_LOGS__';
+const UNIX_CONTAINER_PATH = '/usr/local/bin:/var/packages/ContainerManager/target/usr/bin:/var/packages/Docker/target/usr/bin:$PATH';
+
+function withUnixContainerPath(command: string) {
+  return `PATH=${UNIX_CONTAINER_PATH}
+export PATH
+${command}`;
+}
+
 export function createContainerNameSuggestion(imageRef: string) {
   const imageName = imageRef
     .replace(/^sha256:/, '')
@@ -104,7 +112,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${formatRuntimeCommand(runtime, args)} 2>&1`;
+  return withUnixContainerPath(`${formatRuntimeCommand(runtime, args)} 2>&1`);
 }
 export function getRuntimeLabel(runtime: ContainerRuntime | null, language: AppLanguage) {
   if (runtime === 'docker') return 'Docker';
@@ -134,7 +142,7 @@ Write-Error "${noRuntime}"
 exit 127
 `);
   }
-  return `
+  return withUnixContainerPath(`
 if command -v docker >/dev/null 2>&1; then
   printf 'docker\\n'
   exit 0
@@ -145,7 +153,7 @@ if command -v podman >/dev/null 2>&1; then
 fi
 printf '${noRuntime}\\n' >&2
 exit 127
-`;
+`);
 }
 export function getContainerListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -156,7 +164,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} ps -a --format '{{json .}}' 2>&1`;
+  return withUnixContainerPath(`${runtime} ps -a --format '{{json .}}' 2>&1`);
 }
 export function getImageListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -167,7 +175,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} images --format '{{json .}}' 2>&1`;
+  return withUnixContainerPath(`${runtime} images --format '{{json .}}' 2>&1`);
 }
 export function getComposeListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -186,7 +194,7 @@ exit $exitCode
 `);
   }
   if (runtime === 'podman') {
-    return `
+    return withUnixContainerPath(`
 compose_output="$(${runtime} compose ls --format json 2>&1)"
 compose_code=$?
 if [ "$compose_code" -eq 0 ]; then
@@ -203,9 +211,9 @@ case "$compose_output" in
     exit "$compose_code"
     ;;
 esac
-`;
+`);
   }
-  return `${runtime} compose ls --format json 2>&1`;
+  return withUnixContainerPath(`${runtime} compose ls --format json 2>&1`);
 }
 export function getNetworkListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -216,7 +224,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} network ls --format '{{json .}}' 2>&1`;
+  return withUnixContainerPath(`${runtime} network ls --format '{{json .}}' 2>&1`);
 }
 export function getVolumeListCommand(runtime: ContainerRuntime, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -227,7 +235,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} volume ls --format '{{json .}}' 2>&1`;
+  return withUnixContainerPath(`${runtime} volume ls --format '{{json .}}' 2>&1`);
 }
 export function getContainerDetailCommand(runtime: ContainerRuntime, containerId: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -243,7 +251,7 @@ $target = ${powershellSingleQuote(containerId)}
 exit 0
 `);
   }
-  return `
+  return withUnixContainerPath(`
 target=${shellSingleQuote(containerId)}
 printf '${CONTAINER_INSPECT_MARKER}\\n'
 ${runtime} inspect "$target" 2>&1 || true
@@ -251,7 +259,7 @@ printf '${CONTAINER_STATS_MARKER}\\n'
 ${runtime} stats --no-stream --format '{{json .}}' "$target" 2>&1 || true
 printf '${CONTAINER_LOGS_MARKER}\\n'
 ${runtime} logs --tail 200 "$target" 2>&1 || true
-`;
+`);
 }
 export function getContainerLogsCommand(runtime: ContainerRuntime, containerId: string, isWindowsHost: boolean, tail = 200, sinceSeconds?: number) {
   const args = ['logs', '--tail', String(Math.max(1, Math.min(tail, 1000)))];
@@ -272,7 +280,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} ${runtimeAction} ${shellSingleQuote(containerId)} 2>&1`;
+  return withUnixContainerPath(`${runtime} ${runtimeAction} ${shellSingleQuote(containerId)} 2>&1`);
 }
 export function buildContainerRunArgs(form: ContainerRunForm, language: AppLanguage) {
   const image = form.image.trim();
@@ -508,10 +516,10 @@ foreach ($containerArgs in $commandGroups) {
 exit 0
 `);
   }
-  return [
+  return withUnixContainerPath([
     'set -e',
     ...commandGroups.map((args) => `${formatRuntimeCommand(runtime, args)} 2>&1`),
-  ].join('\n');
+  ].join('\n'));
 }
 export function getImagePullCommand(runtime: ContainerRuntime, imageName: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -523,7 +531,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} pull ${shellSingleQuote(imageName)} 2>&1`;
+  return withUnixContainerPath(`${runtime} pull ${shellSingleQuote(imageName)} 2>&1`);
 }
 export function getImageRemoveCommand(runtime: ContainerRuntime, imageRef: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -535,7 +543,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} rmi ${shellSingleQuote(imageRef)} 2>&1`;
+  return withUnixContainerPath(`${runtime} rmi ${shellSingleQuote(imageRef)} 2>&1`);
 }
 export function getContainerExecCommand(runtime: ContainerRuntime, containerId: string, command: string, isWindowsHost: boolean) {
   if (isWindowsHost) {
@@ -548,7 +556,7 @@ $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 exit $exitCode
 `);
   }
-  return `${runtime} exec ${shellSingleQuote(containerId)} sh -lc ${shellSingleQuote(command)} 2>&1`;
+  return withUnixContainerPath(`${runtime} exec ${shellSingleQuote(containerId)} sh -lc ${shellSingleQuote(command)} 2>&1`);
 }
 export function matchesContainerQuery(container: ContainerSummary, query: string) {
   if (!query) {

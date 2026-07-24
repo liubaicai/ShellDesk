@@ -228,7 +228,7 @@ async fn ensure_direct_ssh_host_key_trusted(
         .and_then(Value::as_bool)
         .unwrap_or(false)
     {
-        upsert_known_host_from_scan(&state, &profile, &scanned, &decision)?;
+        upsert_known_host_from_scan(&state, &profile, &scanned, &decision).await?;
         let _ = ui.emit("vault:changed", json!({ "kind": "hostKeyTrust" }));
     }
     profile.known_hosts_path =
@@ -549,12 +549,13 @@ pub(super) fn select_scanned_host_key_decision(
     first_changed.or(first_unknown)
 }
 
-fn upsert_known_host_from_scan(
+async fn upsert_known_host_from_scan(
     state: &AppState,
     profile: &SshProfile,
     scanned: &Value,
     decision: &Value,
 ) -> Result<(), String> {
+    let _operation = state.vault_operation_lock.lock().await;
     with_store_mut(state, |store| {
         let current = store
             .get("knownHosts")

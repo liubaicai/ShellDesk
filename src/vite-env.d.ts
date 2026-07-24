@@ -444,6 +444,7 @@ type ShellDeskHostSystemType =
   | 'unknown'
   | 'windows'
   | 'macos'
+  | 'synology'
   | 'ubuntu'
   | 'debian'
   | 'redhat'
@@ -1601,7 +1602,7 @@ interface ShellDeskEventControls {
   onOpenAiSettings: (callback: () => void) => () => void;
   onDesktopAppOpen: (callback: (payload: { appKey: ShellDeskDesktopAppKey }) => void) => () => void;
   onLogsChanged: (callback: (payload: ShellDeskLogsChangedPayload) => void) => () => void;
-  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference' | 'hostKeyTrust'; scope?: string; key?: string }) => void) => () => void;
+  onVaultChanged: (callback: (payload: { kind: 'vault' | 'bookmarks' | 'preference' | 'hostKeyTrust' | 'sync'; scope?: string; key?: string }) => void) => () => void;
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
