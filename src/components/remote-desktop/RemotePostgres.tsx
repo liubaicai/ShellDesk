@@ -1,11 +1,11 @@
-import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
-import DatabaseImportDialog from './DatabaseImportDialog';
+import DatabaseImportDialog from './database-import/DatabaseImportDialog';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import {
@@ -21,6 +21,8 @@ import {
 } from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { useDatabaseImportDraft } from './database-import/useDatabaseImportDraft';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 import {
   buildPgInsertSql,
@@ -37,8 +39,6 @@ import {
   formatImportTarget,
   generateCreateTableSql,
   generateCreateTableStatements,
-  getShellDeskEditorTheme,
-  type ImportDataState,
   importEditorTarget,
   maxHistoryItems,
   maxResultTabs,
@@ -107,7 +107,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [editSaving, setEditSaving] = useState(false);
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
   const [contextMenu, setContextMenu] = useState<PostgresContextMenuState | null>(null);
   const [createTableState, setCreateTableState] = useState<PgCreateTableState>({
     open: false,
@@ -122,17 +122,17 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     executing: false,
     dialogError: '',
   });
-  const [importDataState, setImportDataState] = useState<ImportDataState>({
-    open: false,
-    mode: 'csv',
-    targetTable: '',
-    csvText: '',
-    jsonText: '',
-    preview: [],
-    columns: [],
-    executing: false,
-    progress: null,
-    error: '',
+  const {
+    isReadingImportFile,
+    importDataState,
+    setImportDataState,
+    invalidateImportFileRead,
+    updateImportText,
+    handleImportFileSelected,
+    updateImportMode,
+  } = useDatabaseImportDraft({
+    parseCsv: parseImportCsv,
+    parseJson: parseImportJson,
   });
 
   const isConnected = status === 'connected';
@@ -858,20 +858,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
     setCreateTableState((current) => ({ ...current, open: false, executing: false, dialogError: '' }));
   }, []);
 
-  const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
-    if (!text.trim()) {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-      return;
-    }
-
-    try {
-      const parsed = mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
-      setImportDataState((current) => ({ ...current, preview: parsed.preview, columns: parsed.columns }));
-    } catch {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-    }
-  }, []);
-
   const openImportDialog = useCallback(() => {
     const targetTable = selectedTable ?? activeResultTab?.table ?? importTargetTables[0] ?? null;
     const targetValue = targetTable ? serializeImportTarget(targetTable) : '';
@@ -891,48 +877,9 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   }, [activeResultTab, importTargetTables, selectedTable, tablesBySchema, toggleSchema]);
 
   const closeImportDialog = useCallback(() => {
+    invalidateImportFileRead();
     setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null, error: '' }));
-  }, []);
-
-  const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
-    setImportDataState((current) => ({
-      ...current,
-      mode,
-      csvText: mode === 'csv' ? text : current.csvText,
-      jsonText: mode === 'json' ? text : current.jsonText,
-      progress: null,
-      error: '',
-    }));
-    refreshImportPreview(mode, text);
-  }, [refreshImportPreview]);
-
-  const handleImportFileSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const mode: ImportDataState['mode'] = file.name.endsWith('.json') ? 'json' : 'csv';
-      setImportDataState((current) => ({
-        ...current,
-        mode,
-        csvText: mode === 'csv' ? text : current.csvText,
-        jsonText: mode === 'json' ? text : current.jsonText,
-        progress: null,
-        error: '',
-      }));
-      refreshImportPreview(mode, text);
-    };
-    reader.readAsText(file);
-
-    event.target.value = '';
-  }, [refreshImportPreview]);
-
-  const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
-    setImportDataState((current) => ({ ...current, mode, progress: null, error: '' }));
-    refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
-  }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
+  }, [invalidateImportFileRead]);
 
   const getImportTargetTable = useCallback((): TableInfo | null => {
     if (importDataState.targetTable === importEditorTarget) {
@@ -942,7 +889,8 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
   }, [activeResultTab, importDataState.targetTable, selectedTable]);
 
   const handleExecuteImport = useCallback(async () => {
-    if (!api || !postgresId) return;
+    if (!api || !postgresId || isReadingImportFile) return;
+    invalidateImportFileRead();
 
     const table = getImportTargetTable();
     const text = importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText;
@@ -1047,7 +995,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         error: tCurrent('auto.remotePostgres.importFailed', { error: text }),
       }));
     }
-  }, [addHistoryItem, addResultTab, api, connectionId, database, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, postgresId]);
+  }, [addHistoryItem, addResultTab, api, connectionId, database, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, invalidateImportFileRead, isReadingImportFile, postgresId]);
 
   const updateCreateTableColumn = useCallback(<Key extends keyof PgSchemaColumn,>(
     columnId: string,
@@ -1249,20 +1197,6 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
       editorRef.current?.view?.focus();
     }
   }, [activeQueryId, isConnected]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!createTableState.open) return undefined;
@@ -2017,6 +1951,7 @@ function RemotePostgres({ connectionId, hostId }: RemotePostgresProps) {
         dialogId="postgres-import-title"
         editorTargetValue={importEditorTarget}
         fileInputRef={importFileInputRef}
+        isReadingFile={isReadingImportFile}
         labels={{
           cancel: tCurrent('auto.remotePostgres.cancel'),
           closeAlert: tCurrent('common.closeAlert'),

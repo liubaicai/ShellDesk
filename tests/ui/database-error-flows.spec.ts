@@ -58,6 +58,83 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
+async function expectMonitorPaneOwnsLayout(page: Page) {
+  const layout = await page.locator('.monitor-pane').evaluate((node) => {
+    const style = window.getComputedStyle(node);
+    return {
+      display: style.display,
+      gap: style.gap,
+      padding: style.padding,
+      minHeight: style.minHeight,
+      backgroundImage: style.backgroundImage,
+      clientHeight: node.clientHeight,
+      parentClientHeight: node.parentElement?.clientHeight ?? -1,
+    };
+  });
+
+  expect(layout).toMatchObject({
+    display: 'grid',
+    gap: '10px',
+    padding: '0px',
+    minHeight: '0px',
+  });
+  expect(layout.backgroundImage).toContain('linear-gradient');
+  expect(layout.clientHeight).toBe(layout.parentClientHeight);
+}
+
+test('Shared editor theme subscribers update without losing content', async ({ page }) => {
+  await gotoHarness(page, 'component=editor-theme-subscribers&theme=dark');
+
+  const firstSubscriber = page.getByTestId('editor-theme-first');
+  const secondSubscriber = page.getByTestId('editor-theme-second');
+  const firstContent = page.getByRole('textbox', { name: 'first editor content' });
+  const secondContent = page.getByRole('textbox', { name: 'second editor content' });
+
+  await expect(firstSubscriber).toHaveAttribute('data-editor-theme', 'dark');
+  await expect(secondSubscriber).toHaveAttribute('data-editor-theme', 'dark');
+
+  await firstContent.fill('SELECT current_database();');
+  await secondContent.fill('{"enabled":false,"retries":3}');
+
+  await page.getByRole('button', { name: 'Switch to light theme' }).click();
+
+  await expect(firstSubscriber).toHaveAttribute('data-editor-theme', 'light');
+  await expect(secondSubscriber).toHaveAttribute('data-editor-theme', 'light');
+  await expect(firstContent).toHaveValue('SELECT current_database();');
+  await expect(secondContent).toHaveValue('{"enabled":false,"retries":3}');
+
+  await page.getByRole('button', { name: 'Hide all editors' }).click();
+  await expect(firstSubscriber).toHaveCount(0);
+  await expect(secondSubscriber).toHaveCount(0);
+  await page.getByRole('button', { name: 'Switch to dark theme' }).click();
+  await page.getByRole('button', { name: 'Show all editors' }).click();
+
+  await expect(firstSubscriber).toHaveAttribute('data-editor-theme', 'dark');
+  await expect(secondSubscriber).toHaveAttribute('data-editor-theme', 'dark');
+  await page.getByRole('button', { name: 'Switch to light theme' }).click();
+  await expect(firstSubscriber).toHaveAttribute('data-editor-theme', 'light');
+  await expect(secondSubscriber).toHaveAttribute('data-editor-theme', 'light');
+});
+
+test('MySQL editor consumes the shared theme without replacing its document', async ({ page }) => {
+  await gotoHarness(page, 'component=mysql&theme=dark');
+  await page.getByTestId('mysql-connect-submit').click();
+
+  const editorContent = page.locator('.mysql-sql-editor .cm-content');
+  await expect(editorContent).toBeVisible();
+  await editorContent.fill('SELECT 42 AS answer;');
+  await expect(editorContent).toContainText('SELECT 42 AS answer;');
+
+  const editor = page.locator('.mysql-sql-editor .cm-editor');
+  const darkBackground = await editor.evaluate((node) => window.getComputedStyle(node).backgroundColor);
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+
+  await expect.poll(
+    () => editor.evaluate((node) => window.getComputedStyle(node).backgroundColor),
+  ).not.toBe(darkBackground);
+  await expect(editorContent).toContainText('SELECT 42 AS answer;');
+});
+
 test('Desktop icons keep a fixed image row when labels wrap and artwork fills each PNG', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 420 });
   await gotoHarness(page, 'component=desktop-icons&theme=dark');
@@ -644,8 +721,68 @@ test('Virtual machine manager applies URI changes only after explicit confirmati
   await expect.poll(getVirshRequestCount).toBeGreaterThan(initialRequestCount);
 });
 
+test('FRP client and server lazy styles preserve themes and the 860px layout boundary', async ({ page }) => {
+  const managerCases = [
+    {
+      component: 'frp-manager',
+      root: '.frp-manager',
+      layout: '.frp-layout',
+      config: '.frp-config',
+      installPanel: '.frp-install-panel',
+      tabs: '.frp-tabs',
+      settings: '.frp-settings',
+      overflow: 'hidden',
+    },
+    {
+      component: 'frps-manager',
+      root: '.frps-manager',
+      layout: '.frps-layout',
+      config: '.frps-config',
+      installPanel: '.frps-install-panel',
+      tabs: '.frps-tabs',
+      settings: '.frps-settings',
+      overflow: 'auto',
+    },
+  ] as const;
+
+  for (const manager of managerCases) {
+    await page.setViewportSize({ width: 861, height: 720 });
+    await gotoHarness(page, `component=${manager.component}&theme=dark`);
+    await expect(page.locator(manager.installPanel)).toBeVisible();
+
+    const darkStyle = await page.locator(manager.root).evaluate((node) => {
+      const style = window.getComputedStyle(node);
+      return { color: style.color, backgroundImage: style.backgroundImage };
+    });
+    expect(darkStyle.color).toBe('rgb(238, 244, 255)');
+    expect(darkStyle.backgroundImage).toContain('linear-gradient');
+    await expect(page.locator(manager.config)).toHaveCSS('overflow', manager.overflow);
+
+    const wideColumns = await page.locator(manager.layout).evaluate(
+      (node) => window.getComputedStyle(node).gridTemplateColumns,
+    );
+    expect(wideColumns.trim().split(/\s+/)).toHaveLength(2);
+
+    const settingsTab = page.locator(manager.tabs).getByRole('button', { name: '设置', exact: true });
+    await settingsTab.click();
+    await expect(page.locator(manager.settings)).toBeVisible();
+
+    await page.setViewportSize({ width: 860, height: 720 });
+    const compactColumns = await page.locator(manager.layout).evaluate(
+      (node) => window.getComputedStyle(node).gridTemplateColumns,
+    );
+    expect(compactColumns.trim().split(/\s+/)).toHaveLength(1);
+
+    await page.setViewportSize({ width: 861, height: 720 });
+    await gotoHarness(page, `component=${manager.component}&theme=light`);
+    await expect(page.locator(manager.installPanel)).toBeVisible();
+    await expect(page.locator(manager.root)).toHaveCSS('color', 'rgb(29, 40, 56)');
+  }
+});
+
 test('Monitor persistence remains opt-in and can return to real-time only', async ({ page }) => {
   await gotoHarness(page, 'component=monitor');
+  await expectMonitorPaneOwnsLayout(page);
 
   const dialog = page.getByRole('dialog', { name: '开启持久化分析？' });
   await expect(dialog).toBeVisible();
@@ -690,6 +827,7 @@ test('Monitor persistence places sample count in the control bar and combines ne
 test('Monitor persistence remains usable in a compact window', async ({ page }) => {
   await page.setViewportSize({ width: 620, height: 720 });
   await gotoHarness(page, 'component=monitor');
+  await expectMonitorPaneOwnsLayout(page);
 
   const optInDialog = page.getByRole('dialog', { name: '开启持久化分析？' });
   await optInDialog.getByRole('button', { name: '开启持久化' }).click();
@@ -750,6 +888,90 @@ test('Redis destructive action errors stay visible inside the confirmation modal
     page.getByTestId('redis-confirm-error'),
     'mock redis delete failure',
   );
+});
+
+test('File explorer danger action keeps readable theme contrast', async ({ page }) => {
+  for (const theme of ['light', 'dark'] as const) {
+    await gotoHarness(page, `component=file-explorer&theme=${theme}`);
+
+    const row = page.getByTestId('explorer-row-secure.txt');
+    await expect(row).toBeVisible();
+    await row.click({ button: 'right' });
+
+    const deleteAction = page.getByTestId('explorer-context-delete');
+    await expect(deleteAction).toBeVisible();
+    const metrics = await deleteAction.evaluate((node) => {
+      type Rgba = { red: number; green: number; blue: number; alpha: number };
+
+      const parseColor = (value: string): Rgba => {
+        const match = value.match(
+          /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/,
+        );
+        if (!match) {
+          throw new Error(`Unsupported computed color: ${value}`);
+        }
+        return {
+          red: Number(match[1]),
+          green: Number(match[2]),
+          blue: Number(match[3]),
+          alpha: match[4] === undefined ? 1 : Number(match[4]),
+        };
+      };
+      const composite = (foreground: Rgba, background: Rgba): Rgba => {
+        const alpha = foreground.alpha + background.alpha * (1 - foreground.alpha);
+        const channel = (foregroundValue: number, backgroundValue: number) => (
+          alpha === 0
+            ? 0
+            : (
+              foregroundValue * foreground.alpha
+              + backgroundValue * background.alpha * (1 - foreground.alpha)
+            ) / alpha
+        );
+        return {
+          red: channel(foreground.red, background.red),
+          green: channel(foreground.green, background.green),
+          blue: channel(foreground.blue, background.blue),
+          alpha,
+        };
+      };
+      const luminance = ({ red, green, blue }: Rgba) => {
+        const channel = (value: number) => {
+          const normalized = value / 255;
+          return normalized <= 0.04045
+            ? normalized / 12.92
+            : ((normalized + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+      };
+
+      const actionColor = getComputedStyle(node).color;
+      const menu = node.closest('.context-menu, .context-submenu') ?? node.parentElement;
+      if (!menu) {
+        throw new Error('Danger action menu is missing.');
+      }
+      const effectiveBackground = composite(
+        parseColor(getComputedStyle(menu).backgroundColor),
+        parseColor(getComputedStyle(document.documentElement).backgroundColor),
+      );
+      const foregroundLuminance = luminance(parseColor(actionColor));
+      const backgroundLuminance = luminance(effectiveBackground);
+      const contrastRatio = (
+        Math.max(foregroundLuminance, backgroundLuminance) + 0.05
+      ) / (
+        Math.min(foregroundLuminance, backgroundLuminance) + 0.05
+      );
+      const tokenProbe = document.createElement('span');
+      tokenProbe.style.color = 'var(--danger)';
+      document.body.append(tokenProbe);
+      const tokenColor = getComputedStyle(tokenProbe).color;
+      tokenProbe.remove();
+
+      return { actionColor, contrastRatio, tokenColor };
+    });
+
+    expect(metrics.actionColor).toBe(metrics.tokenColor);
+    expect(metrics.contrastRatio).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test('File explorer permission errors stay visible inside the properties modal', async ({ page }) => {

@@ -1,7 +1,7 @@
 use crate::{
     error_string, get_connection,
     ssh_tunnel::{config_from_connection_with_window, create_tunnel, SshTunnel, SshTunnelError},
-    string_arg, AppState, ConnectionKind,
+    string_arg, AppState, ConnectionKind, UiWindowRef,
 };
 use reqwest::{
     header::{CONTENT_TYPE, HOST},
@@ -353,7 +353,7 @@ async fn acquire_tunnel(
         None,
     )
     .await?;
-    let tunnel = create_tunnel(config)
+    let tunnel = create_tunnel(config, state.clone(), UiWindowRef::from_window(window))
         .await
         .map_err(|error| HttpTunnelError::Tunnel(error).user_message())?;
     let local_port = tunnel.local_addr().port();

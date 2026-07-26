@@ -6,6 +6,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import { useSudoCommand } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { parseNginxConfig, parseNginxTestOutput } from './nginxParser';
 import {
   createNginxDetectCommand,
@@ -141,6 +142,7 @@ function getServerBlockIndex(file: NginxConfigFile | null, block: NginxServerBlo
 }
 
 function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProps) {
+  const editorTheme = useShellDeskEditorTheme();
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const [installation, setInstallation] = useState<NginxInstallation | null>(null);
@@ -192,7 +194,6 @@ function RemoteNginxManager({ connectionId, systemType }: RemoteNginxManagerProp
   const visualServerForm = useMemo(() => (selectedServerBlock ? createNginxVisualServerForm(selectedServerBlock) : null), [selectedServerBlock]);
   const editorDiagnostics = useMemo(() => analyzeNginxConfig(editorContent), [editorContent]);
   const editorExtensions = useMemo(() => [nginxEditorDiagnosticsExtension], []);
-  const editorTheme = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
   const editorDiagnosticLabel = editorDiagnostics.length > 0
     ? tCurrent('auto.remoteNginxManager.editorIssues', { value0: editorDiagnostics.length })
     : tCurrent('auto.remoteNginxManager.editorClean');

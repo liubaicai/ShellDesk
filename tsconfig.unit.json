@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vite/client", "node", "@playwright/test"]
+  },
+  "include": ["tests/unit", "playwright.unit.config.ts"]
+}

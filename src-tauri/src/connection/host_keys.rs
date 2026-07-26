@@ -1,4 +1,4 @@
-use crate::russh_client::scan_host_public_keys;
+use crate::russh_client::scan_host_public_keys_with_context;
 use crate::vault::{read_store, with_store_mut};
 use crate::{error_string, now, random_id, AppState, HostKeyRequest, SshProfile, UiWindowRef};
 use base64::Engine;
@@ -185,7 +185,7 @@ async fn ensure_direct_ssh_host_key_trusted(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let scanned_keys = scan_ssh_host_keys(profile.clone()).await?;
+    let scanned_keys = scan_ssh_host_keys(&state, &ui, profile.clone()).await?;
     let (scanned, decision) = select_scanned_host_key_decision(
         &known_hosts,
         &profile.address,
@@ -331,13 +331,18 @@ fn host_key_already_trusted(state: &AppState, profile: &SshProfile, scanned: &Va
         == "trusted"
 }
 
-async fn scan_ssh_host_keys(profile: SshProfile) -> Result<Vec<Value>, String> {
-    let scanned_keys = scan_host_public_keys(profile)
-        .await?
-        .into_iter()
-        .filter_map(|public_key| public_key.to_openssh().ok())
-        .filter_map(|public_key| scanned_host_key_from_public_key(&public_key).ok())
-        .collect::<Vec<_>>();
+async fn scan_ssh_host_keys(
+    state: &AppState,
+    ui: &HostKeyUi,
+    profile: SshProfile,
+) -> Result<Vec<Value>, String> {
+    let scanned_keys =
+        scan_host_public_keys_with_context(Some(state.clone()), Some(ui.window.clone()), profile)
+            .await?
+            .into_iter()
+            .filter_map(|public_key| public_key.to_openssh().ok())
+            .filter_map(|public_key| scanned_host_key_from_public_key(&public_key).ok())
+            .collect::<Vec<_>>();
     if scanned_keys.is_empty() {
         return Err("未能读取 SSH 主机公钥。".to_string());
     }

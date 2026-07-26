@@ -1,7 +1,7 @@
 import { type ChangeEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { DatabaseImportState } from './databaseImportUtils';
+import type { DatabaseImportMode, DatabaseImportState } from './databaseImportUtils';
 
 export interface DatabaseImportTargetOption {
   label: string;
@@ -31,14 +31,15 @@ interface DatabaseImportDialogProps {
   dialogId: string;
   editorTargetValue: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  isReadingFile: boolean;
   labels: DatabaseImportDialogLabels;
   onClearError: () => void;
   onClose: () => void;
   onExecute: () => void;
   onFileSelected: (event: ChangeEvent<HTMLInputElement>) => void;
-  onModeChange: (mode: DatabaseImportState['mode']) => void;
+  onModeChange: (mode: DatabaseImportMode) => void;
   onTargetChange: (value: string) => void;
-  onTextChange: (mode: DatabaseImportState['mode'], value: string) => void;
+  onTextChange: (mode: DatabaseImportMode, value: string) => void;
   state: DatabaseImportState;
   targetOptions: DatabaseImportTargetOption[];
 }
@@ -47,6 +48,7 @@ export default function DatabaseImportDialog({
   dialogId,
   editorTargetValue,
   fileInputRef,
+  isReadingFile,
   labels,
   onClearError,
   onClose,
@@ -198,7 +200,7 @@ export default function DatabaseImportDialog({
             type="button"
             className="primary"
             onClick={onExecute}
-            disabled={state.executing}
+            disabled={state.executing || isReadingFile}
           >
             {state.executing ? labels.executing : labels.execute}
           </button>

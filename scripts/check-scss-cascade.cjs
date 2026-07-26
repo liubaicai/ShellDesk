@@ -1,10 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
 const stylesRoot = path.join(root, 'src', 'styles');
 const fix = process.argv.includes('--fix');
 const auditPartial = process.argv.includes('--audit-partial');
+const selfTestOnly = process.argv.includes('--self-test');
+const fallbackMarker = '/* shelldesk-scss-fallback */';
 
 function listScssFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -47,6 +50,41 @@ function skipComment(source, index, end) {
   return index;
 }
 
+function skipInterpolation(source, index, end) {
+  if (source[index] !== '#' || source[index + 1] !== '{') {
+    return index;
+  }
+  let depth = 1;
+  let cursor = index + 2;
+  while (cursor < end) {
+    const char = source[cursor];
+    if (char === '"' || char === "'") {
+      cursor = skipQuoted(source, cursor, end);
+      continue;
+    }
+    const interpolationEnd = skipInterpolation(source, cursor, end);
+    if (interpolationEnd !== cursor) {
+      cursor = interpolationEnd;
+      continue;
+    }
+    const commentEnd = skipComment(source, cursor, end);
+    if (commentEnd !== cursor) {
+      cursor = commentEnd;
+      continue;
+    }
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return cursor + 1;
+      }
+    }
+    cursor += 1;
+  }
+  return end;
+}
+
 function skipTrivia(source, index, end) {
   let cursor = index;
   while (cursor < end) {
@@ -71,6 +109,11 @@ function findBlockEnd(source, openIndex, end) {
     const char = source[cursor];
     if (char === '"' || char === "'") {
       cursor = skipQuoted(source, cursor, end);
+      continue;
+    }
+    const interpolationEnd = skipInterpolation(source, cursor, end);
+    if (interpolationEnd !== cursor) {
+      cursor = interpolationEnd;
       continue;
     }
     const commentEnd = skipComment(source, cursor, end);
@@ -156,6 +199,7 @@ function readDeclarations(source, start, end) {
 
   function recordDeclaration(statementEnd) {
     const propertyStart = skipTrivia(source, statementStart, statementEnd);
+    const leadingTrivia = source.slice(statementStart, propertyStart);
     const statement = source.slice(propertyStart, statementEnd);
     const match = statement.match(/^([\w-]+)\s*:\s*([\s\S]*?);?\s*$/);
     if (!match || match[2].includes('{') || match[2].includes('}')) {
@@ -164,6 +208,7 @@ function readDeclarations(source, start, end) {
     declarations.push({
       property: match[1].toLowerCase(),
       important: /!important\s*;?\s*$/i.test(statement),
+      fallback: leadingTrivia.includes(fallbackMarker),
       start: propertyStart,
       end: statementEnd,
     });
@@ -173,6 +218,11 @@ function readDeclarations(source, start, end) {
     const char = source[cursor];
     if (char === '"' || char === "'") {
       cursor = skipQuoted(source, cursor, end);
+      continue;
+    }
+    const interpolationEnd = skipInterpolation(source, cursor, end);
+    if (interpolationEnd !== cursor) {
+      cursor = interpolationEnd;
       continue;
     }
     const commentEnd = skipComment(source, cursor, end);
@@ -220,6 +270,11 @@ function parseRules(source) {
         const char = source[cursor];
         if (char === '"' || char === "'") {
           cursor = skipQuoted(source, cursor, end);
+          continue;
+        }
+        const interpolationEnd = skipInterpolation(source, cursor, end);
+        if (interpolationEnd !== cursor) {
+          cursor = interpolationEnd;
           continue;
         }
         const commentEnd = skipComment(source, cursor, end);
@@ -349,9 +404,6 @@ function findShadowedDeclarations(source) {
 
   const shadowedByDeclaration = new Map();
   for (const occurrences of groups.values()) {
-    if (occurrences.length < 2) {
-      continue;
-    }
     const declarationsByProperty = new Map();
     for (const occurrence of occurrences) {
       for (const declaration of occurrence.rule.declarations) {
@@ -370,6 +422,9 @@ function findShadowedDeclarations(source) {
       }
       for (let index = 0; index < entries.length - 1; index += 1) {
         const entry = entries[index];
+        if (entry.declaration.fallback) {
+          continue;
+        }
         const later = entries.slice(index + 1);
         if (!entry.declaration.important || later.some((candidate) => candidate.declaration.important)) {
           const declarationKey = `${entry.declaration.start}\u0000${entry.declaration.end}`;
@@ -393,6 +448,101 @@ function findShadowedDeclarations(source) {
       partialSelector: entry.shadowedSelectors.size < selectorCount,
     };
   });
+}
+
+function runSelfTests() {
+  const sameBlock = findShadowedDeclarations(`
+    .item {
+      color: red;
+      color: blue;
+    }
+  `);
+  assert.equal(sameBlock.length, 1, 'detects duplicate properties in one rule block');
+  assert.equal(sameBlock[0].property, 'color');
+  assert.equal(sameBlock[0].partialSelector, false);
+  assert.deepEqual(sameBlock[0].selectors, ['.item']);
+
+  const intentionalFallback = findShadowedDeclarations(`
+    .item {
+      ${fallbackMarker}
+      display: -webkit-box;
+      display: flex;
+    }
+  `);
+  assert.equal(intentionalFallback.length, 0, 'allows an explicitly marked progressive fallback');
+
+  const markerOnFinalDeclaration = findShadowedDeclarations(`
+    .item {
+      display: -webkit-box;
+      ${fallbackMarker}
+      display: flex;
+    }
+  `);
+  assert.equal(
+    markerOnFinalDeclaration.length,
+    1,
+    'the fallback marker applies only to the declaration immediately after it',
+  );
+
+  const interpolatedSelectors = findShadowedDeclarations(`
+    @mixin component($namespace) {
+      .#{$namespace}-panel {
+        --#{$namespace}-background: red;
+        color: var(--#{$namespace}-text);
+      }
+      [data-theme="light"] .#{$namespace}-panel {
+        --#{$namespace}-background: white;
+      }
+    }
+  `);
+  assert.equal(interpolatedSelectors.length, 0, 'parses Sass interpolation without inventing rules');
+
+  const laterRule = findShadowedDeclarations(`
+    .item {
+      color: red;
+    }
+    .item {
+      color: blue;
+    }
+  `);
+  assert.equal(laterRule.length, 1, 'detects a later matching selector');
+  assert.equal(laterRule[0].property, 'color');
+  assert.equal(laterRule[0].partialSelector, false);
+  assert.deepEqual(laterRule[0].selectors, ['.item']);
+
+  const separateMediaContexts = findShadowedDeclarations(`
+    @media (max-width: 720px) {
+      .item {
+        color: red;
+      }
+    }
+    @media (min-width: 721px) {
+      .item {
+        color: blue;
+      }
+    }
+  `);
+  assert.equal(separateMediaContexts.length, 0, 'keeps distinct media contexts separate');
+
+  const partialSelector = findShadowedDeclarations(`
+    .item,
+    .item-label {
+      color: red;
+    }
+    .item {
+      color: blue;
+    }
+  `);
+  assert.equal(partialSelector.length, 1, 'detects overlap in a selector list');
+  assert.equal(partialSelector[0].property, 'color');
+  assert.equal(partialSelector[0].partialSelector, true);
+  assert.deepEqual(partialSelector[0].selectors, ['.item']);
+}
+
+runSelfTests();
+if (selfTestOnly) {
+  console.log('SCSS cascade self-test ok.');
+  process.exit(0);
 }
 
 const reports = [];
@@ -518,6 +668,7 @@ if (reports.length || crossFileRedeclarations.length) {
       });
       return `  - cross-file ${property} (${selector}): ${locations.join(', ')}`;
     }),
+    `Place ${fallbackMarker} immediately before an intentional progressive fallback declaration.`,
     'Run `node scripts/check-scss-cascade.cjs --fix` to remove fully shadowed declarations; partial selector overlaps require a manual split.',
   ].join('\n'));
   process.exit(1);

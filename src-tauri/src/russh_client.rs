@@ -30,6 +30,25 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_KEEPALIVE_INTERVAL_MS: u64 = 15_000;
 const SSH_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(300);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SshAuthenticationKind {
+    Password,
+    Key,
+    Agent,
+}
+
+pub(crate) fn ssh_authentication_kind(auth_method: &str) -> SshAuthenticationKind {
+    match auth_method {
+        "key" | "privateKey" => SshAuthenticationKind::Key,
+        "agent" => SshAuthenticationKind::Agent,
+        _ => SshAuthenticationKind::Password,
+    }
+}
+
+pub(crate) fn is_key_auth_method(auth_method: &str) -> bool {
+    ssh_authentication_kind(auth_method) == SshAuthenticationKind::Key
+}
+
 pub(crate) struct RusshSession {
     handle: client::Handle<ShellDeskClientHandler>,
 }
@@ -94,22 +113,35 @@ pub(crate) async fn run_exec_command_stream(
         .map_err(|_| "SSH command timed out.".to_string())?
 }
 
+#[cfg(test)]
 pub(crate) async fn scan_host_public_keys(profile: SshProfile) -> Result<Vec<PublicKey>, String> {
+    scan_host_public_keys_with_context(None, None, profile).await
+}
+
+pub(crate) async fn scan_host_public_keys_with_context(
+    state: Option<AppState>,
+    window: Option<UiWindowRef>,
+    profile: SshProfile,
+) -> Result<Vec<PublicKey>, String> {
     tokio::task::spawn_blocking(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(error_string)?;
-        runtime.block_on(scan_host_public_keys_inner(profile))
+        runtime.block_on(scan_host_public_keys_inner(state, window, profile))
     })
     .await
     .map_err(error_string)?
 }
 
-async fn scan_host_public_keys_inner(profile: SshProfile) -> Result<Vec<PublicKey>, String> {
+async fn scan_host_public_keys_inner(
+    state: Option<AppState>,
+    window: Option<UiWindowRef>,
+    profile: SshProfile,
+) -> Result<Vec<PublicKey>, String> {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let policy = HostKeyPolicy::Capture(Arc::clone(&captured));
-    let _session = connect_profile(profile, DEFAULT_CONNECT_TIMEOUT, policy).await?;
+    let _session = connect_profile(profile, DEFAULT_CONNECT_TIMEOUT, policy, state, window).await?;
     let keys = captured.lock().map_err(error_string)?.clone();
     if keys.is_empty() {
         return Err("未能读取 SSH 主机公钥。".to_string());
@@ -126,6 +158,8 @@ pub(crate) async fn connect_authenticated(
         profile.clone(),
         DEFAULT_CONNECT_TIMEOUT,
         HostKeyPolicy::Verify,
+        state.clone(),
+        window.clone(),
     )
     .await?;
     authenticate_profile(&mut handle, profile, state, window).await?;
@@ -298,6 +332,8 @@ async fn connect_profile(
     profile: SshProfile,
     timeout: Duration,
     policy: HostKeyPolicy,
+    state: Option<AppState>,
+    window: Option<UiWindowRef>,
 ) -> Result<client::Handle<ShellDeskClientHandler>, String> {
     let keepalive_interval = keepalive_interval(&profile);
     let ssh_config = Arc::new(client::Config {
@@ -317,7 +353,7 @@ async fn connect_profile(
     };
     let error_host = profile.address.clone();
     let error_port = profile.port;
-    let transport = open_transport(profile, timeout).await?;
+    let transport = open_transport(profile, timeout, state, window).await?;
     tokio::time::timeout(
         timeout,
         client::connect_stream(ssh_config, transport, handler),
@@ -374,25 +410,23 @@ pub(crate) fn configure_tcp_keepalive(stream: &TcpStream, keepalive_interval_ms:
     }
 }
 
-async fn authenticate_profile(
-    session: &mut client::Handle<ShellDeskClientHandler>,
+pub(crate) async fn authenticate_profile<H: client::Handler>(
+    session: &mut client::Handle<H>,
     profile: SshProfile,
     state: Option<AppState>,
     window: Option<UiWindowRef>,
 ) -> Result<(), String> {
-    let auth_method = profile.auth_method.clone();
-    match auth_method.as_str() {
-        "key" | "privateKey" => authenticate_key(session, profile).await,
-        "agent" => authenticate_agent(session, profile).await,
-        "password" => {
+    match ssh_authentication_kind(&profile.auth_method) {
+        SshAuthenticationKind::Key => authenticate_key(session, profile).await,
+        SshAuthenticationKind::Agent => authenticate_agent(session, profile).await,
+        SshAuthenticationKind::Password => {
             authenticate_password_or_keyboard_interactive(session, profile, state, window).await
         }
-        _ => authenticate_password_or_keyboard_interactive(session, profile, state, window).await,
     }
 }
 
-async fn authenticate_key(
-    session: &mut client::Handle<ShellDeskClientHandler>,
+async fn authenticate_key<H: client::Handler>(
+    session: &mut client::Handle<H>,
     profile: SshProfile,
 ) -> Result<(), String> {
     if profile.key_path.trim().is_empty() {
@@ -426,7 +460,7 @@ async fn authenticate_key(
     Err("服务器拒绝 SSH 私钥认证。".to_string())
 }
 
-pub(crate) fn key_auth_hash_algorithms(
+fn key_auth_hash_algorithms(
     algorithm: Algorithm,
     server_best: Option<Option<HashAlg>>,
 ) -> Vec<Option<HashAlg>> {
@@ -445,8 +479,8 @@ pub(crate) fn key_auth_hash_algorithms(
     candidates
 }
 
-async fn authenticate_password_or_keyboard_interactive(
-    session: &mut client::Handle<ShellDeskClientHandler>,
+async fn authenticate_password_or_keyboard_interactive<H: client::Handler>(
+    session: &mut client::Handle<H>,
     profile: SshProfile,
     state: Option<AppState>,
     window: Option<UiWindowRef>,
@@ -471,8 +505,8 @@ async fn authenticate_password_or_keyboard_interactive(
     authenticate_keyboard_interactive(session, profile, state, window).await
 }
 
-async fn authenticate_keyboard_interactive(
-    session: &mut client::Handle<ShellDeskClientHandler>,
+async fn authenticate_keyboard_interactive<H: client::Handler>(
+    session: &mut client::Handle<H>,
     profile: SshProfile,
     state: Option<AppState>,
     window: Option<UiWindowRef>,
@@ -563,8 +597,8 @@ fn is_password_keyboard_prompt(prompt: &str) -> bool {
     .any(|needle| prompt.contains(needle))
 }
 
-async fn authenticate_agent(
-    session: &mut client::Handle<ShellDeskClientHandler>,
+async fn authenticate_agent<H: client::Handler>(
+    session: &mut client::Handle<H>,
     profile: SshProfile,
 ) -> Result<(), String> {
     let mut agent = open_agent_client().await?;
@@ -648,9 +682,11 @@ async fn open_agent_client(
 async fn open_transport(
     mut profile: SshProfile,
     timeout: Duration,
+    state: Option<AppState>,
+    window: Option<UiWindowRef>,
 ) -> Result<RusshTransport, String> {
     if profile.jump.is_some() {
-        return open_jump_transport(profile, timeout).await;
+        return open_jump_transport(profile, timeout, state, window).await;
     }
     if let Some(proxy) = profile.proxy.take() {
         return open_proxy_transport(profile, proxy).await;
@@ -669,6 +705,8 @@ async fn open_transport(
 async fn open_jump_transport(
     mut target: SshProfile,
     timeout: Duration,
+    state: Option<AppState>,
+    window: Option<UiWindowRef>,
 ) -> Result<RusshTransport, String> {
     let jump = target
         .jump
@@ -679,9 +717,11 @@ async fn open_jump_transport(
         jump.clone(),
         timeout,
         HostKeyPolicy::Verify,
+        state.clone(),
+        window.clone(),
     ))
     .await?;
-    authenticate_profile(&mut jump_session, jump, None, None).await?;
+    authenticate_profile(&mut jump_session, jump, state, window).await?;
     let target_host = target.address.clone();
     let target_port = target.port;
     let channel = jump_session
@@ -695,25 +735,53 @@ async fn open_proxy_transport(
     profile: SshProfile,
     proxy: SshProxyConfig,
 ) -> Result<RusshTransport, String> {
-    let (command_line, envs) = match proxy.proxy_type.as_str() {
-        "command" => (
-            proxy_command_template(&proxy.command, &profile.address, profile.port),
+    match proxy.proxy_type.as_str() {
+        "command" => RusshTransport::proxy_command(
+            &proxy_command_template(&proxy.command, &profile.address, profile.port)?,
             Vec::new(),
         ),
-        "http" | "socks5" => proxy_helper_command(
+        "http" | "socks5" => RusshTransport::proxy_helper(proxy_helper_command(
             &profile.proxy_helper_exe,
             &profile.address,
             profile.port,
             &proxy,
-        )?,
-        _ => return Err("代理类型无效。".to_string()),
-    };
-    RusshTransport::proxy_command(&command_line, envs)
+        )?),
+        _ => Err("代理类型无效。".to_string()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authentication_kind_normalizes_supported_methods() {
+        assert_eq!(
+            ssh_authentication_kind("password"),
+            SshAuthenticationKind::Password
+        );
+        assert_eq!(ssh_authentication_kind("key"), SshAuthenticationKind::Key);
+        assert_eq!(
+            ssh_authentication_kind("privateKey"),
+            SshAuthenticationKind::Key
+        );
+        assert_eq!(
+            ssh_authentication_kind("agent"),
+            SshAuthenticationKind::Agent
+        );
+        assert_eq!(
+            ssh_authentication_kind("unexpected"),
+            SshAuthenticationKind::Password
+        );
+    }
+
+    #[test]
+    fn key_auth_method_accepts_current_and_legacy_names() {
+        assert!(is_key_auth_method("key"));
+        assert!(is_key_auth_method("privateKey"));
+        assert!(!is_key_auth_method("password"));
+        assert!(!is_key_auth_method("agent"));
+    }
 
     #[test]
     fn rsa_key_auth_prefers_server_supported_hash_then_legacy() {

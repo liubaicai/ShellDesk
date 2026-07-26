@@ -1,9 +1,9 @@
 import { getShellDeskLocale } from './desktopUtils';
 import {
-  type DatabaseImportState,
   parseDatabaseImportCsv,
   parseDatabaseImportJson,
-} from './databaseImportUtils';
+  readDatabaseImportValue,
+} from './database-import/databaseImportUtils';
 import { createId, quoteIdentifier } from './databaseUtils';
 import { tCurrent } from '../../i18n';
 
@@ -139,8 +139,6 @@ export interface PgCreateTableState {
   dialogError: string;
 }
 
-export type ImportDataState = DatabaseImportState;
-
 export const tablePreviewLimit = 50;
 export const pageSize = 100;
 export const maxHistoryItems = 12;
@@ -192,14 +190,6 @@ export const postgresTypesWithoutLength = new Set([
 export const postgresForeignKeyActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
 export const importEditorTarget = '__sql_editor__';
 
-export function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-}
-
 export function createQueryTab(index: number, sqlText = 'SELECT current_database(), now();'): PostgresQueryTab {
   return {
     id: createId('pg-query'),
@@ -241,7 +231,9 @@ export function buildPgInsertSql(schema: string, table: string, columns: string[
   const tableIdentifier = `${quoteIdentifier(schema || 'public', 'postgres')}.${quoteIdentifier(table, 'postgres')}`;
   const columnSql = columns.map((column) => quoteIdentifier(column, 'postgres')).join(', ');
   const valuesSql = rows
-    .map((row) => `(${columns.map((column) => quotePgImportValue(row[column])).join(', ')})`)
+    .map((row) => `(${columns.map((column) => (
+      quotePgImportValue(readDatabaseImportValue(row, column))
+    )).join(', ')})`)
     .join(', ');
   return `INSERT INTO ${tableIdentifier} (${columnSql}) VALUES ${valuesSql};`;
 }

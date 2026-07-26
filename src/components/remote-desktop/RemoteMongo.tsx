@@ -12,6 +12,7 @@ import {
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import NotepadEditor from './NotepadEditor';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 
 interface RemoteMongoProps {
@@ -41,14 +42,6 @@ interface MongoContextMenuState {
 
 const defaultLimit = 100;
 const defaultMongoPort = 27017;
-
-function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-}
 
 function formatBytes(value?: number) {
   if (!value || value < 0) return '0 B';
@@ -178,7 +171,7 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
   const [queryRunning, setQueryRunning] = useState(false);
   const [writeRunning, setWriteRunning] = useState<MongoWriteOperation | null>(null);
   const [lastQueryAt, setLastQueryAt] = useState('');
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
   const [contextMenu, setContextMenu] = useState<MongoContextMenuState | null>(null);
 
   const isConnected = status === 'connected';
@@ -270,20 +263,6 @@ function RemoteMongo({ connectionId, hostId }: RemoteMongoProps) {
       setNotice(`数据库连接已因空闲超过 ${payload.idleMinutes} 分钟自动断开。`);
     });
   }, [connectionId]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   const loadCollections = useCallback(async (nextMongoId: string, database: string) => {
     if (!api) return [];

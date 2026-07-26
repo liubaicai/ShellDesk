@@ -82,6 +82,7 @@ interface ChartSeries {
 - 采样应有清理机制，组件卸载时停止 polling。
 - 网络速率由前后两次采样的字节差除以时间间隔计算得出。
 - 远端 SQLite 使用 WAL 与 `synchronous=NORMAL`，采集器每次运行后退出，不保留常驻 Agent。
+- `.monitor-pane` 的全高、网格间距和主题背景由 `_monitor.scss` 自己维护，不依赖文件管理器样式入口。
 
 ## 开发计划
 

@@ -13,11 +13,15 @@ import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
+import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
 import '../../src/styles/critical.scss';
 import '../../src/styles/deferred.scss';
+
+const LazyRemoteFrpManager = React.lazy(() => import('../../src/components/remote-desktop/RemoteFrpManager'));
+const LazyRemoteFrpsManager = React.lazy(() => import('../../src/components/remote-desktop/RemoteFrpsManager'));
 
 const harnessTheme = new URLSearchParams(window.location.search).get('theme');
 if (harnessTheme === 'light' || harnessTheme === 'dark') {
@@ -624,7 +628,7 @@ function installGuiSshMock() {
       onVaultChanged: () => () => undefined,
       onTransferProgress: () => () => undefined,
       onTransferEnd: () => () => undefined,
-      onRdpDiagnostic: (callback) => {
+      onRdpDiagnostic: (callback: (payload: ShellDeskRdpDiagnosticPayload) => void) => {
         rdpDiagnosticListener = callback;
         return () => {
           if (rdpDiagnosticListener === callback) {
@@ -635,6 +639,54 @@ function installGuiSshMock() {
       onConnectionClosed: () => () => undefined,
     },
   };
+}
+
+function EditorThemeSubscriber({ id, initialContent }: { id: string; initialContent: string }) {
+  const editorTheme = useShellDeskEditorTheme();
+  const [content, setContent] = React.useState(initialContent);
+
+  return (
+    <label data-testid={`editor-theme-${id}`} data-editor-theme={editorTheme}>
+      <span>{id}</span>
+      <textarea
+        aria-label={`${id} editor content`}
+        value={content}
+        onChange={(event) => setContent(event.currentTarget.value)}
+      />
+    </label>
+  );
+}
+
+function EditorThemeSubscribersHarness() {
+  const [showEditors, setShowEditors] = React.useState(true);
+
+  return (
+    <React.StrictMode>
+      <main>
+        <button
+          type="button"
+          onClick={() => document.documentElement.setAttribute('data-theme', 'light')}
+        >
+          Switch to light theme
+        </button>
+        <button
+          type="button"
+          onClick={() => document.documentElement.setAttribute('data-theme', 'dark')}
+        >
+          Switch to dark theme
+        </button>
+        <button type="button" onClick={() => setShowEditors((current) => !current)}>
+          {showEditors ? 'Hide all editors' : 'Show all editors'}
+        </button>
+        {showEditors ? (
+          <>
+            <EditorThemeSubscriber id="first" initialContent="SELECT 1;" />
+            <EditorThemeSubscriber id="second" initialContent={'{\n  "enabled": true\n}'} />
+          </>
+        ) : null}
+      </main>
+    </React.StrictMode>
+  );
 }
 
 function App() {
@@ -667,6 +719,10 @@ function App() {
         </section>
       </main>
     );
+  }
+
+  if (component === 'editor-theme-subscribers') {
+    return <EditorThemeSubscribersHarness />;
   }
 
   if (component === 'vm-manager') {
@@ -717,6 +773,10 @@ function App() {
           onOpenSftp={() => undefined}
           onDeleteHost={() => undefined}
           onEditHost={() => undefined}
+          onQuickAssignGroup={() => undefined}
+          onQuickAddTag={() => undefined}
+          groupOptions={[]}
+          tagOptions={[]}
           hostPage={1}
           hostPageCount={1}
           hostPageNumbers={[1]}
@@ -771,6 +831,26 @@ function App() {
 
   if (component === 'redis') {
     return <RemoteRedis connectionId={connectionId} hostId={hostId} />;
+  }
+
+  if (component === 'frp-manager') {
+    return (
+      <div style={{ display: 'grid', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <React.Suspense fallback={<div data-testid="frp-manager-loading">Loading FRP client…</div>}>
+          <LazyRemoteFrpManager connectionId={connectionId} systemType="ubuntu" />
+        </React.Suspense>
+      </div>
+    );
+  }
+
+  if (component === 'frps-manager') {
+    return (
+      <div style={{ display: 'grid', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <React.Suspense fallback={<div data-testid="frps-manager-loading">Loading FRP server…</div>}>
+          <LazyRemoteFrpsManager connectionId={connectionId} systemType="ubuntu" />
+        </React.Suspense>
+      </div>
+    );
   }
 
   if (component === 'file-explorer') {

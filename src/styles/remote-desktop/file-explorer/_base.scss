@@ -1,14 +1,10 @@
-.file-pane,
-.monitor-pane {
+.file-pane {
   display: grid;
   height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 12px;
   background: rgba(5, 9, 15, 0.32);
-}
-
-.file-pane {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .explorer-pane {
@@ -645,11 +641,11 @@ button.explorer-row {
 }
 
 .context-menu button.danger-text {
-  color: #dc2626 !important;
+  color: var(--danger) !important;
 }
 
 .context-menu button.danger-text:hover {
-  background: #fef2f2 !important;
+  background: var(--danger-soft) !important;
 }
 
 

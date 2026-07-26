@@ -20,11 +20,13 @@
 - `src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`
 - `src-tauri/src/vault/remote_profiles.rs` 的远程组件白名单和 `src-tauri/src/vault/normalize.rs` 的目录迁移
 - `src/components/remote-desktop/index.ts` 的组件导出
-- `src/styles/index.scss` 的远程桌面样式入口
+- `src/styles/critical.scss`、`src/styles/deferred.scss` 与 lazy 组件局部 import 的样式入口
 
-数据库工作台的组件状态与交互仍保留在各 `Remote*.tsx`；SQL 生成、导入解析和表结构模型分别放在 `mysqlWorkbenchModel.ts`、`postgresWorkbenchModel.ts`、`clickHouseWorkbenchModel.ts`，共享编辑器、导入逻辑和导入弹窗分别放在 `databaseEditorExtensions.ts`、`databaseImportUtils.ts` 和 `DatabaseImportDialog.tsx`。文件管理器的上传冲突、删除确认和 sudo 提示统一由 `FileExplorerDialogs.tsx` 渲染到 `document.body`。
+数据库工作台的组件状态与交互仍保留在各 `Remote*.tsx`；SQL 生成、导入解析和表结构模型分别放在 `mysqlWorkbenchModel.ts`、`postgresWorkbenchModel.ts`、`clickHouseWorkbenchModel.ts`，共享编辑器扩展位于 `databaseEditorExtensions.ts`，导入解析、草稿状态和弹窗统一位于 `database-import/`。文件管理器的上传冲突、删除确认和 sudo 提示统一由 `FileExplorerDialogs.tsx` 渲染到 `document.body`。
 
 `docs/remote-desktop-components/_example.md` 是新增或更新组件文档时的模板与检查清单。
+
+远程桌面样式必须只有一个运行时 owner：全局/共享样式由 `critical.scss` 或 `deferred.scss` 引入，随 lazy 组件加载的专属样式由组件自身 import，不得同时进入 deferred bundle。`scripts/check-style-ownership.cjs` 固化 FRP 客户端、FRP 服务端和 Monitor 的当前边界。
 
 ## 连接启动
 

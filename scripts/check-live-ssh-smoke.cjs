@@ -55,6 +55,12 @@ const liveEnv = readLiveSshEnv();
 const missing = [];
 if (!meaningful(liveEnv.SHELLDESK_TEST_SSH_HOST)) missing.push('SHELLDESK_TEST_SSH_HOST');
 if (!meaningful(liveEnv.SHELLDESK_TEST_SSH_USERNAME)) missing.push('SHELLDESK_TEST_SSH_USERNAME');
+if (
+  !meaningful(liveEnv.SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH)
+  || !fs.existsSync(liveEnv.SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH)
+) {
+  missing.push('SHELLDESK_TEST_SSH_KNOWN_HOSTS_PATH');
+}
 if (!meaningful(liveEnv.SHELLDESK_TEST_SSH_PASSWORD) && !meaningful(liveEnv.SHELLDESK_TEST_SSH_KEY_PATH)) {
   missing.push('SHELLDESK_TEST_SSH_PASSWORD or SHELLDESK_TEST_SSH_KEY_PATH');
 }

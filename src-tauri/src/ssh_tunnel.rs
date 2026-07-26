@@ -1,7 +1,4 @@
-use russh::{
-    client,
-    keys::{key::PrivateKeyWithHashAlg, Algorithm, HashAlg},
-};
+use russh::client;
 use serde::Deserialize;
 use std::{
     fmt,
@@ -23,11 +20,14 @@ use crate::{
     connection::ensure_ssh_profile_host_key_trusted,
     get_connection,
     proxy::SshProxyConfig,
-    russh_client::{configure_tcp_keepalive, keepalive_interval_from_settings},
+    russh_client::{
+        authenticate_profile, configure_tcp_keepalive, keepalive_interval_from_settings,
+        ssh_authentication_kind, SshAuthenticationKind,
+    },
     russh_transport_io::{
         proxy_command_template, proxy_helper_command, RusshTransport as TunnelTransport,
     },
-    AppState, ConnectionKind, SshProfile,
+    AppState, ConnectionKind, SshProfile, UiWindowRef,
 };
 use serde_json::Value;
 
@@ -37,6 +37,8 @@ pub(crate) struct SshTunnelConfig {
     pub(crate) ssh_host: String,
     pub(crate) ssh_port: u16,
     pub(crate) ssh_user: String,
+    #[serde(default = "default_auth_method")]
+    pub(crate) ssh_auth_method: String,
     pub(crate) ssh_password: Option<String>,
     pub(crate) ssh_key_path: Option<String>,
     pub(crate) ssh_key_passphrase: Option<String>,
@@ -64,6 +66,7 @@ impl fmt::Debug for SshTunnelConfig {
             .field("ssh_host", &self.ssh_host)
             .field("ssh_port", &self.ssh_port)
             .field("ssh_user", &self.ssh_user)
+            .field("ssh_auth_method", &self.ssh_auth_method)
             .field(
                 "ssh_password",
                 &self.ssh_password.as_ref().map(|_| "<redacted>"),
@@ -90,6 +93,10 @@ fn default_connect_timeout_ms() -> u64 {
     15_000
 }
 
+fn default_auth_method() -> String {
+    "password".to_string()
+}
+
 fn default_keepalive_interval_ms() -> u64 {
     15_000
 }
@@ -105,7 +112,7 @@ pub(crate) enum SshTunnelError {
     MissingRemoteHost,
     #[error("{field} 端口必须在 1-65535 范围内。")]
     InvalidPort { field: &'static str },
-    #[error("必须提供 SSH 密码或 SSH 私钥路径。")]
+    #[error("SSH 私钥认证必须提供私钥路径。")]
     MissingAuthentication,
     #[error("SSH 私钥文件不存在：{0}")]
     MissingKeyFile(String),
@@ -176,23 +183,15 @@ impl SshTunnelConfig {
             return Err(SshTunnelError::InvalidPort { field: "远程" });
         }
 
-        let has_password = self
-            .ssh_password
-            .as_deref()
-            .is_some_and(|value| !value.is_empty());
-        let has_key = self
+        let auth_kind = ssh_authentication_kind(&self.ssh_auth_method);
+        let key_path = self
             .ssh_key_path
             .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
-        if !has_password && !has_key {
-            return Err(SshTunnelError::MissingAuthentication);
-        }
-
-        if let Some(path) = self
-            .ssh_key_path
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
+            .filter(|value| !value.trim().is_empty());
+        if auth_kind == SshAuthenticationKind::Key {
+            let Some(path) = key_path else {
+                return Err(SshTunnelError::MissingAuthentication);
+            };
             if !Path::new(path).is_file() {
                 return Err(SshTunnelError::MissingKeyFile(path.to_string()));
             }
@@ -300,27 +299,19 @@ impl client::Handler for TunnelHandler {
     }
 }
 
-pub(crate) async fn create_tunnel(config: SshTunnelConfig) -> Result<SshTunnel, SshTunnelError> {
+pub(crate) async fn create_tunnel(
+    config: SshTunnelConfig,
+    state: AppState,
+    window: UiWindowRef,
+) -> Result<SshTunnel, SshTunnelError> {
     config.validate()?;
 
     let timeout = Duration::from_millis(config.connect_timeout_ms.max(1_000));
-    let mut session = connect_profile(&config, timeout, "SSH").await?;
-
-    if let Some(key_path) = config
-        .ssh_key_path
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        authenticate_key(
-            &mut session,
-            &config.ssh_user,
-            key_path,
-            config.ssh_key_passphrase.as_deref(),
-        )
-        .await?;
-    } else if let Some(password) = config.ssh_password.as_deref() {
-        authenticate_password(&mut session, &config.ssh_user, password).await?;
-    }
+    let mut session = connect_profile(&config, timeout, "SSH", &state, &window).await?;
+    let auth_profile = authentication_profile_from_config(&config);
+    authenticate_profile(&mut session, auth_profile, Some(state), Some(window))
+        .await
+        .map_err(SshTunnelError::SshAuth)?;
 
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
@@ -378,7 +369,7 @@ pub(crate) async fn create_tunnel_for_connection(
 ) -> Result<(SshTunnelHandle, SocketAddr), String> {
     let config =
         config_from_connection_with_window(state, window, connection_id, host, port, None).await?;
-    let tunnel = create_tunnel(config)
+    let tunnel = create_tunnel(config, state.clone(), UiWindowRef::from_window(window))
         .await
         .map_err(|error| error.user_message())?;
     let addr = tunnel.local_addr();
@@ -399,6 +390,8 @@ async fn connect_profile(
     config: &SshTunnelConfig,
     timeout: Duration,
     label: &str,
+    state: &AppState,
+    window: &UiWindowRef,
 ) -> Result<client::Handle<TunnelHandler>, SshTunnelError> {
     let ssh_config = Arc::new(client::Config {
         inactivity_timeout: if config.keepalive_enabled {
@@ -418,7 +411,7 @@ async fn connect_profile(
         known_hosts_path: config.known_hosts_path.clone(),
     };
 
-    let transport = open_transport(config, timeout).await?;
+    let transport = open_transport(config, timeout, state, window).await?;
     tokio::time::timeout(
         timeout,
         client::connect_stream(ssh_config, transport, handler),
@@ -438,76 +431,14 @@ async fn connect_profile(
     })
 }
 
-async fn authenticate_key(
-    session: &mut client::Handle<TunnelHandler>,
-    user: &str,
-    key_path: &str,
-    passphrase: Option<&str>,
-) -> Result<(), SshTunnelError> {
-    let key = russh::keys::load_secret_key(key_path, passphrase)
-        .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?;
-    let key = Arc::new(key);
-    let rsa_hash = if matches!(key.algorithm(), Algorithm::Rsa { .. }) {
-        session
-            .best_supported_rsa_hash()
-            .await
-            .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?
-    } else {
-        None
-    };
-    for hash_alg in key_auth_hash_algorithms(key.algorithm(), rsa_hash) {
-        let key_with_hash = PrivateKeyWithHashAlg::new(Arc::clone(&key), hash_alg);
-        let auth_result = session
-            .authenticate_publickey(user, key_with_hash)
-            .await
-            .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?;
-        if auth_result.success() {
-            return Ok(());
-        }
-    }
-    Err(SshTunnelError::SshAuth("服务器拒绝私钥认证。".to_string()))
-}
-
-fn key_auth_hash_algorithms(
-    algorithm: Algorithm,
-    server_best: Option<Option<HashAlg>>,
-) -> Vec<Option<HashAlg>> {
-    if !matches!(algorithm, Algorithm::Rsa { .. }) {
-        return vec![None];
-    }
-    let mut candidates = Vec::new();
-    if let Some(hash_alg) = server_best {
-        candidates.push(hash_alg);
-    } else {
-        candidates.push(Some(HashAlg::Sha512));
-        candidates.push(Some(HashAlg::Sha256));
-    }
-    candidates.push(None);
-    candidates.dedup();
-    candidates
-}
-
-async fn authenticate_password(
-    session: &mut client::Handle<TunnelHandler>,
-    user: &str,
-    password: &str,
-) -> Result<(), SshTunnelError> {
-    let auth_result = session
-        .authenticate_password(user, password)
-        .await
-        .map_err(|error| SshTunnelError::SshAuth(error.to_string()))?;
-    if !auth_result.success() {
-        return Err(SshTunnelError::SshAuth("服务器拒绝密码认证。".to_string()));
-    }
-    Ok(())
-}
-
 async fn open_transport(
     config: &SshTunnelConfig,
     timeout: Duration,
+    state: &AppState,
+    window: &UiWindowRef,
 ) -> Result<TunnelTransport, SshTunnelError> {
     if let Some(jump) = config.jump.as_deref() {
-        return open_jump_transport(config, jump, timeout).await;
+        return open_jump_transport(config, jump, timeout, state, window).await;
     }
     if let Some(proxy) = config.proxy.as_ref() {
         return open_proxy_transport(config, proxy).await;
@@ -529,25 +460,27 @@ async fn open_jump_transport(
     target: &SshTunnelConfig,
     jump: &SshProfile,
     timeout: Duration,
+    state: &AppState,
+    window: &UiWindowRef,
 ) -> Result<TunnelTransport, SshTunnelError> {
     let jump_config = config_from_profile(jump, &target.ssh_host, target.ssh_port, None);
-    let mut jump_session = Box::pin(connect_profile(&jump_config, timeout, "跳板机"))
-        .await
-        .map_err(|error| SshTunnelError::JumpConnect(error.user_message()))?;
-    if jump.auth_method == "key" && !jump.key_path.trim().is_empty() {
-        authenticate_key(
-            &mut jump_session,
-            &jump.username,
-            &jump.key_path,
-            (!jump.password.is_empty()).then_some(jump.password.as_str()),
-        )
-        .await
-        .map_err(|error| SshTunnelError::JumpConnect(error.user_message()))?;
-    } else if jump.auth_method == "password" && !jump.password.is_empty() {
-        authenticate_password(&mut jump_session, &jump.username, &jump.password)
-            .await
-            .map_err(|error| SshTunnelError::JumpConnect(error.user_message()))?;
-    }
+    let mut jump_session = Box::pin(connect_profile(
+        &jump_config,
+        timeout,
+        "跳板机",
+        state,
+        window,
+    ))
+    .await
+    .map_err(|error| SshTunnelError::JumpConnect(error.user_message()))?;
+    authenticate_profile(
+        &mut jump_session,
+        jump.clone(),
+        Some(state.clone()),
+        Some(window.clone()),
+    )
+    .await
+    .map_err(|error| SshTunnelError::JumpConnect(SshTunnelError::SshAuth(error).user_message()))?;
     let channel = jump_session
         .channel_open_direct_tcpip(
             target.ssh_host.as_str(),
@@ -564,21 +497,25 @@ async fn open_proxy_transport(
     config: &SshTunnelConfig,
     proxy: &SshProxyConfig,
 ) -> Result<TunnelTransport, SshTunnelError> {
-    let (command_line, envs) = match proxy.proxy_type.as_str() {
-        "command" => (
-            proxy_command_template(&proxy.command, &config.ssh_host, config.ssh_port),
+    match proxy.proxy_type.as_str() {
+        "command" => TunnelTransport::proxy_command(
+            &proxy_command_template(&proxy.command, &config.ssh_host, config.ssh_port)
+                .map_err(SshTunnelError::ProxyConnect)?,
             Vec::new(),
-        ),
-        "http" | "socks5" => proxy_helper_command(
-            &config.proxy_helper_exe,
-            &config.ssh_host,
-            config.ssh_port,
-            proxy,
         )
-        .map_err(SshTunnelError::ProxyConnect)?,
-        _ => return Err(SshTunnelError::ProxyConnect("代理类型无效。".to_string())),
-    };
-    TunnelTransport::proxy_command(&command_line, envs).map_err(SshTunnelError::ProxyConnect)
+        .map_err(SshTunnelError::ProxyConnect),
+        "http" | "socks5" => TunnelTransport::proxy_helper(
+            proxy_helper_command(
+                &config.proxy_helper_exe,
+                &config.ssh_host,
+                config.ssh_port,
+                proxy,
+            )
+            .map_err(SshTunnelError::ProxyConnect)?,
+        )
+        .map_err(SshTunnelError::ProxyConnect),
+        _ => Err(SshTunnelError::ProxyConnect("代理类型无效。".to_string())),
+    }
 }
 
 pub(crate) async fn config_from_connection_with_window(
@@ -616,21 +553,23 @@ fn config_from_profile(
     remote_port: u16,
     overrides: Option<&Value>,
 ) -> SshTunnelConfig {
-    let ssh_password = if profile.auth_method == "password" {
+    let auth_kind = ssh_authentication_kind(&profile.auth_method);
+    let ssh_password = if auth_kind == SshAuthenticationKind::Password {
         Some(profile.password.clone())
     } else {
         None
     };
-    let ssh_key_path = if profile.auth_method == "key" {
+    let ssh_key_path = if auth_kind == SshAuthenticationKind::Key {
         Some(profile.key_path.clone())
     } else {
         None
     };
-    let ssh_key_passphrase = if profile.auth_method == "key" && !profile.password.is_empty() {
-        Some(profile.password.clone())
-    } else {
-        None
-    };
+    let ssh_key_passphrase =
+        if auth_kind == SshAuthenticationKind::Key && !profile.password.is_empty() {
+            Some(profile.password.clone())
+        } else {
+            None
+        };
     let connect_timeout_ms = overrides
         .and_then(|value| value.get("connectTimeoutMs"))
         .and_then(Value::as_u64)
@@ -649,6 +588,7 @@ fn config_from_profile(
         ssh_host: profile.address.clone(),
         ssh_port: profile.port,
         ssh_user: profile.username.clone(),
+        ssh_auth_method: profile.auth_method.clone(),
         ssh_password,
         ssh_key_path,
         ssh_key_passphrase,
@@ -661,6 +601,34 @@ fn config_from_profile(
         connect_timeout_ms,
         keepalive_enabled,
         keepalive_interval_ms,
+    }
+}
+
+fn authentication_profile_from_config(config: &SshTunnelConfig) -> SshProfile {
+    let auth_kind = ssh_authentication_kind(&config.ssh_auth_method);
+    let password = match auth_kind {
+        SshAuthenticationKind::Key => config.ssh_key_passphrase.clone().unwrap_or_default(),
+        SshAuthenticationKind::Password => config.ssh_password.clone().unwrap_or_default(),
+        SshAuthenticationKind::Agent => String::new(),
+    };
+    let key_path = if auth_kind == SshAuthenticationKind::Key {
+        config.ssh_key_path.clone().unwrap_or_default()
+    } else {
+        String::new()
+    };
+    SshProfile {
+        address: config.ssh_host.clone(),
+        port: config.ssh_port,
+        username: config.ssh_user.clone(),
+        auth_method: config.ssh_auth_method.clone(),
+        password,
+        key_path,
+        known_hosts_path: config.known_hosts_path.clone().unwrap_or_default(),
+        proxy_helper_exe: config.proxy_helper_exe.clone(),
+        proxy: None,
+        jump: None,
+        keepalive_enabled: config.keepalive_enabled,
+        keepalive_interval_ms: config.keepalive_interval_ms,
     }
 }
 
@@ -753,6 +721,7 @@ mod tests {
             ssh_host: "example.com".to_string(),
             ssh_port: 22,
             ssh_user: "root".to_string(),
+            ssh_auth_method: "password".to_string(),
             ssh_password: Some("secret".to_string()),
             ssh_key_path: None,
             ssh_key_passphrase: None,
@@ -763,6 +732,23 @@ mod tests {
             remote_host: "127.0.0.1".to_string(),
             remote_port: 3306,
             connect_timeout_ms: 1_000,
+            keepalive_enabled: false,
+            keepalive_interval_ms: 15_000,
+        }
+    }
+
+    fn base_profile(auth_method: &str) -> SshProfile {
+        SshProfile {
+            address: "example.com".to_string(),
+            port: 22,
+            username: "root".to_string(),
+            auth_method: auth_method.to_string(),
+            password: String::new(),
+            key_path: String::new(),
+            known_hosts_path: "/tmp/known_hosts".to_string(),
+            proxy_helper_exe: "shelldesk".to_string(),
+            proxy: None,
+            jump: None,
             keepalive_enabled: false,
             keepalive_interval_ms: 15_000,
         }
@@ -779,8 +765,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_authentication() {
+    fn rejects_key_authentication_without_key_path() {
         let mut config = base_config();
+        config.ssh_auth_method = "key".to_string();
         config.ssh_password = None;
         config.ssh_key_path = None;
         assert!(matches!(
@@ -792,12 +779,74 @@ mod tests {
     #[test]
     fn rejects_missing_key_file() {
         let mut config = base_config();
+        config.ssh_auth_method = "key".to_string();
         config.ssh_password = None;
         config.ssh_key_path = Some("/path/that/does/not/exist".to_string());
         assert!(matches!(
             config.validate(),
             Err(SshTunnelError::MissingKeyFile(_))
         ));
+    }
+
+    #[test]
+    fn agent_authentication_does_not_require_password_or_key() {
+        let mut config = base_config();
+        config.ssh_auth_method = "agent".to_string();
+        config.ssh_password = None;
+        config.ssh_key_path = None;
+
+        config.validate().unwrap();
+        let profile = authentication_profile_from_config(&config);
+        assert_eq!(profile.auth_method, "agent");
+        assert!(profile.password.is_empty());
+        assert!(profile.key_path.is_empty());
+    }
+
+    #[test]
+    fn password_authentication_without_secret_can_use_keyboard_interactive() {
+        let mut config = base_config();
+        config.ssh_password = None;
+
+        config.validate().unwrap();
+        let profile = authentication_profile_from_config(&config);
+        assert_eq!(profile.auth_method, "password");
+        assert!(profile.password.is_empty());
+    }
+
+    #[test]
+    fn profile_mapping_preserves_current_and_legacy_key_authentication() {
+        for auth_method in ["key", "privateKey"] {
+            let mut profile = base_profile(auth_method);
+            profile.password = "key-passphrase".to_string();
+            profile.key_path = "/tmp/id_ed25519".to_string();
+            profile.keepalive_enabled = true;
+            profile.keepalive_interval_ms = 30_000;
+
+            let config = config_from_profile(&profile, "127.0.0.1", 3306, None);
+            assert_eq!(config.ssh_auth_method, auth_method);
+            assert_eq!(config.ssh_password, None);
+            assert_eq!(config.ssh_key_path.as_deref(), Some("/tmp/id_ed25519"));
+            assert_eq!(config.ssh_key_passphrase.as_deref(), Some("key-passphrase"));
+
+            let mapped_profile = authentication_profile_from_config(&config);
+            assert_eq!(mapped_profile.auth_method, auth_method);
+            assert_eq!(mapped_profile.password, "key-passphrase");
+            assert_eq!(mapped_profile.key_path, "/tmp/id_ed25519");
+        }
+    }
+
+    #[test]
+    fn profile_mapping_keeps_agent_credentials_empty() {
+        let mut profile = base_profile("agent");
+        profile.password = "stale-password".to_string();
+        profile.key_path = "/tmp/stale-key".to_string();
+
+        let config = config_from_profile(&profile, "127.0.0.1", 5900, None);
+        assert_eq!(config.ssh_auth_method, "agent");
+        assert_eq!(config.ssh_password, None);
+        assert_eq!(config.ssh_key_path, None);
+        assert_eq!(config.ssh_key_passphrase, None);
+        config.validate().unwrap();
     }
 
     #[test]
@@ -815,48 +864,5 @@ mod tests {
             config.validate(),
             Err(SshTunnelError::InvalidPort { field: "远程" })
         ));
-    }
-
-    #[test]
-    fn proxy_command_template_quotes_placeholders_for_current_shell() {
-        let command = proxy_command_template("connect {host} %h {port} %p", "safe&echo bad", 22);
-
-        if cfg!(windows) {
-            assert_eq!(
-                command,
-                "connect \"safe^&echo bad\" \"safe^&echo bad\" 22 22"
-            );
-        } else {
-            assert_eq!(command, "connect 'safe&echo bad' 'safe&echo bad' 22 22");
-        }
-    }
-
-    #[test]
-    fn rsa_key_auth_prefers_server_supported_hash_then_legacy() {
-        assert_eq!(
-            key_auth_hash_algorithms(
-                Algorithm::Rsa {
-                    hash: Some(HashAlg::Sha256)
-                },
-                Some(Some(HashAlg::Sha512)),
-            ),
-            vec![Some(HashAlg::Sha512), None]
-        );
-    }
-
-    #[test]
-    fn rsa_key_auth_tries_sha2_before_legacy_without_server_hint() {
-        assert_eq!(
-            key_auth_hash_algorithms(Algorithm::Rsa { hash: None }, None),
-            vec![Some(HashAlg::Sha512), Some(HashAlg::Sha256), None]
-        );
-    }
-
-    #[test]
-    fn non_rsa_key_auth_ignores_hash_algorithms() {
-        assert_eq!(
-            key_auth_hash_algorithms(Algorithm::Ed25519, Some(Some(HashAlg::Sha512))),
-            vec![None]
-        );
     }
 }

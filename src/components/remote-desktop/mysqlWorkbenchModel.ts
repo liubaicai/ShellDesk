@@ -1,9 +1,9 @@
 import { getShellDeskLocale } from './desktopUtils';
 import {
-  type DatabaseImportState,
   parseDatabaseImportCsv,
   parseDatabaseImportJson,
-} from './databaseImportUtils';
+  readDatabaseImportValue,
+} from './database-import/databaseImportUtils';
 import { createId, quoteIdentifier } from './databaseUtils';
 import { tCurrent } from '../../i18n';
 
@@ -167,8 +167,6 @@ export interface DatabaseDialogState {
   executing: boolean;
   error: string;
 }
-
-export type ImportDataState = DatabaseImportState;
 
 export type MysqlContextMenuAction = 'database-info' | 'create-table' | 'drop-database' | 'query-table' | 'table-structure' | 'edit-table';
 
@@ -774,14 +772,6 @@ export function translateForeignKeyAction(action: string): string {
   return tCurrent('auto.remoteMySQL.restrict');
 }
 
-export function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-}
-
 export function createQueryTab(index: number, sql = 'SELECT 1;'): MysqlQueryTab {
   return {
     id: createId('query'),
@@ -822,7 +812,9 @@ export function quoteMysqlImportValue(value: unknown): string {
 export function buildMysqlInsertSql(table: string, columns: string[], rows: Record<string, unknown>[]): string {
   const columnSql = columns.map((column) => quoteIdentifier(column, 'mysql')).join(', ');
   const valuesSql = rows
-    .map((row) => `(${columns.map((column) => quoteMysqlImportValue(row[column])).join(', ')})`)
+    .map((row) => `(${columns.map((column) => (
+      quoteMysqlImportValue(readDatabaseImportValue(row, column))
+    )).join(', ')})`)
     .join(', ');
 
   return `INSERT INTO ${quoteIdentifier(table, 'mysql')} (${columnSql}) VALUES ${valuesSql};`;

@@ -38,6 +38,7 @@ import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionPro
 import { isWindowsSystem } from './remoteSystem';
 import RemoteTerminal from './RemoteTerminal';
 import type { RemoteTerminalSessionState } from './terminalTypes';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import type { RemoteSystemType } from './types';
 
 interface RemoteCodeEditorProps {
@@ -340,6 +341,7 @@ export default function RemoteCodeEditor({
   systemType,
   onSettingsChange,
 }: RemoteCodeEditorProps) {
+  const editorTheme = useShellDeskEditorTheme();
   const language = settings.language;
   const isWindowsHost = useMemo(() => isWindowsSystem(systemType), [systemType]);
   const [projectRoot, setProjectRoot] = useState('.');
@@ -925,7 +927,7 @@ export default function RemoteCodeEditor({
                       content={activeTab.content}
                       language={activeTab.language}
                       readOnly={false}
-                      theme={settings.theme === 'light' ? 'light' : 'dark'}
+                      theme={editorTheme}
                       wrapEnabled={false}
                       onChange={updateActiveContent}
                       onCursorChange={() => undefined}

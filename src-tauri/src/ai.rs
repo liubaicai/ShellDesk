@@ -15,6 +15,7 @@ const MAX_AI_MODEL_NAME_LENGTH: usize = 200;
 const MAX_AI_MESSAGE_COUNT: usize = 40;
 const MAX_AI_MESSAGE_LENGTH: usize = 120000;
 const MAX_AI_STREAM_ID_LENGTH: usize = 80;
+const MAX_AI_SSE_MESSAGE_BYTES: usize = 1024 * 1024;
 const MAX_WEB_SEARCH_QUERY_LENGTH: usize = 1000;
 const MAX_WEB_SEARCH_SNIPPET_LENGTH: usize = 1200;
 
@@ -112,14 +113,18 @@ fn read_limited_string(
 }
 
 fn read_ai_api_base_url(value: Option<&Value>) -> Result<String, String> {
-    let api_base_url = read_limited_string(value, "AI API 地址", 2048, true, true)?
-        .trim_end_matches('/')
-        .to_string();
-    let parsed = reqwest::Url::parse(&api_base_url).map_err(|_| "AI API 地址无效。".to_string())?;
+    let api_base_url = read_limited_string(value, "AI API 地址", 2048, true, true)?;
+    let mut parsed =
+        reqwest::Url::parse(&api_base_url).map_err(|_| "AI API 地址无效。".to_string())?;
     if parsed.scheme() != "https" && parsed.scheme() != "http" {
         return Err("AI API 地址只支持 http 或 https。".to_string());
     }
-    Ok(api_base_url)
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("AI API 地址不能包含查询参数或片段。".to_string());
+    }
+    let normalized_path = parsed.path().trim_end_matches('/').to_string();
+    parsed.set_path(&normalized_path);
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
 }
 
 fn read_ai_model_list_request(raw_request: Value) -> Result<AiModelListRequest, String> {
@@ -380,13 +385,13 @@ fn api_base_is_version_path(api_base_url: &str) -> bool {
                 .path_segments()
                 .map(|segments| segments.collect::<Vec<_>>())
                 .unwrap_or_default();
+            let is_version_segment = |segment: &str| {
+                let digits = segment.strip_prefix('v').unwrap_or_default();
+                !digits.is_empty() && digits.chars().all(|ch| ch.is_ascii_digit())
+            };
             match segments.as_slice() {
-                [version] => {
-                    version.starts_with('v') && version[1..].chars().all(|ch| ch.is_ascii_digit())
-                }
-                [version, "beta"] => {
-                    version.starts_with('v') && version[1..].chars().all(|ch| ch.is_ascii_digit())
-                }
+                [.., version, "beta"] => is_version_segment(version),
+                [.., version] => is_version_segment(version),
                 _ => false,
             }
         })
@@ -1136,13 +1141,69 @@ fn extract_anthropic_stream_delta(payload: &Value) -> Result<String, String> {
     Ok(String::new())
 }
 
-fn find_sse_separator(buffer: &str) -> Option<(usize, usize)> {
-    let rn = buffer.find("\r\n\r\n").map(|index| (index, 4));
-    let n = buffer.find("\n\n").map(|index| (index, 2));
+fn find_sse_separator(buffer: &[u8]) -> Option<(usize, usize)> {
+    let find = |needle: &[u8]| {
+        buffer
+            .windows(needle.len())
+            .position(|window| window == needle)
+    };
+    let rn = find(b"\r\n\r\n").map(|index| (index, 4));
+    let n = find(b"\n\n").map(|index| (index, 2));
     match (rn, n) {
         (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
         (Some(value), None) | (None, Some(value)) => Some(value),
         (None, None) => None,
+    }
+}
+
+#[derive(Default)]
+struct SseUtf8Decoder {
+    buffer: Vec<u8>,
+}
+
+impl SseUtf8Decoder {
+    #[cfg(test)]
+    fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>, String> {
+        let mut messages = Vec::new();
+        self.push_until(chunk, |message| {
+            messages.push(message);
+            Ok(false)
+        })?;
+        Ok(messages)
+    }
+
+    fn push_until<F>(&mut self, chunk: &[u8], mut consume: F) -> Result<bool, String>
+    where
+        F: FnMut(String) -> Result<bool, String>,
+    {
+        self.buffer.extend_from_slice(chunk);
+        while let Some((index, separator_len)) = find_sse_separator(&self.buffer) {
+            if index > MAX_AI_SSE_MESSAGE_BYTES {
+                return Err("SD-Agent 流式响应事件过大。".to_string());
+            }
+            let tail = self.buffer.split_off(index + separator_len);
+            self.buffer.truncate(index);
+            let message = Self::decode(std::mem::replace(&mut self.buffer, tail))?;
+            if consume(message)? {
+                self.buffer.clear();
+                return Ok(true);
+            }
+        }
+        if self.buffer.len() > MAX_AI_SSE_MESSAGE_BYTES {
+            return Err("SD-Agent 流式响应事件过大。".to_string());
+        }
+        Ok(false)
+    }
+
+    fn finish(self) -> Result<Option<String>, String> {
+        if self.buffer.iter().all(u8::is_ascii_whitespace) {
+            return Ok(None);
+        }
+        Self::decode(self.buffer).map(Some)
+    }
+
+    fn decode(message: Vec<u8>) -> Result<String, String> {
+        String::from_utf8(message).map_err(|_| "SD-Agent 流式响应包含无效 UTF-8。".to_string())
     }
 }
 
@@ -1236,65 +1297,50 @@ async fn request_ai_chat_stream(
         return Ok(json!({ "endpoint": endpoint, "content": content, "toolCalls": tool_calls }));
     }
 
-    let mut buffer = String::new();
+    let mut decoder = SseUtf8Decoder::default();
     let mut openai_tool_call_deltas: Vec<OpenAiStreamToolCallDelta> = Vec::new();
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(error_string)?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some((index, separator_len)) = find_sse_separator(&buffer) {
-            let raw_message = buffer[..index].to_string();
-            buffer = buffer[index + separator_len..].to_string();
-            let Some(data) = parse_sse_message(&raw_message) else {
-                continue;
+    {
+        let mut consume_message = |raw_message: &str| -> Result<bool, String> {
+            let Some(data) = parse_sse_message(raw_message) else {
+                return Ok(false);
             };
             if data == "[DONE]" {
-                continue;
+                return Ok(true);
             }
             let Some(payload) = parse_json_response(&data) else {
-                continue;
+                return Ok(false);
             };
             if request.chat.api_format != "anthropic" {
                 append_openai_stream_tool_call_deltas(&payload, &mut openai_tool_call_deltas);
             }
-            let chunk = if request.chat.api_format == "anthropic" {
+            let content_chunk = if request.chat.api_format == "anthropic" {
                 extract_anthropic_stream_delta(&payload)?
             } else {
                 extract_openai_stream_delta(&payload)?
             };
-            if chunk.is_empty() {
-                continue;
+            if content_chunk.is_empty() {
+                return Ok(false);
             }
-            content.push_str(&chunk);
+            content.push_str(&content_chunk);
             let _ = window.emit(
                 "ai:chat-stream:chunk",
-                json!({ "streamId": request.stream_id, "chunk": chunk }),
+                json!({ "streamId": request.stream_id, "chunk": content_chunk }),
             );
+            Ok(false)
+        };
+
+        let mut reached_done = false;
+        'read_stream: while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(error_string)?;
+            if decoder.push_until(&chunk, |raw_message| consume_message(&raw_message))? {
+                reached_done = true;
+                break 'read_stream;
+            }
         }
-    }
-    if !buffer.trim().is_empty() {
-        if let Some(data) = parse_sse_message(&buffer) {
-            if data != "[DONE]" {
-                if let Some(payload) = parse_json_response(&data) {
-                    if request.chat.api_format != "anthropic" {
-                        append_openai_stream_tool_call_deltas(
-                            &payload,
-                            &mut openai_tool_call_deltas,
-                        );
-                    }
-                    let chunk = if request.chat.api_format == "anthropic" {
-                        extract_anthropic_stream_delta(&payload)?
-                    } else {
-                        extract_openai_stream_delta(&payload)?
-                    };
-                    if !chunk.is_empty() {
-                        content.push_str(&chunk);
-                        let _ = window.emit(
-                            "ai:chat-stream:chunk",
-                            json!({ "streamId": request.stream_id, "chunk": chunk }),
-                        );
-                    }
-                }
+        if !reached_done {
+            if let Some(raw_message) = decoder.finish()? {
+                consume_message(&raw_message)?;
             }
         }
     }
@@ -1322,3 +1368,7 @@ impl StringFallback for String {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "ai_tests.rs"]
+mod tests;

@@ -136,6 +136,13 @@ function extractStyleUses(source) {
   return unique([...source.matchAll(/@use\s+"\.\/remote-desktop\/([^"]+)"/g)].map((match) => match[1]));
 }
 
+function componentImportsStyle(source, styleName) {
+  const escapedStyleName = styleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `import\\s+['"]\\.\\.\\/\\.\\.\\/styles\\/remote-desktop\\/_${escapedStyleName}\\.scss['"]\\s*;?`,
+  ).test(source);
+}
+
 function compareSets(label, expected, actual, errors) {
   const expectedSet = new Set(expected);
   const actualSet = new Set(actual);
@@ -285,8 +292,19 @@ for (const entry of desktopAppEntries) {
   if (!workspaceFileExists(stylePartial)) {
     errors.push(`Desktop app ${entry.key} SCSS partial is missing: ${stylePartial}`);
   }
-  if (!remoteDesktopStyleUses.has(assetContract.style)) {
-    errors.push(`Desktop app ${entry.key} SCSS partial is not imported by src/styles/deferred.scss: ${assetContract.style}`);
+
+  const isDeferredStyle = remoteDesktopStyleUses.has(assetContract.style);
+  const isComponentLocalStyle = workspaceFileExists(componentFile)
+    && componentImportsStyle(readWorkspaceFile(componentFile), assetContract.style);
+  if (!isDeferredStyle && !isComponentLocalStyle) {
+    errors.push(
+      `Desktop app ${entry.key} SCSS partial must be owned by src/styles/deferred.scss or its lazy component: ${assetContract.style}`,
+    );
+  }
+  if (isDeferredStyle && isComponentLocalStyle) {
+    errors.push(
+      `Desktop app ${entry.key} SCSS partial has duplicate deferred and lazy-component owners: ${assetContract.style}`,
+    );
   }
 }
 
@@ -295,4 +313,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Desktop app contract ok: ${desktopAppKeys.length} app keys are aligned across catalog, rendering, i18n, component files, icons, styles, types, defaults, migrations, and Rust vault normalization.`);
+console.log(`Desktop app contract ok: ${desktopAppKeys.length} app keys are aligned across catalog, rendering, i18n, component files, icons, single-owner styles, types, defaults, migrations, and Rust vault normalization.`);

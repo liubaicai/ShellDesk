@@ -10,6 +10,9 @@ const seededHosts = [
     address: '10.0.0.10',
     port: 22,
     username: 'root',
+    authMethod: 'password' as const,
+    password: '',
+    keyId: '',
     group: 'Production',
     tags: ['linux', 'prod'],
     note: '',
@@ -22,6 +25,9 @@ const seededHosts = [
     address: '10.0.0.20',
     port: 22,
     username: 'root',
+    authMethod: 'password' as const,
+    password: '',
+    keyId: '',
     group: '',
     tags: [],
     note: '',
@@ -34,6 +40,9 @@ const seededHosts = [
     address: '10.0.0.30',
     port: 22,
     username: 'root',
+    authMethod: 'password' as const,
+    password: '',
+    keyId: '',
     group: '',
     tags: [],
     note: '',
@@ -46,8 +55,12 @@ async function gotoSeededHostPage(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('region', { name: '全部主机' })).toBeVisible();
   await page.evaluate(async (hosts) => {
-    const snapshot = await window.guiSSH.vault.getSnapshot();
-    await window.guiSSH.vault.saveCollections({
+    const api = window.guiSSH;
+    if (!api) {
+      throw new Error('ShellDesk bridge is unavailable');
+    }
+    const snapshot = await api.vault.getSnapshot();
+    await api.vault.saveCollections({
       hosts,
       sshKeys: snapshot.sshKeys,
       proxyProfiles: snapshot.proxyProfiles,

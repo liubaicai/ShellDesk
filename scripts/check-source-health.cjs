@@ -7,6 +7,7 @@ const defaultLimits = new Map([
   ['.tsx', 2_000],
   ['.scss', 1_700],
   ['.rs', 1_500],
+  ['.py', 800],
 ]);
 const fileLimits = new Map([
   ['src/i18nCatalog.ts', 12_000],
@@ -30,14 +31,16 @@ const sourceFiles = [
   ...collectFiles(path.join(root, 'src')),
   ...collectFiles(path.join(root, 'src-tauri', 'src')),
 ];
+const checkedSourceFiles = sourceFiles.filter((filePath) => defaultLimits.has(path.extname(filePath)));
+const checkedFilesByExtension = new Map(
+  [...defaultLimits.keys()].map((extension) => [extension, 0]),
+);
 const violations = [];
 
-for (const filePath of sourceFiles) {
+for (const filePath of checkedSourceFiles) {
   const extension = path.extname(filePath);
   const defaultLimit = defaultLimits.get(extension);
-  if (!defaultLimit) {
-    continue;
-  }
+  checkedFilesByExtension.set(extension, checkedFilesByExtension.get(extension) + 1);
 
   const relativePath = path.relative(root, filePath).replaceAll(path.sep, '/');
   const limit = fileLimits.get(relativePath) ?? defaultLimit;
@@ -54,4 +57,8 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log(`Source-size guard ok: checked ${sourceFiles.length} source files.`);
+const checkedFileSummary = [...checkedFilesByExtension]
+  .filter(([, count]) => count > 0)
+  .map(([extension, count]) => `${extension}=${count}`)
+  .join(', ');
+console.log(`Source-size guard ok: checked ${checkedSourceFiles.length} source files (${checkedFileSummary}).`);

@@ -36,16 +36,11 @@ import type {
 import RemoteFilePicker from './RemoteFilePicker';
 import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import { isTextFile } from './textFileUtils';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 
 const NotepadEditor = lazy(() => import('./NotepadEditor'));
 const elevationRequiredPrefix = 'SHELLDESK_ELEVATION_REQUIRED:';
 const elevationAuthFailedPrefix = 'SHELLDESK_ELEVATION_AUTH_FAILED:';
-
-function getPreferredLightTheme() {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-color-scheme: light)').matches;
-}
 
 function getFileNameFromPath(filePath: string): string {
   const parts = filePath.replace(/\\/g, '/').split('/');
@@ -152,6 +147,7 @@ function createNewTab(language: AppLanguage, initialTitle?: string, initialConte
 }
 
 function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent, initialTitle, openFileRequest, systemType }: RemoteNotepadProps) {
+  const codeMirrorTheme = useShellDeskEditorTheme();
   const language = settings.language;
   const [tabs, setTabs] = useState<NotepadTab[]>(() => [createNewTab(language, initialTitle, initialContent)]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
@@ -164,7 +160,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const [conflictDialog, setConflictDialog] = useState<NotepadConflictDialog | null>(null);
   const [diffDialog, setDiffDialog] = useState<NotepadDiffDialog | null>(null);
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
-  const [prefersLightTheme, setPrefersLightTheme] = useState(() => getPreferredLightTheme());
   const [sudoPrompt, setSudoPrompt] = useState<NotepadSudoPrompt | null>(null);
 
   const [filePickerVisible, setFilePickerVisible] = useState(false);
@@ -194,19 +189,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
 
   const updateTab = useCallback((tabId: string, update: (tab: NotepadTab) => NotepadTab) => {
     setTabs((currentTabs) => currentTabs.map((tab) => tab.id === tabId ? update(tab) : tab));
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return undefined;
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-    const handleThemeChange = () => setPrefersLightTheme(mediaQuery.matches);
-    handleThemeChange();
-    mediaQuery.addEventListener('change', handleThemeChange);
-
-    return () => mediaQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
   useEffect(() => {
@@ -446,7 +428,6 @@ function RemoteNotepad({ connectionId, settings, initialFilePath, initialContent
   const activeContent = activeTab.content;
   const lineCount = useMemo(() => countLogicalLines(activeContent), [activeContent]);
   const effectiveWrapEnabled = wrapEnabled;
-  const codeMirrorTheme = settings.theme === 'system' ? (prefersLightTheme ? 'light' : 'dark') : settings.theme;
   const lineEndingLabel = useMemo(() => getLineEndingLabel(activeContent, language), [activeContent, language]);
 
   const saveTabToPath = useCallback(async (tabId: string, filePath: string, options: SaveOptions = {}) => {

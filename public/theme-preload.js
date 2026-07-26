@@ -1,16 +1,18 @@
 (function () {
   var storageKey = 'shelldesk:theme-preload';
   var light = {
-    bg: '#f6f7f8',
-    chrome: '#fafafa',
-    surface: '#ffffff',
-    text: '#1f2328',
+    '--bg': '#eef2f5',
+    '--chrome': '#f8fafb',
+    '--surface': '#ffffff',
+    '--surface-elevated': '#f8fafb',
+    '--text': '#23313d',
   };
   var dark = {
-    bg: '#0e131c',
-    chrome: '#22272f',
-    surface: '#111722',
-    text: '#f4f7fb',
+    '--bg': '#080e16',
+    '--chrome': '#1b222b',
+    '--surface': '#111b28',
+    '--surface-elevated': '#0f1823',
+    '--text': '#e8eef5',
   };
 
   function readThemePreference() {
@@ -18,7 +20,7 @@
       var params = new URLSearchParams(window.location.search);
       var queryTheme = params.get('shelldeskTheme');
 
-      if (queryTheme) {
+      if (queryTheme === 'dark' || queryTheme === 'light' || queryTheme === 'system') {
         return queryTheme;
       }
     } catch {
@@ -31,6 +33,8 @@
       if (!storedTheme) {
         return '';
       }
+
+      storedTheme = storedTheme.trim();
 
       if (storedTheme.charAt(0) === '{') {
         var parsedTheme = JSON.parse(storedTheme);
@@ -47,7 +51,7 @@
     try {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     } catch {
-      return 'light';
+      return 'dark';
     }
   }
 
@@ -70,12 +74,10 @@
 
     root.setAttribute('data-theme', theme);
     root.style.colorScheme = theme;
-    root.style.backgroundColor = palette.bg;
-    root.style.setProperty('--bg', palette.bg);
-    root.style.setProperty('--chrome', palette.chrome);
-    root.style.setProperty('--surface', palette.surface);
-    root.style.setProperty('--surface-elevated', theme === 'light' ? palette.chrome : palette.surface);
-    root.style.setProperty('--text', palette.text);
+
+    Object.keys(palette).forEach(function (property) {
+      root.style.setProperty(property, palette[property]);
+    });
 
     if (colorSchemeMeta) {
       colorSchemeMeta.setAttribute('content', theme);
@@ -84,10 +86,4 @@
 
   var theme = normalizeTheme(readThemePreference());
   applyTheme(theme);
-
-  if (!document.body) {
-    document.addEventListener('DOMContentLoaded', function () {
-      applyTheme(theme);
-    }, { once: true });
-  }
 }());

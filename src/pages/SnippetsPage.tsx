@@ -5,6 +5,7 @@ import { completeAiRequest, isAiConfigured } from '../ai';
 import NotepadEditor from '../components/remote-desktop/NotepadEditor';
 import { LANGUAGE_OPTIONS, normalizeLanguage } from '../components/remote-desktop/notepadLanguageDetection';
 import { isMacClient, keyEventToShortcut } from '../components/remote-desktop/terminalSnippetShortcuts';
+import { useShellDeskEditorTheme } from '../components/remote-desktop/useShellDeskEditorTheme';
 import { t, useCurrentAppLanguage, type AppLanguage } from '../i18n';
 
 interface SnippetsPageProps {
@@ -122,25 +123,6 @@ function getSnippetLanguageLabel(languageValue: string | undefined, appLanguage:
   }
 
   return languageOption.label ?? normalizedLanguage;
-}
-
-function getEffectiveSnippetEditorTheme(theme: ShellDeskAppSettings['theme']): 'light' | 'dark' {
-  if (typeof document !== 'undefined') {
-    const documentTheme = document.documentElement.getAttribute('data-theme');
-    if (documentTheme === 'light' || documentTheme === 'dark') {
-      return documentTheme;
-    }
-  }
-
-  if (theme === 'light' || theme === 'dark') {
-    return theme;
-  }
-
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
-    return 'light';
-  }
-
-  return 'dark';
 }
 
 function handleSnippetEditorCursorChange() {
@@ -287,6 +269,7 @@ function getShortcutWarning(
 }
 
 function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
+  const editorTheme = useShellDeskEditorTheme();
   const language = useCurrentAppLanguage();
   const snippets = settings.terminalSnippets ?? [];
   const [searchQuery, setSearchQuery] = useState('');
@@ -589,8 +572,6 @@ function SnippetsPage({ settings, onSettingsChange }: SnippetsPageProps) {
       : saveStatus === 'error'
         ? t('snippets.page.saveFailed', language, { error: saveStatusDetail || t('app.error.operationFailed', language) })
         : '';
-  const editorTheme = getEffectiveSnippetEditorTheme(settings.theme);
-
   return (
     <>
       <div className="command-bar no-drag snippets-command-bar">

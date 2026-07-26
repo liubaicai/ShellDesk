@@ -398,12 +398,11 @@
   border-color: rgba(244, 247, 251, 0.58);
 }
 
-.context-menu button.danger-text,
 .context-submenu button.danger-text {
-  color: #ffb7bd !important;
+  color: var(--danger) !important;
 }
 
 .context-menu button.danger-text:hover,
 .context-submenu button.danger-text:hover {
-  background: rgba(232, 17, 35, 0.16) !important;
+  background: var(--danger-hover-bg) !important;
 }

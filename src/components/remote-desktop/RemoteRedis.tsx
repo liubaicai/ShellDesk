@@ -10,6 +10,7 @@ import {
 import DismissibleAlert from './DismissibleAlert';
 import NotepadEditor from './NotepadEditor';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 
 interface RemoteRedisProps {
@@ -83,14 +84,6 @@ const mutableRedisCommands = new Set([
   'ZADD',
   'ZREM',
 ]);
-
-function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-}
 
 function formatTtl(ttl?: number): string {
   if (ttl === undefined || Number.isNaN(ttl)) return tCurrent('auto.remoteRedis.1lpnuh4');
@@ -326,7 +319,7 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
   const [cmdRunning, setCmdRunning] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingRedisAction | null>(null);
   const [pendingRunning, setPendingRunning] = useState(false);
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
 
   const isReady = status === 'connected';
 
@@ -1028,12 +1021,6 @@ function RemoteRedis({ connectionId, hostId }: RemoteRedisProps) {
       setErrorMessage(`数据库连接已因空闲超过 ${payload.idleMinutes} 分钟自动断开。`);
     });
   }, [api, connectionId, resetWorkspace]);
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
 
   if (!isReady) {
     return (

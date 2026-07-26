@@ -3,8 +3,23 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './tauriBridge';
 import './styles/critical.scss';
+import { clearThemePreloadTokens } from './theme/appearance';
 
 let didScheduleInitialReveal = false;
+
+async function loadDeferredStylesAndShow() {
+  try {
+    await import('./styles/deferred.scss');
+  } catch (error) {
+    console.error('Failed to load ShellDesk deferred styles:', error);
+  }
+
+  try {
+    await window.guiSSH?.window?.show?.();
+  } catch (error) {
+    console.error('Failed to show ShellDesk window after first paint:', error);
+  }
+}
 
 function scheduleInitialReveal() {
   if (didScheduleInitialReveal) {
@@ -14,10 +29,7 @@ function scheduleInitialReveal() {
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      void window.guiSSH?.window?.show?.().catch((error) => {
-        console.error('Failed to show ShellDesk window after first paint:', error);
-      });
-      void import('./styles/deferred.scss').catch(() => {});
+      void loadDeferredStylesAndShow();
     });
   });
 }
@@ -29,6 +41,8 @@ function ShellDeskRoot() {
 
   return <App />;
 }
+
+clearThemePreloadTokens();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

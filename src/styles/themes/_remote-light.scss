@@ -403,7 +403,7 @@
 [data-theme="light"] .remote-desktop-connection-mark {
   border-color: rgba(200, 48, 78, 0.28);
   background: rgba(200, 48, 78, 0.08);
-  color: #c8304e;
+  color: var(--danger);
 }
 
 [data-theme="light"] .remote-desktop-connection-dialog.checking .remote-desktop-connection-mark {

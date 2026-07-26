@@ -2,7 +2,7 @@
 
 > 当前状态：已接入远程桌面（appKey: `mysql`），实现入口为 `src/components/remote-desktop/RemoteMySQL.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
-SQL 生成、建表解析、schema 差异与导入模型位于 `mysqlWorkbenchModel.ts`；数据库编辑器、CSV/JSON 解析和导入弹窗分别复用 `databaseEditorExtensions.ts`、`databaseImportUtils.ts`、`DatabaseImportDialog.tsx`。
+SQL 生成、建表解析、schema 差异与导入模型位于 `mysqlWorkbenchModel.ts`；数据库编辑器复用 `databaseEditorExtensions.ts`，CSV/JSON 解析、草稿状态和导入弹窗统一复用 `database-import/`。
 
 ## 定位
 

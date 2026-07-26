@@ -112,8 +112,15 @@ import {
 import { HostSystemIcon, ShellDeskNavIcon } from './components/AppNavigationIcons';
 import type { NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
-import { buildFontStack } from './fontUtils';
+import {
+  createLatestRequestGate,
+  createLatestWinsSingleFlightQueue,
+  isCollectionsSnapshotCurrent,
+  type LatestWinsSingleFlightQueue,
+} from './features/vault/latestSaveQueue';
 import { getAppLocale, getCurrentAppLanguage, getSystemLanguage, loadFullMessageCatalog, preloadFullMessageCatalog, t, useShellDeskI18n, type AppLanguage } from './i18n';
+import { readPreloadThemePreference } from './theme/appearance';
+import { useRuntimeAppearance } from './theme/useRuntimeAppearance';
 
 export type { LogCategory, LogEntry, LogLevel } from './appHostModel';
 
@@ -135,7 +142,6 @@ const AgentWorkspace = lazy(() =>
   Promise.all([loadFullMessageCatalog(), import('./pages/AgentWorkspace')]).then(([, module]) => module));
 const SftpTransferWindow = lazy(() => import('./components/sftp-transfer/SftpTransferWindow'));
 
-const themePreloadStorageKey = 'shelldesk:theme-preload';
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
 const maxRenderedLogEntries = 5_000;
@@ -276,44 +282,10 @@ const defaultAppSettings: ShellDeskAppSettings = {
   terminalSnippets: createDefaultTerminalSnippets(defaultAppLanguage),
 };
 
-function isAppTheme(value: unknown): value is ShellDeskAppSettings['theme'] {
-  return value === 'light' || value === 'dark' || value === 'system';
-}
-
-function readPreloadThemePreference(): ShellDeskAppSettings['theme'] | null {
-  try {
-    const queryTheme = new URLSearchParams(window.location.search).get('shelldeskTheme');
-
-    if (isAppTheme(queryTheme)) {
-      return queryTheme;
-    }
-  } catch {
-    // Ignore URL parsing failures.
-  }
-
-  try {
-    const storedTheme = window.localStorage.getItem(themePreloadStorageKey);
-
-    if (!storedTheme) {
-      return null;
-    }
-
-    if (isAppTheme(storedTheme)) {
-      return storedTheme;
-    }
-
-    const parsedTheme = JSON.parse(storedTheme) as { theme?: unknown };
-
-    return isAppTheme(parsedTheme.theme) ? parsedTheme.theme : null;
-  } catch {
-    return null;
-  }
-}
-
 function createInitialAppSettings(): ShellDeskAppSettings {
   return {
     ...defaultAppSettings,
-    theme: readPreloadThemePreference() ?? defaultAppSettings.theme,
+    theme: readPreloadThemePreference(),
   };
 }
 
@@ -340,6 +312,10 @@ type SyncNotice = Pick<
 };
 type UpdateReadyNotice = Pick<ShellDeskUpdateStatus, 'version' | 'releaseDate' | 'releaseNotes'>;
 type ShellDeskNavIconName = NavIconName;
+type VaultCollectionsSaveRequest = {
+  payload: VaultCollectionsSavePayload;
+  serialized: string;
+};
 
 type NavigationItem = {
   key: 'hosts' | 'snippets' | 'known-hosts' | 'keys' | 'proxies' | 'logs';
@@ -390,80 +366,6 @@ function RemoteDesktopLoadingFallback({ language }: { language: AppLanguage }) {
       </section>
     </main>
   );
-}
-
-function readHexColorChannels(hexColor: string) {
-  const match = /^#(?<red>[0-9a-f]{2})(?<green>[0-9a-f]{2})(?<blue>[0-9a-f]{2})$/i.exec(hexColor);
-
-  if (!match?.groups) {
-    return { red: 67, green: 199, blue: 255 };
-  }
-
-  return {
-    red: Number.parseInt(match.groups.red, 16),
-    green: Number.parseInt(match.groups.green, 16),
-    blue: Number.parseInt(match.groups.blue, 16),
-  };
-}
-
-function toRgba(hexColor: string, alpha: number) {
-  const { red, green, blue } = readHexColorChannels(hexColor);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
-function getReadableTextColor(hexColor: string) {
-  const { red, green, blue } = readHexColorChannels(hexColor);
-  const backgroundLuminance = getRelativeLuminance(red, green, blue);
-  const darkTextLuminance = getRelativeLuminance(11, 18, 32);
-  const darkTextContrast =
-    (Math.max(backgroundLuminance, darkTextLuminance) + 0.05) /
-    (Math.min(backgroundLuminance, darkTextLuminance) + 0.05);
-  const lightTextContrast = 1.05 / (backgroundLuminance + 0.05);
-
-  return darkTextContrast > lightTextContrast ? '#0b1220' : '#ffffff';
-}
-
-function getRelativeLuminance(red: number, green: number, blue: number) {
-  const toLinearChannel = (channel: number) => {
-    const normalized = channel / 255;
-    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
-  };
-
-  return 0.2126 * toLinearChannel(red) + 0.7152 * toLinearChannel(green) + 0.0722 * toLinearChannel(blue);
-}
-
-function getLightThemeAccentColor(hexColor: string) {
-  const channels = readHexColorChannels(hexColor);
-  const whiteContrast = 1.05 / (getRelativeLuminance(channels.red, channels.green, channels.blue) + 0.05);
-
-  if (whiteContrast >= 4.5) {
-    return hexColor;
-  }
-
-  let minimumScale = 0;
-  let maximumScale = 1;
-  let accessibleChannels = channels;
-
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const scale = (minimumScale + maximumScale) / 2;
-    const candidate = {
-      red: Math.round(channels.red * scale),
-      green: Math.round(channels.green * scale),
-      blue: Math.round(channels.blue * scale),
-    };
-    const contrast = 1.05 / (getRelativeLuminance(candidate.red, candidate.green, candidate.blue) + 0.05);
-
-    if (contrast >= 4.5) {
-      accessibleChannels = candidate;
-      minimumScale = scale;
-    } else {
-      maximumScale = scale;
-    }
-  }
-
-  return `#${[accessibleChannels.red, accessibleChannels.green, accessibleChannels.blue]
-    .map((channel) => channel.toString(16).padStart(2, '0'))
-    .join('')}`;
 }
 
 function getRemoteDesktopLayoutAppKeys(items: ShellDeskDesktopLayoutItem[]) {
@@ -880,6 +782,11 @@ function App() {
       terminalSnippets: readStoredTerminalSnippets(defaultAppSettings.terminalSnippets),
     };
   });
+  useRuntimeAppearance({
+    theme: settings.theme,
+    accentColor: settings.accentColor,
+    interfaceFont: settings.interfaceFont,
+  });
   const [storageInfo, setStorageInfo] = useState<ShellDeskStorageInfo | null>(initialPublicSnapshot?.storage ?? null);
   const [bookmarkCount, setBookmarkCount] = useState(() => (
     initialPublicSnapshot?.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0) ?? 0
@@ -928,13 +835,54 @@ function App() {
   const knownHostsRef = useRef(knownHosts);
   const settingsRef = useRef(settings);
   const lastPersistedCollectionsRef = useRef('');
-  const collectionsSaveInFlightRef = useRef(false);
-  const collectionsSaveInFlightSerializedRef = useRef('');
-  const collectionsSavePromiseRef = useRef<Promise<void> | null>(null);
-  const pendingCollectionsSaveRef = useRef<{ payload: VaultCollectionsSavePayload; serialized: string } | null>(null);
+  const collectionsRevisionRef = useRef(0);
+  const collectionsSnapshotRequestGate = useMemo(createLatestRequestGate, []);
   const platform = window.guiSSH?.platform;
   const windowControls = window.guiSSH?.window;
   const vaultControls = window.guiSSH?.vault;
+  const vaultControlsRef = useRef(vaultControls);
+  // This queue owns broad collections payloads; knownHosts-only writes remain independent.
+  const collectionsSaveQueueRef = useRef<LatestWinsSingleFlightQueue<VaultCollectionsSaveRequest> | null>(null);
+  if (!collectionsSaveQueueRef.current) {
+    collectionsSaveQueueRef.current = createLatestWinsSingleFlightQueue({
+      getKey: (request) => request.serialized,
+      save: async (request) => {
+        const currentVaultControls = vaultControlsRef.current;
+        if (!currentVaultControls) {
+          throw new Error('Vault controls are unavailable.');
+        }
+
+        const snapshot = await currentVaultControls.saveCollections(request.payload);
+        lastPersistedCollectionsRef.current = request.serialized;
+        setStorageInfo(snapshot.storage);
+        setBookmarkCount(snapshot.browserBookmarks.reduce(
+          (total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length,
+          0,
+        ));
+      },
+      onError: (error) => {
+        const currentLanguage = getCurrentAppLanguage();
+        setStatusMessage(t('app.status.saveLocalFailed', currentLanguage, {
+          error: getErrorMessage(error, currentLanguage),
+        }));
+      },
+    });
+  }
+  const collectionsSaveQueue = collectionsSaveQueueRef.current;
+  const beginCollectionsSnapshotRequest = useCallback(() => ({
+    requestId: collectionsSnapshotRequestGate.begin(),
+    revision: collectionsRevisionRef.current,
+  }), [collectionsSnapshotRequestGate]);
+  const isCurrentCollectionsSnapshotRequest = useCallback((
+    request: { requestId: number; revision: number },
+  ) => (
+    collectionsSnapshotRequestGate.isCurrent(request.requestId)
+    && isCollectionsSnapshotCurrent(
+      request.revision,
+      collectionsRevisionRef.current,
+      collectionsSaveQueue.hasWork(),
+    )
+  ), [collectionsSaveQueue, collectionsSnapshotRequestGate]);
   const appLanguage = settings.language;
   const appLocale = getAppLocale(appLanguage);
   const hostViewMode: HostViewMode = settings.defaultHostView === 'grid' ? 'grid' : 'list';
@@ -1179,57 +1127,9 @@ function App() {
     }
   };
 
-  const flushCollectionsSave = useCallback(() => {
-    if (!vaultControls || collectionsSaveInFlightRef.current) {
-      return;
-    }
-
-    const pendingSave = pendingCollectionsSaveRef.current;
-
-    if (!pendingSave) {
-      return;
-    }
-
-    pendingCollectionsSaveRef.current = null;
-    collectionsSaveInFlightRef.current = true;
-    collectionsSaveInFlightSerializedRef.current = pendingSave.serialized;
-
-    const savePromise = vaultControls.saveCollections(pendingSave.payload).then((snapshot) => {
-      lastPersistedCollectionsRef.current = pendingSave.serialized;
-      setStorageInfo(snapshot.storage);
-      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
-    }).catch((error: unknown) => {
-      const currentLanguage = getCurrentAppLanguage();
-      setStatusMessage(t('app.status.saveLocalFailed', currentLanguage, { error: getErrorMessage(error, currentLanguage) }));
-    }).finally(() => {
-      collectionsSaveInFlightRef.current = false;
-      collectionsSaveInFlightSerializedRef.current = '';
-      if (collectionsSavePromiseRef.current === savePromise) {
-        collectionsSavePromiseRef.current = null;
-      }
-
-      if (pendingCollectionsSaveRef.current) {
-        flushCollectionsSave();
-      }
-    });
-
-    collectionsSavePromiseRef.current = savePromise;
-    void savePromise;
-  }, [vaultControls]);
-
   const scheduleCollectionsSave = useCallback((payload: VaultCollectionsSavePayload, serialized: string) => {
-    if (pendingCollectionsSaveRef.current?.serialized === serialized) {
-      return;
-    }
-
-    if (collectionsSaveInFlightSerializedRef.current === serialized) {
-      pendingCollectionsSaveRef.current = null;
-      return;
-    }
-
-    pendingCollectionsSaveRef.current = { payload, serialized };
-    flushCollectionsSave();
-  }, [flushCollectionsSave]);
+    collectionsSaveQueue.enqueue({ payload, serialized });
+  }, [collectionsSaveQueue]);
 
   const queueCollectionsSaveIfChanged = useCallback((payload: VaultCollectionsSavePayload) => {
     if (!vaultControls || !isVaultReady || !isVaultHydrated) {
@@ -1238,20 +1138,19 @@ function App() {
 
     const serializedPayload = JSON.stringify(payload);
 
-    if (serializedPayload === lastPersistedCollectionsRef.current) {
+    if (
+      serializedPayload === lastPersistedCollectionsRef.current
+      && !collectionsSaveQueue.hasWork()
+    ) {
       return;
     }
 
     scheduleCollectionsSave(payload, serializedPayload);
-  }, [isVaultHydrated, isVaultReady, scheduleCollectionsSave, vaultControls]);
+  }, [collectionsSaveQueue, isVaultHydrated, isVaultReady, scheduleCollectionsSave, vaultControls]);
 
   const persistCurrentCollections = useCallback(async () => {
     if (!vaultControls || !isVaultReady || !isVaultHydrated) {
       return;
-    }
-
-    if (collectionsSavePromiseRef.current) {
-      await collectionsSavePromiseRef.current;
     }
 
     const payload: VaultCollectionsSavePayload = {
@@ -1262,33 +1161,15 @@ function App() {
     };
     const serializedPayload = JSON.stringify(payload);
 
-    if (serializedPayload === lastPersistedCollectionsRef.current) {
+    if (
+      serializedPayload === lastPersistedCollectionsRef.current
+      && !collectionsSaveQueue.hasWork()
+    ) {
       return;
     }
 
-    pendingCollectionsSaveRef.current = null;
-    collectionsSaveInFlightRef.current = true;
-    collectionsSaveInFlightSerializedRef.current = serializedPayload;
-
-    const savePromise = vaultControls.saveCollections(payload).then((snapshot) => {
-      lastPersistedCollectionsRef.current = serializedPayload;
-      setStorageInfo(snapshot.storage);
-      setBookmarkCount(snapshot.browserBookmarks.reduce((total: number, collection: ShellDeskBrowserBookmarkCollection) => total + collection.bookmarks.length, 0));
-    }).finally(() => {
-      collectionsSaveInFlightRef.current = false;
-      collectionsSaveInFlightSerializedRef.current = '';
-      if (collectionsSavePromiseRef.current === savePromise) {
-        collectionsSavePromiseRef.current = null;
-      }
-
-      if (pendingCollectionsSaveRef.current) {
-        flushCollectionsSave();
-      }
-    });
-
-    collectionsSavePromiseRef.current = savePromise;
-    await savePromise;
-  }, [flushCollectionsSave, isVaultHydrated, isVaultReady, vaultControls]);
+    await collectionsSaveQueue.drain({ payload, serialized: serializedPayload });
+  }, [collectionsSaveQueue, isVaultHydrated, isVaultReady, vaultControls]);
 
   const commitCollectionsState = useCallback((
     nextHosts: Host[],
@@ -1299,6 +1180,9 @@ function App() {
   ) => {
     const orderedHosts = sortHostsByListOrder(sanitizeHostJumpHostReferences(nextHosts));
 
+    // Invalidate any vault snapshot requested before this local mutation, even if its save
+    // finishes and the single-flight queue becomes idle before the snapshot response arrives.
+    collectionsRevisionRef.current += 1;
     hostsRef.current = orderedHosts;
     sshKeysRef.current = nextSshKeys;
     proxyProfilesRef.current = nextProxyProfiles;
@@ -1358,7 +1242,11 @@ function App() {
     }
 
     try {
+      const request = beginCollectionsSnapshotRequest();
       const snapshot = await vaultControls.getSnapshot();
+      if (!isCurrentCollectionsSnapshotRequest(request)) {
+        return;
+      }
       applyVaultSnapshot(snapshot);
       setStatusMessage(t('app.status.hostsRefreshed', appLanguage, { count: String(snapshot.hosts.length) }));
     } catch (error) {
@@ -1425,6 +1313,10 @@ function App() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    vaultControlsRef.current = vaultControls;
+  }, [vaultControls]);
 
   useEffect(() => {
     if (!isAgentWorkspace || !vaultControls?.getPublicSnapshot) {
@@ -1516,6 +1408,7 @@ function App() {
     let disposed = false;
 
     const loadSnapshot = async () => {
+      const hydrationRevision = collectionsRevisionRef.current;
       let renderedPublicSnapshot = Boolean(initialPublicSnapshotRef.current);
       const persistedLayoutShadow = await readPersistedRemoteDesktopLayoutShadow();
 
@@ -1525,11 +1418,18 @@ function App() {
 
       if (!renderedPublicSnapshot) {
         try {
+          const publicSnapshotRequest = beginCollectionsSnapshotRequest();
           const publicSnapshot = typeof vaultControls.getPublicSnapshot === 'function'
             ? await vaultControls.getPublicSnapshot()
             : null;
 
-          if (!disposed && publicSnapshot) {
+          if (
+            !disposed
+            && publicSnapshot
+            && collectionsSnapshotRequestGate.isCurrent(publicSnapshotRequest.requestId)
+            && hydrationRevision === collectionsRevisionRef.current
+            && !collectionsSaveQueue.hasWork()
+          ) {
             renderedPublicSnapshot = true;
             applyVaultSnapshot(publicSnapshot, { hydrated: false });
           }
@@ -1539,10 +1439,35 @@ function App() {
       }
 
       try {
+        const fullSnapshotRequest = beginCollectionsSnapshotRequest();
         const snapshot = await vaultControls.getSnapshot();
 
-        if (!disposed) {
+        if (
+          !disposed
+          && collectionsSnapshotRequestGate.isCurrent(fullSnapshotRequest.requestId)
+          && hydrationRevision === collectionsRevisionRef.current
+          && !collectionsSaveQueue.hasWork()
+        ) {
           applyVaultSnapshot(snapshot);
+        } else if (
+          !disposed
+          && collectionsSnapshotRequestGate.isCurrent(fullSnapshotRequest.requestId)
+        ) {
+          const payload: VaultCollectionsSavePayload = {
+            hosts: hostsRef.current,
+            sshKeys: sshKeysRef.current,
+            proxyProfiles: proxyProfilesRef.current,
+            settings: settingsRef.current,
+          };
+          const serialized = JSON.stringify(payload);
+          setStorageInfo(snapshot.storage);
+          setBookmarkCount(snapshot.browserBookmarks.reduce(
+            (total, collection) => total + collection.bookmarks.length,
+            0,
+          ));
+          setIsVaultReady(true);
+          setIsVaultHydrated(true);
+          collectionsSaveQueue.enqueue({ payload, serialized });
         }
       } catch (error) {
         if (!disposed) {
@@ -1562,7 +1487,13 @@ function App() {
     return () => {
       disposed = true;
     };
-  }, [isConnectionWindow, vaultControls]);
+  }, [
+    beginCollectionsSnapshotRequest,
+    collectionsSaveQueue,
+    collectionsSnapshotRequestGate,
+    isConnectionWindow,
+    vaultControls,
+  ]);
 
   useEffect(() => {
     if (isConnectionWindow) {
@@ -1849,89 +1780,6 @@ function App() {
   }, [statusMessage]);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const prefersLight = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches;
-    const effectiveTheme = settings.theme === 'system' ? (prefersLight ? 'light' : 'dark') : settings.theme;
-    const isLightTheme = effectiveTheme === 'light';
-    const accentColor = isLightTheme ? getLightThemeAccentColor(settings.accentColor) : settings.accentColor;
-    const accentContrast = getReadableTextColor(accentColor);
-
-    root.style.setProperty('--accent', accentColor);
-    root.style.setProperty('--accent-strong', accentColor);
-    root.style.setProperty('--accent-contrast', accentContrast);
-    root.style.setProperty('--bg', isLightTheme ? '#eef2f5' : '#080e16');
-    root.style.setProperty('--chrome', isLightTheme ? '#f8fafb' : '#1b222b');
-    root.style.setProperty('--sidebar', isLightTheme ? '#f4f7f9' : '#171f29');
-    root.style.setProperty('--sidebar-active', isLightTheme ? '#e8eef2' : '#263441');
-    root.style.setProperty('--surface', isLightTheme ? '#ffffff' : '#111b28');
-    root.style.setProperty('--surface-soft', isLightTheme ? '#f3f6f8' : '#182433');
-    root.style.setProperty('--surface-strong', isLightTheme ? '#e3eaef' : '#1d2a39');
-    root.style.setProperty('--surface-elevated', isLightTheme ? '#f8fafb' : '#0f1823');
-    root.style.setProperty('--surface-input', isLightTheme ? '#f9fbfc' : '#1d2a39');
-    root.style.setProperty('--surface-control', isLightTheme ? '#ffffff' : '#141f2c');
-    root.style.setProperty('--surface-hover', isLightTheme ? '#ebf1f4' : 'rgba(137, 175, 204, 0.08)');
-    root.style.setProperty('--surface-icon', isLightTheme ? '#e8f0f4' : '#143149');
-    root.style.setProperty('--surface-panel', isLightTheme ? '#ffffff' : 'rgba(15, 24, 35, 0.98)');
-    root.style.setProperty('--surface-empty', isLightTheme ? 'rgba(33, 50, 66, 0.035)' : 'rgba(148, 163, 184, 0.04)');
-    root.style.setProperty('--surface-pill', isLightTheme ? '#e3eaef' : '#182433');
-    root.style.setProperty('--surface-success-soft', isLightTheme ? 'rgba(34, 160, 90, 0.08)' : 'rgba(119, 244, 197, 0.08)');
-    root.style.setProperty('--surface-success-border', isLightTheme ? 'rgba(34, 160, 90, 0.22)' : 'rgba(119, 244, 197, 0.22)');
-    root.style.setProperty('--text-success', isLightTheme ? '#1a8a55' : '#d8fff1');
-    root.style.setProperty('--toast-bg', isLightTheme ? 'rgba(248, 250, 251, 0.97)' : 'rgba(15, 24, 35, 0.96)');
-    root.style.setProperty('--toast-text', isLightTheme ? '#275f78' : '#d8f4ff');
-    root.style.setProperty('--text', isLightTheme ? '#23313d' : '#e8eef5');
-    root.style.setProperty('--muted', isLightTheme ? '#6b7986' : '#8d9aaa');
-    root.style.setProperty('--muted-strong', isLightTheme ? '#435361' : '#bcc6d1');
-    root.style.setProperty('--text-secondary', isLightTheme ? '#526270' : '#a8b3c0');
-    root.style.setProperty('--text-muted', isLightTheme ? '#75828e' : '#96a3b3');
-    root.style.setProperty('--border', isLightTheme ? 'rgba(45, 64, 80, 0.14)' : 'rgba(151, 166, 184, 0.15)');
-    root.style.setProperty('--border-strong', isLightTheme ? 'rgba(45, 64, 80, 0.22)' : 'rgba(151, 166, 184, 0.27)');
-    root.style.setProperty('--window-border', isLightTheme ? 'rgba(45, 64, 80, 0.12)' : 'rgba(151, 166, 184, 0.2)');
-    root.style.setProperty('--window-divider', isLightTheme ? 'rgba(45, 64, 80, 0.09)' : 'rgba(151, 166, 184, 0.13)');
-    root.style.setProperty('--chrome-hover', isLightTheme ? 'rgba(45, 64, 80, 0.07)' : 'rgba(151, 166, 184, 0.1)');
-    root.style.setProperty('--danger-hover-bg', isLightTheme ? 'rgba(200, 48, 78, 0.12)' : 'rgba(255, 111, 143, 0.18)');
-    root.style.setProperty('--danger-hover-text', isLightTheme ? '#d63a5e' : '#ffd8e1');
-    root.style.setProperty('--danger-soft', isLightTheme ? 'rgba(200, 48, 78, 0.08)' : 'rgba(255, 111, 143, 0.12)');
-    root.style.setProperty('--danger-border', isLightTheme ? 'rgba(200, 48, 78, 0.32)' : 'rgba(255, 111, 143, 0.42)');
-    root.style.setProperty('--danger-text-soft', isLightTheme ? '#c8304e' : '#ffd3dc');
-    root.style.setProperty('--focus-border', toRgba(accentColor, isLightTheme ? 0.42 : 0.46));
-    root.style.setProperty('--focus-ring', toRgba(accentColor, isLightTheme ? 0.11 : 0.12));
-    root.style.setProperty('--accent-soft', toRgba(accentColor, isLightTheme ? 0.09 : 0.16));
-    root.style.setProperty('--accent-border', toRgba(accentColor, isLightTheme ? 0.25 : 0.42));
-    root.style.setProperty('--accent-strong-border', toRgba(accentColor, isLightTheme ? 0.38 : 0.58));
-    root.style.setProperty('--shadow', isLightTheme ? 'rgba(33, 50, 66, 0.09)' : 'rgba(0, 0, 0, 0.34)');
-    root.style.setProperty('--shadow-soft', isLightTheme ? '0 1px 2px rgba(33, 50, 66, 0.05), 0 5px 16px rgba(33, 50, 66, 0.035)' : '0 10px 28px rgba(0, 0, 0, 0.18)');
-    root.style.setProperty('--shadow-float', isLightTheme ? '0 12px 28px rgba(33, 50, 66, 0.1)' : '0 16px 38px rgba(0, 0, 0, 0.28)');
-    root.style.setProperty('--shadow-panel', isLightTheme ? '0 20px 52px rgba(33, 50, 66, 0.13)' : '0 24px 64px rgba(0, 0, 0, 0.38)');
-    root.style.setProperty('--shadow-panel-strong', isLightTheme ? '0 24px 64px rgba(33, 50, 66, 0.16)' : '0 28px 76px rgba(0, 0, 0, 0.44)');
-    root.style.setProperty('--toggle-off', isLightTheme ? '#dce5eb' : '#263342');
-    root.style.colorScheme = isLightTheme ? 'light' : 'dark';
-    root.setAttribute('data-theme', effectiveTheme);
-    try {
-      window.localStorage.setItem(themePreloadStorageKey, settings.theme);
-    } catch {
-      // Ignore localStorage write failures in restricted environments.
-    }
-    const interfaceFontFamily = buildFontStack(settings.interfaceFont, [
-      'Microsoft YaHei UI',
-      'Microsoft YaHei',
-      'PingFang SC',
-      'Hiragino Sans GB',
-      'Noto Sans CJK SC',
-      'Source Han Sans SC',
-      'Segoe UI Variable',
-      'Segoe UI',
-      'ui-sans-serif',
-      'system-ui',
-      '-apple-system',
-      'BlinkMacSystemFont',
-      'sans-serif',
-    ]);
-    root.style.setProperty('--interface-font-family', interfaceFontFamily);
-    document.body.style.fontFamily = interfaceFontFamily;
-  }, [settings]);
-
-  useEffect(() => {
     if (!windowControls) {
       return;
     }
@@ -2054,14 +1902,18 @@ function App() {
       }
 
       if (payload.kind === 'hostKeyTrust' || payload.kind === 'sync') {
+        const request = beginCollectionsSnapshotRequest();
         void vaultControls.getSnapshot().then((snapshot) => {
+          if (!isCurrentCollectionsSnapshotRequest(request)) {
+            return;
+          }
+
           knownHostsRef.current = snapshot.knownHosts;
           setKnownHosts(snapshot.knownHosts);
 
           if (
             payload.kind === 'sync'
-            && !collectionsSaveInFlightRef.current
-            && !pendingCollectionsSaveRef.current
+            && !collectionsSaveQueue.hasWork()
           ) {
             applyVaultSnapshot(snapshot);
           }
@@ -2073,15 +1925,26 @@ function App() {
         return;
       }
 
-      if (collectionsSaveInFlightRef.current || pendingCollectionsSaveRef.current) {
+      if (collectionsSaveQueue.hasWork()) {
         return;
       }
 
+      const request = beginCollectionsSnapshotRequest();
       void vaultControls.getSnapshot().then((snapshot) => {
+        if (!isCurrentCollectionsSnapshotRequest(request)) {
+          return;
+        }
+
         applyVaultSnapshot(snapshot, { updateCollections: isConnectionWindow || payload.kind === 'vault' });
       }).catch(() => undefined);
     });
-  }, [isConnectionWindow, vaultControls]);
+  }, [
+    beginCollectionsSnapshotRequest,
+    collectionsSaveQueue,
+    isConnectionWindow,
+    isCurrentCollectionsSnapshotRequest,
+    vaultControls,
+  ]);
 
   useEffect(() => {
     if (!window.guiSSH?.events.onHostKeyTrusted) {
@@ -2992,6 +2855,22 @@ function App() {
       const hasDetectedSystem = detectedSystemType !== 'unknown' || Boolean(detectedSystemName);
       const connectionFinishedAt = new Date().toISOString();
 
+      let refreshedKnownHosts: ShellDeskKnownHost[] | null = null;
+
+      if (vaultControls?.getSnapshot) {
+        try {
+          const request = beginCollectionsSnapshotRequest();
+          const snapshot = await vaultControls.getSnapshot();
+          if (isCurrentCollectionsSnapshotRequest(request)) {
+            refreshedKnownHosts = snapshot.knownHosts;
+            setStorageInfo(snapshot.storage);
+            setBookmarkCount(snapshot.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0));
+          }
+        } catch (snapshotError) {
+          console.warn('[shelldesk] failed to refresh known hosts after connection:', snapshotError);
+        }
+      }
+
       const nextHosts = hostsRef.current.map((currentHost): Host =>
         currentHost.id === host.id
           ? {
@@ -3020,27 +2899,14 @@ function App() {
             }
           : currentHost,
       );
-      let nextSshKeys = sshKeysRef.current;
-      let nextKnownHosts = knownHostsRef.current;
-
-      if (credentials?.saveCredential && effectiveAuthMethod === 'key' && selectedKey) {
-        nextSshKeys = sshKeysRef.current.map((key) => (
-          key.id === selectedKey.id
-            ? { ...key, passphrase: credentials.passphrase, updatedAt: connectionFinishedAt }
-            : key
-        ));
-      }
-
-      if (vaultControls?.getSnapshot) {
-        try {
-          const snapshot = await vaultControls.getSnapshot();
-          nextKnownHosts = snapshot.knownHosts;
-          setStorageInfo(snapshot.storage);
-          setBookmarkCount(snapshot.browserBookmarks.reduce((total, collection) => total + collection.bookmarks.length, 0));
-        } catch (snapshotError) {
-          console.warn('[shelldesk] failed to refresh known hosts after connection:', snapshotError);
-        }
-      }
+      const nextSshKeys = credentials?.saveCredential && effectiveAuthMethod === 'key' && selectedKey
+        ? sshKeysRef.current.map((key) => (
+            key.id === selectedKey.id
+              ? { ...key, passphrase: credentials.passphrase, updatedAt: connectionFinishedAt }
+              : key
+          ))
+        : sshKeysRef.current;
+      const nextKnownHosts = refreshedKnownHosts ?? knownHostsRef.current;
 
       commitCollectionsState(nextHosts, nextSshKeys, settingsRef.current, proxyProfilesRef.current, nextKnownHosts);
       void collectHostInfoAfterConnection(host, nextConnection, detectedSystemType, detectedSystemName);

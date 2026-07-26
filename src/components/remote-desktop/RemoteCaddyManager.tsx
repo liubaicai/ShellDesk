@@ -6,6 +6,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import { useSudoCommand } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { parseCaddyConfig, parseCaddyTestOutput } from './caddyParser';
 import {
   createCaddyBackupCommand,
@@ -91,6 +92,7 @@ async function pMap<T, R>(items: T[], concurrency: number, mapper: (item: T) => 
 }
 
 function RemoteCaddyManager({ connectionId, systemType }: RemoteCaddyManagerProps) {
+  const editorTheme = useShellDeskEditorTheme();
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const [installation, setInstallation] = useState<CaddyInstallation | null>(null);
@@ -143,8 +145,6 @@ function RemoteCaddyManager({ connectionId, systemType }: RemoteCaddyManagerProp
 
   const globalConfig = configFiles[0] ?? null;
   const modalOpen = Boolean(pendingAction || selectedTemplate);
-  const editorTheme = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-
   const refresh = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;

@@ -1,0 +1,479 @@
+@use "sass:list";
+
+@mixin frp-manager(
+  $namespace,
+  $config-overflow,
+  $include-config-select,
+  $action-cell-requires-button
+) {
+  .#{$namespace}-manager {
+    --#{$namespace}-bg: #0f1118;
+    --#{$namespace}-panel: rgba(24, 27, 38, 0.92);
+    --#{$namespace}-border: rgba(154, 174, 206, 0.18);
+    --#{$namespace}-text: #eef4ff;
+    --#{$namespace}-muted: #9daabe;
+    --#{$namespace}-accent: #6ec6a6;
+    --#{$namespace}-blue: #7bb7ff;
+    --#{$namespace}-danger: #ff8fa3;
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(16, 20, 30, 0.98), rgba(9, 12, 18, 0.98)), var(--#{$namespace}-bg);
+    color: var(--#{$namespace}-text);
+  }
+
+  .#{$namespace}-toolbar,
+  .#{$namespace}-tabs,
+  .#{$namespace}-panel-head,
+  .#{$namespace}-preview-head,
+  .#{$namespace}-modal-head,
+  .#{$namespace}-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .#{$namespace}-toolbar {
+    min-height: 56px;
+    border-bottom: 1px solid var(--#{$namespace}-border);
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .#{$namespace}-status {
+    display: grid;
+    min-width: 210px;
+    gap: 2px;
+  }
+
+  .#{$namespace}-status span,
+  .#{$namespace}-section-head span,
+  .#{$namespace}-panel-head span {
+    color: var(--#{$namespace}-muted);
+    font-size: 11px;
+    font-weight: 740;
+  }
+
+  .#{$namespace}-status strong {
+    color: var(--#{$namespace}-blue);
+    font-size: 14px;
+    font-weight: 860;
+  }
+
+  .#{$namespace}-status.running strong {
+    color: var(--#{$namespace}-accent);
+  }
+
+  .#{$namespace}-status.missing strong {
+    color: #ffd27a;
+  }
+
+  .#{$namespace}-toolbar button,
+  .#{$namespace}-preview-head button,
+  .#{$namespace}-tabs button,
+  .#{$namespace}-panel-head button,
+  .#{$namespace}-proxies-table button,
+  .#{$namespace}-settings button,
+  .#{$namespace}-install-panel button,
+  .#{$namespace}-modal button {
+    height: 30px;
+    border: 1px solid var(--#{$namespace}-border);
+    border-radius: 6px;
+    padding: 0 11px;
+    background: rgba(255, 255, 255, 0.045);
+    color: #dce7f8;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 800;
+  }
+
+  .#{$namespace}-toolbar button:hover:not(:disabled),
+  .#{$namespace}-preview-head button:hover:not(:disabled),
+  .#{$namespace}-tabs button:hover:not(:disabled),
+  .#{$namespace}-tabs button.active,
+  .#{$namespace}-panel-head button:hover:not(:disabled),
+  .#{$namespace}-settings button:hover:not(:disabled),
+  .#{$namespace}-modal button:hover:not(:disabled) {
+    border-color: rgba(110, 198, 166, 0.34);
+    background: rgba(110, 198, 166, 0.12);
+    color: var(--#{$namespace}-text);
+  }
+
+  .#{$namespace}-toolbar button.primary,
+  .#{$namespace}-panel-head button.primary,
+  .#{$namespace}-install-panel button.primary,
+  .#{$namespace}-modal button.primary {
+    border-color: rgba(110, 198, 166, 0.38);
+    background: rgba(110, 198, 166, 0.16);
+    color: #e7fff5;
+  }
+
+  .#{$namespace}-proxies-table button.danger {
+    border-color: rgba(255, 143, 163, 0.28);
+    background: rgba(255, 143, 163, 0.12);
+    color: var(--#{$namespace}-danger);
+  }
+
+  .#{$namespace}-toolbar button:disabled,
+  .#{$namespace}-panel-head button:disabled,
+  .#{$namespace}-settings button:disabled,
+  .#{$namespace}-install-panel button:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+  }
+
+  .#{$namespace}-alert {
+    margin: 8px 10px 0;
+    border: 1px solid;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 720;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .#{$namespace}-alert.danger {
+    border-color: rgba(255, 143, 163, 0.24);
+    background: rgba(255, 143, 163, 0.12);
+    color: var(--#{$namespace}-danger);
+  }
+
+  .#{$namespace}-alert.info {
+    border-color: rgba(123, 183, 255, 0.24);
+    background: rgba(123, 183, 255, 0.1);
+    color: var(--#{$namespace}-blue);
+  }
+
+  .#{$namespace}-install-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 10px 0;
+    border: 1px solid rgba(255, 210, 122, 0.28);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background:
+      linear-gradient(90deg, rgba(255, 210, 122, 0.14), rgba(110, 198, 166, 0.06)),
+      rgba(20, 22, 30, 0.92);
+    color: #ffe3aa;
+    box-shadow: inset 3px 0 0 rgba(255, 210, 122, 0.72);
+  }
+
+  .#{$namespace}-install-panel::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #ffd27a;
+    box-shadow: 0 0 0 4px rgba(255, 210, 122, 0.12);
+  }
+
+  .#{$namespace}-install-panel strong {
+    flex: 0 0 auto;
+    color: #fff3cf;
+    font-size: 13px;
+    font-weight: 860;
+  }
+
+  .#{$namespace}-install-panel span {
+    flex: 1 1 auto;
+    color: #e8d4a6;
+    font-size: 12px;
+  }
+
+  .#{$namespace}-layout {
+    display: grid;
+    min-height: 0;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    gap: 10px;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .#{$namespace}-config,
+  .#{$namespace}-panel,
+  .#{$namespace}-settings {
+    min-width: 0;
+    border: 1px solid var(--#{$namespace}-border);
+    border-radius: 8px;
+    background: var(--#{$namespace}-panel);
+  }
+
+  .#{$namespace}-config,
+  .#{$namespace}-settings {
+    min-height: 0;
+  }
+
+  .#{$namespace}-config {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: $config-overflow;
+    padding: 12px;
+  }
+
+  .#{$namespace}-section-head,
+  .#{$namespace}-preview-head,
+  .#{$namespace}-panel-head {
+    justify-content: space-between;
+  }
+
+  .#{$namespace}-section-head strong,
+  .#{$namespace}-preview-head strong,
+  .#{$namespace}-panel-head strong,
+  .#{$namespace}-modal-head strong {
+    font-size: 13px;
+    font-weight: 860;
+  }
+
+  .#{$namespace}-config label,
+  .#{$namespace}-settings label,
+  .#{$namespace}-modal label {
+    display: grid;
+    gap: 5px;
+    color: var(--#{$namespace}-muted);
+    font-size: 11px;
+    font-weight: 760;
+  }
+
+  $control-selectors: ".#{$namespace}-config input";
+  @if $include-config-select {
+    $control-selectors: list.append($control-selectors, ".#{$namespace}-config select", comma);
+  }
+  $control-selectors: list.append($control-selectors, ".#{$namespace}-settings input", comma);
+  $control-selectors: list.append($control-selectors, ".#{$namespace}-settings select", comma);
+  $control-selectors: list.append($control-selectors, ".#{$namespace}-modal input", comma);
+  $control-selectors: list.append($control-selectors, ".#{$namespace}-modal select", comma);
+  $control-selectors: list.append($control-selectors, ".#{$namespace}-modal textarea", comma);
+
+  #{$control-selectors} {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--#{$namespace}-border);
+    border-radius: 6px;
+    padding: 7px 9px;
+    background: rgba(5, 7, 12, 0.5);
+    color: var(--#{$namespace}-text);
+    font: inherit;
+    font-size: 12px;
+  }
+
+  .#{$namespace}-config-preview {
+    min-height: 220px;
+    flex: 0 0 260px;
+    overflow: auto;
+  }
+
+  .#{$namespace}-log-viewer {
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .#{$namespace}-config-preview,
+  .#{$namespace}-log-viewer {
+    border: 1px solid var(--#{$namespace}-border);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(5, 7, 12, 0.58);
+    color: #dce8f8;
+    font: 12px/1.5 "SFMono-Regular", Consolas, monospace;
+    resize: none;
+  }
+
+  .#{$namespace}-main,
+  .#{$namespace}-panel {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .#{$namespace}-tabs {
+    flex: 0 0 auto;
+    margin-bottom: 10px;
+  }
+
+  .#{$namespace}-panel {
+    flex: 1 1 auto;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .#{$namespace}-table-wrap {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: auto;
+    margin-top: 10px;
+  }
+
+  .#{$namespace}-proxies-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .#{$namespace}-proxies-table th,
+  .#{$namespace}-proxies-table td {
+    border-bottom: 1px solid rgba(154, 174, 206, 0.12);
+    padding: 9px 8px;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .#{$namespace}-proxies-table th {
+    color: var(--#{$namespace}-muted);
+    font-size: 11px;
+    font-weight: 820;
+  }
+
+  .#{$namespace}-proxies-table td {
+    color: #edf4ff;
+  }
+
+  $action-cell-selector: ".#{$namespace}-proxies-table td:last-child";
+  @if $action-cell-requires-button {
+    $action-cell-selector: "#{$action-cell-selector}:has(button)";
+  }
+
+  #{$action-cell-selector} {
+    display: flex;
+    gap: 6px;
+  }
+
+  .#{$namespace}-empty {
+    color: var(--#{$namespace}-muted) !important;
+    text-align: center !important;
+  }
+
+  .#{$namespace}-proxy-status {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: rgba(157, 170, 190, 0.14);
+    color: var(--#{$namespace}-muted);
+    font-size: 11px;
+    font-weight: 820;
+  }
+
+  .#{$namespace}-proxy-status.active {
+    background: rgba(110, 198, 166, 0.14);
+    color: var(--#{$namespace}-accent);
+  }
+
+  .#{$namespace}-proxy-status.error {
+    background: rgba(255, 143, 163, 0.12);
+    color: var(--#{$namespace}-danger);
+  }
+
+  .#{$namespace}-proxy-status.inactive {
+    background: rgba(255, 210, 122, 0.1);
+    color: #ffd27a;
+  }
+
+  .#{$namespace}-log-viewer {
+    overflow: auto;
+    margin: 10px 0 0;
+    white-space: pre-wrap;
+  }
+
+  .#{$namespace}-settings {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+
+  .#{$namespace}-checkbox {
+    display: flex !important;
+    grid-template-columns: none !important;
+    align-items: center;
+    gap: 8px !important;
+  }
+
+  .#{$namespace}-checkbox input {
+    width: auto;
+  }
+
+  .#{$namespace}-modal-backdrop {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.54);
+  }
+
+  .#{$namespace}-modal {
+    display: grid;
+    width: min(520px, calc(100vw - 28px));
+    max-height: calc(100vh - 48px);
+    gap: 12px;
+    overflow: auto;
+    border: 1px solid var(--#{$namespace}-border);
+    border-radius: 10px;
+    padding: 14px;
+    background: #171b25;
+    color: var(--#{$namespace}-text);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+  }
+
+  .#{$namespace}-modal textarea {
+    min-height: 72px;
+    resize: vertical;
+  }
+
+  .#{$namespace}-modal-head,
+  .#{$namespace}-modal-actions {
+    justify-content: space-between;
+  }
+
+  @media (max-width: 860px) {
+    .#{$namespace}-toolbar {
+      flex-wrap: wrap;
+    }
+
+    .#{$namespace}-layout {
+      grid-template-columns: 1fr;
+      overflow: auto;
+    }
+
+    .#{$namespace}-config,
+    .#{$namespace}-panel {
+      min-height: 360px;
+    }
+  }
+
+  [data-theme="light"] .#{$namespace}-manager {
+    --#{$namespace}-bg: #f3f7fb;
+    --#{$namespace}-panel: rgba(255, 255, 255, 0.94);
+    --#{$namespace}-border: rgba(53, 77, 112, 0.18);
+    --#{$namespace}-text: #1d2838;
+    --#{$namespace}-muted: #627188;
+    --#{$namespace}-accent: #208b71;
+    --#{$namespace}-blue: #2169b6;
+    --#{$namespace}-danger: #be3f5b;
+    background: linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(234, 240, 248, 0.98)), var(--#{$namespace}-bg);
+  }
+
+  [data-theme="light"] .#{$namespace}-install-panel {
+    border-color: rgba(177, 118, 24, 0.28);
+    background:
+      linear-gradient(90deg, rgba(255, 218, 145, 0.42), rgba(221, 248, 239, 0.44)),
+      rgba(255, 255, 255, 0.92);
+    color: #6f4d14;
+    box-shadow: inset 3px 0 0 rgba(204, 132, 25, 0.68);
+  }
+
+  [data-theme="light"] .#{$namespace}-install-panel strong {
+    color: #68450f;
+  }
+
+  [data-theme="light"] .#{$namespace}-install-panel span {
+    color: #725d36;
+  }
+}

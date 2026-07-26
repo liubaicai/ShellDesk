@@ -4,9 +4,11 @@ export interface ParsedDatabaseImport {
   preview: Record<string, string>[];
 }
 
+export type DatabaseImportMode = 'csv' | 'json';
+
 export interface DatabaseImportState {
   open: boolean;
-  mode: 'csv' | 'json';
+  mode: DatabaseImportMode;
   targetTable: string;
   csvText: string;
   jsonText: string;
@@ -15,6 +17,63 @@ export interface DatabaseImportState {
   executing: boolean;
   progress: { current: number; total: number } | null;
   error: string;
+}
+
+export function createDatabaseImportState(): DatabaseImportState {
+  return {
+    open: false,
+    mode: 'csv',
+    targetTable: '',
+    csvText: '',
+    jsonText: '',
+    preview: [],
+    columns: [],
+    executing: false,
+    progress: null,
+    error: '',
+  };
+}
+
+export function updateDatabaseImportTextState(
+  state: DatabaseImportState,
+  mode: DatabaseImportMode,
+  text: string,
+): DatabaseImportState {
+  return {
+    ...state,
+    mode,
+    csvText: mode === 'csv' ? text : state.csvText,
+    jsonText: mode === 'json' ? text : state.jsonText,
+    progress: null,
+    error: '',
+  };
+}
+
+export function updateDatabaseImportModeState(
+  state: DatabaseImportState,
+  mode: DatabaseImportMode,
+): DatabaseImportState {
+  return {
+    ...state,
+    mode,
+    progress: null,
+    error: '',
+  };
+}
+
+export function updateDatabaseImportPreviewState(
+  state: DatabaseImportState,
+  parsed: ParsedDatabaseImport | null,
+): DatabaseImportState {
+  return {
+    ...state,
+    preview: parsed?.preview ?? [],
+    columns: parsed?.columns ?? [],
+  };
+}
+
+export function getDatabaseImportModeForFileName(fileName: string): DatabaseImportMode {
+  return fileName.toLowerCase().endsWith('.json') ? 'json' : 'csv';
 }
 
 interface DatabaseImportJsonErrors {
@@ -28,10 +87,21 @@ function normalizeImportPreviewValue(value: unknown): string {
   return String(value);
 }
 
+export function readDatabaseImportValue(
+  row: Record<string, unknown>,
+  column: string,
+): unknown {
+  return Object.hasOwn(row, column) ? row[column] : undefined;
+}
+
 function createImportPreview(columns: string[], rows: Record<string, unknown>[]) {
-  return rows.slice(0, 5).map((row) => (
-    Object.fromEntries(columns.map((column) => [column, normalizeImportPreviewValue(row[column])]))
-  ));
+  return rows.slice(0, 5).map((row) => {
+    const previewRow = Object.create(null) as Record<string, string>;
+    for (const column of columns) {
+      previewRow[column] = normalizeImportPreviewValue(readDatabaseImportValue(row, column));
+    }
+    return previewRow;
+  });
 }
 
 function parseCsvRows(text: string, unclosedQuoteError: string): string[][] {
@@ -92,15 +162,24 @@ function parseCsvRows(text: string, unclosedQuoteError: string): string[][] {
 
 export function parseDatabaseImportCsv(text: string, unclosedQuoteError: string): ParsedDatabaseImport {
   const parsedRows = parseCsvRows(text.trim(), unclosedQuoteError);
-  const columns = parsedRows[0]?.map((column) => column.trim()).filter(Boolean) ?? [];
+  const seenColumns = new Set<string>();
+  const columnDescriptors = (parsedRows[0] ?? []).flatMap((rawColumn, sourceIndex) => {
+    const column = rawColumn.trim();
+    if (!column || seenColumns.has(column)) {
+      return [];
+    }
+    seenColumns.add(column);
+    return [{ column, sourceIndex }];
+  });
+  const columns = columnDescriptors.map(({ column }) => column);
   if (columns.length === 0 || parsedRows.length <= 1) {
     return { columns, rows: [], preview: [] };
   }
 
   const rows = parsedRows.slice(1).map((row) => {
-    const entry: Record<string, unknown> = {};
-    columns.forEach((column, index) => {
-      entry[column] = row[index] ?? '';
+    const entry = Object.create(null) as Record<string, unknown>;
+    columnDescriptors.forEach(({ column, sourceIndex }) => {
+      entry[column] = row[sourceIndex] ?? '';
     });
     return entry;
   });

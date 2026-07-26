@@ -226,7 +226,7 @@
 }
 
 [data-theme="light"] .danger-text {
-  color: #c8304e !important;
+  color: var(--danger) !important;
 }
 
 [data-theme="light"] .danger-text:hover {

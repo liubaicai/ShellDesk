@@ -1,9 +1,9 @@
 import { getShellDeskLocale } from './desktopUtils';
 import {
-  type DatabaseImportState,
   parseDatabaseImportCsv,
   parseDatabaseImportJson,
-} from './databaseImportUtils';
+  readDatabaseImportValue,
+} from './database-import/databaseImportUtils';
 import { createId, quoteIdentifier } from './databaseUtils';
 import { tCurrent } from '../../i18n';
 
@@ -140,8 +140,6 @@ export interface ChCreateTableState {
   original?: ChCreateTableState;
 }
 
-export type ImportDataState = DatabaseImportState;
-
 export const defaultHttpPort = 8123;
 export const defaultHttpsPort = 8443;
 export const pageSize = 100;
@@ -229,14 +227,6 @@ export function validateChCreateTableState(state: ChCreateTableState): string | 
     seenColumnNames.add(normalizedColumnName);
   }
   return null;
-}
-
-export function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
 }
 
 export function createQueryTab(index: number, sql = 'SELECT version() AS version;'): ClickHouseQueryTab {
@@ -681,7 +671,9 @@ export function buildClickHouseInsertSql(database: string, table: string, column
   const tableIdentifier = quoteClickHouseQualifiedTable(database, table);
   const columnSql = columns.map((column) => quoteIdentifier(column, 'clickhouse')).join(', ');
   const valuesSql = rows
-    .map((row) => `(${columns.map((column) => quoteClickHouseImportValue(row[column])).join(', ')})`)
+    .map((row) => `(${columns.map((column) => (
+      quoteClickHouseImportValue(readDatabaseImportValue(row, column))
+    )).join(', ')})`)
     .join(', ');
   return `INSERT INTO ${tableIdentifier} (${columnSql}) FORMAT Values ${valuesSql};`;
 }

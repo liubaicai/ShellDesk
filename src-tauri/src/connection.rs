@@ -3,9 +3,11 @@ use crate::ssh_tunnel::spawn_tunnel_shutdown;
 use crate::vault::read_store;
 use crate::{
     error_string, https_url_origin, now, prevent_process_window, random_id, read_string_field,
-    read_u16_field, remote_fs, russh_client::run_exec_command, sanitize_file_name, string_arg,
-    terminal, unavailable_password_auth_error, whoami, ActiveConnection, AppState, ConnectionKind,
-    DesktopProxySession, PrivilegeConfig, SshProfile, UiWindowRef,
+    read_u16_field, remote_fs,
+    russh_client::{is_key_auth_method, run_exec_command},
+    sanitize_file_name, string_arg, terminal, unavailable_password_auth_error, whoami,
+    ActiveConnection, AppState, ConnectionKind, DesktopProxySession, PrivilegeConfig, SshProfile,
+    UiWindowRef,
 };
 use host_keys::prepare_ssh_host_key_trust;
 use serde_json::{json, Value};
@@ -160,14 +162,14 @@ fn build_ssh_profile(
     let port = read_u16_field(&host, "port", 22);
     let username = read_string_field(&host, "username", "");
     let auth_method = read_string_field(&host, "authMethod", "password");
-    let password = if auth_method == "key" {
+    let password = if is_key_auth_method(&auth_method) {
         read_string_field(&host, "passphrase", "")
     } else {
         read_string_field(&host, "password", "")
     };
     let key_id = read_string_field(&host, "keyId", "");
     let mut key_path = read_string_field(&host, "keyPath", "");
-    if auth_method == "key" && key_path.is_empty() && !key_id.is_empty() {
+    if is_key_auth_method(&auth_method) && key_path.is_empty() && !key_id.is_empty() {
         if let Some(key) = find_store_item_by_id(&store, "sshKeys", &key_id) {
             let private_key = read_string_field(&key, "privateKey", "");
             if !private_key.trim().is_empty() {
@@ -1150,25 +1152,66 @@ mod tests {
     }
 
     #[test]
-    fn key_auth_profile_uses_passphrase_as_ssh_secret() {
+    fn key_auth_profiles_use_passphrase_as_ssh_secret() {
         let state = AppState::new(
             std::env::temp_dir().join(format!("shelldesk-key-auth-profile-{}", std::process::id())),
         );
+        for auth_method in ["key", "privateKey"] {
+            let raw_host = json!({
+                "address": "example.com",
+                "port": 22,
+                "username": "administrator",
+                "authMethod": auth_method,
+                "password": "windows-account-password",
+                "passphrase": "key-passphrase",
+                "keyPath": "C:\\Users\\me\\.ssh\\id_rsa"
+            });
+
+            let profile = build_ssh_profile(&state, &raw_host, false, &mut Vec::new()).unwrap();
+
+            assert_eq!(profile.auth_method, auth_method);
+            assert_eq!(profile.password, "key-passphrase");
+            assert_eq!(profile.key_path, "C:\\Users\\me\\.ssh\\id_rsa");
+        }
+    }
+
+    #[test]
+    fn legacy_private_key_auth_materializes_key_id_from_vault() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "shelldesk-private-key-profile-{}",
+            random_id("test")
+        ));
+        let state = AppState::new(data_dir.clone());
+        let mut store = crate::vault::read_store(&state).unwrap();
+        store["sshKeys"] = json!([{
+            "id": "legacy-key",
+            "name": "Legacy key",
+            "privateKey": "test-private-key"
+        }]);
+        crate::vault::write_store(&state, &store).unwrap();
         let raw_host = json!({
             "address": "example.com",
             "port": 22,
-            "username": "administrator",
-            "authMethod": "key",
-            "password": "windows-account-password",
-            "passphrase": "key-passphrase",
-            "keyPath": "C:\\Users\\me\\.ssh\\id_rsa"
+            "username": "root",
+            "authMethod": "privateKey",
+            "keyId": "legacy-key",
+            "passphrase": "key-passphrase"
         });
+        let mut temporary_key_paths = Vec::new();
 
-        let profile = build_ssh_profile(&state, &raw_host, false, &mut Vec::new()).unwrap();
+        let profile =
+            build_ssh_profile(&state, &raw_host, false, &mut temporary_key_paths).unwrap();
 
-        assert_eq!(profile.auth_method, "key");
+        assert_eq!(profile.auth_method, "privateKey");
         assert_eq!(profile.password, "key-passphrase");
-        assert_eq!(profile.key_path, "C:\\Users\\me\\.ssh\\id_rsa");
+        assert_eq!(temporary_key_paths, vec![PathBuf::from(&profile.key_path)]);
+        assert_eq!(
+            fs::read_to_string(&profile.key_path).unwrap(),
+            "test-private-key"
+        );
+
+        cleanup_temporary_key_paths_immediate(temporary_key_paths);
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[test]

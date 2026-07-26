@@ -36,6 +36,7 @@ const buildWrapper = readText('scripts/run-tauri-build.cjs');
 const updaterSource = readText('src-tauri/src/updater.rs');
 const versionSyncScript = readText('scripts/set-release-version.cjs');
 const tauriMainSource = readText('src-tauri/src/main.rs');
+const rustCoverageScript = readText('scripts/check-rust-coverage.cjs');
 
 assert.equal(packageJson.name, 'shelldesk');
 assert.equal(packageJson.productName, 'ShellDesk');
@@ -53,9 +54,12 @@ assertScript(packageJson, 'smoke:tauri-dev', 'node scripts/check-tauri-dev-start
 assertScript(packageJson, 'smoke:ssh-live', 'node scripts/check-live-ssh-smoke.cjs');
 assert.equal(
   packageJson.scripts['check:contracts'],
-  'node scripts/check-ipc-parity.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && pnpm check:source-health && node scripts/check-scss-cascade.cjs && node scripts/test-release-scripts.cjs',
+  'node scripts/check-ipc-parity.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && pnpm check:source-health && node scripts/check-style-ownership.cjs && node scripts/check-theme-token-contract.cjs && node scripts/check-scss-cascade.cjs && node scripts/test-release-scripts.cjs',
 );
 assertScript(packageJson, 'check:source-health', 'node scripts/check-source-health.cjs && tsc --noEmit --noUnusedLocals --noUnusedParameters');
+assertScript(packageJson, 'check:unit', 'tsc --noEmit -p tsconfig.unit.json && playwright test --config=playwright.unit.config.ts');
+assertScript(packageJson, 'check:ui', 'tsc --noEmit -p tsconfig.ui.json && playwright test');
+assertScript(packageJson, 'check:rust:coverage', 'node scripts/check-rust-coverage.cjs');
 assert.match(packageJson.scripts.test, /pnpm check:contracts/);
 
 for (const removedAlias of ['start', 'release:dir', 'pack:win']) {
@@ -144,6 +148,21 @@ assert.match(tauriMainSource, /windows_subsystem = "windows"/);
 assertFile('src/assets/images/icon.png');
 assertFile('scripts/check-tauri-dev-start.cjs');
 assertFile('scripts/check-live-ssh-smoke.cjs');
+assertFile('scripts/check-rust-coverage.cjs');
+assertFile('scripts/check-style-ownership.cjs');
+assertFile('scripts/check-theme-token-contract.cjs');
+
+for (const expected of [
+  "'--summary-only'",
+  '_tests[.]rs$',
+  '_test[.]rs$',
+  'test_helpers[.]rs$',
+]) {
+  assert.ok(rustCoverageScript.includes(expected), `Rust coverage gate must include ${expected}`);
+}
+assert.match(rustCoverageScript, /'--fail-under-functions',\s*'36'/);
+assert.match(rustCoverageScript, /'--fail-under-lines',\s*'39'/);
+assert.match(rustCoverageScript, /'--fail-under-regions',\s*'37'/);
 
 const updaterEndpoint = 'https://github.com/liubaicai/ShellDesk/releases/latest/download/latest.json';
 assert.match(buildWrapper, new RegExp(updaterEndpoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -175,6 +194,8 @@ for (const workflow of [testWorkflow, releaseWorkflow]) {
 assert.match(testWorkflow, /libwebkit2gtk-4\.1-dev/);
 assert.match(testWorkflow, /libayatana-appindicator3-dev/);
 assert.match(testWorkflow, /run: pnpm test/);
+assert.match(testWorkflow, /uses: taiki-e\/install-action@cargo-llvm-cov/);
+assert.match(testWorkflow, /run: pnpm check:rust:coverage/);
 
 for (const expected of [
   'pack_script: pack:mac',

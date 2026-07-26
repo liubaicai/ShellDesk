@@ -1,10 +1,10 @@
 import { MySQL, sql } from '@codemirror/lang-sql';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getErrorMessage } from './desktopUtils';
-import DatabaseImportDialog from './DatabaseImportDialog';
+import DatabaseImportDialog from './database-import/DatabaseImportDialog';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
 import {
@@ -20,6 +20,8 @@ import {
 } from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileBoolean, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { useDatabaseImportDraft } from './database-import/useDatabaseImportDraft';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 import {
   buildClickHouseInsertSql,
@@ -57,8 +59,6 @@ import {
   generateClickHouseCreateTableSql,
   getColumnBadge,
   getColumnMeta,
-  getShellDeskEditorTheme,
-  type ImportDataState,
   importEditorTarget,
   isProtectedClickHouseDatabase,
   maxHistoryItems,
@@ -133,7 +133,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
   const [sortState, setSortState] = useState<ClickHouseSortState | null>(null);
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
   const [contextMenu, setContextMenu] = useState<ClickHouseContextMenuState | null>(null);
   const [databaseDialog, setDatabaseDialog] = useState<ClickHouseDatabaseDialogState>({
     open: false,
@@ -144,17 +144,17 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     error: '',
   });
   const [createTableState, setCreateTableState] = useState<ChCreateTableState>(createChCreateTableState);
-  const [importDataState, setImportDataState] = useState<ImportDataState>({
-    open: false,
-    mode: 'csv',
-    targetTable: '',
-    csvText: '',
-    jsonText: '',
-    preview: [],
-    columns: [],
-    executing: false,
-    progress: null,
-    error: '',
+  const {
+    isReadingImportFile,
+    importDataState,
+    setImportDataState,
+    invalidateImportFileRead,
+    updateImportText,
+    handleImportFileSelected,
+    updateImportMode,
+  } = useDatabaseImportDraft({
+    parseCsv: parseImportCsv,
+    parseJson: parseImportJson,
   });
 
   const isReady = status === 'connected';
@@ -734,20 +734,6 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     selectedTable,
   ]);
 
-  const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
-    if (!text.trim()) {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-      return;
-    }
-
-    try {
-      const parsed = mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
-      setImportDataState((current) => ({ ...current, preview: parsed.preview, columns: parsed.columns }));
-    } catch {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-    }
-  }, []);
-
   const openImportDialog = useCallback(() => {
     const targetTable = selectedTable
       ? encodeImportTarget(selectedTable.database, selectedTable.name)
@@ -774,48 +760,9 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   }, [activeDb, activeResultTab, databases, dbTables, loadTables, selectedTable]);
 
   const closeImportDialog = useCallback(() => {
+    invalidateImportFileRead();
     setImportDataState((current) => current.executing ? current : { ...current, open: false, progress: null, error: '' });
-  }, []);
-
-  const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
-    setImportDataState((current) => ({
-      ...current,
-      mode,
-      csvText: mode === 'csv' ? text : current.csvText,
-      jsonText: mode === 'json' ? text : current.jsonText,
-      progress: null,
-      error: '',
-    }));
-    refreshImportPreview(mode, text);
-  }, [refreshImportPreview]);
-
-  const handleImportFileSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const mode: ImportDataState['mode'] = file.name.endsWith('.json') ? 'json' : 'csv';
-      setImportDataState((current) => ({
-        ...current,
-        mode,
-        csvText: mode === 'csv' ? text : current.csvText,
-        jsonText: mode === 'json' ? text : current.jsonText,
-        progress: null,
-        error: '',
-      }));
-      refreshImportPreview(mode, text);
-    };
-    reader.readAsText(file);
-
-    event.target.value = '';
-  }, [refreshImportPreview]);
-
-  const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
-    setImportDataState((current) => ({ ...current, mode, progress: null, error: '' }));
-    refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
-  }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
+  }, [invalidateImportFileRead]);
 
   const getImportTargetTable = useCallback(() => {
     if (importDataState.targetTable === importEditorTarget) {
@@ -828,7 +775,8 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
   }, [activeResultTab, importDataState.targetTable, selectedTable]);
 
   const handleExecuteImport = useCallback(async () => {
-    if (!api?.connections || !clickhouseId) return;
+    if (!api?.connections || !clickhouseId || isReadingImportFile) return;
+    invalidateImportFileRead();
 
     const target = getImportTargetTable();
     const text = importDataState.mode === 'csv' ? importDataState.csvText : importDataState.jsonText;
@@ -936,7 +884,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         error: tCurrent('auto.remoteClickHouse.importFailed', { error: textError }),
       }));
     }
-  }, [addHistoryItem, addResultTab, api, clickhouseId, connectionId, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode]);
+  }, [addHistoryItem, addResultTab, api, clickhouseId, connectionId, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, invalidateImportFileRead, isReadingImportFile]);
 
   const updateCreateTableColumn = useCallback(<Key extends keyof ChSchemaColumn,>(
     columnId: string,
@@ -1761,20 +1709,6 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [closeImportDialog, importDataState.executing, importDataState.open]);
 
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
   useContextMenu(contextMenu, setContextMenu);
 
   useEffect(() => {
@@ -2321,6 +2255,7 @@ function RemoteClickHouse({ connectionId, hostId }: RemoteClickHouseProps) {
         dialogId="clickhouse-import-title"
         editorTargetValue={importEditorTarget}
         fileInputRef={importFileInputRef}
+        isReadingFile={isReadingImportFile}
         labels={{
           cancel: tCurrent('auto.remoteClickHouse.cancel'),
           closeAlert: tCurrent('common.closeAlert'),

@@ -1,10 +1,10 @@
-import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { MySQL, sql } from '@codemirror/lang-sql';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 
-import DatabaseImportDialog from './DatabaseImportDialog';
+import DatabaseImportDialog from './database-import/DatabaseImportDialog';
 import { getErrorMessage } from './desktopUtils';
 import { createDatabaseEditorExtensions } from './databaseEditorExtensions';
 import { exportDatabaseRows, type DatabaseExportFormat } from './databaseExport';
@@ -22,6 +22,8 @@ import {
 } from './databaseUtils';
 import DismissibleAlert from './DismissibleAlert';
 import { loadRemoteConnectionProfile, readProfileString, saveRemoteConnectionProfile } from './remoteConnectionProfiles';
+import { useDatabaseImportDraft } from './database-import/useDatabaseImportDraft';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 import {
   buildMysqlInsertSql,
@@ -42,8 +44,6 @@ import {
   generateAlterTableStatements,
   generateCreateTableSql,
   getColumnMeta,
-  getShellDeskEditorTheme,
-  type ImportDataState,
   importEditorTarget,
   isProtectedMysqlDatabase,
   maxHistoryItems,
@@ -135,7 +135,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
   const [sortState, setSortState] = useState<MysqlSortState | null>(null);
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
   const [contextMenu, setContextMenu] = useState<MysqlContextMenuState | null>(null);
   const [createTableState, setCreateTableState] = useState<CreateTableState>({
     mode: 'create',
@@ -161,17 +161,18 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     executing: false,
     error: '',
   });
-  const [importDataState, setImportDataState] = useState<ImportDataState>({
-    open: false,
-    mode: 'csv',
-    targetTable: '',
-    csvText: '',
-    jsonText: '',
-    preview: [],
-    columns: [],
-    executing: false,
-    progress: null,
-    error: '',
+  const {
+    isReadingImportFile,
+    importDataState,
+    setImportDataState,
+    resetImportDataState,
+    invalidateImportFileRead,
+    updateImportText,
+    handleImportFileSelected,
+    updateImportMode,
+  } = useDatabaseImportDraft({
+    parseCsv: parseImportCsv,
+    parseJson: parseImportJson,
   });
 
   const isReady = status === 'connected';
@@ -315,19 +316,8 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       executing: false,
       error: '',
     });
-    setImportDataState({
-      open: false,
-      mode: 'csv',
-      targetTable: '',
-      csvText: '',
-      jsonText: '',
-      preview: [],
-      columns: [],
-      executing: false,
-      progress: null,
-      error: '',
-    });
-  }, []);
+    resetImportDataState();
+  }, [resetImportDataState]);
 
   const addHistoryItem = useCallback((item: Omit<MysqlHistoryItem, 'id' | 'createdAt'>) => {
     setHistory((prev) => [
@@ -1117,20 +1107,6 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
     openCreateTableDialog,
   ]);
 
-  const refreshImportPreview = useCallback((mode: ImportDataState['mode'], text: string) => {
-    if (!text.trim()) {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-      return;
-    }
-
-    try {
-      const parsed = mode === 'csv' ? parseImportCsv(text) : parseImportJson(text);
-      setImportDataState((current) => ({ ...current, preview: parsed.preview, columns: parsed.columns }));
-    } catch {
-      setImportDataState((current) => ({ ...current, preview: [], columns: [] }));
-    }
-  }, []);
-
   const openImportDialog = useCallback(() => {
     const database = activeDb || selectedTable?.database || activeResultTab?.table?.database || databases[0] || '';
     const table = selectedTable?.database === database
@@ -1155,48 +1131,9 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   }, [activeDb, activeResultTab, databases, dbTables, loadTables, selectedTable]);
 
   const closeImportDialog = useCallback(() => {
+    invalidateImportFileRead();
     setImportDataState((current) => ({ ...current, open: false, executing: false, progress: null, error: '' }));
-  }, []);
-
-  const updateImportText = useCallback((mode: ImportDataState['mode'], text: string) => {
-    setImportDataState((current) => ({
-      ...current,
-      mode,
-      csvText: mode === 'csv' ? text : current.csvText,
-      jsonText: mode === 'json' ? text : current.jsonText,
-      progress: null,
-      error: '',
-    }));
-    refreshImportPreview(mode, text);
-  }, [refreshImportPreview]);
-
-  const handleImportFileSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      const mode: ImportDataState['mode'] = file.name.endsWith('.json') ? 'json' : 'csv';
-      setImportDataState((current) => ({
-        ...current,
-        mode,
-        csvText: mode === 'csv' ? text : current.csvText,
-        jsonText: mode === 'json' ? text : current.jsonText,
-        progress: null,
-        error: '',
-      }));
-      refreshImportPreview(mode, text);
-    };
-    reader.readAsText(file);
-
-    event.target.value = '';
-  }, [refreshImportPreview]);
-
-  const updateImportMode = useCallback((mode: ImportDataState['mode']) => {
-    setImportDataState((current) => ({ ...current, mode, progress: null, error: '' }));
-    refreshImportPreview(mode, mode === 'csv' ? importDataState.csvText : importDataState.jsonText);
-  }, [importDataState.csvText, importDataState.jsonText, refreshImportPreview]);
+  }, [invalidateImportFileRead]);
 
   const getImportTargetTable = useCallback(() => {
     if (importDataState.targetTable === importEditorTarget) {
@@ -1206,7 +1143,8 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
   }, [activeResultTab, importDataState.targetTable, selectedTable]);
 
   const handleExecuteImport = useCallback(async () => {
-    if (!api?.connections || !mysqlId) return;
+    if (!api?.connections || !mysqlId || isReadingImportFile) return;
+    invalidateImportFileRead();
 
     const table = getImportTargetTable().trim();
     const database = activeDb || selectedTable?.database || activeResultTab?.table?.database || undefined;
@@ -1316,7 +1254,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         error: tCurrent('auto.remoteMySQL.importFailed', { error: text }),
       }));
     }
-  }, [activeDb, activeResultTab, addHistoryItem, addResultTab, api, connectionId, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, mysqlId, selectedTable]);
+  }, [activeDb, activeResultTab, addHistoryItem, addResultTab, api, connectionId, getImportTargetTable, importDataState.csvText, importDataState.jsonText, importDataState.mode, invalidateImportFileRead, isReadingImportFile, mysqlId, selectedTable]);
 
   useEffect(() => {
     if (!createTableState.open) return undefined;
@@ -1936,20 +1874,6 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
       sqlEditorRef.current?.view?.focus();
     }
   }, [activeQueryId, isReady]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   useContextMenu(contextMenu, setContextMenu);
 
@@ -2923,6 +2847,7 @@ function RemoteMySQL({ connectionId, hostId }: RemoteMySQLProps) {
         dialogId="mysql-import-title"
         editorTargetValue={importEditorTarget}
         fileInputRef={importFileInputRef}
+        isReadingFile={isReadingImportFile}
         labels={{
           cancel: tCurrent('auto.remoteMySQL.cancel'),
           closeAlert: tCurrent('common.closeAlert'),

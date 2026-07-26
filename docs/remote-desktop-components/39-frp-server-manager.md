@@ -24,6 +24,7 @@ FRP 服务端用于在远程主机上管理 `frps` 服务端配置、运行状�
 - `src/components/remote-desktop/frpsParsers.ts`
 - `src/components/remote-desktop/frpsTypes.ts`
 - `src/styles/remote-desktop/_frps-manager.scss`
+- `src/styles/remote-desktop/_frp-manager-shared.scss`
 - `src/assets/desktop-icons/frps-manager.png`
 - `src/RemoteDesktopShell.tsx`
 
@@ -32,6 +33,7 @@ FRP 服务端用于在远程主机上管理 `frps` 服务端配置、运行状�
 - Dashboard 默认账号密码只作为配置默认值，真实环境必须由用户修改。
 - 服务端端口开放仍需要防火墙、安全组和云平台策略配合。
 - 不把 token 或 Dashboard 密码写入公开日志、提交信息或回复。
+- 专属 SCSS 随 `RemoteFrpsManager` lazy chunk 加载，不再由 `deferred.scss` 重复引入；与客户端共用参数化 mixin，同时保留服务端 config 滚动、`select` 控件和 `:has(button)` action cell 差异。
 
 ## 后续增强
 

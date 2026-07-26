@@ -20,6 +20,7 @@ import DismissibleAlert from './DismissibleAlert';
 import RemoteFilePicker from './RemoteFilePicker';
 import { clearCachedSudoPassword, getCachedSudoOptions, setCachedSudoPassword } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { tCurrent } from '../../i18n';
 
 interface RemoteSqliteProps {
@@ -120,14 +121,6 @@ const elevationErrorPrefixes = [
   'SHELLDESK_ELEVATION_REQUIRED:',
   'SHELLDESK_ELEVATION_AUTH_FAILED:',
 ];
-
-function getShellDeskEditorTheme(): 'light' | 'dark' {
-  if (typeof document === 'undefined') {
-    return 'dark';
-  }
-
-  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-}
 
 function createQueryTab(index: number, sql = ''): SqliteQueryTab {
   return {
@@ -236,7 +229,7 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
   const [pendingWrite, setPendingWrite] = useState<PendingWriteSql | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [page, setPage] = useState(0);
-  const [editorTheme, setEditorTheme] = useState<'light' | 'dark'>(getShellDeskEditorTheme);
+  const editorTheme = useShellDeskEditorTheme();
   const [filePickerVisible, setFilePickerVisible] = useState(false);
   const [sudoPrompt, setSudoPrompt] = useState<SqliteSudoPrompt | null>(null);
   const [contextMenu, setContextMenu] = useState<SqliteContextMenuState | null>(null);
@@ -994,20 +987,6 @@ function RemoteSqlite({ connectionId, initialFilePath, systemType }: RemoteSqlit
       sqlEditorRef.current?.view?.focus();
     }
   }, [activeQueryId, isReady]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const observer = new MutationObserver(() => setEditorTheme(getShellDeskEditorTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!initialFilePath || autoOpenRef.current) return;

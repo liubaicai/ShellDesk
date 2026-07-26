@@ -4,7 +4,7 @@ use crate::{
         config_from_connection_with_window, create_tunnel, SshTunnel, SshTunnelConfig,
         SshTunnelError,
     },
-    string_arg, AppState,
+    string_arg, AppState, UiWindowRef,
 };
 use fred::prelude::{Client as RedisClient, ClientLike};
 use mongodb::Client as MongoClient;
@@ -358,9 +358,13 @@ pub(super) async fn open_database_ssh_tunnel(
     options: &TunnelOptions,
 ) -> Result<DatabaseSshEndpoint, String> {
     let tunnel_config = tunnel_config_from_options(state, window, connection_id, options).await?;
-    let tunnel = create_tunnel(tunnel_config)
-        .await
-        .map_err(|error| error.user_message())?;
+    let tunnel = create_tunnel(
+        tunnel_config,
+        state.clone(),
+        UiWindowRef::from_window(window),
+    )
+    .await
+    .map_err(|error| error.user_message())?;
     let local_addr = tunnel.local_addr();
     Ok(DatabaseSshEndpoint {
         host: local_addr.ip().to_string(),

@@ -24,6 +24,7 @@ FRP 客户端用于在远程主机上管理 `frpc` 隧道配置、运行状态�
 - `src/components/remote-desktop/frpParsers.ts`
 - `src/components/remote-desktop/frpTypes.ts`
 - `src/styles/remote-desktop/_frp-manager.scss`
+- `src/styles/remote-desktop/_frp-manager-shared.scss`
 - `src/assets/desktop-icons/frp-manager.png`
 - `src/RemoteDesktopShell.tsx`
 
@@ -32,6 +33,7 @@ FRP 客户端用于在远程主机上管理 `frpc` 隧道配置、运行状态�
 - `frpc` 下载和安装依赖目标系统网络与权限。
 - 自启动在 Linux 优先 systemd，非 systemd 或 Windows 按平台能力降级。
 - token、admin 密码等敏感字段不得写入日志或回复。
+- 专属 SCSS 随 `RemoteFrpManager` lazy chunk 加载，不再由 `deferred.scss` 重复引入；与服务端共用参数化 mixin，但保留客户端 config overflow、表单 selector 和 action cell 语义。
 
 ## 后续增强
 

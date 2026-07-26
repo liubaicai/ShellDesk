@@ -6,6 +6,7 @@ import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem } from './remoteSystem';
 import { useSudoCommand } from './sudoPrompt';
 import type { RemoteSystemType } from './types';
+import { useShellDeskEditorTheme } from './useShellDeskEditorTheme';
 import { parseApacheConfig, parseApacheTestOutput } from './apacheParser';
 import {
   createApacheBackupCommand,
@@ -151,6 +152,7 @@ async function pMap<T, R>(items: T[], concurrency: number, mapper: (item: T) => 
 }
 
 function RemoteApacheManager({ connectionId, systemType }: RemoteApacheManagerProps) {
+  const editorTheme = useShellDeskEditorTheme();
   const isWindowsHost = isWindowsSystem(systemType);
   const { runCommand, sudoPrompt } = useSudoCommand(connectionId, systemType);
   const [installation, setInstallation] = useState<ApacheInstallation | null>(null);
@@ -204,8 +206,6 @@ function RemoteApacheManager({ connectionId, systemType }: RemoteApacheManagerPr
   }, [allVirtualHosts, searchQuery, siteFilter]);
 
   const modalOpen = Boolean(pendingAction || selectedTemplate);
-  const editorTheme = typeof document !== 'undefined' && document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-
   const refresh = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
