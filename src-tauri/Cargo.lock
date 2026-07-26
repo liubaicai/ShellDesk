@@ -1379,6 +1379,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid 0.9.6",
+ "der_derive",
  "pem-rfc7468 0.7.0",
  "zeroize",
 ]
@@ -1392,6 +1393,17 @@ dependencies = [
  "const-oid 0.10.2",
  "pem-rfc7468 1.0.0",
  "zeroize",
+]
+
+[[package]]
+name = "der_derive"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8034092389675178f570469e6c3b0465d3d30b4505c294a6550db47f3c17ad18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -3074,6 +3086,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "ironrdp-rdcleanpath"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "182a2dc5208e10a272584df09662f741af2e7fc0b676d7056c8f8fbb4ed43b49"
+dependencies = [
+ "der 0.7.10",
 ]
 
 [[package]]
@@ -5818,6 +5839,7 @@ dependencies = [
  "encoding_rs",
  "fred",
  "futures-util",
+ "ironrdp-rdcleanpath",
  "mongodb",
  "open",
  "pbkdf2 0.12.2",
@@ -5838,6 +5860,7 @@ dependencies = [
  "tauri-plugin-updater",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "tokio-util",
  "url",

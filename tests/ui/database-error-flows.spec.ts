@@ -162,6 +162,43 @@ test('Backup manager creates, validates, downloads, restores, and schedules with
   expect(capturedS3Upload.stdin).toContain('mock-s3-secret');
 });
 
+test('RDP viewer initializes IronRDP and probes the tunneled target without persisting a password', async ({ page }) => {
+  test.setTimeout(60_000);
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => {
+    runtimeErrors.push(error.message);
+  });
+  await page.setViewportSize({ width: 1220, height: 760 });
+  await gotoHarness(page, 'component=rdp-viewer&theme=dark');
+
+  await expect(page.getByText('Windows 桌面已准备连接')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByText('SSH 隧道', { exact: true })).toBeVisible();
+  await page.getByLabel('RDP 主机').fill('10.20.30.40');
+  await page.getByLabel('端口').fill('3390');
+  await page.getByLabel('用户名').fill('Administrator');
+  await page.getByLabel('域').fill('EXAMPLE');
+  await page.getByLabel('密码').fill('ui-only-rdp-secret');
+  await page.getByRole('button', { name: '探测' }).click();
+
+  await expect(page.getByText('RDP 服务探测成功，安全协议：CredSSP Extended。')).toBeVisible();
+  await expect(page.getByLabel('密码')).toHaveValue('ui-only-rdp-secret');
+  await expect(page.locator('.rdp-statusbar')).toContainText('10.20.30.40:3390');
+  await expect(page.getByLabel('色深')).toHaveValue('16');
+
+  await page.getByTitle('显示设置面板').click();
+  await expect(page.locator('.rdp-inspector')).toBeHidden();
+  await expect(page.locator('.rdp-stage')).toBeVisible();
+
+  await gotoHarness(page, 'component=rdp-viewer&theme=light');
+  const lightEmptyState = page.locator('.rdp-empty-state');
+  await expect(lightEmptyState.getByText('Windows 桌面已准备连接')).toBeVisible({ timeout: 40_000 });
+  await expect(lightEmptyState.locator('strong')).toHaveCSS('color', 'rgb(241, 247, 255)');
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
   test.setTimeout(90_000);
   const runtimeErrors: string[] = [];

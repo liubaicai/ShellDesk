@@ -7,6 +7,7 @@ import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileEx
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
+import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
@@ -541,6 +542,16 @@ function installGuiSshMock() {
       },
       redisRemoveListItem: async () => true,
       redisCommand: async () => 'OK',
+      rdpProbe: async (_connectionId: string, config: ShellDeskRdpConnectConfig) => ({
+        host: config.host ?? '127.0.0.1',
+        port: config.port ?? 3389,
+        protocol: 'RDP' as const,
+        securityProtocol: 'CredSSP Extended',
+      }),
+      rdpStart: async () => {
+        throw new Error('mock RDP sessions are not started by the component harness');
+      },
+      rdpStop: async () => true,
     },
     vault: {
       getRemoteConnectionProfile: async () => null,
@@ -553,6 +564,8 @@ function installGuiSshMock() {
       onVaultChanged: () => () => undefined,
       onTransferProgress: () => () => undefined,
       onTransferEnd: () => () => undefined,
+      onRdpDiagnostic: () => () => undefined,
+      onConnectionClosed: () => () => undefined,
     },
   };
 }
@@ -581,6 +594,14 @@ function App() {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <RemoteBackupManager connectionId={connectionId} hostId={hostId} systemType="ubuntu" onOpenScheduledTasks={() => undefined} />
+      </div>
+    );
+  }
+
+  if (component === 'rdp-viewer') {
+    return (
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemoteRdpViewer connectionId={connectionId} hostId={hostId} />
       </div>
     );
   }

@@ -20,6 +20,7 @@
 @use "./remote-desktop/service-manager" as *;
 @use "./remote-desktop/supervisor-manager" as *;
 @use "./remote-desktop/backup-manager" as *;
+@use "./remote-desktop/rdp-viewer" as *;
 @use "./remote-desktop/container-manager" as *;
 @use "./remote-desktop/k8s-manager" as *;
 @use "./remote-desktop/vm-manager" as *;

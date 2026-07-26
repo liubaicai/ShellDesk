@@ -11,13 +11,15 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) data_dir: PathBuf,
     pub(crate) connections: Arc<Mutex<HashMap<String, ActiveConnection>>>,
     pub(crate) terminals: Arc<Mutex<HashMap<String, terminal::TerminalSession>>>,
-    pub(crate) vnc_proxies: Arc<Mutex<HashMap<String, VncProxySession>>>,
+    pub(crate) vnc_proxies: Arc<Mutex<HashMap<String, DesktopProxySession>>>,
+    pub(crate) rdp_proxies: Arc<Mutex<HashMap<String, DesktopProxySession>>>,
     pub(crate) browser_proxies: Arc<Mutex<HashMap<String, browser_proxy::BrowserProxySession>>>,
     pub(crate) transfer_cancellations: Arc<Mutex<HashSet<String>>>,
     pub(crate) active_transfers: Arc<Mutex<HashMap<String, ActiveTransfer>>>,
@@ -74,6 +76,7 @@ impl AppState {
             connections: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
             vnc_proxies: Arc::new(Mutex::new(HashMap::new())),
+            rdp_proxies: Arc::new(Mutex::new(HashMap::new())),
             browser_proxies: Arc::new(Mutex::new(HashMap::new())),
             transfer_cancellations: Arc::new(Mutex::new(HashSet::new())),
             active_transfers: Arc::new(Mutex::new(HashMap::new())),
@@ -96,6 +99,7 @@ impl AppState {
             connections: self.connections.clone(),
             terminals: self.terminals.clone(),
             vnc_proxies: self.vnc_proxies.clone(),
+            rdp_proxies: self.rdp_proxies.clone(),
             browser_proxies: self.browser_proxies.clone(),
             transfer_cancellations: self.transfer_cancellations.clone(),
             active_transfers: self.active_transfers.clone(),
@@ -178,9 +182,9 @@ pub(crate) enum ConnectionKind {
     Ssh,
 }
 
-pub(crate) struct VncProxySession {
+pub(crate) struct DesktopProxySession {
     pub(crate) connection_id: String,
-    pub(crate) shutdown: Option<oneshot::Sender<()>>,
+    pub(crate) cancellation: CancellationToken,
     pub(crate) ssh_tunnel: Option<SshTunnelHandle>,
 }
 

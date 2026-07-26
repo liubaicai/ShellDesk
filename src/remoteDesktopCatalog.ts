@@ -30,6 +30,7 @@ export const desktopApps = [
   { key: 'code-editor', group: 'development', labelId: 'desktop.app.codeEditor.label', descriptionId: 'desktop.app.codeEditor.description' },
   { key: 'browser', group: 'basic', labelId: 'desktop.app.browser.label', descriptionId: 'desktop.app.browser.description' },
   { key: 'vnc', group: 'operations', labelId: 'desktop.app.vnc.label', descriptionId: 'desktop.app.vnc.description' },
+  { key: 'rdp-viewer', group: 'operations', labelId: 'desktop.app.rdpViewer.label', descriptionId: 'desktop.app.rdpViewer.description' },
   { key: 'log-viewer', group: 'operations', labelId: 'desktop.app.logViewer.label', descriptionId: 'desktop.app.logViewer.description' },
   { key: 'monitor', group: 'operations', labelId: 'desktop.app.monitor.label', descriptionId: 'desktop.app.monitor.description' },
   { key: 'mysql', group: 'data', labelId: 'desktop.app.mysql.label', descriptionId: 'desktop.app.mysql.description' },
@@ -81,6 +82,7 @@ export const desktopAppIconSources: Record<DesktopAppKey, string> = {
   'code-editor': new URL('./assets/desktop-icons/code-editor.png', import.meta.url).href,
   browser: new URL('./assets/desktop-icons/browser.png', import.meta.url).href,
   vnc: new URL('./assets/desktop-icons/vnc.png', import.meta.url).href,
+  'rdp-viewer': new URL('./assets/desktop-icons/rdp-viewer.png', import.meta.url).href,
   'log-viewer': new URL('./assets/desktop-icons/log-viewer.png', import.meta.url).href,
   monitor: new URL('./assets/desktop-icons/monitor.png', import.meta.url).href,
   mysql: new URL('./assets/desktop-icons/mysql.png', import.meta.url).href,
@@ -122,7 +124,7 @@ export const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 export const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 export const launchpadAnimationMs = 180;
-export const desktopAppCatalogVersion = 18;
+export const desktopAppCatalogVersion = 19;
 export const defaultDesktopAppKeys: DesktopAppKey[] = [
   'files',
   'terminal',
@@ -156,8 +158,14 @@ export const appCatalogMigrationKeys: DesktopAppKey[] = [
   'vm-manager',
   'supervisor-manager',
   'backup-manager',
+  'rdp-viewer',
 ];
-export const latestAppCatalogMigrationKeys: DesktopAppKey[] = ['vm-manager', 'supervisor-manager', 'backup-manager'];
+export const latestAppCatalogMigrationKeys: DesktopAppKey[] = [
+  'vm-manager',
+  'supervisor-manager',
+  'backup-manager',
+  'rdp-viewer',
+];
 export const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
   .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));

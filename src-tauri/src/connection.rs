@@ -5,7 +5,7 @@ use crate::{
     error_string, https_url_origin, now, prevent_process_window, random_id, read_string_field,
     read_u16_field, remote_fs, russh_client::run_exec_command, sanitize_file_name, string_arg,
     terminal, unavailable_password_auth_error, whoami, ActiveConnection, AppState, ConnectionKind,
-    PrivilegeConfig, SshProfile, UiWindowRef,
+    DesktopProxySession, PrivilegeConfig, SshProfile, UiWindowRef,
 };
 use host_keys::prepare_ssh_host_key_trust;
 use serde_json::{json, Value};
@@ -709,28 +709,8 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
     }
     let _ = remote_fs::cancel_transfers_for_connection(state, connection_id)?;
     let _ = terminal::close_terminals_for_connection(state, connection_id)?;
-    let mut proxies = state.vnc_proxies.lock().map_err(error_string)?;
-    let proxy_keys: Vec<String> = proxies
-        .iter()
-        .filter_map(|(key, proxy)| {
-            if proxy.connection_id == connection_id {
-                Some(key.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    for key in proxy_keys {
-        if let Some(mut proxy) = proxies.remove(&key) {
-            if let Some(shutdown) = proxy.shutdown.take() {
-                let _ = shutdown.send(());
-            }
-            if let Some(tunnel) = proxy.ssh_tunnel.take() {
-                spawn_tunnel_shutdown("vnc", tunnel);
-            }
-        }
-    }
-    drop(proxies);
+    close_desktop_proxies(&state.vnc_proxies, connection_id, "vnc")?;
+    close_desktop_proxies(&state.rdp_proxies, connection_id, "rdp")?;
     let mut browser_proxies = state.browser_proxies.lock().map_err(error_string)?;
     let browser_proxy_keys: Vec<String> = browser_proxies
         .iter()
@@ -816,6 +796,28 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
                 eprintln!("[http-tunnel] session shutdown timed out: {error}");
             }
         });
+    }
+    Ok(())
+}
+
+fn close_desktop_proxies(
+    proxies: &std::sync::Mutex<HashMap<String, DesktopProxySession>>,
+    connection_id: &str,
+    proxy_kind: &'static str,
+) -> Result<(), String> {
+    let mut proxies = proxies.lock().map_err(error_string)?;
+    let proxy_keys: Vec<String> = proxies
+        .iter()
+        .filter(|(_, proxy)| proxy.connection_id == connection_id)
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in proxy_keys {
+        if let Some(mut proxy) = proxies.remove(&key) {
+            proxy.cancellation.cancel();
+            if let Some(tunnel) = proxy.ssh_tunnel.take() {
+                spawn_tunnel_shutdown(proxy_kind, tunnel);
+            }
+        }
     }
     Ok(())
 }

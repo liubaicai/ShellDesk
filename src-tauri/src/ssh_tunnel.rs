@@ -129,6 +129,29 @@ pub(crate) enum SshTunnelError {
     Forward(#[source] std::io::Error),
 }
 
+pub(crate) struct SshTunnelGuard {
+    label: &'static str,
+    tunnel: Option<SshTunnelHandle>,
+}
+
+impl SshTunnelGuard {
+    pub(crate) fn new(label: &'static str, tunnel: Option<SshTunnelHandle>) -> Self {
+        Self { label, tunnel }
+    }
+
+    pub(crate) fn take(&mut self) -> Option<SshTunnelHandle> {
+        self.tunnel.take()
+    }
+}
+
+impl Drop for SshTunnelGuard {
+    fn drop(&mut self) {
+        if let Some(tunnel) = self.tunnel.take() {
+            spawn_tunnel_shutdown(self.label, tunnel);
+        }
+    }
+}
+
 impl SshTunnelError {
     pub(crate) fn user_message(&self) -> String {
         self.to_string()

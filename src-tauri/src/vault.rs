@@ -615,13 +615,13 @@ mod tests {
             json!(["terminal", "files"])
         );
         assert_eq!(settings["remoteDesktopLayout"]["sortMode"], "custom");
-        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 18);
+        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 19);
         assert_eq!(
             settings["remoteDesktopLayout"]["items"]
                 .as_array()
                 .unwrap()
                 .len(),
-            5
+            6
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][0]["appKey"],
@@ -642,6 +642,10 @@ mod tests {
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][4]["appKey"],
             "backup-manager"
+        );
+        assert_eq!(
+            settings["remoteDesktopLayout"]["items"][5]["appKey"],
+            "rdp-viewer"
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["removedAppKeys"],

@@ -194,6 +194,7 @@ type ShellDeskDesktopAppKey =
   | 'code-editor'
   | 'browser'
   | 'vnc'
+  | 'rdp-viewer'
   | 'log-viewer'
   | 'monitor'
   | 'mysql'
@@ -1002,6 +1003,9 @@ interface ShellDeskConnectionControls {
   vncProbe: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProbeResult>;
   vncStart: (connectionId: string, config: ShellDeskVncConnectConfig) => Promise<ShellDeskVncProxyInfo>;
   vncStop: (connectionId: string, vncId: string) => Promise<boolean>;
+  rdpProbe: (connectionId: string, config: ShellDeskRdpConnectConfig) => Promise<ShellDeskRdpProbeResult>;
+  rdpStart: (connectionId: string, config: ShellDeskRdpConnectConfig) => Promise<ShellDeskRdpProxyInfo>;
+  rdpStop: (connectionId: string, rdpId: string) => Promise<boolean>;
   sqliteOpen: (connectionId: string, filePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ sqliteId: string; filePath: string }>;
   sqliteClose: (connectionId: string, sqliteId: string) => Promise<boolean>;
   sqliteTables: (connectionId: string, sqliteId: string, options?: ShellDeskSudoPasswordOptions) => Promise<string[]>;
@@ -1348,6 +1352,35 @@ interface ShellDeskVncDiagnosticPayload {
   detail: string;
 }
 
+interface ShellDeskRdpConnectConfig {
+  host?: string;
+  port?: number;
+  rdpId?: string;
+}
+
+interface ShellDeskRdpProxyInfo {
+  rdpId: string;
+  host: string;
+  port: number;
+  destination: string;
+  webSocketUrl: string;
+  authToken: string;
+}
+
+interface ShellDeskRdpProbeResult {
+  host: string;
+  port: number;
+  protocol: 'RDP';
+  securityProtocol: string;
+}
+
+interface ShellDeskRdpDiagnosticPayload {
+  connectionId: string;
+  rdpId: string;
+  stage: string;
+  detail: string;
+}
+
 interface ShellDeskLogEntry {
   id: string;
   timestamp: string;
@@ -1592,6 +1625,7 @@ interface ShellDeskEventControls {
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string; bytes?: ArrayBuffer | ArrayBufferView | number[] }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
+  onRdpDiagnostic: (callback: (payload: ShellDeskRdpDiagnosticPayload) => void) => () => void;
   onConnectionClosed: (callback: (payload: { connectionId: string; reason?: string }) => void) => () => void;
   onConnectionReconnecting: (callback: (payload: { connectionId: string; reason?: string; startedAt?: string }) => void) => () => void;
   onConnectionRestored: (callback: (payload: { connectionId: string; restoredAt?: string }) => void) => () => void;

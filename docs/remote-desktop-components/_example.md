@@ -22,6 +22,7 @@
 | `code-editor` | 代码编辑器 | `RemoteCodeEditor.tsx` | `34-code-editor.md` |
 | `browser` | 浏览器 | `RemoteBrowser.tsx` | `03-browser-redesign.md` |
 | `vnc` | VNC Viewer | `RemoteVncViewer.tsx` | `05-vnc-viewer-redesign.md` |
+| `rdp-viewer` | RDP 远程桌面 | `RemoteRdpViewer.tsx` | `45-rdp-viewer.md` |
 | `log-viewer` | 日志查看 | `RemoteLogViewer.tsx` | `13-log-viewer.md` |
 | `monitor` | 系统监视器 | `RemoteMonitor.tsx` | `06-system-monitor-redesign.md` |
 | `mysql` | MySQL | `RemoteMySQL.tsx` | `07-mysql-redesign.md` |

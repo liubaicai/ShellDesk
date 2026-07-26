@@ -11,6 +11,7 @@ const SHELLDESK_APP_KEYS = [
   'code-editor',
   'browser',
   'vnc',
+  'rdp-viewer',
   'log-viewer',
   'monitor',
   'mysql',

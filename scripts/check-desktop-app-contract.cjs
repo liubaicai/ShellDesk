@@ -159,6 +159,7 @@ const desktopAppAssetContracts = {
   'code-editor': { component: 'RemoteCodeEditor', style: 'code-editor' },
   browser: { component: 'RemoteBrowser', style: 'browser' },
   vnc: { component: 'RemoteVncViewer', style: 'vnc' },
+  'rdp-viewer': { component: 'RemoteRdpViewer', style: 'rdp-viewer' },
   'log-viewer': { component: 'RemoteLogViewer', style: 'log-viewer' },
   monitor: { component: 'RemoteMonitor', style: 'monitor' },
   mysql: { component: 'RemoteMySQL', style: 'mysql' },
