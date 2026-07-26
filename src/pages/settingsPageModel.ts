@@ -119,6 +119,7 @@ export const desktopDockPinnedAppChoices = [
   { key: 'procmanager', labelId: 'desktop.app.processManager.label' },
   { key: 'settings', labelId: 'desktop.app.settings.label' },
   { key: 'service-manager', labelId: 'desktop.app.serviceManager.label' },
+  { key: 'supervisor-manager', labelId: 'desktop.app.supervisorManager.label' },
   { key: 'container-manager', labelId: 'desktop.app.containerManager.label' },
   { key: 'disk-analyzer', labelId: 'desktop.app.diskAnalyzer.label' },
   { key: 'disk-manager', labelId: 'desktop.app.diskManager.label' },

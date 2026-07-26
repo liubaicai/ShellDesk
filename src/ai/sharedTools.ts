@@ -17,6 +17,7 @@ const SHELLDESK_APP_KEYS = [
   'clickhouse',
   'redis',
   'service-manager',
+  'supervisor-manager',
   'container-manager',
   'k8s-manager',
   'vm-manager',

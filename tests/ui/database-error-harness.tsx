@@ -7,6 +7,7 @@ import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
+import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
 import { loadFullMessageCatalog } from '../../src/i18n';
@@ -186,6 +187,7 @@ function installGuiSshMock() {
   let lastVirshCommand = '';
   let lastVirshStdin = '';
   let lastSftpTransferOptions: ShellDeskSftpTransferOptions | undefined;
+  let lastSupervisorActionCommand = '';
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -199,6 +201,7 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshCommand', { configurable: true, get: () => lastVirshCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSftpTransferOptions', { configurable: true, get: () => lastSftpTransferOptions });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastSupervisorActionCommand', { configurable: true, get: () => lastSupervisorActionCommand });
 
   (window as any).guiSSH = {
     platform: 'win32',
@@ -235,6 +238,38 @@ function installGuiSshMock() {
         if (scenario === 'sudo-prompt' && !sudoPromptShown && !options?.sudoPassword) {
           sudoPromptShown = true;
           return createCommandResult('', 'sudo: a password is required', 1);
+        }
+        if (command.includes('command -v supervisorctl')) {
+          return createCommandResult([
+            'installed=true',
+            'executable=/usr/bin/supervisorctl',
+            'version=4.2.5',
+            'running=true',
+            'statusMessage=',
+            'config=/etc/supervisor/supervisord.conf',
+            'config=/etc/supervisor/conf.d/web.conf',
+          ].join('\n'));
+        }
+        if (command.trim() === 'supervisorctl status 2>&1') {
+          return createCommandResult([
+            'web                             RUNNING   pid 1801, uptime 2:14:32',
+            'queue:worker                    RUNNING   pid 1804, uptime 2:14:30',
+            'scheduler                       STOPPED   Not started',
+            'legacy                          BACKOFF   Exited too quickly (process log may have details)',
+          ].join('\n'));
+        }
+        if (command.startsWith('head -n 600 ')) {
+          return createCommandResult(command.includes('web.conf')
+            ? '[program:web]\ncommand=gunicorn app:application\nautostart=true'
+            : '[supervisord]\nlogfile=/var/log/supervisor/supervisord.log');
+        }
+        if (command.startsWith('supervisorctl tail ')) {
+          const stream = command.includes(' stderr ') ? 'stderr' : 'stdout';
+          return createCommandResult(`web ${stream} line 1\nweb ${stream} line 2`);
+        }
+        if (/^supervisorctl (?:start|stop|restart|reload)\b/.test(command.trim())) {
+          lastSupervisorActionCommand = command.trim();
+          return createCommandResult('ok');
         }
         if (command.includes('__SHELLDESK_PASSWD__')) {
           return createCommandResult(createUserSnapshot());
@@ -462,6 +497,14 @@ function App() {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <RemoteVirtualMachineManager connectionId={connectionId} systemType="ubuntu" onOpenTerminal={() => undefined} onOpenVnc={() => undefined} />
+      </div>
+    );
+  }
+
+  if (component === 'supervisor-manager') {
+    return (
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemoteSupervisorManager connectionId={connectionId} systemType="ubuntu" />
       </div>
     );
   }

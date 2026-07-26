@@ -165,6 +165,7 @@ const desktopAppAssetContracts = {
   clickhouse: { component: 'RemoteClickHouse', style: 'clickhouse' },
   redis: { component: 'RemoteRedis', style: 'redis' },
   'service-manager': { component: 'RemoteServiceManager', style: 'service-manager' },
+  'supervisor-manager': { component: 'RemoteSupervisorManager', style: 'supervisor-manager' },
   'container-manager': { component: 'RemoteContainerManager', style: 'container-manager' },
   'k8s-manager': { component: 'RemoteK8sManager', style: 'k8s-manager' },
   'vm-manager': { component: 'RemoteVirtualMachineManager', style: 'vm-manager' },

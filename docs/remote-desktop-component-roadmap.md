@@ -1,6 +1,6 @@
 # ShellDesk 远程桌面组件路线图
 
-截至 2026-07-24，ShellDesk 远程桌面已经接入 41 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
+截至 2026-07-26，ShellDesk 远程桌面已经接入 42 个远程桌面 appKey，另有 1 个设置页登录会话面板。本文档用于说明当前应用目录、组件文档位置和后续维护规则；单组件细节放在 `remote-desktop-components/`。
 
 ## 事实源
 
@@ -77,6 +77,7 @@
 | 40 | `ai-chat` | AI 助手 | [AI 助手](./remote-desktop-components/40-ai-assistant.md) | 远程上下文对话、共享工具、Markdown 渲染、打开设置和组件 |
 | 41 | `k8s-manager` | Kubernetes 管理器 | [Kubernetes 管理器](./remote-desktop-components/41-k8s-manager.md) | 上下文/命名空间、Pod 与 Workload 管理、日志、Exec、YAML 和节点视图 |
 | 42 | `vm-manager` | 虚拟机管理器 | [虚拟机管理器](./remote-desktop-components/42-virtual-machine-manager.md) | 68:32 清单/详情布局、生命周期、创建/克隆/设置/删除、设备挂载、迁移、快照、网络与存储池 |
+| 43 | `supervisor-manager` | Supervisor 管理器 | [Supervisor 管理器](./remote-desktop-components/43-supervisor-manager.md) | supervisord 检测、进程筛选与批量启停、配置只读预览、stdout/stderr 日志 |
 
 ## Dock 与桌面布局
 
@@ -85,7 +86,7 @@
 - Dock 位置、大小、自动隐藏和固定应用由应用设置里的“桌面”子菜单配置；远程桌面窗口最大化和拖拽边界会按 Dock 所在边和大小预留空间。
 - 其他应用默认从桌面、Launchpad 或文件夹打开；窗口打开后会动态加入 Dock，关闭后消失。
 - 默认桌面布局仍只放 `files`、`terminal`、`browser`、`settings`，新增应用通过目录迁移进入可用应用集合。
-- 当前 app catalog version 为 `16`。新增 appKey 时必须同步迁移版本和白名单，避免用户拖到桌面的图标被 vault 清洗掉。
+- 当前 app catalog version 为 `17`。新增 appKey 时必须同步迁移版本和白名单，避免用户拖到桌面的图标被 vault 清洗掉。
 
 ## 文档维护规则
 

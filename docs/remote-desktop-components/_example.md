@@ -28,6 +28,7 @@
 | `clickhouse` | ClickHouse | `RemoteClickHouse.tsx` | `33-clickhouse-manager.md` |
 | `redis` | Redis | `RemoteRedis.tsx` | `08-redis-redesign.md` |
 | `service-manager` | 服务管理 | `RemoteServiceManager.tsx` | `12-service-manager.md` |
+| `supervisor-manager` | Supervisor 管理 | `RemoteSupervisorManager.tsx` | `43-supervisor-manager.md` |
 | `container-manager` | 容器管理 | `RemoteContainerManager.tsx` | `14-docker-podman-manager.md` |
 | `k8s-manager` | Kubernetes 管理 | `RemoteK8sManager.tsx` | `41-k8s-manager.md` |
 | `vm-manager` | 虚拟机管理 | `RemoteVirtualMachineManager.tsx` | `42-virtual-machine-manager.md` |

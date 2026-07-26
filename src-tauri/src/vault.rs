@@ -615,13 +615,13 @@ mod tests {
             json!(["terminal", "files"])
         );
         assert_eq!(settings["remoteDesktopLayout"]["sortMode"], "custom");
-        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 16);
+        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 17);
         assert_eq!(
             settings["remoteDesktopLayout"]["items"]
                 .as_array()
                 .unwrap()
                 .len(),
-            3
+            4
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][0]["appKey"],
@@ -634,6 +634,10 @@ mod tests {
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][2]["appKey"],
             "vm-manager"
+        );
+        assert_eq!(
+            settings["remoteDesktopLayout"]["items"][3]["appKey"],
+            "supervisor-manager"
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["removedAppKeys"],
