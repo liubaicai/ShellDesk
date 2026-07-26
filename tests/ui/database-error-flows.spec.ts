@@ -198,9 +198,14 @@ test('RDP viewer initializes IronRDP and probes the tunneled target without pers
   await page.getByLabel('用户名').fill('Administrator');
   await page.getByLabel('域').fill('EXAMPLE');
   await page.getByLabel('密码').fill('ui-only-rdp-secret');
+  const diagnostics = page.locator('.rdp-diagnostics');
+  await expect(diagnostics.getByText('开始探测或连接后会显示阶段信息。')).toBeVisible();
   await page.getByRole('button', { name: '探测' }).click();
 
   await expect(page.getByText('RDP 服务探测成功，安全协议：CredSSP Extended。')).toBeVisible();
+  await expect(diagnostics.getByText('Checking RDP target 10.20.30.40:3390')).toBeVisible();
+  await expect(diagnostics.getByText('RDP negotiation completed.')).toBeVisible();
+  await expect(diagnostics.locator('.rdp-diagnostic-empty')).toHaveCount(0);
   await expect(page.getByLabel('密码')).toHaveValue('ui-only-rdp-secret');
   await expect(page.locator('.rdp-statusbar')).toContainText('10.20.30.40:3390');
   await expect(page.getByLabel('色深')).toHaveValue('16');
@@ -225,6 +230,27 @@ test('RDP viewer initializes IronRDP and probes the tunneled target without pers
   await expect(lightEmptyState.getByText('Windows 桌面已准备连接')).toBeVisible({ timeout: 40_000 });
   await expect(lightEmptyState.locator('strong')).toHaveCSS('color', 'rgb(241, 247, 255)');
   expect(runtimeErrors).toEqual([]);
+});
+
+test('host table keeps every cell border aligned when tags wrap', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 420 });
+  await gotoHarness(page, 'component=host-list&theme=dark');
+
+  const wrappedRow = page.locator('.host-table tbody tr').first();
+  await expect(wrappedRow.locator('.host-tag-cell .host-chip')).toHaveCount(2);
+  const cellMetrics = await wrappedRow.locator('td').evaluateAll((cells) => cells.map((cell) => {
+    const bounds = cell.getBoundingClientRect();
+    return {
+      display: getComputedStyle(cell).display,
+      height: bounds.height,
+      bottom: bounds.bottom,
+    };
+  }));
+
+  expect(cellMetrics).toHaveLength(8);
+  expect(cellMetrics.every(({ display }) => display === 'table-cell')).toBe(true);
+  expect(new Set(cellMetrics.map(({ height }) => Math.round(height))).size).toBe(1);
+  expect(new Set(cellMetrics.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
 });
 
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {

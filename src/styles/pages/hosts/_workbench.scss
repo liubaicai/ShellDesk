@@ -965,7 +965,7 @@
   z-index: 5;
 }
 
-.host-name-cell {
+.host-name-cell-content {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1133,7 +1133,7 @@
   background: var(--surface-soft);
 }
 
-.host-tag-cell {
+.host-tag-list {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;

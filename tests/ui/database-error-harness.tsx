@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import HostListPanel from '../../src/components/HostListPanel';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
 import RemoteBackupManager from '../../src/components/remote-desktop/RemoteBackupManager';
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
@@ -24,6 +25,45 @@ if (harnessTheme === 'light' || harnessTheme === 'dark') {
 const connectionId = 'ui-test-connection';
 const hostId = 'ui-test-host';
 const now = new Date('2026-01-01T00:00:00Z').toISOString();
+const hostListFixtures = [
+  {
+    id: 'host-wrapped-tags',
+    name: '192.168.2.230',
+    address: '192.168.2.230',
+    port: 22,
+    username: 'root',
+    group: 'CYZ',
+    tags: ['MiniPC', 'AI'],
+    note: '',
+    jumpHostId: '',
+    canBeJumpHost: false,
+    proxyProfileId: '',
+    systemName: 'Debian GNU/Linux',
+    systemType: 'debian',
+    lastConnectionStatus: 'success',
+    lastConnectionAt: now,
+    lastConnectionError: '',
+  },
+  {
+    id: 'host-single-tag',
+    name: 'console.big.example',
+    address: '82.156.143.27',
+    port: 22,
+    username: 'root',
+    group: 'Cloud',
+    tags: ['腾讯云'],
+    note: '',
+    jumpHostId: '',
+    canBeJumpHost: false,
+    proxyProfileId: '',
+    systemName: 'Debian GNU/Linux',
+    systemType: 'debian',
+    lastConnectionStatus: 'success',
+    lastConnectionAt: now,
+    lastConnectionError: '',
+  },
+];
+const emptyProxyProfiles = new Map<string, ShellDeskProxyProfile>();
 
 function createSftpEntries(prefix: string) {
   return [
@@ -198,6 +238,7 @@ function installGuiSshMock() {
   let lastBackupDownloadPath = '';
   let lastBackupS3Command = '';
   let lastBackupS3Stdin = '';
+  let rdpDiagnosticListener: ((payload: ShellDeskRdpDiagnosticPayload) => void) | undefined;
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -542,12 +583,29 @@ function installGuiSshMock() {
       },
       redisRemoveListItem: async () => true,
       redisCommand: async () => 'OK',
-      rdpProbe: async (_connectionId: string, config: ShellDeskRdpConnectConfig) => ({
-        host: config.host ?? '127.0.0.1',
-        port: config.port ?? 3389,
-        protocol: 'RDP' as const,
-        securityProtocol: 'CredSSP Extended',
-      }),
+      rdpProbe: async (connectionId: string, config: ShellDeskRdpConnectConfig) => {
+        const host = config.host ?? '127.0.0.1';
+        const port = config.port ?? 3389;
+        const rdpId = config.rdpId ?? '';
+        rdpDiagnosticListener?.({
+          connectionId,
+          rdpId,
+          stage: 'probe',
+          detail: `Checking RDP target ${host}:${port}`,
+        });
+        rdpDiagnosticListener?.({
+          connectionId,
+          rdpId,
+          stage: 'probe-ready',
+          detail: 'RDP negotiation completed.',
+        });
+        return {
+          host,
+          port,
+          protocol: 'RDP' as const,
+          securityProtocol: 'CredSSP Extended',
+        };
+      },
       rdpStart: async () => {
         throw new Error('mock RDP sessions are not started by the component harness');
       },
@@ -564,7 +622,14 @@ function installGuiSshMock() {
       onVaultChanged: () => () => undefined,
       onTransferProgress: () => () => undefined,
       onTransferEnd: () => () => undefined,
-      onRdpDiagnostic: () => () => undefined,
+      onRdpDiagnostic: (callback) => {
+        rdpDiagnosticListener = callback;
+        return () => {
+          if (rdpDiagnosticListener === callback) {
+            rdpDiagnosticListener = undefined;
+          }
+        };
+      },
       onConnectionClosed: () => () => undefined,
     },
   };
@@ -602,6 +667,43 @@ function App() {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <RemoteRdpViewer connectionId={connectionId} hostId={hostId} />
+      </div>
+    );
+  }
+
+  if (component === 'host-list') {
+    return (
+      <div style={{ width: 900, height: 320, padding: 24 }}>
+        <HostListPanel
+          hosts={hostListFixtures}
+          filteredHosts={hostListFixtures}
+          pagedHosts={hostListFixtures}
+          isVaultReady
+          appLanguage="zh-CN"
+          hostViewMode="list"
+          selectedHostId={null}
+          onSelectHost={() => undefined}
+          onOpenHost={() => undefined}
+          onOpenSftp={() => undefined}
+          onDeleteHost={() => undefined}
+          onEditHost={() => undefined}
+          hostPage={1}
+          hostPageCount={1}
+          hostPageNumbers={[1]}
+          hostPageSize={10}
+          hostPageSizeOptions={[10]}
+          onPageSizeChange={() => undefined}
+          onPageChange={() => undefined}
+          isHostConnecting={() => false}
+          proxyProfileById={emptyProxyProfiles}
+          closeHostCardMenu={() => undefined}
+          formatRelativeTime={() => '刚刚'}
+          getHostChipClassName={(kind) => `host-chip ${kind}-chip tone-1`}
+          getHostConnectionStateView={() => ({ className: '', title: '已连接' })}
+          getHostSystemLabel={() => 'Debian GNU/Linux'}
+          getProxyConfigTypeLabel={() => ''}
+          renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
+        />
       </div>
     );
   }

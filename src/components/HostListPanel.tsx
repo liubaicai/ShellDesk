@@ -261,12 +261,14 @@ function HostListPanel<THost extends HostListPanelHost>({
                         onDoubleClick={() => onOpenHost(host)}
                       >
                         <td className="host-name-cell">
-                          <span className={`host-presence-dot ${connectionState.className}`} aria-hidden="true" />
-                          {renderHostSystemIcon(host)}
-                          <span className="host-name-copy">
-                            <strong>{host.name}</strong>
-                            <small>{host.note || getHostSystemLabel(host, appLanguage)}</small>
-                          </span>
+                          <div className="host-name-cell-content">
+                            <span className={`host-presence-dot ${connectionState.className}`} aria-hidden="true" />
+                            {renderHostSystemIcon(host)}
+                            <span className="host-name-copy">
+                              <strong>{host.name}</strong>
+                              <small>{host.note || getHostSystemLabel(host, appLanguage)}</small>
+                            </span>
+                          </div>
                         </td>
                         <td>
                           <span className={getHostChipClassName('group', host.group, Boolean(host.group))}>{host.group || t('app.host.group.ungrouped', appLanguage)}</span>
@@ -280,11 +282,13 @@ function HostListPanel<THost extends HostListPanelHost>({
                         <td className="mono-cell">{host.username}</td>
                         <td className="mono-cell">{host.port}</td>
                         <td className="host-tag-cell">
-                          {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
-                          {hostTags.slice(0, 2).map((tag) => (
-                            <span key={`${host.id}:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
-                          ))}
-                          {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
+                          <div className="host-tag-list">
+                            {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
+                            {hostTags.slice(0, 2).map((tag) => (
+                              <span key={`${host.id}:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
+                            ))}
+                            {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
+                          </div>
                         </td>
                         <td>{formatRelativeTime(host.lastConnectionAt, appLanguage)}</td>
                         <td className="host-table-actions" onClick={(event) => event.stopPropagation()}>

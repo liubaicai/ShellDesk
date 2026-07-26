@@ -220,6 +220,7 @@ function RemoteRdpViewer({
   const interactionRef = useRef<RdpInteraction | null>(null);
   const backendRef = useRef<RdpBackendModule | null>(null);
   const rdpIdRef = useRef('');
+  const probeIdRef = useRef('');
   const disconnectingRef = useRef(false);
   const resizeTimerRef = useRef<number | null>(null);
   const diagnosticCounterRef = useRef(0);
@@ -355,6 +356,7 @@ function RemoteRdpViewer({
       }
       const currentRdpId = rdpIdRef.current;
       rdpIdRef.current = '';
+      probeIdRef.current = '';
       void stopProxy(currentRdpId);
       if (element && readyListener) {
         element.removeEventListener('ready', readyListener);
@@ -392,7 +394,9 @@ function RemoteRdpViewer({
       return undefined;
     }
     return api.events.onRdpDiagnostic((payload) => {
-      if (payload.connectionId === connectionId && payload.rdpId === rdpIdRef.current) {
+      const matchesActiveRequest = payload.rdpId === rdpIdRef.current
+        || payload.rdpId === probeIdRef.current;
+      if (payload.connectionId === connectionId && payload.rdpId && matchesActiveRequest) {
         appendDiagnostic(payload.stage, payload.detail);
       }
     });
@@ -456,6 +460,7 @@ function RemoteRdpViewer({
     }
     const targetPort = parsePort(port);
     const probeId = createRdpId();
+    probeIdRef.current = probeId;
     setStatus('probing');
     setErrorMessage('');
     setNotice('');
@@ -491,6 +496,7 @@ function RemoteRdpViewer({
     disconnectingRef.current = false;
     const targetPort = parsePort(port);
     const nextRdpId = createRdpId();
+    probeIdRef.current = '';
     rdpIdRef.current = nextRdpId;
     setStatus('starting');
     setErrorMessage('');
