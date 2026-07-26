@@ -726,6 +726,19 @@ function App() {
     );
   }
 
+  if (component === 'host-table-scroll') {
+    return (
+      <div style={{ display: 'grid', width: '420px', height: '320px', padding: '24px' }}>
+        <div className="host-table-frame table-mode">
+          <div className="host-table-scroll">
+            <div style={{ width: '900px', height: '640px' }} />
+          </div>
+          <div className="host-table-pagination" />
+        </div>
+      </div>
+    );
+  }
+
   if (component === 'redis') {
     return <RemoteRedis connectionId={connectionId} hostId={hostId} />;
   }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   FolderSync,
@@ -59,6 +60,10 @@ interface HostListPanelProps<THost extends HostListPanelHost> {
   onOpenSftp: (host: THost) => void;
   onDeleteHost: (host: THost) => void;
   onEditHost: (host: THost) => void;
+  onQuickAssignGroup: (host: THost, group: string) => void;
+  onQuickAddTag: (host: THost, tag: string) => void;
+  groupOptions: string[];
+  tagOptions: string[];
   hostPage: number;
   hostPageCount: number;
   hostPageNumbers: number[];
@@ -98,6 +103,56 @@ function HostRouteIcons<THost extends HostListPanelHost>({ host, appLanguage }: 
   );
 }
 
+function HostEmptyMetadataSelect({
+  kind,
+  label,
+  options,
+  appLanguage,
+  onSelect,
+}: {
+  kind: 'group' | 'tag';
+  label: string;
+  options: string[];
+  appLanguage: AppLanguage;
+  onSelect: (value: string) => void;
+}) {
+  const kindLabel = kind === 'group'
+    ? (appLanguage === 'zh-CN' ? '分组' : 'group')
+    : (appLanguage === 'zh-CN' ? '标签' : 'tag');
+  const selectLabel = appLanguage === 'zh-CN'
+    ? `为主机选择${kindLabel}`
+    : `Choose a ${kindLabel} for this host`;
+  const emptyTitle = appLanguage === 'zh-CN'
+    ? `暂无可选${kindLabel}，可在编辑主机时新建`
+    : `No ${kindLabel} options yet. Create one while editing the host.`;
+
+  return (
+    <span
+      className={`host-quick-metadata-select ${kind}-chip muted`}
+      title={options.length ? selectLabel : emptyTitle}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <select
+        value=""
+        aria-label={selectLabel}
+        disabled={!options.length}
+        onChange={(event) => {
+          if (event.target.value) {
+            onSelect(event.target.value);
+          }
+        }}
+      >
+        <option value="">{label}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+      <ChevronDown aria-hidden="true" />
+    </span>
+  );
+}
+
 function HostListPanel<THost extends HostListPanelHost>({
   hosts,
   filteredHosts,
@@ -111,6 +166,10 @@ function HostListPanel<THost extends HostListPanelHost>({
   onOpenSftp,
   onDeleteHost,
   onEditHost,
+  onQuickAssignGroup,
+  onQuickAddTag,
+  groupOptions,
+  tagOptions,
   hostPage,
   hostPageCount,
   hostPageNumbers,
@@ -146,7 +205,6 @@ function HostListPanel<THost extends HostListPanelHost>({
                   const isConnecting = isHostConnecting(host.id);
                   const proxyProfile = host.proxyProfileId ? proxyProfileById.get(host.proxyProfileId) ?? null : null;
                   const isSelected = selectedHostId === host.id;
-                  const hostTags = host.tags.length ? host.tags : [t('app.host.noTags', appLanguage)];
 
                   return (
                     <article
@@ -183,18 +241,43 @@ function HostListPanel<THost extends HostListPanelHost>({
                                 <FolderSync aria-hidden="true" />
                                 {appLanguage === 'zh-CN' ? '文件传输' : 'File transfer'}
                               </button>
-                              <button type="button" onClick={(event) => { closeHostCardMenu(event.currentTarget); onEditHost(host); }}>{t('app.host.edit', appLanguage)}</button>
-                              <button type="button" className="danger-text" onClick={(event) => { closeHostCardMenu(event.currentTarget); onDeleteHost(host); }}>{t('app.host.delete', appLanguage)}</button>
+                              <button type="button" onClick={(event) => { closeHostCardMenu(event.currentTarget); onEditHost(host); }}>
+                                <Pencil aria-hidden="true" />
+                                {t('app.host.edit', appLanguage)}
+                              </button>
+                              <button type="button" className="danger-text" onClick={(event) => { closeHostCardMenu(event.currentTarget); onDeleteHost(host); }}>
+                                <Trash2 aria-hidden="true" />
+                                {t('app.host.delete', appLanguage)}
+                              </button>
                             </div>
                           </details>
                         </div>
                       </header>
 
                       <div className="host-card-badges">
-                        <span className={getHostChipClassName('group', host.group, Boolean(host.group))}>{host.group || t('app.host.group.ungrouped', appLanguage)}</span>
-                        {hostTags.slice(0, 2).map((tag) => (
+                        {host.group ? (
+                          <span className={getHostChipClassName('group', host.group, true)}>{host.group}</span>
+                        ) : (
+                          <HostEmptyMetadataSelect
+                            kind="group"
+                            label={t('app.host.group.ungrouped', appLanguage)}
+                            options={groupOptions}
+                            appLanguage={appLanguage}
+                            onSelect={(group) => onQuickAssignGroup(host, group)}
+                          />
+                        )}
+                        {host.tags.slice(0, 2).map((tag) => (
                           <span key={`${host.id}:card:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
                         ))}
+                        {!host.tags.length ? (
+                          <HostEmptyMetadataSelect
+                            kind="tag"
+                            label={t('app.host.noTags', appLanguage)}
+                            options={tagOptions}
+                            appLanguage={appLanguage}
+                            onSelect={(tag) => onQuickAddTag(host, tag)}
+                          />
+                        ) : null}
                         {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
                         {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
                       </div>
@@ -249,7 +332,6 @@ function HostListPanel<THost extends HostListPanelHost>({
                     const isConnecting = isHostConnecting(host.id);
                     const proxyProfile = host.proxyProfileId ? proxyProfileById.get(host.proxyProfileId) ?? null : null;
                     const isSelected = selectedHostId === host.id;
-                    const hostTags = host.tags.length ? host.tags : [t('app.host.noTags', appLanguage)];
 
                     return (
                       <tr
@@ -271,7 +353,17 @@ function HostListPanel<THost extends HostListPanelHost>({
                           </div>
                         </td>
                         <td>
-                          <span className={getHostChipClassName('group', host.group, Boolean(host.group))}>{host.group || t('app.host.group.ungrouped', appLanguage)}</span>
+                          {host.group ? (
+                            <span className={getHostChipClassName('group', host.group, true)}>{host.group}</span>
+                          ) : (
+                            <HostEmptyMetadataSelect
+                              kind="group"
+                              label={t('app.host.group.ungrouped', appLanguage)}
+                              options={groupOptions}
+                              appLanguage={appLanguage}
+                              onSelect={(group) => onQuickAssignGroup(host, group)}
+                            />
+                          )}
                         </td>
                         <td>
                           <span className="host-endpoint-line mono-cell">
@@ -284,9 +376,18 @@ function HostListPanel<THost extends HostListPanelHost>({
                         <td className="host-tag-cell">
                           <div className="host-tag-list">
                             {proxyProfile ? <span className="host-chip proxy-chip">{getProxyConfigTypeLabel(proxyProfile.config)}</span> : null}
-                            {hostTags.slice(0, 2).map((tag) => (
+                            {host.tags.slice(0, 2).map((tag) => (
                               <span key={`${host.id}:${tag}`} className={getHostChipClassName('tag', tag, Boolean(host.tags.length))}>{tag}</span>
                             ))}
+                            {!host.tags.length ? (
+                              <HostEmptyMetadataSelect
+                                kind="tag"
+                                label={t('app.host.noTags', appLanguage)}
+                                options={tagOptions}
+                                appLanguage={appLanguage}
+                                onSelect={(tag) => onQuickAddTag(host, tag)}
+                              />
+                            ) : null}
                             {host.tags.length > 2 ? <span className="host-chip muted">+{host.tags.length - 2}</span> : null}
                           </div>
                         </td>
