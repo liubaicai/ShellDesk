@@ -192,6 +192,7 @@ export const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   'code-editor': { x: 74, y: 30, width: 1220, height: 720 },
   browser: { x: 150, y: 58, width: 1000, height: 600 },
   vnc: { x: 118, y: 46, width: 1040, height: 650 },
+  'rdp-viewer': { x: 72, y: 30, width: 1220, height: 720 },
   'log-viewer': { x: 118, y: 46, width: 1080, height: 650 },
   monitor: { x: 224, y: 86, width: 820, height: 520 },
   mysql: { x: 100, y: 40, width: 1020, height: 620 },

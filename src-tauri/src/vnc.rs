@@ -5,38 +5,18 @@ use tauri::Emitter;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::oneshot,
     time,
 };
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     error_string, get_connection, random_id, read_string_field,
-    ssh_tunnel::{create_tunnel_for_connection, spawn_tunnel_shutdown, SshTunnelHandle},
-    string_arg, AppState, ConnectionKind, VncProxySession,
+    ssh_tunnel::{
+        create_tunnel_for_connection, spawn_tunnel_shutdown, SshTunnelGuard, SshTunnelHandle,
+    },
+    string_arg, AppState, ConnectionKind, DesktopProxySession,
 };
-
-struct VncTunnelGuard {
-    tunnel: Option<SshTunnelHandle>,
-}
-
-impl VncTunnelGuard {
-    fn new(tunnel: Option<SshTunnelHandle>) -> Self {
-        Self { tunnel }
-    }
-
-    fn take(&mut self) -> Option<SshTunnelHandle> {
-        self.tunnel.take()
-    }
-}
-
-impl Drop for VncTunnelGuard {
-    fn drop(&mut self) {
-        if let Some(tunnel) = self.tunnel.take() {
-            spawn_tunnel_shutdown("vnc", tunnel);
-        }
-    }
-}
 
 pub(crate) async fn probe(
     state: AppState,
@@ -129,7 +109,7 @@ pub(crate) async fn start(
         );
         (local_addr.ip().to_string(), forward_port, Some(tunnel))
     };
-    let mut tunnel_guard = VncTunnelGuard::new(ssh_tunnel);
+    let mut tunnel_guard = SshTunnelGuard::new("vnc", ssh_tunnel);
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
@@ -142,7 +122,8 @@ pub(crate) async fn start(
         "websocket-ready",
         &format!("Listening on ws://127.0.0.1:{ws_port}/"),
     );
-    let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
+    let cancellation = CancellationToken::new();
+    let server_cancellation = cancellation.clone();
     let server_target_host = target_host.clone();
     let event_window = window.clone();
     let event_connection_id = connection_id.clone();
@@ -150,7 +131,7 @@ pub(crate) async fn start(
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::select! {
-                _ = &mut shutdown_rx => break,
+                _ = server_cancellation.cancelled() => break,
                 accepted = listener.accept() => {
                     match accepted {
                         Ok((stream, _)) => {
@@ -158,8 +139,9 @@ pub(crate) async fn start(
                             let next_window = event_window.clone();
                             let next_connection_id = event_connection_id.clone();
                             let next_vnc_id = event_vnc_id.clone();
+                            let next_cancellation = server_cancellation.clone();
                             tauri::async_runtime::spawn(async move {
-                                if let Err(error) = handle_websocket(stream, next_host, target_port).await {
+                                if let Err(error) = handle_websocket(stream, next_host, target_port, next_cancellation).await {
                                     emit_diagnostic(
                                         &next_window,
                                         &next_connection_id,
@@ -179,9 +161,9 @@ pub(crate) async fn start(
 
     state.vnc_proxies.lock().map_err(error_string)?.insert(
         vnc_key(&connection_id, &vnc_id),
-        VncProxySession {
+        DesktopProxySession {
             connection_id: connection_id.clone(),
-            shutdown: Some(shutdown_tx),
+            cancellation,
             ssh_tunnel: tunnel_guard.take(),
         },
     );
@@ -383,9 +365,7 @@ fn vnc_security_type_name(code: u32) -> &'static str {
 
 fn stop_by_key(state: &AppState, key: &str) -> Result<(), String> {
     if let Some(mut proxy) = state.vnc_proxies.lock().map_err(error_string)?.remove(key) {
-        if let Some(shutdown) = proxy.shutdown.take() {
-            let _ = shutdown.send(());
-        }
+        proxy.cancellation.cancel();
         if let Some(tunnel) = proxy.ssh_tunnel.take() {
             spawn_tunnel_shutdown("vnc", tunnel);
         }
@@ -397,6 +377,7 @@ async fn handle_websocket(
     stream: TcpStream,
     target_host: String,
     target_port: u16,
+    cancellation: CancellationToken,
 ) -> Result<(), String> {
     let websocket = tokio_tungstenite::accept_async(stream)
         .await
@@ -446,6 +427,7 @@ async fn handle_websocket(
     };
 
     tokio::select! {
+        _ = cancellation.cancelled() => Ok(()),
         result = client_to_target => result,
         result = target_to_client => result,
     }

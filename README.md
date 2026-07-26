@@ -10,7 +10,7 @@
 
 <p align="center">
   ShellDesk is built with Tauri 2, Rust, React 19, TypeScript, russh, and xterm.js.<br/>
-  It combines SSH and local host management, a native dual-pane SFTP workspace, SD-Agent, databases, VNC, private-network browsing, and 41 built-in remote desktop apps in one local-first operations workspace.
+  It combines SSH and local host management, a native dual-pane SFTP workspace, SD-Agent, databases, VNC/RDP, private-network browsing, and 44 built-in remote desktop apps in one local-first operations workspace.
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@
 
 | | Current capability |
 | :--- | :--- |
-| **41 built-in apps** | Terminal, files, code, AI, data, network, security, web-service, container, Kubernetes, and virtual-machine tools |
+| **44 built-in apps** | Terminal, files, code, AI, data, VNC/RDP, network, security, web-service, container, Kubernetes, and virtual-machine tools |
 | **6 database engines** | MySQL, PostgreSQL, ClickHouse, MongoDB, Redis, and SQLite |
 | **Native SSH + SFTP** | Rust `russh` / `russh-sftp`; no client-side OpenSSH, `sshpass`, or `ssh-keyscan` dependency |
 | **3 desktop platforms** | Windows, macOS, and Linux packages, with a shared React interface and Rust backend |
@@ -105,7 +105,7 @@ ShellDesk is useful for:
 - Each SSH or local connection opens in an independent connection window with the current host and local SOCKS port in the title bar when available
 - Built-in SOCKS proxy, Tauri-backed browser proxy, and noVNC viewer cover remote web and desktop access through Rust-side SSH tunnels
 - Remote desktop windows support drag, resize, maximize, minimize, z-order management, and a Dock
-- The 43-app catalog is grouped in Launchpad; File Manager, Terminal, and Browser are pinned by default while Dock position, size, auto-hide, and pinned apps are configurable
+- The 44-app catalog is grouped in Launchpad; File Manager, Terminal, and Browser are pinned by default while Dock position, size, auto-hide, and pinned apps are configurable
 - Desktop icons support custom layout, folders, sorting modes, catalog migration, and custom wallpaper
 
 ### Terminal, Files, and Editing
@@ -304,7 +304,7 @@ ShellDesk/
 │   ├── i18n.ts                          # UI language selection and translation helpers
 │   ├── components/
 │   │   ├── navigation/                  # Main navigation icons
-│   │   ├── remote-desktop/              # 41 built-in remote desktop apps
+│   │   ├── remote-desktop/              # 44 built-in remote desktop apps
 │   │   └── sftp-transfer/               # Native dual-pane SFTP workspace
 │   ├── pages/
 │   │   ├── KeysPage.tsx                 # SSH key management

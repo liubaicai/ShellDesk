@@ -8,6 +8,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "code-editor",
     "browser",
     "vnc",
+    "rdp-viewer",
     "log-viewer",
     "monitor",
     "mysql",

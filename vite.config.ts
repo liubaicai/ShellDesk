@@ -4,6 +4,14 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  optimizeDeps: {
+    // IronRDP embeds its WASM payload in ESM. Serving it directly avoids a
+    // multi-megabyte cold-start prebundle before the lazy RDP view can render.
+    exclude: [
+      '@devolutions/iron-remote-desktop',
+      '@devolutions/iron-remote-desktop-rdp',
+    ],
+  },
   build: {
     rollupOptions: {
       output: {

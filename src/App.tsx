@@ -138,7 +138,7 @@ const themePreloadStorageKey = 'shelldesk:theme-preload';
 const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
 const maxRenderedLogEntries = 5_000;
-const remoteDesktopAppCatalogVersion = 18;
+const remoteDesktopAppCatalogVersion = 19;
 const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'git-manager',
   'cert-manager',
@@ -159,6 +159,7 @@ const remoteDesktopAppCatalogMigrationKeys: ShellDeskDesktopAppKey[] = [
   'vm-manager',
   'supervisor-manager',
   'backup-manager',
+  'rdp-viewer',
 ];
 const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = {
   appCatalogVersion: remoteDesktopAppCatalogVersion,

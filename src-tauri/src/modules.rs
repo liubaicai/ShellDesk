@@ -32,6 +32,8 @@ pub(crate) mod mcp_server;
 pub(crate) mod monitor_persistence;
 #[path = "proxy.rs"]
 pub(crate) mod proxy;
+#[path = "rdp.rs"]
+pub(crate) mod rdp;
 #[path = "remote_fs.rs"]
 pub(crate) mod remote_fs;
 #[path = "russh_client.rs"]
@@ -77,8 +79,8 @@ pub(crate) use ssh_transport::{
     unavailable_password_auth_error, value_to_bytes,
 };
 pub(crate) use state::{
-    ActiveConnection, ActiveTransfer, AppState, ConnectionKind, HostKeyRequest, PrivilegeConfig,
-    SshProfile, UiWindowRef, VncProxySession,
+    ActiveConnection, ActiveTransfer, AppState, ConnectionKind, DesktopProxySession,
+    HostKeyRequest, PrivilegeConfig, SshProfile, UiWindowRef,
 };
 pub(crate) use util::{
     app_data_dir, error_string, escape_pointer, https_url_origin, node_platform, now,

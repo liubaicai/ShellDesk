@@ -2,8 +2,9 @@
 mod database_channels;
 
 use crate::{
-    browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, remote_fs,
-    run_connection_command, run_connection_command_stream, terminal, vnc, zmodem, AppState,
+    browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, rdp,
+    remote_fs, run_connection_command, run_connection_command_stream, terminal, vnc, zmodem,
+    AppState,
 };
 use serde_json::{json, Value};
 use std::{future::Future, pin::Pin, sync::OnceLock};
@@ -124,6 +125,9 @@ pub(crate) async fn dispatch(
         "connection:vnc-probe" => vnc::probe(state.clone(), window.clone(), args).await,
         "connection:vnc-start" => vnc::start(state.clone(), window.clone(), args).await,
         "connection:vnc-stop" => vnc::stop(&state, args),
+        "connection:rdp-probe" => rdp::probe(state.clone(), window.clone(), args).await,
+        "connection:rdp-start" => rdp::start(state.clone(), window.clone(), args).await,
+        "connection:rdp-stop" => rdp::stop(&state, args),
         _ => return None,
     };
 

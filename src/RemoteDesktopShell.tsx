@@ -137,6 +137,7 @@ const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSett
 const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
 const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
 const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVncViewer'));
+const RemoteRdpViewer = lazy(() => import('./components/remote-desktop/RemoteRdpViewer'));
 
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent, initialAppKey }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
@@ -1730,6 +1731,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           hostId={remoteConnectionProfileHostId}
           systemType={connection.host.systemType}
           onOpenScheduledTasks={() => openDesktopWindow('scheduled-tasks')}
+        />
+      );
+    }
+
+    if (desktopWindow.appKey === 'rdp-viewer') {
+      return (
+        <RemoteRdpViewer
+          connectionId={connection.id}
+          hostId={remoteConnectionProfileHostId}
         />
       );
     }
