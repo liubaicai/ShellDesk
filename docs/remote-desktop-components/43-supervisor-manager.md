@@ -17,6 +17,7 @@ Supervisor 管理器用于查看和控制远程 Unix 主机上由 `supervisord` 
 - 扫描 Debian / Ubuntu、RHEL 系、Homebrew 等常见配置路径，提供只读配置预览。
 - 远程命令权限不足时复用 ShellDesk 的 sudo 凭据提示与连接级缓存。
 - Windows 主机只显示明确的降级说明，不执行 Unix 命令。
+- 响应式布局以 Supervisor 组件窗口自身宽度为准，缩放浮动窗口时会重排标题、操作区和运行概览。
 
 ## 代码落点
 

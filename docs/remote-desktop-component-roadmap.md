@@ -77,9 +77,9 @@
 | 40 | `ai-chat` | AI 助手 | [AI 助手](./remote-desktop-components/40-ai-assistant.md) | 远程上下文对话、共享工具、Markdown 渲染、打开设置和组件 |
 | 41 | `k8s-manager` | Kubernetes 管理器 | [Kubernetes 管理器](./remote-desktop-components/41-k8s-manager.md) | 上下文/命名空间、Pod 与 Workload 管理、日志、Exec、YAML 和节点视图 |
 | 42 | `vm-manager` | 虚拟机管理器 | [虚拟机管理器](./remote-desktop-components/42-virtual-machine-manager.md) | 68:32 清单/详情布局、生命周期、创建/克隆/设置/删除、设备挂载、迁移、快照、网络与存储池 |
-| 43 | `supervisor-manager` | Supervisor 管理器 | [Supervisor 管理器](./remote-desktop-components/43-supervisor-manager.md) | supervisord 检测、进程筛选与批量启停、配置只读预览、stdout/stderr 日志 |
-| 44 | `backup-manager` | 备份管理器 | [备份管理器](./remote-desktop-components/44-backup-manager.md) | 文件与数据库备份、校验/下载/恢复、S3 / MinIO 传输、Unix 与 Windows 定时计划 |
-| 45 | `rdp-viewer` | RDP 远程桌面 | [RDP 远程桌面查看器](./remote-desktop-components/45-rdp-viewer.md) | SSH direct-tcpip、RDCleanPath/TLS、IronRDP Canvas、剪贴板、自适应分辨率与全屏 |
+| 43 | `supervisor-manager` | Supervisor 管理器 | [Supervisor 管理器](./remote-desktop-components/43-supervisor-manager.md) | supervisord 检测、进程筛选与批量启停、配置只读预览、stdout/stderr 日志、组件级响应式布局 |
+| 44 | `backup-manager` | 备份管理器 | [备份管理器](./remote-desktop-components/44-backup-manager.md) | 文件与数据库备份、校验/下载/恢复、S3 / MinIO 传输、Unix 与 Windows 定时计划、组件级响应式布局 |
+| 45 | `rdp-viewer` | RDP 远程桌面 | [RDP 远程桌面查看器](./remote-desktop-components/45-rdp-viewer.md) | SSH direct-tcpip、RDCleanPath/TLS、IronRDP Canvas、剪贴板、自适应分辨率、WebView WASM 兼容与组件级响应式布局 |
 
 ## Dock 与桌面布局
 

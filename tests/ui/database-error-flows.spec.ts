@@ -45,6 +45,15 @@ async function expectElementTopmost(element: Locator) {
   expect(isTopmost, 'element center should not be covered by another element').toBe(true);
 }
 
+async function setComponentInlineSize(component: Locator, width: number) {
+  await component.evaluate((node, inlineSize) => {
+    const element = node as HTMLElement;
+    element.style.inlineSize = `${inlineSize}px`;
+    element.style.maxInlineSize = `${inlineSize}px`;
+    element.style.flex = '0 0 auto';
+  }, width);
+}
+
 async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
@@ -80,6 +89,10 @@ test('Supervisor manager covers process actions, logs, and read-only config prev
   await page.getByRole('tab', { name: '概览' }).click();
   await page.locator('.supervisor-config-list button').filter({ hasText: 'web.conf' }).click();
   await expect(page.locator('.supervisor-config-preview')).toContainText('[program:web]');
+
+  const supervisorManager = page.locator('.supervisor-manager');
+  await setComponentInlineSize(supervisorManager, 620);
+  await expect(supervisorManager.locator('.supervisor-header')).toHaveCSS('flex-direction', 'column');
 });
 
 test('Backup manager creates, validates, downloads, restores, and schedules without exposing credentials', async ({ page }) => {
@@ -160,6 +173,10 @@ test('Backup manager creates, validates, downloads, restores, and schedules with
   expect(capturedS3Upload.command).toBe('sh -s');
   expect(capturedS3Upload.command).not.toContain('mock-s3-secret');
   expect(capturedS3Upload.stdin).toContain('mock-s3-secret');
+
+  const backupManager = page.locator('.backup-manager');
+  await setComponentInlineSize(backupManager, 680);
+  await expect(backupManager.locator('.backup-manager-header')).toHaveCSS('flex-direction', 'column');
 });
 
 test('RDP viewer initializes IronRDP and probes the tunneled target without persisting a password', async ({ page }) => {
@@ -191,6 +208,17 @@ test('RDP viewer initializes IronRDP and probes the tunneled target without pers
   await page.getByTitle('显示设置面板').click();
   await expect(page.locator('.rdp-inspector')).toBeHidden();
   await expect(page.locator('.rdp-stage')).toBeVisible();
+
+  const rdpViewer = page.locator('.rdp-viewer');
+  await setComponentInlineSize(rdpViewer, 520);
+  const [hostBox, portBox] = await Promise.all([
+    page.getByLabel('RDP 主机').boundingBox(),
+    page.getByLabel('端口').boundingBox(),
+  ]);
+  expect(hostBox).not.toBeNull();
+  expect(portBox).not.toBeNull();
+  expect(Math.abs(portBox!.x - hostBox!.x)).toBeLessThanOrEqual(1);
+  expect(portBox!.y).toBeGreaterThan(hostBox!.y + hostBox!.height);
 
   await gotoHarness(page, 'component=rdp-viewer&theme=light');
   const lightEmptyState = page.locator('.rdp-empty-state');

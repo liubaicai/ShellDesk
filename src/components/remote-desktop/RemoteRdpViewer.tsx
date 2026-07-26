@@ -75,12 +75,67 @@ interface DiagnosticEntry {
 
 const defaultRdpPort = 3389;
 const maxDiagnostics = 40;
+const wasmDataUrlPrefix = 'data:application/wasm;base64,';
+let rdpClientPromise: Promise<RdpBackendModule> | null = null;
 const resolutionSizes: Record<Exclude<RdpResolution, 'adaptive'>, { width: number; height: number }> = {
   '1920x1080': { width: 1920, height: 1080 },
   '1600x900': { width: 1600, height: 900 },
   '1366x768': { width: 1366, height: 768 },
   '1280x720': { width: 1280, height: 720 },
 };
+
+function getFetchUrl(input: RequestInfo | URL) {
+  if (typeof input === 'string') {
+    return input;
+  }
+  return input instanceof URL ? input.href : input.url;
+}
+
+function createWasmDataResponse(url: string) {
+  const binary = globalThis.atob(url.slice(wasmDataUrlPrefix.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Response(bytes, {
+    headers: { 'Content-Type': 'application/wasm' },
+  });
+}
+
+async function initializeRdpBackend(backend: RdpBackendModule) {
+  const originalFetch = globalThis.fetch;
+  const wasmAwareFetch: typeof fetch = (input, init) => {
+    const url = getFetchUrl(input);
+    if (url.startsWith(wasmDataUrlPrefix)) {
+      return Promise.resolve(createWasmDataResponse(url));
+    }
+    return originalFetch.call(globalThis, input, init);
+  };
+
+  globalThis.fetch = wasmAwareFetch;
+  try {
+    await backend.init('warn');
+  } finally {
+    if (globalThis.fetch === wasmAwareFetch) {
+      globalThis.fetch = originalFetch;
+    }
+  }
+}
+
+function loadRdpClient() {
+  if (!rdpClientPromise) {
+    rdpClientPromise = (async () => {
+      const backend = await import('@devolutions/iron-remote-desktop-rdp');
+      await initializeRdpBackend(backend);
+      await import('@devolutions/iron-remote-desktop');
+      return backend;
+    })().catch((error) => {
+      rdpClientPromise = null;
+      throw error;
+    });
+  }
+  return rdpClientPromise;
+}
 
 function createRdpId() {
   if ('randomUUID' in crypto) {
@@ -256,9 +311,7 @@ function RemoteRdpViewer({
 
     const prepareClient = async () => {
       try {
-        const backend = await import('@devolutions/iron-remote-desktop-rdp');
-        await backend.init('warn');
-        await import('@devolutions/iron-remote-desktop');
+        const backend = await loadRdpClient();
         if (!active || !mountRef.current) {
           return;
         }
