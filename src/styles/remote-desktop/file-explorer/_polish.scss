@@ -107,10 +107,12 @@
 .explorer-row .row-actions {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.14s ease;
+  transition: opacity 0.12s ease;
 }
 
 .explorer-row:hover .row-actions,
@@ -135,6 +137,7 @@
 }
 
 .explorer-row .row-actions button:hover,
+.explorer-row .row-actions button:focus-visible,
 .search-clear-button:hover {
   background: var(--explorer-hover);
   color: var(--explorer-text);
