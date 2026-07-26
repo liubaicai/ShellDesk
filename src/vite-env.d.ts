@@ -201,6 +201,7 @@ type ShellDeskDesktopAppKey =
   | 'redis'
   | 'service-manager'
   | 'supervisor-manager'
+  | 'backup-manager'
   | 'container-manager'
   | 'k8s-manager'
   | 'vm-manager'

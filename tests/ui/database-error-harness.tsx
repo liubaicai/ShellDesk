@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
+import RemoteBackupManager from '../../src/components/remote-desktop/RemoteBackupManager';
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
@@ -188,6 +189,14 @@ function installGuiSshMock() {
   let lastVirshStdin = '';
   let lastSftpTransferOptions: ShellDeskSftpTransferOptions | undefined;
   let lastSupervisorActionCommand = '';
+  let backupCreated = false;
+  let backupPlanSaved = false;
+  let lastBackupCommand = '';
+  let lastBackupStdin = '';
+  let lastBackupPlanStdin = '';
+  let lastBackupDownloadPath = '';
+  let lastBackupS3Command = '';
+  let lastBackupS3Stdin = '';
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -202,6 +211,12 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSftpTransferOptions', { configurable: true, get: () => lastSftpTransferOptions });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSupervisorActionCommand', { configurable: true, get: () => lastSupervisorActionCommand });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupCommand', { configurable: true, get: () => lastBackupCommand });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupStdin', { configurable: true, get: () => lastBackupStdin });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupPlanStdin', { configurable: true, get: () => lastBackupPlanStdin });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupDownloadPath', { configurable: true, get: () => lastBackupDownloadPath });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Command', { configurable: true, get: () => lastBackupS3Command });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Stdin', { configurable: true, get: () => lastBackupS3Stdin });
 
   (window as any).guiSSH = {
     platform: 'win32',
@@ -228,6 +243,37 @@ function installGuiSshMock() {
     },
     connections: {
       runCommand: async (_connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => {
+        if (command === 'sh -s' && stdin?.includes('for tool in') && stdin.includes('mysqldump')) {
+          return createCommandResult('tar\ngzip\nmysqldump\nmysql\npg_dump\npg_restore\nmongodump\nmongorestore\nsqlite3\naws\nmc\ncrontab\n');
+        }
+        if (command === 'sh -s' && stdin?.includes('__SHELLDESK_BACKUP_ITEM__')) {
+          const rows = [
+            '__SHELLDESK_BACKUP_ITEM__\tshelldesk-files-assets-20260101-020000.tar.gz\t/home/demo/backups/shelldesk-files-assets-20260101-020000.tar.gz\t4096\t1767232800',
+            '__SHELLDESK_BACKUP_ITEM__\tshelldesk-postgres-app-20260101-010000.dump\t/home/demo/backups/shelldesk-postgres-app-20260101-010000.dump\t8192\t1767229200',
+          ];
+          if (backupCreated) {
+            rows.unshift('__SHELLDESK_BACKUP_ITEM__\tshelldesk-mysql-production-20260101-030000.sql.gz\t/home/demo/backups/shelldesk-mysql-production-20260101-030000.sql.gz\t12288\t1767236400');
+          }
+          return createCommandResult(rows.join('\n'));
+        }
+        if (command === 'sh -s' && stdin?.trim() === 'crontab -l 2>/dev/null || true') {
+          return createCommandResult(backupPlanSaved
+            ? '# SHELLDESK_BACKUP:mysql-production|mysql|production|~/.config/shelldesk/backup-plans/mysql-production.sh\n0 2 * * * "$HOME/.config/shelldesk/backup-plans/mysql-production.sh"'
+            : '');
+        }
+        if (command === 'sh -s' && stdin?.includes('__SHELLDESK_BACKUP_VALIDATION__')) {
+          return createCommandResult('__SHELLDESK_BACKUP_VALIDATION__\tabcdef0123456789\tgzip stream valid');
+        }
+        if (command === 'sh -s' && stdin?.includes('# SHELLDESK_BACKUP:mysql-production|')) {
+          backupPlanSaved = true;
+          lastBackupPlanStdin = stdin;
+          return createCommandResult('');
+        }
+        if (command === 'sh -s' && stdin?.includes('MC_HOST_shelldesk=')) {
+          lastBackupS3Command = command;
+          lastBackupS3Stdin = stdin;
+          return createCommandResult('');
+        }
         if (command.includes('SHELLDESK_VIRSH_URI=')) {
           virshRequestCount += 1;
           if (command.includes('\nset -e\n')) {
@@ -297,6 +343,25 @@ function installGuiSshMock() {
         }
         return createCommandResult('');
       },
+      runCommandStream: async (
+        _connectionId: string,
+        command: string,
+        stdin?: string,
+        callbacks?: ShellDeskRunCommandStreamCallbacks,
+      ) => {
+        if (command === 'sh -s' && stdin?.includes('__SHELLDESK_BACKUP_CREATED__')) {
+          backupCreated = true;
+          lastBackupCommand = command;
+          lastBackupStdin = stdin;
+          callbacks?.onChunk?.('Creating protected backup...\n', 'stdout');
+          return createCommandResult('__SHELLDESK_BACKUP_CREATED__\t/home/demo/backups/shelldesk-mysql-production-20260101-030000.sql.gz');
+        }
+        if (command === 'sh -s' && stdin?.includes('backup_path=')) {
+          callbacks?.onChunk?.('Restore completed.\n', 'stdout');
+          return createCommandResult('');
+        }
+        return createCommandResult('');
+      },
       resolveBrowserUrl: async (_connectionId: string, url: string) => {
         if (url.includes('badcert')) {
           throw new Error('CERT_AUTHORITY_INVALID mock certificate failure');
@@ -337,7 +402,10 @@ function installGuiSshMock() {
       createDirectory: async () => true,
       createFile: async () => true,
       renamePath: async () => true,
-      downloadFile: async () => ({ path: 'secure.txt' }),
+      downloadFile: async (_connectionId: string, remotePath: string) => {
+        lastBackupDownloadPath = remotePath;
+        return { canceled: false, path: 'secure.txt' };
+      },
       downloadPaths: async () => ({ path: 'secure.zip' }),
       uploadLocalPaths: async () => true,
       selectUploadFiles: async () => null,
@@ -505,6 +573,14 @@ function App() {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <RemoteSupervisorManager connectionId={connectionId} systemType="ubuntu" />
+      </div>
+    );
+  }
+
+  if (component === 'backup-manager') {
+    return (
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemoteBackupManager connectionId={connectionId} hostId={hostId} systemType="ubuntu" onOpenScheduledTasks={() => undefined} />
       </div>
     );
   }
