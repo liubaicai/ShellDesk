@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -59,6 +59,41 @@ async function gotoSeededHostPage(page: Page) {
   await expect(page.getByText('Production Web', { exact: true })).toBeVisible();
 }
 
+async function expectCheckedOptionToBeReadable(select: Locator) {
+  const metrics = await select.locator('option:checked').evaluate((option) => {
+    const style = getComputedStyle(option);
+    const sampleColor = (color: string) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
+    const luminance = ([red, green, blue]: number[]) => {
+      const linear = [red, green, blue].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    };
+    const background = sampleColor(style.backgroundColor);
+    const foreground = sampleColor(style.color);
+    const backgroundLuminance = luminance(background);
+    const foregroundLuminance = luminance(foreground);
+
+    return {
+      backgroundAlpha: background[3],
+      contrastRatio: (Math.max(backgroundLuminance, foregroundLuminance) + 0.05)
+        / (Math.min(backgroundLuminance, foregroundLuminance) + 0.05),
+    };
+  });
+
+  expect(metrics.backgroundAlpha).toBe(255);
+  expect(metrics.contrastRatio).toBeGreaterThanOrEqual(4.5);
+}
+
 test('host editor reuses existing groups and tags while preserving custom input', async ({ page }) => {
   await gotoSeededHostPage(page);
   await page.getByRole('button', { name: '添加主机' }).click();
@@ -102,9 +137,22 @@ test('empty metadata can be assigned from cards and list rows, and card actions 
   await expect(card.getByRole('button', { name: '删除' }).locator('svg')).toHaveCount(1);
   await menuTrigger.click();
 
-  await card.locator('select[aria-label="为主机选择分组"]').selectOption('Production');
+  const cardGroupSelect = card.locator('select[aria-label="为主机选择分组"]');
+  const cardTagSelect = card.locator('select[aria-label="为主机选择标签"]');
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((nextTheme) => {
+      document.documentElement.dataset.theme = nextTheme;
+    }, theme);
+    await expectCheckedOptionToBeReadable(cardGroupSelect);
+    await expectCheckedOptionToBeReadable(cardTagSelect);
+  }
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark';
+  });
+
+  await cardGroupSelect.selectOption('Production');
   await expect(card.getByText('Production', { exact: true })).toBeVisible();
-  await card.locator('select[aria-label="为主机选择标签"]').selectOption('linux');
+  await cardTagSelect.selectOption('linux');
   await expect(card.getByText('linux', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: '列表模式' }).click();

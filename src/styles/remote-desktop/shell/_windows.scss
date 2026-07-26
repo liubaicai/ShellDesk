@@ -32,6 +32,13 @@
     border-color 120ms ease;
 }
 
+.desktop-icons > .desktop-icon-button {
+  height: 88px;
+  grid-template-rows: 46px minmax(0, 28px);
+  align-content: start;
+  gap: 4px;
+}
+
 .desktop-icon-button.active,
 .desktop-icon-button:hover {
   border-color: rgba(255, 255, 255, 0.22);

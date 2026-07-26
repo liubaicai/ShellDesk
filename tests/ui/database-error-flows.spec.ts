@@ -58,6 +58,79 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
+test('Desktop icons keep a fixed image row when labels wrap and artwork fills each PNG', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 420 });
+  await gotoHarness(page, 'component=desktop-icons&theme=dark');
+
+  const buttons = page.locator('.desktop-icons > .desktop-icon-button');
+  await expect(buttons).toHaveCount(6);
+  await expect(page.getByRole('button', { name: '记事本', exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+
+  const layout = await buttons.evaluateAll((elements) => elements.map((element) => {
+    const icon = element.querySelector<HTMLElement>('.desktop-app-icon-shell');
+    const label = element.querySelector<HTMLElement>('strong');
+    const range = document.createRange();
+    range.selectNodeContents(label!);
+
+    return {
+      appKey: (element as HTMLElement).dataset.appKey,
+      iconTop: icon!.getBoundingClientRect().top,
+      labelLines: range.getClientRects().length,
+    };
+  }));
+
+  const byAppKey = new Map(layout.map((item) => [item.appKey, item]));
+  expect(byAppKey.get('notepad')!.iconTop).toBeCloseTo(byAppKey.get('supervisor-manager')!.iconTop, 1);
+  expect(byAppKey.get('code-editor')!.iconTop).toBeCloseTo(byAppKey.get('backup-manager')!.iconTop, 1);
+  expect(byAppKey.get('browser')!.iconTop).toBeCloseTo(byAppKey.get('rdp-viewer')!.iconTop, 1);
+  expect(byAppKey.get('notepad')!.labelLines).toBe(1);
+  expect(byAppKey.get('supervisor-manager')!.labelLines).toBeGreaterThan(1);
+  expect(byAppKey.get('rdp-viewer')!.labelLines).toBeGreaterThan(1);
+
+  const artwork = await page.locator(
+    '[data-app-key="backup-manager"] img, [data-app-key="rdp-viewer"] img',
+  ).evaluateAll(async (images) => Promise.all(images.map(async (image) => {
+    const img = image as HTMLImageElement;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(img, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let minX = canvas.width;
+    let minY = canvas.height;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] <= 4) continue;
+      const pixelIndex = (index - 3) / 4;
+      const x = pixelIndex % canvas.width;
+      const y = Math.floor(pixelIndex / canvas.width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+
+    return {
+      appKey: img.closest<HTMLElement>('[data-app-key]')!.dataset.appKey,
+      width: canvas.width,
+      height: canvas.height,
+      bounds: [minX, minY, maxX + 1, maxY + 1],
+    };
+  })));
+
+  expect(artwork).toEqual([
+    { appKey: 'backup-manager', width: 220, height: 220, bounds: [0, 0, 220, 220] },
+    { appKey: 'rdp-viewer', width: 220, height: 220, bounds: [0, 0, 220, 220] },
+  ]);
+});
+
 test('Supervisor manager covers process actions, logs, and read-only config preview', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 760 });
   await gotoHarness(page, 'component=supervisor-manager&theme=dark');

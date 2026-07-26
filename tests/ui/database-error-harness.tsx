@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import HostListPanel from '../../src/components/HostListPanel';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
 import RemoteBackupManager from '../../src/components/remote-desktop/RemoteBackupManager';
+import { DesktopAppIcon } from '../../src/components/remote-desktop/RemoteDesktopAppIcon';
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
@@ -14,6 +15,7 @@ import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteS
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
 import { loadFullMessageCatalog } from '../../src/i18n';
+import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
 import '../../src/styles/critical.scss';
 import '../../src/styles/deferred.scss';
 
@@ -638,6 +640,34 @@ function installGuiSshMock() {
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
+
+  if (component === 'desktop-icons') {
+    const icons = [
+      { appKey: 'notepad', label: '记事本' },
+      { appKey: 'code-editor', label: '代码编辑器' },
+      { appKey: 'browser', label: '浏览器' },
+      { appKey: 'supervisor-manager', label: 'Supervisor 管理' },
+      { appKey: 'backup-manager', label: '备份管理' },
+      { appKey: 'rdp-viewer', label: 'RDP 远程桌面' },
+    ] satisfies ReadonlyArray<{ appKey: DesktopAppKey; label: string }>;
+
+    return (
+      <main className="remote-desktop-page" style={{ width: 280, height: 400 }}>
+        <section className="remote-desktop-surface remote-desktop-dock-bottom" style={{ background: '#0b2938' }}>
+          <div className="desktop-icons" aria-label="桌面图标布局" style={{ height: 276 }}>
+            {icons.map(({ appKey, label }) => (
+              <div key={appKey} role="button" className="desktop-icon-button" data-app-key={appKey}>
+                <span className={`desktop-app-icon-shell desktop-app-icon-${appKey}`}>
+                  <DesktopAppIcon appKey={appKey} />
+                </span>
+                <strong>{label}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (component === 'vm-manager') {
     return (

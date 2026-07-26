@@ -41,7 +41,7 @@ select optgroup {
 }
 
 select option:checked {
-  background-color: var(--accent-soft);
+  background-color: color-mix(in srgb, var(--accent) 24%, var(--surface-input));
   color: var(--text);
 }
 
