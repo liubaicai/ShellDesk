@@ -28,6 +28,7 @@
   --backup-shadow: 0 18px 52px rgba(0, 0, 0, 0.2);
   display: grid;
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  container-type: inline-size;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -1148,7 +1149,7 @@
   }
 }
 
-@media (max-width: 1020px) {
+@container (max-width: 1020px) {
   .backup-create-layout,
   .backup-history-layout,
   .backup-plans-layout {
@@ -1174,7 +1175,7 @@
   }
 }
 
-@media (max-width: 720px) {
+@container (max-width: 720px) {
   .backup-manager-header,
   .backup-history-toolbar {
     align-items: flex-start;

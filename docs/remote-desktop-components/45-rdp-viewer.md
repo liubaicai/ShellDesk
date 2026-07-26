@@ -17,6 +17,7 @@ RDP Viewer 在当前 ShellDesk SSH 会话内打开到 Windows RDP 服务的 `dir
 - 通过 Display Control 动态通道按窗口变化调整会话分辨率。
 - 支持自动剪贴板同步，以及显式发送本机内容和保存远端内容。
 - 按主机保存目标、用户名、域、分辨率、色深、缩放和剪贴板偏好；RDP 密码只保留在当前 React 状态，连接建立后清空，永不写入 vault。
+- 响应式布局以 RDP 组件窗口自身宽度为准，连接表单在窄窗口依次切换为双列和单列。
 
 ## 代码落点
 
@@ -34,6 +35,7 @@ RDP Viewer 在当前 ShellDesk SSH 会话内打开到 Windows RDP 服务的 `dir
 - 浏览器无法直接建立任意 TCP/TLS RDP 连接，因此本地后端实现了 IronRDP 所需的最小 RDCleanPath 代理。
 - 代理只接受本机回环连接，并同时校验随机授权令牌和预期目标，令牌不会写入配置或日志。
 - RDP 服务器常使用自签名证书；代理允许该证书完成 TLS，但仍验证握手签名，并将实际证书链交给 IronRDP 进行 CredSSP 公钥绑定。
+- 页面 CSP 仅额外放行 `wasm-unsafe-eval`；IronRDP 包内嵌的 WebAssembly data URL 由初始化期间的窄作用域 fetch 适配器解码，其他请求保持原路径并在初始化后恢复。
 - 关闭组件、RDP 会话或底层 SSH 连接时会取消监听与活动转发，并关闭对应 SSH 隧道。
 - 不新增系统 OpenSSH、`ssh -L`、Node 服务、Guacamole、Devolutions Gateway 或系统 RDP 客户端 fallback。
 

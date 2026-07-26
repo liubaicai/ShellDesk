@@ -15,6 +15,7 @@
   --supervisor-danger: #fb7185;
   --supervisor-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
   display: flex;
+  container-type: inline-size;
   min-width: 0;
   height: 100%;
   flex-direction: column;
@@ -1081,7 +1082,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@container (max-width: 900px) {
   .supervisor-runtime-card {
     grid-template-columns: auto minmax(0, 1fr);
 
@@ -1109,7 +1110,7 @@
   }
 }
 
-@media (max-width: 680px) {
+@container (max-width: 680px) {
   .supervisor-header {
     align-items: flex-start;
     flex-direction: column;

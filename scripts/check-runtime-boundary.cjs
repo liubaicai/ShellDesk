@@ -84,6 +84,7 @@ function findForbiddenSourceUses() {
 const packageJson = readJson('package.json');
 const workspaceYaml = readText('pnpm-workspace.yaml');
 const bridgeSource = readText('src/tauriBridge.ts');
+const indexHtml = readText('index.html');
 const failures = [];
 
 if (Object.hasOwn(packageJson, 'main')) {
@@ -103,6 +104,14 @@ failures.push(...findForbiddenSourceUses());
 
 if (!bridgeSource.includes("invoke<T>('ipc_dispatch'")) {
   failures.push('src/tauriBridge.ts must be the renderer IPC boundary and call ipc_dispatch.');
+}
+
+if (!indexHtml.includes("script-src 'self' 'wasm-unsafe-eval'")) {
+  failures.push('index.html must allow WebAssembly compilation without enabling general unsafe-eval.');
+}
+
+if (indexHtml.includes("script-src 'self' 'unsafe-eval'")) {
+  failures.push('index.html must not enable general unsafe-eval.');
 }
 
 if (failures.length) {

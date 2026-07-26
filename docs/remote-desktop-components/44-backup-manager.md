@@ -16,6 +16,7 @@
 - Unix 使用带 ShellDesk 标记的 crontab 与远程包装脚本；Windows 使用当前用户的 Task Scheduler 与 PowerShell 包装脚本创建定时计划。
 - 计划任务不保存当前输入的数据库密码，并可跳转到计划任务管理器继续维护。
 - Windows 和 Unix 分别生成原生脚本；执行过程通过 `runCommandStream` 持续显示输出。
+- 响应式布局以备份组件窗口自身宽度为准，窄窗口会重排统计卡、表单、预览和历史操作区。
 
 ## 代码落点
 
