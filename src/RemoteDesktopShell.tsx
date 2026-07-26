@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, lazy, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, lazy, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
@@ -16,6 +16,7 @@ import { getRemoteConnectionProfileHostId } from './components/remote-desktop/re
 import { getErrorMessage } from './components/remote-desktop/desktopUtils';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
+import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
 import {
   addAppToFolder,
   areRemoteDesktopLayoutsEqual,
@@ -67,7 +68,6 @@ import {
   type DesktopPointerDragPreviewState,
   type DesktopPointerDragSession,
   type DesktopSurfaceContextMenuState,
-  type DesktopWindowFrame,
   type DesktopWindowInteractionMode,
   type DesktopWindowPointerState,
   type DesktopWindowState,
@@ -132,178 +132,11 @@ const RemoteSearchCluster = lazy(() => import('./components/remote-desktop/Remot
 const RemoteSecurityAudit = lazy(() => import('./components/remote-desktop/RemoteSecurityAudit'));
 const RemoteServiceManager = lazy(() => import('./components/remote-desktop/RemoteServiceManager'));
 const RemoteSupervisorManager = lazy(() => import('./components/remote-desktop/RemoteSupervisorManager'));
+const RemoteBackupManager = lazy(() => import('./components/remote-desktop/RemoteBackupManager'));
 const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSettings'));
 const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
 const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
 const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVncViewer'));
-
-interface DesktopWindowProps {
-  appLabel: string;
-  desktopWindow: DesktopWindowState;
-  isFocused: boolean;
-  isTerminalTitlebarMenuOpen: boolean;
-  language: ShellDeskAppSettings['language'];
-  livePointerFrame: DesktopWindowFrame | null;
-  renderSettings: ShellDeskAppSettings;
-  onBringToFront: (windowId: string) => void;
-  onClose: (windowId: string) => void;
-  onFinishInteraction: (event: ReactPointerEvent<HTMLElement>) => void;
-  onMinimize: (windowId: string) => void;
-  onOpenTerminalTitlebarMenu: (windowId: string, buttonRect: DOMRect) => void;
-  onResizePointerDown: (event: ReactPointerEvent<HTMLElement>, windowId: string) => void;
-  onTitlebarPointerDown: (event: ReactPointerEvent<HTMLElement>, windowId: string) => void;
-  onToggleMaximize: (windowId: string) => void;
-  onUpdateInteraction: (event: ReactPointerEvent<HTMLElement>) => void;
-  renderContent: (desktopWindow: DesktopWindowState) => ReactNode;
-}
-
-const DesktopWindow = memo(function DesktopWindow({
-  appLabel,
-  desktopWindow,
-  isFocused,
-  isTerminalTitlebarMenuOpen,
-  language,
-  livePointerFrame,
-  onBringToFront,
-  onClose,
-  onFinishInteraction,
-  onMinimize,
-  onOpenTerminalTitlebarMenu,
-  onResizePointerDown,
-  onTitlebarPointerDown,
-  onToggleMaximize,
-  onUpdateInteraction,
-  renderContent,
-}: DesktopWindowProps) {
-  const renderedFrame = livePointerFrame ?? desktopWindow.frame;
-  const desktopWindowStyle: CSSProperties = {
-    width: renderedFrame.width,
-    height: renderedFrame.height,
-    transform: `translate3d(${renderedFrame.x}px, ${renderedFrame.y}px, 0)`,
-    zIndex: 10 + desktopWindow.zIndex,
-  };
-
-  return (
-    <section
-      className={`desktop-window desktop-window-${desktopWindow.appKey} ${isFocused ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
-      aria-label={appLabel}
-      aria-hidden={desktopWindow.isMinimized}
-      style={desktopWindowStyle}
-      onPointerDownCapture={() => onBringToFront(desktopWindow.id)}
-    >
-      <header
-        className="desktop-window-titlebar"
-        onPointerDown={(event) => onTitlebarPointerDown(event, desktopWindow.id)}
-        onPointerMove={onUpdateInteraction}
-        onPointerUp={onFinishInteraction}
-        onPointerCancel={onFinishInteraction}
-      >
-        <div className="desktop-window-title">
-          <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
-            <DesktopAppIcon appKey={desktopWindow.appKey} />
-          </span>
-          {desktopWindow.appKey === 'browser' ? (
-            <>
-              <span className="desktop-window-kicker">{appLabel}</span>
-              {desktopWindow.chromeTitle ? (
-                <strong title={desktopWindow.chromeTitle}>
-                  {desktopWindow.chromeTitle}
-                </strong>
-              ) : null}
-              {desktopWindow.chromeStatus ? (
-                <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
-                  {desktopWindow.chromeStatus}
-                </span>
-              ) : null}
-            </>
-          ) : desktopWindow.appKey === 'terminal' ? (
-            <>
-              <strong title={desktopWindow.chromeTitle || appLabel}>
-                {desktopWindow.chromeTitle || appLabel}
-              </strong>
-              {desktopWindow.chromeStatus && desktopWindow.chromeTone !== 'idle' ? (
-                <span className={`desktop-window-state-pill ${desktopWindow.chromeTone || 'idle'}`}>
-                  {desktopWindow.chromeStatus}
-                </span>
-              ) : null}
-            </>
-          ) : (
-            <strong>{appLabel}</strong>
-          )}
-        </div>
-        <div className="win-titlebar-controls" aria-label={t('desktop.window.controls', language)} onPointerDown={(event) => event.stopPropagation()}>
-          {desktopWindow.appKey === 'terminal' ? (
-            <button
-              type="button"
-              className={`win-btn terminal-tools ${isTerminalTitlebarMenuOpen ? 'active' : ''}`}
-              aria-label={t('terminal.titlebar.tools', language)}
-              aria-haspopup="menu"
-              aria-expanded={isTerminalTitlebarMenuOpen}
-              title={t('terminal.titlebar.tools', language)}
-              onClick={(event) => onOpenTerminalTitlebarMenu(desktopWindow.id, event.currentTarget.getBoundingClientRect())}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                <circle cx="2" cy="6" r="1.2" fill="currentColor" />
-                <circle cx="6" cy="6" r="1.2" fill="currentColor" />
-                <circle cx="10" cy="6" r="1.2" fill="currentColor" />
-              </svg>
-            </button>
-          ) : null}
-          <button type="button" className="win-btn minimize" aria-label={t('desktop.window.minimize', language)} title={t('desktop.window.minimizeTitle', language)} onClick={() => onMinimize(desktopWindow.id)}>
-            <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
-          </button>
-          <button
-            type="button"
-            className="win-btn maximize"
-            aria-label={desktopWindow.isMaximized ? t('desktop.window.restoreWindow', language) : t('desktop.window.maximizeWindow', language)}
-            title={desktopWindow.isMaximized ? t('desktop.window.restoreTitle', language) : t('desktop.window.maximizeTitle', language)}
-            onClick={() => onToggleMaximize(desktopWindow.id)}
-          >
-            {desktopWindow.isMaximized ? (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
-                <rect x="0.5" y="2.5" width="7" height="7" rx="0.5" />
-                <path d="M2.5 2.5V0.5H9.5V7.5H7.5" />
-              </svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
-                <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" />
-              </svg>
-            )}
-          </button>
-          <button type="button" className="win-btn close" aria-label={t('desktop.window.close', language)} title={t('desktop.window.closeTitle', language)} onClick={() => onClose(desktopWindow.id)}>
-            <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
-              <line x1="1" y1="1" x2="9" y2="9" />
-              <line x1="9" y1="1" x2="1" y2="9" />
-            </svg>
-          </button>
-        </div>
-      </header>
-      <div className="desktop-window-body">
-        <Suspense fallback={<div className="desktop-window-loading">{t('desktop.window.loading', language)}</div>}>
-          {renderContent(desktopWindow)}
-        </Suspense>
-      </div>
-      {!desktopWindow.isMaximized ? (
-        <div
-          className="desktop-window-resize-handle"
-          onPointerDown={(event) => onResizePointerDown(event, desktopWindow.id)}
-          onPointerMove={onUpdateInteraction}
-          onPointerUp={onFinishInteraction}
-          onPointerCancel={onFinishInteraction}
-          aria-hidden="true"
-        />
-      ) : null}
-    </section>
-  );
-}, (previousProps, nextProps) => (
-  previousProps.desktopWindow === nextProps.desktopWindow &&
-  previousProps.isFocused === nextProps.isFocused &&
-  previousProps.isTerminalTitlebarMenuOpen === nextProps.isTerminalTitlebarMenuOpen &&
-  previousProps.language === nextProps.language &&
-  previousProps.livePointerFrame === nextProps.livePointerFrame &&
-  previousProps.renderSettings === nextProps.renderSettings &&
-  previousProps.appLabel === nextProps.appLabel
-));
 
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent, initialAppKey }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
@@ -1890,6 +1723,17 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return <RemoteSupervisorManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
+    if (desktopWindow.appKey === 'backup-manager') {
+      return (
+        <RemoteBackupManager
+          connectionId={connection.id}
+          hostId={remoteConnectionProfileHostId}
+          systemType={connection.host.systemType}
+          onOpenScheduledTasks={() => openDesktopWindow('scheduled-tasks')}
+        />
+      );
+    }
+
     if (desktopWindow.appKey === 'container-manager') {
       return <RemoteContainerManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
@@ -2135,7 +1979,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             : null;
 
           return (
-            <DesktopWindow
+            <RemoteDesktopWindow
               key={desktopWindow.id}
               appLabel={getAppLabel(appInfo, settings.language)}
               desktopWindow={desktopWindow}

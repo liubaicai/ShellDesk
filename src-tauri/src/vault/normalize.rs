@@ -13,7 +13,7 @@ const DESKTOP_WALLPAPER_PRESET_IDS: &[&str] = &[
     "green-health",
     "indigo-traces",
 ];
-const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 17;
+const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 18;
 const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "git-manager",
     "cert-manager",
@@ -33,9 +33,10 @@ const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
     "k8s-manager",
     "vm-manager",
     "supervisor-manager",
+    "backup-manager",
 ];
 const LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] =
-    &["vm-manager", "supervisor-manager"];
+    &["vm-manager", "supervisor-manager", "backup-manager"];
 const TERMINAL_THEME_CHOICES: &[&str] = &[
     "shelldesk-dark",
     "netcatty-dark",

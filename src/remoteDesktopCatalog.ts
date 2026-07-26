@@ -37,6 +37,7 @@ export const desktopApps = [
   { key: 'redis', group: 'data', labelId: 'desktop.app.redis.label', descriptionId: 'desktop.app.redis.description' },
   { key: 'service-manager', group: 'basic', labelId: 'desktop.app.serviceManager.label', descriptionId: 'desktop.app.serviceManager.description' },
   { key: 'supervisor-manager', group: 'operations', labelId: 'desktop.app.supervisorManager.label', descriptionId: 'desktop.app.supervisorManager.description' },
+  { key: 'backup-manager', group: 'operations', labelId: 'desktop.app.backupManager.label', descriptionId: 'desktop.app.backupManager.description' },
   { key: 'container-manager', group: 'development', labelId: 'desktop.app.containerManager.label', descriptionId: 'desktop.app.containerManager.description' },
   { key: 'k8s-manager', group: 'development', labelId: 'desktop.app.k8sManager.label', descriptionId: 'desktop.app.k8sManager.description' },
   { key: 'vm-manager', group: 'operations', labelId: 'desktop.app.vmManager.label', descriptionId: 'desktop.app.vmManager.description' },
@@ -87,6 +88,7 @@ export const desktopAppIconSources: Record<DesktopAppKey, string> = {
   redis: new URL('./assets/desktop-icons/redis.png', import.meta.url).href,
   'service-manager': new URL('./assets/desktop-icons/service-manager.png', import.meta.url).href,
   'supervisor-manager': new URL('./assets/desktop-icons/supervisor-manager.png', import.meta.url).href,
+  'backup-manager': new URL('./assets/desktop-icons/backup-manager.png', import.meta.url).href,
   'container-manager': new URL('./assets/desktop-icons/container-manager.png', import.meta.url).href,
   'k8s-manager': new URL('./assets/desktop-icons/k8s-manager.png', import.meta.url).href,
   'vm-manager': new URL('./assets/desktop-icons/vm-manager.png', import.meta.url).href,
@@ -120,7 +122,7 @@ export const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 export const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 export const launchpadAnimationMs = 180;
-export const desktopAppCatalogVersion = 17;
+export const desktopAppCatalogVersion = 18;
 export const defaultDesktopAppKeys: DesktopAppKey[] = [
   'files',
   'terminal',
@@ -153,8 +155,9 @@ export const appCatalogMigrationKeys: DesktopAppKey[] = [
   'k8s-manager',
   'vm-manager',
   'supervisor-manager',
+  'backup-manager',
 ];
-export const latestAppCatalogMigrationKeys: DesktopAppKey[] = ['vm-manager', 'supervisor-manager'];
+export const latestAppCatalogMigrationKeys: DesktopAppKey[] = ['vm-manager', 'supervisor-manager', 'backup-manager'];
 export const legacyAllDesktopAppKeys = desktopApps
   .map((app) => app.key)
   .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));

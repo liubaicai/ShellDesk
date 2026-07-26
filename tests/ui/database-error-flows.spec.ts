@@ -82,6 +82,86 @@ test('Supervisor manager covers process actions, logs, and read-only config prev
   await expect(page.locator('.supervisor-config-preview')).toContainText('[program:web]');
 });
 
+test('Backup manager creates, validates, downloads, restores, and schedules without exposing credentials', async ({ page }) => {
+  await page.setViewportSize({ width: 1220, height: 780 });
+  await gotoHarness(page, 'component=backup-manager&theme=dark');
+
+  await expect(page.getByRole('heading', { name: '备份管理' })).toBeVisible();
+  await expect(page.locator('.backup-manager-stats article').nth(0)).toContainText('2');
+  await page.getByRole('button', { name: 'MySQL', exact: true }).click();
+  await page.getByLabel('用户名').fill('backup_user');
+  await page.getByLabel('密码').fill('mock-backup-secret');
+  await expect(page.locator('.backup-preview-card code')).not.toContainText('mock-backup-secret');
+
+  await page.getByRole('button', { name: '开始备份' }).click();
+  await expect(page.getByRole('tab', { name: '备份历史' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.backup-table-frame tbody tr')).toHaveCount(3);
+
+  const capturedBackup = await page.evaluate(() => {
+    const harnessWindow = window as typeof window & {
+      __shellDeskUiHarnessLastBackupCommand?: string;
+      __shellDeskUiHarnessLastBackupStdin?: string;
+    };
+    return {
+      command: harnessWindow.__shellDeskUiHarnessLastBackupCommand,
+      stdin: harnessWindow.__shellDeskUiHarnessLastBackupStdin,
+    };
+  });
+  expect(capturedBackup.command).toBe('sh -s');
+  expect(capturedBackup.command).not.toContain('mock-backup-secret');
+  expect(capturedBackup.stdin).toContain("MYSQL_PWD='mock-backup-secret'");
+
+  const mysqlRow = page.locator('.backup-table-frame tbody tr').filter({ hasText: 'shelldesk-mysql-production' });
+  await mysqlRow.getByRole('button', { name: '校验' }).click();
+  await expect(page.locator('.backup-validation-card')).toContainText('abcdef0123456789');
+  await mysqlRow.getByRole('button', { name: '下载' }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as typeof window & { __shellDeskUiHarnessLastBackupDownloadPath?: string })
+      .__shellDeskUiHarnessLastBackupDownloadPath
+  ))).toContain('shelldesk-mysql-production');
+
+  const fileRow = page.locator('.backup-table-frame tbody tr').filter({ hasText: 'shelldesk-files-assets' });
+  await fileRow.getByRole('button', { name: '恢复' }).click();
+  const restoreDialog = page.getByRole('alertdialog');
+  await expect(restoreDialog).toContainText('ShellDesk 会先校验');
+  await expectElementTopmost(restoreDialog);
+  await restoreDialog.getByLabel('恢复目标').fill('/srv/restored-assets');
+  await restoreDialog.getByRole('button', { name: '确认执行' }).click();
+  await expect(page.getByText('备份已恢复到 /srv/restored-assets。')).toBeVisible();
+
+  await page.getByRole('tab', { name: '计划任务' }).click();
+  await page.getByRole('button', { name: '保存计划' }).click();
+  await expect(page.locator('.backup-plan-list article')).toHaveCount(1);
+  const planStdin = await page.evaluate(() => (
+    (window as typeof window & { __shellDeskUiHarnessLastBackupPlanStdin?: string })
+      .__shellDeskUiHarnessLastBackupPlanStdin
+  ));
+  expect(planStdin).toContain('# SHELLDESK_BACKUP:mysql-production|');
+  expect(planStdin).not.toContain('mock-backup-secret');
+
+  await page.getByRole('tab', { name: '创建备份' }).click();
+  await page.getByRole('button', { name: '上传 S3 / MinIO' }).click();
+  await page.getByLabel('Endpoint').fill('https://minio.example.test');
+  await page.getByLabel('Access Key').fill('mock-s3-access');
+  await page.getByLabel('Secret Key').fill('mock-s3-secret');
+  await page.getByLabel('Bucket').fill('backups');
+  await page.getByRole('button', { name: '开始备份' }).click();
+
+  const capturedS3Upload = await page.evaluate(() => {
+    const harnessWindow = window as typeof window & {
+      __shellDeskUiHarnessLastBackupS3Command?: string;
+      __shellDeskUiHarnessLastBackupS3Stdin?: string;
+    };
+    return {
+      command: harnessWindow.__shellDeskUiHarnessLastBackupS3Command,
+      stdin: harnessWindow.__shellDeskUiHarnessLastBackupS3Stdin,
+    };
+  });
+  expect(capturedS3Upload.command).toBe('sh -s');
+  expect(capturedS3Upload.command).not.toContain('mock-s3-secret');
+  expect(capturedS3Upload.stdin).toContain('mock-s3-secret');
+});
+
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
   test.setTimeout(90_000);
   const runtimeErrors: string[] = [];

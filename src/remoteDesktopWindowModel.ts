@@ -199,6 +199,7 @@ export const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
   'supervisor-manager': { x: 96, y: 38, width: 1140, height: 680 },
+  'backup-manager': { x: 84, y: 34, width: 1180, height: 700 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'k8s-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'vm-manager': { x: 72, y: 30, width: 1220, height: 720 },

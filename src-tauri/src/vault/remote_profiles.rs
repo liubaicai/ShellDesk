@@ -15,6 +15,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "redis",
     "service-manager",
     "supervisor-manager",
+    "backup-manager",
     "container-manager",
     "k8s-manager",
     "vm-manager",
