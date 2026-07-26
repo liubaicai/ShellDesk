@@ -131,6 +131,7 @@ const RemoteScheduledTasks = lazy(() => import('./components/remote-desktop/Remo
 const RemoteSearchCluster = lazy(() => import('./components/remote-desktop/RemoteSearchCluster'));
 const RemoteSecurityAudit = lazy(() => import('./components/remote-desktop/RemoteSecurityAudit'));
 const RemoteServiceManager = lazy(() => import('./components/remote-desktop/RemoteServiceManager'));
+const RemoteSupervisorManager = lazy(() => import('./components/remote-desktop/RemoteSupervisorManager'));
 const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSettings'));
 const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
 const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
@@ -1883,6 +1884,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     if (desktopWindow.appKey === 'service-manager') {
       return <RemoteServiceManager connectionId={connection.id} systemType={connection.host.systemType} />;
+    }
+
+    if (desktopWindow.appKey === 'supervisor-manager') {
+      return <RemoteSupervisorManager connectionId={connection.id} systemType={connection.host.systemType} />;
     }
 
     if (desktopWindow.appKey === 'container-manager') {

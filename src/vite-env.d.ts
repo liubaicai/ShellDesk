@@ -200,6 +200,7 @@ type ShellDeskDesktopAppKey =
   | 'clickhouse'
   | 'redis'
   | 'service-manager'
+  | 'supervisor-manager'
   | 'container-manager'
   | 'k8s-manager'
   | 'vm-manager'

@@ -198,6 +198,7 @@ export const defaultWindowFrames: Record<DesktopAppKey, DesktopWindowFrame> = {
   clickhouse: { x: 100, y: 40, width: 1080, height: 650 },
   redis: { x: 100, y: 40, width: 1020, height: 620 },
   'service-manager': { x: 110, y: 44, width: 1080, height: 650 },
+  'supervisor-manager': { x: 96, y: 38, width: 1140, height: 680 },
   'container-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'k8s-manager': { x: 104, y: 42, width: 1100, height: 660 },
   'vm-manager': { x: 72, y: 30, width: 1220, height: 720 },

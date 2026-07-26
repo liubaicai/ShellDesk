@@ -14,6 +14,7 @@ pub(super) const REMOTE_DESKTOP_APP_KEYS: &[&str] = &[
     "clickhouse",
     "redis",
     "service-manager",
+    "supervisor-manager",
     "container-manager",
     "k8s-manager",
     "vm-manager",

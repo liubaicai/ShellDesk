@@ -49,6 +49,39 @@ async function gotoHarness(page: Page, query: string) {
   await page.goto(`/tests/ui/database-error-harness.html?${query}`, { waitUntil: 'domcontentloaded' });
 }
 
+test('Supervisor manager covers process actions, logs, and read-only config preview', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 760 });
+  await gotoHarness(page, 'component=supervisor-manager&theme=dark');
+
+  await expect(page.getByRole('heading', { name: 'Supervisor 管理' })).toBeVisible();
+  await expect(page.getByText('Supervisor 服务可用')).toBeVisible();
+  await expect(page.locator('.supervisor-stat-grid article').nth(0)).toContainText('4');
+  await expect(page.locator('.supervisor-stat-grid article').nth(1)).toContainText('2');
+
+  await page.getByRole('tab', { name: /进程列表/ }).click();
+  await expect(page.locator('.supervisor-table tbody tr')).toHaveCount(4);
+  await page.getByRole('checkbox', { name: '选择进程 web' }).check();
+  await page.getByRole('checkbox', { name: '选择进程 queue:worker' }).check();
+  await page.locator('.supervisor-batch-actions').getByRole('button', { name: '停止' }).click();
+
+  const confirmDialog = page.getByRole('alertdialog');
+  await expect(confirmDialog).toContainText('将对 2 个进程执行“停止”');
+  await expectElementTopmost(confirmDialog);
+  await confirmDialog.getByRole('button', { name: '确认执行' }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as typeof window & { __shellDeskUiHarnessLastSupervisorActionCommand?: string })
+      .__shellDeskUiHarnessLastSupervisorActionCommand
+  ))).toContain("supervisorctl stop 'web' 'queue:worker'");
+
+  await page.locator('.supervisor-process-link').filter({ hasText: 'web' }).first().click();
+  await expect(page.getByRole('tab', { name: '进程日志' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.supervisor-log-output')).toContainText('web stdout line 1');
+
+  await page.getByRole('tab', { name: '概览' }).click();
+  await page.locator('.supervisor-config-list button').filter({ hasText: 'web.conf' }).click();
+  await expect(page.locator('.supervisor-config-preview')).toContainText('[program:web]');
+});
+
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
   test.setTimeout(90_000);
   const runtimeErrors: string[] = [];
