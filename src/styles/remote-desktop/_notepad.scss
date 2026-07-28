@@ -807,67 +807,6 @@
   color: #344054;
 }
 
-/* notepad modal dialogs */
-.notepad-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.notepad-modal {
-  width: min(420px, calc(100% - 32px));
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  padding: 20px;
-  background: var(--surface-panel);
-  box-shadow: var(--shadow-panel);
-}
-
-.notepad-modal-title {
-  margin-bottom: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.notepad-modal-field {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 16px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.notepad-modal-input {
-  width: 100%;
-  height: 34px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 10px;
-  background: var(--surface-input);
-  color: var(--text);
-  font-size: 13px;
-  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-  box-sizing: border-box;
-}
-
-.notepad-modal-input:focus {
-  outline: none;
-  border-color: var(--focus-border);
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.notepad-modal-message {
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: var(--muted-strong);
-  line-height: 1.5;
-}
-
 .notepad-diff-modal,
 .notepad-conflict-modal {
   width: min(780px, calc(100% - 32px));
@@ -933,69 +872,6 @@
   padding: 0 9px;
 }
 
-.notepad-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.notepad-modal-btn {
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 14px;
-  background: var(--surface-control);
-  color: var(--muted-strong);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.notepad-modal-btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-
-.notepad-modal-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.44;
-}
-
-.notepad-modal-btn.primary {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.notepad-modal-btn.primary:hover {
-  background: var(--accent-border);
-  color: var(--text);
-}
-
-.notepad-modal-btn.danger {
-  border-color: rgba(248, 81, 73, 0.45);
-  background: rgba(248, 81, 73, 0.12);
-  color: #ff8f8a;
-}
-
-.notepad-modal-btn.danger:hover {
-  background: rgba(248, 81, 73, 0.22);
-  color: #ffd8d5;
-}
-
-[data-theme="light"] .notepad-modal {
-  border-color: rgba(16, 32, 51, 0.16);
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(31, 35, 40, 0.18);
-}
-
-[data-theme="light"] .notepad-modal-input {
-  border-color: rgba(16, 32, 51, 0.12);
-  background: #fff;
-  color: #1f2328;
-}
-
 [data-theme="light"] .notepad-diff-preview {
   border-color: rgba(16, 32, 51, 0.12);
   background: #fff;
@@ -1015,24 +891,6 @@
 [data-theme="light"] .notepad-diff-line.meta {
   background: #f6f8fa;
   color: #656d76;
-}
-
-[data-theme="light"] .notepad-modal-btn {
-  border-color: rgba(16, 32, 51, 0.12);
-  background: #f6f8fa;
-  color: #656d76;
-}
-
-[data-theme="light"] .notepad-modal-btn.primary {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-[data-theme="light"] .notepad-modal-btn.danger {
-  border-color: rgba(207, 34, 46, 0.32);
-  background: rgba(207, 34, 46, 0.08);
-  color: #cf222e;
 }
 
 [data-theme="light"] .win-titlebar-controls .win-btn {

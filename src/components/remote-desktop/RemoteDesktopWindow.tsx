@@ -1,9 +1,12 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   memo,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   Suspense,
+  useEffect,
+  useRef,
 } from 'react';
 
 import { t } from '../../i18n';
@@ -21,6 +24,7 @@ interface RemoteDesktopWindowProps {
   onBringToFront: (windowId: string) => void;
   onClose: (windowId: string) => void;
   onFinishInteraction: (event: ReactPointerEvent<HTMLElement>) => void;
+  onKeyboardFrameChange: (windowId: string, mode: 'move' | 'resize', deltaX: number, deltaY: number) => void;
   onMinimize: (windowId: string) => void;
   onOpenTerminalTitlebarMenu: (windowId: string, buttonRect: DOMRect) => void;
   onResizePointerDown: (event: ReactPointerEvent<HTMLElement>, windowId: string) => void;
@@ -40,6 +44,7 @@ const RemoteDesktopWindow = memo(function RemoteDesktopWindow({
   onBringToFront,
   onClose,
   onFinishInteraction,
+  onKeyboardFrameChange,
   onMinimize,
   onOpenTerminalTitlebarMenu,
   onResizePointerDown,
@@ -48,6 +53,8 @@ const RemoteDesktopWindow = memo(function RemoteDesktopWindow({
   onUpdateInteraction,
   renderContent,
 }: RemoteDesktopWindowProps) {
+  const windowRef = useRef<HTMLElement | null>(null);
+  const wasFocusedRef = useRef(false);
   const renderedFrame = livePointerFrame ?? desktopWindow.frame;
   const desktopWindowStyle: CSSProperties = {
     width: renderedFrame.width,
@@ -55,23 +62,55 @@ const RemoteDesktopWindow = memo(function RemoteDesktopWindow({
     transform: `translate3d(${renderedFrame.x}px, ${renderedFrame.y}px, 0)`,
     zIndex: 10 + desktopWindow.zIndex,
   };
+  const titleId = `desktop-window-title-${desktopWindow.id}`;
+
+  useEffect(() => {
+    if (
+      isFocused
+      && !wasFocusedRef.current
+      && !desktopWindow.isMinimized
+      && !windowRef.current?.contains(document.activeElement)
+    ) {
+      windowRef.current?.focus({ preventScroll: true });
+    }
+
+    wasFocusedRef.current = isFocused;
+  }, [desktopWindow.isMinimized, isFocused]);
+
+  const handleTitlebarKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!event.altKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    const step = 16;
+    const deltaX = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+    const deltaY = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+    onKeyboardFrameChange(desktopWindow.id, event.shiftKey ? 'resize' : 'move', deltaX, deltaY);
+  };
 
   return (
     <section
+      ref={windowRef}
       className={`desktop-window desktop-window-${desktopWindow.appKey} ${isFocused ? 'focused' : ''} ${desktopWindow.isMaximized ? 'maximized' : ''} ${desktopWindow.isMinimized ? 'minimized' : ''}`}
-      aria-label={appLabel}
+      role="dialog"
+      aria-labelledby={titleId}
       aria-hidden={desktopWindow.isMinimized}
+      tabIndex={-1}
       style={desktopWindowStyle}
       onPointerDownCapture={() => onBringToFront(desktopWindow.id)}
     >
       <header
         className="desktop-window-titlebar"
+        tabIndex={0}
+        aria-label={t('desktop.window.keyboardMoveHint', language, { app: appLabel })}
         onPointerDown={(event) => onTitlebarPointerDown(event, desktopWindow.id)}
+        onKeyDown={handleTitlebarKeyDown}
         onPointerMove={onUpdateInteraction}
         onPointerUp={onFinishInteraction}
         onPointerCancel={onFinishInteraction}
       >
-        <div className="desktop-window-title">
+        <div id={titleId} className="desktop-window-title">
           <span className={`desktop-title-icon desktop-app-icon-${desktopWindow.appKey}`}>
             <DesktopAppIcon appKey={desktopWindow.appKey} />
           </span>

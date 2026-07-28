@@ -102,7 +102,7 @@ for (const packageName of removedRuntimePackages) {
 
 failures.push(...findForbiddenSourceUses());
 
-if (!bridgeSource.includes("invoke<T>('ipc_dispatch'")) {
+if (!/invoke<.*>\('ipc_dispatch'/.test(bridgeSource)) {
   failures.push('src/tauriBridge.ts must be the renderer IPC boundary and call ipc_dispatch.');
 }
 

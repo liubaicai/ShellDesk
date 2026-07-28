@@ -10,12 +10,13 @@ const defaultLimits = new Map([
   ['.py', 800],
 ]);
 const fileLimits = new Map([
-  ['src/i18nCatalog.ts', 12_000],
+  ['src/i18nCatalog.zh-CN.ts', 6_100],
+  ['src/i18nCatalog.en-US.ts', 6_100],
   ['src/vite-env.d.ts', 1_800],
-  ['src/App.tsx', 4_800],
+  ['src/App.tsx', 4_350],
   ['src/RemoteDesktopShell.tsx', 2_850],
-  ['src/pages/SettingsPage.tsx', 2_650],
-  ['src/components/remote-desktop/RemoteMySQL.tsx', 3_100],
+  ['src/pages/SettingsPage.tsx', 2_550],
+  ['src/components/remote-desktop/RemoteMySQL.tsx', 2_900],
   ['src/components/remote-desktop/RemoteClickHouse.tsx', 2_800],
   ['src/components/remote-desktop/RemotePostgres.tsx', 2_200],
 ]);

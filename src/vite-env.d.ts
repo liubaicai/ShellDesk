@@ -250,6 +250,7 @@ type ShellDeskDesktopLayoutItem = ShellDeskDesktopAppLayoutItem | ShellDeskDeskt
 
 interface ShellDeskRemoteDesktopLayout {
   appCatalogVersion: number;
+  seenAppCatalogVersion: number;
   sortMode: ShellDeskDesktopSortMode;
   items: ShellDeskDesktopLayoutItem[];
   removedAppKeys: ShellDeskDesktopAppKey[];

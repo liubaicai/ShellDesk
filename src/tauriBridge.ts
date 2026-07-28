@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { createDefaultRemoteDesktopLayout } from './remoteDesktopLayout';
+import type { IpcArgs, IpcChannel, IpcResult } from './ipcChannelMap';
 
 type EventCallback<T = unknown> = (payload: T) => void;
 
@@ -32,27 +34,6 @@ function isTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in (window as TauriRuntimeWindow);
 }
 
-function createPreviewRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
-  return {
-    appCatalogVersion: 14,
-    sortMode: 'custom',
-    items: [
-      { id: 'app:files', type: 'app', appKey: 'files' },
-      { id: 'app:terminal', type: 'app', appKey: 'terminal' },
-      { id: 'app:notepad', type: 'app', appKey: 'notepad' },
-      { id: 'app:code-editor', type: 'app', appKey: 'code-editor' },
-      { id: 'app:browser', type: 'app', appKey: 'browser' },
-      { id: 'app:service-manager', type: 'app', appKey: 'service-manager' },
-      { id: 'app:container-manager', type: 'app', appKey: 'container-manager' },
-      { id: 'app:k8s-manager', type: 'app', appKey: 'k8s-manager' },
-      { id: 'app:procmanager', type: 'app', appKey: 'procmanager' },
-      { id: 'app:ai-chat', type: 'app', appKey: 'ai-chat' },
-      { id: 'app:settings', type: 'app', appKey: 'settings' },
-    ],
-    removedAppKeys: [],
-  };
-}
-
 // 预览模式默认设置。Rust 后端 vault.rs::default_settings() 为唯一权威源。
 // 本处硬编码仅用于无后端的预览模式，保持与后端一致。
 // 一致性检查：node scripts/check-default-settings-parity.cjs
@@ -74,7 +55,7 @@ function createPreviewSettings(): ShellDeskAppSettings {
     remoteDesktopDockSize: 'medium',
     remoteDesktopDockAutoHide: 'never',
     remoteDesktopDockPinnedApps: ['files', 'terminal', 'browser'],
-    remoteDesktopLayout: createPreviewRemoteDesktopLayout(),
+    remoteDesktopLayout: createDefaultRemoteDesktopLayout(),
     rememberPasswords: true,
     rememberKeyPassphrases: true,
     aiProvider: 'openai',
@@ -214,7 +195,10 @@ function createPreviewDirectory(remote: boolean): ShellDeskRemoteDirectoryResult
   };
 }
 
-async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promise<T> {
+async function previewIpc<Channel extends IpcChannel>(
+  channel: Channel,
+  args: IpcArgs<Channel>,
+): Promise<IpcResult<Channel>> {
   switch (channel) {
     case 'app:get-info':
       return {
@@ -227,7 +211,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         platform: detectPlatform(),
         arch: 'unknown',
         isPackaged: false,
-      } satisfies ShellDeskAppInfo as T;
+      } satisfies ShellDeskAppInfo as IpcResult<Channel>;
 
     case 'app:check-for-updates':
       return {
@@ -244,41 +228,41 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         downloadUrl: null,
         downloadSize: 0,
         checkedAt: new Date().toISOString(),
-      } satisfies ShellDeskUpdateCheckResult as T;
+      } satisfies ShellDeskUpdateCheckResult as IpcResult<Channel>;
 
     case 'app:check-for-update-download':
-      return { available: false, supported: false, error: previewUnsupportedMessage } satisfies ShellDeskAutoUpdateCheckResult as T;
+      return { available: false, supported: false, error: previewUnsupportedMessage } satisfies ShellDeskAutoUpdateCheckResult as IpcResult<Channel>;
 
     case 'app:download-update':
-      return { success: false, error: previewUnsupportedMessage } satisfies ShellDeskUpdateActionResult as T;
+      return { success: false, error: previewUnsupportedMessage } satisfies ShellDeskUpdateActionResult as IpcResult<Channel>;
 
     case 'app:install-update':
-      return false as T;
+      return false as IpcResult<Channel>;
 
     case 'app:get-update-status':
-      return createPreviewUpdateStatus() as T;
+      return createPreviewUpdateStatus() as IpcResult<Channel>;
 
     case 'app:open-external': {
       const url = typeof args[0] === 'string' ? args[0] : '';
       if (url) {
         window.open(url, '_blank', 'noopener,noreferrer');
       }
-      return null as T;
+      return null as IpcResult<Channel>;
     }
 
     case 'window:is-maximized':
     case 'window:toggle-maximize':
-      return false as T;
+      return false as IpcResult<Channel>;
 
     case 'window:show':
     case 'window:start-dragging':
     case 'window:minimize':
     case 'window:close':
-      return null as T;
+      return null as IpcResult<Channel>;
 
     case 'vault:get-public-snapshot':
     case 'vault:get-snapshot':
-      return previewVaultSnapshot as T;
+      return previewVaultSnapshot as IpcResult<Channel>;
 
     case 'vault:save-collections': {
       const payload = (args[0] ?? {}) as ShellDeskVaultCollectionsPayload;
@@ -290,45 +274,45 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         knownHosts: payload.knownHosts ?? previewVaultSnapshot.knownHosts,
         settings: payload.settings ?? previewVaultSnapshot.settings,
       };
-      return previewVaultSnapshot as T;
+      return previewVaultSnapshot as IpcResult<Channel>;
     }
 
     case 'vault:get-bookmarks':
-      return [] as T;
+      return [] as IpcResult<Channel>;
 
     case 'vault:save-bookmarks':
-      return (Array.isArray(args[1]) ? args[1] : []) as T;
+      return (Array.isArray(args[1]) ? args[1] : []) as IpcResult<Channel>;
 
     case 'vault:get-remote-connection-profile':
-      return null as T;
+      return null as IpcResult<Channel>;
 
     case 'vault:save-remote-connection-profile':
-      return ((args[2] ?? {}) as ShellDeskRemoteConnectionProfileValues) as T;
+      return ((args[2] ?? {}) as ShellDeskRemoteConnectionProfileValues) as IpcResult<Channel>;
 
     case 'logs:get-entries':
     case 'logs:clear-entries':
     case 'logs:save-entries':
     case 'logs:append-entry':
-      return [] as T;
+      return [] as IpcResult<Channel>;
 
     case 'preferences:get':
-      return null as T;
+      return null as IpcResult<Channel>;
 
     case 'preferences:set':
-      return (args[1] ?? null) as T;
+      return (args[1] ?? null) as IpcResult<Channel>;
 
     case 'system:list-fonts':
-      return [] as T;
+      return [] as IpcResult<Channel>;
 
     case 'system:read-known-hosts':
-      return { content: '', paths: [] } satisfies ShellDeskKnownHostsReadResult as T;
+      return { content: '', paths: [] } satisfies ShellDeskKnownHostsReadResult as IpcResult<Channel>;
 
     case 'sync:get-config':
     case 'sync:save-config':
-      return createPreviewSyncConfig() as T;
+      return createPreviewSyncConfig() as IpcResult<Channel>;
 
     case 'sync:test-webdav':
-      return { ok: false, checkedAt: new Date().toISOString(), message: previewUnsupportedMessage } satisfies ShellDeskWebDavTestResult as T;
+      return { ok: false, checkedAt: new Date().toISOString(), message: previewUnsupportedMessage } satisfies ShellDeskWebDavTestResult as IpcResult<Channel>;
 
     case 'sync:run-now':
       return {
@@ -362,14 +346,14 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         shrinkSummary: null,
         snapshot: null,
         config: createPreviewSyncConfig(),
-      } satisfies ShellDeskSyncResult as T;
+      } satisfies ShellDeskSyncResult as IpcResult<Channel>;
 
     case 'ai:list-models':
-      return { endpoint: '', models: [] } satisfies ShellDeskAiModelListResult as T;
+      return { endpoint: '', models: [] } satisfies ShellDeskAiModelListResult as IpcResult<Channel>;
 
     case 'ai:chat':
     case 'ai:chat-stream':
-      return { endpoint: '', content: previewUnsupportedMessage } satisfies ShellDeskAiChatResult as T;
+      return { endpoint: '', content: previewUnsupportedMessage } satisfies ShellDeskAiChatResult as IpcResult<Channel>;
 
     case 'ai:web-search':
       return {
@@ -377,7 +361,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         query: '',
         provider: 'tavily',
         results: [],
-      } satisfies ShellDeskWebSearchResult as T;
+      } satisfies ShellDeskWebSearchResult as IpcResult<Channel>;
 
     case 'ai:mcp-server-status':
     case 'ai:set-mcp-server-enabled':
@@ -388,13 +372,13 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         port: 38471,
         endpoint: 'http://127.0.0.1:38471/mcp',
         error: previewUnsupportedMessage,
-      } satisfies ShellDeskMcpServerStatus as T;
+      } satisfies ShellDeskMcpServerStatus as IpcResult<Channel>;
 
     case 'ai:export-mcp-skill':
-      return { canceled: true } satisfies ShellDeskMcpSkillExportResult as T;
+      return { canceled: true } satisfies ShellDeskMcpSkillExportResult as IpcResult<Channel>;
 
     case 'connection:get-ipc-capabilities':
-      return { terminalSessions: false, terminalBinary: false } satisfies ShellDeskIpcCapabilities as T;
+      return { terminalSessions: false, terminalBinary: false } satisfies ShellDeskIpcCapabilities as IpcResult<Channel>;
 
     case 'connection:get-info':
       return {
@@ -413,13 +397,13 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
           systemType: 'ubuntu',
           systemName: 'Ubuntu 24.04 LTS',
         },
-      } as T;
+      } as IpcResult<Channel>;
 
     case 'files:list-local-directory':
-      return createPreviewDirectory(false) as T;
+      return createPreviewDirectory(false) as IpcResult<Channel>;
 
     case 'connection:sftp-list-directory':
-      return createPreviewDirectory(true) as T;
+      return createPreviewDirectory(true) as IpcResult<Channel>;
 
     case 'connection:sftp-compare-directory':
       return {
@@ -438,7 +422,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
           { name: 'releases', size: 82_200_000, fileCount: 3 },
           { name: 'server.log', size: 13_600_000, fileCount: 1 },
         ],
-      } satisfies ShellDeskSftpDirectoryComparison as T;
+      } satisfies ShellDeskSftpDirectoryComparison as IpcResult<Channel>;
 
     case 'files:stat-local-path':
     case 'connection:sftp-stat-path':
@@ -450,7 +434,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         group: 1000,
         modifiedAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
-      } satisfies ShellDeskRemotePathStat as T;
+      } satisfies ShellDeskRemotePathStat as IpcResult<Channel>;
 
     case 'files:create-local-directory':
     case 'files:create-local-file':
@@ -461,7 +445,7 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
     case 'connection:sftp-delete-path':
     case 'connection:sftp-rename-path':
     case 'connection:sftp-set-path-permissions':
-      return true as T;
+      return true as IpcResult<Channel>;
 
     case 'connection:sftp-download-paths':
     case 'connection:sftp-upload-local-paths': {
@@ -538,31 +522,32 @@ async function previewIpc<T = unknown>(channel: string, args: unknown[]): Promis
         size: total,
         fileCount: totalFiles,
         itemCount: totalFiles,
-      } as T;
+      } as IpcResult<Channel>;
     }
 
     case 'connection:browser-resolve-url': {
       const url = typeof args[1] === 'string' ? args[1] : 'about:blank';
-      return { url, browserUrl: url, proxied: false, mode: 'direct' } as T;
+      return { url, browserUrl: url, proxied: false, mode: 'direct' } as IpcResult<Channel>;
     }
 
     case 'connection:disconnect':
     case 'connection:close-terminal':
-      return true as T;
+      return true as IpcResult<Channel>;
 
     default:
       return unsupportedPreviewIpc(channel);
   }
 }
 
-async function ipc<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
-  // TODO: Replace free-form channel strings and unknown args with a typed channel map
-  // so each IPC channel carries its expected argument tuple and return type.
+async function ipc<Channel extends IpcChannel>(
+  channel: Channel,
+  ...args: IpcArgs<Channel>
+): Promise<IpcResult<Channel>> {
   if (!isTauriRuntime()) {
-    return previewIpc<T>(channel, args);
+    return previewIpc(channel, args);
   }
 
-  return invoke<T>('ipc_dispatch', { channel, args });
+  return invoke<IpcResult<Channel>>('ipc_dispatch', { channel, args });
 }
 
 function onTauriEvent<T = unknown>(channel: string, callback: EventCallback<T>) {
@@ -608,7 +593,7 @@ function chatStream(request: ShellDeskAiChatRequest, callbacks: ShellDeskAiChatS
     }
   });
 
-  return ipc<ShellDeskAiChatResult>('ai:chat-stream', { ...(request as object), streamId }).finally(() => {
+  return ipc('ai:chat-stream', { ...request, streamId }).finally(() => {
     removeChunkListener();
   });
 }
@@ -618,7 +603,7 @@ function runCommandStream(
   command: string,
   stdin?: string,
   callbacks: { onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void } = {},
-  options?: unknown,
+  options?: { sudoPassword?: string },
 ) {
   const streamId = createRequestId('command-stream');
   const removeChunkListener = onTauriEvent<{
@@ -631,7 +616,7 @@ function runCommandStream(
     }
   });
 
-  return ipc<{ stdout: string; stderr: string; code: number }>(
+  return ipc(
     'connection:run-command-stream',
     connectionId,
     command,
@@ -644,7 +629,7 @@ function runCommandStream(
 }
 
 async function connectHost(host: ShellDeskHostConnectionRequest) {
-  const result = await ipc<{ ok?: boolean; error?: string; connection?: ShellDeskConnectionInfo }>('connection:connect', host);
+  const result = await ipc('connection:connect', host);
 
   if (!result?.ok) {
     throw new Error(result?.error || 'SSH 连接失败。');
@@ -658,7 +643,7 @@ async function connectHost(host: ShellDeskHostConnectionRequest) {
 }
 
 async function openLocalConnection() {
-  const result = await ipc<{ ok?: boolean; error?: string; connection?: ShellDeskConnectionInfo }>('connection:open-local');
+  const result = await ipc('connection:open-local');
 
   if (!result?.ok) {
     throw new Error(result?.error || '打开本地模式失败。');
@@ -667,7 +652,7 @@ async function openLocalConnection() {
   return result.connection as ShellDeskConnectionInfo;
 }
 
-const initialPublicVaultSnapshotPromise = ipc<ShellDeskVaultSnapshot>('vault:get-public-snapshot');
+const initialPublicVaultSnapshotPromise = ipc('vault:get-public-snapshot');
 let shouldUseInitialPublicVaultSnapshot = true;
 
 initialPublicVaultSnapshotPromise.catch(() => undefined);
@@ -679,7 +664,7 @@ function getPublicVaultSnapshot() {
     });
   }
 
-  return ipc<ShellDeskVaultSnapshot>('vault:get-public-snapshot');
+  return ipc('vault:get-public-snapshot');
 }
 
 window.guiSSH = {
@@ -722,9 +707,9 @@ window.guiSSH = {
   },
   vault: {
     initialPublicSnapshot: null,
-    getDefaultSettings: () => ipc<ShellDeskAppSettings>('vault:get-default-settings'),
+    getDefaultSettings: () => ipc('vault:get-default-settings'),
     getPublicSnapshot: getPublicVaultSnapshot,
-    getSnapshot: () => ipc<ShellDeskVaultSnapshot>('vault:get-snapshot'),
+    getSnapshot: () => ipc('vault:get-snapshot'),
     saveCollections: (payload) => ipc('vault:save-collections', payload),
     importKeyPair: (payload) => ipc('vault:import-key-pair', payload),
     generateRsaKeyPair: (payload) => ipc('vault:generate-rsa-key-pair', payload),
@@ -775,14 +760,14 @@ window.guiSSH = {
     respondHostKeyVerification: (payload) => ipc('connection:host-key-response', payload),
     getInfo: (connectionId) => ipc('connection:get-info', connectionId),
     disconnect: (connectionId) => ipc('connection:disconnect', connectionId),
-    getIpcCapabilities: () => ipc<ShellDeskIpcCapabilities>('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
+    getIpcCapabilities: () => ipc('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
     trustBrowserCertificate: (partition, url) => ipc('connection:trust-browser-certificate', partition, url),
     resolveBrowserUrl: (connectionId, url) => ipc('connection:browser-resolve-url', connectionId, url),
     startTerminal: (connectionId, terminalId, columns, rows, options) => ipc('connection:start-terminal', connectionId, terminalId, columns, rows, options),
     writeTerminal: (connectionId, terminalId, data, options) => ipc('connection:write-terminal', connectionId, terminalId, data, options),
     writeTerminalBytes: (connectionId, terminalId, data) => ipc('connection:write-terminal-binary', connectionId, terminalId, data),
     resizeTerminal: (connectionId, terminalId, columns, rows, options) => ipc('connection:resize-terminal', connectionId, terminalId, columns, rows, options),
-    closeTerminal: (connectionId, terminalId) => ipc<boolean>('connection:close-terminal', connectionId, terminalId).catch(() => false),
+    closeTerminal: (connectionId, terminalId) => ipc('connection:close-terminal', connectionId, terminalId).catch(() => false),
     listDirectory: (connectionId, remotePath, options) => ipc('connection:list-directory', connectionId, remotePath, options),
     sftpListDirectory: (connectionId, remotePath) => ipc('connection:sftp-list-directory', connectionId, remotePath),
     sftpCompareDirectory: (connectionId, localPath, remotePath) => ipc('connection:sftp-compare-directory', connectionId, localPath, remotePath),

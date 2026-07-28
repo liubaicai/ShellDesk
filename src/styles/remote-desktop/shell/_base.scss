@@ -394,7 +394,7 @@
   display: grid;
   width: min(980px, calc(100vw - 72px));
   max-height: min(660px, calc(100vh - 72px));
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 18px;
@@ -495,6 +495,46 @@
   cursor: pointer;
 }
 
+.launchpad-refresh-capabilities {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef4ff;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.launchpad-capability-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 18px;
+}
+
+.launchpad-capability-filters button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(238, 244, 255, 0.68);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.launchpad-capability-filters button.active {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: #ffffff;
+}
+
 .launchpad-groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -571,10 +611,72 @@
 }
 
 .launchpad-app-button {
-  min-height: 76px;
+  min-height: 96px;
   align-content: start;
   gap: 5px;
   padding: 8px 6px;
+}
+
+.launchpad-app-button[aria-disabled="true"] {
+  cursor: help;
+  opacity: 0.7;
+}
+
+.launchpad-app-name {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.launchpad-app-name > span:first-child {
+  overflow-wrap: anywhere;
+}
+
+.launchpad-capability-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #91a0b7;
+  box-shadow: 0 0 0 1px rgba(11, 17, 26, 0.32);
+  opacity: 0.88;
+}
+
+.launchpad-capability-dot.available {
+  background: #63c878;
+}
+
+.launchpad-capability-dot.missing,
+.launchpad-capability-dot.checking,
+.launchpad-capability-dot.unknown {
+  background: #d8a94f;
+}
+
+.launchpad-capability-dot.unsupported {
+  background: #df6570;
+}
+
+.launchpad-new-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 860;
+  line-height: 1.2;
+}
+
+.launchpad-close:focus-visible,
+.launchpad-refresh-capabilities:focus-visible,
+.launchpad-capability-filters button:focus-visible,
+.launchpad-app-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 86%, white);
+  outline-offset: 2px;
 }
 
 .launchpad-tooltip {
@@ -746,24 +848,6 @@
 
 .desktop-folder-rename-modal {
   width: min(360px, calc(100vw - 48px));
-}
-
-.context-menu button:disabled {
-  opacity: 0.46;
-  cursor: not-allowed;
-}
-
-.context-menu button:disabled:hover {
-  background: transparent;
-}
-
-.context-submenu button.checked::before {
-  width: 12px;
-}
-
-.context-submenu button:not(.checked)::before {
-  content: "";
-  width: 12px;
 }
 
 .desktop-window {

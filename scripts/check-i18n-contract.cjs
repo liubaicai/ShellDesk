@@ -131,14 +131,15 @@ function compareDictionaries(label, zhMessages, enMessages, errors) {
   }
 }
 
-const catalogSource = createSourceFile('src/i18nCatalog.ts');
+const zhCatalogSource = createSourceFile('src/i18nCatalog.zh-CN.ts');
+const enCatalogSource = createSourceFile('src/i18nCatalog.en-US.ts');
 const coreSource = createSourceFile('src/i18nCoreCatalog.ts');
 const errors = [];
 
 compareDictionaries(
   'Full catalog',
-  readMessageDictionary(findVariableObject(catalogSource, 'zhCN')),
-  readMessageDictionary(findVariableObject(catalogSource, 'enUS')),
+  readMessageDictionary(findVariableObject(zhCatalogSource, 'zhCN')),
+  readMessageDictionary(findVariableObject(enCatalogSource, 'enUS')),
   errors,
 );
 

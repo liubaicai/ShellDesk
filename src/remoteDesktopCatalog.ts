@@ -1,4 +1,25 @@
 import { getAppLocale, t, type MessageId } from './i18n';
+import type { RemoteSystemType } from './components/remote-desktop/types';
+import {
+  acknowledgeDesktopAppCatalog,
+  appCatalogMigrationKeys,
+  createDefaultRemoteDesktopLayout,
+  defaultDesktopAppKeys,
+  desktopAppCatalogVersion,
+  getRemoteDesktopLayoutAppKeys,
+  getRemoteDesktopLayoutRemovedAppKeys,
+  latestAppCatalogMigrationKeys,
+  shouldPreserveCurrentRemoteDesktopLayout,
+} from './remoteDesktopLayout';
+
+export {
+  acknowledgeDesktopAppCatalog,
+  appCatalogMigrationKeys,
+  createDefaultRemoteDesktopLayout,
+  defaultDesktopAppKeys,
+  desktopAppCatalogVersion,
+  latestAppCatalogMigrationKeys,
+};
 
 const remoteDesktopLayoutShadowPreferenceKey = 'remoteDesktop.layoutShadow';
 
@@ -73,6 +94,73 @@ export const desktopApps = [
 export type DesktopAppInfo = (typeof desktopApps)[number];
 export type DesktopAppKey = DesktopAppInfo['key'];
 
+export type DesktopSystemFamily = 'linux' | 'windows' | 'macos';
+export type DesktopAppMode = 'workspace' | 'read-only' | 'management' | 'network-client';
+export type DesktopAppPermission = 'user' | 'sudo-optional' | 'sudo-required';
+export type DesktopToolRequirement = string | readonly string[];
+
+export interface DesktopAppCapability {
+  supportedSystems: readonly DesktopSystemFamily[];
+  requiredTools: readonly DesktopToolRequirement[];
+  requiredToolsBySystem?: Partial<Record<DesktopSystemFamily, readonly DesktopToolRequirement[]>>;
+  mode: DesktopAppMode;
+  permission: DesktopAppPermission;
+  capabilityProbe: 'none' | 'required-tools';
+  introducedInVersion: number;
+}
+
+const allDesktopSystems = ['linux', 'windows', 'macos'] as const;
+const posixDesktopSystems = ['linux', 'macos'] as const;
+const linuxDesktopSystems = ['linux'] as const;
+const linuxWindowsDesktopSystems = ['linux', 'windows'] as const;
+
+export const desktopAppCapabilities = {
+  files: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  terminal: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  notepad: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  'code-editor': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 16 },
+  browser: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  vnc: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  'rdp-viewer': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 19 },
+  'log-viewer': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'read-only', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  monitor: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'read-only', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  mysql: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  clickhouse: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
+  redis: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  'service-manager': { supportedSystems: linuxWindowsDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: [['systemctl', 'rc-service']], windows: ['sc.exe'] }, mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  'supervisor-manager': { supportedSystems: posixDesktopSystems, requiredTools: ['supervisorctl'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 19 },
+  'backup-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 19 },
+  'container-manager': { supportedSystems: allDesktopSystems, requiredTools: [['docker', 'podman']], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  'k8s-manager': { supportedSystems: allDesktopSystems, requiredTools: ['kubectl'], mode: 'management', permission: 'user', capabilityProbe: 'required-tools', introducedInVersion: 17 },
+  'vm-manager': { supportedSystems: linuxDesktopSystems, requiredTools: ['virsh'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 18 },
+  'port-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  'firewall-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-required', capabilityProbe: 'none', introducedInVersion: 1 },
+  'iptables-manager': { supportedSystems: linuxDesktopSystems, requiredTools: ['iptables'], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  'network-diagnostics': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'read-only', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  'disk-analyzer': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'read-only', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  'disk-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-required', capabilityProbe: 'none', introducedInVersion: 14 },
+  'package-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-required', capabilityProbe: 'none', introducedInVersion: 1 },
+  'git-manager': { supportedSystems: allDesktopSystems, requiredTools: ['git'], mode: 'management', permission: 'user', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'cert-manager': { supportedSystems: allDesktopSystems, requiredTools: ['openssl'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'nginx-manager': { supportedSystems: allDesktopSystems, requiredTools: ['nginx'], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'caddy-manager': { supportedSystems: allDesktopSystems, requiredTools: ['caddy'], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'apache-manager': { supportedSystems: allDesktopSystems, requiredTools: [['apache2', 'httpd']], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'scheduled-tasks': { supportedSystems: allDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: [['crontab', 'systemctl']], windows: ['schtasks.exe'], macos: ['crontab'] }, mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  postgres: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  mongo: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
+  'search-cluster': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
+  'message-queue': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
+  's3-browser': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
+  'frp-manager': { supportedSystems: allDesktopSystems, requiredTools: ['frpc'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'frps-manager': { supportedSystems: allDesktopSystems, requiredTools: ['frps'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 14 },
+  'security-audit': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'read-only', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  'api-debugger': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+  procmanager: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  'ai-chat': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 15 },
+  settings: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 1 },
+  sqlite: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
+} as const satisfies Record<DesktopAppKey, DesktopAppCapability>;
+
 export const defaultDockPinnedApps: DesktopAppKey[] = ['files', 'terminal', 'browser'];
 
 export const desktopAppIconSources: Record<DesktopAppKey, string> = {
@@ -124,51 +212,6 @@ export const desktopAppIconSources: Record<DesktopAppKey, string> = {
 
 export const remoteDesktopLayoutShadowStorageKey = 'shelldesk:remote-desktop-layout-shadow';
 export const launchpadAnimationMs = 180;
-export const desktopAppCatalogVersion = 19;
-export const defaultDesktopAppKeys: DesktopAppKey[] = [
-  'files',
-  'terminal',
-  'notepad',
-  'code-editor',
-  'browser',
-  'service-manager',
-  'container-manager',
-  'k8s-manager',
-  'procmanager',
-  'ai-chat',
-  'settings',
-];
-export const appCatalogMigrationKeys: DesktopAppKey[] = [
-  'git-manager',
-  'cert-manager',
-  'nginx-manager',
-  'caddy-manager',
-  'apache-manager',
-  'mongo',
-  'search-cluster',
-  'message-queue',
-  's3-browser',
-  'frp-manager',
-  'frps-manager',
-  'disk-manager',
-  'clickhouse',
-  'ai-chat',
-  'code-editor',
-  'k8s-manager',
-  'vm-manager',
-  'supervisor-manager',
-  'backup-manager',
-  'rdp-viewer',
-];
-export const latestAppCatalogMigrationKeys: DesktopAppKey[] = [
-  'vm-manager',
-  'supervisor-manager',
-  'backup-manager',
-  'rdp-viewer',
-];
-export const legacyAllDesktopAppKeys = desktopApps
-  .map((app) => app.key)
-  .filter((appKey): appKey is DesktopAppKey => !appCatalogMigrationKeys.includes(appKey as DesktopAppKey));
 export const desktopAppKeySet = new Set<DesktopAppKey>(desktopApps.map((app) => app.key));
 export const desktopSortOptions: Array<{ value: ShellDeskDesktopSortMode; labelId: MessageId }> = [
   { value: 'custom', labelId: 'desktop.sort.custom' },
@@ -181,6 +224,22 @@ export type DesktopFolderLayoutItem = ShellDeskDesktopFolderLayoutItem;
 
 export function getAppInfo(appKey: DesktopAppKey) {
   return desktopApps.find((app) => app.key === appKey) ?? desktopApps[0];
+}
+
+export function getAppCapability(appKey: DesktopAppKey): DesktopAppCapability {
+  return desktopAppCapabilities[appKey];
+}
+
+export function getDesktopSystemFamily(systemType?: RemoteSystemType): DesktopSystemFamily | 'unknown' {
+  if (systemType === 'windows') return 'windows';
+  if (systemType === 'macos') return 'macos';
+  if (!systemType || systemType === 'unknown') return 'unknown';
+  return 'linux';
+}
+
+export function getDesktopAppToolRequirements(appKey: DesktopAppKey, systemFamily: DesktopSystemFamily) {
+  const capability = getAppCapability(appKey);
+  return capability.requiredToolsBySystem?.[systemFamily] ?? capability.requiredTools;
 }
 
 export function normalizeDockPinnedApps(appKeys: ShellDeskDesktopAppKey[] | undefined): DesktopAppKey[] {
@@ -207,30 +266,17 @@ export function isDesktopAppKey(value: unknown): value is DesktopAppKey {
   return typeof value === 'string' && desktopAppKeySet.has(value as DesktopAppKey);
 }
 
-export function createDefaultRemoteDesktopLayout(): ShellDeskRemoteDesktopLayout {
-  return {
-    appCatalogVersion: desktopAppCatalogVersion,
-    sortMode: 'custom',
-    items: defaultDesktopAppKeys.map((appKey) => ({
-      id: `app:${appKey}`,
-      type: 'app',
-      appKey,
-    })),
-    removedAppKeys: [],
-  };
-}
-
 export function normalizeFolderName(value: unknown) {
   const name = typeof value === 'string' ? value.trim().slice(0, 40) : '';
   return name || t('desktop.folder.defaultName', 'zh-CN');
 }
 
 export function getLayoutAppKeys(items: DesktopLayoutItem[]) {
-  return new Set(items.flatMap((item) => (item.type === 'app' ? [item.appKey] : item.appKeys)));
+  return getRemoteDesktopLayoutAppKeys(items) as Set<DesktopAppKey>;
 }
 
 export function getLayoutRemovedAppKeys(layout: Pick<ShellDeskRemoteDesktopLayout, 'removedAppKeys'>) {
-  return new Set(layout.removedAppKeys ?? []);
+  return getRemoteDesktopLayoutRemovedAppKeys(layout) as Set<DesktopAppKey>;
 }
 
 export function areRemoteDesktopLayoutsEqual(firstLayout: ShellDeskRemoteDesktopLayout, secondLayout: ShellDeskRemoteDesktopLayout) {
@@ -241,48 +287,13 @@ export function shouldPreserveCurrentDesktopLayout(
   currentLayout: ShellDeskRemoteDesktopLayout,
   incomingLayout: ShellDeskRemoteDesktopLayout,
 ) {
-  const currentAppKeys = getLayoutAppKeys(currentLayout.items);
-  const incomingAppKeys = getLayoutAppKeys(incomingLayout.items);
-  const currentRemovedAppKeys = getLayoutRemovedAppKeys(currentLayout);
-  const incomingRemovedAppKeys = getLayoutRemovedAppKeys(incomingLayout);
-  const shouldPreserveUserRemovedApps = [...currentRemovedAppKeys]
-    .some((appKey) => !incomingRemovedAppKeys.has(appKey));
-
-  return shouldPreserveUserRemovedApps || appCatalogMigrationKeys.some((appKey) => currentAppKeys.has(appKey) && !incomingAppKeys.has(appKey));
+  return shouldPreserveCurrentRemoteDesktopLayout(currentLayout, incomingLayout);
 }
 
 export function migrateLegacyAllAppsLayout(items: DesktopLayoutItem[], appCatalogVersion: number, removedAppKeys: Set<DesktopAppKey>) {
-  if (appCatalogVersion >= desktopAppCatalogVersion) {
-    return items;
-  }
-
-  const appKeys = getLayoutAppKeys(items);
-  const shouldAppendNewApps = legacyAllDesktopAppKeys.every((appKey) => appKeys.has(appKey));
-
-  const migratedItems = shouldAppendNewApps
-    ? [
-        ...items,
-        ...appCatalogMigrationKeys
-          .filter((appKey) => !appKeys.has(appKey) && !removedAppKeys.has(appKey))
-          .map((appKey): DesktopLayoutItem => ({
-            id: `app:${appKey}`,
-            type: 'app',
-            appKey,
-          })),
-      ]
-    : items;
-  const migratedAppKeys = getLayoutAppKeys(migratedItems);
-
-  return [
-    ...migratedItems,
-    ...latestAppCatalogMigrationKeys
-      .filter((appKey) => !migratedAppKeys.has(appKey) && !removedAppKeys.has(appKey))
-      .map((appKey): DesktopLayoutItem => ({
-        id: `app:${appKey}`,
-        type: 'app',
-        appKey,
-      })),
-  ];
+  void appCatalogVersion;
+  void removedAppKeys;
+  return items;
 }
 
 export function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemoteDesktopLayout {
@@ -297,6 +308,10 @@ export function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemot
   const appCatalogVersion = Number.isInteger(rawAppCatalogVersion) && rawAppCatalogVersion > 0
     ? rawAppCatalogVersion
     : 1;
+  const rawSeenAppCatalogVersion = Number(layout.seenAppCatalogVersion);
+  const seenAppCatalogVersion = Number.isInteger(rawSeenAppCatalogVersion) && rawSeenAppCatalogVersion > 0
+    ? Math.min(rawSeenAppCatalogVersion, desktopAppCatalogVersion)
+    : Math.min(appCatalogVersion, desktopAppCatalogVersion);
   const sortMode = layout.sortMode === 'name-asc' || layout.sortMode === 'name-desc'
     ? layout.sortMode
     : 'custom';
@@ -365,6 +380,7 @@ export function normalizeRemoteDesktopLayout(rawLayout: unknown): ShellDeskRemot
 
   return {
     appCatalogVersion: desktopAppCatalogVersion,
+    seenAppCatalogVersion,
     sortMode,
     items: migratedItems,
     removedAppKeys: [...removedAppKeys].filter((appKey) => !migratedAppKeys.has(appKey)),

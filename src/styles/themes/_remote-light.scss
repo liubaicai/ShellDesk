@@ -517,6 +517,41 @@
   color: #172033;
 }
 
+[data-theme="light"] .launchpad-refresh-capabilities,
+[data-theme="light"] .launchpad-capability-filters button {
+  border-color: rgba(16, 32, 51, 0.12);
+  background: rgba(250, 248, 244, 0.88);
+  color: #526178;
+}
+
+[data-theme="light"] .launchpad-capability-filters {
+  border-bottom-color: rgba(16, 32, 51, 0.08);
+}
+
+[data-theme="light"] .launchpad-capability-filters button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+[data-theme="light"] .launchpad-capability-dot {
+  box-shadow: 0 0 0 1px rgba(16, 32, 51, 0.2);
+}
+
+[data-theme="light"] .launchpad-capability-dot.available {
+  background: #2da44e;
+}
+
+[data-theme="light"] .launchpad-capability-dot.missing,
+[data-theme="light"] .launchpad-capability-dot.checking,
+[data-theme="light"] .launchpad-capability-dot.unknown {
+  background: #bf8700;
+}
+
+[data-theme="light"] .launchpad-capability-dot.unsupported {
+  background: #cf222e;
+}
+
 [data-theme="light"] .launchpad-search {
   border-color: rgba(16, 32, 51, 0.12);
   background: rgba(250, 248, 244, 0.9);

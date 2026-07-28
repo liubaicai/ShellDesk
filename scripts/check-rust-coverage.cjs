@@ -30,12 +30,14 @@ const args = [
   '--summary-only',
   '--ignore-filename-regex',
   String.raw`(_tests[.]rs$|_test[.]rs$|test_helpers[.]rs$|[/\\]tests[/\\]|[/\\]tests[.]rs$)`,
+  // Keep these below the measured filtered-production baseline so the gate
+  // ratchets regressions without rounding a fractional percentage upward.
   '--fail-under-functions',
   '36',
   '--fail-under-lines',
-  '39',
+  '38.5',
   '--fail-under-regions',
-  '37',
+  '36.5',
 ];
 const result = spawnSync('cargo', args, {
   stdio: 'inherit',

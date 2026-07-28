@@ -1,4 +1,4 @@
-import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, lazy, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
@@ -19,13 +19,14 @@ import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
 import {
   addAppToFolder,
+  acknowledgeDesktopAppCatalog,
   areRemoteDesktopLayoutsEqual,
   createUniqueFolderName,
   desktopAppGroupByKey,
-  desktopAppGroups,
   desktopApps,
   desktopSortOptions,
   getAppDescription,
+  getAppCapability,
   getAppGroupLabel,
   getAppInfo,
   getAppLabel,
@@ -48,6 +49,60 @@ import {
   type DesktopFolderLayoutItem,
   type DesktopLayoutItem,
 } from './remoteDesktopCatalog';
+import type { DesktopAppAvailabilityStatus } from './features/remote-desktop/desktopCapabilities';
+import {
+  focusFirstElement,
+  handleModalKeyboardNavigation,
+  handleRovingKeyboardNavigation,
+  initializeRovingFocus,
+} from './features/remote-desktop/desktopKeyboardNavigation';
+import { useDesktopCapabilities } from './features/remote-desktop/useDesktopCapabilities';
+import {
+  RemoteAiChat,
+  RemoteApacheManager,
+  RemoteApiDebugger,
+  RemoteBackupManager,
+  RemoteBrowser,
+  RemoteCaddyManager,
+  RemoteCertManager,
+  RemoteClickHouse,
+  RemoteCodeEditor,
+  RemoteContainerManager,
+  RemoteDiskAnalyzer,
+  RemoteDiskManager,
+  RemoteFileExplorer,
+  RemoteFirewallManager,
+  RemoteFrpManager,
+  RemoteFrpsManager,
+  RemoteGitManager,
+  RemoteIptablesManager,
+  RemoteK8sManager,
+  RemoteLogViewer,
+  RemoteMessageQueuePanel,
+  RemoteMonitor,
+  RemoteMongo,
+  RemoteMySQL,
+  RemoteNetworkDiagnostics,
+  RemoteNginxManager,
+  RemoteNotepad,
+  RemotePackageManager,
+  RemotePortManager,
+  RemotePostgres,
+  RemoteProcessManager,
+  RemoteRdpViewer,
+  RemoteRedis,
+  RemoteS3Browser,
+  RemoteScheduledTasks,
+  RemoteSearchCluster,
+  RemoteSecurityAudit,
+  RemoteServiceManager,
+  RemoteSettings,
+  RemoteSqlite,
+  RemoteSupervisorManager,
+  RemoteTerminal,
+  RemoteVirtualMachineManager,
+  RemoteVncViewer,
+} from './features/remote-desktop/desktopAppLoaders';
 import { AllAppsIcon, DesktopAppIcon } from './components/remote-desktop/RemoteDesktopAppIcon';
 import {
   applyWindowFrameToElement,
@@ -80,7 +135,6 @@ import {
   getTopDesktopWindow,
   hasCustomDesktopWallpaper,
   hasTerminalLaunchOverrides,
-  type LaunchpadTooltipState,
   parseTmuxLaunchCommand,
   parseTmuxSessions,
   preventDesktopOpenSelection,
@@ -92,52 +146,7 @@ import {
   type TmuxMenuState,
 } from './remoteDesktopWindowModel';
 import { getAppLocale, t } from './i18n';
-
-
-const RemoteApiDebugger = lazy(() => import('./components/remote-desktop/RemoteApiDebugger'));
-const RemoteAiChat = lazy(() => import('./components/remote-desktop/RemoteAiChat'));
-const RemoteApacheManager = lazy(() => import('./components/remote-desktop/RemoteApacheManager'));
-const RemoteBrowser = lazy(() => import('./components/remote-desktop/RemoteBrowser'));
-const RemoteCertManager = lazy(() => import('./components/remote-desktop/RemoteCertManager'));
-const RemoteCaddyManager = lazy(() => import('./components/remote-desktop/RemoteCaddyManager'));
-const RemoteClickHouse = lazy(() => import('./components/remote-desktop/RemoteClickHouse'));
-const RemoteCodeEditor = lazy(() => import('./components/remote-desktop/RemoteCodeEditor'));
-const RemoteContainerManager = lazy(() => import('./components/remote-desktop/RemoteContainerManager'));
-const RemoteDiskAnalyzer = lazy(() => import('./components/remote-desktop/RemoteDiskAnalyzer'));
-const RemoteDiskManager = lazy(() => import('./components/remote-desktop/RemoteDiskManager'));
-const RemoteFileExplorer = lazy(() => import('./components/remote-desktop/RemoteFileExplorer'));
-const RemoteFirewallManager = lazy(() => import('./components/remote-desktop/RemoteFirewallManager'));
-const RemoteFrpManager = lazy(() => import('./components/remote-desktop/RemoteFrpManager'));
-const RemoteFrpsManager = lazy(() => import('./components/remote-desktop/RemoteFrpsManager'));
-const RemoteGitManager = lazy(() => import('./components/remote-desktop/RemoteGitManager'));
-const RemoteIptablesManager = lazy(() => import('./components/remote-desktop/RemoteIptablesManager'));
-const RemoteK8sManager = lazy(() => import('./components/remote-desktop/RemoteK8sManager'));
-const RemoteVirtualMachineManager = lazy(() => import('./components/remote-desktop/RemoteVirtualMachineManager'));
-const RemoteLogViewer = lazy(() => import('./components/remote-desktop/RemoteLogViewer'));
-const RemoteMessageQueuePanel = lazy(() => import('./components/remote-desktop/RemoteMessageQueuePanel'));
-const RemoteMonitor = lazy(() => import('./components/remote-desktop/RemoteMonitor'));
-const RemoteMongo = lazy(() => import('./components/remote-desktop/RemoteMongo'));
-const RemoteMySQL = lazy(() => import('./components/remote-desktop/RemoteMySQL'));
-const RemoteNetworkDiagnostics = lazy(() => import('./components/remote-desktop/RemoteNetworkDiagnostics'));
-const RemoteNginxManager = lazy(() => import('./components/remote-desktop/RemoteNginxManager'));
-const RemoteNotepad = lazy(() => import('./components/remote-desktop/RemoteNotepad'));
-const RemotePackageManager = lazy(() => import('./components/remote-desktop/RemotePackageManager'));
-const RemotePortManager = lazy(() => import('./components/remote-desktop/RemotePortManager'));
-const RemotePostgres = lazy(() => import('./components/remote-desktop/RemotePostgres'));
-const RemoteProcessManager = lazy(() => import('./components/remote-desktop/RemoteProcessManager'));
-const RemoteRedis = lazy(() => import('./components/remote-desktop/RemoteRedis'));
-const RemoteS3Browser = lazy(() => import('./components/remote-desktop/RemoteS3Browser'));
-const RemoteScheduledTasks = lazy(() => import('./components/remote-desktop/RemoteScheduledTasks'));
-const RemoteSearchCluster = lazy(() => import('./components/remote-desktop/RemoteSearchCluster'));
-const RemoteSecurityAudit = lazy(() => import('./components/remote-desktop/RemoteSecurityAudit'));
-const RemoteServiceManager = lazy(() => import('./components/remote-desktop/RemoteServiceManager'));
-const RemoteSupervisorManager = lazy(() => import('./components/remote-desktop/RemoteSupervisorManager'));
-const RemoteBackupManager = lazy(() => import('./components/remote-desktop/RemoteBackupManager'));
-const RemoteSettings = lazy(() => import('./components/remote-desktop/RemoteSettings'));
-const RemoteSqlite = lazy(() => import('./components/remote-desktop/RemoteSqlite'));
-const RemoteTerminal = lazy(() => import('./components/remote-desktop/RemoteTerminal'));
-const RemoteVncViewer = lazy(() => import('./components/remote-desktop/RemoteVncViewer'));
-const RemoteRdpViewer = lazy(() => import('./components/remote-desktop/RemoteRdpViewer'));
+import { DesktopLaunchpad } from './components/remote-desktop/DesktopLaunchpad';
 
 function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminalSessionEvent, initialAppKey }: RemoteDesktopProps) {
   const desktopSurfaceRef = useRef<HTMLElement | null>(null);
@@ -152,8 +161,17 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const connectionCheckSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const openedInitialAppRef = useRef('');
+  const openDesktopWindowRef = useRef<(appKey: DesktopAppKey) => boolean>(() => false);
   const launchpadCloseTimerRef = useRef<number | null>(null);
   const folderCloseTimerRef = useRef<number | null>(null);
+  const launchpadButtonRef = useRef<HTMLButtonElement | null>(null);
+  const folderPanelRef = useRef<HTMLElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const capabilityDialogRef = useRef<HTMLElement | null>(null);
+  const capabilityPreviousFocusRef = useRef<HTMLElement | null>(null);
+  const contextMenuPreviousFocusRef = useRef<HTMLElement | null>(null);
+  const wasContextMenuOpenRef = useRef(false);
+  const renameDialogRef = useRef<HTMLFormElement | null>(null);
   const [desktopWindows, setDesktopWindows] = useState<DesktopWindowState[]>([]);
   const desktopWindowsRef = useRef(desktopWindows);
   const [desktopLayout, setDesktopLayout] = useState<ShellDeskRemoteDesktopLayout>(() => {
@@ -169,13 +187,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
   const [isLaunchpadRendered, setIsLaunchpadRendered] = useState(false);
   const [launchpadSearch, setLaunchpadSearch] = useState('');
+  const [launchpadCapabilityFilter, setLaunchpadCapabilityFilter] = useState<'all' | DesktopAppAvailabilityStatus>('all');
+  const [capabilityNoticeAppKey, setCapabilityNoticeAppKey] = useState<DesktopAppKey | null>(null);
   const [appContextMenu, setAppContextMenu] = useState<DesktopAppContextMenuState | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<DesktopFolderContextMenuState | null>(null);
   const [surfaceContextMenu, setSurfaceContextMenu] = useState<DesktopSurfaceContextMenuState | null>(null);
   const [openFolderId, setOpenFolderId] = useState('');
+  const [focusedFolderAppKey, setFocusedFolderAppKey] = useState<DesktopAppKey | null>(null);
   const [isFolderOpen, setIsFolderOpen] = useState(false);
   const [renameFolderDialog, setRenameFolderDialog] = useState<FolderRenameDialogState | null>(null);
-  const [launchpadTooltip, setLaunchpadTooltip] = useState<LaunchpadTooltipState | null>(null);
   const [desktopPointerDragPreview, setDesktopPointerDragPreview] = useState<DesktopPointerDragPreviewState | null>(null);
   const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
   const [tmuxMenuState, setTmuxMenuState] = useState<TmuxMenuState>({ status: 'idle', sessions: [] });
@@ -187,6 +207,11 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   ));
   const [presetWallpaperUrl, setPresetWallpaperUrl] = useState('');
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState('');
+  const { snapshot: desktopCapabilitySnapshot, refresh: refreshDesktopCapabilities } = useDesktopCapabilities(
+    connection.id,
+    connection.host.systemType,
+    connectionGate.status === 'ready',
+  );
   const focusedWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === focusedWindowId && !desktopWindow.isMinimized) ?? null;
   const terminalTitlebarMenuWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === terminalTitlebarMenu?.windowId && desktopWindow.appKey === 'terminal') ?? null;
   const pendingCloseWindow = desktopWindows.find((desktopWindow) => desktopWindow.id === pendingCloseWindowId) ?? null;
@@ -210,6 +235,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const launchpadSearchTerm = launchpadSearch.trim().toLocaleLowerCase(appLocale);
   const launchpadApps = [...desktopApps]
     .filter((app) => {
+      const availability = desktopCapabilitySnapshot[app.key];
+      if (
+        launchpadCapabilityFilter !== 'all'
+        && availability.status !== launchpadCapabilityFilter
+        && !(launchpadCapabilityFilter === 'unknown' && availability.status === 'checking')
+      ) {
+        return false;
+      }
+
       if (!launchpadSearchTerm) return true;
       const appGroup = desktopAppGroupByKey.get(app.group);
       const searchTarget = [
@@ -223,13 +257,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     .sort((firstApp, secondApp) => (
       getAppLabel(firstApp, settings.language).localeCompare(getAppLabel(secondApp, settings.language), appLocale)
     ));
-  const launchpadAppGroups = desktopAppGroups
-    .map((group) => ({
-      ...group,
-      apps: launchpadApps.filter((app) => app.group === group.key),
-    }))
-    .filter((group) => group.apps.length > 0);
-
   const dismissDesktopChromeForConnectionGate = useCallback(() => {
     if (launchpadCloseTimerRef.current !== null) {
       window.clearTimeout(launchpadCloseTimerRef.current);
@@ -245,7 +272,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     setFolderContextMenu(null);
     setSurfaceContextMenu(null);
     setTerminalTitlebarMenu(null);
-    setLaunchpadTooltip(null);
     setRenameFolderDialog(null);
     setPendingCloseWindowId('');
     setIsLaunchpadOpen(false);
@@ -531,10 +557,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     setIsLaunchpadOpen(true);
   };
 
-  const closeLaunchpad = () => {
+  const closeLaunchpad = (restoreFocus = true) => {
     setIsLaunchpadOpen(false);
-    setLaunchpadTooltip(null);
     setLaunchpadSearch('');
+    setLaunchpadCapabilityFilter('all');
+
+    const acknowledgedLayout = acknowledgeDesktopAppCatalog(desktopLayoutRef.current);
+    if (!areRemoteDesktopLayoutsEqual(acknowledgedLayout, desktopLayoutRef.current)) {
+      commitDesktopLayout(acknowledgedLayout);
+    }
 
     if (launchpadCloseTimerRef.current !== null) {
       window.clearTimeout(launchpadCloseTimerRef.current);
@@ -544,6 +575,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       setIsLaunchpadRendered(false);
       launchpadCloseTimerRef.current = null;
     }, launchpadAnimationMs);
+
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => launchpadButtonRef.current?.focus({ preventScroll: true }));
+    }
   };
 
   const toggleLaunchpad = () => {
@@ -562,10 +597,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     setOpenFolderId(folderId);
+    const folder = desktopLayoutRef.current.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === folderId);
+    setFocusedFolderAppKey(folder?.appKeys[0] ?? null);
     setIsFolderOpen(true);
   };
 
-  const closeDesktopFolder = () => {
+  const closeDesktopFolder = (restoreFocus = true) => {
+    const folderId = openFolderId;
     setIsFolderOpen(false);
 
     if (folderCloseTimerRef.current !== null) {
@@ -576,6 +614,44 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       setOpenFolderId('');
       folderCloseTimerRef.current = null;
     }, launchpadAnimationMs);
+
+    if (restoreFocus && folderId) {
+      window.requestAnimationFrame(() => {
+        desktopSurfaceRef.current
+          ?.querySelector<HTMLElement>(`[data-layout-item-id="${CSS.escape(folderId)}"]`)
+          ?.focus({ preventScroll: true });
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isFolderOpen && openFolder) {
+      focusFirstElement(folderPanelRef.current, '.desktop-folder-app-button, .desktop-folder-title');
+    }
+  }, [isFolderOpen, openFolder]);
+
+  useEffect(() => {
+    const isContextMenuOpen = Boolean(appContextMenu || folderContextMenu || surfaceContextMenu);
+    if (isContextMenuOpen) {
+      if (!wasContextMenuOpenRef.current) {
+        contextMenuPreviousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
+      initializeRovingFocus(contextMenuRef.current, '[role^="menuitem"]');
+    } else if (!isContextMenuOpen && wasContextMenuOpenRef.current) {
+      window.requestAnimationFrame(() => contextMenuPreviousFocusRef.current?.focus({ preventScroll: true }));
+    }
+    wasContextMenuOpenRef.current = isContextMenuOpen;
+  }, [appContextMenu, folderContextMenu, surfaceContextMenu]);
+
+  useEffect(() => {
+    if (capabilityNoticeAppKey) {
+      focusFirstElement(capabilityDialogRef.current);
+    }
+  }, [capabilityNoticeAppKey]);
+
+  const closeCapabilityNotice = () => {
+    setCapabilityNoticeAppKey(null);
+    window.requestAnimationFrame(() => capabilityPreviousFocusRef.current?.focus({ preventScroll: true }));
   };
 
   const createFolder = () => {
@@ -641,19 +717,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     event.preventDefault();
     action();
-  };
-
-  const showLaunchpadTooltip = (element: HTMLElement, description: string) => {
-    const rect = element.getBoundingClientRect();
-    const tooltipHeight = 56;
-    const placement = rect.bottom + tooltipHeight + 12 > window.innerHeight ? 'top' : 'bottom';
-
-    setLaunchpadTooltip({
-      description,
-      x: rect.left + rect.width / 2,
-      y: placement === 'bottom' ? rect.bottom + 10 : rect.top - 10,
-      placement,
-    });
   };
 
   const applyDesktopDrop = (payload: DesktopDragPayload, targetItem?: DesktopLayoutItem) => {
@@ -972,23 +1035,33 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   };
 
   const openDesktopWindow = (appKey: DesktopAppKey) => {
+    const availability = desktopCapabilitySnapshot[appKey];
+    if (
+      availability.status === 'unsupported'
+      || availability.status === 'missing'
+      || availability.status === 'checking'
+    ) {
+      capabilityPreviousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setCapabilityNoticeAppKey(appKey);
+      return false;
+    }
     if (appKey === 'terminal') {
       void openTerminalWindow();
-      return;
+      return true;
     }
-
     appendDesktopWindow(appKey);
+    return true;
   };
-
+  openDesktopWindowRef.current = openDesktopWindow;
   useEffect(() => {
     if (!initialAppKey || openedInitialAppRef.current === initialAppKey || !desktopApps.some((app) => app.key === initialAppKey)) {
       return;
     }
-
+    const appKey = initialAppKey as DesktopAppKey;
+    if (connectionGate.status !== 'ready' || desktopCapabilitySnapshot[appKey].status === 'checking') return;
     openedInitialAppRef.current = initialAppKey;
-    openDesktopWindow(initialAppKey as DesktopAppKey);
-  }, [initialAppKey]);
-
+    openDesktopWindowRef.current(appKey);
+  }, [connectionGate.status, desktopCapabilitySnapshot, initialAppKey]);
   useEffect(() => {
     const events = window.guiSSH?.events;
     if (!events?.onDesktopAppOpen) {
@@ -997,7 +1070,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     return events.onDesktopAppOpen(({ appKey }) => {
       if (desktopApps.some((app) => app.key === appKey)) {
-        openDesktopWindow(appKey as DesktopAppKey);
+        openDesktopWindowRef.current(appKey as DesktopAppKey);
       }
     });
   }, []);
@@ -1232,10 +1305,19 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   const removeDesktopWindow = useCallback((windowId: string) => {
     setDesktopWindows((currentWindows) => {
+      const closedWindow = currentWindows.find((desktopWindow) => desktopWindow.id === windowId);
       const nextWindows = currentWindows.filter((desktopWindow) => desktopWindow.id !== windowId);
       const nextFocusedWindow = getTopDesktopWindow(nextWindows, (desktopWindow) => !desktopWindow.isMinimized);
 
       setFocusedWindowId(nextFocusedWindow?.id ?? '');
+      if (!nextFocusedWindow) {
+        window.requestAnimationFrame(() => {
+          const dockButton = closedWindow
+            ? desktopSurfaceRef.current?.querySelector<HTMLButtonElement>(`[data-dock-app-key="${closedWindow.appKey}"]`)
+            : null;
+          (dockButton ?? launchpadButtonRef.current)?.focus({ preventScroll: true });
+        });
+      }
       return nextWindows;
     });
   }, []);
@@ -1321,6 +1403,51 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         frame: getMaximizedWindowFrame(surfaceRect.width, surfaceRect.height, dockPosition, dockSize, shouldReserveDockSpace(true)),
         isMaximized: true,
         zIndex: nextZIndex,
+      };
+    }));
+  }, [dockAutoHide, dockPosition, dockSize]);
+
+  const handleWindowKeyboardFrameChange = useCallback((
+    windowId: string,
+    mode: 'move' | 'resize',
+    deltaX: number,
+    deltaY: number,
+  ) => {
+    const surface = desktopSurfaceRef.current;
+
+    if (!surface) {
+      return;
+    }
+
+    const surfaceRect = surface.getBoundingClientRect();
+    setFocusedWindowId(windowId);
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => {
+      if (desktopWindow.id !== windowId || desktopWindow.isMaximized || desktopWindow.isMinimized) {
+        return desktopWindow;
+      }
+
+      const nextFrame = mode === 'move'
+        ? {
+            ...desktopWindow.frame,
+            x: desktopWindow.frame.x + deltaX,
+            y: desktopWindow.frame.y + deltaY,
+          }
+        : {
+            ...desktopWindow.frame,
+            width: desktopWindow.frame.width + deltaX,
+            height: desktopWindow.frame.height + deltaY,
+          };
+
+      return {
+        ...desktopWindow,
+        frame: clampWindowFrame(
+          nextFrame,
+          surfaceRect.width,
+          surfaceRect.height,
+          dockPosition,
+          dockSize,
+          shouldReserveDockSpace(false),
+        ),
       };
     }));
   }, [dockAutoHide, dockPosition, dockSize]);
@@ -2001,6 +2128,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               onBringToFront={bringWindowToFront}
               onClose={closeDesktopWindow}
               onFinishInteraction={finishWindowInteraction}
+              onKeyboardFrameChange={handleWindowKeyboardFrameChange}
               onMinimize={minimizeDesktopWindow}
               onOpenTerminalTitlebarMenu={openTerminalTitlebarMenu}
               onResizePointerDown={handleWindowResizePointerDown}
@@ -2014,6 +2142,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
         <nav className="mac-dock" aria-label={t('desktop.dock.aria', settings.language)}>
           <button
+            ref={launchpadButtonRef}
             type="button"
             className={`dock-launchpad-button ${isLaunchpadOpen ? 'active' : ''}`}
             onClick={toggleLaunchpad}
@@ -2054,6 +2183,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 <button
                   key={app.key}
                   type="button"
+                  data-dock-app-key={app.key}
                   className={dockButtonClassName}
                   onClick={() => activateDockApp(app.key)}
                   aria-label={dockButtonLabel}
@@ -2113,110 +2243,42 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       </section>
     </main>
 
-    {isLaunchpadRendered ? createPortal(
-      <div className={`launchpad-overlay ${isLaunchpadOpen ? 'open' : 'closing'}`} role="presentation" onClick={closeLaunchpad}>
-        <section className="launchpad-panel" aria-label={t('desktop.launchpad.allApps', settings.language)} onClick={(event) => event.stopPropagation()}>
-          <header className="launchpad-header">
-            <div>
-              <span>{t('desktop.launchpad.allApps', settings.language)}</span>
-              <strong>{t('desktop.launchpad.componentCount', settings.language, { count: launchpadApps.length })}</strong>
-            </div>
-            <label className="launchpad-search">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.25" />
-                <path d="m10.25 10.25 3 3" />
-              </svg>
-              <input
-                value={launchpadSearch}
-                onChange={(event) => setLaunchpadSearch(event.target.value)}
-                placeholder={t('desktop.launchpad.searchPlaceholder', settings.language)}
-                aria-label={t('desktop.launchpad.searchPlaceholder', settings.language)}
-              />
-            </label>
-            <button type="button" className="launchpad-close" aria-label={t('desktop.launchpad.close', settings.language)} onClick={closeLaunchpad}>
-              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <line x1="2" y1="2" x2="10" y2="10" />
-                <line x1="10" y1="2" x2="2" y2="10" />
-              </svg>
-            </button>
-          </header>
-          <div className="launchpad-groups">
-            {launchpadAppGroups.map((group) => (
-              <section key={group.key} className="launchpad-group" aria-labelledby={`launchpad-group-${group.key}`}>
-                <header className="launchpad-group-header">
-                  <h2 id={`launchpad-group-${group.key}`}>{getAppGroupLabel(group, settings.language)}</h2>
-                  <span>{t('desktop.launchpad.groupCount', settings.language, { count: group.apps.length })}</span>
-                </header>
-                <div className="launchpad-grid">
-                  {group.apps.map((app) => {
-                    const appLabel = getAppLabel(app, settings.language);
-                    const appDescription = getAppDescription(app, settings.language);
-
-                    return (
-                      <div
-                        key={app.key}
-                        role="button"
-                        tabIndex={0}
-                        className="launchpad-app-button"
-                        draggable={false}
-                        onPointerDown={(event) => startPointerDrag(event, { source: 'launchpad', appKey: app.key })}
-                        onDragStart={(event) => event.preventDefault()}
-                        onMouseEnter={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
-                        onMouseLeave={() => setLaunchpadTooltip(null)}
-                        onFocus={(event) => showLaunchpadTooltip(event.currentTarget, appDescription)}
-                        onBlur={() => setLaunchpadTooltip(null)}
-                        onClick={(event) => {
-                          if (consumeSuppressedPointerClick(event)) return;
-                          closeLaunchpad();
-                          openDesktopWindow(app.key);
-                        }}
-                        onKeyDown={(event) => activateRoleButton(event, () => {
-                          closeLaunchpad();
-                          openDesktopWindow(app.key);
-                        })}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          closeDesktopMenus();
-                          setAppContextMenu({ x: event.clientX, y: event.clientY, appKey: app.key, source: 'launchpad' });
-                        }}
-                      >
-                        <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
-                          <DesktopAppIcon appKey={app.key} />
-                        </span>
-                        <strong>{appLabel}</strong>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-            {!launchpadApps.length ? (
-              <div className="launchpad-empty">{t('desktop.launchpad.noSearchResults', settings.language)}</div>
-            ) : null}
-          </div>
-        </section>
-      </div>,
-      document.body,
-    ) : null}
-
-    {launchpadTooltip ? createPortal(
-      <div
-        className={`launchpad-tooltip ${launchpadTooltip.placement}`}
-        style={{ left: launchpadTooltip.x, top: launchpadTooltip.y }}
-        role="tooltip"
-      >
-        {launchpadTooltip.description}
-      </div>,
-      document.body,
+    {isLaunchpadRendered ? (
+      <DesktopLaunchpad
+        apps={launchpadApps}
+        capabilityFilter={launchpadCapabilityFilter}
+        capabilitySnapshot={desktopCapabilitySnapshot}
+        isOpen={isLaunchpadOpen}
+        language={settings.language}
+        search={launchpadSearch}
+        seenAppCatalogVersion={desktopLayout.seenAppCatalogVersion}
+        onCapabilityFilterChange={setLaunchpadCapabilityFilter}
+        onClose={closeLaunchpad}
+        onContextMenu={(appKey, x, y) => {
+          closeDesktopMenus();
+          setAppContextMenu({ x, y, appKey, source: 'launchpad' });
+        }}
+        onOpenApp={openDesktopWindow}
+        onPointerDown={(event, appKey) => startPointerDrag(event, { source: 'launchpad', appKey })}
+        onRefreshCapabilities={() => void refreshDesktopCapabilities(true)}
+        onSearchChange={setLaunchpadSearch}
+      />
     ) : null}
 
     {openFolder ? createPortal(
-      <div className={`desktop-folder-overlay ${isFolderOpen ? 'open' : 'closing'}`} role="presentation" onClick={closeDesktopFolder}>
+      <div className={`desktop-folder-overlay ${isFolderOpen ? 'open' : 'closing'}`} role="presentation" onClick={() => closeDesktopFolder()}>
         <section
+          ref={folderPanelRef}
           className="desktop-folder-panel"
+          role="dialog"
+          aria-modal="true"
           aria-label={openFolder.name}
+          tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            handleModalKeyboardNavigation(event, event.currentTarget, () => closeDesktopFolder());
+            handleRovingKeyboardNavigation(event, event.currentTarget, '.desktop-folder-app-button', 5);
+          }}
           data-desktop-drop-kind="folder"
           data-folder-id={openFolder.id}
         >
@@ -2229,7 +2291,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             >
               {openFolder.name}
             </button>
-            <button type="button" className="launchpad-close" aria-label={t('desktop.folder.close', settings.language)} onClick={closeDesktopFolder}>
+            <button type="button" className="launchpad-close" aria-label={t('desktop.folder.close', settings.language)} onClick={() => closeDesktopFolder()}>
               <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
                 <line x1="2" y1="2" x2="10" y2="10" />
                 <line x1="10" y1="2" x2="2" y2="10" />
@@ -2245,24 +2307,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
                 <div
                   key={appKey}
                   role="button"
-                  tabIndex={0}
+                  tabIndex={focusedFolderAppKey === appKey ? 0 : -1}
                   className="desktop-icon-button desktop-folder-app-button"
                   title={t('desktop.folder.openHint', settings.language)}
                   draggable={false}
                   data-desktop-drop-kind="folder-app"
                   data-folder-id={openFolder.id}
                   data-app-key={appKey}
+                  onFocus={() => setFocusedFolderAppKey(appKey)}
                   onPointerDown={(event) => startPointerDrag(event, { source: 'folder', folderId: openFolder.id, appKey })}
                   onDragStart={(event) => event.preventDefault()}
                   onDoubleClick={(event) => {
                     if (consumeSuppressedPointerClick(event)) return;
                     preventDesktopOpenSelection(event);
-                    openDesktopWindow(appKey);
-                    closeDesktopFolder();
+                    if (openDesktopWindow(appKey)) {
+                      closeDesktopFolder(false);
+                    }
                   }}
                   onKeyDown={(event) => activateRoleButton(event, () => {
-                    openDesktopWindow(appKey);
-                    closeDesktopFolder();
+                    if (openDesktopWindow(appKey)) {
+                      closeDesktopFolder(false);
+                    }
                   })}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -2294,9 +2359,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onContextMenu={(event) => { event.preventDefault(); setAppContextMenu(null); }}
         />
         <div
+          ref={contextMenuRef}
           className="context-menu"
           style={{ left: appContextMenu.x, top: appContextMenu.y }}
           role="menu"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            handleModalKeyboardNavigation(event, event.currentTarget, () => setAppContextMenu(null));
+            handleRovingKeyboardNavigation(event, event.currentTarget, '[role^="menuitem"]');
+          }}
         >
           <button
             type="button"
@@ -2306,10 +2377,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
               const { appKey, source } = appContextMenu;
               setAppContextMenu(null);
               if (source === 'launchpad') {
-                closeLaunchpad();
+                closeLaunchpad(false);
               }
               if (source === 'folder') {
-                closeDesktopFolder();
+                closeDesktopFolder(false);
               }
               openDesktopWindow(appKey);
             }}
@@ -2389,9 +2460,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onContextMenu={(event) => { event.preventDefault(); setFolderContextMenu(null); }}
         />
         <div
+          ref={contextMenuRef}
           className="context-menu"
           style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
           role="menu"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            handleModalKeyboardNavigation(event, event.currentTarget, () => setFolderContextMenu(null));
+            handleRovingKeyboardNavigation(event, event.currentTarget, '[role^="menuitem"]');
+          }}
         >
           <button
             type="button"
@@ -2444,9 +2521,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onContextMenu={(event) => { event.preventDefault(); setSurfaceContextMenu(null); }}
         />
         <div
+          ref={contextMenuRef}
           className="context-menu"
           style={{ left: surfaceContextMenu.x, top: surfaceContextMenu.y }}
           role="menu"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            handleModalKeyboardNavigation(event, event.currentTarget, () => setSurfaceContextMenu(null));
+            handleRovingKeyboardNavigation(event, event.currentTarget, '[role^="menuitem"]');
+          }}
         >
           <button
             type="button"
@@ -2488,14 +2571,75 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       document.body,
     ) : null}
 
+    {capabilityNoticeAppKey ? createPortal(
+      <div className="notepad-modal-overlay" role="presentation" onClick={closeCapabilityNotice}>
+        <section
+          ref={capabilityDialogRef}
+          className="notepad-modal desktop-capability-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="desktop-capability-dialog-title"
+          tabIndex={-1}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => handleModalKeyboardNavigation(
+            event,
+            event.currentTarget,
+            closeCapabilityNotice,
+          )}
+        >
+          <div id="desktop-capability-dialog-title" className="notepad-modal-title">
+            {t('desktop.capability.dialogTitle', settings.language, {
+              app: getAppLabel(getAppInfo(capabilityNoticeAppKey), settings.language),
+            })}
+          </div>
+          <div className="notepad-modal-message">
+            {desktopCapabilitySnapshot[capabilityNoticeAppKey].status === 'unsupported' ? (
+              <p>{t('desktop.capability.unsupportedMessage', settings.language, {
+                systems: getAppCapability(capabilityNoticeAppKey).supportedSystems.join(' / '),
+              })}</p>
+            ) : desktopCapabilitySnapshot[capabilityNoticeAppKey].status === 'missing' ? (
+              <p>{t('desktop.capability.missingMessage', settings.language, {
+                tools: desktopCapabilitySnapshot[capabilityNoticeAppKey].missingTools.join(', '),
+              })}</p>
+            ) : (
+              <p>{t('desktop.capability.checkingMessage', settings.language)}</p>
+            )}
+          </div>
+          <div className="notepad-modal-actions">
+            <button type="button" className="notepad-modal-btn" onClick={closeCapabilityNotice}>
+              {t('common.close', settings.language)}
+            </button>
+            {desktopCapabilitySnapshot[capabilityNoticeAppKey].status !== 'unsupported' ? (
+              <button
+                type="button"
+                className="notepad-modal-btn primary"
+                onClick={() => {
+                  void refreshDesktopCapabilities(true).finally(closeCapabilityNotice);
+                }}
+              >
+                {t('desktop.capability.refresh', settings.language)}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      </div>,
+      document.body,
+    ) : null}
+
     {renameFolderDialog ? createPortal(
       <div className="notepad-modal-overlay" role="presentation" onClick={() => setRenameFolderDialog(null)}>
         <form
+          ref={renameDialogRef}
           className="notepad-modal desktop-folder-rename-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="desktop-folder-rename-title"
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => handleModalKeyboardNavigation(
+            event,
+            event.currentTarget,
+            () => setRenameFolderDialog(null),
+          )}
           onSubmit={submitFolderRename}
         >
           <div id="desktop-folder-rename-title" className="notepad-modal-title">{t('desktop.folder.rename', settings.language)}</div>
