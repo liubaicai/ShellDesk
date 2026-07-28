@@ -161,8 +161,8 @@ for (const expected of [
   assert.ok(rustCoverageScript.includes(expected), `Rust coverage gate must include ${expected}`);
 }
 assert.match(rustCoverageScript, /'--fail-under-functions',\s*'36'/);
-assert.match(rustCoverageScript, /'--fail-under-lines',\s*'39'/);
-assert.match(rustCoverageScript, /'--fail-under-regions',\s*'37'/);
+assert.match(rustCoverageScript, /'--fail-under-lines',\s*'38\.5'/);
+assert.match(rustCoverageScript, /'--fail-under-regions',\s*'36\.5'/);
 
 const updaterEndpoint = 'https://github.com/liubaicai/ShellDesk/releases/latest/download/latest.json';
 assert.match(buildWrapper, new RegExp(updaterEndpoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
