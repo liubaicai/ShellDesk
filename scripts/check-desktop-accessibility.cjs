@@ -25,6 +25,8 @@ assert.match(shell, /role="menu"/, 'context menus must expose menu semantics');
 assert.match(shell, /role="alertdialog"/, 'blocking capability notices must expose alertdialog semantics');
 assert.match(shell, /initializeRovingFocus\(contextMenuRef\.current/, 'opened context menus must receive roving focus');
 assert.match(shell, /data-dock-app-key/, 'window close focus restoration must have a stable Dock target');
+assert.match(shell, /desktopCapabilitySnapshot\[appKey\]\.status === 'checking'/, 'direct app launches must wait for capability probes');
+assert.match(shell, /openDesktopWindowRef\.current\(appKey as DesktopAppKey\)/, 'desktop app events must use the latest capability snapshot');
 assert.match(keyboardNavigation, /event\.key === 'Escape'/, 'overlay keyboard helper must support Escape');
 assert.match(keyboardNavigation, /event\.key !== 'Tab'/, 'overlay keyboard helper must trap Tab navigation');
 

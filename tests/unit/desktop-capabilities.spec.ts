@@ -32,7 +32,10 @@ test('static capability gate distinguishes supported, unsupported and probed app
 });
 
 test('platform-specific and alternative tool requirements remain explicit', () => {
-  expect(getDesktopAppToolRequirements('service-manager', 'linux')).toEqual(['systemctl']);
+  expect(getDesktopAppToolRequirements('service-manager', 'linux')).toEqual([['systemctl', 'rc-service']]);
   expect(getDesktopAppToolRequirements('service-manager', 'windows')).toEqual(['sc.exe']);
+  expect(desktopAppCapabilities['service-manager'].supportedSystems).not.toContain('macos');
+  expect(getDesktopAppToolRequirements('scheduled-tasks', 'linux')).toEqual([['crontab', 'systemctl']]);
+  expect(getDesktopAppToolRequirements('scheduled-tasks', 'macos')).toEqual(['crontab']);
   expect(formatToolRequirement(['docker', 'podman'])).toBe('docker / podman');
 });

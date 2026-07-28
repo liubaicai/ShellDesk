@@ -112,6 +112,7 @@ export interface DesktopAppCapability {
 const allDesktopSystems = ['linux', 'windows', 'macos'] as const;
 const posixDesktopSystems = ['linux', 'macos'] as const;
 const linuxDesktopSystems = ['linux'] as const;
+const linuxWindowsDesktopSystems = ['linux', 'windows'] as const;
 
 export const desktopAppCapabilities = {
   files: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'workspace', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
@@ -126,7 +127,7 @@ export const desktopAppCapabilities = {
   mysql: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
   clickhouse: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
   redis: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
-  'service-manager': { supportedSystems: allDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: ['systemctl'], windows: ['sc.exe'], macos: ['launchctl'] }, mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  'service-manager': { supportedSystems: linuxWindowsDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: [['systemctl', 'rc-service']], windows: ['sc.exe'] }, mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 1 },
   'supervisor-manager': { supportedSystems: posixDesktopSystems, requiredTools: ['supervisorctl'], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 19 },
   'backup-manager': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'none', introducedInVersion: 19 },
   'container-manager': { supportedSystems: allDesktopSystems, requiredTools: [['docker', 'podman']], mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 1 },
@@ -144,7 +145,7 @@ export const desktopAppCapabilities = {
   'nginx-manager': { supportedSystems: allDesktopSystems, requiredTools: ['nginx'], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
   'caddy-manager': { supportedSystems: allDesktopSystems, requiredTools: ['caddy'], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
   'apache-manager': { supportedSystems: allDesktopSystems, requiredTools: [['apache2', 'httpd']], mode: 'management', permission: 'sudo-required', capabilityProbe: 'required-tools', introducedInVersion: 14 },
-  'scheduled-tasks': { supportedSystems: allDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: ['crontab'], windows: ['schtasks.exe'], macos: ['launchctl'] }, mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 1 },
+  'scheduled-tasks': { supportedSystems: allDesktopSystems, requiredTools: [], requiredToolsBySystem: { linux: [['crontab', 'systemctl']], windows: ['schtasks.exe'], macos: ['crontab'] }, mode: 'management', permission: 'sudo-optional', capabilityProbe: 'required-tools', introducedInVersion: 1 },
   postgres: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 1 },
   mongo: { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },
   'search-cluster': { supportedSystems: allDesktopSystems, requiredTools: [], mode: 'network-client', permission: 'user', capabilityProbe: 'none', introducedInVersion: 14 },

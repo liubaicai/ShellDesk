@@ -161,6 +161,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const connectionCheckSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const openedInitialAppRef = useRef('');
+  const openDesktopWindowRef = useRef<(appKey: DesktopAppKey) => boolean>(() => false);
   const launchpadCloseTimerRef = useRef<number | null>(null);
   const folderCloseTimerRef = useRef<number | null>(null);
   const launchpadButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1035,7 +1036,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
   const openDesktopWindow = (appKey: DesktopAppKey) => {
     const availability = desktopCapabilitySnapshot[appKey];
-
     if (
       availability.status === 'unsupported'
       || availability.status === 'missing'
@@ -1045,25 +1045,23 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       setCapabilityNoticeAppKey(appKey);
       return false;
     }
-
     if (appKey === 'terminal') {
       void openTerminalWindow();
       return true;
     }
-
     appendDesktopWindow(appKey);
     return true;
   };
-
+  openDesktopWindowRef.current = openDesktopWindow;
   useEffect(() => {
     if (!initialAppKey || openedInitialAppRef.current === initialAppKey || !desktopApps.some((app) => app.key === initialAppKey)) {
       return;
     }
-
+    const appKey = initialAppKey as DesktopAppKey;
+    if (connectionGate.status !== 'ready' || desktopCapabilitySnapshot[appKey].status === 'checking') return;
     openedInitialAppRef.current = initialAppKey;
-    openDesktopWindow(initialAppKey as DesktopAppKey);
-  }, [initialAppKey]);
-
+    openDesktopWindowRef.current(appKey);
+  }, [connectionGate.status, desktopCapabilitySnapshot, initialAppKey]);
   useEffect(() => {
     const events = window.guiSSH?.events;
     if (!events?.onDesktopAppOpen) {
@@ -1072,7 +1070,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
 
     return events.onDesktopAppOpen(({ appKey }) => {
       if (desktopApps.some((app) => app.key === appKey)) {
-        openDesktopWindow(appKey as DesktopAppKey);
+        openDesktopWindowRef.current(appKey as DesktopAppKey);
       }
     });
   }, []);

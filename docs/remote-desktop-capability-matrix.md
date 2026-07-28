@@ -26,7 +26,7 @@
 | `mysql` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
 | `clickhouse` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
 | `redis` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
-| `service-manager` | linux / windows / macos | systemctl | sc.exe | launchctl | management | sudo-required | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
+| `service-manager` | linux / windows | systemctl / rc-service | sc.exe | — | management | sudo-required | automated-contract | automated-probe | automated-probe | expected-unsupported | environment-required |
 | `supervisor-manager` | linux / macos | supervisorctl | supervisorctl | supervisorctl | management | sudo-optional | automated-contract | automated-probe | expected-unsupported | automated-probe | environment-required |
 | `backup-manager` | linux / windows / macos | — | — | — | management | sudo-optional | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
 | `container-manager` | linux / windows / macos | docker / podman | docker / podman | docker / podman | management | sudo-optional | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
@@ -44,7 +44,7 @@
 | `nginx-manager` | linux / windows / macos | nginx | nginx | nginx | management | sudo-required | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
 | `caddy-manager` | linux / windows / macos | caddy | caddy | caddy | management | sudo-required | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
 | `apache-manager` | linux / windows / macos | apache2 / httpd | apache2 / httpd | apache2 / httpd | management | sudo-required | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
-| `scheduled-tasks` | linux / windows / macos | crontab | schtasks.exe | launchctl | management | sudo-optional | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
+| `scheduled-tasks` | linux / windows / macos | crontab / systemctl | schtasks.exe | crontab | management | sudo-optional | automated-contract | automated-probe | automated-probe | automated-probe | environment-required |
 | `postgres` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
 | `mongo` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
 | `search-cluster` | linux / windows / macos | — | — | — | network-client | user | automated-contract | not-applicable | not-applicable | not-applicable | environment-required |
