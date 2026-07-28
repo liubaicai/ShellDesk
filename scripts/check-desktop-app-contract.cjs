@@ -116,14 +116,21 @@ function extractCatalogMessageIds(source, catalogName) {
   const block = extractBlock(
     source,
     new RegExp(`const\\s+${catalogName}\\b`),
-    catalogName === 'zhCN' ? /\n} as const;/ : /\n};/,
+    /\n} as const;/,
   );
   return unique([...block.matchAll(/'([^']+)':\s*(?:'|`)/g)].map((entry) => entry[1]));
 }
 
 function extractLazyComponents(source) {
-  return new Map([...source.matchAll(/const\s+(Remote[A-Za-z0-9]+)\s*=\s*lazy\(\(\)\s*=>\s*import\('([^']+)'\)\)/g)]
-    .map((match) => [match[1], match[2]]));
+  return new Map([...source.matchAll(/const\s+(Remote[A-Za-z0-9]+)\s*=\s*[\s\S]*?import\('(?:\.\.\/\.\.\/|\.\/)components\/remote-desktop\/([^']+)'\)[\s\S]*?;/g)]
+    .map((match) => [match[1], `./components/remote-desktop/${match[2]}`]));
+}
+
+function extractLazyStyleImports(source) {
+  return unique(
+    [...source.matchAll(/import\('(?:\.\.\/\.\.\/|\.\/)styles\/remote-desktop\/_([^']+)\.scss'\)/g)]
+      .map((match) => match[1]),
+  );
 }
 
 function extractIconSourcePaths(source) {
@@ -207,14 +214,17 @@ const desktopAppAssetContracts = {
 };
 
 const remoteDesktopSource = readWorkspaceFile('src/RemoteDesktopShell.tsx');
+const desktopAppLoaderSource = readWorkspaceFile('src/features/remote-desktop/desktopAppLoaders.tsx');
 const remoteDesktopCatalogSource = readWorkspaceFile('src/remoteDesktopCatalog.ts');
+const remoteDesktopLayoutSource = readWorkspaceFile('src/remoteDesktopLayout.ts');
 const remoteDesktopWindowModelSource = readWorkspaceFile('src/remoteDesktopWindowModel.ts');
-const appSource = readWorkspaceFile('src/App.tsx');
+const appDefaultSettingsSource = readWorkspaceFile('src/appDefaultSettings.ts');
 const deferredStyleSource = readWorkspaceFile('src/styles/deferred.scss');
 const viteEnvSource = readWorkspaceFile('src/vite-env.d.ts');
 const vaultRemoteProfilesSource = readWorkspaceFile('src-tauri/src/vault/remote_profiles.rs');
 const vaultNormalizeSource = readWorkspaceFile('src-tauri/src/vault/normalize.rs');
-const i18nCatalogSource = readWorkspaceFile('src/i18nCatalog.ts');
+const zhI18nCatalogSource = readWorkspaceFile('src/i18nCatalog.zh-CN.ts');
+const enI18nCatalogSource = readWorkspaceFile('src/i18nCatalog.en-US.ts');
 const sharedToolsSource = readWorkspaceFile('src/ai/sharedTools.ts');
 
 const desktopAppEntries = extractDesktopApps(remoteDesktopCatalogSource);
@@ -229,32 +239,48 @@ compareOrdered('vite-env ShellDeskDesktopAppKey', desktopAppKeys, extractTypeUni
 compareOrdered('Rust REMOTE_DESKTOP_APP_KEYS', desktopAppKeys, extractRustStringArray(vaultRemoteProfilesSource, 'REMOTE_DESKTOP_APP_KEYS'), errors);
 compareOrdered('AI SHELLDESK_APP_KEYS', desktopAppKeys, extractStringArray(sharedToolsSource, 'SHELLDESK_APP_KEYS'), errors);
 compareSets('desktopAppIconSources', desktopAppKeys, extractRecordKeys(remoteDesktopCatalogSource, 'desktopAppIconSources'), errors);
+compareSets('desktopAppCapabilities', desktopAppKeys, extractRecordKeys(remoteDesktopCatalogSource, 'desktopAppCapabilities'), errors);
 compareSets('defaultWindowFrames', desktopAppKeys, extractRecordKeys(remoteDesktopWindowModelSource, 'defaultWindowFrames'), errors);
 compareSets('renderWindowContent branches', desktopAppKeys, extractRenderBranches(remoteDesktopSource), errors);
 compareSets('desktop app asset contract table', desktopAppKeys, Object.keys(desktopAppAssetContracts), errors);
 
-const shellCatalogVersion = extractNumberConst(remoteDesktopCatalogSource, 'desktopAppCatalogVersion');
-const appCatalogVersion = extractNumberConst(appSource, 'remoteDesktopAppCatalogVersion');
+const shellCatalogVersion = extractNumberConst(remoteDesktopLayoutSource, 'desktopAppCatalogVersion');
 const rustCatalogVersion = extractRustNumberConst(vaultNormalizeSource, 'REMOTE_DESKTOP_APP_CATALOG_VERSION');
-if (shellCatalogVersion !== appCatalogVersion || shellCatalogVersion !== rustCatalogVersion) {
-  errors.push(`remote desktop app catalog versions differ: shell=${shellCatalogVersion}, app=${appCatalogVersion}, rust=${rustCatalogVersion}`);
+if (shellCatalogVersion !== rustCatalogVersion) {
+  errors.push(`remote desktop app catalog versions differ: frontend=${shellCatalogVersion}, rust=${rustCatalogVersion}`);
 }
 
-const migrationKeys = extractStringArray(remoteDesktopCatalogSource, 'appCatalogMigrationKeys');
-compareOrdered('App remoteDesktopAppCatalogMigrationKeys', migrationKeys, extractStringArray(appSource, 'remoteDesktopAppCatalogMigrationKeys'), errors);
+const migrationKeys = extractStringArray(remoteDesktopLayoutSource, 'appCatalogMigrationKeys');
 compareOrdered('Rust REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS', migrationKeys, extractRustStringArray(vaultNormalizeSource, 'REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS'), errors);
 compareSets('migration keys in desktopApps', migrationKeys, migrationKeys.filter((key) => desktopAppKeys.includes(key)), errors);
 
-const defaultDesktopAppKeys = extractStringArray(remoteDesktopCatalogSource, 'defaultDesktopAppKeys');
-const appDefaultLayoutBlock = extractBlock(appSource, /const defaultRemoteDesktopLayout: ShellDeskRemoteDesktopLayout = \{/, /\n\};/);
-const appDefaultLayoutKeys = [...appDefaultLayoutBlock.matchAll(/appKey:\s*'([^']+)'/g)].map((entry) => entry[1]);
-compareOrdered('App default remote desktop layout', defaultDesktopAppKeys, appDefaultLayoutKeys, errors);
+const defaultDesktopAppKeys = extractStringArray(remoteDesktopLayoutSource, 'defaultDesktopAppKeys');
+compareOrdered('default desktop core apps', ['files', 'terminal', 'browser', 'settings'], defaultDesktopAppKeys, errors);
+if (!appDefaultSettingsSource.includes('createDefaultRemoteDesktopLayout()')) {
+  errors.push('appDefaultSettings.ts must use createDefaultRemoteDesktopLayout() instead of maintaining a duplicate layout.');
+}
 
-const zhCNMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'zhCN'));
-const enUSMessageIds = new Set(extractCatalogMessageIds(i18nCatalogSource, 'enUS'));
-const lazyComponents = extractLazyComponents(remoteDesktopSource);
+const capabilityBlock = extractBlock(
+  remoteDesktopCatalogSource,
+  /const desktopAppCapabilities = \{/,
+  /\n} as const satisfies Record<DesktopAppKey, DesktopAppCapability>;/,
+);
+for (const appKey of desktopAppKeys) {
+  const escapedKey = appKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const entry = capabilityBlock.match(new RegExp(`^\\s*(?:'${escapedKey}'|${escapedKey.replaceAll('-', '\\-')})\\s*:\\s*\\{([^\\n]+)`, 'm'))?.[1] ?? '';
+  for (const field of ['supportedSystems', 'requiredTools', 'mode', 'permission', 'capabilityProbe', 'introducedInVersion']) {
+    if (!entry.includes(`${field}:`)) {
+      errors.push(`Desktop app ${appKey} capability metadata is missing ${field}.`);
+    }
+  }
+}
+
+const zhCNMessageIds = new Set(extractCatalogMessageIds(zhI18nCatalogSource, 'zhCN'));
+const enUSMessageIds = new Set(extractCatalogMessageIds(enI18nCatalogSource, 'enUS'));
+const lazyComponents = extractLazyComponents(desktopAppLoaderSource);
 const iconSourcePaths = extractIconSourcePaths(remoteDesktopCatalogSource);
 const remoteDesktopStyleUses = new Set(extractStyleUses(deferredStyleSource));
+const lazyStyleImports = new Set(extractLazyStyleImports(desktopAppLoaderSource));
 for (const entry of desktopAppEntries) {
   for (const messageId of [entry.labelId, entry.descriptionId]) {
     if (!zhCNMessageIds.has(messageId)) {
@@ -296,14 +322,16 @@ for (const entry of desktopAppEntries) {
   const isDeferredStyle = remoteDesktopStyleUses.has(assetContract.style);
   const isComponentLocalStyle = workspaceFileExists(componentFile)
     && componentImportsStyle(readWorkspaceFile(componentFile), assetContract.style);
-  if (!isDeferredStyle && !isComponentLocalStyle) {
+  const isShellLazyStyle = lazyStyleImports.has(assetContract.style);
+  const styleOwnerCount = [isDeferredStyle, isComponentLocalStyle, isShellLazyStyle].filter(Boolean).length;
+  if (styleOwnerCount === 0) {
     errors.push(
-      `Desktop app ${entry.key} SCSS partial must be owned by src/styles/deferred.scss or its lazy component: ${assetContract.style}`,
+      `Desktop app ${entry.key} SCSS partial must be owned by deferred.scss, its lazy component, or its lazy shell import: ${assetContract.style}`,
     );
   }
-  if (isDeferredStyle && isComponentLocalStyle) {
+  if (styleOwnerCount > 1) {
     errors.push(
-      `Desktop app ${entry.key} SCSS partial has duplicate deferred and lazy-component owners: ${assetContract.style}`,
+      `Desktop app ${entry.key} SCSS partial has multiple production owners: ${assetContract.style}`,
     );
   }
 }
@@ -313,4 +341,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Desktop app contract ok: ${desktopAppKeys.length} app keys are aligned across catalog, rendering, i18n, component files, icons, single-owner styles, types, defaults, migrations, and Rust vault normalization.`);
+console.log(`Desktop app contract ok: ${desktopAppKeys.length} app keys are aligned across catalog, capabilities, rendering, i18n, component files, icons, single-owner styles, types, defaults, migrations, and Rust vault normalization.`);

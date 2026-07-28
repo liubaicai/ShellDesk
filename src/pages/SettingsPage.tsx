@@ -13,8 +13,8 @@ import {
   getDesktopWallpaperPreset,
   loadDesktopWallpaperPresetUrl,
 } from '../assets/desktopWallpapers';
-import appIconUrl from '../assets/images/icon.png';
 import { getCurrentAppLocale, t } from '../i18n';
+import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
   accentColorChoices,
@@ -38,15 +38,12 @@ import {
   desktopDockPinnedAppChoices,
   aiProviderChoices,
   webSearchProviderChoices,
-  shellDeskRepositoryUrl,
-  shellDeskReleasesUrl,
   defaultSyncRemotePath,
   syncIntervalChoices,
   isCustomAiProvider,
   createDefaultUpdateStatus,
   createDefaultSyncForm,
   createSyncFormFromConfig,
-  formatFileSize,
   formatDateTime,
   getSettingsSectionNavClass,
   readFileAsDataUrl,
@@ -2437,156 +2434,28 @@ function SettingsPage({
           ) : null}
 
           {activeSection === 'about' ? (
-            <div className="settings-about-grid">
-              <section className="settings-section settings-about-section">
-                <div className="settings-about-hero">
-                  <img src={appIconUrl} alt="" draggable={false} />
-                  <span>
-                    <strong>{appDisplayName}</strong>
-                    <small>{t('settings.about.intro', settings.language)}</small>
-                  </span>
-                </div>
-              </section>
-
-              <section className="settings-section settings-about-info-section">
-                <h2>{t('settings.about.appInfo.title', settings.language)}</h2>
-                <div className="settings-card">
-                  <div className="settings-row">
-                    <span>
-                      <strong>{t('settings.about.version.label', settings.language)}</strong>
-                      <small>{appPlatform}</small>
-                    </span>
-                    <code className="settings-inline-code">v{appVersion}</code>
-                  </div>
-
-                  <div className="settings-row">
-                    <span>
-                      <strong>GitHub</strong>
-                      <small>{t('settings.about.repository.summary', settings.language)}</small>
-                    </span>
-                    <button
-                      type="button"
-                      className="settings-link-button"
-                      onClick={() => openExternalLink(shellDeskRepositoryUrl)}
-                    >
-                      liubaicai/ShellDesk
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="settings-section settings-update-section">
-                <h2>{t('settings.update.title', settings.language)}</h2>
-                <div className="settings-card">
-                  <div className="settings-row">
-                    <span>
-                      <strong>{t('settings.update.auto.label', settings.language)}</strong>
-                      <small>{t('settings.update.auto.summary', settings.language)}</small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      className="settings-toggle"
-                      checked={settings.autoUpdateEnabled}
-                      onChange={(event) => updateSetting('autoUpdateEnabled', event.target.checked)}
-                      aria-label={t('settings.update.auto.label', settings.language)}
-                    />
-                  </div>
-
-                  <div className="settings-row">
-                    <span>
-                      <strong>{t('settings.update.status.label', settings.language)}</strong>
-                      <small className={updateStatusClassName ? `settings-update-status ${updateStatusClassName}` : 'settings-update-status'}>
-                        {updateStatusText}
-                      </small>
-                    </span>
-                    <div className="settings-update-actions">
-                      <button
-                        type="button"
-                        className="command-button"
-                        onClick={checkForUpdates}
-                        disabled={isCheckingForUpdates || updateStatus.isChecking || isUpdateDownloading || isUpdateReady}
-                      >
-                        {isCheckingForUpdates || updateStatus.isChecking
-                          ? t('settings.update.checkingButton', settings.language)
-                          : t('settings.update.checkButton', settings.language)}
-                      </button>
-                      {isUpdateReady ? (
-                        <button
-                          type="button"
-                          className="command-button"
-                          onClick={installUpdate}
-                        >
-                          {t('settings.update.installButton', settings.language)}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="settings-row">
-                    <span>
-                      <strong>{t('settings.update.latest.label', settings.language)}</strong>
-                      <small>
-                        {updateCheckResult
-                          ? [updateCheckResult.releaseName, formatDateTime(updateCheckResult.releaseDate)].filter(Boolean).join(' · ')
-                          : updateStatus.version
-                            ? t('settings.update.latest.autoDetected', settings.language, { version: updateStatus.version })
-                            : t('settings.update.latest.clickToCheck', settings.language)}
-                      </small>
-                    </span>
-                    <code className="settings-inline-code">{updateCheckResult?.latestVersion ?? updateStatus.version ?? t('settings.update.latest.notChecked', settings.language)}</code>
-                  </div>
-
-                  {isUpdateDownloading ? (
-                    <div className="settings-row settings-update-progress-row">
-                      <span>
-                        <strong>{t('settings.update.download.progress', settings.language)}</strong>
-                        <small>{settings.autoUpdateEnabled
-                          ? t('settings.update.download.auto', settings.language)
-                          : t('settings.update.download.manualOnly', settings.language)}</small>
-                      </span>
-                      <div className="settings-update-progress" aria-label={t('settings.update.download.progress', settings.language)}>
-                        <span style={{ width: `${updateProgressPercent}%` }} />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {updateCheckResult?.updateAvailable || updateStatus.status === 'available' || updateStatus.status === 'error' || isUpdateReady ? (
-                    <div className="settings-row">
-                      <span>
-                        <strong>{t('settings.update.download.title', settings.language)}</strong>
-                        <small>
-                          {!settings.autoUpdateEnabled
-                            ? t('settings.update.download.manualOnly', settings.language)
-                            : updateStatus.supported === false
-                            ? updateStatus.unsupportedReason || t('settings.update.download.manual', settings.language)
-                            : [updateCheckResult?.downloadName || t('settings.update.download.defaultName', settings.language), formatFileSize(updateCheckResult?.downloadSize ?? 0)].filter(Boolean).join(' · ')}
-                        </small>
-                      </span>
-                      <div className="settings-update-actions">
-                        {canManualDownloadUpdate ? (
-                          <button
-                            type="button"
-                            className="command-button"
-                            onClick={downloadUpdate}
-                          >
-                            {t('settings.update.downloadButton', settings.language)}
-                          </button>
-                        ) : null}
-                        {canOpenUpdateRelease ? (
-                          <button
-                            type="button"
-                            className="command-button"
-                            onClick={() => openExternalLink(updateCheckResult?.downloadUrl ?? updateCheckResult?.releaseUrl ?? shellDeskReleasesUrl)}
-                          >
-                            {t('settings.update.download.open', settings.language)}
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            </div>
+            <SettingsAboutSection
+              appDisplayName={appDisplayName}
+              appPlatform={appPlatform}
+              appVersion={appVersion}
+              autoUpdateEnabled={settings.autoUpdateEnabled}
+              canManualDownloadUpdate={canManualDownloadUpdate}
+              canOpenUpdateRelease={canOpenUpdateRelease}
+              isCheckingForUpdates={isCheckingForUpdates}
+              isUpdateDownloading={isUpdateDownloading}
+              isUpdateReady={isUpdateReady}
+              language={settings.language}
+              updateCheckResult={updateCheckResult}
+              updateProgressPercent={updateProgressPercent}
+              updateStatus={updateStatus}
+              updateStatusClassName={updateStatusClassName}
+              updateStatusText={updateStatusText}
+              onAutoUpdateChange={(enabled) => updateSetting('autoUpdateEnabled', enabled)}
+              onCheckForUpdates={checkForUpdates}
+              onDownloadUpdate={downloadUpdate}
+              onInstallUpdate={installUpdate}
+              onOpenExternalLink={openExternalLink}
+            />
           ) : null}
         </div>
         {mcpExampleDialog ? createPortal(

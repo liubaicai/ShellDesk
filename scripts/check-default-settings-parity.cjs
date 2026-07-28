@@ -284,8 +284,8 @@ function extractRustDefaults() {
 }
 
 function extractAppDefaults() {
-  const source = readWorkspaceFile('src/App.tsx');
-  return extractScalarDefaults(extractBalancedObjectAfter(source, 'const defaultAppSettings', 'const defaultAppSettings'.length), 'App.tsx defaultAppSettings');
+  const source = readWorkspaceFile('src/appDefaultSettings.ts');
+  return extractScalarDefaults(extractBalancedObjectAfter(source, 'const defaultAppSettings', 'const defaultAppSettings'.length), 'appDefaultSettings.ts defaultAppSettings');
 }
 
 function extractPreviewDefaults() {

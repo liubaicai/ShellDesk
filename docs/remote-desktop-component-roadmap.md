@@ -13,8 +13,9 @@
   - `appCatalogMigrationKeys`
 - `src/remoteDesktopWindowModel.ts`
   - `defaultWindowFrames`
+- `src/features/remote-desktop/desktopAppLoaders.tsx`
+  - lazy 组件与专属样式注册
 - `src/RemoteDesktopShell.tsx`
-  - lazy 组件注册
   - `renderWindowContent`
 - `src/components/remote-desktop/RemoteDesktopAppIcon.tsx` 的桌面与 Dock 图标渲染
 - `src/vite-env.d.ts` 的 `ShellDeskDesktopAppKey`
@@ -26,7 +27,9 @@
 
 `docs/remote-desktop-components/_example.md` 是新增或更新组件文档时的模板与检查清单。
 
-远程桌面样式必须只有一个运行时 owner：全局/共享样式由 `critical.scss` 或 `deferred.scss` 引入，随 lazy 组件加载的专属样式由组件自身 import，不得同时进入 deferred bundle。`scripts/check-style-ownership.cjs` 固化 FRP 客户端、FRP 服务端和 Monitor 的当前边界。
+远程桌面样式必须只有一个运行时 owner：全局/共享样式由 `critical.scss` 或 `deferred.scss` 引入，专属样式由 `desktopAppLoaders.tsx` 与组件 chunk 一起加载；FRP 等少数组件可在组件内局部 import，但不得同时进入 deferred bundle。`scripts/check-style-ownership.cjs` 校验单一 owner、至少 40 个懒加载样式入口，并把 deferred 展开产物限制在 260 KB 内。
+
+2026-07-28 的生产构建基线：初始 `index.css` 74.70 KB（gzip 13.24 KB），共享 `deferred.css` 181.78 KB（gzip 32.05 KB）；原单一 deferred 基线约 765.79 KB。各远程应用样式现为独立 1.19–33.11 KB chunk，新增应用应保持这一加载边界。
 
 ## 连接启动
 
@@ -89,8 +92,8 @@
 - `src/assets/desktop-icons/` 下的 PNG 图标画布必须裁到非透明像素边界，不在图片内保留统一 padding；桌面、Launchpad、文件夹、Dock 和标题栏中的实际显示尺寸统一由 `.desktop-app-icon-shell`、`.dock-app-icon`、`.desktop-title-icon` 及其上下文样式控制。
 - Dock 位置、大小、自动隐藏和固定应用由应用设置里的“桌面”子菜单配置；远程桌面窗口最大化和拖拽边界会按 Dock 所在边和大小预留空间。
 - 其他应用默认从桌面、Launchpad 或文件夹打开；窗口打开后会动态加入 Dock，关闭后消失。
-- 默认桌面布局仍只放 `files`、`terminal`、`browser`、`settings`，新增应用通过目录迁移进入可用应用集合。
-- 当前 app catalog version 为 `19`。新增 appKey 时必须同步迁移版本和白名单，避免用户拖到桌面的图标被 vault 清洗掉。
+- 默认桌面布局只放 `files`、`terminal`、`browser`、`settings`。新增应用仅在 Launchpad 以“新”标记提供，不再通过迁移自动固定到用户桌面。
+- 当前 app catalog version 为 `20`。新增 appKey 时必须同步版本、能力声明和后端白名单，避免用户拖到桌面的图标被 vault 清洗掉。
 
 ## 文档维护规则
 

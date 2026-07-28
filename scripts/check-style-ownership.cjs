@@ -6,6 +6,10 @@ const ts = require('typescript');
 
 const root = path.resolve(__dirname, '..');
 
+function unique(values) {
+  return [...new Set(values)];
+}
+
 function readText(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
@@ -99,8 +103,43 @@ function ruleBody(css, selector) {
 
 const deferredStyles = readText('src/styles/deferred.scss');
 const remoteDesktopShell = readText('src/RemoteDesktopShell.tsx');
+const desktopAppLoaders = readText('src/features/remote-desktop/desktopAppLoaders.tsx');
 const sharedFrpStyles = readText('src/styles/remote-desktop/_frp-manager-shared.scss');
 const productionSourceFiles = listSourceFiles('src');
+const deferredRemoteDesktopUses = [
+  ...deferredStyles.matchAll(/@use\s+["']\.\/remote-desktop\/([^"']+)["']/g),
+].map((match) => match[1]);
+const allowedSharedDeferredStyles = new Set([
+  'shell',
+  'dismissible-alert',
+  'sudo-prompt',
+  'dock-responsive',
+  'database-tunnel',
+  'modal',
+  'file-picker',
+]);
+const unexpectedDeferredAppStyles = deferredRemoteDesktopUses
+  .filter((styleName) => !allowedSharedDeferredStyles.has(styleName));
+assert.deepEqual(
+  unexpectedDeferredAppStyles,
+  [],
+  'application-specific remote desktop styles must load with their lazy application chunk',
+);
+
+const lazyStyleImports = unique(
+  [...desktopAppLoaders.matchAll(/import\(['"]\.\.\/\.\.\/styles\/remote-desktop\/_([^"']+)\.scss["']\)/g)]
+    .map((match) => match[1]),
+);
+assert.ok(
+  lazyStyleImports.length >= 40,
+  `expected at least 40 lazy remote desktop style chunks, found ${lazyStyleImports.length}`,
+);
+
+const deferredCss = sass.compile(path.join(root, 'src/styles/deferred.scss'), { style: 'expanded' }).css;
+assert.ok(
+  Buffer.byteLength(deferredCss) <= 260_000,
+  `deferred.scss expanded CSS exceeds the 260 KB budget: ${Buffer.byteLength(deferredCss)} bytes`,
+);
 
 assert.doesNotMatch(
   deferredStyles,
@@ -156,10 +195,10 @@ for (const owner of frpOwners) {
   );
   assert.ok(
     hasLazyDynamicImport(
-      remoteDesktopShell,
-      'src/RemoteDesktopShell.tsx',
+      desktopAppLoaders,
+      'src/features/remote-desktop/desktopAppLoaders.tsx',
       owner.componentName,
-      `./components/remote-desktop/${owner.componentName}`,
+      `../../components/remote-desktop/${owner.componentName}`,
     ),
     `${owner.componentName} must remain lazy-loaded`,
   );
@@ -216,4 +255,4 @@ assert.match(monitorPaneSource, /height:\s*100%;/);
 assert.match(monitorPaneSource, /min-height:\s*0;/);
 assert.match(monitorPaneSource, /gap:\s*10px;/);
 
-console.log('Style ownership contract ok: lazy FRP chunks and monitor layout have a single source owner.');
+console.log(`Style ownership contract ok: ${lazyStyleImports.length} lazy app styles have single owners; deferred CSS is ${Buffer.byteLength(deferredCss)} bytes.`);

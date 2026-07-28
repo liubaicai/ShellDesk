@@ -4,5 +4,5 @@
     "noEmit": true,
     "types": ["vite/client", "node", "@playwright/test"]
   },
-  "include": ["tests/unit", "playwright.unit.config.ts"]
+  "include": ["src/**/*.d.ts", "tests/unit", "playwright.unit.config.ts"]
 }

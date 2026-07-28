@@ -1,5 +1,15 @@
 # 服务管理器功能设计与开发计划
 
+<!-- current-implementation:start -->
+## 当前实现状态
+
+- 接入状态：已接入远程桌面目录，appKey 为 `service-manager`；注册、窗口、图标、翻译和渲染分支由合同检查覆盖。
+- 能力声明：平台 `linux / windows / macos`；模式 `management`；权限 `sudo-required`。
+- 依赖探测：Linux `systemctl`；Windows `sc.exe`；macOS `launchctl`。存在依赖时由 Launchpad 连接级探测并显示缺失原因。
+- 验证边界：启动合同为 `automated-contract`；完整业务流程仍为 `environment-required`，没有真实主机证据时不得写成已验证通过。
+- 最后同步：2026-07-28；详见[能力与验证矩阵](../remote-desktop-capability-matrix.md)。
+<!-- current-implementation:end -->
+
 > 当前状态：已接入远程桌面（appKey: `service-manager`），实现入口为 `src/components/remote-desktop/RemoteServiceManager.tsx`。本文保留设计计划和验收标准，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
 ## 定位

@@ -54,19 +54,13 @@ pub(crate) fn default_settings() -> Value {
         "remoteDesktopDockAutoHide": "never",
         "remoteDesktopDockPinnedApps": ["files", "terminal", "browser"],
         "remoteDesktopLayout": {
-            "appCatalogVersion": 14,
+            "appCatalogVersion": 20,
+            "seenAppCatalogVersion": 20,
             "sortMode": "custom",
             "items": [
                 { "id": "app:files", "type": "app", "appKey": "files" },
                 { "id": "app:terminal", "type": "app", "appKey": "terminal" },
-                { "id": "app:notepad", "type": "app", "appKey": "notepad" },
-                { "id": "app:code-editor", "type": "app", "appKey": "code-editor" },
                 { "id": "app:browser", "type": "app", "appKey": "browser" },
-                { "id": "app:service-manager", "type": "app", "appKey": "service-manager" },
-                { "id": "app:container-manager", "type": "app", "appKey": "container-manager" },
-                { "id": "app:k8s-manager", "type": "app", "appKey": "k8s-manager" },
-                { "id": "app:procmanager", "type": "app", "appKey": "procmanager" },
-                { "id": "app:ai-chat", "type": "app", "appKey": "ai-chat" },
                 { "id": "app:settings", "type": "app", "appKey": "settings" }
             ],
             "removedAppKeys": []
@@ -615,13 +609,14 @@ mod tests {
             json!(["terminal", "files"])
         );
         assert_eq!(settings["remoteDesktopLayout"]["sortMode"], "custom");
-        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 19);
+        assert_eq!(settings["remoteDesktopLayout"]["appCatalogVersion"], 20);
+        assert_eq!(settings["remoteDesktopLayout"]["seenAppCatalogVersion"], 9);
         assert_eq!(
             settings["remoteDesktopLayout"]["items"]
                 .as_array()
                 .unwrap()
                 .len(),
-            6
+            2
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][0]["appKey"],
@@ -630,22 +625,6 @@ mod tests {
         assert_eq!(
             settings["remoteDesktopLayout"]["items"][1]["appKeys"],
             json!(["files"])
-        );
-        assert_eq!(
-            settings["remoteDesktopLayout"]["items"][2]["appKey"],
-            "vm-manager"
-        );
-        assert_eq!(
-            settings["remoteDesktopLayout"]["items"][3]["appKey"],
-            "supervisor-manager"
-        );
-        assert_eq!(
-            settings["remoteDesktopLayout"]["items"][4]["appKey"],
-            "backup-manager"
-        );
-        assert_eq!(
-            settings["remoteDesktopLayout"]["items"][5]["appKey"],
-            "rdp-viewer"
         );
         assert_eq!(
             settings["remoteDesktopLayout"]["removedAppKeys"],

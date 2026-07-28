@@ -13,35 +13,9 @@ const DESKTOP_WALLPAPER_PRESET_IDS: &[&str] = &[
     "green-health",
     "indigo-traces",
 ];
-const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 19;
-const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
-    "git-manager",
-    "cert-manager",
-    "nginx-manager",
-    "caddy-manager",
-    "apache-manager",
-    "mongo",
-    "search-cluster",
-    "message-queue",
-    "s3-browser",
-    "frp-manager",
-    "frps-manager",
-    "disk-manager",
-    "clickhouse",
-    "ai-chat",
-    "code-editor",
-    "k8s-manager",
-    "vm-manager",
-    "supervisor-manager",
-    "backup-manager",
-    "rdp-viewer",
-];
-const LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[
-    "vm-manager",
-    "supervisor-manager",
-    "backup-manager",
-    "rdp-viewer",
-];
+const REMOTE_DESKTOP_APP_CATALOG_VERSION: i64 = 20;
+const REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[];
+const LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS: &[&str] = &[];
 const TERMINAL_THEME_CHOICES: &[&str] = &[
     "shelldesk-dark",
     "netcatty-dark",
@@ -521,6 +495,16 @@ fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {
         })
         .filter(|number| *number > 0)
         .unwrap_or(1);
+    let seen_app_catalog_version = layout
+        .get("seenAppCatalogVersion")
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+        })
+        .filter(|number| *number > 0)
+        .unwrap_or(app_catalog_version)
+        .min(REMOTE_DESKTOP_APP_CATALOG_VERSION);
     let Some(raw_items) = layout.get("items").and_then(Value::as_array) else {
         let mut next = defaults;
         next["sortMode"] = json!(sort_mode);
@@ -612,42 +596,15 @@ fn read_remote_desktop_layout(value: Option<&Value>) -> Result<Value, String> {
             removed_app_keys.push(app_key.to_string());
         }
     }
-    if app_catalog_version < REMOTE_DESKTOP_APP_CATALOG_VERSION {
-        let migration_key_set = REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS.to_vec();
-        let legacy_app_keys = REMOTE_DESKTOP_APP_KEYS
-            .iter()
-            .copied()
-            .filter(|app_key| !migration_key_set.contains(app_key))
-            .collect::<Vec<_>>();
-        let has_all_legacy_apps = legacy_app_keys
-            .iter()
-            .all(|app_key| seen_app_keys.iter().any(|seen| seen == app_key));
-        if has_all_legacy_apps {
-            for app_key in REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS {
-                if !seen_app_keys.iter().any(|seen| seen == app_key)
-                    && !removed_app_keys.iter().any(|removed| removed == app_key)
-                {
-                    items.push(
-                        json!({ "id": format!("app:{app_key}"), "type": "app", "appKey": app_key }),
-                    );
-                    seen_app_keys.push(app_key.to_string());
-                }
-            }
-        }
-        for app_key in LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS {
-            if !seen_app_keys.iter().any(|seen| seen == app_key)
-                && !removed_app_keys.iter().any(|removed| removed == app_key)
-            {
-                items.push(
-                    json!({ "id": format!("app:{app_key}"), "type": "app", "appKey": app_key }),
-                );
-                seen_app_keys.push(app_key.to_string());
-            }
-        }
-    }
+    let _ = (
+        app_catalog_version,
+        REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS,
+        LATEST_REMOTE_DESKTOP_APP_CATALOG_MIGRATION_KEYS,
+    );
     removed_app_keys.retain(|app_key| !seen_app_keys.iter().any(|seen| seen == app_key));
     Ok(json!({
         "appCatalogVersion": REMOTE_DESKTOP_APP_CATALOG_VERSION,
+        "seenAppCatalogVersion": seen_app_catalog_version,
         "sortMode": sort_mode,
         "items": items,
         "removedAppKeys": removed_app_keys

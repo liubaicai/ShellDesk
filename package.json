@@ -11,7 +11,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "check:contracts": "node scripts/check-ipc-parity.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && pnpm check:source-health && node scripts/check-style-ownership.cjs && node scripts/check-theme-token-contract.cjs && node scripts/check-scss-cascade.cjs && node scripts/test-release-scripts.cjs",
+    "check:contracts": "node scripts/check-ipc-parity.cjs && node scripts/generate-ipc-channel-map.cjs && node scripts/check-desktop-app-contract.cjs && node scripts/check-desktop-capability-matrix.cjs && node scripts/check-remote-desktop-docs.cjs && node scripts/check-desktop-accessibility.cjs && node scripts/check-i18n-contract.cjs && node scripts/check-runtime-boundary.cjs && node scripts/check-tauri-contract.cjs && node scripts/check-default-settings-parity.cjs && pnpm check:source-health && node scripts/check-style-ownership.cjs && node scripts/check-theme-token-contract.cjs && node scripts/check-scss-cascade.cjs && node scripts/test-release-scripts.cjs",
     "check:desktop-apps": "node scripts/check-desktop-app-contract.cjs",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "check:rust:coverage": "node scripts/check-rust-coverage.cjs",

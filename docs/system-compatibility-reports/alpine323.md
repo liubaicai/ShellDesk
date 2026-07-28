@@ -1,4 +1,8 @@
-# xxxx 兼容性报告
+# Alpine Linux 3.23 兼容性报告
+
+<!-- catalog-coverage:start -->
+> 目录覆盖声明：当前注册目录为 44 个 appKey。下方表格只记录该主机已有的实测子集；表中未列出的目录应用一律视为“未测试”，不能从代码接入状态推断为兼容。完整声明与依赖见[能力与验证矩阵](../remote-desktop-capability-matrix.md)。
+<!-- catalog-coverage:end -->
 
 ## 测试方式
 

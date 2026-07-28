@@ -1,5 +1,15 @@
 # Nginx 管理器组件说明
 
+<!-- current-implementation:start -->
+## 当前实现状态
+
+- 接入状态：已接入远程桌面目录，appKey 为 `nginx-manager`；注册、窗口、图标、翻译和渲染分支由合同检查覆盖。
+- 能力声明：平台 `linux / windows / macos`；模式 `management`；权限 `sudo-required`。
+- 依赖探测：Linux `nginx`；Windows `nginx`；macOS `nginx`。存在依赖时由 Launchpad 连接级探测并显示缺失原因。
+- 验证边界：启动合同为 `automated-contract`；完整业务流程仍为 `environment-required`，没有真实主机证据时不得写成已验证通过。
+- 最后同步：2026-07-28；详见[能力与验证矩阵](../remote-desktop-capability-matrix.md)。
+<!-- current-implementation:end -->
+
 > 当前状态：已接入远程桌面（appKey: `nginx-manager`），实现入口为 `src/components/remote-desktop/RemoteNginxManager.tsx`。文件名保留历史上的 `nginx-apache-caddy` 命名，但实际应用已经拆分为 Nginx、Caddy、Apache 三个独立管理器；Caddy 与 Apache 见 `36-caddy-manager.md`、`37-apache-manager.md`。
 
 ## 定位

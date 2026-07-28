@@ -19,6 +19,17 @@ import { loadFullMessageCatalog } from '../../src/i18n';
 import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
 import '../../src/styles/critical.scss';
 import '../../src/styles/deferred.scss';
+import '../../src/styles/remote-desktop/_backup-manager.scss';
+import '../../src/styles/remote-desktop/_browser.scss';
+import '../../src/styles/remote-desktop/_file-explorer.scss';
+import '../../src/styles/remote-desktop/_monitor.scss';
+import '../../src/styles/remote-desktop/_mysql.scss';
+import '../../src/styles/remote-desktop/_rdp-viewer.scss';
+import '../../src/styles/remote-desktop/_redis.scss';
+import '../../src/styles/remote-desktop/_settings.scss';
+import '../../src/styles/remote-desktop/_supervisor-manager.scss';
+import '../../src/styles/remote-desktop/_vm-manager-management.scss';
+import '../../src/styles/remote-desktop/_vm-manager.scss';
 
 const LazyRemoteFrpManager = React.lazy(() => import('../../src/components/remote-desktop/RemoteFrpManager'));
 const LazyRemoteFrpsManager = React.lazy(() => import('../../src/components/remote-desktop/RemoteFrpsManager'));

@@ -1,5 +1,15 @@
 # 登录会话查看器功能设计与开发计划
 
+<!-- current-implementation:start -->
+## 当前实现状态
+
+- 接入状态：已实现，并作为 `settings` 应用中的登录会话面板提供，不是独立桌面 appKey。
+- 代码入口：`src/components/remote-desktop/SettingsLoginSessionsPanel.tsx`。
+- 平台与依赖：随系统设置能力运行；具体命令按目标系统选择，真实主机结果仍需环境验证。
+- 验证边界：组件接入由类型和构建门禁覆盖；未在真实主机执行的行为必须标记为未测试。
+- 最后同步：2026-07-28；完整目录见[能力与验证矩阵](../remote-desktop-capability-matrix.md)。
+<!-- current-implementation:end -->
+
 > 当前状态：已迁入系统设置页（settings tab: `loginsessions`），设置面板实现入口为 `src/components/remote-desktop/SettingsLoginSessionsPanel.tsx`。原独立组件 `RemoteLoginSessions.tsx` 保留，数据解析层继续由 `loginSessionParsers.ts` 提供。
 
 ## 定位
