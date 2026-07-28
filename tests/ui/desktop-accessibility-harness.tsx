@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { useRef, useState } from 'react';
 
 import { defaultAppSettings } from '../../src/appDefaultSettings';
@@ -18,6 +19,7 @@ function AccessibilityHarness() {
   const windowButtonRef = useRef<HTMLButtonElement | null>(null);
   const [isLaunchpadOpen, setIsLaunchpadOpen] = useState(false);
   const [isWindowVisible, setIsWindowVisible] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [desktopWindow, setDesktopWindow] = useState(() => createDesktopWindow('terminal', 1, 1, 'zh-CN'));
   const capabilitySnapshot = createStaticDesktopCapabilitySnapshot('ubuntu');
   const launchpadApps = desktopApps.filter((app) => ['files', 'terminal', 'browser', 'settings'].includes(app.key));
@@ -39,6 +41,17 @@ function AccessibilityHarness() {
       <button ref={windowButtonRef} id="open-window" type="button" onClick={() => setIsWindowVisible(true)}>
         打开终端窗口
       </button>
+      <section
+        id="context-menu-surface"
+        className="remote-desktop-surface"
+        style={{ position: 'relative', width: 420, height: 180, marginTop: 16 }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContextMenuPosition({ x: event.clientX, y: event.clientY });
+        }}
+      >
+        虚拟桌面空白区域
+      </section>
 
       {isLaunchpadOpen ? (
         <DesktopLaunchpad
@@ -89,6 +102,27 @@ function AccessibilityHarness() {
             renderContent={() => <div>终端内容</div>}
           />
         </div>
+      ) : null}
+
+      {contextMenuPosition ? createPortal(
+        <>
+          <div
+            className="context-menu-overlay"
+            onClick={() => setContextMenuPosition(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenuPosition(null);
+            }}
+          />
+          <div
+            className="context-menu"
+            style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
+            role="menu"
+          >
+            <button type="button" role="menuitem">新建文件夹</button>
+          </div>
+        </>,
+        document.body,
       ) : null}
     </main>
   );

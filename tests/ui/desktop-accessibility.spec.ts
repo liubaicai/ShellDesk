@@ -9,6 +9,9 @@ test('Launchpad supports focus entry, roving arrows, Escape, and focus restorati
   await opener.press('Enter');
 
   await expect(page.locator('.launchpad-search input')).toBeFocused();
+  await expect(page.locator('.launchpad-capability-badge')).toHaveCount(0);
+  await expect(page.locator('.launchpad-capability-dot')).toHaveCount(4);
+  await expect(page.locator('[data-launchpad-app="files"] .launchpad-capability-dot')).toHaveAttribute('title', '可用');
   const files = page.locator('[data-launchpad-app="files"]');
   await files.focus();
   await files.press('ArrowRight');
@@ -17,6 +20,28 @@ test('Launchpad supports focus entry, roving arrows, Escape, and focus restorati
   await expect(page.locator('[data-launchpad-app="settings"]')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(opener).toBeFocused();
+});
+
+test('virtual desktop context menu is visible before file explorer styles are loaded', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.goto(harnessPath);
+  await page.locator('#context-menu-surface').click({
+    button: 'right',
+    position: { x: 180, y: 90 },
+  });
+
+  const contextMenu = page.getByRole('menu');
+  await expect(contextMenu).toBeVisible();
+  await expect(contextMenu.getByRole('menuitem', { name: '新建文件夹' })).toBeVisible();
+  await expect(contextMenu).toHaveCSS('position', 'fixed');
+  await expect(contextMenu).toHaveCSS('z-index', '9999');
+  await page.locator('.context-menu-overlay').click({ button: 'right' });
+  await expect(contextMenu).toHaveCount(0);
+  expect(runtimeErrors).toEqual([]);
 });
 
 test('desktop window exposes its title and supports keyboard move, resize, maximize, and close', async ({ page }) => {

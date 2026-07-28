@@ -113,6 +113,7 @@ const allowedSharedDeferredStyles = new Set([
   'shell',
   'dismissible-alert',
   'sudo-prompt',
+  'context-menu',
   'dock-responsive',
   'database-tunnel',
   'modal',
@@ -233,6 +234,8 @@ for (const owner of frpOwners) {
 }
 
 const fileExplorerBase = readText('src/styles/remote-desktop/file-explorer/_base.scss');
+const fileExplorerWindows = readText('src/styles/remote-desktop/file-explorer/_windows.scss');
+const sharedContextMenuStyles = readText('src/styles/remote-desktop/_context-menu.scss');
 const monitorStyles = readText('src/styles/remote-desktop/_monitor.scss');
 const remoteDesktopShellBase = readText('src/styles/remote-desktop/shell/_base.scss');
 assert.doesNotMatch(
@@ -240,6 +243,13 @@ assert.doesNotMatch(
   /\.monitor-pane/,
   'file explorer styles must not own monitor layout declarations',
 );
+assert.doesNotMatch(
+  `${fileExplorerBase}\n${fileExplorerWindows}`,
+  /\.context-menu(?:-overlay|\s|\{)/,
+  'file explorer styles must not own shared context menu declarations',
+);
+assert.match(sharedContextMenuStyles, /\.context-menu-overlay\s*\{/);
+assert.match(sharedContextMenuStyles, /\.context-menu\s*\{/);
 assert.doesNotMatch(
   remoteDesktopShellBase,
   /\.monitor-pane/,

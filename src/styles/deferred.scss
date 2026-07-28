@@ -6,6 +6,7 @@
 @use "./remote-desktop/shell" as *;
 @use "./remote-desktop/dismissible-alert" as *;
 @use "./remote-desktop/sudo-prompt" as *;
+@use "./remote-desktop/context-menu" as *;
 @use "./pages/sftp-transfer" as *;
 @use "./remote-desktop/dock-responsive" as *;
 @use "./pages/logs" as *;

@@ -534,18 +534,22 @@
   color: var(--accent);
 }
 
-[data-theme="light"] .launchpad-capability-badge.available {
-  color: #1a7f37;
+[data-theme="light"] .launchpad-capability-dot {
+  box-shadow: 0 0 0 1px rgba(16, 32, 51, 0.2);
 }
 
-[data-theme="light"] .launchpad-capability-badge.missing,
-[data-theme="light"] .launchpad-capability-badge.checking,
-[data-theme="light"] .launchpad-capability-badge.unknown {
-  color: #8a5a00;
+[data-theme="light"] .launchpad-capability-dot.available {
+  background: #2da44e;
 }
 
-[data-theme="light"] .launchpad-capability-badge.unsupported {
-  color: #cf222e;
+[data-theme="light"] .launchpad-capability-dot.missing,
+[data-theme="light"] .launchpad-capability-dot.checking,
+[data-theme="light"] .launchpad-capability-dot.unknown {
+  background: #bf8700;
+}
+
+[data-theme="light"] .launchpad-capability-dot.unsupported {
+  background: #cf222e;
 }
 
 [data-theme="light"] .launchpad-search {

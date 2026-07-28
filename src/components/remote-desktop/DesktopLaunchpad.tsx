@@ -205,8 +205,14 @@ export function DesktopLaunchpad({
                           <span className={`desktop-app-icon-shell desktop-app-icon-${app.key}`}>
                             <DesktopAppIcon appKey={app.key} />
                           </span>
-                          <strong>{appLabel}</strong>
-                          <span className={`launchpad-capability-badge ${availability.status}`}>{availabilityLabel}</span>
+                          <strong className="launchpad-app-name">
+                            <span>{appLabel}</span>
+                            <span
+                              className={`launchpad-capability-dot ${availability.status}`}
+                              title={availabilityLabel}
+                              aria-hidden="true"
+                            />
+                          </strong>
                           {getAppCapability(app.key).introducedInVersion > seenAppCatalogVersion
                             ? <span className="launchpad-new-badge">{t('desktop.capability.new', language)}</span>
                             : null}

@@ -622,34 +622,40 @@
   opacity: 0.7;
 }
 
-.launchpad-capability-badge {
+.launchpad-app-name {
+  display: inline-flex;
   max-width: 100%;
-  overflow: hidden;
-  border-radius: 999px;
-  padding: 2px 6px;
-  color: rgba(238, 244, 255, 0.62);
-  font-size: 9px;
-  font-weight: 760;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
-.launchpad-capability-badge.available {
-  background: rgba(46, 160, 67, 0.16);
-  color: #74d98b;
+.launchpad-app-name > span:first-child {
+  overflow-wrap: anywhere;
 }
 
-.launchpad-capability-badge.missing,
-.launchpad-capability-badge.checking,
-.launchpad-capability-badge.unknown {
-  background: rgba(217, 164, 65, 0.16);
-  color: #f1c56f;
+.launchpad-capability-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #91a0b7;
+  box-shadow: 0 0 0 1px rgba(11, 17, 26, 0.32);
+  opacity: 0.88;
 }
 
-.launchpad-capability-badge.unsupported {
-  background: rgba(207, 34, 46, 0.16);
-  color: #ff8792;
+.launchpad-capability-dot.available {
+  background: #63c878;
+}
+
+.launchpad-capability-dot.missing,
+.launchpad-capability-dot.checking,
+.launchpad-capability-dot.unknown {
+  background: #d8a94f;
+}
+
+.launchpad-capability-dot.unsupported {
+  background: #df6570;
 }
 
 .launchpad-new-badge {
@@ -842,24 +848,6 @@
 
 .desktop-folder-rename-modal {
   width: min(360px, calc(100vw - 48px));
-}
-
-.context-menu button:disabled {
-  opacity: 0.46;
-  cursor: not-allowed;
-}
-
-.context-menu button:disabled:hover {
-  background: transparent;
-}
-
-.context-submenu button.checked::before {
-  width: 12px;
-}
-
-.context-submenu button:not(.checked)::before {
-  content: "";
-  width: 12px;
 }
 
 .desktop-window {
