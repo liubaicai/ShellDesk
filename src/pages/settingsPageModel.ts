@@ -12,6 +12,7 @@ export const settingsSections = [
   { key: 'backup', labelId: 'settings.section.backup.label', summaryId: 'settings.section.backup.summary' },
   { key: 'about', labelId: 'settings.section.about.label', summaryId: 'settings.section.about.summary' },
 ] as const satisfies ReadonlyArray<{ key: string; labelId: MessageId; summaryId: MessageId }>;
+export const defaultSettingsSection = 'general' satisfies (typeof settingsSections)[number]['key'];
 
 export const accentColorChoices = ['#43c7ff', '#77f4c5', '#ffb347', '#ff7b9c', '#9f8cff', '#8bd3ff', '#ff8c42'];
 export const terminalLineHeightChoices = [1, 1.1, 1.2, 1.3, 1.4];

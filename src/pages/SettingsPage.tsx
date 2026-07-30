@@ -17,6 +17,7 @@ import { getCurrentAppLocale, t } from '../i18n';
 import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
+  defaultSettingsSection,
   accentColorChoices,
   terminalLineHeightChoices,
   terminalScrollSensitivityChoices,
@@ -102,7 +103,7 @@ function SettingsPage({
   onImportConfig,
   onExportConfig,
 }: SettingsPageProps) {
-  const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>('about');
+  const [activeSection, setActiveSection] = useState<(typeof settingsSections)[number]['key']>(defaultSettingsSection);
   const [wallpaperError, setWallpaperError] = useState('');
   const [wallpaperPresetUrls, setWallpaperPresetUrls] = useState<Record<string, string>>({});
   const [systemFonts, setSystemFonts] = useState<string[]>(fallbackSystemFontChoices);
