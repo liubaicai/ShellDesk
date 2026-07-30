@@ -112,6 +112,7 @@ export const ipcChannelBindings = {
   'connection:sftp-create-file': 'connections.sftpCreateFile',
   'connection:sftp-delete-path': 'connections.sftpDeletePath',
   'connection:sftp-download-paths': 'connections.sftpDownloadPaths',
+  'connection:sftp-enqueue-transfers': 'connections.sftpEnqueueTransfers',
   'connection:sftp-list-directory': 'connections.sftpListDirectory',
   'connection:sftp-rename-path': 'connections.sftpRenamePath',
   'connection:sftp-set-path-permissions': 'connections.sftpSetPathPermissions',

@@ -68,6 +68,62 @@ impl TransferHistory {
         Some(snapshot)
     }
 
+    pub(crate) fn record_queued(&self, payload: &Value) -> Option<Value> {
+        let id = transfer_id(payload)?;
+        let now = Utc::now().to_rfc3339();
+        let mut tasks = self.tasks.lock().ok()?;
+        let task = tasks
+            .iter_mut()
+            .find(|task| task.get("id").and_then(Value::as_str) == Some(id.as_str()));
+        let task = match task {
+            Some(task) => task,
+            None => {
+                tasks.push(json!({
+                    "id": id,
+                    "createdAt": now,
+                }));
+                tasks.last_mut()?
+            }
+        };
+        merge_transfer_payload(task, payload);
+        task["status"] = json!("queued");
+        task["updatedAt"] = json!(now);
+        task.as_object_mut()?.remove("finishedAt");
+        task.as_object_mut()?.remove("error");
+        task.as_object_mut()?.remove("errorCode");
+        let snapshot = task.clone();
+        prune_tasks(&mut tasks);
+        drop(tasks);
+        let _ = self.persist();
+        Some(snapshot)
+    }
+
+    pub(crate) fn record_terminal_status(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Option<Value> {
+        let now = Utc::now().to_rfc3339();
+        let mut tasks = self.tasks.lock().ok()?;
+        let task = tasks
+            .iter_mut()
+            .find(|task| task.get("id").and_then(Value::as_str) == Some(id))?;
+        task["status"] = json!(status);
+        task["updatedAt"] = json!(now);
+        task["finishedAt"] = json!(now);
+        if let Some(error) = error.filter(|error| !error.trim().is_empty()) {
+            task["error"] = json!(error);
+        } else {
+            task.as_object_mut()?.remove("error");
+        }
+        let snapshot = task.clone();
+        prune_tasks(&mut tasks);
+        drop(tasks);
+        let _ = self.persist();
+        Some(snapshot)
+    }
+
     pub(crate) fn record_end(&self, payload: &Value) -> Option<Value> {
         let id = transfer_id(payload)?;
         let now = Utc::now().to_rfc3339();
@@ -126,8 +182,7 @@ impl TransferHistory {
         let before = tasks.len();
         tasks.retain(|task| {
             let matches = task.get("id").and_then(Value::as_str) == Some(id);
-            let running = task.get("status").and_then(Value::as_str) == Some("running");
-            !matches || running
+            !matches || transfer_status_is_active(task)
         });
         let removed = tasks.len() != before;
         drop(tasks);
@@ -140,7 +195,7 @@ impl TransferHistory {
     pub(crate) fn clear_finished(&self) -> Result<u64, String> {
         let mut tasks = self.tasks.lock().map_err(error_string)?;
         let before = tasks.len();
-        tasks.retain(|task| task.get("status").and_then(Value::as_str) == Some("running"));
+        tasks.retain(transfer_status_is_active);
         let removed = before.saturating_sub(tasks.len()) as u64;
         drop(tasks);
         if removed > 0 {
@@ -213,7 +268,7 @@ fn normalize_stored_task(value: Value) -> Option<Value> {
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("failed");
-    if status == "running" {
+    if matches!(status, "queued" | "running") {
         task.insert("status".to_string(), json!("failed"));
         task.insert("errorCode".to_string(), json!("interrupted-on-exit"));
         let now = Utc::now().to_rfc3339();
@@ -235,12 +290,19 @@ fn prune_tasks(tasks: &mut Vec<Value>) {
     tasks.sort_by_key(|task| Reverse(task_timestamp(task)));
     let mut finished_count = 0;
     tasks.retain(|task| {
-        if task.get("status").and_then(Value::as_str) == Some("running") {
+        if transfer_status_is_active(task) {
             return true;
         }
         finished_count += 1;
         finished_count <= MAX_TRANSFER_HISTORY
     });
+}
+
+fn transfer_status_is_active(task: &Value) -> bool {
+    matches!(
+        task.get("status").and_then(Value::as_str),
+        Some("queued" | "running" | "paused")
+    )
 }
 
 pub(crate) fn list_transfers(state: &AppState) -> Value {
@@ -310,6 +372,34 @@ mod tests {
 
         assert!(!history.remove("queue-1").unwrap());
         assert_eq!(history.list().as_array().unwrap().len(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn queued_tasks_are_retained_until_the_runtime_finishes_them() {
+        let directory = std::env::temp_dir().join(random_id("transfer-history-test"));
+        fs::create_dir_all(&directory).unwrap();
+        let history = TransferHistory::new(&directory);
+        history
+            .record_queued(&json!({
+                "queueId": "queue-1",
+                "connectionId": "connection-1",
+                "type": "upload",
+                "fileName": "release.zip",
+                "transferred": 0,
+                "total": 1024,
+            }))
+            .unwrap();
+
+        assert!(!history.remove("queue-1").unwrap());
+        assert_eq!(history.clear_finished().unwrap(), 0);
+        drop(history);
+
+        let restored = TransferHistory::new(&directory);
+        let task = restored.list().as_array().unwrap().first().unwrap().clone();
+        assert_eq!(task["status"], "failed");
+        assert_eq!(task["errorCode"], "interrupted-on-exit");
+        assert!(restored.remove("queue-1").unwrap());
         fs::remove_dir_all(directory).unwrap();
     }
 }

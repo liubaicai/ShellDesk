@@ -115,6 +115,9 @@ pub(crate) async fn dispatch(
         | "connection:upload-paths" => {
             dispatch_remote_fs(state.clone(), Some(window.clone()), channel.clone(), args).await
         }
+        "connection:sftp-enqueue-transfers" => {
+            remote_fs::enqueue_sftp_transfers(state.clone(), window.clone(), args)
+        }
         "connection:cancel-transfer" => remote_fs::cancel_transfer(&state, args),
         "connection:list-transfers" => Ok(transfer_history::list_transfers(&state)),
         "connection:remove-transfer" => transfer_history::remove_transfer(&state, &args),

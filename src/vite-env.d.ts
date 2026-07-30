@@ -860,6 +860,19 @@ interface ShellDeskSftpTransferOptions {
   conflictPolicy?: 'overwrite' | 'skip';
 }
 
+interface ShellDeskSftpRuntimeTask {
+  id: string;
+  direction: 'upload' | 'download';
+  label: string;
+  sourcePaths: string[];
+  targetPath: string;
+  plannedSize?: number;
+  plannedFileCount?: number;
+  conflictPolicy?: 'overwrite' | 'skip';
+  hostId?: string;
+  hostName?: string;
+}
+
 interface ShellDeskConnectionControls {
   connect: (host: ShellDeskHostConnectionRequest) => Promise<ShellDeskConnectionInfo>;
   openLocal: () => Promise<ShellDeskConnectionInfo>;
@@ -907,6 +920,7 @@ interface ShellDeskConnectionControls {
   sftpSetPathPermissions: (connectionId: string, remotePath: string, options: ShellDeskRemotePathPermissionOptions) => Promise<boolean>;
   sftpDownloadPaths: (connectionId: string, remotePaths: string[], localDirectory: string, options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; directoryPath?: string; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
   sftpUploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
+  sftpEnqueueTransfers: (connectionId: string, tasks: ShellDeskSftpRuntimeTask[], concurrency: number) => Promise<{ queuedIds: string[] }>;
   createDirectory: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink', options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   renamePath: (connectionId: string, oldPath: string, newPath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
@@ -1611,7 +1625,7 @@ interface ShellDeskTransferTask extends ShellDeskTransferProgress {
   label?: string;
   sourcePaths?: string[];
   targetPath?: string;
-  status: 'running' | 'completed' | 'failed' | 'canceled' | 'paused';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled' | 'paused';
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;

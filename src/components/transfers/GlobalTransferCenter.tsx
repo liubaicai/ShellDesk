@@ -21,6 +21,7 @@ const messages = {
   'zh-CN': {
     title: '全局传输中心',
     empty: '还没有文件传输记录',
+    queued: '排队中',
     active: '进行中',
     completed: '已完成',
     failed: '失败',
@@ -37,6 +38,7 @@ const messages = {
   'en-US': {
     title: 'Global transfer center',
     empty: 'No file transfer history yet',
+    queued: 'Queued',
     active: 'Active',
     completed: 'Completed',
     failed: 'Failed',
@@ -59,11 +61,16 @@ function transferRatio(task: ShellDeskTransferTask) {
 
 function taskStatusLabel(task: ShellDeskTransferTask, language: AppLanguage) {
   const text = messages[language];
+  if (task.status === 'queued') return text.queued;
   if (task.status === 'running') return text.active;
   if (task.status === 'completed') return text.completed;
   if (task.status === 'canceled') return text.canceled;
   if (task.status === 'paused') return text.paused;
   return text.failed;
+}
+
+function taskIsActive(task: ShellDeskTransferTask) {
+  return task.status === 'queued' || task.status === 'running' || task.status === 'paused';
 }
 
 function taskTimestamp(task: ShellDeskTransferTask, language: AppLanguage) {
@@ -136,7 +143,7 @@ export default function GlobalTransferCenter({ language }: GlobalTransferCenterP
   }, [open]);
 
   const activeCount = useMemo(
-    () => tasks.filter((task) => task.status === 'running').length,
+    () => tasks.filter(taskIsActive).length,
     [tasks],
   );
   const failedCount = useMemo(
@@ -170,7 +177,7 @@ export default function GlobalTransferCenter({ language }: GlobalTransferCenterP
   const clearFinished = useCallback(async () => {
     try {
       await window.guiSSH?.connections.clearFinishedTransfers();
-      setTasks((current) => current.filter((task) => task.status === 'running'));
+      setTasks((current) => current.filter(taskIsActive));
       setError('');
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));
@@ -209,7 +216,7 @@ export default function GlobalTransferCenter({ language }: GlobalTransferCenterP
               <small>{activeCount ? `${text.active} ${activeCount}` : `${tasks.length}`}</small>
             </div>
             <div className="global-transfer-header-actions">
-              <button type="button" onClick={() => void clearFinished()} disabled={tasks.every((task) => task.status === 'running')}>
+              <button type="button" onClick={() => void clearFinished()} disabled={tasks.every(taskIsActive)}>
                 <Trash2 aria-hidden="true" />
                 {text.clear}
               </button>
@@ -226,6 +233,7 @@ export default function GlobalTransferCenter({ language }: GlobalTransferCenterP
             {!visibleTasks.length ? <p className="global-transfer-empty">{text.empty}</p> : visibleTasks.map((task) => {
               const ratio = transferRatio(task);
               const running = task.status === 'running';
+              const cancelable = task.status === 'running' || task.status === 'queued';
               const Icon = task.type === 'upload' ? ArrowUpFromLine : ArrowDownToLine;
               const StatusIcon = running ? LoaderCircle : task.status === 'completed' ? CheckCircle2 : CircleX;
               return (
@@ -258,15 +266,15 @@ export default function GlobalTransferCenter({ language }: GlobalTransferCenterP
                     ) : null}
                   </div>
                   <div className="global-transfer-task-actions">
-                    {running ? (
+                    {cancelable ? (
                       <button type="button" aria-label={text.cancel} title={text.cancel} onClick={() => void cancelTask(task)}>
                         <CircleX aria-hidden="true" />
                       </button>
-                    ) : (
+                    ) : task.status !== 'paused' ? (
                       <button type="button" aria-label={text.remove} title={text.remove} onClick={() => void removeTask(task)}>
                         <Trash2 aria-hidden="true" />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </article>
               );

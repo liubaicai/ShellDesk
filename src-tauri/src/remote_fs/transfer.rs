@@ -1,6 +1,6 @@
 use crate::{
-    error_string, random_id, string_arg, transfer_history::TransferHistory, ActiveTransfer,
-    AppState,
+    connection, error_string, random_id, string_arg, transfer_history::TransferHistory,
+    ActiveTransfer, AppState,
 };
 use serde_json::{json, Value};
 use std::{
@@ -18,6 +18,7 @@ fn progress_emit_due(last: Option<Instant>, now: Instant, force: bool) -> bool {
 }
 
 pub(super) struct TransferReporter {
+    app_state: AppState,
     window: tauri::Window,
     cancellations: Arc<Mutex<HashSet<String>>>,
     active_transfers: Arc<Mutex<HashMap<String, ActiveTransfer>>>,
@@ -94,6 +95,7 @@ impl TransferReporter {
             .unwrap_or_else(|| json!([]));
 
         Self {
+            app_state: app_state.clone(),
             window: window.clone(),
             cancellations: app_state.transfer_cancellations.clone(),
             active_transfers: app_state.active_transfers.clone(),
@@ -337,6 +339,11 @@ impl TransferReporter {
     }
 
     fn unregister(&self, queue_id: &str, client_id: Option<&str>) {
+        let connection_id = self
+            .state
+            .lock()
+            .map(|state| state.connection_id.clone())
+            .unwrap_or_default();
         if let Ok(mut cancellations) = self.cancellations.lock() {
             cancellations.remove(queue_id);
             if let Some(client_id) = client_id {
@@ -345,6 +352,9 @@ impl TransferReporter {
         }
         if let Ok(mut active_transfers) = self.active_transfers.lock() {
             active_transfers.remove(queue_id);
+        }
+        if !connection_id.is_empty() {
+            let _ = connection::finish_deferred_connection_close(&self.app_state, &connection_id);
         }
     }
 

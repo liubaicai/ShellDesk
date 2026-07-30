@@ -538,6 +538,9 @@ async function previewIpc<Channel extends IpcChannel>(
     case 'connection:list-transfers':
       return [] as ShellDeskTransferTask[] as IpcResult<Channel>;
 
+    case 'connection:sftp-enqueue-transfers':
+      return { queuedIds: [] } as IpcResult<Channel>;
+
     case 'connection:clear-finished-transfers':
       return 0 as IpcResult<Channel>;
 
@@ -786,6 +789,7 @@ window.guiSSH = {
     sftpSetPathPermissions: (connectionId, remotePath, options) => ipc('connection:sftp-set-path-permissions', connectionId, remotePath, options),
     sftpDownloadPaths: (connectionId, remotePaths, localDirectory, options) => ipc('connection:sftp-download-paths', connectionId, remotePaths, localDirectory, options),
     sftpUploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:sftp-upload-local-paths', connectionId, remotePath, items, options),
+    sftpEnqueueTransfers: (connectionId, tasks, concurrency) => ipc('connection:sftp-enqueue-transfers', connectionId, tasks, concurrency),
     createDirectory: (connectionId, remotePath, options) => ipc('connection:create-directory', connectionId, remotePath, options),
     deletePath: (connectionId, remotePath, entryType, options) => ipc('connection:delete-path', connectionId, remotePath, entryType, options),
     renamePath: (connectionId, oldPath, newPath, options) => ipc('connection:rename-path', connectionId, oldPath, newPath, options),

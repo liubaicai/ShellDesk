@@ -645,6 +645,7 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(conflictDialog).toContainText('跳过会继续遍历同名文件夹');
   await conflictDialog.getByRole('button', { name: '跳过已存在项' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastSftpTransferOptions?.conflictPolicy)).toBe('skip');
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessSftpRuntimeEnqueueCount)).toBe(1);
   await expect(page.locator('#sftp-transfer-queue')).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });

@@ -703,6 +703,11 @@ pub(crate) fn disconnect_connection(
 }
 
 pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> Result<(), String> {
+    state
+        .deferred_connection_closures
+        .lock()
+        .map_err(error_string)?
+        .remove(connection_id);
     {
         let mut connections = state.connections.lock().map_err(error_string)?;
         if let Some(connection) = connections.remove(connection_id) {
@@ -802,6 +807,53 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
     Ok(())
 }
 
+pub(crate) fn close_connection_after_transfers(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<bool, String> {
+    let has_active_transfers = state
+        .active_transfers
+        .lock()
+        .map_err(error_string)?
+        .values()
+        .any(|transfer| transfer.connection_id == connection_id);
+    if !has_active_transfers {
+        close_connection_by_id(state, connection_id)?;
+        return Ok(false);
+    }
+    state
+        .deferred_connection_closures
+        .lock()
+        .map_err(error_string)?
+        .insert(connection_id.to_string());
+    Ok(true)
+}
+
+pub(crate) fn finish_deferred_connection_close(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<bool, String> {
+    let deferred = state
+        .deferred_connection_closures
+        .lock()
+        .map_err(error_string)?
+        .contains(connection_id);
+    if !deferred {
+        return Ok(false);
+    }
+    let has_active_transfers = state
+        .active_transfers
+        .lock()
+        .map_err(error_string)?
+        .values()
+        .any(|transfer| transfer.connection_id == connection_id);
+    if has_active_transfers {
+        return Ok(false);
+    }
+    close_connection_by_id(state, connection_id)?;
+    Ok(true)
+}
+
 fn close_desktop_proxies(
     proxies: &std::sync::Mutex<HashMap<String, DesktopProxySession>>,
     connection_id: &str,
@@ -890,6 +942,34 @@ fn cleanup_temporary_key_path(path: &PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_close_is_deferred_until_the_last_transfer_finishes() {
+        let state = AppState::new(std::env::temp_dir().join(random_id("deferred-close-test")));
+        state.active_transfers.lock().unwrap().insert(
+            "queue-1".to_string(),
+            crate::ActiveTransfer {
+                connection_id: "connection-1".to_string(),
+                client_id: Some("queue-1".to_string()),
+            },
+        );
+
+        assert!(close_connection_after_transfers(&state, "connection-1").unwrap());
+        assert!(state
+            .deferred_connection_closures
+            .lock()
+            .unwrap()
+            .contains("connection-1"));
+        assert!(!finish_deferred_connection_close(&state, "connection-1").unwrap());
+
+        state.active_transfers.lock().unwrap().remove("queue-1");
+        assert!(finish_deferred_connection_close(&state, "connection-1").unwrap());
+        assert!(!state
+            .deferred_connection_closures
+            .lock()
+            .unwrap()
+            .contains("connection-1"));
+    }
 
     #[test]
     fn known_host_matching_accepts_openssh_bracketed_host_pattern() {

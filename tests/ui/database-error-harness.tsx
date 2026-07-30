@@ -226,6 +226,7 @@ function createUserDetail() {
 function installGuiSshMock() {
   const params = new URLSearchParams(window.location.search);
   const scenario = params.get('scenario') ?? '';
+  const componentUnderTest = params.get('component') ?? '';
   const mysqlColumns = [
     { name: 'id', type: 'INT', nullable: false, key: 'PRI', default: null },
     { name: 'name', type: 'VARCHAR(64)', nullable: true, key: '', default: null },
@@ -247,6 +248,7 @@ function installGuiSshMock() {
   let lastVirshCommand = '';
   let lastVirshStdin = '';
   let lastSftpTransferOptions: ShellDeskSftpTransferOptions | undefined;
+  let sftpRuntimeEnqueueCount = 0;
   let lastSupervisorActionCommand = '';
   let backupCreated = false;
   let backupPlanSaved = false;
@@ -307,6 +309,7 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshCommand', { configurable: true, get: () => lastVirshCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSftpTransferOptions', { configurable: true, get: () => lastSftpTransferOptions });
+  Object.defineProperty(window, '__shellDeskUiHarnessSftpRuntimeEnqueueCount', { configurable: true, get: () => sftpRuntimeEnqueueCount });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSupervisorActionCommand', { configurable: true, get: () => lastSupervisorActionCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupCommand', { configurable: true, get: () => lastBackupCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupStdin', { configurable: true, get: () => lastBackupStdin });
@@ -508,7 +511,7 @@ function installGuiSshMock() {
       selectUploadFiles: async () => null,
       selectUploadFolders: async () => null,
       cancelTransfer: async () => true,
-      listTransfers: async () => transferHistoryFixtures,
+      listTransfers: async () => componentUnderTest === 'transfer-center' ? transferHistoryFixtures : [],
       removeTransfer: async (taskId: string) => {
         const previousLength = transferHistoryFixtures.length;
         transferHistoryFixtures = transferHistoryFixtures.filter((task) => task.id !== taskId || task.status === 'running');
@@ -543,6 +546,23 @@ function installGuiSshMock() {
       sftpDownloadPaths: async (_connectionId: string, _remotePaths: string[], _localPath: string, options?: ShellDeskSftpTransferOptions) => {
         lastSftpTransferOptions = options;
         return { canceled: false, size: 0, fileCount: 0, itemCount: 1, skippedCount: 1 };
+      },
+      sftpEnqueueTransfers: async (_connectionId: string, tasks: ShellDeskSftpRuntimeTask[]) => {
+        sftpRuntimeEnqueueCount += 1;
+        const firstTask = tasks[0];
+        lastSftpTransferOptions = firstTask ? {
+          transferClientId: firstTask.id,
+          queueId: firstTask.id,
+          hostId: firstTask.hostId,
+          hostName: firstTask.hostName,
+          label: firstTask.label,
+          sourcePaths: firstTask.sourcePaths,
+          targetPath: firstTask.targetPath,
+          expectedTotal: firstTask.plannedSize,
+          expectedFileCount: firstTask.plannedFileCount,
+          conflictPolicy: firstTask.conflictPolicy,
+        } : undefined;
+        return { queuedIds: tasks.map((task) => task.id) };
       },
       compress: async () => true,
       decompress: async () => true,
