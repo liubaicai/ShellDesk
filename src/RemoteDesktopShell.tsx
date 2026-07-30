@@ -140,6 +140,7 @@ import {
   preventDesktopOpenSelection,
   quotePosixShellArg,
   type RemoteDesktopProps,
+  shouldResolveDefaultTmuxLaunch,
   type TerminalTitlebarMenuState,
   titlebarDoubleClickDelayMs,
   titlebarDoubleClickDistance,
@@ -158,6 +159,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const terminalToolRequestSequenceRef = useRef(0);
   const terminalCommandRequestSequenceRef = useRef(0);
   const tmuxRefreshRequestRef = useRef(0);
+  const pendingDefaultTerminalRef = useRef(false);
   const connectionCheckSequenceRef = useRef(0);
   const zIndexRef = useRef(0);
   const openedInitialAppRef = useRef('');
@@ -1023,17 +1025,18 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       return undefined;
     }
   };
-
   const openTerminalWindow = async (launchOptions?: RemoteTerminalLaunchOptions) => {
-    const resolvedLaunchOptions = hasTerminalLaunchOverrides(launchOptions)
-      ? launchOptions
-      : await resolveDefaultTerminalLaunchOptions();
-
-    appendDesktopWindow('terminal', (nextWindow) => {
-      nextWindow.terminalLaunchOptions = resolvedLaunchOptions;
-    });
+    const shouldResolveDefaultLaunch = !hasTerminalLaunchOverrides(launchOptions) && shouldResolveDefaultTmuxLaunch(desktopWindowsRef.current, pendingDefaultTerminalRef.current);
+    if (shouldResolveDefaultLaunch) pendingDefaultTerminalRef.current = true;
+    try {
+      const resolvedLaunchOptions = shouldResolveDefaultLaunch
+        ? await resolveDefaultTerminalLaunchOptions()
+        : launchOptions;
+      appendDesktopWindow('terminal', (nextWindow) => { nextWindow.terminalLaunchOptions = resolvedLaunchOptions; });
+    } finally {
+      if (shouldResolveDefaultLaunch) pendingDefaultTerminalRef.current = false;
+    }
   };
-
   const openDesktopWindow = (appKey: DesktopAppKey) => {
     const availability = desktopCapabilitySnapshot[appKey];
     if (

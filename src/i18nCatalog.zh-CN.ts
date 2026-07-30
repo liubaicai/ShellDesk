@@ -218,7 +218,7 @@ export const zhCN = {
   'settings.terminal.theme.previewAria': '终端颜色预览',
   'settings.terminal.session.title': '终端会话',
   'settings.terminal.preferTmux.label': '优先使用 tmux',
-  'settings.terminal.preferTmux.summary': '打开默认终端时，检测到 tmux 后接入或创建 sd-tmux；未安装时保持普通终端。',
+  'settings.terminal.preferTmux.summary': '打开首个默认终端时，检测到 tmux 后接入或创建 sd-tmux；后续窗口使用普通终端。',
   'settings.terminal.typography.title': '字体与排版',
   'settings.terminal.fontFamily.label': '字体族',
   'settings.terminal.fontSize.label': '终端字号',

@@ -218,7 +218,7 @@ export const enUS = {
   'settings.terminal.theme.previewAria': 'Terminal color preview',
   'settings.terminal.session.title': 'Terminal Sessions',
   'settings.terminal.preferTmux.label': 'Prefer tmux',
-  'settings.terminal.preferTmux.summary': 'When opening the default terminal, attach to or create sd-tmux when tmux is available; otherwise use a regular terminal.',
+  'settings.terminal.preferTmux.summary': 'For the first default terminal, attach to or create sd-tmux when available; later windows use regular terminals.',
   'settings.terminal.typography.title': 'Fonts & Typography',
   'settings.terminal.fontFamily.label': 'Font family',
   'settings.terminal.fontSize.label': 'Terminal font size',

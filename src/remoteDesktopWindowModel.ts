@@ -443,6 +443,14 @@ export function createTmuxAvailabilityCommand() {
   return 'command -v tmux >/dev/null 2>&1';
 }
 
+export function shouldResolveDefaultTmuxLaunch(
+  desktopWindows: readonly Pick<DesktopWindowState, 'appKey'>[],
+  hasPendingDefaultTerminal: boolean,
+) {
+  return !hasPendingDefaultTerminal
+    && !desktopWindows.some((desktopWindow) => desktopWindow.appKey === 'terminal');
+}
+
 export function parseTmuxSessions(output: string): TmuxSessionInfo[] {
   return output
     .split(/\r?\n/u)
