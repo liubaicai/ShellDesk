@@ -1,13 +1,17 @@
-use crate::{error_string, random_id, string_arg, ActiveTransfer, AppState};
+use crate::{
+    error_string, random_id, string_arg, transfer_history::TransferHistory, ActiveTransfer,
+    AppState,
+};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(100);
+const HISTORY_PERSIST_INTERVAL: Duration = Duration::from_secs(1);
 
 fn progress_emit_due(last: Option<Instant>, now: Instant, force: bool) -> bool {
     force || last.is_none_or(|last| now.duration_since(last) >= PROGRESS_EMIT_INTERVAL)
@@ -17,6 +21,7 @@ pub(super) struct TransferReporter {
     window: tauri::Window,
     cancellations: Arc<Mutex<HashSet<String>>>,
     active_transfers: Arc<Mutex<HashMap<String, ActiveTransfer>>>,
+    transfer_history: TransferHistory,
     state: Arc<Mutex<TransferReporterState>>,
 }
 
@@ -24,7 +29,12 @@ struct TransferReporterState {
     connection_id: String,
     queue_id: String,
     client_id: Option<String>,
+    host_id: String,
+    host_name: String,
     transfer_type: String,
+    label: String,
+    source_paths: Value,
+    target_path: String,
     file_name: String,
     transferred: u64,
     total: u64,
@@ -40,6 +50,7 @@ struct TransferReporterState {
     prepared_directories: u64,
     total_directories: u64,
     last_progress_emit: Option<Instant>,
+    last_history_persist: Option<Instant>,
     started: bool,
     ended: bool,
     registered: bool,
@@ -69,16 +80,34 @@ impl TransferReporter {
             .filter(|value| !value.is_empty())
             .map(ToString::to_string)
             .unwrap_or_else(|| random_id("transfer"));
+        let metadata_string = |key: &str| {
+            options
+                .and_then(|value| value.get(key))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        let source_paths = options
+            .and_then(|value| value.get("sourcePaths"))
+            .filter(|value| value.is_array())
+            .cloned()
+            .unwrap_or_else(|| json!([]));
 
         Self {
             window: window.clone(),
             cancellations: app_state.transfer_cancellations.clone(),
             active_transfers: app_state.active_transfers.clone(),
+            transfer_history: app_state.transfer_history.clone(),
             state: Arc::new(Mutex::new(TransferReporterState {
                 connection_id: connection_id.to_string(),
                 queue_id,
                 client_id,
+                host_id: metadata_string("hostId"),
+                host_name: metadata_string("hostName"),
                 transfer_type: transfer_type.to_string(),
+                label: metadata_string("label"),
+                source_paths,
+                target_path: metadata_string("targetPath"),
                 file_name,
                 transferred: 0,
                 total: 0,
@@ -94,6 +123,7 @@ impl TransferReporter {
                 prepared_directories: 0,
                 total_directories: 0,
                 last_progress_emit: None,
+                last_history_persist: None,
                 started: false,
                 ended: false,
                 registered: false,
@@ -277,7 +307,10 @@ impl TransferReporter {
             self.unregister(&queue_id, client_id.as_deref());
         }
         if let Some(payload) = payload {
-            let _ = self.window.emit("transfer:end", payload);
+            if let Some(task) = self.transfer_history.record_end(&payload) {
+                let _ = self.window.app_handle().emit("transfer:task-changed", task);
+            }
+            let _ = self.window.app_handle().emit("transfer:end", payload);
         }
     }
 
@@ -316,7 +349,7 @@ impl TransferReporter {
     }
 
     fn emit_progress(&self, force: bool) {
-        let payload = if let Ok(mut state) = self.state.lock() {
+        let (payload, persist_history) = if let Ok(mut state) = self.state.lock() {
             if state.ended {
                 return;
             }
@@ -325,12 +358,25 @@ impl TransferReporter {
                 return;
             }
             state.last_progress_emit = Some(now);
-            Some(state.payload(false, None))
+            let persist_history = force
+                || state
+                    .last_history_persist
+                    .is_none_or(|last| now.duration_since(last) >= HISTORY_PERSIST_INTERVAL);
+            if persist_history {
+                state.last_history_persist = Some(now);
+            }
+            (Some(state.payload(false, None)), persist_history)
         } else {
-            None
+            (None, false)
         };
         if let Some(payload) = payload {
-            let _ = self.window.emit("transfer:progress", payload);
+            if let Some(task) = self
+                .transfer_history
+                .record_progress(&payload, persist_history)
+            {
+                let _ = self.window.app_handle().emit("transfer:task-changed", task);
+            }
+            let _ = self.window.app_handle().emit("transfer:progress", payload);
         }
     }
 
@@ -366,7 +412,12 @@ impl TransferReporterState {
         let mut payload = json!({
             "connectionId": self.connection_id,
             "queueId": self.queue_id,
+            "hostId": self.host_id,
+            "hostName": self.host_name,
             "type": self.transfer_type,
+            "label": self.label,
+            "sourcePaths": self.source_paths,
+            "targetPath": self.target_path,
             "fileName": self.file_name,
             "transferred": self.transferred,
             "total": self.total,

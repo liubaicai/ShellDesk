@@ -55,6 +55,8 @@ pub(crate) mod terminal;
 #[cfg(test)]
 #[path = "test_helpers.rs"]
 pub(crate) mod test_helpers;
+#[path = "transfer_history.rs"]
+pub(crate) mod transfer_history;
 #[path = "tray.rs"]
 pub(crate) mod tray;
 #[path = "ui_prompts.rs"]

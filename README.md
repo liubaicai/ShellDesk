@@ -116,7 +116,7 @@ ShellDesk is useful for:
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
 - Font selection reads the local system font list instead of bundling font files
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
-- A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, queued concurrent transfers, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, and streamed `russh-sftp` transfers
+- A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, queued concurrent transfers, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, streamed `russh-sftp` transfers, and a persistent global transfer center shared by every app window
 - Remote Notepad supports tabs, remote read/write, find, go to line, syntax highlighting, language modes, and unsaved-change prompts
 - Notepad uses a binary extension blacklist to avoid opening images, archives, databases, executables, and other binary files by mistake
 - Code Editor adds a remote project tree, multi-tab editing, remote-change detection, embedded project terminals, and SD-Agent

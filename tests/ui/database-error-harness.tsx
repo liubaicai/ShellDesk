@@ -15,6 +15,7 @@ import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteS
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
+import GlobalTransferCenter from '../../src/components/transfers/GlobalTransferCenter';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
 import '../../src/styles/critical.scss';
@@ -256,6 +257,43 @@ function installGuiSshMock() {
   let lastBackupS3Command = '';
   let lastBackupS3Stdin = '';
   let rdpDiagnosticListener: ((payload: ShellDeskRdpDiagnosticPayload) => void) | undefined;
+  let transferHistoryFixtures: ShellDeskTransferTask[] = [
+    {
+      id: 'transfer-active',
+      queueId: 'queue-active',
+      connectionId,
+      hostId,
+      hostName: 'UI Test Host',
+      type: 'upload',
+      fileName: 'release.zip',
+      label: 'release.zip',
+      sourcePaths: ['D:/build/release.zip'],
+      targetPath: '/srv/releases',
+      transferred: 512,
+      total: 1024,
+      status: 'running',
+      createdAt: new Date(Date.parse(now) - 60_000).toISOString(),
+      updatedAt: now,
+    },
+    {
+      id: 'transfer-completed',
+      queueId: 'queue-completed',
+      connectionId,
+      hostId,
+      hostName: 'UI Test Host',
+      type: 'download',
+      fileName: 'access.log',
+      label: 'access.log',
+      sourcePaths: ['/var/log/access.log'],
+      targetPath: 'D:/logs',
+      transferred: 2048,
+      total: 2048,
+      status: 'completed',
+      createdAt: new Date(Date.parse(now) - 120_000).toISOString(),
+      updatedAt: new Date(Date.parse(now) - 30_000).toISOString(),
+      finishedAt: new Date(Date.parse(now) - 30_000).toISOString(),
+    },
+  ];
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -470,6 +508,17 @@ function installGuiSshMock() {
       selectUploadFiles: async () => null,
       selectUploadFolders: async () => null,
       cancelTransfer: async () => true,
+      listTransfers: async () => transferHistoryFixtures,
+      removeTransfer: async (taskId: string) => {
+        const previousLength = transferHistoryFixtures.length;
+        transferHistoryFixtures = transferHistoryFixtures.filter((task) => task.id !== taskId || task.status === 'running');
+        return transferHistoryFixtures.length !== previousLength;
+      },
+      clearFinishedTransfers: async () => {
+        const previousLength = transferHistoryFixtures.length;
+        transferHistoryFixtures = transferHistoryFixtures.filter((task) => task.status === 'running');
+        return previousLength - transferHistoryFixtures.length;
+      },
       sftpListDirectory: async (_connectionId: string, path: string) => {
         if (path === '/') {
           return { path: '/', entries: [{ name: 'root', longname: 'drwxr-xr-x root', type: 'directory' as const, size: 0, modifiedAt: now }] };
@@ -639,6 +688,7 @@ function installGuiSshMock() {
       onVaultChanged: () => () => undefined,
       onTransferProgress: () => () => undefined,
       onTransferEnd: () => () => undefined,
+      onTransferTaskChanged: () => () => undefined,
       onRdpDiagnostic: (callback: (payload: ShellDeskRdpDiagnosticPayload) => void) => {
         rdpDiagnosticListener = callback;
         return () => {
@@ -806,6 +856,16 @@ function App() {
           renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
         />
       </div>
+    );
+  }
+
+  if (component === 'transfer-center') {
+    return (
+      <main style={{ minHeight: '100vh', padding: 24, background: 'var(--bg)' }}>
+        <div className="titlebar-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <GlobalTransferCenter language="zh-CN" />
+        </div>
+      </main>
     );
   }
 

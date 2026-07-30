@@ -3,8 +3,8 @@ mod database_channels;
 
 use crate::{
     browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, rdp,
-    remote_fs, run_connection_command, run_connection_command_stream, terminal, vnc, zmodem,
-    AppState,
+    remote_fs, run_connection_command, run_connection_command_stream, terminal, transfer_history,
+    vnc, zmodem, AppState,
 };
 use serde_json::{json, Value};
 use std::{future::Future, pin::Pin, sync::OnceLock};
@@ -116,6 +116,9 @@ pub(crate) async fn dispatch(
             dispatch_remote_fs(state.clone(), Some(window.clone()), channel.clone(), args).await
         }
         "connection:cancel-transfer" => remote_fs::cancel_transfer(&state, args),
+        "connection:list-transfers" => Ok(transfer_history::list_transfers(&state)),
+        "connection:remove-transfer" => transfer_history::remove_transfer(&state, &args),
+        "connection:clear-finished-transfers" => transfer_history::clear_finished_transfers(&state),
         "connection:zmodem-select-upload-files" => zmodem::select_zmodem_upload_files(&state),
         "connection:zmodem-read-upload-file" => zmodem::read_zmodem_upload_file(&state, args),
         "connection:zmodem-release-upload-files" => {

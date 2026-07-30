@@ -22,6 +22,7 @@ import appIconUrl from './assets/images/icon.png';
 import DismissibleAlert from './components/DismissibleAlert';
 import HostListPanel from './components/HostListPanel';
 import HostMetadataFields, { useHostMetadataOptions } from './components/HostMetadataFields';
+import GlobalTransferCenter from './components/transfers/GlobalTransferCenter';
 import {
   type AuthMethod,
   compareHostsByHostListSortMode,
@@ -3016,21 +3017,24 @@ function App() {
           ) : null}
         </div>
 
-        {showWindowControls ? (
-          <div className="titlebar-controls no-drag">
-            <button type="button" className="titlebar-button minimize" aria-label={t('app.titlebar.minimize', appLanguage)} title={t('app.titlebar.minimize', appLanguage)} onClick={minimizeWindow}>−</button>
-            <button
-              type="button"
-              className={`titlebar-button maximize ${isWindowMaximized ? 'restore' : ''}`}
-              aria-label={maximizeWindowLabel}
-              title={maximizeWindowLabel}
-              onClick={toggleMaximizeWindow}
-            >
-              <span className={`window-control-icon ${isWindowMaximized ? 'restore' : 'maximize'}`} aria-hidden="true" />
-            </button>
-            <button type="button" className="titlebar-button danger" aria-label={t('app.titlebar.close', appLanguage)} title={t('app.titlebar.close', appLanguage)} onClick={closeWindow}>×</button>
-          </div>
-        ) : null}
+        <div className="titlebar-actions no-drag">
+          <GlobalTransferCenter language={appLanguage} />
+          {showWindowControls ? (
+            <div className="titlebar-controls">
+              <button type="button" className="titlebar-button minimize" aria-label={t('app.titlebar.minimize', appLanguage)} title={t('app.titlebar.minimize', appLanguage)} onClick={minimizeWindow}>−</button>
+              <button
+                type="button"
+                className={`titlebar-button maximize ${isWindowMaximized ? 'restore' : ''}`}
+                aria-label={maximizeWindowLabel}
+                title={maximizeWindowLabel}
+                onClick={toggleMaximizeWindow}
+              >
+                <span className={`window-control-icon ${isWindowMaximized ? 'restore' : 'maximize'}`} aria-hidden="true" />
+              </button>
+              <button type="button" className="titlebar-button danger" aria-label={t('app.titlebar.close', appLanguage)} title={t('app.titlebar.close', appLanguage)} onClick={closeWindow}>×</button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}

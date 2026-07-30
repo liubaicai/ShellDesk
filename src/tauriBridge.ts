@@ -532,7 +532,14 @@ async function previewIpc<Channel extends IpcChannel>(
 
     case 'connection:disconnect':
     case 'connection:close-terminal':
+    case 'connection:remove-transfer':
       return true as IpcResult<Channel>;
+
+    case 'connection:list-transfers':
+      return [] as ShellDeskTransferTask[] as IpcResult<Channel>;
+
+    case 'connection:clear-finished-transfers':
+      return 0 as IpcResult<Channel>;
 
     default:
       return unsupportedPreviewIpc(channel);
@@ -794,6 +801,9 @@ window.guiSSH = {
     uploadPaths: (connectionId, remotePath, options) => ipc('connection:upload-paths', connectionId, remotePath, options),
     uploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:upload-local-paths', connectionId, remotePath, items, options),
     cancelTransfer: (connectionId, queueId) => ipc('connection:cancel-transfer', connectionId, queueId),
+    listTransfers: () => ipc('connection:list-transfers'),
+    removeTransfer: (transferId) => ipc('connection:remove-transfer', transferId),
+    clearFinishedTransfers: () => ipc('connection:clear-finished-transfers'),
     checkSftp: (connectionId) => ipc('connection:check-sftp', connectionId),
     selectZmodemUploadFiles: () => ipc('connection:zmodem-select-upload-files'),
     readZmodemUploadFile: (fileId, offset, length) => ipc('connection:zmodem-read-upload-file', fileId, offset, length),
@@ -891,6 +901,7 @@ window.guiSSH = {
     onSyncChanged: (callback) => onTauriEvent('sync:changed', callback),
     onTransferProgress: (callback) => onTauriEvent('transfer:progress', callback),
     onTransferEnd: (callback) => onTauriEvent('transfer:end', callback),
+    onTransferTaskChanged: (callback) => onTauriEvent('transfer:task-changed', callback),
     onUpdateAvailable: (callback) => onTauriEvent('app:update:available', callback),
     onUpdateNotAvailable: (callback) => onTauriEvent('app:update:not-available', callback),
     onUpdateDownloadProgress: (callback) => onTauriEvent('app:update:download-progress', callback),

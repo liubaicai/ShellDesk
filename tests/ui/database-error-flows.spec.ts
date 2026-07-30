@@ -403,6 +403,38 @@ test('host table keeps every cell border aligned when tags wrap', async ({ page 
   expect(new Set(cellMetrics.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
 });
 
+test('global transfer center keeps active work while clearing finished history', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHarness(page, 'component=transfer-center&theme=light');
+  await page.waitForTimeout(500);
+  expect(runtimeErrors).toEqual([]);
+
+  const trigger = page.getByRole('button', { name: '全局传输中心' });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger.locator('.global-transfer-badge')).toHaveText('1');
+  await trigger.click();
+
+  const dialog = page.getByRole('dialog', { name: '全局传输中心' });
+  await expect(dialog).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(dialog.getByText('release.zip', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('access.log', { exact: true })).toBeVisible();
+  await expect(dialog.locator('.global-transfer-progress').first()).toHaveAttribute('aria-label', '50%');
+
+  await dialog.getByRole('button', { name: '清除已结束' }).click();
+  await expect(dialog.getByText('release.zip', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('access.log', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: '关闭传输中心' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
   test.setTimeout(90_000);
   const runtimeErrors: string[] = [];

@@ -72,7 +72,12 @@ export default function SftpTransferWindow({ connection, language }: SftpTransfe
   const refreshBoth = useCallback(() => {
     void Promise.allSettled([localPane.refresh(), remotePane.refresh()]);
   }, [localPane.refresh, remotePane.refresh]);
-  const transferQueue = useTransferQueue({ connectionId: connection.id, onTransferFinished: refreshBoth });
+  const transferQueue = useTransferQueue({
+    connectionId: connection.id,
+    hostId: connection.host.id ?? '',
+    hostName: connection.host.name,
+    onTransferFinished: refreshBoth,
+  });
 
   const paneFor = (kind: TransferPaneKind) => kind === 'local' ? localPane : remotePane;
   const entryPath = (kind: TransferPaneKind, entry: TransferFileEntry) => {

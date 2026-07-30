@@ -5,10 +5,12 @@ import type { SftpTransferTask } from './types';
 
 interface UseTransferQueueOptions {
   connectionId: string;
+  hostId: string;
+  hostName: string;
   onTransferFinished: () => void;
 }
 
-export function useTransferQueue({ connectionId, onTransferFinished }: UseTransferQueueOptions) {
+export function useTransferQueue({ connectionId, hostId, hostName, onTransferFinished }: UseTransferQueueOptions) {
   const [tasks, setTasks] = useState<SftpTransferTask[]>([]);
   const [concurrency, setConcurrency] = useState(2);
   const tasksRef = useRef(tasks);
@@ -102,19 +104,31 @@ export function useTransferQueue({ connectionId, onTransferFinished }: UseTransf
     patchTask(task.id, { status: 'running', startedAt: Date.now(), error: '', progress: plannedProgress });
     try {
       let result: { size?: number; fileCount?: number };
+      const transferOptions: ShellDeskSftpTransferOptions = {
+        transferClientId: task.id,
+        queueId: task.id,
+        hostId,
+        hostName,
+        label: task.label,
+        sourcePaths: task.sourcePaths,
+        targetPath: task.targetPath,
+        expectedTotal: task.plannedSize,
+        expectedFileCount: task.plannedFileCount,
+        conflictPolicy: task.conflictPolicy,
+      };
       if (task.direction === 'upload') {
         result = await window.guiSSH.connections.sftpUploadLocalPaths(
           connectionId,
           task.targetPath,
           task.sourcePaths.map((path) => ({ path })),
-          { transferClientId: task.id, expectedTotal: task.plannedSize, expectedFileCount: task.plannedFileCount, conflictPolicy: task.conflictPolicy },
+          transferOptions,
         );
       } else {
         result = await window.guiSSH.connections.sftpDownloadPaths(
           connectionId,
           task.sourcePaths,
           task.targetPath,
-          { transferClientId: task.id, expectedTotal: task.plannedSize, expectedFileCount: task.plannedFileCount, conflictPolicy: task.conflictPolicy },
+          transferOptions,
         );
       }
       if (pauseRequestedRef.current.has(task.id)) {
@@ -161,7 +175,7 @@ export function useTransferQueue({ connectionId, onTransferFinished }: UseTransf
       pendingProgressRef.current.delete(task.id);
       setTasks((current) => [...current]);
     }
-  }, [connectionId, onTransferFinished, patchTask]);
+  }, [connectionId, hostId, hostName, onTransferFinished, patchTask]);
 
   useEffect(() => {
     const available = Math.max(0, concurrency - activeTaskIdsRef.current.size);

@@ -850,6 +850,11 @@ interface ShellDeskLocalUploadItem {
 interface ShellDeskSftpTransferOptions {
   transferClientId?: string;
   queueId?: string;
+  hostId?: string;
+  hostName?: string;
+  label?: string;
+  sourcePaths?: string[];
+  targetPath?: string;
   expectedTotal?: number;
   expectedFileCount?: number;
   conflictPolicy?: 'overwrite' | 'skip';
@@ -917,6 +922,9 @@ interface ShellDeskConnectionControls {
   uploadPaths: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   uploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   cancelTransfer: (connectionId: string, queueId?: string) => Promise<boolean>;
+  listTransfers: () => Promise<ShellDeskTransferTask[]>;
+  removeTransfer: (transferId: string) => Promise<boolean>;
+  clearFinishedTransfers: () => Promise<number>;
   checkSftp: (connectionId: string) => Promise<{ available: boolean; error?: string }>;
   selectZmodemUploadFiles: () => Promise<{ canceled: boolean; files: ShellDeskZmodemUploadFile[] }>;
   readZmodemUploadFile: (fileId: string, offset: number, length: number) => Promise<ArrayBuffer>;
@@ -1596,6 +1604,21 @@ interface ShellDeskTransferProgress {
   totalDirectories?: number;
 }
 
+interface ShellDeskTransferTask extends ShellDeskTransferProgress {
+  id: string;
+  hostId?: string;
+  hostName?: string;
+  label?: string;
+  sourcePaths?: string[];
+  targetPath?: string;
+  status: 'running' | 'completed' | 'failed' | 'canceled' | 'paused';
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  error?: string;
+  errorCode?: 'interrupted-on-exit';
+}
+
 interface ShellDeskTransferEndPayload {
   connectionId?: string;
   queueId?: string;
@@ -1643,6 +1666,7 @@ interface ShellDeskEventControls {
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
+  onTransferTaskChanged: (callback: (payload: ShellDeskTransferTask) => void) => () => void;
   onUpdateAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
   onUpdateNotAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
   onUpdateDownloadProgress: (callback: (payload: ShellDeskUpdateDownloadProgress) => void) => () => void;

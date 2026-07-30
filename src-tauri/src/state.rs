@@ -1,6 +1,7 @@
 use crate::{
     browser_proxy, database::tunnel::DatabaseTunnelSession, http_tunnel::HttpTunnelSession,
-    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal, updater::update_status, zmodem,
+    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal,
+    transfer_history::TransferHistory, updater::update_status, zmodem,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -23,6 +24,7 @@ pub(crate) struct AppState {
     pub(crate) browser_proxies: Arc<Mutex<HashMap<String, browser_proxy::BrowserProxySession>>>,
     pub(crate) transfer_cancellations: Arc<Mutex<HashSet<String>>>,
     pub(crate) active_transfers: Arc<Mutex<HashMap<String, ActiveTransfer>>>,
+    pub(crate) transfer_history: TransferHistory,
     pub(crate) zmodem_upload_selections: Arc<Mutex<HashMap<String, zmodem::ZmodemUploadSelection>>>,
     pub(crate) database_sessions: Arc<Mutex<HashMap<String, Value>>>,
     pub(crate) database_tunnel_sessions: Arc<Mutex<HashMap<String, DatabaseTunnelSession>>>,
@@ -68,6 +70,7 @@ impl UiWindowRef {
 
 impl AppState {
     pub(crate) fn new(data_dir: PathBuf) -> Self {
+        let transfer_history = TransferHistory::new(&data_dir);
         Self {
             update_state: Arc::new(Mutex::new(update_status("idle", &data_dir, "1.0.0", None))),
             update_operation_active: Arc::new(AtomicBool::new(false)),
@@ -80,6 +83,7 @@ impl AppState {
             browser_proxies: Arc::new(Mutex::new(HashMap::new())),
             transfer_cancellations: Arc::new(Mutex::new(HashSet::new())),
             active_transfers: Arc::new(Mutex::new(HashMap::new())),
+            transfer_history,
             zmodem_upload_selections: Arc::new(Mutex::new(HashMap::new())),
             database_sessions: Arc::new(Mutex::new(HashMap::new())),
             database_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -103,6 +107,7 @@ impl AppState {
             browser_proxies: self.browser_proxies.clone(),
             transfer_cancellations: self.transfer_cancellations.clone(),
             active_transfers: self.active_transfers.clone(),
+            transfer_history: self.transfer_history.clone(),
             zmodem_upload_selections: self.zmodem_upload_selections.clone(),
             database_sessions: self.database_sessions.clone(),
             database_tunnel_sessions: self.database_tunnel_sessions.clone(),
