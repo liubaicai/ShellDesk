@@ -2226,6 +2226,7 @@ Rules:
   'fileExplorer.details.accessedAt': 'Accessed',
   'fileExplorer.details.decompress': 'Decompress',
   'fileExplorer.details.openInTerminal': 'Open in terminal',
+  'fileExplorer.details.runScript': 'Run script',
   'fileExplorer.details.selectedCount': '{count} items selected',
   'fileExplorer.details.selectionFilesFolders': '{files} files{foldersText}, total file size {size}',
   'fileExplorer.details.selectionFoldersSuffix': ', {count} folders',

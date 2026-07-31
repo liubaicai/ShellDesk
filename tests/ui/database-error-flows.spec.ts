@@ -1174,6 +1174,33 @@ test('File explorer permission errors stay visible inside the properties modal',
   );
 });
 
+test('File explorer opens the current directory and allowlisted scripts in terminal', async ({ page }) => {
+  await gotoHarness(page, 'component=file-explorer');
+
+  await page.getByRole('button', { name: '终端', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __shellDeskUiHarnessLastExplorerTerminalPath: string })
+      .__shellDeskUiHarnessLastExplorerTerminalPath
+  ))).toBe('/tmp');
+
+  const scriptRow = page.getByTestId('explorer-row-deploy.sh');
+  await expect(scriptRow).toBeVisible();
+  await scriptRow.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '运行脚本', exact: true }).click();
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __shellDeskUiHarnessLastExplorerScriptLaunch?: {
+      title?: string;
+      initialCommand?: string;
+      workingDirectory?: string;
+    } }).__shellDeskUiHarnessLastExplorerScriptLaunch
+  ))).toEqual({
+    title: 'deploy.sh',
+    initialCommand: "sh '/tmp/deploy.sh'",
+    workingDirectory: '/tmp',
+  });
+});
+
 test('Shared sudo password prompt stays topmost when remote settings command needs elevation', async ({ page }) => {
   await gotoHarness(page, 'component=settings-sudo&scenario=sudo-prompt');
 

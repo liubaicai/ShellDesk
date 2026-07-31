@@ -2226,6 +2226,7 @@ checks 必须是 allowlist 中存在的 ID。优先选择能覆盖账号、登�
   'fileExplorer.details.accessedAt': '访问时间',
   'fileExplorer.details.decompress': '解压缩',
   'fileExplorer.details.openInTerminal': '在终端中打开',
+  'fileExplorer.details.runScript': '运行脚本',
   'fileExplorer.details.selectedCount': '{count} 个项目已选',
   'fileExplorer.details.selectionFilesFolders': '其中 {files} 个文件{foldersText}，文件合计 {size}',
   'fileExplorer.details.selectionFoldersSuffix': '、{count} 个文件夹',

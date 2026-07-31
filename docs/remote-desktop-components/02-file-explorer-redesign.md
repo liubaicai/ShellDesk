@@ -10,7 +10,7 @@
 - 最后同步：2026-07-28；详见[能力与验证矩阵](../remote-desktop-capability-matrix.md)。
 <!-- current-implementation:end -->
 
-> 当前状态：已接入远程桌面（appKey: `files`），实现入口为 `src/components/remote-desktop/RemoteFileExplorer.tsx` 与 `RemoteFileExplorerCore.tsx`。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
+> 当前状态：已接入远程桌面（appKey: `files`），实现入口为 `src/components/remote-desktop/RemoteFileExplorer.tsx` 与 `RemoteFileExplorerCore.tsx`。支持从当前目录或选中目录打开终端，并可在脚本所在目录按受支持的扩展名安全启动脚本。本文保留重设计背景，维护时以当前实现、`RemoteDesktopShell.tsx` 注册表和 `_example.md` 清单为准。
 
 样式入口为 `src/styles/remote-desktop/_file-explorer.scss`，按基础、工作台、Windows 模拟与交互抛光分层加载，避免继续在单文件末尾叠加覆盖。
 

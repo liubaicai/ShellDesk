@@ -20,6 +20,7 @@ import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteS
 import { TerminalRestorePlaceholder } from '../../src/components/remote-desktop/TerminalRestorePlaceholder';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
+import type { RemoteTerminalLaunchOptions } from '../../src/components/remote-desktop/terminalTypes';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
 import GlobalTransferCenter from '../../src/components/transfers/GlobalTransferCenter';
 import { loadFullMessageCatalog } from '../../src/i18n';
@@ -51,6 +52,8 @@ if (harnessTheme === 'light' || harnessTheme === 'dark') {
 const connectionId = 'ui-test-connection';
 const hostId = 'ui-test-host';
 const now = new Date('2026-01-01T00:00:00Z').toISOString();
+let lastExplorerTerminalPath = '';
+let lastExplorerScriptLaunch: RemoteTerminalLaunchOptions | undefined;
 const hostListFixtures = [
   {
     id: 'host-wrapped-tags',
@@ -372,6 +375,8 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupDownloadPath', { configurable: true, get: () => lastBackupDownloadPath });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Command', { configurable: true, get: () => lastBackupS3Command });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Stdin', { configurable: true, get: () => lastBackupS3Stdin });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastExplorerTerminalPath', { configurable: true, get: () => lastExplorerTerminalPath });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastExplorerScriptLaunch', { configurable: true, get: () => lastExplorerScriptLaunch });
 
   (window as any).guiSSH = {
     platform: 'win32',
@@ -601,6 +606,13 @@ function installGuiSshMock() {
             longname: '-rw-r--r-- 1 demo demo 12 Jan 1 00:00 secure.txt',
             type: 'file',
             size: 12,
+            modifiedAt: now,
+          },
+          {
+            name: 'deploy.sh',
+            longname: '-rwxr-xr-x 1 demo demo 24 Jan 1 00:00 deploy.sh',
+            type: 'file',
+            size: 24,
             modifiedAt: now,
           },
         ],
@@ -1199,7 +1211,15 @@ function App() {
   }
 
   if (component === 'file-explorer') {
-    return <RemoteFileExplorer connectionId={connectionId} systemType="ubuntu" initialPath="/tmp" />;
+    return (
+      <RemoteFileExplorer
+        connectionId={connectionId}
+        systemType="ubuntu"
+        initialPath="/tmp"
+        onOpenTerminal={(path) => { lastExplorerTerminalPath = path; }}
+        onRunScript={(options) => { lastExplorerScriptLaunch = options; }}
+      />
+    );
   }
 
   if (component === 'browser') {
