@@ -1,7 +1,8 @@
 use crate::{
     browser_proxy, database::tunnel::DatabaseTunnelSession, http_tunnel::HttpTunnelSession,
-    port_forward::PortForwardRuntimeEntry, proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle,
-    terminal, transfer_history::TransferHistory, updater::update_status, zmodem,
+    plugin_security::PluginSecurityManager, port_forward::PortForwardRuntimeEntry,
+    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal,
+    transfer_history::TransferHistory, updater::update_status, zmodem,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -31,6 +32,7 @@ pub(crate) struct AppState {
     pub(crate) database_tunnel_sessions: Arc<Mutex<HashMap<String, DatabaseTunnelSession>>>,
     pub(crate) http_tunnel_sessions: Arc<Mutex<HashMap<String, HttpTunnelSession>>>,
     pub(crate) port_forward_runtimes: Arc<Mutex<HashMap<String, PortForwardRuntimeEntry>>>,
+    pub(crate) plugin_security: PluginSecurityManager,
     pub(crate) update_state: Arc<Mutex<Value>>,
     pub(crate) update_operation_active: Arc<AtomicBool>,
     pub(crate) pending_tauri_update: Arc<Mutex<Option<tauri_plugin_updater::Update>>>,
@@ -73,6 +75,7 @@ impl UiWindowRef {
 impl AppState {
     pub(crate) fn new(data_dir: PathBuf) -> Self {
         let transfer_history = TransferHistory::new(&data_dir);
+        let plugin_security = PluginSecurityManager::new(&data_dir);
         Self {
             update_state: Arc::new(Mutex::new(update_status("idle", &data_dir, "1.0.0", None))),
             update_operation_active: Arc::new(AtomicBool::new(false)),
@@ -92,6 +95,7 @@ impl AppState {
             database_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
             http_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
             port_forward_runtimes: Arc::new(crate::port_forward::new_runtime_map()),
+            plugin_security,
             sync_schedule_generation: Arc::new(Mutex::new(0)),
             ui_window: Arc::new(Mutex::new(None)),
             host_key_responses: Arc::new(Mutex::new(HashMap::new())),
@@ -118,6 +122,7 @@ impl AppState {
             database_tunnel_sessions: self.database_tunnel_sessions.clone(),
             http_tunnel_sessions: self.http_tunnel_sessions.clone(),
             port_forward_runtimes: self.port_forward_runtimes.clone(),
+            plugin_security: self.plugin_security.clone(),
             update_state: self.update_state.clone(),
             update_operation_active: self.update_operation_active.clone(),
             pending_tauri_update: self.pending_tauri_update.clone(),

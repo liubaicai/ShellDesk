@@ -30,6 +30,8 @@ pub(crate) mod logs;
 pub(crate) mod mcp_server;
 #[path = "monitor_persistence.rs"]
 pub(crate) mod monitor_persistence;
+#[path = "plugin_security.rs"]
+pub(crate) mod plugin_security;
 #[path = "port_forward.rs"]
 pub(crate) mod port_forward;
 #[path = "proxy.rs"]

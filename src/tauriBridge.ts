@@ -754,6 +754,11 @@ window.guiSSH = {
     readKnownHosts: () => ipc('system:read-known-hosts'),
     testProxy: (payload) => ipc('system:test-proxy', payload),
   },
+  pluginSecurity: {
+    getPolicy: () => ipc('plugins:get-security-policy'),
+    reviewManifest: (manifest) => ipc('plugins:review-manifest', manifest),
+    listAudit: () => ipc('plugins:list-security-audit'),
+  },
   ai: {
     listModels: (request) => ipc('ai:list-models', request),
     chat: (request) => ipc('ai:chat', request),

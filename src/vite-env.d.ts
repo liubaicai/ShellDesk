@@ -1494,6 +1494,12 @@ interface ShellDeskSystemControls {
   testProxy: (payload: { config: ShellDeskProxyConfig; target?: ShellDeskProxyTestTarget }) => Promise<ShellDeskProxyTestResult>;
 }
 
+interface ShellDeskPluginSecurityControls {
+  getPolicy: () => Promise<ShellDeskPluginSecurityPolicy>;
+  reviewManifest: (manifest: ShellDeskPluginManifestReviewInput) => Promise<ShellDeskPluginManifestReview>;
+  listAudit: () => Promise<ShellDeskPluginSecurityAuditEntry[]>;
+}
+
 interface ShellDeskAiControls {
   // TODO: Keep these legacy IPC AI methods until all fallback callers are retired.
   listModels: (request: ShellDeskAiModelListRequest) => Promise<ShellDeskAiModelListResult>;
@@ -1753,6 +1759,7 @@ interface ShellDeskApi {
   logs: ShellDeskLogsControls;
   preferences: ShellDeskPreferenceControls;
   system: ShellDeskSystemControls;
+  pluginSecurity: ShellDeskPluginSecurityControls;
   ai: ShellDeskAiControls;
   agentSessions: ShellDeskAgentSessionsControls;
   sync: ShellDeskSyncControls;
