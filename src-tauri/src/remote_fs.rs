@@ -933,6 +933,7 @@ mod tests {
             ActiveTransfer {
                 connection_id: "conn-1".to_string(),
                 client_id: Some("client-1".to_string()),
+                resource_key: None,
             },
         );
 
@@ -960,6 +961,7 @@ mod tests {
                 ActiveTransfer {
                     connection_id: "conn-1".to_string(),
                     client_id: Some("client-1".to_string()),
+                    resource_key: None,
                 },
             );
             active_transfers.insert(
@@ -967,6 +969,7 @@ mod tests {
                 ActiveTransfer {
                     connection_id: "conn-2".to_string(),
                     client_id: Some("client-2".to_string()),
+                    resource_key: None,
                 },
             );
         }

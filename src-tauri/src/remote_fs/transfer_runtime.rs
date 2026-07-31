@@ -236,16 +236,60 @@ fn register_jobs(
     {
         return Err(format!("传输任务已在运行：{}", job.id));
     }
+    let mut resources = HashSet::new();
+    for job in jobs {
+        let resource_key = transfer_resource_key(connection_id, job);
+        if !resources.insert(resource_key.clone()) {
+            return Err(format!(
+                "同一批次包含冲突的传输目标，无法安全并行写入：{}",
+                job.target_path
+            ));
+        }
+        if active_transfers
+            .values()
+            .any(|transfer| transfer.resource_key.as_deref() == Some(resource_key.as_str()))
+        {
+            return Err(format!(
+                "传输目标正在被其他任务写入，请等待完成后重试：{}",
+                job.target_path
+            ));
+        }
+    }
     for job in jobs {
         active_transfers.insert(
             job.id.clone(),
             ActiveTransfer {
                 connection_id: connection_id.to_string(),
                 client_id: Some(job.id.clone()),
+                resource_key: Some(transfer_resource_key(connection_id, job)),
             },
         );
     }
     Ok(())
+}
+
+fn normalize_transfer_directory(path: &str) -> String {
+    let mut normalized = path.trim().replace('\\', "/");
+    while normalized.ends_with('/')
+        && normalized.len() > 1
+        && !(normalized.len() == 3 && normalized.as_bytes().get(1) == Some(&b':'))
+    {
+        normalized.pop();
+    }
+    #[cfg(windows)]
+    {
+        normalized = normalized.to_lowercase();
+    }
+    normalized
+}
+
+fn transfer_resource_key(connection_id: &str, job: &SftpTransferJob) -> String {
+    let target = normalize_transfer_directory(&job.target_path);
+    if job.direction == "download" {
+        format!("download:{target}")
+    } else {
+        format!("upload:{connection_id}:{target}")
+    }
 }
 
 fn emit_queued_task(
@@ -335,7 +379,7 @@ fn transfer_concurrency(value: Option<&Value>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_jobs, transfer_concurrency};
+    use super::{parse_jobs, transfer_concurrency, transfer_resource_key};
     use serde_json::json;
 
     #[test]
@@ -372,5 +416,48 @@ mod tests {
         assert_eq!(transfer_concurrency(Some(&json!(0))), 1);
         assert_eq!(transfer_concurrency(Some(&json!(3))), 3);
         assert_eq!(transfer_concurrency(Some(&json!(99))), 4);
+    }
+
+    #[test]
+    fn transfer_resource_keys_lock_local_download_and_remote_upload_targets() {
+        let download = parse_jobs(
+            "connection-1",
+            Some(&vec![json!({
+                "id": "download-1",
+                "direction": "download",
+                "sourcePaths": ["/srv/release.zip"],
+                "targetPath": "D:\\Downloads\\",
+            })]),
+        )
+        .unwrap()
+        .remove(0);
+        let upload = parse_jobs(
+            "connection-1",
+            Some(&vec![json!({
+                "id": "upload-1",
+                "direction": "upload",
+                "sourcePaths": ["D:/release.zip"],
+                "targetPath": "/srv/releases/",
+            })]),
+        )
+        .unwrap()
+        .remove(0);
+
+        assert_eq!(
+            transfer_resource_key("connection-1", &download),
+            if cfg!(windows) {
+                "download:d:/downloads"
+            } else {
+                "download:D:/Downloads"
+            }
+        );
+        assert_eq!(
+            transfer_resource_key("connection-1", &upload),
+            "upload:connection-1:/srv/releases"
+        );
+        assert_ne!(
+            transfer_resource_key("connection-1", &upload),
+            transfer_resource_key("connection-2", &upload)
+        );
     }
 }

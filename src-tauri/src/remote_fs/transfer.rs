@@ -328,12 +328,19 @@ impl TransferReporter {
                 ActiveTransfer {
                     connection_id: state.connection_id.clone(),
                     client_id: state.client_id.clone(),
+                    resource_key: None,
                 },
             ));
         }
         if let Some((queue_id, transfer)) = registration {
             if let Ok(mut active_transfers) = self.active_transfers.lock() {
-                active_transfers.insert(queue_id, transfer);
+                active_transfers
+                    .entry(queue_id)
+                    .and_modify(|active| {
+                        active.connection_id = transfer.connection_id.clone();
+                        active.client_id = transfer.client_id.clone();
+                    })
+                    .or_insert(transfer);
             }
         }
     }

@@ -984,6 +984,7 @@ mod tests {
             crate::ActiveTransfer {
                 connection_id: "connection-1".to_string(),
                 client_id: Some("queue-1".to_string()),
+                resource_key: None,
             },
         );
 

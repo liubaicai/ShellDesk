@@ -140,6 +140,7 @@ impl AppState {
 pub(crate) struct ActiveTransfer {
     pub(crate) connection_id: String,
     pub(crate) client_id: Option<String>,
+    pub(crate) resource_key: Option<String>,
 }
 
 #[derive(Clone)]
