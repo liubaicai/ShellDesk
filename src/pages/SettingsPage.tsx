@@ -1075,6 +1075,26 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
+                      <strong>{t('settings.general.sshConnectTimeout.label', settings.language)}</strong>
+                      <small>{t('settings.general.sshConnectTimeout.summary', settings.language)}</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-number-input"
+                      type="number"
+                      min={3}
+                      max={120}
+                      step={1}
+                      value={settings.sshConnectTimeoutSeconds}
+                      aria-label={t('settings.general.sshConnectTimeout.label', settings.language)}
+                      onChange={(event) => updateSetting(
+                        'sshConnectTimeoutSeconds',
+                        Math.max(3, Math.min(120, Number.parseInt(event.target.value, 10) || 15)),
+                      )}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
                       <strong>{t('settings.general.minimizeToTrayOnClose.label', settings.language)}</strong>
                       <small>{t('settings.general.minimizeToTrayOnClose.summary', settings.language)}</small>
                     </span>

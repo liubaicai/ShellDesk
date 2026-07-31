@@ -1098,6 +1098,7 @@ fn authentication_profile_from_config(config: &SshTunnelConfig) -> SshProfile {
         jump: None,
         keepalive_enabled: config.keepalive_enabled,
         keepalive_interval_ms: config.keepalive_interval_ms,
+        connect_timeout_ms: config.connect_timeout_ms,
     }
 }
 
@@ -1147,6 +1148,11 @@ fn profile_from_overrides(overrides: Option<&Value>) -> Result<SshProfile, Strin
             .and_then(Value::as_u64)
             .filter(|value| *value > 0)
             .unwrap_or_else(default_keepalive_interval_ms),
+        connect_timeout_ms: value
+            .get("connectTimeoutMs")
+            .and_then(Value::as_u64)
+            .filter(|value| (3_000..=120_000).contains(value))
+            .unwrap_or_else(default_connect_timeout_ms),
     })
 }
 
@@ -1220,6 +1226,7 @@ mod tests {
             jump: None,
             keepalive_enabled: false,
             keepalive_interval_ms: 15_000,
+            connect_timeout_ms: 15_000,
         }
     }
 

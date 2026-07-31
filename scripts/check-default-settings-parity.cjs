@@ -18,6 +18,7 @@ const checkedKeys = [
   'desktopWallpaperName',
   'rememberPasswords',
   'rememberKeyPassphrases',
+  'sshConnectTimeoutSeconds',
   'aiProvider',
   'aiProviderName',
   'aiApiFormat',

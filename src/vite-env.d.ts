@@ -384,6 +384,7 @@ interface ShellDeskAppSettings {
   remoteDesktopLayout: ShellDeskRemoteDesktopLayout;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
+  sshConnectTimeoutSeconds: number;
   aiProvider: ShellDeskAiProvider;
   aiProviderName: string;
   aiApiFormat: ShellDeskAiApiFormat;
@@ -502,7 +503,7 @@ interface ShellDeskStoredHostRecord {
   address: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
   password: string;
   keyId: string;
   keyPath?: string;
@@ -514,6 +515,7 @@ interface ShellDeskStoredHostRecord {
   proxyProfileId?: string;
   keepaliveEnabled?: boolean;
   keepaliveIntervalMs?: number;
+  connectTimeoutMs?: number;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
   hostInfo?: ShellDeskHostInfoSnapshot | null;
@@ -613,6 +615,7 @@ interface ShellDeskHostConnectionRequest {
   proxyProfileId?: string;
   keepaliveEnabled?: boolean;
   keepaliveIntervalMs?: number;
+  connectTimeoutMs?: number;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
 }

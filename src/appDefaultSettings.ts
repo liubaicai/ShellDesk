@@ -58,6 +58,7 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   remoteDesktopLayout: createDefaultRemoteDesktopLayout(),
   rememberPasswords: true,
   rememberKeyPassphrases: true,
+  sshConnectTimeoutSeconds: 15,
   aiProvider: 'openai',
   aiProviderName: 'OpenAI',
   aiApiFormat: 'openai',

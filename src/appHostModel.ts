@@ -281,13 +281,16 @@ export function toKeyFormState(key: SshKey): KeyFormState {
   };
 }
 
-export type AuthMethod = 'password' | 'key';
-export type ConnectionAuthMethod = AuthMethod | 'agent';
+export type AuthMethod = 'password' | 'key' | 'agent';
+export type ConnectionAuthMethod = AuthMethod;
 export type HostConnectionStatus = 'unknown' | 'success' | 'failed';
 export type HostStatusFilter = 'all' | 'ready' | 'failed' | 'never';
 export type PrivilegeMode = 'sudo' | 'su-root';
 export const defaultKeepaliveIntervalSeconds = 15;
 export const defaultKeepaliveIntervalMs = defaultKeepaliveIntervalSeconds * 1000;
+export const defaultSshConnectTimeoutSeconds = 15;
+export const minimumSshConnectTimeoutSeconds = 3;
+export const maximumSshConnectTimeoutSeconds = 120;
 
 export interface HostInfoItem {
   key: string;
@@ -322,6 +325,7 @@ export interface Host {
   proxyProfileId: string;
   keepaliveEnabled?: boolean;
   keepaliveIntervalMs?: number;
+  connectTimeoutMs?: number;
   systemType: HostSystemType;
   systemName: string;
   hostInfo: HostInfoSnapshot | null;
@@ -357,8 +361,8 @@ export interface ConnectionErrorNotice {
 export type ConnectionLaunchSource = 'host-card' | 'quick-connect' | 'credential';
 export type ConnectionLaunchTarget = 'desktop' | 'sftp-transfer';
 
-export type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'systemType' | 'systemName' | 'hostInfo' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
-  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>> & {
+export type StoredHost = Omit<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'connectTimeoutMs' | 'systemType' | 'systemName' | 'hostInfo' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'> &
+  Partial<Pick<Host, 'authMethod' | 'password' | 'keyId' | 'keyPath' | 'passphrase' | 'privilegeMode' | 'rootPassword' | 'jumpHostId' | 'canBeJumpHost' | 'proxyProfileId' | 'keepaliveEnabled' | 'keepaliveIntervalMs' | 'connectTimeoutMs' | 'systemType' | 'systemName' | 'lastConnectionStatus' | 'lastConnectionAt' | 'lastConnectionError'>> & {
     hostInfo?: unknown;
   };
 
@@ -379,6 +383,7 @@ export interface HostFormState {
   proxyProfileId: string;
   keepaliveEnabled: boolean;
   keepaliveIntervalSeconds: string;
+  connectTimeoutSeconds: string;
   group: string;
   tags: string;
   note: string;
@@ -456,6 +461,7 @@ export const emptyHostForm: HostFormState = {
   proxyProfileId: '',
   keepaliveEnabled: true,
   keepaliveIntervalSeconds: String(defaultKeepaliveIntervalSeconds),
+  connectTimeoutSeconds: '',
   group: '',
   tags: '',
   note: '',
@@ -536,7 +542,7 @@ export function getHostChipClassName(kind: 'group' | 'tag', value: string, activ
 }
 
 export function getAuthMethod(value: unknown): AuthMethod {
-  return value === 'key' ? 'key' : 'password';
+  return value === 'key' || value === 'agent' ? value : 'password';
 }
 
 export function getPrivilegeMode(value: unknown): PrivilegeMode {
@@ -555,6 +561,15 @@ export function getKeepaliveIntervalMs(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? Math.round(value)
     : defaultKeepaliveIntervalMs;
+}
+
+export function getConnectTimeoutMs(value: unknown) {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= minimumSshConnectTimeoutSeconds * 1000
+    && value <= maximumSshConnectTimeoutSeconds * 1000
+    ? Math.round(value)
+    : 0;
 }
 
 export function readHostInfoItem(value: unknown): HostInfoItem | null {
@@ -896,6 +911,9 @@ export function createHostInfoSnapshot(
 }
 
 export function getAuthLabel(host: Pick<Host, 'authMethod' | 'password'>, key: SshKey | null, language: ShellDeskAppSettings['language']) {
+  if (host.authMethod === 'agent') {
+    return t('app.auth.agentLogin', language);
+  }
   if (host.authMethod === 'key') {
     if (!key) {
       return t('app.auth.keyLogin', language);
@@ -977,14 +995,15 @@ export function isStoredHost(value: unknown): value is StoredHost {
 export function normalizeStoredHost(host: StoredHost): Host {
   const hostInfo = getHostInfoSnapshot(host.hostInfo);
   const normalizedAddress = host.address.trim();
+  const authMethod = getAuthMethod(host.authMethod);
 
   return {
     ...host,
-    authMethod: getAuthMethod(host.authMethod),
-    password: typeof host.password === 'string' ? host.password : '',
-    keyId: typeof host.keyId === 'string' ? host.keyId : '',
-    keyPath: typeof host.keyPath === 'string' ? host.keyPath : '',
-    passphrase: typeof host.passphrase === 'string' ? host.passphrase : '',
+    authMethod,
+    password: authMethod === 'password' && typeof host.password === 'string' ? host.password : '',
+    keyId: authMethod === 'key' && typeof host.keyId === 'string' ? host.keyId : '',
+    keyPath: authMethod === 'key' && typeof host.keyPath === 'string' ? host.keyPath : '',
+    passphrase: authMethod === 'key' && typeof host.passphrase === 'string' ? host.passphrase : '',
     privilegeMode: getPrivilegeMode(host.privilegeMode),
     rootPassword: getPrivilegeMode(host.privilegeMode) === 'su-root' && typeof host.rootPassword === 'string' ? host.rootPassword : '',
     address: normalizedAddress,
@@ -993,6 +1012,7 @@ export function normalizeStoredHost(host: StoredHost): Host {
     proxyProfileId: typeof host.proxyProfileId === 'string' ? host.proxyProfileId : '',
     keepaliveEnabled: host.keepaliveEnabled !== false,
     keepaliveIntervalMs: getKeepaliveIntervalMs(host.keepaliveIntervalMs),
+    connectTimeoutMs: getConnectTimeoutMs(host.connectTimeoutMs),
     systemType: getHostSystemType(host.systemType, host.systemName),
     systemName: typeof host.systemName === 'string' ? host.systemName : '',
     hostInfo: hostInfo && (!hostInfo.address || hostInfo.address === normalizedAddress) ? hostInfo : null,
@@ -1388,6 +1408,23 @@ export function validateHostForm(
     return t('app.host.validation.keyRequired', language);
   }
 
+  const connectTimeoutSeconds = form.connectTimeoutSeconds.trim()
+    ? Number(form.connectTimeoutSeconds)
+    : 0;
+  if (
+    form.connectTimeoutSeconds.trim()
+    && (
+      !Number.isInteger(connectTimeoutSeconds)
+      || connectTimeoutSeconds < minimumSshConnectTimeoutSeconds
+      || connectTimeoutSeconds > maximumSshConnectTimeoutSeconds
+    )
+  ) {
+    return t('app.host.validation.connectTimeout', language, {
+      min: String(minimumSshConnectTimeoutSeconds),
+      max: String(maximumSshConnectTimeoutSeconds),
+    });
+  }
+
   if (jumpHostId) {
     const jumpHost = hosts.find((host) => host.id === jumpHostId) ?? null;
 
@@ -1448,6 +1485,7 @@ export function createHostFromForm(form: HostFormState, selectedKey: SshKey | nu
   const rootLogin = isRootLoginUsername(form.username);
   const privilegeMode = rootLogin ? 'sudo' : form.privilegeMode;
   const keepaliveIntervalMs = (parsePositiveInteger(form.keepaliveIntervalSeconds) ?? defaultKeepaliveIntervalSeconds) * 1000;
+  const connectTimeoutMs = (parsePositiveInteger(form.connectTimeoutSeconds) ?? 0) * 1000;
 
   return {
     id: createId(),
@@ -1467,6 +1505,7 @@ export function createHostFromForm(form: HostFormState, selectedKey: SshKey | nu
     proxyProfileId: form.proxyProfileId.trim(),
     keepaliveEnabled: form.keepaliveEnabled,
     keepaliveIntervalMs,
+    connectTimeoutMs,
     systemType: 'unknown',
     systemName: '',
     hostInfo: null,
@@ -1498,6 +1537,7 @@ export function updateHostFromForm(host: Host, form: HostFormState, selectedKey:
   const nextPrivilegeMode: PrivilegeMode = rootLogin ? 'sudo' : form.privilegeMode;
   const nextRootPassword = nextPrivilegeMode === 'su-root' ? form.rootPassword : '';
   const nextKeepaliveIntervalMs = (parsePositiveInteger(form.keepaliveIntervalSeconds) ?? defaultKeepaliveIntervalSeconds) * 1000;
+  const nextConnectTimeoutMs = (parsePositiveInteger(form.connectTimeoutSeconds) ?? 0) * 1000;
   const connectionProfileChanged =
     endpointChanged ||
     jumpHostChanged ||
@@ -1508,7 +1548,8 @@ export function updateHostFromForm(host: Host, form: HostFormState, selectedKey:
     host.privilegeMode !== nextPrivilegeMode ||
     host.rootPassword !== nextRootPassword ||
     host.keepaliveEnabled !== form.keepaliveEnabled ||
-    getKeepaliveIntervalMs(host.keepaliveIntervalMs) !== nextKeepaliveIntervalMs;
+    getKeepaliveIntervalMs(host.keepaliveIntervalMs) !== nextKeepaliveIntervalMs ||
+    getConnectTimeoutMs(host.connectTimeoutMs) !== nextConnectTimeoutMs;
 
   return {
     ...host,
@@ -1528,6 +1569,7 @@ export function updateHostFromForm(host: Host, form: HostFormState, selectedKey:
     proxyProfileId: nextProxyProfileId,
     keepaliveEnabled: form.keepaliveEnabled,
     keepaliveIntervalMs: nextKeepaliveIntervalMs,
+    connectTimeoutMs: nextConnectTimeoutMs,
     systemType: addressChanged ? 'unknown' : host.systemType,
     systemName: addressChanged ? '' : host.systemName,
     hostInfo: addressChanged ? null : host.hostInfo,
@@ -1559,6 +1601,9 @@ export function toFormState(host: Host): HostFormState {
     proxyProfileId: host.proxyProfileId,
     keepaliveEnabled: host.keepaliveEnabled === true,
     keepaliveIntervalSeconds: String(Math.max(1, Math.round(getKeepaliveIntervalMs(host.keepaliveIntervalMs) / 1000))),
+    connectTimeoutSeconds: getConnectTimeoutMs(host.connectTimeoutMs)
+      ? String(Math.round(getConnectTimeoutMs(host.connectTimeoutMs) / 1000))
+      : '',
     group: host.group,
     tags: formatTags(host.tags),
     note: host.note,

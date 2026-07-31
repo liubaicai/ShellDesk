@@ -165,6 +165,7 @@ pub(crate) struct SshProfile {
     pub(crate) jump: Option<Box<SshProfile>>,
     pub(crate) keepalive_enabled: bool,
     pub(crate) keepalive_interval_ms: u64,
+    pub(crate) connect_timeout_ms: u64,
 }
 
 impl fmt::Debug for SshProfile {
@@ -183,6 +184,7 @@ impl fmt::Debug for SshProfile {
             .field("jump", &self.jump)
             .field("keepalive_enabled", &self.keepalive_enabled)
             .field("keepalive_interval_ms", &self.keepalive_interval_ms)
+            .field("connect_timeout_ms", &self.connect_timeout_ms)
             .finish()
     }
 }

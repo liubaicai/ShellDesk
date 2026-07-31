@@ -1073,6 +1073,7 @@ component vmManager true sh -c 'command -v virsh >/dev/null && LC_ALL=C virsh --
             jump: None,
             keepalive_enabled: false,
             keepalive_interval_ms: 15_000,
+            connect_timeout_ms: 15_000,
         }
     }
 }

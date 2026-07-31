@@ -240,6 +240,7 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "remoteDesktopLayout": remote_desktop_layout,
         "rememberPasswords": read_bool(settings.get("rememberPasswords"), defaults["rememberPasswords"].as_bool().unwrap_or(true)),
         "rememberKeyPassphrases": read_bool(settings.get("rememberKeyPassphrases"), defaults["rememberKeyPassphrases"].as_bool().unwrap_or(true)),
+        "sshConnectTimeoutSeconds": read_i64_range(settings.get("sshConnectTimeoutSeconds"), 3, 120, defaults["sshConnectTimeoutSeconds"].as_i64().unwrap_or(15)),
         "aiProvider": ai_provider,
         "aiProviderName": ai_provider_name,
         "aiApiFormat": ai_api_format,
@@ -767,7 +768,7 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
     let auth_method = host
         .get("authMethod")
         .and_then(Value::as_str)
-        .filter(|value| matches!(*value, "password" | "key"))
+        .filter(|value| matches!(*value, "password" | "key" | "agent"))
         .ok_or_else(|| "主机登录方式无效。".to_string())?;
     let port = read_port(host.get("port"), "主机端口")?;
     let name = read_bounded_string_value(host.get("name"), "主机名称", 80, true, true, true)?;
@@ -789,6 +790,10 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
         "proxyProfileId": read_optional_bounded_string(host.get("proxyProfileId"), "代理 ID", 128, true, true)?,
         "keepaliveEnabled": read_bool(host.get("keepaliveEnabled"), true),
         "keepaliveIntervalMs": read_i64_range(host.get("keepaliveIntervalMs"), 1_000, 3_600_000, 15_000),
+        "connectTimeoutMs": host.get("connectTimeoutMs")
+            .and_then(Value::as_u64)
+            .filter(|value| (3_000..=120_000).contains(value))
+            .unwrap_or(0),
         "systemType": read_remote_system_type(host.get("systemType")),
         "systemName": read_optional_bounded_string(host.get("systemName"), "系统名称", 160, true, true)?,
         "hostInfo": read_host_info_snapshot(host.get("hostInfo"))?,
@@ -813,12 +818,21 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
             output["name"].as_str().unwrap_or("")
         ));
     }
-    if auth_method == "password" {
-        output["keyId"] = json!("");
-        output["keyPath"] = json!("");
-        output["passphrase"] = json!("");
-    } else {
-        output["password"] = json!("");
+    match auth_method {
+        "password" => {
+            output["keyId"] = json!("");
+            output["keyPath"] = json!("");
+            output["passphrase"] = json!("");
+        }
+        "key" => {
+            output["password"] = json!("");
+        }
+        _ => {
+            output["password"] = json!("");
+            output["keyId"] = json!("");
+            output["keyPath"] = json!("");
+            output["passphrase"] = json!("");
+        }
     }
     if output["privilegeMode"].as_str() != Some("su-root") {
         output["rootPassword"] = json!("");
@@ -1215,4 +1229,58 @@ fn read_port(value: Option<&Value>, label: &str) -> Result<i64, String> {
         _ => None,
     };
     port.ok_or_else(|| format!("{label}无效。"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_agent_hosts_drop_other_authentication_secrets() {
+        let hosts = normalize_hosts(&json!([{
+            "id": "agent-host",
+            "name": "Agent Host",
+            "address": "agent.example.com",
+            "port": 22,
+            "username": "deploy",
+            "authMethod": "agent",
+            "password": "stale-password",
+            "keyId": "stale-key",
+            "keyPath": "/tmp/stale-key",
+            "passphrase": "stale-passphrase",
+            "connectTimeoutMs": 9_000,
+            "group": "",
+            "tags": [],
+            "note": "",
+            "createdAt": "2026-07-31T00:00:00Z",
+            "updatedAt": "2026-07-31T00:00:00Z"
+        }]))
+        .unwrap();
+        let host = &hosts.as_array().unwrap()[0];
+
+        assert_eq!(host["authMethod"], "agent");
+        assert_eq!(host["password"], "");
+        assert_eq!(host["keyId"], "");
+        assert_eq!(host["keyPath"], "");
+        assert_eq!(host["passphrase"], "");
+        assert_eq!(host["connectTimeoutMs"], 9_000);
+    }
+
+    #[test]
+    fn settings_connect_timeout_falls_back_outside_supported_range() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["sshConnectTimeoutSeconds"], 15);
+
+        let minimum = normalize_app_settings(&json!({
+            "sshConnectTimeoutSeconds": 3
+        }))
+        .unwrap();
+        assert_eq!(minimum["sshConnectTimeoutSeconds"], 3);
+
+        let invalid = normalize_app_settings(&json!({
+            "sshConnectTimeoutSeconds": 121
+        }))
+        .unwrap();
+        assert_eq!(invalid["sshConnectTimeoutSeconds"], 15);
+    }
 }

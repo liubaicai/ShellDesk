@@ -4,7 +4,10 @@ use crate::vault::read_store;
 use crate::{
     error_string, https_url_origin, now, port_forward, prevent_process_window, random_id,
     read_string_field, read_u16_field, remote_fs,
-    russh_client::{is_key_auth_method, run_exec_command},
+    russh_client::{
+        connect_timeout, is_key_auth_method, run_exec_command, ssh_authentication_kind,
+        SshAuthenticationKind,
+    },
     sanitize_file_name, string_arg, terminal, unavailable_password_auth_error, whoami,
     ActiveConnection, AppState, ConnectionKind, DesktopProxySession, PrivilegeConfig, SshProfile,
     UiWindowRef,
@@ -162,13 +165,17 @@ fn build_ssh_profile(
     let port = read_u16_field(&host, "port", 22);
     let username = read_string_field(&host, "username", "");
     let auth_method = read_string_field(&host, "authMethod", "password");
-    let password = if is_key_auth_method(&auth_method) {
-        read_string_field(&host, "passphrase", "")
-    } else {
-        read_string_field(&host, "password", "")
+    let password = match ssh_authentication_kind(&auth_method) {
+        SshAuthenticationKind::Key => read_string_field(&host, "passphrase", ""),
+        SshAuthenticationKind::Password => read_string_field(&host, "password", ""),
+        SshAuthenticationKind::Agent => String::new(),
     };
     let key_id = read_string_field(&host, "keyId", "");
-    let mut key_path = read_string_field(&host, "keyPath", "");
+    let mut key_path = if is_key_auth_method(&auth_method) {
+        read_string_field(&host, "keyPath", "")
+    } else {
+        String::new()
+    };
     if is_key_auth_method(&auth_method) && key_path.is_empty() && !key_id.is_empty() {
         if let Some(key) = find_store_item_by_id(&store, "sshKeys", &key_id) {
             let private_key = read_string_field(&key, "privateKey", "");
@@ -190,6 +197,17 @@ fn build_ssh_profile(
         .and_then(Value::as_u64)
         .filter(|value| *value > 0)
         .unwrap_or(15_000);
+    let default_connect_timeout_ms = store
+        .pointer("/settings/sshConnectTimeoutSeconds")
+        .and_then(Value::as_u64)
+        .filter(|value| (3..=120).contains(value))
+        .unwrap_or(15)
+        .saturating_mul(1_000);
+    let connect_timeout_ms = host
+        .get("connectTimeoutMs")
+        .and_then(Value::as_u64)
+        .filter(|value| (3_000..=120_000).contains(value))
+        .unwrap_or(default_connect_timeout_ms);
     if !is_jump && !jump_host_id.is_empty() && !proxy_profile_id.is_empty() {
         return Err("当前不能同时为目标主机选择代理和跳板机。".to_string());
     }
@@ -244,6 +262,7 @@ fn build_ssh_profile(
         jump,
         keepalive_enabled,
         keepalive_interval_ms,
+        connect_timeout_ms,
     })
 }
 
@@ -494,6 +513,7 @@ async fn validate_login_and_probe_remote_system_type(
     window: &tauri::Window,
     profile: &mut SshProfile,
 ) -> Result<Option<&'static str>, String> {
+    let probe_timeout = connect_timeout(profile).saturating_add(Duration::from_secs(10));
     // `echo %OS%` is parsed by cmd.exe on the standard Windows OpenSSH shell and
     // stays a harmless literal on POSIX shells. Do this before any platform-specific
     // status command so a Windows host never receives a Unix redirect such as /dev/null.
@@ -503,7 +523,7 @@ async fn validate_login_and_probe_remote_system_type(
         profile.clone(),
         "echo %OS%".to_string(),
         String::new(),
-        Duration::from_secs(8),
+        probe_timeout,
     )
     .await;
     let output = match first {
@@ -516,7 +536,7 @@ async fn validate_login_and_probe_remote_system_type(
                 profile.clone(),
                 "echo %OS%".to_string(),
                 String::new(),
-                Duration::from_secs(8),
+                probe_timeout,
             )
             .await?
         }
@@ -1185,6 +1205,7 @@ mod tests {
             jump: None,
             keepalive_enabled: false,
             keepalive_interval_ms: 15_000,
+            connect_timeout_ms: 15_000,
         };
         let current = vec![
             json!({
@@ -1266,6 +1287,55 @@ mod tests {
             assert_eq!(profile.password, "key-passphrase");
             assert_eq!(profile.key_path, "C:\\Users\\me\\.ssh\\id_rsa");
         }
+    }
+
+    #[test]
+    fn agent_profile_clears_stale_secrets_and_resolves_timeout_override() {
+        let data_dir =
+            std::env::temp_dir().join(format!("shelldesk-agent-profile-{}", random_id("test")));
+        let state = AppState::new(data_dir.clone());
+        let mut store = crate::vault::read_store(&state).unwrap();
+        store["settings"]["sshConnectTimeoutSeconds"] = json!(41);
+        crate::vault::write_store(&state, &store).unwrap();
+        let raw_host = json!({
+            "address": "example.com",
+            "port": 22,
+            "username": "deploy",
+            "authMethod": "agent",
+            "password": "stale-password",
+            "keyPath": "stale-key",
+            "passphrase": "stale-passphrase",
+            "connectTimeoutMs": 9_000
+        });
+
+        let profile = build_ssh_profile(&state, &raw_host, false, &mut Vec::new()).unwrap();
+
+        assert_eq!(profile.auth_method, "agent");
+        assert!(profile.password.is_empty());
+        assert!(profile.key_path.is_empty());
+        assert_eq!(profile.connect_timeout_ms, 9_000);
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn host_profile_inherits_global_connect_timeout() {
+        let data_dir =
+            std::env::temp_dir().join(format!("shelldesk-timeout-profile-{}", random_id("test")));
+        let state = AppState::new(data_dir.clone());
+        let mut store = crate::vault::read_store(&state).unwrap();
+        store["settings"]["sshConnectTimeoutSeconds"] = json!(41);
+        crate::vault::write_store(&state, &store).unwrap();
+        let raw_host = json!({
+            "address": "example.com",
+            "port": 22,
+            "username": "deploy",
+            "authMethod": "agent"
+        });
+
+        let profile = build_ssh_profile(&state, &raw_host, false, &mut Vec::new()).unwrap();
+
+        assert_eq!(profile.connect_timeout_ms, 41_000);
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[test]

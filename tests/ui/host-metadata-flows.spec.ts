@@ -137,6 +137,43 @@ test('host editor reuses existing groups and tags while preserving custom input'
   await expect(tagsInput).toHaveValue('windows, staging');
 });
 
+test('saved SSH Agent hosts and global or per-host connect timeouts round-trip through the Vault', async ({ page }) => {
+  await gotoSeededHostPage(page);
+  await page.getByRole('button', { name: '添加主机', exact: true }).click();
+
+  const editor = page.getByRole('complementary', { name: '新建主机' });
+  await editor.getByRole('button', { name: /SSH Agent/ }).click();
+  await expect(editor.getByText(/不会保存密码、私钥或密钥口令/)).toBeVisible();
+  await editor.getByLabel('主机名称', { exact: true }).fill('Agent Host');
+  await editor.getByLabel('地址', { exact: true }).fill('agent.example.com');
+  await editor.getByLabel('用户名', { exact: true }).fill('deploy');
+  await editor.getByRole('spinbutton', { name: /连接超时/ }).fill('27');
+  await editor.getByRole('button', { name: '添加主机', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+
+  const savedHost = await page.evaluate(async () => {
+    const snapshot = await window.guiSSH!.vault.getSnapshot();
+    return snapshot.hosts.find((host) => host.name === 'Agent Host');
+  });
+  expect(savedHost).toMatchObject({
+    authMethod: 'agent',
+    password: '',
+    keyId: '',
+    keyPath: '',
+    passphrase: '',
+    connectTimeoutMs: 27_000,
+  });
+
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const timeoutInput = page.getByRole('spinbutton', { name: /SSH 连接超时/ });
+  await expect(timeoutInput).toHaveValue('15');
+  await timeoutInput.fill('37');
+  await timeoutInput.blur();
+  await expect.poll(async () => page.evaluate(async () => (
+    await window.guiSSH!.vault.getSnapshot()
+  ).settings.sshConnectTimeoutSeconds)).toBe(37);
+});
+
 test('empty metadata can be assigned from cards and list rows, and card actions show icons', async ({ page }) => {
   await gotoSeededHostPage(page);
   await page.getByRole('button', { name: '卡片模式' }).click();

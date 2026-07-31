@@ -87,6 +87,8 @@ SFTP 普通操作不得回退到 `exec`、系统 `sftp` 或系统 `ssh`。需要
 
 普通密码 prompt 会优先用已保存密码自动回应；OTP、token、verification code 等交互 prompt 会通过 `ui_prompts.rs` 发到当前 UI 窗口。日志和错误信息不应打印密码、私钥、passphrase 或 `.env` 中的测试凭据。
 
+主机配置可以持久化选择 SSH agent，但该模式会在前端模型和 Vault 规范化层同时清空密码、私钥路径、密钥 ID 与 passphrase。全局 SSH 连接超时在“设置 > 通用”中配置，主机可用 3–120 秒的独立值覆盖；该超时只用于 TCP 连接、代理/跳板通道和 SSH 握手，跳板机与目标主机分别采用自己的配置。
+
 ## 维护规则
 
 - 不要新增 `Command::new("ssh")`、`sshpass`、`SSHPASS`、`SSH_ASKPASS`、`ssh-keyscan`、`ssh-keygen` 或 OpenSSH fallback。

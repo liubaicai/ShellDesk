@@ -96,7 +96,8 @@ ShellDesk is useful for:
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
 - Switch between card and table views, filter hosts by connection state, sort recent activity, paginate and keyboard-navigate large inventories, and inspect connection/system details without leaving the list
 - Migrate MobaXterm bookmarks, Xshell sessions, SecureCRT sessions, or CSV inventories through a preview-first wizard with validation, duplicate policies, secret opt-in, and a guarded one-step undo
-- Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
+- Supports saved password, private-key, or system SSH Agent login, proxy/jump-host settings, local mode, and credential prompts before connecting; Agent profiles do not persist password or key material
+- Settings provide a global 3–120 second SSH connection timeout, with an optional per-host override for slow or unreliable networks
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint
 - Settings control whether SSH passwords and key passphrases are saved by default, and known-hosts trust decisions are handled by the Rust backend through russh

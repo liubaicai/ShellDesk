@@ -39,6 +39,8 @@ The unit gate first type-checks `tests/unit` with `tsconfig.unit.json`, then use
 
 `tests/unit/host-large-list.spec.ts` locks host-list and virtual-picker index navigation at page boundaries. The UI smoke suite crosses inventory pages with the keyboard and verifies that the SD-Agent picker renders only a small visible window from a 5,000-host fixture while preserving search and active selection.
 
+`tests/unit/host-connection-settings.spec.ts` covers persisted SSH Agent profiles, secret clearing, global/per-host connection-timeout normalization, and timeout validation boundaries. Rust tests repeat the secret-clearing and timeout-resolution checks at the Vault and `SshProfile` layers.
+
 ## Build Verification
 
 ```bash

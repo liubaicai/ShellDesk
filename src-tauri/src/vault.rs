@@ -67,6 +67,7 @@ pub(crate) fn default_settings() -> Value {
         },
         "rememberPasswords": true,
         "rememberKeyPassphrases": true,
+        "sshConnectTimeoutSeconds": 15,
         "aiProvider": "openai",
         "aiProviderName": "OpenAI",
         "aiApiFormat": "openai",

@@ -141,7 +141,8 @@ async fn scan_host_public_keys_inner(
 ) -> Result<Vec<PublicKey>, String> {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let policy = HostKeyPolicy::Capture(Arc::clone(&captured));
-    let _session = connect_profile(profile, DEFAULT_CONNECT_TIMEOUT, policy, state, window).await?;
+    let timeout = connect_timeout(&profile);
+    let _session = connect_profile(profile, timeout, policy, state, window).await?;
     let keys = captured.lock().map_err(error_string)?.clone();
     if keys.is_empty() {
         return Err("未能读取 SSH 主机公钥。".to_string());
@@ -154,9 +155,10 @@ pub(crate) async fn connect_authenticated(
     window: Option<UiWindowRef>,
     profile: SshProfile,
 ) -> Result<RusshSession, String> {
+    let timeout = connect_timeout(&profile);
     let mut handle = connect_profile(
         profile.clone(),
-        DEFAULT_CONNECT_TIMEOUT,
+        timeout,
         HostKeyPolicy::Verify,
         state.clone(),
         window.clone(),
@@ -375,6 +377,14 @@ async fn connect_profile(
 
 pub(crate) fn keepalive_interval(profile: &SshProfile) -> Option<Duration> {
     keepalive_interval_from_settings(profile.keepalive_enabled, profile.keepalive_interval_ms)
+}
+
+pub(crate) fn connect_timeout(profile: &SshProfile) -> Duration {
+    Duration::from_millis(if profile.connect_timeout_ms == 0 {
+        DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
+    } else {
+        profile.connect_timeout_ms.clamp(3_000, 120_000)
+    })
 }
 
 pub(crate) fn keepalive_interval_from_settings(
@@ -713,9 +723,10 @@ async fn open_jump_transport(
         .take()
         .ok_or_else(|| "跳板机配置为空。".to_string())?;
     let jump = *jump;
+    let jump_timeout = connect_timeout(&jump);
     let mut jump_session = Box::pin(connect_profile(
         jump.clone(),
-        timeout,
+        jump_timeout,
         HostKeyPolicy::Verify,
         state.clone(),
         window.clone(),
@@ -724,10 +735,13 @@ async fn open_jump_transport(
     authenticate_profile(&mut jump_session, jump, state, window).await?;
     let target_host = target.address.clone();
     let target_port = target.port;
-    let channel = jump_session
-        .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
-        .await
-        .map_err(|error| format!("跳板机打开目标 SSH 通道失败：{error}"))?;
+    let channel = tokio::time::timeout(
+        timeout,
+        jump_session.channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0),
+    )
+    .await
+    .map_err(|_| "跳板机打开目标 SSH 通道超时。".to_string())?
+    .map_err(|error| format!("跳板机打开目标 SSH 通道失败：{error}"))?;
     Ok(RusshTransport::jump(channel.into_stream(), jump_session))
 }
 
@@ -781,6 +795,19 @@ mod tests {
         assert!(is_key_auth_method("privateKey"));
         assert!(!is_key_auth_method("password"));
         assert!(!is_key_auth_method("agent"));
+    }
+
+    #[test]
+    fn connect_timeout_uses_default_and_safe_bounds() {
+        let mut profile = crate::test_helpers::ssh_profile();
+        profile.connect_timeout_ms = 0;
+        assert_eq!(connect_timeout(&profile), Duration::from_secs(15));
+
+        profile.connect_timeout_ms = 1;
+        assert_eq!(connect_timeout(&profile), Duration::from_secs(3));
+
+        profile.connect_timeout_ms = 240_000;
+        assert_eq!(connect_timeout(&profile), Duration::from_secs(120));
     }
 
     #[test]

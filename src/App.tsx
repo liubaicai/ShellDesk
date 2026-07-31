@@ -24,6 +24,7 @@ import HostListPanel from './components/HostListPanel';
 import HostImportWizard from './components/HostImportWizard';
 import HostImportMenuActions from './components/HostImportMenuActions';
 import HostMetadataFields, { useHostMetadataOptions } from './components/HostMetadataFields';
+import { AuthenticationMethodSwitch, SshConnectTimeoutField } from './components/SshConnectionSettingsFields';
 import GlobalTransferCenter from './components/transfers/GlobalTransferCenter';
 import {
   type AuthMethod,
@@ -2237,9 +2238,14 @@ function App() {
       return {
         ...currentForm,
         authMethod,
-        keyId: authMethod === 'key' ? selectedKey?.id ?? '' : currentForm.keyId,
-        passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? currentForm.passphrase : currentForm.passphrase,
-        saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+        password: authMethod === 'password' ? currentForm.password : '',
+        keyId: authMethod === 'key' ? selectedKey?.id ?? '' : '',
+        passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? currentForm.passphrase : '',
+        saveCredential: authMethod === 'agent'
+          ? true
+          : authMethod === 'password'
+            ? settings.rememberPasswords
+            : settings.rememberKeyPassphrases,
       };
     });
     setCredentialError('');
@@ -2258,16 +2264,20 @@ function App() {
 
   const openCredentialDialog = (host: ConnectionHost, message = '', launchTarget: ConnectionLaunchTarget = 'desktop') => {
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
-    const authMethod: AuthMethod = host.authMethod === 'key' ? 'key' : 'password';
+    const authMethod: AuthMethod = host.authMethod;
 
     setCredentialHost(host);
     setCredentialLaunchTarget(launchTarget);
     setCredentialForm({
       authMethod,
-      password: host.password,
-      keyId: authMethod === 'key' ? selectedKey?.id ?? '' : sshKeys[0]?.id ?? '',
-      passphrase: selectedKey?.passphrase ?? host.passphrase,
-      saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+      password: authMethod === 'password' ? host.password : '',
+      keyId: authMethod === 'key' ? selectedKey?.id ?? '' : '',
+      passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
+      saveCredential: authMethod === 'agent'
+        ? true
+        : authMethod === 'password'
+          ? settings.rememberPasswords
+          : settings.rememberKeyPassphrases,
     });
     setCredentialError(message);
   };
@@ -2549,7 +2559,7 @@ function App() {
               ...currentHost,
               ...(credentials?.saveCredential
                 ? {
-                    authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
+                    authMethod: effectiveAuthMethod,
                     password: effectiveAuthMethod === 'password' ? credentials.password : '',
                     keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
                     keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
@@ -2914,7 +2924,9 @@ function App() {
   );
   const credentialCanUseKeyAuth = sshKeys.length > 0 || credentialCanUseCurrentKeyFile;
   const credentialSaveLabel = credentialHost && hosts.some((host) => host.id === credentialHost.id)
-    ? t('app.credential.saveHostPassword', appLanguage)
+    ? credentialForm.authMethod === 'agent'
+      ? t('app.credential.saveAgentAuth', appLanguage)
+      : t('app.credential.saveHostPassword', appLanguage)
     : credentialForm.authMethod === 'key'
       ? t('app.credential.saveKeyPassphrase', appLanguage)
       : t('app.credential.rememberPassword', appLanguage);
@@ -3816,35 +3828,18 @@ function App() {
                   </label>
                 </div>
 
-                <div className="auth-method-section">
-                  <span className="field-label">{t('app.host.field.authMethod', appLanguage)}</span>
-                  <div className="auth-switch" role="group" aria-label={t('app.host.field.authMethod', appLanguage)}>
-                    <button
-                      type="button"
-                      className={form.authMethod === 'password' ? 'active' : ''}
-                      onClick={() => {
-                        updateFormField('authMethod', 'password');
-                        updateFormField('keyId', '');
-                        updateFormField('keyPath', '');
-                        updateFormField('passphrase', '');
-                      }}
-                    >
-                      <strong>{t('app.auth.passwordLogin', appLanguage)}</strong>
-                      <small>{t('app.host.auth.passwordSummary', appLanguage)}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={form.authMethod === 'key' ? 'active' : ''}
-                      onClick={() => {
-                        updateFormField('authMethod', 'key');
-                        updateFormField('password', '');
-                      }}
-                    >
-                      <strong>{t('app.auth.keyLogin', appLanguage)}</strong>
-                      <small>{t('app.host.auth.keySummary', appLanguage)}</small>
-                    </button>
-                  </div>
-                </div>
+                <AuthenticationMethodSwitch
+                  language={appLanguage}
+                  value={form.authMethod}
+                  variant="host"
+                  onChange={(authMethod) => {
+                    updateFormField('authMethod', authMethod);
+                    updateFormField('password', authMethod === 'password' ? form.password : '');
+                    updateFormField('keyId', authMethod === 'key' ? form.keyId : '');
+                    updateFormField('keyPath', authMethod === 'key' ? form.keyPath : '');
+                    updateFormField('passphrase', authMethod === 'key' ? form.passphrase : '');
+                  }}
+                />
 
                 {form.authMethod === 'key' ? (
                   <label className="field">
@@ -3860,7 +3855,7 @@ function App() {
                     </select>
                     {!sshKeys.length ? <small className="field-note">{t('app.host.field.needKeyFirst', appLanguage)}</small> : null}
                   </label>
-                ) : (
+                ) : form.authMethod === 'password' ? (
                   <label className="field">
                     <span>{t('app.host.field.password', appLanguage)}</span>
                     <input
@@ -3870,6 +3865,10 @@ function App() {
                       placeholder={t('app.host.field.passwordPlaceholder', appLanguage)}
                     />
                   </label>
+                ) : (
+                  <div className="credential-note">
+                    {t('app.host.auth.agentDescription', appLanguage)}
+                  </div>
                 )}
 
                 {!hostFormUsesRootLogin ? (
@@ -4004,6 +4003,13 @@ function App() {
                     />
                   </label>
                 ) : null}
+
+                <SshConnectTimeoutField
+                  language={appLanguage}
+                  value={form.connectTimeoutSeconds}
+                  inheritedSeconds={settings.sshConnectTimeoutSeconds}
+                  onChange={(value) => updateFormField('connectTimeoutSeconds', value)}
+                />
 
                 <HostMetadataFields
                   appLanguage={appLanguage} group={form.group} tags={form.tags}
@@ -4141,28 +4147,13 @@ function App() {
               </div>
 
               <form className="host-form" onSubmit={submitCredentialConnection}>
-                <div className="auth-method-section">
-                  <span className="field-label">{t('app.credential.authMethod', appLanguage)}</span>
-                  <div className="auth-switch" role="group" aria-label={t('app.credential.authMethod', appLanguage)}>
-                    <button
-                      type="button"
-                      className={credentialForm.authMethod === 'password' ? 'active' : ''}
-                      onClick={() => updateCredentialAuthMethod('password')}
-                    >
-                      <strong>{t('app.credential.password', appLanguage)}</strong>
-                      <small>{t('app.credential.passwordSummary', appLanguage)}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={credentialForm.authMethod === 'key' ? 'active' : ''}
-                      onClick={() => updateCredentialAuthMethod('key')}
-                      disabled={!credentialCanUseKeyAuth}
-                    >
-                      <strong>{t('app.credential.key', appLanguage)}</strong>
-                      <small>{t('app.credential.keySummary', appLanguage)}</small>
-                    </button>
-                  </div>
-                </div>
+                <AuthenticationMethodSwitch
+                  language={appLanguage}
+                  value={credentialForm.authMethod}
+                  variant="credential"
+                  keyDisabled={!credentialCanUseKeyAuth}
+                  onChange={updateCredentialAuthMethod}
+                />
 
                 {credentialForm.authMethod === 'password' ? (
                   <label className="field">
@@ -4175,7 +4166,7 @@ function App() {
                       autoFocus
                     />
                   </label>
-                ) : (
+                ) : credentialForm.authMethod === 'key' ? (
                   <>
                     {sshKeys.length ? (
                       <label className="field">
@@ -4216,6 +4207,10 @@ function App() {
                       />
                     </label>
                   </>
+                ) : (
+                  <div className="credential-note" tabIndex={-1}>
+                    {t('app.host.auth.agentDescription', appLanguage)}
+                  </div>
                 )}
 
                 {hosts.some((host) => host.id === credentialHost.id) || (credentialForm.authMethod === 'key' && credentialSelectedKey) ? (
