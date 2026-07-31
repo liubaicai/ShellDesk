@@ -1,8 +1,8 @@
 use crate::{
     browser_proxy, database::tunnel::DatabaseTunnelSession, http_tunnel::HttpTunnelSession,
     plugin_security::PluginSecurityManager, port_forward::PortForwardRuntimeEntry,
-    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal,
-    transfer_history::TransferHistory, updater::update_status, zmodem,
+    proxy::SshProxyConfig, ssh_transport_pool::SshTransportPool, ssh_tunnel::SshTunnelHandle,
+    terminal, transfer_history::TransferHistory, updater::update_status, zmodem,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct AppState {
     pub(crate) data_dir: PathBuf,
     pub(crate) connections: Arc<Mutex<HashMap<String, ActiveConnection>>>,
+    pub(crate) ssh_transports: SshTransportPool,
     pub(crate) terminals: Arc<Mutex<HashMap<String, terminal::TerminalSession>>>,
     pub(crate) vnc_proxies: Arc<Mutex<HashMap<String, DesktopProxySession>>>,
     pub(crate) rdp_proxies: Arc<Mutex<HashMap<String, DesktopProxySession>>>,
@@ -82,6 +83,7 @@ impl AppState {
             pending_tauri_update: Arc::new(Mutex::new(None)),
             data_dir,
             connections: Arc::new(Mutex::new(HashMap::new())),
+            ssh_transports: SshTransportPool::default(),
             terminals: Arc::new(Mutex::new(HashMap::new())),
             vnc_proxies: Arc::new(Mutex::new(HashMap::new())),
             rdp_proxies: Arc::new(Mutex::new(HashMap::new())),
@@ -109,6 +111,7 @@ impl AppState {
         Self {
             data_dir: self.data_dir.clone(),
             connections: self.connections.clone(),
+            ssh_transports: self.ssh_transports.clone(),
             terminals: self.terminals.clone(),
             vnc_proxies: self.vnc_proxies.clone(),
             rdp_proxies: self.rdp_proxies.clone(),

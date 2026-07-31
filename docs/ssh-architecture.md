@@ -16,8 +16,9 @@
 | 模块 | 责任 |
 | --- | --- |
 | `src-tauri/src/russh_client.rs` | 共享 russh 客户端。负责 TCP/jump/proxy transport、host key verify/capture、密码/私钥/agent/键盘交互认证、exec channel 和流式输出。 |
+| `src-tauri/src/ssh_transport_pool.rs` | 连接级已认证 transport 池。终端与 SFTP 按用途租用独立 session channel，避免同一连接上的重复握手和认证；单 transport 达到 8 个活跃租约时扩展新 transport，关闭连接时统一失效并断开。 |
 | `src-tauri/src/ssh_transport.rs` | `connection:run-command` 的高层包装。负责本地/远程分流、sudo/su-root 包装、重试、host key 刷新和输出格式。 |
-| `src-tauri/src/terminal.rs` | 终端生命周期。远程终端通过 russh `channel_open_session`、`request_pty`、`request_shell`/`exec` 运行；resize 通过 `window_change` 转发。 |
+| `src-tauri/src/terminal.rs` | 终端生命周期。远程终端通过池化 transport 上的 `channel_open_session`、`request_pty`、`request_shell`/`exec` 运行；resize 通过 `window_change` 转发，输出通过有界批处理和确认机制回压。 |
 | `src-tauri/src/ssh_tunnel.rs` | russh `direct-tcpip` 隧道。数据库、浏览器代理、VNC 和 HTTP tunnel 复用该能力，不保留 OpenSSH `ssh -L` fallback。 |
 | `src-tauri/src/remote_fs/sftp.rs` | 独立文件传输窗口的原生 SFTP 实现。复用 russh 认证会话，负责目录读取、元数据、增删改、权限和流式上传/下载。 |
 | `src-tauri/src/connection/host_keys.rs` | 主机密钥预检、分类、信任确认、known_hosts 写入和 vault known-hosts 记录同步。扫描由 russh 握手捕获 server public key。 |
@@ -38,10 +39,10 @@
 ## 远程终端流程
 
 1. 前端创建 xterm.js 会话，通过 `connection:start-terminal` 启动后端终端。
-2. SSH 连接由 `terminal.rs` 调用 `russh_client::connect_authenticated`。
-3. 后端打开 session channel，调用 `request_pty("xterm-256color", columns, rows, ...)`。
+2. `terminal.rs` 向 `ssh_transport_pool.rs` 租用当前连接的已认证 transport；首次租用才调用 `russh_client::connect_authenticated`，后续终端和 SFTP 复用认证结果。
+3. 后端在租约上打开独立 session channel，调用 `request_pty("xterm-256color", columns, rows, ...)`。
 4. 后端根据启动参数选择 `request_shell` 或 `exec`，并注入初始命令、工作目录或指定 shell。
-5. xterm 输入通过 control channel 写入 russh channel；远端输出通过 `terminal:data` 回到渲染层。
+5. xterm 输入通过 control channel 写入 russh channel；远端输出先按 64 KiB / 8 ms 聚合，再通过 `terminal:data` 回到渲染层。渲染层在 xterm 完成写入后调用 `connection:ack-terminal-output`，超过高水位时后端暂停读取，降至低水位后恢复。
 6. resize 通过 `connection:resize-terminal` 转成 russh `window_change(columns, rows, 0, 0)`。
 7. su-root 自动化只观察远端 PTY 输出中的密码提示，并把 root 密码写回同一个 PTY channel。
 
@@ -51,9 +52,9 @@
 
 1. 主机列表的文件传输入口复用标准连接认证，打开带 `sftpTransfer=1` 的独立 Tauri 窗口。
 2. 前端经 `connection:sftp-*` IPC 进入 `remote_fs/sftp.rs`，本地侧文件操作经 `files:*` 进入 `local_fs.rs`。
-3. 后端调用 `connect_authenticated` 完成与终端、命令执行一致的主机密钥校验和认证。
-4. russh 打开 session channel 并请求 `sftp` subsystem；`russh-sftp` 在 channel stream 上处理 SFTP 协议。
-5. 上传和下载使用固定大小缓冲区流式复制，进度通过现有 `remote-transfer-progress` 事件上报，取消通过 transfer client id 协作终止。
+3. 后端从连接级 transport 池租用 SFTP 浏览或传输通道；首次连接仍执行与终端一致的主机密钥校验和认证。
+4. russh 在租约上打开独立 session channel 并请求 `sftp` subsystem；`russh-sftp` 在 channel stream 上处理 SFTP 协议。
+5. 上传使用有界待确认写入管线；自适应下载最多并行发出 8 个固定偏移 READ 请求并按偏移顺序落盘，失败时从最后连续落盘位置回退到顺序读取。进度通过现有 `remote-transfer-progress` 事件上报，取消通过 transfer client id 协作终止。
 
 SFTP 普通操作不得回退到 `exec`、系统 `sftp` 或系统 `ssh`。需要 sudo 的远程文件操作属于原远程文件管理器的显式命令能力，不属于纯 SFTP 文件传输窗口。
 

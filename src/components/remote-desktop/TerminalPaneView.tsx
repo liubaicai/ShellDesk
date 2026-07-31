@@ -1,6 +1,11 @@
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
 
-import { TerminalContextMenuPortal, TerminalLaunchDialogPortal, TerminalSettingsDialogPortal } from './terminalDialogs';
+import {
+  TerminalContextMenuPortal,
+  TerminalLaunchDialogPortal,
+  TerminalLinkDialogPortal,
+  TerminalSettingsDialogPortal,
+} from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
 import type { RemoteSystemType } from './types';
 import { t } from '../../i18n';
@@ -15,6 +20,8 @@ interface TerminalPaneViewProps {
   searchQuery: string;
   searchResults: TerminalSearchResultState;
   contextMenu: TerminalContextMenuState | null;
+  commandSuggestion: string;
+  pendingTerminalLink: string;
   isLaunchDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
   launchDraft: TerminalLaunchDraft;
@@ -27,6 +34,8 @@ interface TerminalPaneViewProps {
   onSearchClose: () => void;
   onContextMenuClose: () => void;
   onContextMenuCopy: (text: string) => void;
+  onTerminalLinkCancel: () => void;
+  onTerminalLinkOpen: () => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
   onLaunchDialogClose: () => void;
   onLaunchSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -45,6 +54,8 @@ export function TerminalPaneView({
   searchQuery,
   searchResults,
   contextMenu,
+  commandSuggestion,
+  pendingTerminalLink,
   isLaunchDialogOpen,
   isSettingsDialogOpen,
   launchDraft,
@@ -57,6 +68,8 @@ export function TerminalPaneView({
   onSearchClose,
   onContextMenuClose,
   onContextMenuCopy,
+  onTerminalLinkCancel,
+  onTerminalLinkOpen,
   onOpenNote,
   onLaunchDialogClose,
   onLaunchSubmit,
@@ -86,6 +99,12 @@ export function TerminalPaneView({
       <div className={`terminal-host-shell ${settings.terminalLineTimestamps ? 'with-timestamps' : ''}`}>
         <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
         <div ref={terminalHostRef} className="terminal-host" />
+        {commandSuggestion ? (
+          <div className="terminal-command-suggestion" aria-live="polite">
+            <span>{commandSuggestion}</span>
+            <kbd>{t('terminal.autocomplete.hint', settings.language)}</kbd>
+          </div>
+        ) : null}
       </div>
 
       <TerminalContextMenuPortal
@@ -112,6 +131,13 @@ export function TerminalPaneView({
         settings={settings}
         onClose={onSettingsDialogClose}
         onSettingChange={onSettingChange}
+      />
+
+      <TerminalLinkDialogPortal
+        link={pendingTerminalLink}
+        language={settings.language}
+        onCancel={onTerminalLinkCancel}
+        onOpen={onTerminalLinkOpen}
       />
     </div>
   );

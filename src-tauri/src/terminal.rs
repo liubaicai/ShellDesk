@@ -1,7 +1,7 @@
-use crate::russh_client::connect_authenticated;
 use crate::{
-    error_string, get_connection, prevent_tokio_process_window, string_arg, value_to_bytes,
-    ActiveConnection, AppState, ConnectionKind, SshProfile, UiWindowRef,
+    error_string, get_connection, prevent_tokio_process_window,
+    ssh_transport_pool::SshTransportLeaseKind, string_arg, value_to_bytes, ActiveConnection,
+    AppState, ConnectionKind, SshProfile, UiWindowRef,
 };
 use russh::ChannelMsg;
 use serde_json::{json, Value};
@@ -10,7 +10,7 @@ use tauri::Emitter;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
-    sync::{mpsc, oneshot},
+    sync::mpsc,
     task::JoinHandle,
     time::{self, Instant},
 };
@@ -38,6 +38,7 @@ impl Drop for TerminalSession {
 enum TerminalControl {
     Input(Vec<u8>),
     Resize { columns: u16, rows: u16 },
+    OutputAck { sequence: u64, byte_length: usize },
     Close,
 }
 
@@ -54,6 +55,84 @@ struct TerminalStartupPlan {
 }
 
 const TERMINAL_KEEPALIVE_INTERVAL_MS: u64 = 15_000;
+const TERMINAL_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+const TERMINAL_OUTPUT_HIGH_WATER_BYTES: usize = 512 * 1024;
+const TERMINAL_OUTPUT_LOW_WATER_BYTES: usize = 128 * 1024;
+const TERMINAL_OUTPUT_FLUSH_INTERVAL: Duration = Duration::from_millis(8);
+
+struct TerminalOutputFlow {
+    pending: String,
+    in_flight_bytes: usize,
+    next_sequence: u64,
+    last_acked_sequence: u64,
+    backpressured: bool,
+}
+
+impl TerminalOutputFlow {
+    fn new() -> Self {
+        Self {
+            pending: String::new(),
+            in_flight_bytes: 0,
+            next_sequence: 0,
+            last_acked_sequence: 0,
+            backpressured: false,
+        }
+    }
+
+    fn can_read(&self) -> bool {
+        !self.backpressured
+    }
+
+    fn push(&mut self, data: String) {
+        self.pending.push_str(&data);
+        self.refresh_backpressure();
+    }
+
+    fn should_flush(&self) -> bool {
+        self.pending.len() >= TERMINAL_OUTPUT_BATCH_BYTES
+    }
+
+    fn flush(&mut self, window: &tauri::Window, connection_id: &str, terminal_id: &str) {
+        if self.pending.is_empty() {
+            return;
+        }
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        let data = std::mem::take(&mut self.pending);
+        let byte_length = data.len();
+        self.in_flight_bytes = self.in_flight_bytes.saturating_add(byte_length);
+        self.refresh_backpressure();
+        let _ = window.emit(
+            "terminal:data",
+            json!({
+                "connectionId": connection_id,
+                "terminalId": terminal_id,
+                "data": data,
+                "sequence": self.next_sequence,
+                "byteLength": byte_length
+            }),
+        );
+    }
+
+    fn acknowledge(&mut self, sequence: u64, byte_length: usize) {
+        if sequence <= self.last_acked_sequence {
+            return;
+        }
+        self.last_acked_sequence = sequence;
+        self.in_flight_bytes = self.in_flight_bytes.saturating_sub(byte_length);
+        self.refresh_backpressure();
+    }
+
+    fn refresh_backpressure(&mut self) {
+        let buffered = self.in_flight_bytes.saturating_add(self.pending.len());
+        if self.backpressured {
+            if buffered <= TERMINAL_OUTPUT_LOW_WATER_BYTES {
+                self.backpressured = false;
+            }
+        } else if buffered >= TERMINAL_OUTPUT_HIGH_WATER_BYTES {
+            self.backpressured = true;
+        }
+    }
+}
 
 struct SuRootAutomation {
     terminal_prompt_buffer: String,
@@ -213,142 +292,130 @@ async fn start_ssh_terminal_session(
     let terminals = state.terminals.clone();
     let initial_input = startup_plan.initial_input.clone();
     let mut automation = SuRootAutomation::new(&startup_plan);
-    let (setup_tx, setup_rx) = oneshot::channel::<Result<(), String>>();
+    let (transport_lease, channel) = state
+        .ssh_transports
+        .open_session_channel(
+            state.clone(),
+            Some(UiWindowRef::from_window(&window)),
+            &connection_id,
+            profile,
+            SshTransportLeaseKind::Terminal,
+        )
+        .await?;
+    channel
+        .request_pty(
+            true,
+            "xterm-256color",
+            u32::from(columns),
+            u32::from(rows),
+            0,
+            0,
+            &[],
+        )
+        .await
+        .map_err(|error| format!("SSH PTY 请求失败：{error}"))?;
+    if should_launch_ssh_remote_shell(&connection, &launch_options) {
+        let command = create_ssh_remote_shell_command(&launch_options);
+        channel
+            .exec(true, command.as_bytes())
+            .await
+            .map_err(|error| format!("SSH 远程 Shell 启动失败：{error}"))?;
+    } else {
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|error| format!("SSH 远程 Shell 启动失败：{error}"))?;
+    }
+    let (mut read_half, write_half) = channel.split();
 
-    let task =
-        tokio::task::spawn_blocking(move || {
-            let runtime = match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    let _ = setup_tx.send(Err(error_string(error)));
-                    return;
-                }
-            };
-            let mut setup_tx = Some(setup_tx);
-            let result = runtime.block_on(async {
-            let mut session = connect_authenticated(
-                Some(state.clone()),
-                Some(UiWindowRef::from_window(&window)),
-                profile,
-            )
-            .await?;
-            let channel = session
-                .handle()
-                .channel_open_session()
-                .await
-                .map_err(|error| format!("SSH 终端通道打开失败：{error}"))?;
-            channel
-                .request_pty(
-                    true,
-                    "xterm-256color",
-                    u32::from(columns),
-                    u32::from(rows),
-                    0,
-                    0,
-                    &[],
-                )
-                .await
-                .map_err(|error| format!("SSH PTY 请求失败：{error}"))?;
-            if should_launch_ssh_remote_shell(&connection, &launch_options) {
-                let command = create_ssh_remote_shell_command(&launch_options);
-                channel
-                    .exec(true, command.as_bytes())
-                    .await
-                    .map_err(|error| format!("SSH 远程 Shell 启动失败：{error}"))?;
-            } else {
-                channel
-                    .request_shell(true)
-                    .await
-                    .map_err(|error| format!("SSH 远程 Shell 启动失败：{error}"))?;
-            }
-            let (mut read_half, write_half) = channel.split();
-            if let Some(sender) = setup_tx.take() {
-                let _ = sender.send(Ok(()));
-            }
-            if !initial_input.is_empty() {
-                let mut writer = write_half.make_writer();
-                let _ = writer.write_all(initial_input.as_bytes()).await;
-                let _ = writer.flush().await;
-            }
+    let task = tokio::spawn(async move {
+        let _transport_lease = transport_lease;
+        if !initial_input.is_empty() {
+            let mut writer = write_half.make_writer();
+            let _ = writer.write_all(initial_input.as_bytes()).await;
+            let _ = writer.flush().await;
+        }
 
-            let mut exit_code: Option<i32> = None;
-            let mut exit_signal: Option<String> = None;
-            let mut automation_tick = time::interval(Duration::from_millis(250));
-            loop {
-                tokio::select! {
-                    message = read_half.wait() => {
-                        let Some(message) = message else {
-                            break;
-                        };
-                        match message {
-                            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                                let text = String::from_utf8_lossy(&data).to_string();
-                                for input in automation.observe_output(&text) {
-                                    let mut writer = write_half.make_writer();
-                                    let _ = writer.write_all(&input).await;
-                                    let _ = writer.flush().await;
-                                }
-                                emit_terminal_data(&window, &connection_id, &terminal_id, text);
-                            }
-                            ChannelMsg::ExitStatus { exit_status } => {
-                                exit_code = Some(i32::try_from(exit_status).unwrap_or(-1));
-                            }
-                            ChannelMsg::ExitSignal { signal_name, .. } => {
-                                exit_code = Some(-1);
-                                exit_signal = Some(format!("{signal_name:?}"));
-                            }
-                            ChannelMsg::Close => break,
-                            _ => {}
-                        }
-                    }
-                    control = control_rx.recv() => {
-                        match control {
-                            Some(TerminalControl::Input(data)) => {
+        let mut exit_code: Option<i32> = None;
+        let mut exit_signal: Option<String> = None;
+        let mut automation_tick = time::interval(Duration::from_millis(250));
+        let mut output_tick = time::interval(TERMINAL_OUTPUT_FLUSH_INTERVAL);
+        let mut output_flow = TerminalOutputFlow::new();
+        loop {
+            tokio::select! {
+                message = read_half.wait(), if output_flow.can_read() => {
+                    let Some(message) = message else {
+                        break;
+                    };
+                    match message {
+                        ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
+                            let text = String::from_utf8_lossy(&data).to_string();
+                            for input in automation.observe_output(&text) {
                                 let mut writer = write_half.make_writer();
-                                let _ = writer.write_all(&data).await;
+                                let _ = writer.write_all(&input).await;
                                 let _ = writer.flush().await;
                             }
-                            Some(TerminalControl::Resize { columns, rows }) => {
-                                let _ = write_half
-                                    .window_change(u32::from(columns), u32::from(rows), 0, 0)
-                                    .await;
-                            }
-                            Some(TerminalControl::Close) | None => {
-                                let _ = write_half.close().await;
-                                break;
+                            output_flow.push(text);
+                            if output_flow.should_flush() {
+                                output_flow.flush(&window, &connection_id, &terminal_id);
                             }
                         }
+                        ChannelMsg::ExitStatus { exit_status } => {
+                            exit_code = Some(i32::try_from(exit_status).unwrap_or(-1));
+                        }
+                        ChannelMsg::ExitSignal { signal_name, .. } => {
+                            exit_code = Some(-1);
+                            exit_signal = Some(format!("{signal_name:?}"));
+                        }
+                        ChannelMsg::Close => break,
+                        _ => {}
                     }
-                    _ = automation_tick.tick() => {
-                        for input in automation.flush_due_after_auth_input() {
+                }
+                control = control_rx.recv() => {
+                    match control {
+                        Some(TerminalControl::Input(data)) => {
                             let mut writer = write_half.make_writer();
-                            let _ = writer.write_all(&input).await;
+                            let _ = writer.write_all(&data).await;
                             let _ = writer.flush().await;
                         }
+                        Some(TerminalControl::Resize { columns, rows }) => {
+                            let _ = write_half
+                                .window_change(u32::from(columns), u32::from(rows), 0, 0)
+                                .await;
+                        }
+                        Some(TerminalControl::OutputAck { sequence, byte_length }) => {
+                            output_flow.acknowledge(sequence, byte_length);
+                        }
+                        Some(TerminalControl::Close) | None => {
+                            let _ = write_half.close().await;
+                            break;
+                        }
                     }
                 }
-            }
-            session.disconnect().await;
-            emit_terminal_exit(&window, &connection_id, &terminal_id, exit_code, exit_signal);
-            if let Ok(mut map) = terminals.lock() {
-                map.remove(&terminal_key);
-            }
-            Ok::<(), String>(())
-        });
-            if let Err(error) = result {
-                if let Some(sender) = setup_tx.take() {
-                    let _ = sender.send(Err(error));
+                _ = automation_tick.tick() => {
+                    for input in automation.flush_due_after_auth_input() {
+                        let mut writer = write_half.make_writer();
+                        let _ = writer.write_all(&input).await;
+                        let _ = writer.flush().await;
+                    }
+                }
+                _ = output_tick.tick() => {
+                    output_flow.flush(&window, &connection_id, &terminal_id);
                 }
             }
-        });
-    match setup_rx.await {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => return Err(error),
-        Err(_) => return Err("SSH 终端启动任务已结束。".to_string()),
-    }
+        }
+        output_flow.flush(&window, &connection_id, &terminal_id);
+        emit_terminal_exit(
+            &window,
+            &connection_id,
+            &terminal_id,
+            exit_code,
+            exit_signal,
+        );
+        if let Ok(mut map) = terminals.lock() {
+            map.remove(&terminal_key);
+        }
+    });
 
     Ok(TerminalSession {
         control_tx,
@@ -416,6 +483,8 @@ async fn start_local_terminal_session(
         let mut exit_code: Option<i32> = None;
         let mut stdout_buffer = [0_u8; 8192];
         let mut stderr_buffer = [0_u8; 8192];
+        let mut output_tick = time::interval(TERMINAL_OUTPUT_FLUSH_INTERVAL);
+        let mut output_flow = TerminalOutputFlow::new();
         loop {
             if wait_done && stdout_done && stderr_done {
                 break;
@@ -428,6 +497,9 @@ async fn start_local_terminal_session(
                             let _ = child_stdin.flush().await;
                         }
                         Some(TerminalControl::Resize { .. }) => {}
+                        Some(TerminalControl::OutputAck { sequence, byte_length }) => {
+                            output_flow.acknowledge(sequence, byte_length);
+                        }
                         Some(TerminalControl::Close) | None => {
                             let _ = child.kill().await;
                             break;
@@ -438,32 +510,36 @@ async fn start_local_terminal_session(
                     wait_done = true;
                     exit_code = status.ok().and_then(|status| status.code());
                 }
-                read = child_stdout.read(&mut stdout_buffer), if !stdout_done => {
+                read = child_stdout.read(&mut stdout_buffer), if !stdout_done && output_flow.can_read() => {
                     match read {
                         Ok(0) => stdout_done = true,
-                        Ok(count) => emit_terminal_data(
-                            &window,
-                            &connection_id,
-                            &terminal_id,
-                            String::from_utf8_lossy(&stdout_buffer[..count]).to_string(),
-                        ),
+                        Ok(count) => {
+                            output_flow.push(String::from_utf8_lossy(&stdout_buffer[..count]).to_string());
+                            if output_flow.should_flush() {
+                                output_flow.flush(&window, &connection_id, &terminal_id);
+                            }
+                        }
                         Err(_) => stdout_done = true,
                     }
                 }
-                read = child_stderr.read(&mut stderr_buffer), if !stderr_done => {
+                read = child_stderr.read(&mut stderr_buffer), if !stderr_done && output_flow.can_read() => {
                     match read {
                         Ok(0) => stderr_done = true,
-                        Ok(count) => emit_terminal_data(
-                            &window,
-                            &connection_id,
-                            &terminal_id,
-                            String::from_utf8_lossy(&stderr_buffer[..count]).to_string(),
-                        ),
+                        Ok(count) => {
+                            output_flow.push(String::from_utf8_lossy(&stderr_buffer[..count]).to_string());
+                            if output_flow.should_flush() {
+                                output_flow.flush(&window, &connection_id, &terminal_id);
+                            }
+                        }
                         Err(_) => stderr_done = true,
                     }
                 }
+                _ = output_tick.tick() => {
+                    output_flow.flush(&window, &connection_id, &terminal_id);
+                }
             }
         }
+        output_flow.flush(&window, &connection_id, &terminal_id);
         emit_terminal_exit(&window, &connection_id, &terminal_id, exit_code, None);
         if let Ok(mut map) = terminals.lock() {
             map.remove(&terminal_key);
@@ -757,22 +833,6 @@ fn is_terminal_likely_root_prompt(value: &str) -> bool {
         .is_some_and(|line| line.ends_with('#'))
 }
 
-fn emit_terminal_data(
-    window: &tauri::Window,
-    connection_id: &str,
-    terminal_id: &str,
-    data: String,
-) {
-    let _ = window.emit(
-        "terminal:data",
-        json!({
-            "connectionId": connection_id,
-            "terminalId": terminal_id,
-            "data": data
-        }),
-    );
-}
-
 fn emit_terminal_exit(
     window: &tauri::Window,
     connection_id: &str,
@@ -879,6 +939,37 @@ pub(crate) fn write_terminal_bytes(state: &AppState, args: Vec<Value>) -> Result
     terminal
         .control_tx
         .send(TerminalControl::Input(bytes))
+        .map_err(|_| "终端尚未启动。".to_string())?;
+    Ok(json!(true))
+}
+
+pub(crate) fn acknowledge_terminal_output(
+    state: &AppState,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    let connection_id = string_arg(&args, 0)?;
+    let terminal_id = string_arg(&args, 1)?;
+    let sequence = args
+        .get(2)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "终端输出确认序号无效。".to_string())?;
+    let byte_length = args
+        .get(3)
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0 && *value <= TERMINAL_OUTPUT_HIGH_WATER_BYTES * 2)
+        .ok_or_else(|| "终端输出确认字节数无效。".to_string())?;
+    let key = terminal_key(&connection_id, &terminal_id);
+    let terminals = state.terminals.lock().map_err(error_string)?;
+    let terminal = terminals
+        .get(&key)
+        .ok_or_else(|| "终端尚未启动。".to_string())?;
+    terminal
+        .control_tx
+        .send(TerminalControl::OutputAck {
+            sequence,
+            byte_length,
+        })
         .map_err(|_| "终端尚未启动。".to_string())?;
     Ok(json!(true))
 }
@@ -1079,6 +1170,27 @@ mod tests {
 
         let valid = vec![json!("conn-1"), json!("term-1"), json!(120), json!(40)];
         assert_eq!(read_terminal_size(&valid).unwrap(), (120, 40));
+    }
+
+    #[test]
+    fn terminal_output_flow_uses_high_and_low_watermarks() {
+        let mut flow = TerminalOutputFlow::new();
+        flow.in_flight_bytes = TERMINAL_OUTPUT_HIGH_WATER_BYTES;
+        flow.refresh_backpressure();
+        assert!(!flow.can_read());
+
+        flow.acknowledge(1, TERMINAL_OUTPUT_HIGH_WATER_BYTES);
+        assert!(flow.can_read());
+        assert_eq!(flow.in_flight_bytes, 0);
+    }
+
+    #[test]
+    fn terminal_output_flow_ignores_duplicate_acknowledgements() {
+        let mut flow = TerminalOutputFlow::new();
+        flow.in_flight_bytes = 32 * 1024;
+        flow.acknowledge(4, 8 * 1024);
+        flow.acknowledge(4, 8 * 1024);
+        assert_eq!(flow.in_flight_bytes, 24 * 1024);
     }
 
     #[test]

@@ -748,6 +748,7 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
     }
     let _ = remote_fs::cancel_transfers_for_connection(state, connection_id)?;
     let _ = terminal::close_terminals_for_connection(state, connection_id)?;
+    state.ssh_transports.invalidate(connection_id);
     port_forward::close_for_connection(state, connection_id)?;
     close_desktop_proxies(&state.vnc_proxies, connection_id, "vnc")?;
     close_desktop_proxies(&state.rdp_proxies, connection_id, "rdp")?;

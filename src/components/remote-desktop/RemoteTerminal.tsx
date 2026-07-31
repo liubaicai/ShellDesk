@@ -1,6 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import * as Zmodem from 'zmodem.js';
@@ -20,7 +21,10 @@ import { isWindowsSystem } from './remoteSystem';
 import { collectSubmittedCommands, isLikelyForegroundCommand, readForegroundTaskSignal, summarizeTerminalOutput } from './terminalCommands';
 import { applyTerminalOptions, buildTerminalOptions, getLocalWindowsPtyOption, getShellChoices, getTerminalChromeTone, getTerminalSessionTitle, getTerminalStatusLabel, sftpProbeCacheMs, terminalSearchOptions } from './terminalCore';
 import { createTerminalCwdProbeController } from './terminalCwd';
+import { rememberRuntimeTerminalCommand, suggestRuntimeTerminalCommand } from './terminalCommandHistory';
+import { normalizeSafeTerminalLink } from './terminalLinks';
 import { createTerminalOutputDecorationController, type TerminalOutputDecorationController } from './terminalOutputDecorations';
+import { createTerminalOutputFlowController, type TerminalOutputFlowController } from './terminalOutputFlow';
 import { createSftpProgressHandlers, createSftpTransferRunner } from './terminalTransfer';
 import type { ForegroundTaskSource, RemoteTerminalProps, RemoteTerminalSessionEvent, RemoteTerminalSessionEventInput, RemoteTerminalSessionStatus, TerminalContextMenuState, TerminalCwdProbeState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
 import { TerminalPaneView } from './TerminalPaneView';
@@ -54,9 +58,11 @@ function RemoteTerminal({
   launchOptions,
   commandRequest,
   toolRequest,
+  isVisible = true,
   onChromeChange,
   onCommandRequestHandled,
   onToolRequestHandled,
+  onSplitTerminal,
   onOpenTerminal,
   onOpenNote,
   onCommandIntercept,
@@ -73,6 +79,7 @@ function RemoteTerminal({
   const fitAndSyncSizeRef = useRef<(() => void) | null>(null);
   const restartTerminalRef = useRef<(() => void) | null>(null);
   const sendInputRef = useRef<((data: string) => void) | null>(null);
+  const resolveWorkingDirectoryRef = useRef<(() => Promise<string>) | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
   const autoReconnectActiveRef = useRef(false);
@@ -95,6 +102,7 @@ function RemoteTerminal({
   const followOutputRef = useRef(true);
   const commandBufferRef = useRef('');
   const commandBufferUnsafeRef = useRef(false);
+  const commandSuggestionRef = useRef('');
   const foregroundSequenceBufferRef = useRef('');
   const foregroundTaskSourceRef = useRef<ForegroundTaskSource | null>(null);
   const handledCommandRequestRef = useRef('');
@@ -105,6 +113,8 @@ function RemoteTerminal({
   const onSessionStateChangeRef = useRef(onSessionStateChange);
   const onSessionExitRef = useRef(onSessionExit);
   const outputDecorationControllerRef = useRef<TerminalOutputDecorationController | null>(null);
+  const outputFlowControllerRef = useRef<TerminalOutputFlowController | null>(null);
+  const isVisibleRef = useRef(isVisible);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sessionStatus, setSessionStatus] = useState<RemoteTerminalSessionStatus>('idle');
   const [sessionError, setSessionError] = useState('');
@@ -116,6 +126,8 @@ function RemoteTerminal({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TerminalSearchResultState>({ index: -1, count: 0 });
   const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(null);
+  const [commandSuggestion, setCommandSuggestion] = useState('');
+  const [pendingTerminalLink, setPendingTerminalLink] = useState('');
   const [isLaunchDialogOpen, setIsLaunchDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [launchDraft, setLaunchDraft] = useState<TerminalLaunchDraft>({
@@ -156,6 +168,19 @@ function RemoteTerminal({
       terminalRef.current?.writeln(`\r\n${t('terminal.error.copyFailed', settings.language, { error: getErrorMessage(error) })}`);
     });
   }, [settings.language]);
+
+  const openPendingTerminalLink = useCallback(() => {
+    const link = normalizeSafeTerminalLink(pendingTerminalLink);
+    setPendingTerminalLink('');
+    if (!link) {
+      return;
+    }
+    window.guiSSH?.app?.openExternal(link).catch((error: unknown) => {
+      terminalRef.current?.writeln(`\r\n${t('terminal.error.openLinkFailed', settings.language, {
+        error: getErrorMessage(error),
+      })}`);
+    });
+  }, [pendingTerminalLink, settings.language]);
 
   const focusTerminal = useCallback(() => {
     terminalRef.current?.focus();
@@ -258,6 +283,17 @@ function RemoteTerminal({
 
   useEffect(() => {
     settingsRef.current = settings;
+    if (!settings.terminalCommandAutocompleteEnabled) {
+      commandSuggestionRef.current = '';
+      setCommandSuggestion('');
+    }
+    if (!settings.terminalSafeLinksEnabled) {
+      setPendingTerminalLink('');
+    }
+    outputFlowControllerRef.current?.setVisible(
+      !settings.terminalSuspendRenderingWhenHidden
+      || (isVisibleRef.current && (typeof document === 'undefined' || document.visibilityState !== 'hidden')),
+    );
     outputDecorationControllerRef.current?.refresh();
     const terminal = terminalRef.current;
 
@@ -304,6 +340,14 @@ function RemoteTerminal({
   }, [followOutput]);
 
   useEffect(() => {
+    isVisibleRef.current = isVisible;
+    outputFlowControllerRef.current?.setVisible(
+      !settingsRef.current.terminalSuspendRenderingWhenHidden
+      || (isVisible && (typeof document === 'undefined' || document.visibilityState !== 'hidden')),
+    );
+  }, [isVisible]);
+
+  useEffect(() => {
     if (showSearch) {
       window.requestAnimationFrame(() => {
         searchInputRef.current?.focus();
@@ -348,11 +392,26 @@ function RemoteTerminal({
     let disposed = false;
     let animationFrame = 0;
     let startWarningTimer = 0;
+    let supportsTerminalOutputFlow = false;
     const supportsTerminalIpcOptions = typeof api.connections.getIpcCapabilities === 'function';
     const terminal = new XTerminal(buildTerminalOptions(settingsRef.current, localWindowsPty));
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon({ highlightLimit: 500 });
     const unicodeGraphemesAddon = new UnicodeGraphemesAddon();
+    const requestSafeTerminalLink = (value: string) => {
+      if (!settingsRef.current.terminalSafeLinksEnabled) {
+        return;
+      }
+      const link = normalizeSafeTerminalLink(value);
+      if (link) {
+        setPendingTerminalLink(link);
+      }
+    };
+    const webLinksAddon = new WebLinksAddon((_event, uri) => requestSafeTerminalLink(uri));
+    terminal.options.linkHandler = {
+      allowNonHttpProtocols: false,
+      activate: (_event, text) => requestSafeTerminalLink(text),
+    };
 
     isTerminalReadyRef.current = false;
     terminalRef.current = terminal;
@@ -366,6 +425,7 @@ function RemoteTerminal({
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(searchAddon);
     terminal.loadAddon(unicodeGraphemesAddon);
+    terminal.loadAddon(webLinksAddon);
     terminal.open(host);
     if (timestampGutterRef.current) {
       outputDecorationControllerRef.current = createTerminalOutputDecorationController(
@@ -568,6 +628,7 @@ function RemoteTerminal({
       systemType,
       writeTerminalInputAsync,
     });
+    resolveWorkingDirectoryRef.current = resolveTerminalWorkingDirectory;
 
     const checkSftpAvailability = async () => {
       const cached = sftpAvailabilityRef.current;
@@ -620,6 +681,83 @@ function RemoteTerminal({
 
     zmodemSentryRef.current = zmodemSentry;
 
+    const updateCommandSuggestion = (buffer: string) => {
+      const suggestion = settingsRef.current.terminalCommandAutocompleteEnabled
+        && !commandBufferUnsafeRef.current
+        && !foregroundTaskSourceRef.current
+        && !zmodemSessionRef.current
+        && launchOptionsRef.current?.mode !== 'tmux'
+        ? suggestRuntimeTerminalCommand(connectionId, buffer, settingsRef.current.terminalSnippets ?? [])
+        : '';
+      if (commandSuggestionRef.current === suggestion) {
+        return;
+      }
+      commandSuggestionRef.current = suggestion;
+      setCommandSuggestion(suggestion);
+    };
+
+    const outputFlowController = createTerminalOutputFlowController({
+      initiallyVisible: !settingsRef.current.terminalSuspendRenderingWhenHidden
+        || (isVisibleRef.current && document.visibilityState !== 'hidden'),
+      acknowledge: (sequence, byteLength) => {
+        if (!supportsTerminalOutputFlow || disposed) {
+          return;
+        }
+        api.connections
+          .acknowledgeTerminalOutput(connectionId, terminalId, sequence, byteLength)
+          .catch(() => undefined);
+      },
+      write: (data, done) => {
+        const foregroundSignal = readForegroundTaskSignal(foregroundSequenceBufferRef.current, data);
+        foregroundSequenceBufferRef.current = foregroundSignal.buffer;
+        if (foregroundSignal.hasForegroundTask !== null) {
+          foregroundTaskSourceRef.current = foregroundSignal.hasForegroundTask ? 'alternate-screen' : null;
+          setHasForegroundTask(foregroundSignal.hasForegroundTask);
+          outputFlowControllerRef.current?.setAlternateScreen(foregroundSignal.hasForegroundTask);
+          if (foregroundSignal.hasForegroundTask) {
+            updateCommandSuggestion('');
+          }
+        }
+
+        const outputSummary = zmodemSessionRef.current ? null : summarizeTerminalOutput(data);
+        if (outputSummary) {
+          emitSessionEvent({
+            type: 'terminal-output',
+            summary: outputSummary.summary,
+            truncated: outputSummary.truncated,
+          });
+        }
+
+        try {
+          zmodemSentry.consume(readTerminalPayloadBytes({ data }));
+          terminal.write('', () => {
+            if (followOutputRef.current) {
+              terminal.scrollToBottom();
+            }
+            done();
+          });
+        } catch (error) {
+          writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
+            error: getErrorMessage(error),
+          }));
+          terminal.write(data, () => {
+            if (followOutputRef.current) {
+              terminal.scrollToBottom();
+            }
+            done();
+          });
+        }
+      },
+    });
+    outputFlowControllerRef.current = outputFlowController;
+    const handleDocumentVisibility = () => {
+      outputFlowController.setVisible(
+        !settingsRef.current.terminalSuspendRenderingWhenHidden
+        || (isVisibleRef.current && document.visibilityState !== 'hidden'),
+      );
+    };
+    document.addEventListener('visibilitychange', handleDocumentVisibility);
+
     const startTerminalSession = async () => {
       setSessionStatus('idle');
       setSessionError('');
@@ -629,6 +767,7 @@ function RemoteTerminal({
       foregroundTaskSourceRef.current = null;
       commandBufferRef.current = '';
       commandBufferUnsafeRef.current = false;
+      updateCommandSuggestion('');
       activeSftpTransferRef.current = false;
       sftpTransferClientIdRef.current = '';
       sftpTransferQueueIdRef.current = '';
@@ -654,6 +793,7 @@ function RemoteTerminal({
         }
 
         useLegacyTerminalIpcRef.current = !capabilities.terminalSessions;
+        supportsTerminalOutputFlow = Boolean(capabilities.terminalOutputFlow);
 
         if (useLegacyTerminalIpcRef.current) {
           terminal.writeln(t('terminal.message.legacyMode', settings.language));
@@ -719,44 +859,12 @@ function RemoteTerminal({
       if (!payload.terminalId) {
         useLegacyTerminalIpcRef.current = true;
       }
-
       const isCwdProbeOutput = processTerminalCwdProbeOutput(payload.data);
-
-      if (isCwdProbeOutput) {
-        return;
-      }
-
-      const foregroundSignal = readForegroundTaskSignal(foregroundSequenceBufferRef.current, payload.data);
-      foregroundSequenceBufferRef.current = foregroundSignal.buffer;
-
-      if (foregroundSignal.hasForegroundTask !== null) {
-        foregroundTaskSourceRef.current = foregroundSignal.hasForegroundTask ? 'alternate-screen' : null;
-        setHasForegroundTask(foregroundSignal.hasForegroundTask);
-      }
-
-      const outputSummary = zmodemSessionRef.current ? null : summarizeTerminalOutput(payload.data);
-
-      if (outputSummary) {
-        emitSessionEvent({
-          type: 'terminal-output',
-          summary: outputSummary.summary,
-          truncated: outputSummary.truncated,
-        });
-      }
-
-      try {
-        zmodemSentry.consume(readTerminalPayloadBytes(payload));
-      } catch (error) {
-        writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
-          error: getErrorMessage(error),
-        }));
-        terminal.write(payload.data, () => {
-          if (followOutputRef.current) {
-            terminal.scrollToBottom();
-          }
-        });
-      }
-
+      outputFlowController.enqueue({
+        data: isCwdProbeOutput ? '' : payload.data,
+        sequence: payload.sequence,
+        byteLength: payload.byteLength,
+      });
     });
     const removeTerminalExit = api.events.onTerminalExit((payload) => {
       if (payload.connectionId !== connectionId || (payload.terminalId !== terminalId && payload.terminalId)) {
@@ -787,15 +895,25 @@ function RemoteTerminal({
 
       if (isUnexpectedSshTerminalClose) {
         setSessionStatus('disconnected');
-        terminal.writeln(`\r\n${t('terminal.message.connectionClosed', settings.language)}`);
-        terminal.writeln(t('terminal.message.pressRToReconnect', settings.language));
         scheduleAutoReconnect();
+        outputFlowController.whenDrained(() => {
+          if (disposed) {
+            return;
+          }
+          terminal.writeln(`\r\n${t('terminal.message.connectionClosed', settings.language)}`);
+          terminal.writeln(t('terminal.message.pressRToReconnect', settings.language));
+        });
         return;
       }
 
       setSessionStatus('exited');
-      terminal.writeln(`\r\n${t('terminal.message.sessionEnded', settings.language)}`);
-      onSessionExitRef.current?.(exitResult);
+      outputFlowController.whenDrained(() => {
+        if (disposed) {
+          return;
+        }
+        terminal.writeln(`\r\n${t('terminal.message.sessionEnded', settings.language)}`);
+        onSessionExitRef.current?.(exitResult);
+      });
     });
     const removeConnectionClosed = api.events.onConnectionClosed((payload) => {
       if (payload.connectionId !== connectionId) {
@@ -847,6 +965,21 @@ function RemoteTerminal({
         return;
       }
 
+      const suggestion = commandSuggestionRef.current;
+      const acceptsSuggestion = Boolean(
+        suggestion
+        && !commandBufferUnsafeRef.current
+        && (data === '\t' || data === '\x1b[C')
+        && suggestion.toLocaleLowerCase().startsWith(commandBufferRef.current.toLocaleLowerCase()),
+      );
+      if (acceptsSuggestion) {
+        const suffix = suggestion.slice(commandBufferRef.current.length);
+        writeTerminalInput(suffix);
+        commandBufferRef.current = suggestion;
+        updateCommandSuggestion('');
+        return;
+      }
+
       const hasCommandLineEditingInput = data.includes('\t') || data.includes('\x1b');
       const canReadVisibleCommand = commandBufferUnsafeRef.current && !hasCommandLineEditingInput;
       const transferCommand = zmodemSessionRef.current
@@ -860,6 +993,8 @@ function RemoteTerminal({
       if (transferCommand) {
         commandBufferRef.current = '';
         commandBufferUnsafeRef.current = false;
+        rememberRuntimeTerminalCommand(connectionId, transferCommand.command);
+        updateCommandSuggestion('');
         emitSessionEvent({
           type: 'terminal-command',
           command: transferCommand.command,
@@ -871,6 +1006,7 @@ function RemoteTerminal({
 
       if (hasCommandLineEditingInput) {
         commandBufferUnsafeRef.current = true;
+        updateCommandSuggestion('');
       }
 
       if (!commandBufferUnsafeRef.current && launchOptionsRef.current?.mode !== 'tmux') {
@@ -880,6 +1016,8 @@ function RemoteTerminal({
         if (interceptedCommand) {
           commandBufferRef.current = commandState.buffer;
           commandBufferUnsafeRef.current = false;
+          rememberRuntimeTerminalCommand(connectionId, interceptedCommand);
+          updateCommandSuggestion(commandState.buffer);
           writeTerminalInput('\x15');
           emitSessionEvent({
             type: 'terminal-command',
@@ -903,6 +1041,7 @@ function RemoteTerminal({
       if (commandBufferUnsafeRef.current && /[\r\n]/u.test(data)) {
         commandBufferRef.current = '';
         commandBufferUnsafeRef.current = false;
+        updateCommandSuggestion('');
         return;
       }
 
@@ -912,6 +1051,7 @@ function RemoteTerminal({
         commandBufferUnsafeRef.current = false;
       }
       commandState.commands.forEach((command) => {
+        rememberRuntimeTerminalCommand(connectionId, command);
         if (isLikelyForegroundCommand(command)) {
           foregroundTaskSourceRef.current = 'command';
           setHasForegroundTask(true);
@@ -923,6 +1063,7 @@ function RemoteTerminal({
           source: 'keyboard',
         });
       });
+      updateCommandSuggestion(commandState.buffer);
     });
     const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fitAndSyncSize);
 
@@ -947,6 +1088,9 @@ function RemoteTerminal({
       removeConnectionRestored();
       removeTransferProgress();
       removeTransferEnd();
+      document.removeEventListener('visibilitychange', handleDocumentVisibility);
+      outputFlowController.dispose();
+      outputFlowControllerRef.current = null;
 
       if (supportsTerminalIpcOptions && !useLegacyTerminalIpcRef.current) {
         api.connections.closeTerminal(connectionId, terminalId).catch(() => undefined);
@@ -970,6 +1114,7 @@ function RemoteTerminal({
       fitAndSyncSizeRef.current = null;
       restartTerminalRef.current = null;
       sendInputRef.current = null;
+      resolveWorkingDirectoryRef.current = null;
     };
   }, [connectionId, emitSessionEvent, localWindowsPty, terminalId]);
 
@@ -993,6 +1138,8 @@ function RemoteTerminal({
     restartTerminal: () => restartTerminalRef.current?.(),
     openSettingsDialog: () => setIsSettingsDialogOpen(true),
     openSearch: () => setShowSearch(true),
+    resolveWorkingDirectory: () => resolveWorkingDirectoryRef.current?.() ?? Promise.resolve('.'),
+    onSplitTerminal,
   });
 
   return (
@@ -1006,6 +1153,8 @@ function RemoteTerminal({
       searchQuery={searchQuery}
       searchResults={searchResults}
       contextMenu={contextMenu}
+      commandSuggestion={commandSuggestion}
+      pendingTerminalLink={pendingTerminalLink}
       isLaunchDialogOpen={isLaunchDialogOpen}
       isSettingsDialogOpen={isSettingsDialogOpen}
       launchDraft={launchDraft}
@@ -1021,6 +1170,8 @@ function RemoteTerminal({
       onSearchClose={closeSearch}
       onContextMenuClose={() => setContextMenu(null)}
       onContextMenuCopy={writeClipboardText}
+      onTerminalLinkCancel={() => setPendingTerminalLink('')}
+      onTerminalLinkOpen={openPendingTerminalLink}
       onOpenNote={onOpenNote}
       onLaunchDialogClose={() => setIsLaunchDialogOpen(false)}
       onLaunchSubmit={submitLaunchDialog}

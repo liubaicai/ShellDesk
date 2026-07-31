@@ -439,6 +439,9 @@ interface ShellDeskAppSettings {
   terminalLineTimestamps: boolean;
   terminalKeywordHighlightEnabled: boolean;
   terminalHighlightKeywords: string;
+  terminalCommandAutocompleteEnabled: boolean;
+  terminalSafeLinksEnabled: boolean;
+  terminalSuspendRenderingWhenHidden: boolean;
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 
@@ -786,6 +789,7 @@ interface ShellDeskMonitorHistoryReport {
 interface ShellDeskIpcCapabilities {
   terminalSessions: boolean;
   terminalBinary?: boolean;
+  terminalOutputFlow?: boolean;
 }
 
 interface ShellDeskKeyboardInteractivePrompt {
@@ -949,6 +953,7 @@ interface ShellDeskConnectionControls {
     terminalId: string,
     data: ArrayBuffer | ArrayBufferView | number[],
   ) => Promise<boolean>;
+  acknowledgeTerminalOutput: (connectionId: string, terminalId: string, sequence: number, byteLength: number) => Promise<boolean>;
   resizeTerminal: (
     connectionId: string,
     terminalId: string,
@@ -1721,7 +1726,7 @@ interface ShellDeskDatabaseTunnelIdleTimeoutPayload {
 }
 
 interface ShellDeskEventControls {
-  onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string; bytes?: ArrayBuffer | ArrayBufferView | number[] }) => void) => () => void;
+  onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string; bytes?: ArrayBuffer | ArrayBufferView | number[]; sequence?: number; byteLength?: number }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
   onRdpDiagnostic: (callback: (payload: ShellDeskRdpDiagnosticPayload) => void) => () => void;

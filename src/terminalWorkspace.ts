@@ -48,6 +48,20 @@ export function sanitizeTerminalLaunchMetadata(
   return Object.values(sanitized).some(Boolean) ? sanitized : undefined;
 }
 
+export function inheritTerminalSplitWorkingDirectory(
+  launchOptions: RemoteTerminalLaunchOptions | undefined,
+  workingDirectory: string,
+) {
+  const directory = boundedMetadata(workingDirectory);
+  if (!directory || launchOptions?.mode === 'tmux') {
+    return launchOptions;
+  }
+  return {
+    ...launchOptions,
+    workingDirectory: directory,
+  } satisfies RemoteTerminalLaunchOptions;
+}
+
 function parseFrame(value: unknown): DesktopWindowFrame | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;

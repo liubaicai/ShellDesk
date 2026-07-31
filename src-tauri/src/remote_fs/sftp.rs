@@ -1,6 +1,7 @@
 use super::{
     commands::join_remote_path,
     paths::sanitize_local_file_name,
+    sftp_download::{download_remote_file_pipelined, download_remote_file_sequential},
     sftp_resume::{
         local_source_fingerprint, prepare_local_download_staging, remote_source_fingerprint,
         remote_upload_staging_path, remove_local_file_if_exists, replace_local_download,
@@ -11,7 +12,7 @@ use super::{
 };
 use crate::{
     error_string, get_connection,
-    russh_client::{connect_authenticated, RusshSession},
+    ssh_transport_pool::{SshTransportLease, SshTransportLeaseKind},
     string_arg, AppState, ConnectionKind, UiWindowRef,
 };
 use chrono::{DateTime, Utc};
@@ -80,14 +81,13 @@ struct TreeComparison {
 }
 
 struct OpenSftpSession {
-    ssh: RusshSession,
+    _transport_lease: SshTransportLease,
     sftp: SftpSession,
 }
 
 impl OpenSftpSession {
-    async fn close(mut self) {
+    async fn close(self) {
         let _ = tokio::time::timeout(SFTP_SESSION_CLOSE_TIMEOUT, self.sftp.close()).await;
-        let _ = tokio::time::timeout(SFTP_SESSION_CLOSE_TIMEOUT, self.ssh.disconnect()).await;
     }
 }
 
@@ -96,8 +96,14 @@ async fn open_sftp_session(
     window: &tauri::Window,
     connection_id: &str,
 ) -> Result<OpenSftpSession, String> {
-    open_sftp_session_with_profile(state, window, connection_id, SftpTransferProfile::Balanced)
-        .await
+    open_sftp_session_with_profile(
+        state,
+        window,
+        connection_id,
+        SftpTransferProfile::Balanced,
+        SshTransportLeaseKind::SftpBrowse,
+    )
+    .await
 }
 
 async fn open_sftp_session_with_profile(
@@ -105,6 +111,7 @@ async fn open_sftp_session_with_profile(
     window: &tauri::Window,
     connection_id: &str,
     transfer_profile: SftpTransferProfile,
+    lease_kind: SshTransportLeaseKind,
 ) -> Result<OpenSftpSession, String> {
     let connection = get_connection(state, connection_id)?;
     if connection.kind == ConnectionKind::Local {
@@ -113,17 +120,16 @@ async fn open_sftp_session_with_profile(
     let ssh_profile = connection
         .ssh
         .ok_or_else(|| "SSH profile is unavailable.".to_string())?;
-    let ssh = connect_authenticated(
-        Some(state.clone()),
-        Some(UiWindowRef::from_window(window)),
-        ssh_profile,
-    )
-    .await?;
-    let channel = ssh
-        .handle()
-        .channel_open_session()
-        .await
-        .map_err(|error| format!("SFTP 会话通道打开失败：{error}"))?;
+    let (transport_lease, channel) = state
+        .ssh_transports
+        .open_session_channel(
+            state.clone(),
+            Some(UiWindowRef::from_window(window)),
+            connection_id,
+            ssh_profile,
+            lease_kind,
+        )
+        .await?;
     channel
         .request_subsystem(true, "sftp")
         .await
@@ -132,7 +138,10 @@ async fn open_sftp_session_with_profile(
         SftpSession::new_with_config(channel.into_stream(), transfer_profile.client_config())
             .await
             .map_err(|error| format!("SFTP 初始化失败：{error}"))?;
-    Ok(OpenSftpSession { ssh, sftp })
+    Ok(OpenSftpSession {
+        _transport_lease: transport_lease,
+        sftp,
+    })
 }
 
 fn file_type(metadata: &FileAttributes) -> &'static str {
@@ -685,6 +694,7 @@ async fn download_remote_file(
     local_dir: &Path,
     item: RemoteDownloadItem,
     profile: SftpTransferProfile,
+    request_concurrency: usize,
     transfer: &TransferReporter,
 ) -> Result<u64, String> {
     transfer.check_canceled()?;
@@ -703,10 +713,6 @@ async fn download_remote_file(
         remove_local_file_if_exists(&part_path)?;
         resume_offset = 0;
     }
-    let mut remote_file = sftp
-        .open(item.remote_path.clone())
-        .await
-        .map_err(|error| format!("SFTP 打开下载文件失败：{error}"))?;
     let mut local_file = tokio::fs::OpenOptions::new()
         .create(true)
         .read(true)
@@ -720,10 +726,6 @@ async fn download_remote_file(
         .await
         .map_err(error_string)?;
     if resume_offset > 0 {
-        remote_file
-            .seek(SeekFrom::Start(resume_offset))
-            .await
-            .map_err(error_string)?;
         local_file
             .seek(SeekFrom::Start(resume_offset))
             .await
@@ -731,19 +733,36 @@ async fn download_remote_file(
         transfer.add_parallel_bytes(resume_offset);
     }
     let mut transferred = resume_offset;
-    let mut buffer = vec![0_u8; profile.buffer_bytes()];
-    loop {
-        transfer.check_canceled()?;
-        let read = remote_file.read(&mut buffer).await.map_err(error_string)?;
-        if read == 0 {
-            break;
-        }
-        local_file
-            .write_all(&buffer[..read])
+    if transferred < item.size {
+        let pipelined = download_remote_file_pipelined(
+            sftp,
+            &item.remote_path,
+            &mut local_file,
+            item.size,
+            profile.buffer_bytes(),
+            request_concurrency,
+            &mut transferred,
+            transfer,
+        )
+        .await;
+        if let Err(parallel_error) = pipelined {
+            if request_concurrency <= 1 {
+                return Err(parallel_error);
+            }
+            download_remote_file_sequential(
+                sftp,
+                &item.remote_path,
+                &mut local_file,
+                item.size,
+                profile.buffer_bytes(),
+                &mut transferred,
+                transfer,
+            )
             .await
-            .map_err(error_string)?;
-        transfer.add_parallel_bytes(read as u64);
-        transferred = transferred.saturating_add(read as u64);
+            .map_err(|fallback_error| {
+                format!("SFTP 并行下载失败：{parallel_error}；兼容模式重试也失败：{fallback_error}")
+            })?;
+        }
     }
     local_file.flush().await.map_err(error_string)?;
     local_file.sync_all().await.map_err(error_string)?;
@@ -892,8 +911,14 @@ pub(crate) async fn download_sftp_paths(
         "download".to_string(),
     ));
     transfer.start_preparing(0);
-    let session =
-        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
+    let session = open_sftp_session_with_profile(
+        &state,
+        &window,
+        &connection_id,
+        transfer_profile,
+        SshTransportLeaseKind::SftpTransfer,
+    )
+    .await?;
     transfer.start_planning();
     let (directories, mut files) =
         collect_remote_download_plan(&session.sftp, &remote_paths, &transfer).await?;
@@ -965,6 +990,7 @@ pub(crate) async fn download_sftp_paths(
     let total = files.iter().map(|item| item.size).sum();
     transfer.set_totals(total, files.len() as u64, files.len() as u64);
     let file_concurrency = transfer_profile.file_concurrency(total, files.len());
+    let request_concurrency = transfer_profile.download_request_concurrency(file_concurrency);
     let transferred = stream::iter(files.iter().cloned())
         .map(|item| {
             download_remote_file(
@@ -972,6 +998,7 @@ pub(crate) async fn download_sftp_paths(
                 &local_dir,
                 item,
                 transfer_profile,
+                request_concurrency,
                 transfer.as_ref(),
             )
         })
@@ -1327,8 +1354,14 @@ pub(crate) async fn upload_sftp_paths(
             }
         };
     transfer.start_preparing(directories.len() as u64);
-    let session =
-        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
+    let session = open_sftp_session_with_profile(
+        &state,
+        &window,
+        &connection_id,
+        transfer_profile,
+        SshTransportLeaseKind::SftpTransfer,
+    )
+    .await?;
     let mut skipped_count = 0_u64;
     let mut blocked_directories = Vec::<String>::new();
     for directory in directories {

@@ -103,6 +103,9 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   terminalLineTimestamps: false,
   terminalKeywordHighlightEnabled: false,
   terminalHighlightKeywords: 'error,warning,failed,denied,exception',
+  terminalCommandAutocompleteEnabled: true,
+  terminalSafeLinksEnabled: true,
+  terminalSuspendRenderingWhenHidden: true,
   terminalSnippets: createDefaultTerminalSnippets(defaultAppLanguage),
 };
 

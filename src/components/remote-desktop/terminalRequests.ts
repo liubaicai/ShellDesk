@@ -7,6 +7,7 @@ import type {
   RemoteTerminalCommandRequest,
   RemoteTerminalSessionEventInput,
   RemoteTerminalSessionStatus,
+  RemoteTerminalSplitDirection,
   RemoteTerminalToolRequest,
 } from './terminalTypes';
 
@@ -30,6 +31,8 @@ interface TerminalExternalRequestsOptions {
   restartTerminal: () => void;
   openSettingsDialog: () => void;
   openSearch: () => void;
+  resolveWorkingDirectory: () => Promise<string>;
+  onSplitTerminal?: (direction: RemoteTerminalSplitDirection, workingDirectory: string) => void;
 }
 
 export function useTerminalExternalRequests({
@@ -52,6 +55,8 @@ export function useTerminalExternalRequests({
   restartTerminal,
   openSettingsDialog,
   openSearch,
+  resolveWorkingDirectory,
+  onSplitTerminal,
 }: TerminalExternalRequestsOptions) {
   useEffect(() => {
     if (!commandRequest || handledCommandRequestRef.current === commandRequest.id || sessionStatus !== 'running') {
@@ -126,6 +131,14 @@ export function useTerminalExternalRequests({
       case 'settings':
         openSettingsDialog();
         break;
+      case 'split-right':
+      case 'split-down': {
+        const direction = toolRequest.action === 'split-right' ? 'right' : 'down';
+        void resolveWorkingDirectory().then((workingDirectory) => {
+          onSplitTerminal?.(direction, workingDirectory);
+        });
+        break;
+      }
     }
 
     onToolRequestHandled?.(toolRequest.id);
@@ -136,6 +149,8 @@ export function useTerminalExternalRequests({
     openLaunchDialog,
     openSearch,
     openSettingsDialog,
+    onSplitTerminal,
+    resolveWorkingDirectory,
     restartTerminal,
     scrollTerminalToBottom,
     toggleFollowOutput,

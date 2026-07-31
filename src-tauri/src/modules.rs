@@ -46,6 +46,8 @@ pub(crate) mod russh_client;
 pub(crate) mod russh_transport_io;
 #[path = "ssh_transport.rs"]
 pub(crate) mod ssh_transport;
+#[path = "ssh_transport_pool.rs"]
+pub(crate) mod ssh_transport_pool;
 #[path = "ssh_tunnel.rs"]
 pub(crate) mod ssh_tunnel;
 #[path = "state.rs"]

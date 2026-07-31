@@ -9,6 +9,7 @@ import { getErrorMessage } from './components/remote-desktop/desktopUtils';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
+import { TerminalCloseConfirmPortal } from './components/remote-desktop/TerminalCloseConfirmPortal';
 import { TerminalRestorePlaceholder } from './components/remote-desktop/TerminalRestorePlaceholder';
 import { TerminalTitlebarMenuPortal } from './components/remote-desktop/TerminalTitlebarMenuPortal';
 import {
@@ -142,6 +143,7 @@ import {
   type TmuxMenuState,
 } from './remoteDesktopWindowModel';
 import {
+  inheritTerminalSplitWorkingDirectory,
   sanitizeTerminalLaunchMetadata,
   splitTerminalWorkspaceFrame,
   type TerminalWorkspaceSplitDirection,
@@ -1081,6 +1083,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const splitTerminalWindow = (
     windowId: string,
     direction: TerminalWorkspaceSplitDirection,
+    workingDirectory?: string,
   ) => {
     const sourceWindow = desktopWindowsRef.current.find((desktopWindow) => (
       desktopWindow.id === windowId && desktopWindow.appKey === 'terminal'
@@ -1096,11 +1099,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     );
     const splitFrames = splitTerminalWorkspaceFrame(sourceWindow.frame, workspace, direction);
     const storedOptions = sanitizeTerminalLaunchMetadata(sourceWindow.terminalLaunchOptions);
-    const splitLaunchOptions = sourceWindow.terminalRestorePending
-      ? storedOptions
-      : storedOptions?.mode === 'tmux'
-        ? undefined
-        : storedOptions;
+    const isLiveTmuxSplit = !sourceWindow.terminalRestorePending && storedOptions?.mode === 'tmux';
+    const splitLaunchOptions = isLiveTmuxSplit
+      ? undefined
+      : inheritTerminalSplitWorkingDirectory(storedOptions, workingDirectory ?? '');
     if (!splitFrames) {
       void openTerminalWindow(splitLaunchOptions);
       setTerminalTitlebarMenu(null);
@@ -1871,9 +1873,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           launchOptions={desktopWindow.terminalLaunchOptions}
           commandRequest={desktopWindow.terminalCommandRequest}
           toolRequest={desktopWindow.terminalToolRequest}
+          isVisible={!desktopWindow.isMinimized}
           onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
           onCommandRequestHandled={(requestId) => completeTerminalCommandRequest(desktopWindow.id, requestId)}
           onToolRequestHandled={(requestId) => completeTerminalToolRequest(desktopWindow.id, requestId)}
+          onSplitTerminal={(direction, workingDirectory) => (
+            splitTerminalWindow(desktopWindow.id, direction, workingDirectory)
+          )}
           onOpenTerminal={openTerminalWindow}
           onOpenNote={openNotepadNote}
           onCommandIntercept={interceptTerminalCommand}
@@ -1918,6 +1924,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           connectionId={connection.id}
           connectionKind={connection.kind}
           hostId={remoteConnectionProfileHostId}
+          isVisible={!desktopWindow.isMinimized}
           settings={settings}
           systemType={connection.host.systemType}
           onSettingsChange={onSettingsChange}
@@ -2800,7 +2807,13 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal');
           }
         }}
-        onSplit={(direction) => splitTerminalWindow(terminalTitlebarMenuWindow.id, direction)}
+        onSplit={(direction) => {
+          if (terminalTitlebarMenuWindow.terminalRestorePending) {
+            splitTerminalWindow(terminalTitlebarMenuWindow.id, direction);
+          } else {
+            requestTerminalTool(terminalTitlebarMenuWindow.id, `split-${direction}`);
+          }
+        }}
         onRequestTool={(action) => requestTerminalTool(terminalTitlebarMenuWindow.id, action)}
         onNewTmux={openNewTmuxTerminal}
         onRefreshTmux={() => void refreshTmuxSessions()}
@@ -2810,32 +2823,16 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       />
     ) : null}
 
-    {pendingCloseWindow ? createPortal(
-      <div className="notepad-modal-overlay" role="presentation" onClick={() => setPendingCloseWindowId('')}>
-        <div
-          className="notepad-modal"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="terminal-close-confirm-title"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div id="terminal-close-confirm-title" className="notepad-modal-title">{t('terminal.closeConfirm.title', settings.language)}</div>
-          <div className="notepad-modal-message">
-            {t('terminal.closeConfirm.message', settings.language)}
-          </div>
-          <div className="notepad-modal-actions">
-            <button type="button" className="notepad-modal-btn" onClick={() => setPendingCloseWindowId('')}>{t('common.cancel', settings.language)}</button>
-            <button type="button" className="notepad-modal-btn danger" onClick={() => {
-              const windowId = pendingCloseWindow.id;
-              setPendingCloseWindowId('');
-              removeDesktopWindow(windowId);
-            }}>
-              {t('common.close', settings.language)}
-            </button>
-          </div>
-        </div>
-      </div>,
-      document.body,
+    {pendingCloseWindow ? (
+      <TerminalCloseConfirmPortal
+        language={settings.language}
+        windowId={pendingCloseWindow.id}
+        onCancel={() => setPendingCloseWindowId('')}
+        onConfirm={(windowId) => {
+          setPendingCloseWindowId('');
+          removeDesktopWindow(windowId);
+        }}
+      />
     ) : null}
   </>
   );
