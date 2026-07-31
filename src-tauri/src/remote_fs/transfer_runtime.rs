@@ -4,11 +4,16 @@ use crate::{
 };
 use futures_util::{stream, StreamExt};
 use serde_json::{json, Map, Value};
-use std::{collections::HashSet, thread};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock, Weak},
+};
 use tauri::{Emitter, Manager};
+use tokio::sync::Semaphore;
 
 const DEFAULT_TRANSFER_CONCURRENCY: usize = 2;
 const MAX_TRANSFER_CONCURRENCY: usize = 4;
+const MAX_TRANSFER_JOBS_PER_BATCH: usize = 100;
 
 #[derive(Clone)]
 struct SftpTransferJob {
@@ -43,52 +48,51 @@ pub(crate) fn enqueue_sftp_transfers(
         emit_queued_task(&state, &window, &connection_id, job);
     }
 
+    let limiter = connection_transfer_limiter(&connection_id, concurrency);
     let runtime_state = state.clone();
     let runtime_window = window.clone();
     let runtime_connection_id = connection_id.clone();
-    let runtime_queued_ids = queued_ids.clone();
-    let spawn_result = thread::Builder::new()
-        .name(format!("sftp-transfer-{connection_id}"))
-        .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build();
-            match runtime {
-                Ok(runtime) => runtime.block_on(async move {
-                    stream::iter(jobs)
-                        .for_each_concurrent(Some(concurrency), |job| {
-                            run_job(
-                                runtime_state.clone(),
-                                runtime_window.clone(),
-                                runtime_connection_id.clone(),
-                                job,
-                            )
-                        })
-                        .await;
-                }),
-                Err(error) => {
-                    fail_registered_jobs(
-                        &runtime_state,
-                        &runtime_window,
-                        &runtime_connection_id,
-                        &runtime_queued_ids,
-                        &format!("创建后台传输运行时失败：{error}"),
-                    );
+    tauri::async_runtime::spawn(async move {
+        stream::iter(jobs)
+            .for_each_concurrent(Some(concurrency), |job| {
+                let limiter = Arc::clone(&limiter);
+                let state = runtime_state.clone();
+                let window = runtime_window.clone();
+                let connection_id = runtime_connection_id.clone();
+                async move {
+                    let Ok(_permit) = limiter.acquire_owned().await else {
+                        finish_runtime_job(
+                            &state,
+                            &window,
+                            &connection_id,
+                            &job.id,
+                            "failed",
+                            Some("后台传输并发控制器已关闭。"),
+                        );
+                        return;
+                    };
+                    run_job(state, window, connection_id, job).await;
                 }
-            }
-        });
-    if let Err(error) = spawn_result {
-        fail_registered_jobs(
-            &state,
-            &window,
-            &connection_id,
-            &queued_ids,
-            &format!("启动后台传输线程失败：{error}"),
-        );
-        return Err(error_string(error));
-    }
+            })
+            .await;
+    });
 
     Ok(json!({ "queuedIds": queued_ids }))
+}
+
+fn connection_transfer_limiter(connection_id: &str, concurrency: usize) -> Arc<Semaphore> {
+    static LIMITERS: OnceLock<Mutex<HashMap<String, Weak<Semaphore>>>> = OnceLock::new();
+    let mut limiters = LIMITERS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    limiters.retain(|_, limiter| limiter.strong_count() > 0);
+    if let Some(limiter) = limiters.get(connection_id).and_then(Weak::upgrade) {
+        return limiter;
+    }
+    let limiter = Arc::new(Semaphore::new(concurrency));
+    limiters.insert(connection_id.to_string(), Arc::downgrade(&limiter));
+    limiter
 }
 
 async fn run_job(
@@ -147,6 +151,11 @@ fn parse_jobs(
     connection_id: &str,
     values: Option<&Vec<Value>>,
 ) -> Result<Vec<SftpTransferJob>, String> {
+    if values.is_some_and(|values| values.len() > MAX_TRANSFER_JOBS_PER_BATCH) {
+        return Err(format!(
+            "单次最多提交 {MAX_TRANSFER_JOBS_PER_BATCH} 个后台传输任务。"
+        ));
+    }
     let mut jobs = Vec::new();
     let mut ids = HashSet::new();
     for value in values.into_iter().flatten() {
@@ -358,18 +367,6 @@ fn unregister_runtime_job(state: &AppState, connection_id: &str, id: &str) {
     let _ = connection::finish_deferred_connection_close(state, connection_id);
 }
 
-fn fail_registered_jobs(
-    state: &AppState,
-    window: &tauri::Window,
-    connection_id: &str,
-    ids: &[String],
-    error: &str,
-) {
-    for id in ids {
-        finish_runtime_job(state, window, connection_id, id, "failed", Some(error));
-    }
-}
-
 fn transfer_concurrency(value: Option<&Value>) -> usize {
     value
         .and_then(Value::as_u64)
@@ -379,8 +376,11 @@ fn transfer_concurrency(value: Option<&Value>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_jobs, transfer_concurrency, transfer_resource_key};
+    use super::{
+        connection_transfer_limiter, parse_jobs, transfer_concurrency, transfer_resource_key,
+    };
     use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn parses_runtime_jobs_into_existing_sftp_options() {
@@ -416,6 +416,23 @@ mod tests {
         assert_eq!(transfer_concurrency(Some(&json!(0))), 1);
         assert_eq!(transfer_concurrency(Some(&json!(3))), 3);
         assert_eq!(transfer_concurrency(Some(&json!(99))), 4);
+    }
+
+    #[tokio::test]
+    async fn transfer_limiter_is_shared_across_enqueue_calls_for_the_same_connection() {
+        let limiter = connection_transfer_limiter("shared-limiter-test", 2);
+        let first = Arc::clone(&limiter).acquire_owned().await.unwrap();
+        let second = Arc::clone(&limiter).acquire_owned().await.unwrap();
+        let blocked = Arc::clone(&limiter).try_acquire_owned();
+        assert!(blocked.is_err());
+
+        let reused = connection_transfer_limiter("shared-limiter-test", 4);
+        assert!(Arc::ptr_eq(&limiter, &reused));
+        assert!(Arc::clone(&reused).try_acquire_owned().is_err());
+
+        drop(first);
+        assert!(Arc::clone(&reused).try_acquire_owned().is_ok());
+        drop(second);
     }
 
     #[test]
