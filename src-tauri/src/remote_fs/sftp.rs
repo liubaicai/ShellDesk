@@ -1,5 +1,13 @@
 use super::{
-    commands::join_remote_path, paths::sanitize_local_file_name, transfer::TransferReporter,
+    commands::join_remote_path,
+    paths::sanitize_local_file_name,
+    sftp_resume::{
+        local_source_fingerprint, prepare_local_download_staging, remote_source_fingerprint,
+        remote_upload_staging_path, remove_local_file_if_exists, replace_local_download,
+        replace_remote_file, resume_prefix_matches, TransferSourceFingerprint,
+    },
+    sftp_tuning::SftpTransferProfile,
+    transfer::TransferReporter,
 };
 use crate::{
     error_string, get_connection,
@@ -10,22 +18,22 @@ use chrono::{DateTime, Utc};
 use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::{
     client::SftpSession,
-    protocol::{FileAttributes, FileType},
+    protocol::{FileAttributes, FileType, OpenFlags},
 };
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::SeekFrom,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-const TRANSFER_CHUNK_BYTES: usize = 256 * 1024;
-const SFTP_FILE_CONCURRENCY: usize = 8;
 const LOCAL_SCAN_IO_TIMEOUT: Duration = Duration::from_secs(20);
 const LOCAL_SCAN_CANCEL_POLL: Duration = Duration::from_millis(200);
+const SFTP_OPERATION_CONCURRENCY: usize = 8;
 const MAX_COMPARE_ENTRIES: usize = 50_000;
 const MAX_RECURSIVE_SFTP_ENTRIES: usize = 100_000;
 const SFTP_SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -88,17 +96,27 @@ async fn open_sftp_session(
     window: &tauri::Window,
     connection_id: &str,
 ) -> Result<OpenSftpSession, String> {
+    open_sftp_session_with_profile(state, window, connection_id, SftpTransferProfile::Balanced)
+        .await
+}
+
+async fn open_sftp_session_with_profile(
+    state: &AppState,
+    window: &tauri::Window,
+    connection_id: &str,
+    transfer_profile: SftpTransferProfile,
+) -> Result<OpenSftpSession, String> {
     let connection = get_connection(state, connection_id)?;
     if connection.kind == ConnectionKind::Local {
         return Err("本地连接不需要 SFTP 会话。".to_string());
     }
-    let profile = connection
+    let ssh_profile = connection
         .ssh
         .ok_or_else(|| "SSH profile is unavailable.".to_string())?;
     let ssh = connect_authenticated(
         Some(state.clone()),
         Some(UiWindowRef::from_window(window)),
-        profile,
+        ssh_profile,
     )
     .await?;
     let channel = ssh
@@ -110,10 +128,10 @@ async fn open_sftp_session(
         .request_subsystem(true, "sftp")
         .await
         .map_err(|error| format!("SSH 服务器拒绝 SFTP 子系统：{error}"))?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| format!("SFTP 初始化失败：{error}"))?;
-    sftp.set_timeout(30);
+    let sftp =
+        SftpSession::new_with_config(channel.into_stream(), transfer_profile.client_config())
+            .await
+            .map_err(|error| format!("SFTP 初始化失败：{error}"))?;
     Ok(OpenSftpSession { ssh, sftp })
 }
 
@@ -528,7 +546,7 @@ async fn remove_sftp_tree(
                 .await
                 .map_err(|error| format!("SFTP 删除文件失败：{error}"))
         })
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .buffer_unordered(SFTP_OPERATION_CONCURRENCY)
         .try_collect::<Vec<_>>()
         .await?;
     for directory in discovered.into_iter().rev() {
@@ -633,12 +651,40 @@ struct RemoteDownloadItem {
     remote_path: String,
     relative_path: PathBuf,
     size: u64,
+    fingerprint: TransferSourceFingerprint,
+}
+
+fn local_download_target_key(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    {
+        normalized.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        normalized
+    }
+}
+
+fn reserve_transfer_target(
+    targets: &mut BTreeSet<String>,
+    target: String,
+    source: &str,
+) -> Result<(), String> {
+    if targets.insert(target.clone()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "多个传输源会写入同一目标 '{target}'，已拒绝可能覆盖数据的传输计划：{source}"
+        ))
+    }
 }
 
 async fn download_remote_file(
     sftp: &SftpSession,
     local_dir: &Path,
     item: RemoteDownloadItem,
+    profile: SftpTransferProfile,
     transfer: &TransferReporter,
 ) -> Result<u64, String> {
     transfer.check_canceled()?;
@@ -649,15 +695,43 @@ async fn download_remote_file(
         .unwrap_or_else(|| "download".to_string());
     transfer.start_parallel_file(&file_name);
     let local_path = local_dir.join(&item.relative_path);
+    let (part_path, checkpoint_path, mut resume_offset) =
+        prepare_local_download_staging(&local_path, &item.fingerprint)?;
+    if resume_offset > 0
+        && !resume_prefix_matches(sftp, &item.remote_path, &part_path, resume_offset).await?
+    {
+        remove_local_file_if_exists(&part_path)?;
+        resume_offset = 0;
+    }
     let mut remote_file = sftp
-        .open(item.remote_path)
+        .open(item.remote_path.clone())
         .await
         .map_err(|error| format!("SFTP 打开下载文件失败：{error}"))?;
-    let mut local_file = tokio::fs::File::create(&local_path)
+    let mut local_file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&part_path)
         .await
         .map_err(error_string)?;
-    let mut transferred = 0_u64;
-    let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+    local_file
+        .set_len(resume_offset)
+        .await
+        .map_err(error_string)?;
+    if resume_offset > 0 {
+        remote_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        local_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        transfer.add_parallel_bytes(resume_offset);
+    }
+    let mut transferred = resume_offset;
+    let mut buffer = vec![0_u8; profile.buffer_bytes()];
     loop {
         transfer.check_canceled()?;
         let read = remote_file.read(&mut buffer).await.map_err(error_string)?;
@@ -672,8 +746,25 @@ async fn download_remote_file(
         transferred = transferred.saturating_add(read as u64);
     }
     local_file.flush().await.map_err(error_string)?;
+    local_file.sync_all().await.map_err(error_string)?;
+    drop(local_file);
+    if transferred != item.size {
+        return Err(format!(
+            "SFTP 下载文件大小不完整：预期 {} 字节，实际 {} 字节。",
+            item.size, transferred
+        ));
+    }
+    let final_metadata = sftp
+        .symlink_metadata(item.remote_path.clone())
+        .await
+        .map_err(|error| format!("SFTP 校验下载源文件失败：{error}"))?;
+    if remote_source_fingerprint(&item.remote_path, &final_metadata) != item.fingerprint {
+        return Err("下载期间远端源文件发生变化，已保留临时文件但不会替换目标文件。".to_string());
+    }
+    replace_local_download(&part_path, &local_path)?;
+    remove_local_file_if_exists(&checkpoint_path)?;
     transfer.complete_file();
-    Ok(transferred)
+    Ok(item.size)
 }
 
 async fn collect_remote_download_plan(
@@ -684,6 +775,7 @@ async fn collect_remote_download_plan(
     let mut directories = Vec::new();
     let mut files = Vec::new();
     let mut visited_directories = BTreeSet::new();
+    let mut planned_targets = BTreeSet::new();
     let mut processed_entries = 0_usize;
     for root in roots {
         transfer.check_canceled()?;
@@ -700,6 +792,11 @@ async fn collect_remote_download_plan(
             .map_err(|error| format!("SFTP 读取下载项失败：{error}"))?;
         if metadata.is_dir() {
             let root_relative = PathBuf::from(&name);
+            reserve_transfer_target(
+                &mut planned_targets,
+                local_download_target_key(&root_relative),
+                root,
+            )?;
             let mut stack = vec![(root.clone(), root_relative.clone())];
             while let Some((remote_dir, relative_dir)) = stack.pop() {
                 transfer.check_canceled()?;
@@ -728,23 +825,37 @@ async fn collect_remote_download_plan(
                     let child_remote = join_remote_path(&remote_dir, &remote_name);
                     let child_relative = relative_dir.join(child_name);
                     let child_metadata = entry.metadata();
+                    reserve_transfer_target(
+                        &mut planned_targets,
+                        local_download_target_key(&child_relative),
+                        &child_remote,
+                    )?;
                     if child_metadata.is_dir() {
                         stack.push((child_remote, child_relative));
                     } else {
+                        let fingerprint = remote_source_fingerprint(&child_remote, &child_metadata);
                         files.push(RemoteDownloadItem {
                             remote_path: child_remote,
                             relative_path: child_relative,
                             size: child_metadata.size.unwrap_or(0),
+                            fingerprint,
                         });
                         transfer.discover_file();
                     }
                 }
             }
         } else {
+            reserve_transfer_target(
+                &mut planned_targets,
+                local_download_target_key(Path::new(&name)),
+                root,
+            )?;
+            let fingerprint = remote_source_fingerprint(root, &metadata);
             files.push(RemoteDownloadItem {
                 remote_path: root.clone(),
                 relative_path: PathBuf::from(name),
                 size: metadata.size.unwrap_or(0),
+                fingerprint,
             });
             transfer.discover_file();
         }
@@ -771,6 +882,7 @@ pub(crate) async fn download_sftp_paths(
         .unwrap_or_default();
     let local_dir = PathBuf::from(string_arg(&args, 2)?);
     let conflict_policy = transfer_conflict_policy(args.get(3));
+    let transfer_profile = SftpTransferProfile::from_options(args.get(3));
     let transfer = Arc::new(TransferReporter::new(
         &state,
         &window,
@@ -780,7 +892,8 @@ pub(crate) async fn download_sftp_paths(
         "download".to_string(),
     ));
     transfer.start_preparing(0);
-    let session = open_sftp_session(&state, &window, &connection_id).await?;
+    let session =
+        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
     transfer.start_planning();
     let (directories, mut files) =
         collect_remote_download_plan(&session.sftp, &remote_paths, &transfer).await?;
@@ -851,9 +964,18 @@ pub(crate) async fn download_sftp_paths(
     }
     let total = files.iter().map(|item| item.size).sum();
     transfer.set_totals(total, files.len() as u64, files.len() as u64);
+    let file_concurrency = transfer_profile.file_concurrency(total, files.len());
     let transferred = stream::iter(files.iter().cloned())
-        .map(|item| download_remote_file(&session.sftp, &local_dir, item, transfer.as_ref()))
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .map(|item| {
+            download_remote_file(
+                &session.sftp,
+                &local_dir,
+                item,
+                transfer_profile,
+                transfer.as_ref(),
+            )
+        })
+        .buffer_unordered(file_concurrency)
         .try_fold(0_u64, |total, size| async move {
             Ok(total.saturating_add(size))
         })
@@ -875,11 +997,15 @@ struct LocalUploadItem {
     local_path: PathBuf,
     remote_path: String,
     size: u64,
+    fingerprint: TransferSourceFingerprint,
 }
 
 enum LocalUploadPathKind {
     Directory,
-    File(u64),
+    File {
+        size: u64,
+        fingerprint: TransferSourceFingerprint,
+    },
     Symlink,
     Other,
 }
@@ -940,7 +1066,10 @@ async fn inspect_local_upload_path(
         } else if metadata.is_dir() {
             LocalUploadPathKind::Directory
         } else if metadata.is_file() {
-            LocalUploadPathKind::File(metadata.len())
+            LocalUploadPathKind::File {
+                size: metadata.len(),
+                fingerprint: local_source_fingerprint(&operation_path, &metadata),
+            }
         } else {
             LocalUploadPathKind::Other
         })
@@ -966,7 +1095,11 @@ async fn read_local_upload_directory(
             } else if file_type.is_dir() {
                 LocalUploadPathKind::Directory
             } else if file_type.is_file() {
-                LocalUploadPathKind::File(entry.metadata().map_err(error_string)?.len())
+                let metadata = entry.metadata().map_err(error_string)?;
+                LocalUploadPathKind::File {
+                    size: metadata.len(),
+                    fingerprint: local_source_fingerprint(&path, &metadata),
+                }
             } else {
                 LocalUploadPathKind::Other
             };
@@ -980,6 +1113,7 @@ async fn read_local_upload_directory(
 async fn upload_local_file(
     sftp: &SftpSession,
     item: LocalUploadItem,
+    profile: SftpTransferProfile,
     transfer: &TransferReporter,
 ) -> Result<u64, String> {
     transfer.check_canceled()?;
@@ -992,12 +1126,49 @@ async fn upload_local_file(
     let mut local_file = tokio::fs::File::open(&item.local_path)
         .await
         .map_err(error_string)?;
-    let mut remote_file = sftp
-        .create(item.remote_path)
+    let staging_path = remote_upload_staging_path(&item.remote_path, &item.fingerprint);
+    let mut resume_offset = 0_u64;
+    if sftp
+        .try_exists(staging_path.clone())
         .await
-        .map_err(|error| format!("SFTP 打开上传文件失败：{error}"))?;
-    let mut transferred = 0_u64;
-    let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+        .map_err(|error| format!("SFTP 检查上传临时文件失败：{error}"))?
+    {
+        let metadata = sftp
+            .symlink_metadata(staging_path.clone())
+            .await
+            .map_err(|error| format!("SFTP 读取上传临时文件失败：{error}"))?;
+        if metadata.is_regular() && metadata.size.unwrap_or(0) <= item.size {
+            resume_offset = metadata.size.unwrap_or(0);
+        } else {
+            let entry_type = file_type(&metadata);
+            remove_sftp_tree(sftp, staging_path.clone(), entry_type).await?;
+        }
+    }
+    if resume_offset > 0
+        && !resume_prefix_matches(sftp, &staging_path, &item.local_path, resume_offset).await?
+    {
+        sftp.remove_file(staging_path.clone())
+            .await
+            .map_err(|error| format!("SFTP 清理无效上传断点失败：{error}"))?;
+        resume_offset = 0;
+    }
+    let mut remote_file = sftp
+        .open_with_flags(staging_path.clone(), OpenFlags::CREATE | OpenFlags::WRITE)
+        .await
+        .map_err(|error| format!("SFTP 打开上传临时文件失败：{error}"))?;
+    if resume_offset > 0 {
+        local_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        remote_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        transfer.add_parallel_bytes(resume_offset);
+    }
+    let mut transferred = resume_offset;
+    let mut buffer = vec![0_u8; profile.buffer_bytes()];
     loop {
         transfer.check_canceled()?;
         let read = local_file.read(&mut buffer).await.map_err(error_string)?;
@@ -1013,8 +1184,21 @@ async fn upload_local_file(
     }
     remote_file.flush().await.map_err(error_string)?;
     remote_file.shutdown().await.map_err(error_string)?;
+    if transferred != item.size {
+        return Err(format!(
+            "SFTP 上传文件大小不完整：预期 {} 字节，实际 {} 字节。",
+            item.size, transferred
+        ));
+    }
+    let final_local_metadata = tokio::fs::metadata(&item.local_path)
+        .await
+        .map_err(error_string)?;
+    if local_source_fingerprint(&item.local_path, &final_local_metadata) != item.fingerprint {
+        return Err("上传期间本地源文件发生变化，已保留临时文件但不会替换远端目标。".to_string());
+    }
+    replace_remote_file(sftp, &staging_path, &item.remote_path).await?;
     transfer.complete_file();
-    Ok(transferred)
+    Ok(item.size)
 }
 
 async fn collect_local_upload_plan(
@@ -1024,6 +1208,7 @@ async fn collect_local_upload_plan(
 ) -> Result<(Vec<String>, Vec<LocalUploadItem>), String> {
     let mut directories = Vec::new();
     let mut files = Vec::new();
+    let mut planned_targets = BTreeSet::new();
     for item in items {
         transfer.check_canceled()?;
         let local_path = PathBuf::from(item.get("path").and_then(Value::as_str).unwrap_or(""));
@@ -1044,6 +1229,11 @@ async fn collect_local_upload_plan(
         let target = join_remote_path(remote_dir, &remote_name);
         match inspect_local_upload_path(local_path.clone(), transfer).await? {
             LocalUploadPathKind::Directory => {
+                reserve_transfer_target(
+                    &mut planned_targets,
+                    target.clone(),
+                    &local_path.to_string_lossy(),
+                )?;
                 let mut stack = vec![(local_path, target)];
                 while let Some((local_dir, remote_target)) = stack.pop() {
                     transfer.check_canceled()?;
@@ -1058,13 +1248,24 @@ async fn collect_local_upload_plan(
                         );
                         match entry.kind {
                             LocalUploadPathKind::Directory => {
+                                reserve_transfer_target(
+                                    &mut planned_targets,
+                                    child_target.clone(),
+                                    &child_path.to_string_lossy(),
+                                )?;
                                 stack.push((child_path, child_target))
                             }
-                            LocalUploadPathKind::File(size) => {
+                            LocalUploadPathKind::File { size, fingerprint } => {
+                                reserve_transfer_target(
+                                    &mut planned_targets,
+                                    child_target.clone(),
+                                    &child_path.to_string_lossy(),
+                                )?;
                                 files.push(LocalUploadItem {
                                     local_path: child_path,
                                     remote_path: child_target,
                                     size,
+                                    fingerprint,
                                 });
                                 transfer.discover_file();
                             }
@@ -1073,11 +1274,17 @@ async fn collect_local_upload_plan(
                     }
                 }
             }
-            LocalUploadPathKind::File(size) => {
+            LocalUploadPathKind::File { size, fingerprint } => {
+                reserve_transfer_target(
+                    &mut planned_targets,
+                    target.clone(),
+                    &local_path.to_string_lossy(),
+                )?;
                 files.push(LocalUploadItem {
                     local_path,
                     remote_path: target,
                     size,
+                    fingerprint,
                 });
                 transfer.discover_file();
             }
@@ -1100,6 +1307,7 @@ pub(crate) async fn upload_sftp_paths(
         .cloned()
         .unwrap_or_default();
     let conflict_policy = transfer_conflict_policy(args.get(3));
+    let transfer_profile = SftpTransferProfile::from_options(args.get(3));
     let transfer = Arc::new(TransferReporter::new(
         &state,
         &window,
@@ -1119,7 +1327,8 @@ pub(crate) async fn upload_sftp_paths(
             }
         };
     transfer.start_preparing(directories.len() as u64);
-    let session = open_sftp_session(&state, &window, &connection_id).await?;
+    let session =
+        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
     let mut skipped_count = 0_u64;
     let mut blocked_directories = Vec::<String>::new();
     for directory in directories {
@@ -1213,9 +1422,10 @@ pub(crate) async fn upload_sftp_paths(
     }
     let total = files.iter().map(|item| item.size).sum();
     transfer.set_totals(total, files.len() as u64, files.len() as u64);
+    let file_concurrency = transfer_profile.file_concurrency(total, files.len());
     let transferred = stream::iter(files.iter().cloned())
-        .map(|item| upload_local_file(&session.sftp, item, transfer.as_ref()))
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .map(|item| upload_local_file(&session.sftp, item, transfer_profile, transfer.as_ref()))
+        .buffer_unordered(file_concurrency)
         .try_fold(0_u64, |total, size| async move {
             Ok(total.saturating_add(size))
         })
@@ -1238,114 +1448,5 @@ pub(crate) async fn upload_sftp_paths(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        compare_tree_snapshots, is_dot_directory, remote_path_is_within,
-        remove_local_overwrite_target, top_level_transfer_summaries, transfer_conflict_policy,
-        TransferConflictPolicy, TreeSnapshotEntry,
-    };
-    use serde_json::json;
-    use std::{collections::BTreeMap, fs, time::SystemTime};
-
-    fn entry(kind: &'static str, size: u64) -> TreeSnapshotEntry {
-        TreeSnapshotEntry { kind, size }
-    }
-
-    #[test]
-    fn recursive_sftp_walk_ignores_dot_directories() {
-        assert!(is_dot_directory("."));
-        assert!(is_dot_directory(".."));
-        assert!(!is_dot_directory(".config"));
-        assert!(!is_dot_directory("folder"));
-    }
-
-    #[test]
-    fn transfer_conflict_policy_defaults_to_overwrite_and_accepts_skip() {
-        assert_eq!(
-            transfer_conflict_policy(Some(&json!({ "conflictPolicy": "skip" }))),
-            TransferConflictPolicy::Skip
-        );
-        assert_eq!(
-            transfer_conflict_policy(Some(&json!({ "conflictPolicy": "invalid" }))),
-            TransferConflictPolicy::Overwrite
-        );
-        assert_eq!(
-            transfer_conflict_policy(None),
-            TransferConflictPolicy::Overwrite
-        );
-    }
-
-    #[test]
-    fn remote_conflict_subtrees_use_path_boundaries() {
-        assert!(remote_path_is_within(
-            "/root/toolbox/bin/app.exe",
-            "/root/toolbox"
-        ));
-        assert!(remote_path_is_within("/root/toolbox", "/root/toolbox"));
-        assert!(!remote_path_is_within(
-            "/root/toolbox-old/app.exe",
-            "/root/toolbox"
-        ));
-    }
-
-    #[test]
-    fn overwrite_cleanup_removes_conflicting_local_files_and_directories() {
-        let unique = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("clock should be after Unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "shelldesk-sftp-overwrite-{}-{unique}",
-            std::process::id()
-        ));
-        let file = root.join("file-conflict");
-        let directory = root.join("directory-conflict");
-        fs::create_dir_all(directory.join("nested")).expect("test directory should be created");
-        fs::write(&file, b"conflict").expect("test file should be created");
-
-        let file_metadata = fs::symlink_metadata(&file).expect("test file should exist");
-        remove_local_overwrite_target(&file, &file_metadata)
-            .expect("conflicting file should be removed");
-        let directory_metadata =
-            fs::symlink_metadata(&directory).expect("test directory should exist");
-        remove_local_overwrite_target(&directory, &directory_metadata)
-            .expect("conflicting directory should be removed recursively");
-
-        assert!(!file.exists());
-        assert!(!directory.exists());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn recursive_comparison_counts_nested_differences() {
-        let local = BTreeMap::from([
-            ("assets".to_string(), entry("directory", 0)),
-            ("assets/app.js".to_string(), entry("file", 120)),
-            ("assets/style.css".to_string(), entry("file", 80)),
-            ("readme.md".to_string(), entry("file", 20)),
-        ]);
-        let remote = BTreeMap::from([
-            ("assets".to_string(), entry("directory", 0)),
-            ("assets/app.js".to_string(), entry("file", 100)),
-            ("assets/old.js".to_string(), entry("file", 40)),
-            ("readme.md".to_string(), entry("file", 20)),
-        ]);
-
-        let comparison = compare_tree_snapshots(&local, &remote);
-        assert_eq!(comparison.difference_count, 3);
-        assert_eq!(
-            comparison.local_differences,
-            vec!["assets/app.js", "assets/style.css"]
-        );
-        assert_eq!(
-            comparison.remote_differences,
-            vec!["assets/app.js", "assets/old.js"]
-        );
-
-        let transfer_items = top_level_transfer_summaries(&local, &comparison.local_differences);
-        assert_eq!(transfer_items.len(), 1);
-        assert_eq!(transfer_items[0]["name"], "assets");
-        assert_eq!(transfer_items[0]["size"], 200);
-        assert_eq!(transfer_items[0]["fileCount"], 2);
-    }
-}
+#[path = "sftp/tests.rs"]
+mod tests;

@@ -49,7 +49,7 @@ fn write_json_content(path: &Path, content: &str, private: bool) -> Result<(), S
     write_temp_json_file(&temp_path, content, private).inspect_err(|_| {
         let _ = fs::remove_file(&temp_path);
     })?;
-    replace_file(&temp_path, path).inspect_err(|_| {
+    replace_file_atomic(&temp_path, path).inspect_err(|_| {
         let _ = fs::remove_file(&temp_path);
     })
 }
@@ -90,7 +90,7 @@ fn write_temp_json_file(path: &Path, content: &str, private: bool) -> Result<(),
 }
 
 #[cfg(windows)]
-fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn replace_file_atomic(source: &Path, target: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
@@ -120,7 +120,7 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+pub(crate) fn replace_file_atomic(source: &Path, target: &Path) -> Result<(), String> {
     fs::rename(source, target).map_err(error_string)
 }
 

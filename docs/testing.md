@@ -35,6 +35,12 @@ The unit gate first type-checks `tests/unit` with `tsconfig.unit.json`, then use
 
 `tests/unit/database-import-draft.spec.ts` covers the shared MySQL/PostgreSQL/ClickHouse import-draft state transitions: fresh reset state, independent CSV/JSON drafts, case-insensitive JSON file-extension selection, transient status clearing, and preservation of execution errors while preview data is applied or cleared.
 
+`tests/unit/host-import.spec.ts` covers MobaXterm, Xshell, SecureCRT, and CSV parsing, malformed rows, duplicate detection, all three duplicate policies, secret opt-in, and SecureCRT multi-session XML. The UI smoke suite also exercises the migration preview and apply result with a mocked native file picker.
+
+`tests/unit/host-large-list.spec.ts` locks host-list and virtual-picker index navigation at page boundaries. The UI smoke suite crosses inventory pages with the keyboard and verifies that the SD-Agent picker renders only a small visible window from a 5,000-host fixture while preserving search and active selection.
+
+`tests/unit/host-connection-settings.spec.ts` covers persisted SSH Agent profiles, secret clearing, global/per-host connection-timeout normalization, and timeout validation boundaries. Rust tests repeat the secret-clearing and timeout-resolution checks at the Vault and `SshProfile` layers.
+
 ## Build Verification
 
 ```bash
@@ -81,7 +87,7 @@ This runs:
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo test`
 
-Rust tests include shared fixtures from `src-tauri/src/test_helpers.rs`, async database tunnel contract coverage, IPC database channel classification, and HTTP tunnel parameter/timeout validation.
+Rust tests include shared fixtures from `src-tauri/src/test_helpers.rs`, async database tunnel contract coverage, IPC database channel classification, HTTP tunnel parameter/timeout validation, WebDAV write/read-back verification, and property-based sync merge/migration invariants.
 
 ## Coverage
 

@@ -403,6 +403,127 @@ test('host table keeps every cell border aligned when tags wrap', async ({ page 
   expect(new Set(cellMetrics.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
 });
 
+test('host inventory keyboard navigation crosses pages and opens the selected host', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 420 });
+  await gotoHarness(page, 'component=host-list-keyboard&theme=dark');
+
+  const hostList = page.locator('.host-table-frame');
+  await hostList.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-host-id="large-host-1"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('PageDown');
+  await expect(page.getByRole('button', { name: '2', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-host-id="large-host-11"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('button', { name: '3', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-host-id="large-host-25"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('opened-host')).toHaveText('large-host-25');
+});
+
+test('SD-Agent host picker virtualizes 5000 hosts and supports keyboard search', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 420, height: 700 });
+  await gotoHarness(page, 'component=agent-host-picker&theme=dark');
+  expect(runtimeErrors).toEqual([]);
+
+  const listbox = page.getByRole('listbox', { name: 'SD-Agent 主机列表' });
+  await expect(listbox).toBeVisible();
+  const renderedOptionCount = await listbox.getByRole('option').count();
+  expect(renderedOptionCount).toBeGreaterThan(5);
+  expect(renderedOptionCount).toBeLessThan(40);
+  await listbox.focus();
+  await page.keyboard.press('End');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', 'agent-host-option-agent-host-05000');
+  await expect(listbox.getByRole('option', { name: /Agent host 05000/ })).toBeVisible();
+
+  const search = page.getByRole('searchbox', { name: '搜索 SD-Agent 主机' });
+  await search.fill('host-04200.example.test');
+  await expect(listbox.getByRole('option')).toHaveCount(1);
+  await listbox.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', 'agent-host-option-agent-host-04200');
+  await expect(page.getByText('1/5000')).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('host migration previews duplicates and applies the selected strategy', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await gotoHarness(page, 'component=host-import&theme=dark');
+
+  const openButton = page.getByRole('button', { name: '打开主机迁移' });
+  await openButton.click();
+  const dialog = page.getByRole('dialog', { name: '迁移外部 SSH 主机' });
+  await expect(dialog).toBeVisible();
+  const selectFilesButton = dialog.getByRole('button', { name: '选择迁移文件' });
+  await expect(selectFilesButton).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(openButton).toBeFocused();
+  await openButton.click();
+  await expect(dialog).toBeVisible();
+  await expect(selectFilesButton).toBeFocused();
+  await selectFilesButton.click();
+  await expect(dialog.getByText('已选择 2 个文件')).toBeVisible();
+  await expect(dialog.getByText('识别 3 台')).toBeVisible();
+  await expect(dialog.getByText('已选 2 台')).toBeVisible();
+  await expect(dialog.getByText('重复 1 台')).toBeVisible();
+  await expect(dialog.getByText('Existing web', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('New database', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('缺少主机地址。')).toBeVisible();
+  await expect(dialog.getByText('导入 CSV 中发现的 2 个明文密码（默认关闭）')).toBeVisible();
+
+  await dialog.getByLabel('重复项处理').selectOption('replace');
+  await dialog.getByRole('button', { name: '导入 2 台' }).click();
+  await expect(dialog.getByText('主机迁移已应用')).toBeVisible();
+  await expect(dialog.getByText('新增 1 台，替换 1 台，跳过 0 台。')).toBeVisible();
+  await dialog.getByRole('button', { name: '完成' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(openButton).toBeFocused();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('global transfer center keeps active work while clearing finished history', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoHarness(page, 'component=transfer-center&theme=light');
+  await page.waitForTimeout(500);
+  expect(runtimeErrors).toEqual([]);
+
+  const trigger = page.getByRole('button', { name: '全局传输中心' });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger.locator('.global-transfer-badge')).toHaveText('1');
+  await trigger.click();
+
+  const dialog = page.getByRole('dialog', { name: '全局传输中心' });
+  await expect(dialog).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(dialog.getByText('release.zip', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('access.log', { exact: true })).toBeVisible();
+  await expect(dialog.locator('.global-transfer-progress').first()).toHaveAttribute('aria-label', '50%');
+
+  await dialog.getByRole('button', { name: '清除已结束' }).click();
+  await expect(dialog.getByText('release.zip', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('access.log', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: '关闭传输中心' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('SFTP directory trees stay rooted and activate the current folder', async ({ page }) => {
   test.setTimeout(90_000);
   const runtimeErrors: string[] = [];
@@ -456,6 +577,31 @@ test('SFTP directory trees stay rooted and activate the current folder', async (
   expect(runtimeErrors).toEqual([]);
 });
 
+test('SFTP workspace opens at the configured local and remote directories', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHarness(
+    page,
+    'component=sftp-transfer&theme=light&sftpLocal=D%3A%5Cconfigured&sftpRemote=%2Fsrv%2Fconfigured',
+  );
+
+  await expect(page.locator('.sftp-file-pane.local .sftp-path-form input')).toHaveValue('D:/configured');
+  await expect(page.locator('.sftp-file-pane.remote .sftp-path-form input')).toHaveValue('/srv/configured');
+});
+
+test('SFTP workspace renders the persisted pane-specific column selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHarness(page, 'component=sftp-transfer&theme=light&sftpColumns=minimal');
+
+  const localHeaders = page.locator('.sftp-file-pane.local .sftp-file-table thead');
+  const remoteHeaders = page.locator('.sftp-file-pane.remote .sftp-file-table thead');
+  await expect(localHeaders.getByText('名称', { exact: true })).toBeVisible();
+  await expect(localHeaders.getByText('大小', { exact: true })).toHaveCount(0);
+  await expect(localHeaders.getByText('修改时间', { exact: true })).toHaveCount(0);
+  await expect(remoteHeaders.getByText('名称', { exact: true })).toBeVisible();
+  await expect(remoteHeaders.getByText('权限', { exact: true })).toBeVisible();
+  await expect(remoteHeaders.getByText('修改时间', { exact: true })).toHaveCount(0);
+});
+
 test('SFTP transfer queue toolbar button toggles the queue and releases its space', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoHarness(page, 'component=sftp-transfer&theme=light');
@@ -481,6 +627,42 @@ test('SFTP transfer queue toolbar button toggles the queue and releases its spac
   await expect(queue).toBeVisible();
   await expect(queueToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.sftp-transfer-workspace')).not.toHaveClass(/queue-hidden/);
+});
+
+test('restored terminal workspace stays disconnected until the manual reconnect action', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await gotoHarness(page, 'component=terminal-restore&theme=dark');
+
+  const placeholder = page.getByRole('region', { name: '已恢复的终端位置' });
+  await expect(placeholder).toContainText('ShellDesk 只恢复了安全元数据');
+  await expect(placeholder.getByText('/srv/app', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('manual-terminal-connected')).toHaveCount(0);
+
+  await placeholder.getByRole('button', { name: '手动重新连接' }).click();
+  await expect(page.getByTestId('manual-terminal-connected')).toBeVisible();
+  await expect(placeholder).toHaveCount(0);
+});
+
+test('saved SSH forwarding can be created, started, and deleted with confirmation', async ({ page }) => {
+  await gotoHarness(page, 'component=port-forwarding&theme=dark');
+
+  await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '启动', exact: true }).click();
+  await expect(page.getByText('运行中', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '新建转发' }).click();
+  await page.getByLabel('名称').fill('Internal SOCKS');
+  await page.getByLabel('转发类型').selectOption('dynamic');
+  await page.getByLabel('监听端口（0 为自动）').fill('0');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByText('Internal SOCKS', { exact: true })).toBeVisible();
+  await expect(page.getByText(/动态 SOCKS5/)).toBeVisible();
+
+  const createdCard = page.locator('.port-forward-card').filter({ hasText: 'Internal SOCKS' });
+  await createdCard.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(createdCard.getByRole('button', { name: '再次点击确认删除' })).toBeVisible();
+  await createdCard.getByRole('button', { name: '再次点击确认删除' }).click();
+  await expect(page.getByText('Internal SOCKS', { exact: true })).toHaveCount(0);
 });
 
 test('SFTP directory tree dividers resize both panes independently', async ({ page }) => {
@@ -581,9 +763,17 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(transferButtons).toHaveCount(3);
   await expect(transferButtons.nth(0)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   const queueSelects = page.locator('.sftp-queue-footer select');
-  await expect(queueSelects).toHaveCount(2);
+  await expect(queueSelects).toHaveCount(3);
   await expect(queueSelects.nth(0)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(queueSelects.nth(1)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(queueSelects.nth(2)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  const profileSelect = page.getByLabel('传输模式');
+  const concurrencySelect = page.getByLabel('并行任务');
+  await expect(profileSelect).toHaveValue('balanced');
+  await profileSelect.selectOption('compatibility');
+  await expect(concurrencySelect).toBeDisabled();
+  await expect(concurrencySelect).toHaveValue('1');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('shelldesk.sftp-transfer-profile'))).toBe('compatibility');
   await commandToolbar.getByRole('button', { name: '传输队列', exact: true }).click();
   await expect(page.locator('#sftp-transfer-queue')).toHaveCount(0);
 
@@ -613,6 +803,8 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(conflictDialog).toContainText('跳过会继续遍历同名文件夹');
   await conflictDialog.getByRole('button', { name: '跳过已存在项' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastSftpTransferOptions?.conflictPolicy)).toBe('skip');
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastSftpTransferOptions?.transferProfile)).toBe('compatibility');
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessSftpRuntimeEnqueueCount)).toBe(1);
   await expect(page.locator('#sftp-transfer-queue')).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
@@ -994,6 +1186,33 @@ test('File explorer permission errors stay visible inside the properties modal',
     page.getByTestId('explorer-properties-error'),
     'mock chmod permission failure',
   );
+});
+
+test('File explorer opens the current directory and allowlisted scripts in terminal', async ({ page }) => {
+  await gotoHarness(page, 'component=file-explorer');
+
+  await page.getByRole('button', { name: '终端', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __shellDeskUiHarnessLastExplorerTerminalPath: string })
+      .__shellDeskUiHarnessLastExplorerTerminalPath
+  ))).toBe('/tmp');
+
+  const scriptRow = page.getByTestId('explorer-row-deploy.sh');
+  await expect(scriptRow).toBeVisible();
+  await scriptRow.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '运行脚本', exact: true }).click();
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __shellDeskUiHarnessLastExplorerScriptLaunch?: {
+      title?: string;
+      initialCommand?: string;
+      workingDirectory?: string;
+    } }).__shellDeskUiHarnessLastExplorerScriptLaunch
+  ))).toEqual({
+    title: 'deploy.sh',
+    initialCommand: "sh '/tmp/deploy.sh'",
+    workingDirectory: '/tmp',
+  });
 });
 
 test('Shared sudo password prompt stays topmost when remote settings command needs elevation', async ({ page }) => {

@@ -58,6 +58,11 @@ function createPreviewSettings(): ShellDeskAppSettings {
     remoteDesktopLayout: createDefaultRemoteDesktopLayout(),
     rememberPasswords: true,
     rememberKeyPassphrases: true,
+    sshConnectTimeoutSeconds: 15,
+    sftpDefaultLocalDirectory: '/',
+    sftpDefaultRemoteDirectory: '.',
+    sftpLocalColumns: ['name', 'size', 'type', 'modifiedAt'],
+    sftpRemoteColumns: ['name', 'size', 'permissions', 'modifiedAt'],
     aiProvider: 'openai',
     aiProviderName: 'OpenAI',
     aiApiFormat: 'openai',
@@ -93,6 +98,11 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalMinimumContrastRatio: 1,
     terminalScreenReaderMode: false,
     terminalPreferTmux: false,
+    terminalRestoreWorkspace: true,
+    terminalExitPolicy: 'keep-open',
+    terminalLineTimestamps: false,
+    terminalKeywordHighlightEnabled: false,
+    terminalHighlightKeywords: 'error,warning,failed,denied,exception',
     terminalSnippets: [],
   };
 }
@@ -532,7 +542,17 @@ async function previewIpc<Channel extends IpcChannel>(
 
     case 'connection:disconnect':
     case 'connection:close-terminal':
+    case 'connection:remove-transfer':
       return true as IpcResult<Channel>;
+
+    case 'connection:list-transfers':
+      return [] as ShellDeskTransferTask[] as IpcResult<Channel>;
+
+    case 'connection:sftp-enqueue-transfers':
+      return { queuedIds: [] } as IpcResult<Channel>;
+
+    case 'connection:clear-finished-transfers':
+      return 0 as IpcResult<Channel>;
 
     default:
       return unsupportedPreviewIpc(channel);
@@ -697,6 +717,7 @@ window.guiSSH = {
     selectPublicKeyFile: () => ipc('dialog:select-public-key'),
     importConfig: () => ipc('config:import'),
     exportConfig: () => ipc('config:export'),
+    selectHostImportFiles: () => ipc('config:select-host-import-files'),
     saveTextFile: (payload) => ipc('dialog:save-text-file', payload),
     listLocalDirectory: (path) => ipc('files:list-local-directory', path),
     statLocalPath: (path) => ipc('files:stat-local-path', path),
@@ -732,6 +753,11 @@ window.guiSSH = {
     listFonts: () => ipc('system:list-fonts'),
     readKnownHosts: () => ipc('system:read-known-hosts'),
     testProxy: (payload) => ipc('system:test-proxy', payload),
+  },
+  pluginSecurity: {
+    getPolicy: () => ipc('plugins:get-security-policy'),
+    reviewManifest: (manifest) => ipc('plugins:review-manifest', manifest),
+    listAudit: () => ipc('plugins:list-security-audit'),
   },
   ai: {
     listModels: (request) => ipc('ai:list-models', request),
@@ -779,6 +805,7 @@ window.guiSSH = {
     sftpSetPathPermissions: (connectionId, remotePath, options) => ipc('connection:sftp-set-path-permissions', connectionId, remotePath, options),
     sftpDownloadPaths: (connectionId, remotePaths, localDirectory, options) => ipc('connection:sftp-download-paths', connectionId, remotePaths, localDirectory, options),
     sftpUploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:sftp-upload-local-paths', connectionId, remotePath, items, options),
+    sftpEnqueueTransfers: (connectionId, tasks, concurrency) => ipc('connection:sftp-enqueue-transfers', connectionId, tasks, concurrency),
     createDirectory: (connectionId, remotePath, options) => ipc('connection:create-directory', connectionId, remotePath, options),
     deletePath: (connectionId, remotePath, entryType, options) => ipc('connection:delete-path', connectionId, remotePath, entryType, options),
     renamePath: (connectionId, oldPath, newPath, options) => ipc('connection:rename-path', connectionId, oldPath, newPath, options),
@@ -794,6 +821,9 @@ window.guiSSH = {
     uploadPaths: (connectionId, remotePath, options) => ipc('connection:upload-paths', connectionId, remotePath, options),
     uploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:upload-local-paths', connectionId, remotePath, items, options),
     cancelTransfer: (connectionId, queueId) => ipc('connection:cancel-transfer', connectionId, queueId),
+    listTransfers: () => ipc('connection:list-transfers'),
+    removeTransfer: (transferId) => ipc('connection:remove-transfer', transferId),
+    clearFinishedTransfers: () => ipc('connection:clear-finished-transfers'),
     checkSftp: (connectionId) => ipc('connection:check-sftp', connectionId),
     selectZmodemUploadFiles: () => ipc('connection:zmodem-select-upload-files'),
     readZmodemUploadFile: (fileId, offset, length) => ipc('connection:zmodem-read-upload-file', fileId, offset, length),
@@ -816,6 +846,11 @@ window.guiSSH = {
     httpTunnelPost: (request) => ipc('connection:http-tunnel-post', request),
     httpTunnelPut: (request) => ipc('connection:http-tunnel-put', request),
     httpTunnelDelete: (request) => ipc('connection:http-tunnel-delete', request),
+    listPortForwards: (connectionId) => ipc('connection:port-forward-list', connectionId),
+    savePortForward: (profile) => ipc('connection:port-forward-save', profile),
+    deletePortForward: (profileId) => ipc('connection:port-forward-delete', profileId),
+    startPortForward: (connectionId, profileId) => ipc('connection:port-forward-start', connectionId, profileId),
+    stopPortForward: (profileId) => ipc('connection:port-forward-stop', profileId),
     mysqlConnect: (connectionId, config) => ipc('connection:mysql-connect', connectionId, config),
     mysqlDisconnect: (connectionId, mysqlId) => ipc('connection:mysql-disconnect', connectionId, mysqlId),
     mysqlDatabases: (connectionId, mysqlId) => ipc('connection:mysql-databases', connectionId, mysqlId),
@@ -891,6 +926,7 @@ window.guiSSH = {
     onSyncChanged: (callback) => onTauriEvent('sync:changed', callback),
     onTransferProgress: (callback) => onTauriEvent('transfer:progress', callback),
     onTransferEnd: (callback) => onTauriEvent('transfer:end', callback),
+    onTransferTaskChanged: (callback) => onTauriEvent('transfer:task-changed', callback),
     onUpdateAvailable: (callback) => onTauriEvent('app:update:available', callback),
     onUpdateNotAvailable: (callback) => onTauriEvent('app:update:not-available', callback),
     onUpdateDownloadProgress: (callback) => onTauriEvent('app:update:download-progress', callback),

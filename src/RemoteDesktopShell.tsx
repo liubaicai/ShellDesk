@@ -2,21 +2,15 @@ import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEve
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
-import type {
-  RemoteTerminalChromePayload,
-  RemoteTerminalCommandRequest,
-  RemoteTerminalLaunchOptions,
-  RemoteTerminalSessionEvent,
-  RemoteTerminalSessionState,
-  RemoteTerminalToolAction,
-  RemoteTerminalToolRequest,
-} from './components/remote-desktop/RemoteTerminal';
+import type { RemoteTerminalChromePayload, RemoteTerminalCommandRequest, RemoteTerminalExitResult, RemoteTerminalLaunchOptions, RemoteTerminalSessionEvent, RemoteTerminalSessionState, RemoteTerminalToolAction, RemoteTerminalToolRequest } from './components/remote-desktop/RemoteTerminal';
 import type { SettingsTab } from './components/remote-desktop/settingsTypes';
 import { getRemoteConnectionProfileHostId } from './components/remote-desktop/remoteConnectionProfiles';
 import { getErrorMessage } from './components/remote-desktop/desktopUtils';
 import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
+import { TerminalRestorePlaceholder } from './components/remote-desktop/TerminalRestorePlaceholder';
+import { TerminalTitlebarMenuPortal } from './components/remote-desktop/TerminalTitlebarMenuPortal';
 import {
   addAppToFolder,
   acknowledgeDesktopAppCatalog,
@@ -57,6 +51,8 @@ import {
   initializeRovingFocus,
 } from './features/remote-desktop/desktopKeyboardNavigation';
 import { useDesktopCapabilities } from './features/remote-desktop/useDesktopCapabilities';
+import { useTerminalWorkspacePersistence } from './features/remote-desktop/useTerminalWorkspacePersistence';
+import { shouldCloseTerminalAfterExit } from './components/remote-desktop/terminalExitPolicy';
 import {
   RemoteAiChat,
   RemoteApacheManager,
@@ -129,9 +125,8 @@ import {
   type DesktopWindowTitlebarClickState,
   type FolderRenameDialogState,
   getDesktopWallpaperStyle,
+  getDesktopWindowWorkspace,
   getMaximizedWindowFrame,
-  getTerminalSnippetGroups,
-  getTerminalSnippetPreview,
   getTopDesktopWindow,
   hasCustomDesktopWallpaper,
   hasTerminalLaunchOverrides,
@@ -146,6 +141,11 @@ import {
   titlebarDoubleClickDistance,
   type TmuxMenuState,
 } from './remoteDesktopWindowModel';
+import {
+  sanitizeTerminalLaunchMetadata,
+  splitTerminalWorkspaceFrame,
+  type TerminalWorkspaceSplitDirection,
+} from './terminalWorkspace';
 import { getAppLocale, t } from './i18n';
 import { DesktopLaunchpad } from './components/remote-desktop/DesktopLaunchpad';
 
@@ -226,6 +226,20 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const shouldReserveDockSpace = (isMaximized: boolean) => (
     dockAutoHide === 'never' || (dockAutoHide === 'maximized' && !isMaximized)
   );
+  useTerminalWorkspacePersistence({
+    host: connection.host,
+    language: settings.language,
+    enabled: settings.terminalRestoreWorkspace,
+    dockPosition,
+    dockSize,
+    dockAutoHide,
+    desktopSurfaceRef,
+    desktopWindows,
+    windowSequenceRef,
+    zIndexRef,
+    setDesktopWindows,
+    setFocusedWindowId,
+  });
   const remoteConnectionProfileHostId = getRemoteConnectionProfileHostId(connection);
   const visibleDesktopItems = getSortedDesktopItems(desktopLayout, settings.language);
   const openFolder = desktopLayout.items.find((item): item is DesktopFolderLayoutItem => item.type === 'folder' && item.id === openFolderId) ?? null;
@@ -1037,6 +1051,97 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       if (shouldResolveDefaultLaunch) pendingDefaultTerminalRef.current = false;
     }
   };
+  const reconnectRestoredTerminal = (windowId: string) => {
+    zIndexRef.current += 1;
+    const nextZIndex = zIndexRef.current;
+    setDesktopWindows((currentWindows) => currentWindows.map((desktopWindow) => {
+      if (desktopWindow.id !== windowId || !desktopWindow.terminalRestorePending) {
+        return desktopWindow;
+      }
+      const storedOptions = sanitizeTerminalLaunchMetadata(desktopWindow.terminalLaunchOptions);
+      const launchOptions = storedOptions?.mode === 'tmux' && storedOptions.tmuxSessionName
+        ? createTmuxLaunchOptions(storedOptions.tmuxSessionName, settings.language)
+        : storedOptions;
+      return {
+        ...desktopWindow,
+        isMinimized: false,
+        zIndex: nextZIndex,
+        terminalLaunchOptions: launchOptions,
+        terminalRestorePending: false,
+        terminalStatus: 'idle',
+        terminalHasForegroundTask: false,
+        chromeTitle: launchOptions?.title,
+        chromeStatus: t('terminal.status.starting', settings.language),
+        chromeTone: 'loading',
+      };
+    }));
+    setFocusedWindowId(windowId);
+    setTerminalTitlebarMenu(null);
+  };
+  const splitTerminalWindow = (
+    windowId: string,
+    direction: TerminalWorkspaceSplitDirection,
+  ) => {
+    const sourceWindow = desktopWindowsRef.current.find((desktopWindow) => (
+      desktopWindow.id === windowId && desktopWindow.appKey === 'terminal'
+    ));
+    const surface = desktopSurfaceRef.current;
+    if (!sourceWindow || !surface) return;
+    const workspace = getDesktopWindowWorkspace(
+      surface.clientWidth,
+      surface.clientHeight,
+      dockPosition,
+      dockSize,
+      shouldReserveDockSpace(false),
+    );
+    const splitFrames = splitTerminalWorkspaceFrame(sourceWindow.frame, workspace, direction);
+    const storedOptions = sanitizeTerminalLaunchMetadata(sourceWindow.terminalLaunchOptions);
+    const splitLaunchOptions = sourceWindow.terminalRestorePending
+      ? storedOptions
+      : storedOptions?.mode === 'tmux'
+        ? undefined
+        : storedOptions;
+    if (!splitFrames) {
+      void openTerminalWindow(splitLaunchOptions);
+      setTerminalTitlebarMenu(null);
+      return;
+    }
+
+    windowSequenceRef.current += 1;
+    zIndexRef.current += 1;
+    const nextWindow = createDesktopWindow(
+      'terminal',
+      windowSequenceRef.current,
+      zIndexRef.current,
+      settings.language,
+    );
+    nextWindow.frame = splitFrames[1];
+    nextWindow.terminalLaunchOptions = splitLaunchOptions;
+    if (sourceWindow.terminalRestorePending) {
+      nextWindow.terminalRestorePending = true;
+      nextWindow.terminalStatus = 'disconnected';
+      nextWindow.chromeTitle = splitLaunchOptions?.title
+        || t('terminal.workspace.restoreTitle', settings.language);
+      nextWindow.chromeStatus = t('terminal.status.disconnected', settings.language);
+      nextWindow.chromeTone = 'idle';
+    }
+    setDesktopWindows((currentWindows) => [
+      ...currentWindows.map((desktopWindow) => (
+        desktopWindow.id === sourceWindow.id
+          ? {
+              ...desktopWindow,
+              frame: splitFrames[0],
+              previousFrame: undefined,
+              isMaximized: false,
+              isMinimized: false,
+            }
+          : desktopWindow
+      )),
+      nextWindow,
+    ]);
+    setFocusedWindowId(nextWindow.id);
+    setTerminalTitlebarMenu(null);
+  };
   const openDesktopWindow = (appKey: DesktopAppKey) => {
     const availability = desktopCapabilitySnapshot[appKey];
     if (
@@ -1687,6 +1792,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
+  const handleTerminalSessionExit = (windowId: string, result: RemoteTerminalExitResult) => {
+    if (shouldCloseTerminalAfterExit(settings.terminalExitPolicy, result)) removeDesktopWindow(windowId);
+  };
+
   const requestTerminalTool = (windowId: string, action: RemoteTerminalToolAction) => {
     terminalToolRequestSequenceRef.current += 1;
     const terminalToolRequest: RemoteTerminalToolRequest = {
@@ -1743,6 +1852,15 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     const openMainAiSettings = window.guiSSH?.app.openMainAiSettings;
 
     if (desktopWindow.appKey === 'terminal') {
+      if (desktopWindow.terminalRestorePending) {
+        return (
+          <TerminalRestorePlaceholder
+            language={settings.language}
+            launchOptions={desktopWindow.terminalLaunchOptions}
+            onReconnect={() => reconnectRestoredTerminal(desktopWindow.id)}
+          />
+        );
+      }
       return (
         <RemoteTerminal
           connectionId={connection.id}
@@ -1761,6 +1879,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onCommandIntercept={interceptTerminalCommand}
           onSessionEvent={handleTerminalSessionEvent}
           onSessionStateChange={(payload) => updateTerminalSessionState(desktopWindow.id, payload)}
+          onSessionExit={(result) => handleTerminalSessionExit(desktopWindow.id, result)}
           onSettingsChange={onSettingsChange}
         />
       );
@@ -1786,7 +1905,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }
 
     if (desktopWindow.appKey === 'files') {
-      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} initialPath={desktopWindow.fileExplorerInitialPath} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} onOpenTerminal={openTerminalAtPath} />;
+      return <RemoteFileExplorer connectionId={connection.id} systemType={connection.host.systemType} initialPath={desktopWindow.fileExplorerInitialPath} onOpenFile={openNotepadFile} onOpenSqliteFile={openSqliteFile} onOpenTerminal={openTerminalAtPath} onRunScript={openTerminalWindow} />;
     }
 
     if (desktopWindow.appKey === 'notepad') {
@@ -2662,157 +2781,33 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
       document.body,
     ) : null}
 
-    {terminalTitlebarMenu && terminalTitlebarMenuWindow ? createPortal(
-      <>
-        <div
-          className="context-menu-overlay"
-          onClick={() => setTerminalTitlebarMenu(null)}
-          onContextMenu={(event) => {
-            event.preventDefault();
+    {terminalTitlebarMenu && terminalTitlebarMenuWindow ? (
+      <TerminalTitlebarMenuPortal
+        menu={terminalTitlebarMenu}
+        desktopWindow={terminalTitlebarMenuWindow}
+        language={settings.language}
+        systemType={connection.host.systemType}
+        snippets={settings.terminalSnippets ?? []}
+        tmuxState={tmuxMenuState}
+        canOpenSettings={Boolean(onSettingsChange)}
+        onClose={() => setTerminalTitlebarMenu(null)}
+        onReconnect={() => reconnectRestoredTerminal(terminalTitlebarMenuWindow.id)}
+        onNewWindow={() => {
+          if (terminalTitlebarMenuWindow.terminalRestorePending) {
+            void openTerminalWindow();
             setTerminalTitlebarMenu(null);
-          }}
-        />
-        <div
-          className="context-menu terminal-titlebar-menu"
-          style={{ left: terminalTitlebarMenu.x, top: terminalTitlebarMenu.y }}
-          role="menu"
-          aria-label={t('terminal.titlebar.tools', settings.language)}
-        >
-          <>
-              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal')}>
-                {t('terminal.titlebar.newWindow', settings.language)}
-              </button>
-              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'search')}>
-                {t('terminal.titlebar.searchOutput', settings.language)}
-              </button>
-              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'clear')}>
-                {t('terminal.titlebar.clear', settings.language)}
-              </button>
-              {connection.host.systemType !== 'windows' ? (
-            <div className="context-menu-item-has-submenu terminal-titlebar-tmux-menu">
-              <button type="button" role="menuitem" aria-haspopup="menu">
-                {t('terminal.tmux.menu', settings.language)}
-              </button>
-              <div className="context-submenu terminal-titlebar-tmux-submenu" role="menu" aria-label={t('terminal.tmux.menu', settings.language)}>
-                <button type="button" role="menuitem" onClick={openNewTmuxTerminal}>
-                  {t('terminal.tmux.newSession', settings.language)}
-                </button>
-                <button type="button" role="menuitem" onClick={(event) => {
-                  event.stopPropagation();
-                  void refreshTmuxSessions();
-                }}>
-                  {t('terminal.tmux.refresh', settings.language)}
-                </button>
-                <div className="context-menu-sep" />
-                {tmuxMenuState.status === 'loading' ? (
-                  <button type="button" role="menuitem" disabled>
-                    {t('terminal.tmux.loading', settings.language)}
-                  </button>
-                ) : null}
-                {tmuxMenuState.status === 'error' ? (
-                  <button type="button" role="menuitem" className="terminal-titlebar-tmux-message" disabled title={tmuxMenuState.error}>
-                    {tmuxMenuState.error || t('terminal.tmux.notInstalled', settings.language)}
-                  </button>
-                ) : null}
-                {tmuxMenuState.status === 'ready' && tmuxMenuState.sessions.length === 0 ? (
-                  <button type="button" role="menuitem" disabled>
-                    {t('terminal.tmux.empty', settings.language)}
-                  </button>
-                ) : null}
-                {tmuxMenuState.sessions.map((session) => (
-                  <button
-                    key={session.name}
-                    type="button"
-                    role="menuitem"
-                    className="terminal-titlebar-tmux-session-button"
-                    title={t('terminal.tmux.attachSession', settings.language, { name: session.name })}
-                    onClick={() => openTmuxTerminal(session.name, 'attach')}
-                  >
-                    <span className="terminal-titlebar-tmux-session-text">
-                      <strong>{session.name}</strong>
-                      <small>
-                        {t('terminal.tmux.sessionMeta', settings.language, {
-                          windows: String(session.windows),
-                          attached: String(session.attached),
-                        })}
-                      </small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-              ) : null}
-              {(settings.terminalSnippets ?? []).length ? (
-                <div className="context-menu-item-has-submenu terminal-titlebar-snippets-menu">
-                  <button type="button" role="menuitem" aria-haspopup="menu">
-                    {t('terminal.titlebar.snippets', settings.language)}
-                  </button>
-                  <div className="context-submenu terminal-titlebar-snippets-submenu" role="menu" aria-label={t('terminal.titlebar.snippets', settings.language)}>
-                    {getTerminalSnippetGroups(settings.terminalSnippets ?? [], settings.language).map((group) => (
-                      <div key={group.label} className="terminal-titlebar-snippet-group" role="presentation">
-                        <div className="terminal-titlebar-snippet-group-label">{group.label}</div>
-                        {group.snippets.map((snippet) => (
-                          <button
-                            key={snippet.id}
-                            type="button"
-                            role="menuitem"
-                            className="terminal-titlebar-snippet-button"
-                            title={snippet.command}
-                            onClick={() => requestTerminalCommand(terminalTitlebarMenuWindow.id, snippet.command, 'snippet')}
-                          >
-                            <span className="terminal-titlebar-snippet-text">
-                              <strong>{snippet.label}</strong>
-                              <small>{getTerminalSnippetPreview(snippet)}</small>
-                            </span>
-                            {snippet.shortcut ? <kbd>{snippet.shortcut}</kbd> : null}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <button type="button" role="menuitem" disabled>
-                  {t('terminal.titlebar.noSnippets', settings.language)}
-                </button>
-              )}
-              <div className="context-menu-sep" />
-              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'toggle-follow')}>
-                {t('terminal.titlebar.toggleFollow', settings.language)}
-              </button>
-              <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'scroll-bottom')}>
-                {t('terminal.titlebar.scrollBottom', settings.language)}
-              </button>
-              {terminalTitlebarMenuWindow.terminalStatus === 'exited' ? (
-                <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'restart')}>
-                  {t('terminal.titlebar.restartSession', settings.language)}
-                </button>
-              ) : null}
-              {onSettingsChange ? (
-                <>
-                  <div className="context-menu-sep" />
-                  <button type="button" role="menuitem" onClick={() => requestTerminalTool(terminalTitlebarMenuWindow.id, 'settings')}>
-                    {t('terminal.titlebar.settings', settings.language)}
-                  </button>
-                </>
-              ) : null}
-              {terminalTitlebarMenuWindow.terminalLaunchOptions?.mode === 'tmux' ? (
-                <>
-                  <div className="context-menu-sep" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="danger-text"
-                    onClick={() => void killTmuxSession(terminalTitlebarMenuWindow)}
-                  >
-                    {t('terminal.tmux.killCurrent', settings.language)}
-                  </button>
-                </>
-              ) : null}
-          </>
-        </div>
-      </>,
-      document.body,
+          } else {
+            requestTerminalTool(terminalTitlebarMenuWindow.id, 'new-terminal');
+          }
+        }}
+        onSplit={(direction) => splitTerminalWindow(terminalTitlebarMenuWindow.id, direction)}
+        onRequestTool={(action) => requestTerminalTool(terminalTitlebarMenuWindow.id, action)}
+        onNewTmux={openNewTmuxTerminal}
+        onRefreshTmux={() => void refreshTmuxSessions()}
+        onOpenTmux={(sessionName) => openTmuxTerminal(sessionName, 'attach')}
+        onRunSnippet={(command) => requestTerminalCommand(terminalTitlebarMenuWindow.id, command, 'snippet')}
+        onKillTmux={() => void killTmuxSession(terminalTitlebarMenuWindow)}
+      />
     ) : null}
 
     {pendingCloseWindow ? createPortal(

@@ -54,6 +54,7 @@ import {
   isFileEntry,
   isSqliteFile,
 } from './fileExplorerIcons';
+import { createRemoteScriptLaunchOptions } from './fileExplorerScriptUtils';
 import {
   formatBytes,
   getDownloadTaskLabel,
@@ -175,7 +176,7 @@ function getTrackedTableScrollTop(scrollTop: number) {
   return EXPLORER_HEADER_HEIGHT + visibleRowIndex * EXPLORER_ROW_HEIGHT;
 }
 
-function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile, onOpenSqliteFile, onOpenTerminal }: RemoteFileExplorerProps) {
+function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile, onOpenSqliteFile, onOpenTerminal, onRunScript }: RemoteFileExplorerProps) {
   const language = useCurrentAppLanguage();
   const isWindowsHost = isWindowsSystem(systemType);
   const initialRemotePath = getExplicitInitialPath(initialPath, isWindowsHost) || DEFAULT_REMOTE_PATH;
@@ -1424,6 +1425,14 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
     isFileEntry(primarySelectedEntry) &&
     isArchiveFile(primarySelectedEntry.name) &&
     (!isWindowsHost || primarySelectedEntry.name.toLowerCase().endsWith('.zip'));
+  const selectedScriptLaunchOptions = selectedEntries.length === 1 && primarySelectedEntry && isFileEntry(primarySelectedEntry)
+    ? createRemoteScriptLaunchOptions(
+        primarySelectedEntry.name,
+        joinRemotePath(remotePath, primarySelectedEntry.name, isWindowsHost),
+        remotePath,
+        systemType,
+      )
+    : undefined;
   const permissionDraftMode = parseOctalModeDraft(permissionDraft);
   const originalPermissionMode = propertiesData ? (propertiesData.mode & 0o777) : null;
   const canSaveProperties = Boolean(
@@ -1799,6 +1808,11 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
                       {t('fileExplorer.details.openInTerminal', language)}
                     </button>
                   ) : null}
+                  {selectedScriptLaunchOptions && onRunScript ? (
+                    <button type="button" onClick={() => onRunScript(selectedScriptLaunchOptions)}>
+                      {t('fileExplorer.details.runScript', language)}
+                    </button>
+                  ) : null}
                 </div>
               </>
             ) : selectedEntries.length > 1 ? (
@@ -1878,6 +1892,7 @@ function RemoteFileExplorer({ connectionId, systemType, initialPath, onOpenFile,
         onOpenFile={onOpenFile}
         onOpenSqliteFile={onOpenSqliteFile}
         onOpenTerminal={onOpenTerminal}
+        onRunScript={onRunScript}
         onStartRename={startRename}
         onCopyEntryPath={copyEntryPath}
         onDownloadEntries={(entries) => void downloadEntries(entries)}

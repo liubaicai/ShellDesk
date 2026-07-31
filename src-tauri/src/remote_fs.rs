@@ -26,8 +26,14 @@ mod paths;
 mod remote_io;
 #[path = "remote_fs/sftp.rs"]
 mod sftp;
+#[path = "remote_fs/sftp_resume.rs"]
+mod sftp_resume;
+#[path = "remote_fs/sftp_tuning.rs"]
+mod sftp_tuning;
 #[path = "remote_fs/transfer.rs"]
 mod transfer;
+#[path = "remote_fs/transfer_runtime.rs"]
+mod transfer_runtime;
 
 pub(crate) use commands::remote_sftp_probe_command;
 use commands::{
@@ -62,6 +68,7 @@ pub(crate) use sftp::{
 };
 use transfer::TransferReporter;
 pub(crate) use transfer::{cancel_transfer, cancel_transfers_for_connection};
+pub(crate) use transfer_runtime::enqueue_sftp_transfers;
 
 const ALL_FILES_FILTER_NAME: &str = "所有文件";
 const UPLOAD_FILES_TITLE: &str = "选择要上传的文件";
@@ -926,6 +933,7 @@ mod tests {
             ActiveTransfer {
                 connection_id: "conn-1".to_string(),
                 client_id: Some("client-1".to_string()),
+                resource_key: None,
             },
         );
 
@@ -953,6 +961,7 @@ mod tests {
                 ActiveTransfer {
                     connection_id: "conn-1".to_string(),
                     client_id: Some("client-1".to_string()),
+                    resource_key: None,
                 },
             );
             active_transfers.insert(
@@ -960,6 +969,7 @@ mod tests {
                 ActiveTransfer {
                     connection_id: "conn-2".to_string(),
                     client_id: Some("client-2".to_string()),
+                    resource_key: None,
                 },
             );
         }

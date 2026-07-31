@@ -27,6 +27,7 @@ import FilePane from './FilePane';
 import TransferQueue from './TransferQueue';
 import { getSftpMessages } from './messages';
 import { isWindowsPlatform, joinPanePath } from './pathUtils';
+import { resolveSftpInitialDirectories } from './settings';
 import type { FileOperationDialog, SftpTransferConflictDialog, TransferFileEntry, TransferPaneKind } from './types';
 import { useFilePane } from './useFilePane';
 import { useTransferQueue } from './useTransferQueue';
@@ -34,14 +35,26 @@ import { useTransferQueue } from './useTransferQueue';
 interface SftpTransferWindowProps {
   connection: RemoteConnectionInfo;
   language: AppLanguage;
+  defaultLocalDirectory: string;
+  defaultRemoteDirectory: string;
+  localColumns: ShellDeskSftpFileColumn[];
+  remoteColumns: ShellDeskSftpFileColumn[];
 }
 
 function topLevelDifferenceNames(paths: string[]) {
   return new Set(paths.map((path) => path.replaceAll('\\', '/').split('/')[0]).filter(Boolean));
 }
 
-export default function SftpTransferWindow({ connection, language }: SftpTransferWindowProps) {
+export default function SftpTransferWindow({
+  connection,
+  language,
+  defaultLocalDirectory,
+  defaultRemoteDirectory,
+  localColumns,
+  remoteColumns,
+}: SftpTransferWindowProps) {
   const t = useMemo(() => getSftpMessages(language), [language]);
+  const [initialDirectories] = useState(() => resolveSftpInitialDirectories(defaultLocalDirectory, defaultRemoteDirectory));
   const windowsLocal = isWindowsPlatform(window.guiSSH?.platform);
   const [activePane, setActivePane] = useState<TransferPaneKind>('local');
   const [showHidden, setShowHidden] = useState(false);
@@ -67,12 +80,17 @@ export default function SftpTransferWindow({ connection, language }: SftpTransfe
     return window.guiSSH.connections.sftpListDirectory(connection.id, path);
   }, [connection.id, t]);
 
-  const localPane = useFilePane({ kind: 'local', initialPath: '/', loadDirectory: loadLocalDirectory });
-  const remotePane = useFilePane({ kind: 'remote', initialPath: '.', loadDirectory: loadRemoteDirectory });
+  const localPane = useFilePane({ kind: 'local', initialPath: initialDirectories.local, loadDirectory: loadLocalDirectory });
+  const remotePane = useFilePane({ kind: 'remote', initialPath: initialDirectories.remote, loadDirectory: loadRemoteDirectory });
   const refreshBoth = useCallback(() => {
     void Promise.allSettled([localPane.refresh(), remotePane.refresh()]);
   }, [localPane.refresh, remotePane.refresh]);
-  const transferQueue = useTransferQueue({ connectionId: connection.id, onTransferFinished: refreshBoth });
+  const transferQueue = useTransferQueue({
+    connectionId: connection.id,
+    hostId: connection.host.id ?? '',
+    hostName: connection.host.name,
+    onTransferFinished: refreshBoth,
+  });
 
   const paneFor = (kind: TransferPaneKind) => kind === 'local' ? localPane : remotePane;
   const entryPath = (kind: TransferPaneKind, entry: TransferFileEntry) => {
@@ -319,17 +337,17 @@ export default function SftpTransferWindow({ connection, language }: SftpTransfe
       {notice ? <div className="sftp-inline-notice"><CheckCircle2 aria-hidden="true" />{notice}<button type="button" onClick={() => setNotice('')}><X aria-hidden="true" /></button></div> : null}
 
       <section className="sftp-dual-pane">
-        <FilePane kind="local" controller={localPane} windowsLocal={windowsLocal} differences={localDifferences} showHidden={showHidden} isActive={activePane === 'local'} t={t} onActivate={() => setActivePane('local')} onNewFolder={() => void openDialog('new-folder', 'local')} onNewFile={() => void openDialog('new-file', 'local')} onRename={(entry) => void openDialog('rename', 'local', [entry])} onDelete={(entries) => void openDialog('delete', 'local', entries)} onProperties={(entry) => void openDialog('properties', 'local', [entry])} onTransfer={enqueueUpload} />
+        <FilePane kind="local" controller={localPane} windowsLocal={windowsLocal} differences={localDifferences} showHidden={showHidden} columns={localColumns} isActive={activePane === 'local'} t={t} onActivate={() => setActivePane('local')} onNewFolder={() => void openDialog('new-folder', 'local')} onNewFile={() => void openDialog('new-file', 'local')} onRename={(entry) => void openDialog('rename', 'local', [entry])} onDelete={(entries) => void openDialog('delete', 'local', entries)} onProperties={(entry) => void openDialog('properties', 'local', [entry])} onTransfer={enqueueUpload} />
         <aside className="sftp-transfer-rail">
           <button type="button" onClick={() => enqueueUpload(uploadEntries)} disabled={!uploadEntries.length} title={t('uploadArrow')}><ArrowRight aria-hidden="true" /><span>{t('upload')}</span></button>
           <button type="button" onClick={() => enqueueDownload(downloadEntries)} disabled={!downloadEntries.length} title={t('downloadArrow')}><ArrowLeft aria-hidden="true" /><span>{t('download')}</span></button>
           <i />
           <button type="button" onClick={() => void compareDirectories().catch((error) => setNotice(getErrorMessage(error)))} disabled={comparing}><Columns3 className={comparing ? 'spin' : ''} aria-hidden="true" /><span>{t('compare')}</span></button>
         </aside>
-        <FilePane kind="remote" controller={remotePane} windowsLocal={windowsLocal} differences={remoteDifferences} showHidden={showHidden} isActive={activePane === 'remote'} t={t} onActivate={() => setActivePane('remote')} onNewFolder={() => void openDialog('new-folder', 'remote')} onNewFile={() => void openDialog('new-file', 'remote')} onRename={(entry) => void openDialog('rename', 'remote', [entry])} onDelete={(entries) => void openDialog('delete', 'remote', entries)} onProperties={(entry) => void openDialog('properties', 'remote', [entry])} onTransfer={enqueueDownload} />
+        <FilePane kind="remote" controller={remotePane} windowsLocal={windowsLocal} differences={remoteDifferences} showHidden={showHidden} columns={remoteColumns} isActive={activePane === 'remote'} t={t} onActivate={() => setActivePane('remote')} onNewFolder={() => void openDialog('new-folder', 'remote')} onNewFile={() => void openDialog('new-file', 'remote')} onRename={(entry) => void openDialog('rename', 'remote', [entry])} onDelete={(entries) => void openDialog('delete', 'remote', entries)} onProperties={(entry) => void openDialog('properties', 'remote', [entry])} onTransfer={enqueueDownload} />
       </section>
 
-      {queueVisible ? <TransferQueue tasks={transferQueue.tasks} filter={queueFilter} onFilterChange={setQueueFilter} concurrency={transferQueue.concurrency} onConcurrencyChange={transferQueue.setConcurrency} onCancel={(id) => void transferQueue.cancel(id)} onPause={(id) => void transferQueue.pause(id)} onResume={transferQueue.resume} onRetry={transferQueue.retry} onRemove={transferQueue.remove} onClearFinished={transferQueue.clearFinished} t={t} /> : null}
+      {queueVisible ? <TransferQueue tasks={transferQueue.tasks} filter={queueFilter} onFilterChange={setQueueFilter} concurrency={transferQueue.concurrency} onConcurrencyChange={transferQueue.setConcurrency} transferProfile={transferQueue.transferProfile} onTransferProfileChange={transferQueue.setTransferProfile} onCancel={(id) => void transferQueue.cancel(id)} onPause={(id) => void transferQueue.pause(id)} onResume={transferQueue.resume} onRetry={transferQueue.retry} onRemove={transferQueue.remove} onClearFinished={transferQueue.clearFinished} t={t} /> : null}
 
       <footer className="sftp-workspace-status">
         <span>{t('localSummary', { count: localPane.state.entries.length })}</span><span>{localPane.selectedEntries.length ? `${t('selected')}: ${formatBytes(localPane.selectedEntries.reduce((sum, entry) => sum + entry.size, 0))}` : '—'}</span>

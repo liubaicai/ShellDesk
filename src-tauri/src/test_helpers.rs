@@ -16,6 +16,7 @@ pub(crate) fn ssh_profile() -> SshProfile {
         jump: None,
         keepalive_enabled: false,
         keepalive_interval_ms: 15_000,
+        connect_timeout_ms: 15_000,
     }
 }
 

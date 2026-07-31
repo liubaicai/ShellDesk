@@ -57,6 +57,8 @@ const TERMINAL_SNIPPET_LANGUAGE_CHOICES: &[&str] = &[
 ];
 const AI_API_FORMAT_CHOICES: &[&str] = &["openai", "anthropic"];
 const WEB_SEARCH_PROVIDER_CHOICES: &[&str] = &["tavily", "exa", "zhipu"];
+const SFTP_LOCAL_COLUMN_CHOICES: &[&str] = &["name", "size", "type", "modifiedAt"];
+const SFTP_REMOTE_COLUMN_CHOICES: &[&str] = &["name", "size", "type", "permissions", "modifiedAt"];
 const REMOTE_DESKTOP_DOCK_POSITION_CHOICES: &[&str] = &["bottom", "left", "right", "top"];
 const REMOTE_DESKTOP_DOCK_SIZE_CHOICES: &[&str] = &["small", "medium", "large"];
 const REMOTE_DESKTOP_DOCK_AUTO_HIDE_CHOICES: &[&str] = &["never", "always", "maximized"];
@@ -219,6 +221,29 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
             .cloned()
             .unwrap_or_else(|| default_terminal_snippets(&language)),
     )?;
+    let sftp_default_local_directory = read_optional_bounded_string(
+        settings.get("sftpDefaultLocalDirectory"),
+        "SFTP 本地起始目录",
+        1024,
+        true,
+        true,
+    )?;
+    let sftp_default_remote_directory = read_optional_bounded_string(
+        settings.get("sftpDefaultRemoteDirectory"),
+        "SFTP 远端起始目录",
+        1024,
+        true,
+        true,
+    )?;
+    let terminal_highlight_keywords = match settings.get("terminalHighlightKeywords") {
+        Some(value) => {
+            read_optional_bounded_string(Some(value), "终端高亮关键字", 512, true, true)?
+        }
+        None => defaults["terminalHighlightKeywords"]
+            .as_str()
+            .unwrap_or("error,warning,failed,denied,exception")
+            .to_string(),
+    };
 
     Ok(json!({
         "language": language,
@@ -240,6 +265,11 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "remoteDesktopLayout": remote_desktop_layout,
         "rememberPasswords": read_bool(settings.get("rememberPasswords"), defaults["rememberPasswords"].as_bool().unwrap_or(true)),
         "rememberKeyPassphrases": read_bool(settings.get("rememberKeyPassphrases"), defaults["rememberKeyPassphrases"].as_bool().unwrap_or(true)),
+        "sshConnectTimeoutSeconds": read_i64_range(settings.get("sshConnectTimeoutSeconds"), 3, 120, defaults["sshConnectTimeoutSeconds"].as_i64().unwrap_or(15)),
+        "sftpDefaultLocalDirectory": if sftp_default_local_directory.is_empty() { defaults["sftpDefaultLocalDirectory"].as_str().unwrap_or("/") } else { &sftp_default_local_directory },
+        "sftpDefaultRemoteDirectory": if sftp_default_remote_directory.is_empty() { defaults["sftpDefaultRemoteDirectory"].as_str().unwrap_or(".") } else { &sftp_default_remote_directory },
+        "sftpLocalColumns": read_sftp_columns(settings.get("sftpLocalColumns"), SFTP_LOCAL_COLUMN_CHOICES, defaults.get("sftpLocalColumns").cloned().unwrap_or_else(|| json!(SFTP_LOCAL_COLUMN_CHOICES))),
+        "sftpRemoteColumns": read_sftp_columns(settings.get("sftpRemoteColumns"), SFTP_REMOTE_COLUMN_CHOICES, defaults.get("sftpRemoteColumns").cloned().unwrap_or_else(|| json!(["name", "size", "permissions", "modifiedAt"]))),
         "aiProvider": ai_provider,
         "aiProviderName": ai_provider_name,
         "aiApiFormat": ai_api_format,
@@ -275,6 +305,11 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalMinimumContrastRatio": read_f64_range(settings.get("terminalMinimumContrastRatio"), 1.0, 7.0, defaults["terminalMinimumContrastRatio"].as_f64().unwrap_or(1.0)),
         "terminalScreenReaderMode": read_bool(settings.get("terminalScreenReaderMode"), defaults["terminalScreenReaderMode"].as_bool().unwrap_or(false)),
         "terminalPreferTmux": read_bool(settings.get("terminalPreferTmux"), defaults["terminalPreferTmux"].as_bool().unwrap_or(false)),
+        "terminalRestoreWorkspace": read_bool(settings.get("terminalRestoreWorkspace"), defaults["terminalRestoreWorkspace"].as_bool().unwrap_or(true)),
+        "terminalExitPolicy": read_choice(settings.get("terminalExitPolicy"), &["keep-open", "close-success", "close-always"], defaults["terminalExitPolicy"].as_str().unwrap_or("keep-open")),
+        "terminalLineTimestamps": read_bool(settings.get("terminalLineTimestamps"), defaults["terminalLineTimestamps"].as_bool().unwrap_or(false)),
+        "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
+        "terminalHighlightKeywords": terminal_highlight_keywords,
         "terminalSnippets": terminal_snippets
     }))
 }
@@ -285,6 +320,19 @@ fn read_choice(value: Option<&Value>, choices: &[&str], fallback: &str) -> Strin
         .filter(|value| choices.contains(value))
         .unwrap_or(fallback)
         .to_string()
+}
+
+fn read_sftp_columns(value: Option<&Value>, choices: &[&str], fallback: Value) -> Value {
+    let Some(columns) = value.and_then(Value::as_array) else {
+        return fallback;
+    };
+    let configured = columns.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+    json!(choices
+        .iter()
+        .filter(|column| {
+            **column == "name" || configured.iter().any(|configured| configured == *column)
+        })
+        .collect::<Vec<_>>())
 }
 
 fn read_ai_provider(value: Option<&Value>, fallback: &str) -> String {
@@ -766,7 +814,7 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
     let auth_method = host
         .get("authMethod")
         .and_then(Value::as_str)
-        .filter(|value| matches!(*value, "password" | "key"))
+        .filter(|value| matches!(*value, "password" | "key" | "agent"))
         .ok_or_else(|| "主机登录方式无效。".to_string())?;
     let port = read_port(host.get("port"), "主机端口")?;
     let name = read_bounded_string_value(host.get("name"), "主机名称", 80, true, true, true)?;
@@ -788,6 +836,10 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
         "proxyProfileId": read_optional_bounded_string(host.get("proxyProfileId"), "代理 ID", 128, true, true)?,
         "keepaliveEnabled": read_bool(host.get("keepaliveEnabled"), true),
         "keepaliveIntervalMs": read_i64_range(host.get("keepaliveIntervalMs"), 1_000, 3_600_000, 15_000),
+        "connectTimeoutMs": host.get("connectTimeoutMs")
+            .and_then(Value::as_u64)
+            .filter(|value| (3_000..=120_000).contains(value))
+            .unwrap_or(0),
         "systemType": read_remote_system_type(host.get("systemType")),
         "systemName": read_optional_bounded_string(host.get("systemName"), "系统名称", 160, true, true)?,
         "hostInfo": read_host_info_snapshot(host.get("hostInfo"))?,
@@ -812,12 +864,21 @@ fn read_stored_host_record(value: &Value) -> Result<Value, String> {
             output["name"].as_str().unwrap_or("")
         ));
     }
-    if auth_method == "password" {
-        output["keyId"] = json!("");
-        output["keyPath"] = json!("");
-        output["passphrase"] = json!("");
-    } else {
-        output["password"] = json!("");
+    match auth_method {
+        "password" => {
+            output["keyId"] = json!("");
+            output["keyPath"] = json!("");
+            output["passphrase"] = json!("");
+        }
+        "key" => {
+            output["password"] = json!("");
+        }
+        _ => {
+            output["password"] = json!("");
+            output["keyId"] = json!("");
+            output["keyPath"] = json!("");
+            output["passphrase"] = json!("");
+        }
     }
     if output["privilegeMode"].as_str() != Some("su-root") {
         output["rootPassword"] = json!("");
@@ -1214,4 +1275,155 @@ fn read_port(value: Option<&Value>, label: &str) -> Result<i64, String> {
         _ => None,
     };
     port.ok_or_else(|| format!("{label}无效。"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_agent_hosts_drop_other_authentication_secrets() {
+        let hosts = normalize_hosts(&json!([{
+            "id": "agent-host",
+            "name": "Agent Host",
+            "address": "agent.example.com",
+            "port": 22,
+            "username": "deploy",
+            "authMethod": "agent",
+            "password": "stale-password",
+            "keyId": "stale-key",
+            "keyPath": "/tmp/stale-key",
+            "passphrase": "stale-passphrase",
+            "connectTimeoutMs": 9_000,
+            "group": "",
+            "tags": [],
+            "note": "",
+            "createdAt": "2026-07-31T00:00:00Z",
+            "updatedAt": "2026-07-31T00:00:00Z"
+        }]))
+        .unwrap();
+        let host = &hosts.as_array().unwrap()[0];
+
+        assert_eq!(host["authMethod"], "agent");
+        assert_eq!(host["password"], "");
+        assert_eq!(host["keyId"], "");
+        assert_eq!(host["keyPath"], "");
+        assert_eq!(host["passphrase"], "");
+        assert_eq!(host["connectTimeoutMs"], 9_000);
+    }
+
+    #[test]
+    fn settings_connect_timeout_falls_back_outside_supported_range() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["sshConnectTimeoutSeconds"], 15);
+
+        let minimum = normalize_app_settings(&json!({
+            "sshConnectTimeoutSeconds": 3
+        }))
+        .unwrap();
+        assert_eq!(minimum["sshConnectTimeoutSeconds"], 3);
+
+        let invalid = normalize_app_settings(&json!({
+            "sshConnectTimeoutSeconds": 121
+        }))
+        .unwrap();
+        assert_eq!(invalid["sshConnectTimeoutSeconds"], 15);
+    }
+
+    #[test]
+    fn settings_normalize_sftp_start_directories() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["sftpDefaultLocalDirectory"], "/");
+        assert_eq!(defaults["sftpDefaultRemoteDirectory"], ".");
+
+        let configured = normalize_app_settings(&json!({
+            "sftpDefaultLocalDirectory": "  D:\\Transfers  ",
+            "sftpDefaultRemoteDirectory": "  /srv/releases  "
+        }))
+        .unwrap();
+        assert_eq!(configured["sftpDefaultLocalDirectory"], "D:\\Transfers");
+        assert_eq!(configured["sftpDefaultRemoteDirectory"], "/srv/releases");
+
+        let blank = normalize_app_settings(&json!({
+            "sftpDefaultLocalDirectory": "",
+            "sftpDefaultRemoteDirectory": " "
+        }))
+        .unwrap();
+        assert_eq!(blank["sftpDefaultLocalDirectory"], "/");
+        assert_eq!(blank["sftpDefaultRemoteDirectory"], ".");
+    }
+
+    #[test]
+    fn settings_normalize_terminal_exit_policy() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["terminalExitPolicy"], "keep-open");
+
+        for policy in ["keep-open", "close-success", "close-always"] {
+            let normalized = normalize_app_settings(&json!({
+                "terminalExitPolicy": policy
+            }))
+            .unwrap();
+            assert_eq!(normalized["terminalExitPolicy"], policy);
+        }
+
+        let invalid = normalize_app_settings(&json!({
+            "terminalExitPolicy": "close-disconnected"
+        }))
+        .unwrap();
+        assert_eq!(invalid["terminalExitPolicy"], "keep-open");
+    }
+
+    #[test]
+    fn settings_normalize_terminal_output_aids() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["terminalLineTimestamps"], false);
+        assert_eq!(defaults["terminalKeywordHighlightEnabled"], false);
+        assert_eq!(
+            defaults["terminalHighlightKeywords"],
+            "error,warning,failed,denied,exception"
+        );
+
+        let configured = normalize_app_settings(&json!({
+            "terminalLineTimestamps": true,
+            "terminalKeywordHighlightEnabled": true,
+            "terminalHighlightKeywords": " error, warning "
+        }))
+        .unwrap();
+        assert_eq!(configured["terminalLineTimestamps"], true);
+        assert_eq!(configured["terminalKeywordHighlightEnabled"], true);
+        assert_eq!(configured["terminalHighlightKeywords"], "error, warning");
+
+        let blank = normalize_app_settings(&json!({
+            "terminalHighlightKeywords": ""
+        }))
+        .unwrap();
+        assert_eq!(blank["terminalHighlightKeywords"], "");
+    }
+
+    #[test]
+    fn settings_normalize_sftp_columns() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(
+            defaults["sftpLocalColumns"],
+            json!(["name", "size", "type", "modifiedAt"])
+        );
+        assert_eq!(
+            defaults["sftpRemoteColumns"],
+            json!(["name", "size", "permissions", "modifiedAt"])
+        );
+
+        let configured = normalize_app_settings(&json!({
+            "sftpLocalColumns": ["permissions", "modifiedAt"],
+            "sftpRemoteColumns": ["permissions", "type", "permissions", "unknown"]
+        }))
+        .unwrap();
+        assert_eq!(
+            configured["sftpLocalColumns"],
+            json!(["name", "modifiedAt"])
+        );
+        assert_eq!(
+            configured["sftpRemoteColumns"],
+            json!(["name", "type", "permissions"])
+        );
+    }
 }

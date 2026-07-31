@@ -171,6 +171,7 @@ interface ShellDeskFileControls {
   selectPublicKeyFile: () => Promise<string>;
   importConfig: () => Promise<ShellDeskConfigImportResult | null>;
   exportConfig: () => Promise<string>;
+  selectHostImportFiles: () => Promise<Array<{ name: string; parentName: string; content: string }>>;
   saveTextFile: (payload: {
     title?: string;
     defaultFileName?: string;
@@ -363,6 +364,8 @@ interface ShellDeskMcpSkillExportResult {
   path?: string;
 }
 
+type ShellDeskSftpFileColumn = 'name' | 'size' | 'type' | 'permissions' | 'modifiedAt';
+
 interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
   interfaceFont: string;
@@ -383,6 +386,11 @@ interface ShellDeskAppSettings {
   remoteDesktopLayout: ShellDeskRemoteDesktopLayout;
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
+  sshConnectTimeoutSeconds: number;
+  sftpDefaultLocalDirectory: string;
+  sftpDefaultRemoteDirectory: string;
+  sftpLocalColumns: ShellDeskSftpFileColumn[];
+  sftpRemoteColumns: ShellDeskSftpFileColumn[];
   aiProvider: ShellDeskAiProvider;
   aiProviderName: string;
   aiApiFormat: ShellDeskAiApiFormat;
@@ -426,6 +434,11 @@ interface ShellDeskAppSettings {
   terminalMinimumContrastRatio: number;
   terminalScreenReaderMode: boolean;
   terminalPreferTmux: boolean;
+  terminalRestoreWorkspace: boolean;
+  terminalExitPolicy: 'keep-open' | 'close-success' | 'close-always';
+  terminalLineTimestamps: boolean;
+  terminalKeywordHighlightEnabled: boolean;
+  terminalHighlightKeywords: string;
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 
@@ -500,7 +513,7 @@ interface ShellDeskStoredHostRecord {
   address: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
   password: string;
   keyId: string;
   keyPath?: string;
@@ -512,6 +525,7 @@ interface ShellDeskStoredHostRecord {
   proxyProfileId?: string;
   keepaliveEnabled?: boolean;
   keepaliveIntervalMs?: number;
+  connectTimeoutMs?: number;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
   hostInfo?: ShellDeskHostInfoSnapshot | null;
@@ -611,6 +625,7 @@ interface ShellDeskHostConnectionRequest {
   proxyProfileId?: string;
   keepaliveEnabled?: boolean;
   keepaliveIntervalMs?: number;
+  connectTimeoutMs?: number;
   systemType?: ShellDeskHostSystemType;
   systemName?: string;
 }
@@ -850,9 +865,61 @@ interface ShellDeskLocalUploadItem {
 interface ShellDeskSftpTransferOptions {
   transferClientId?: string;
   queueId?: string;
+  hostId?: string;
+  hostName?: string;
+  label?: string;
+  sourcePaths?: string[];
+  targetPath?: string;
   expectedTotal?: number;
   expectedFileCount?: number;
   conflictPolicy?: 'overwrite' | 'skip';
+  transferProfile?: 'balanced' | 'compatibility';
+}
+
+interface ShellDeskSftpRuntimeTask {
+  id: string;
+  direction: 'upload' | 'download';
+  label: string;
+  sourcePaths: string[];
+  targetPath: string;
+  plannedSize?: number;
+  plannedFileCount?: number;
+  conflictPolicy?: 'overwrite' | 'skip';
+  transferProfile?: 'balanced' | 'compatibility';
+  hostId?: string;
+  hostName?: string;
+}
+
+type ShellDeskPortForwardKind = 'local' | 'remote' | 'dynamic';
+type ShellDeskPortForwardStatus = 'stopped' | 'starting' | 'running' | 'recovering' | 'error';
+
+interface ShellDeskPortForwardProfile {
+  id?: string;
+  hostId: string;
+  name: string;
+  kind: ShellDeskPortForwardKind;
+  bindHost: string;
+  bindPort: number;
+  targetHost: string;
+  targetPort: number;
+  autostart: boolean;
+  reconnect: boolean;
+  allowNonLoopback: boolean;
+}
+
+interface ShellDeskPortForwardRuntime {
+  connectionId?: string;
+  status: ShellDeskPortForwardStatus;
+  bindHost?: string;
+  bindPort?: number;
+  retryAttempt?: number;
+  error?: string;
+  updatedAt?: string;
+}
+
+interface ShellDeskPortForwardRecord {
+  profile: ShellDeskPortForwardProfile & { id: string };
+  runtime: ShellDeskPortForwardRuntime;
 }
 
 interface ShellDeskConnectionControls {
@@ -902,6 +969,7 @@ interface ShellDeskConnectionControls {
   sftpSetPathPermissions: (connectionId: string, remotePath: string, options: ShellDeskRemotePathPermissionOptions) => Promise<boolean>;
   sftpDownloadPaths: (connectionId: string, remotePaths: string[], localDirectory: string, options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; directoryPath?: string; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
   sftpUploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
+  sftpEnqueueTransfers: (connectionId: string, tasks: ShellDeskSftpRuntimeTask[], concurrency: number) => Promise<{ queuedIds: string[] }>;
   createDirectory: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink', options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   renamePath: (connectionId: string, oldPath: string, newPath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
@@ -917,6 +985,9 @@ interface ShellDeskConnectionControls {
   uploadPaths: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   uploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSudoPasswordOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number }>;
   cancelTransfer: (connectionId: string, queueId?: string) => Promise<boolean>;
+  listTransfers: () => Promise<ShellDeskTransferTask[]>;
+  removeTransfer: (transferId: string) => Promise<boolean>;
+  clearFinishedTransfers: () => Promise<number>;
   checkSftp: (connectionId: string) => Promise<{ available: boolean; error?: string }>;
   selectZmodemUploadFiles: () => Promise<{ canceled: boolean; files: ShellDeskZmodemUploadFile[] }>;
   readZmodemUploadFile: (fileId: string, offset: number, length: number) => Promise<ArrayBuffer>;
@@ -945,6 +1016,11 @@ interface ShellDeskConnectionControls {
   httpTunnelPost: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
   httpTunnelPut: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
   httpTunnelDelete: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
+  listPortForwards: (connectionId: string) => Promise<ShellDeskPortForwardRecord[]>;
+  savePortForward: (profile: ShellDeskPortForwardProfile) => Promise<ShellDeskPortForwardProfile & { id: string }>;
+  deletePortForward: (profileId: string) => Promise<boolean>;
+  startPortForward: (connectionId: string, profileId: string) => Promise<ShellDeskPortForwardRuntime>;
+  stopPortForward: (profileId: string) => Promise<boolean>;
   mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<ShellDeskMysqlConnectResult>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
@@ -1418,6 +1494,12 @@ interface ShellDeskSystemControls {
   testProxy: (payload: { config: ShellDeskProxyConfig; target?: ShellDeskProxyTestTarget }) => Promise<ShellDeskProxyTestResult>;
 }
 
+interface ShellDeskPluginSecurityControls {
+  getPolicy: () => Promise<ShellDeskPluginSecurityPolicy>;
+  reviewManifest: (manifest: ShellDeskPluginManifestReviewInput) => Promise<ShellDeskPluginManifestReview>;
+  listAudit: () => Promise<ShellDeskPluginSecurityAuditEntry[]>;
+}
+
 interface ShellDeskAiControls {
   // TODO: Keep these legacy IPC AI methods until all fallback callers are retired.
   listModels: (request: ShellDeskAiModelListRequest) => Promise<ShellDeskAiModelListResult>;
@@ -1596,6 +1678,22 @@ interface ShellDeskTransferProgress {
   totalDirectories?: number;
 }
 
+interface ShellDeskTransferTask extends ShellDeskTransferProgress {
+  id: string;
+  hostId?: string;
+  hostName?: string;
+  label?: string;
+  sourcePaths?: string[];
+  targetPath?: string;
+  transferProfile?: 'balanced' | 'compatibility';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled' | 'paused';
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  error?: string;
+  errorCode?: 'interrupted-on-exit';
+}
+
 interface ShellDeskTransferEndPayload {
   connectionId?: string;
   queueId?: string;
@@ -1643,6 +1741,7 @@ interface ShellDeskEventControls {
   onSyncChanged: (callback: (payload: ShellDeskSyncResult) => void) => () => void;
   onTransferProgress: (callback: (payload: ShellDeskTransferProgress) => void) => () => void;
   onTransferEnd: (callback: (payload: ShellDeskTransferEndPayload) => void) => () => void;
+  onTransferTaskChanged: (callback: (payload: ShellDeskTransferTask) => void) => () => void;
   onUpdateAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
   onUpdateNotAvailable: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
   onUpdateDownloadProgress: (callback: (payload: ShellDeskUpdateDownloadProgress) => void) => () => void;
@@ -1660,6 +1759,7 @@ interface ShellDeskApi {
   logs: ShellDeskLogsControls;
   preferences: ShellDeskPreferenceControls;
   system: ShellDeskSystemControls;
+  pluginSecurity: ShellDeskPluginSecurityControls;
   ai: ShellDeskAiControls;
   agentSessions: ShellDeskAgentSessionsControls;
   sync: ShellDeskSyncControls;

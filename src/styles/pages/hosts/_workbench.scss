@@ -545,6 +545,27 @@
   box-shadow: var(--shadow-soft);
 }
 
+.host-table-frame:focus {
+  outline: none;
+}
+
+.host-table-frame:focus-visible {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-soft);
+}
+
+.host-table-frame > .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
+}
+
 .host-table-frame.card-mode {
   border-color: transparent;
   background: transparent;

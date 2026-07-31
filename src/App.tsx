@@ -21,7 +21,11 @@ import {
 import appIconUrl from './assets/images/icon.png';
 import DismissibleAlert from './components/DismissibleAlert';
 import HostListPanel from './components/HostListPanel';
+import HostImportWizard from './components/HostImportWizard';
+import HostImportMenuActions from './components/HostImportMenuActions';
 import HostMetadataFields, { useHostMetadataOptions } from './components/HostMetadataFields';
+import { AuthenticationMethodSwitch, SshConnectTimeoutField } from './components/SshConnectionSettingsFields';
+import GlobalTransferCenter from './components/transfers/GlobalTransferCenter';
 import {
   type AuthMethod,
   compareHostsByHostListSortMode,
@@ -109,6 +113,7 @@ import {
   validateKeyForm,
   type VaultCollectionsSavePayload,
 } from './appHostModel';
+import { useHostImportWorkflow } from './features/hosts/useHostImportWorkflow';
 import { HostSystemIcon, ShellDeskNavIcon } from './components/AppNavigationIcons';
 import type { NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
@@ -1634,21 +1639,17 @@ function App() {
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
   }, [commitCollectionsState]);
-
   const updateSettingsAndPersist = useCallback(async (settingsUpdate: SettingsUpdate) => {
     const nextSettings = typeof settingsUpdate === 'function'
       ? settingsUpdate(settingsRef.current)
       : settingsUpdate;
-
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
     await persistCurrentCollections();
   }, [commitCollectionsState, persistCurrentCollections]);
-
   const updateRemoteDesktopSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     persistRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
     void updateSettingsAndPersist(nextSettings);
   }, [updateSettingsAndPersist]);
-
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '', hostMeta: LogHostMeta = {}) => {
     const entry: LogEntry = {
       id: createId(),
@@ -1659,7 +1660,6 @@ function App() {
       detail,
       ...hostMeta,
     };
-
     setLogs((current) => {
       const next = [entry, ...current];
       return next.length > maxRenderedLogEntries ? next.slice(0, maxRenderedLogEntries) : next;
@@ -1668,6 +1668,14 @@ function App() {
     void window.guiSSH?.logs?.appendEntry(entry as unknown as ShellDeskLogEntry).catch(() => undefined);
   };
 
+  const hostImport = useHostImportWorkflow({
+    language: appLanguage,
+    readHosts: () => hostsRef.current,
+    commitHosts: (nextHosts) => commitCollectionsState(nextHosts, sshKeysRef.current, settingsRef.current),
+    createId,
+    setStatusMessage,
+    addLog,
+  });
   const clearLogs = () => {
     setLogs([]);
     void window.guiSSH?.logs?.clearEntries().catch(() => undefined);
@@ -2230,9 +2238,14 @@ function App() {
       return {
         ...currentForm,
         authMethod,
-        keyId: authMethod === 'key' ? selectedKey?.id ?? '' : currentForm.keyId,
-        passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? currentForm.passphrase : currentForm.passphrase,
-        saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+        password: authMethod === 'password' ? currentForm.password : '',
+        keyId: authMethod === 'key' ? selectedKey?.id ?? '' : '',
+        passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? currentForm.passphrase : '',
+        saveCredential: authMethod === 'agent'
+          ? true
+          : authMethod === 'password'
+            ? settings.rememberPasswords
+            : settings.rememberKeyPassphrases,
       };
     });
     setCredentialError('');
@@ -2251,16 +2264,20 @@ function App() {
 
   const openCredentialDialog = (host: ConnectionHost, message = '', launchTarget: ConnectionLaunchTarget = 'desktop') => {
     const selectedKey = host.authMethod === 'key' ? getSelectedSshKey(host) : null;
-    const authMethod: AuthMethod = host.authMethod === 'key' ? 'key' : 'password';
+    const authMethod: AuthMethod = host.authMethod;
 
     setCredentialHost(host);
     setCredentialLaunchTarget(launchTarget);
     setCredentialForm({
       authMethod,
-      password: host.password,
-      keyId: authMethod === 'key' ? selectedKey?.id ?? '' : sshKeys[0]?.id ?? '',
-      passphrase: selectedKey?.passphrase ?? host.passphrase,
-      saveCredential: authMethod === 'password' ? settings.rememberPasswords : settings.rememberKeyPassphrases,
+      password: authMethod === 'password' ? host.password : '',
+      keyId: authMethod === 'key' ? selectedKey?.id ?? '' : '',
+      passphrase: authMethod === 'key' ? selectedKey?.passphrase ?? host.passphrase : '',
+      saveCredential: authMethod === 'agent'
+        ? true
+        : authMethod === 'password'
+          ? settings.rememberPasswords
+          : settings.rememberKeyPassphrases,
     });
     setCredentialError(message);
   };
@@ -2542,7 +2559,7 @@ function App() {
               ...currentHost,
               ...(credentials?.saveCredential
                 ? {
-                    authMethod: effectiveAuthMethod === 'key' ? 'key' : 'password',
+                    authMethod: effectiveAuthMethod,
                     password: effectiveAuthMethod === 'password' ? credentials.password : '',
                     keyId: effectiveAuthMethod === 'key' ? selectedKey?.id ?? currentHost.keyId : '',
                     keyPath: effectiveAuthMethod === 'key' && !selectedKey ? host.keyPath : '',
@@ -2907,7 +2924,9 @@ function App() {
   );
   const credentialCanUseKeyAuth = sshKeys.length > 0 || credentialCanUseCurrentKeyFile;
   const credentialSaveLabel = credentialHost && hosts.some((host) => host.id === credentialHost.id)
-    ? t('app.credential.saveHostPassword', appLanguage)
+    ? credentialForm.authMethod === 'agent'
+      ? t('app.credential.saveAgentAuth', appLanguage)
+      : t('app.credential.saveHostPassword', appLanguage)
     : credentialForm.authMethod === 'key'
       ? t('app.credential.saveKeyPassphrase', appLanguage)
       : t('app.credential.rememberPassword', appLanguage);
@@ -3016,24 +3035,28 @@ function App() {
           ) : null}
         </div>
 
-        {showWindowControls ? (
-          <div className="titlebar-controls no-drag">
-            <button type="button" className="titlebar-button minimize" aria-label={t('app.titlebar.minimize', appLanguage)} title={t('app.titlebar.minimize', appLanguage)} onClick={minimizeWindow}>−</button>
-            <button
-              type="button"
-              className={`titlebar-button maximize ${isWindowMaximized ? 'restore' : ''}`}
-              aria-label={maximizeWindowLabel}
-              title={maximizeWindowLabel}
-              onClick={toggleMaximizeWindow}
-            >
-              <span className={`window-control-icon ${isWindowMaximized ? 'restore' : 'maximize'}`} aria-hidden="true" />
-            </button>
-            <button type="button" className="titlebar-button danger" aria-label={t('app.titlebar.close', appLanguage)} title={t('app.titlebar.close', appLanguage)} onClick={closeWindow}>×</button>
-          </div>
-        ) : null}
+        <div className="titlebar-actions no-drag">
+          <GlobalTransferCenter language={appLanguage} />
+          {showWindowControls ? (
+            <div className="titlebar-controls">
+              <button type="button" className="titlebar-button minimize" aria-label={t('app.titlebar.minimize', appLanguage)} title={t('app.titlebar.minimize', appLanguage)} onClick={minimizeWindow}>−</button>
+              <button
+                type="button"
+                className={`titlebar-button maximize ${isWindowMaximized ? 'restore' : ''}`}
+                aria-label={maximizeWindowLabel}
+                title={maximizeWindowLabel}
+                onClick={toggleMaximizeWindow}
+              >
+                <span className={`window-control-icon ${isWindowMaximized ? 'restore' : 'maximize'}`} aria-hidden="true" />
+              </button>
+              <button type="button" className="titlebar-button danger" aria-label={t('app.titlebar.close', appLanguage)} title={t('app.titlebar.close', appLanguage)} onClick={closeWindow}>×</button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
+      {hostImport.isOpen ? <HostImportWizard language={appLanguage} existingHosts={hosts} onApply={hostImport.apply} onClose={hostImport.close} /> : null}
       {connectionErrorNotice ? createPortal(
         <div className="connection-error-overlay no-drag" role="presentation">
           <div className="connection-error-dialog" role="alertdialog" aria-modal="false" aria-labelledby="connection-error-title">
@@ -3293,7 +3316,7 @@ function App() {
         </Suspense>
       ) : connection && isSftpTransferWorkspace ? (
         <Suspense fallback={<LazyContentFallback language={appLanguage} />}>
-          <SftpTransferWindow connection={connection} language={appLanguage} />
+          <SftpTransferWindow connection={connection} language={appLanguage} defaultLocalDirectory={settings.sftpDefaultLocalDirectory} defaultRemoteDirectory={settings.sftpDefaultRemoteDirectory} localColumns={settings.sftpLocalColumns} remoteColumns={settings.sftpRemoteColumns} />
         </Suspense>
       ) : connection ? (
         <Suspense fallback={<RemoteDesktopLoadingFallback language={appLanguage} />}>
@@ -3473,6 +3496,13 @@ function App() {
                               {t(hostListSortModeLabelIds[sortMode], appLanguage)}
                             </button>
                           ))}
+                          <HostImportMenuActions
+                            language={appLanguage}
+                            rollbackCount={hostImport.rollback ? hostImport.rollback.added + hostImport.rollback.replaced : 0}
+                            onOpen={hostImport.open}
+                            onUndo={hostImport.undo}
+                            onCloseMenu={closeNearestDetailsMenu}
+                          />
                         </div>
                       </details>
                     </div>
@@ -3798,35 +3828,18 @@ function App() {
                   </label>
                 </div>
 
-                <div className="auth-method-section">
-                  <span className="field-label">{t('app.host.field.authMethod', appLanguage)}</span>
-                  <div className="auth-switch" role="group" aria-label={t('app.host.field.authMethod', appLanguage)}>
-                    <button
-                      type="button"
-                      className={form.authMethod === 'password' ? 'active' : ''}
-                      onClick={() => {
-                        updateFormField('authMethod', 'password');
-                        updateFormField('keyId', '');
-                        updateFormField('keyPath', '');
-                        updateFormField('passphrase', '');
-                      }}
-                    >
-                      <strong>{t('app.auth.passwordLogin', appLanguage)}</strong>
-                      <small>{t('app.host.auth.passwordSummary', appLanguage)}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={form.authMethod === 'key' ? 'active' : ''}
-                      onClick={() => {
-                        updateFormField('authMethod', 'key');
-                        updateFormField('password', '');
-                      }}
-                    >
-                      <strong>{t('app.auth.keyLogin', appLanguage)}</strong>
-                      <small>{t('app.host.auth.keySummary', appLanguage)}</small>
-                    </button>
-                  </div>
-                </div>
+                <AuthenticationMethodSwitch
+                  language={appLanguage}
+                  value={form.authMethod}
+                  variant="host"
+                  onChange={(authMethod) => {
+                    updateFormField('authMethod', authMethod);
+                    updateFormField('password', authMethod === 'password' ? form.password : '');
+                    updateFormField('keyId', authMethod === 'key' ? form.keyId : '');
+                    updateFormField('keyPath', authMethod === 'key' ? form.keyPath : '');
+                    updateFormField('passphrase', authMethod === 'key' ? form.passphrase : '');
+                  }}
+                />
 
                 {form.authMethod === 'key' ? (
                   <label className="field">
@@ -3842,7 +3855,7 @@ function App() {
                     </select>
                     {!sshKeys.length ? <small className="field-note">{t('app.host.field.needKeyFirst', appLanguage)}</small> : null}
                   </label>
-                ) : (
+                ) : form.authMethod === 'password' ? (
                   <label className="field">
                     <span>{t('app.host.field.password', appLanguage)}</span>
                     <input
@@ -3852,6 +3865,10 @@ function App() {
                       placeholder={t('app.host.field.passwordPlaceholder', appLanguage)}
                     />
                   </label>
+                ) : (
+                  <div className="credential-note">
+                    {t('app.host.auth.agentDescription', appLanguage)}
+                  </div>
                 )}
 
                 {!hostFormUsesRootLogin ? (
@@ -3986,6 +4003,13 @@ function App() {
                     />
                   </label>
                 ) : null}
+
+                <SshConnectTimeoutField
+                  language={appLanguage}
+                  value={form.connectTimeoutSeconds}
+                  inheritedSeconds={settings.sshConnectTimeoutSeconds}
+                  onChange={(value) => updateFormField('connectTimeoutSeconds', value)}
+                />
 
                 <HostMetadataFields
                   appLanguage={appLanguage} group={form.group} tags={form.tags}
@@ -4123,28 +4147,13 @@ function App() {
               </div>
 
               <form className="host-form" onSubmit={submitCredentialConnection}>
-                <div className="auth-method-section">
-                  <span className="field-label">{t('app.credential.authMethod', appLanguage)}</span>
-                  <div className="auth-switch" role="group" aria-label={t('app.credential.authMethod', appLanguage)}>
-                    <button
-                      type="button"
-                      className={credentialForm.authMethod === 'password' ? 'active' : ''}
-                      onClick={() => updateCredentialAuthMethod('password')}
-                    >
-                      <strong>{t('app.credential.password', appLanguage)}</strong>
-                      <small>{t('app.credential.passwordSummary', appLanguage)}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={credentialForm.authMethod === 'key' ? 'active' : ''}
-                      onClick={() => updateCredentialAuthMethod('key')}
-                      disabled={!credentialCanUseKeyAuth}
-                    >
-                      <strong>{t('app.credential.key', appLanguage)}</strong>
-                      <small>{t('app.credential.keySummary', appLanguage)}</small>
-                    </button>
-                  </div>
-                </div>
+                <AuthenticationMethodSwitch
+                  language={appLanguage}
+                  value={credentialForm.authMethod}
+                  variant="credential"
+                  keyDisabled={!credentialCanUseKeyAuth}
+                  onChange={updateCredentialAuthMethod}
+                />
 
                 {credentialForm.authMethod === 'password' ? (
                   <label className="field">
@@ -4157,7 +4166,7 @@ function App() {
                       autoFocus
                     />
                   </label>
-                ) : (
+                ) : credentialForm.authMethod === 'key' ? (
                   <>
                     {sshKeys.length ? (
                       <label className="field">
@@ -4198,6 +4207,10 @@ function App() {
                       />
                     </label>
                   </>
+                ) : (
+                  <div className="credential-note" tabIndex={-1}>
+                    {t('app.host.auth.agentDescription', appLanguage)}
+                  </div>
                 )}
 
                 {hosts.some((host) => host.id === credentialHost.id) || (credentialForm.authMethod === 'key' && credentialSelectedKey) ? (

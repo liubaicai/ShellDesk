@@ -30,6 +30,10 @@ pub(crate) mod logs;
 pub(crate) mod mcp_server;
 #[path = "monitor_persistence.rs"]
 pub(crate) mod monitor_persistence;
+#[path = "plugin_security.rs"]
+pub(crate) mod plugin_security;
+#[path = "port_forward.rs"]
+pub(crate) mod port_forward;
 #[path = "proxy.rs"]
 pub(crate) mod proxy;
 #[path = "rdp.rs"]
@@ -55,6 +59,8 @@ pub(crate) mod terminal;
 #[cfg(test)]
 #[path = "test_helpers.rs"]
 pub(crate) mod test_helpers;
+#[path = "transfer_history.rs"]
+pub(crate) mod transfer_history;
 #[path = "tray.rs"]
 pub(crate) mod tray;
 #[path = "ui_prompts.rs"]
@@ -85,6 +91,6 @@ pub(crate) use state::{
 pub(crate) use util::{
     app_data_dir, error_string, escape_pointer, https_url_origin, node_platform, now,
     prevent_process_window, prevent_tokio_process_window, random_id, read_json_file,
-    read_string_field, read_u16_field, sanitize_file_name, string_arg, whoami, write_json_file,
-    write_json_file_private,
+    read_string_field, read_u16_field, replace_file_atomic, sanitize_file_name, string_arg, whoami,
+    write_json_file, write_json_file_private,
 };

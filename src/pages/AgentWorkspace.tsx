@@ -22,6 +22,7 @@ import {
 
 import { completeAiRequest, createSharedTools, getDefaultChatPrompt, usePiAgent, type AiMessage } from '../ai';
 import { createAgentWorkspaceTools, type AgentWorkspaceConnectionResult, type AgentWorkspaceHost } from '../ai/agentWorkspaceTools';
+import AgentHostPicker from '../components/AgentHostPicker';
 import { MarkdownMessage } from '../components/remote-desktop/RemoteAiChat';
 import { getErrorMessage } from '../components/remote-desktop/desktopUtils';
 import type { AppLanguage } from '../i18n';
@@ -654,6 +655,12 @@ function AgentWorkspace({ hosts, settings, language, onOpenSettings, onReturnToH
     }
   }, [sendDraft]);
 
+  const selectHost = useCallback((host: AgentWorkspaceHost) => {
+    setSelectedHostId(host.id);
+    setConnection(connectionByHostIdRef.current.get(host.id) ?? null);
+    setConnectionError('');
+  }, []);
+
   const suggestions = selectedHost ? [
     { icon: <TerminalSquare />, label: copy.explore, description: copy.exploreDetail, message: language === 'zh-CN' ? '帮我快速巡检这台主机的系统状态、资源使用和异常服务。' : 'Quickly inspect this host for system health, resource use, and unhealthy services.' },
     { icon: <Wrench />, label: copy.build, description: copy.buildDetail, message: language === 'zh-CN' ? '帮我规划并执行这台主机上的日常运维检查。' : 'Plan and perform routine operations checks on this host.' },
@@ -690,21 +697,14 @@ function AgentWorkspace({ hosts, settings, language, onOpenSettings, onReturnToH
             })}
             {startedTasks.length > 3 ? <button type="button" className="agent-task-expand" onClick={() => setAreMoreTasksVisible((current) => !current)}>{areMoreTasksVisible ? copy.showFewerTasks : copy.showMoreTasks}</button> : null}
           </div>
-          <div className="agent-host-list-heading"><span>{copy.hosts}</span><span>{hosts.length}</span></div>
-          <div className="agent-host-list">
-            {hosts.map((host) => {
-              const isSelected = host.id === selectedHostId;
-              const conversationStatus = conversationStatuses[`host:${host.id}`] ?? 'idle';
-              return (
-                <button key={host.id} type="button" className={`agent-host-row ${isSelected ? 'selected' : ''}`} aria-pressed={isSelected} onClick={() => { setSelectedHostId(host.id); setConnection(connectionByHostIdRef.current.get(host.id) ?? null); setConnectionError(''); }}>
-                  <span className="agent-host-icon"><TerminalSquare aria-hidden="true" /></span>
-                  <span className="agent-host-copy"><strong>{hostLabel(host)}</strong><small>{host.username ? `${host.username}@` : ''}{host.address}:{host.port}</small></span>
-                  <i className={conversationStatus} title={conversationStatus} />
-                </button>
-              );
-            })}
-            {!hosts.length ? <div className="agent-host-empty"><strong>{copy.emptyHosts}</strong><span>{copy.emptyHostsDetail}</span></div> : null}
-          </div>
+          <AgentHostPicker
+            hosts={hosts}
+            selectedHostId={selectedHostId}
+            conversationStatuses={conversationStatuses}
+            language={language}
+            hostLabel={hostLabel}
+            onSelectHost={selectHost}
+          />
           <footer className="agent-pane-footer"><button type="button" onClick={onOpenSettings}><Settings aria-hidden="true" />{copy.settings}</button></footer>
         </> : <div className="agent-collapsed-pane-actions">
           <button type="button" onClick={onReturnToHostManagement} aria-label={copy.returnToHostManagement} title={copy.returnToHostManagement}><ArrowLeft aria-hidden="true" /></button>

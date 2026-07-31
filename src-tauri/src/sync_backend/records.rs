@@ -509,37 +509,120 @@ pub(super) fn create_empty_remote_document() -> Value {
     })
 }
 
-pub(super) fn sanitize_remote_document(raw: Value) -> Value {
-    if raw.get("format").and_then(Value::as_str) == Some("shelldesk-sync-webdav")
-        && raw.get("version").and_then(Value::as_i64) == Some(1)
-    {
+pub(super) fn sanitize_remote_document(raw: Value) -> Result<Value, String> {
+    if raw.get("format").and_then(Value::as_str) == Some("shelldesk-sync-webdav") {
+        if raw.get("version").and_then(Value::as_i64) != Some(1) {
+            return Err("远端同步文件版本不受支持，已拒绝按旧格式迁移。".to_string());
+        }
         let mut document = create_empty_remote_document();
         document["updatedAt"] = raw.get("updatedAt").cloned().unwrap_or_else(|| json!(""));
         document["devices"] = raw.get("devices").cloned().unwrap_or_else(|| json!({}));
         document["records"] = raw.get("records").cloned().unwrap_or_else(|| json!({}));
         document["tombstones"] = raw.get("tombstones").cloned().unwrap_or_else(|| json!({}));
-        return document;
+        validate_remote_document(&document)?;
+        return Ok(document);
+    }
+    if raw.get("format").is_some() {
+        return Err("远端同步文件格式不受支持，已拒绝隐式迁移。".to_string());
     }
     if let Some(snapshot_value) = raw.get("snapshot") {
+        if !looks_like_legacy_vault(snapshot_value) {
+            return Err("旧版远端同步快照结构无效。".to_string());
+        }
         let mut document = create_empty_remote_document();
         let sync_state = json!({ "deviceId": "remote", "lastRecords": {}, "lastTombstones": {} });
-        document["updatedAt"] = raw
-            .get("updatedAt")
-            .cloned()
-            .unwrap_or_else(|| json!(now()));
+        let migration_time = now();
+        document["updatedAt"] = json!(valid_datetime(
+            raw.get("updatedAt").and_then(Value::as_str),
+            &migration_time,
+        ));
         document["records"] = create_records_from_vault(snapshot_value, &sync_state, &now());
-        return document;
+        validate_remote_document(&document)?;
+        return Ok(document);
+    }
+    if !looks_like_legacy_vault(&raw) {
+        return Err("远端同步文件不是可识别的 ShellDesk 同步文档。".to_string());
     }
     let mut document = create_empty_remote_document();
     let sync_state = json!({ "deviceId": "remote", "lastRecords": {}, "lastTombstones": {} });
     document["updatedAt"] = json!(now());
     document["records"] = create_records_from_vault(&raw, &sync_state, &now());
-    document
+    validate_remote_document(&document)?;
+    Ok(document)
+}
+
+fn looks_like_legacy_vault(value: &Value) -> bool {
+    value.get("hosts").and_then(Value::as_array).is_some()
+        && value.get("settings").and_then(Value::as_object).is_some()
+}
+
+fn validate_remote_document(document: &Value) -> Result<(), String> {
+    if !valid_remote_timestamp(document.get("updatedAt").and_then(Value::as_str)) {
+        return Err("远端同步文件的更新时间无效。".to_string());
+    }
+    let devices = document
+        .get("devices")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "远端同步文件的设备清单无效。".to_string())?;
+    if devices.len() > 10_000 || devices.values().any(|device| !device.is_object()) {
+        return Err("远端同步文件的设备清单无效或过大。".to_string());
+    }
+    let records = document
+        .get("records")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "远端同步文件的记录清单无效。".to_string())?;
+    let tombstones = document
+        .get("tombstones")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "远端同步文件的删除记录清单无效。".to_string())?;
+    if records.len() > 100_000 || tombstones.len() > 100_000 {
+        return Err("远端同步文件包含过多记录。".to_string());
+    }
+    for (id, record) in records {
+        let record_type = record.get("type").and_then(Value::as_str).unwrap_or("");
+        if !valid_remote_id(id)
+            || record.get("id").and_then(Value::as_str) != Some(id)
+            || !(synced_content_type(record_type) || record_type == "settings")
+            || !valid_sha256(record.get("hash").and_then(Value::as_str).unwrap_or(""))
+            || !record.get("payload").is_some_and(Value::is_object)
+            || !valid_remote_timestamp(record.get("updatedAt").and_then(Value::as_str))
+        {
+            return Err(format!("远端同步记录 '{id}' 不满足版本 1 不变量。"));
+        }
+    }
+    for (id, tombstone) in tombstones {
+        let record_type = tombstone.get("type").and_then(Value::as_str).unwrap_or("");
+        if !valid_remote_id(id)
+            || tombstone.get("id").and_then(Value::as_str) != Some(id)
+            || !synced_content_type(record_type)
+            || !valid_sha256(tombstone.get("hash").and_then(Value::as_str).unwrap_or(""))
+            || !valid_remote_timestamp(tombstone.get("deletedAt").and_then(Value::as_str))
+        {
+            return Err(format!("远端同步删除记录 '{id}' 不满足版本 1 不变量。"));
+        }
+    }
+    Ok(())
+}
+
+fn valid_remote_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .chars()
+            .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+}
+
+fn valid_remote_timestamp(value: Option<&str>) -> bool {
+    value.is_some_and(|value| chrono::DateTime::parse_from_rfc3339(value).is_ok())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn local_sync_records_include_ssh_key_private_material() {
@@ -618,5 +701,92 @@ mod tests {
         assert_eq!(settings["aiApiBaseUrl"], "https://ai.example.com/v1");
         assert_eq!(settings["aiApiKey"], "sync-test-api-key");
         assert_eq!(settings["aiModel"], "gateway-model");
+    }
+
+    #[test]
+    fn remote_document_migration_rejects_future_and_ambiguous_formats() {
+        let mut future = create_empty_remote_document();
+        future["version"] = json!(2);
+        future["updatedAt"] = json!("2026-07-31T00:00:00.000Z");
+
+        assert!(sanitize_remote_document(future)
+            .unwrap_err()
+            .contains("版本不受支持"));
+        assert!(sanitize_remote_document(json!({ "unexpected": true }))
+            .unwrap_err()
+            .contains("不是可识别"));
+        assert!(sanitize_remote_document(json!({
+            "format": "another-product",
+            "version": 1,
+            "hosts": [],
+            "settings": {}
+        }))
+        .unwrap_err()
+        .contains("格式不受支持"));
+    }
+
+    #[test]
+    fn legacy_snapshot_migration_requires_a_recognizable_vault_shape() {
+        assert!(sanitize_remote_document(json!({ "snapshot": { "hosts": [] } })).is_err());
+        let migrated = sanitize_remote_document(json!({
+            "updatedAt": "2026-07-31T00:00:00.000Z",
+            "snapshot": {
+                "hosts": [],
+                "sshKeys": [],
+                "proxyProfiles": [],
+                "knownHosts": [],
+                "settings": default_settings(),
+                "browserBookmarks": []
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(migrated["format"], "shelldesk-sync-webdav");
+        assert_eq!(migrated["version"], 1);
+        assert!(migrated.pointer("/records/settings:app").is_some());
+    }
+
+    proptest! {
+        #[test]
+        fn version_one_normalization_preserves_valid_record_maps(
+            ids in prop::collection::btree_set("[a-z][a-z0-9]{0,10}", 0..64),
+        ) {
+            let records = ids
+                .into_iter()
+                .enumerate()
+                .map(|(index, id)| {
+                    let record_id = format!("host:{id}");
+                    (
+                        record_id.clone(),
+                        json!({
+                            "id": record_id,
+                            "type": "host",
+                            "hash": format!("{:064x}", index + 1),
+                            "updatedAt": "2026-07-31T00:00:00.000Z",
+                            "deviceId": "device-a",
+                            "payload": {
+                                "id": id,
+                                "name": "generated",
+                                "address": "example.test"
+                            }
+                        }),
+                    )
+                })
+                .collect::<Map<String, Value>>();
+            let raw = json!({
+                "format": "shelldesk-sync-webdav",
+                "version": 1,
+                "updatedAt": "2026-07-31T00:00:00.000Z",
+                "devices": {},
+                "records": Value::Object(records.clone()),
+                "tombstones": {}
+            });
+            let normalized = sanitize_remote_document(raw).unwrap();
+
+            prop_assert_eq!(
+                normalized.get("records"),
+                Some(&Value::Object(records)),
+            );
+        }
     }
 }

@@ -429,6 +429,7 @@ pub(super) fn create_sync_state_from_document(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use serde_json::json;
 
     fn host_record(id: &str, hash: &str, updated_at: &str, name: &str) -> Value {
@@ -655,5 +656,50 @@ mod tests {
             Some(&json!("2026-01-02T00:00:00Z"))
         );
         assert_eq!(state["lastRemoteEtag"], json!("\"etag-1\""));
+    }
+
+    proptest! {
+        #[test]
+        fn merging_identical_record_sets_is_content_idempotent(
+            ids in prop::collection::btree_set("[a-z][a-z0-9]{0,10}", 0..64),
+        ) {
+            let records = ids
+                .into_iter()
+                .enumerate()
+                .map(|(index, id)| {
+                    let record_id = format!("host:{id}");
+                    (
+                        record_id.clone(),
+                        host_record(
+                            &record_id,
+                            &format!("{:064x}", index + 1),
+                            "2026-07-31T00:00:00.000Z",
+                            &id,
+                        ),
+                    )
+                })
+                .collect::<Map<String, Value>>();
+            let result = merge_sync_documents(
+                &json!({
+                    "records": Value::Object(records.clone()),
+                    "tombstones": {},
+                    "devices": {}
+                }),
+                &Value::Object(records.clone()),
+                &json!({}),
+                &json!({ "deviceId": "device-a" }),
+                "2026-07-31T00:01:00.000Z",
+                "",
+            );
+
+            prop_assert_eq!(
+                result.pointer("/document/records"),
+                Some(&Value::Object(records)),
+            );
+            prop_assert_eq!(result["uploaded"].as_i64(), Some(0));
+            prop_assert_eq!(result["downloaded"].as_i64(), Some(0));
+            prop_assert_eq!(result["deleted"].as_i64(), Some(0));
+            prop_assert!(result["conflicts"].as_array().is_some_and(Vec::is_empty));
+        }
     }
 }

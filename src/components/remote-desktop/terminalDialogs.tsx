@@ -204,7 +204,32 @@ export function TerminalSettingsDialogPortal({
               onChange={(event) => onSettingChange('terminalCursorBlink', event.target.checked)}
             />
           </label>
+          <label>
+            <span>{t('settings.terminal.timestamps.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalLineTimestamps}
+              onChange={(event) => onSettingChange('terminalLineTimestamps', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.keywordHighlight.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalKeywordHighlightEnabled}
+              onChange={(event) => onSettingChange('terminalKeywordHighlightEnabled', event.target.checked)}
+            />
+          </label>
         </div>
+        <label>
+          <span>{t('settings.terminal.highlightKeywords.label', settings.language)}</span>
+          <input
+            className="notepad-modal-input"
+            value={settings.terminalHighlightKeywords}
+            disabled={!settings.terminalKeywordHighlightEnabled}
+            onChange={(event) => onSettingChange('terminalHighlightKeywords', event.target.value)}
+          />
+        </label>
         <div className="notepad-modal-actions">
           <button type="button" className="notepad-modal-btn primary" onClick={onClose}>{t('terminal.settingsDialog.done', settings.language)}</button>
         </div>

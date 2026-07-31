@@ -1,6 +1,8 @@
 use crate::{
     browser_proxy, database::tunnel::DatabaseTunnelSession, http_tunnel::HttpTunnelSession,
-    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal, updater::update_status, zmodem,
+    plugin_security::PluginSecurityManager, port_forward::PortForwardRuntimeEntry,
+    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal,
+    transfer_history::TransferHistory, updater::update_status, zmodem,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -23,10 +25,14 @@ pub(crate) struct AppState {
     pub(crate) browser_proxies: Arc<Mutex<HashMap<String, browser_proxy::BrowserProxySession>>>,
     pub(crate) transfer_cancellations: Arc<Mutex<HashSet<String>>>,
     pub(crate) active_transfers: Arc<Mutex<HashMap<String, ActiveTransfer>>>,
+    pub(crate) deferred_connection_closures: Arc<Mutex<HashSet<String>>>,
+    pub(crate) transfer_history: TransferHistory,
     pub(crate) zmodem_upload_selections: Arc<Mutex<HashMap<String, zmodem::ZmodemUploadSelection>>>,
     pub(crate) database_sessions: Arc<Mutex<HashMap<String, Value>>>,
     pub(crate) database_tunnel_sessions: Arc<Mutex<HashMap<String, DatabaseTunnelSession>>>,
     pub(crate) http_tunnel_sessions: Arc<Mutex<HashMap<String, HttpTunnelSession>>>,
+    pub(crate) port_forward_runtimes: Arc<Mutex<HashMap<String, PortForwardRuntimeEntry>>>,
+    pub(crate) plugin_security: PluginSecurityManager,
     pub(crate) update_state: Arc<Mutex<Value>>,
     pub(crate) update_operation_active: Arc<AtomicBool>,
     pub(crate) pending_tauri_update: Arc<Mutex<Option<tauri_plugin_updater::Update>>>,
@@ -68,6 +74,8 @@ impl UiWindowRef {
 
 impl AppState {
     pub(crate) fn new(data_dir: PathBuf) -> Self {
+        let transfer_history = TransferHistory::new(&data_dir);
+        let plugin_security = PluginSecurityManager::new(&data_dir);
         Self {
             update_state: Arc::new(Mutex::new(update_status("idle", &data_dir, "1.0.0", None))),
             update_operation_active: Arc::new(AtomicBool::new(false)),
@@ -80,10 +88,14 @@ impl AppState {
             browser_proxies: Arc::new(Mutex::new(HashMap::new())),
             transfer_cancellations: Arc::new(Mutex::new(HashSet::new())),
             active_transfers: Arc::new(Mutex::new(HashMap::new())),
+            deferred_connection_closures: Arc::new(Mutex::new(HashSet::new())),
+            transfer_history,
             zmodem_upload_selections: Arc::new(Mutex::new(HashMap::new())),
             database_sessions: Arc::new(Mutex::new(HashMap::new())),
             database_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
             http_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
+            port_forward_runtimes: Arc::new(crate::port_forward::new_runtime_map()),
+            plugin_security,
             sync_schedule_generation: Arc::new(Mutex::new(0)),
             ui_window: Arc::new(Mutex::new(None)),
             host_key_responses: Arc::new(Mutex::new(HashMap::new())),
@@ -103,10 +115,14 @@ impl AppState {
             browser_proxies: self.browser_proxies.clone(),
             transfer_cancellations: self.transfer_cancellations.clone(),
             active_transfers: self.active_transfers.clone(),
+            deferred_connection_closures: self.deferred_connection_closures.clone(),
+            transfer_history: self.transfer_history.clone(),
             zmodem_upload_selections: self.zmodem_upload_selections.clone(),
             database_sessions: self.database_sessions.clone(),
             database_tunnel_sessions: self.database_tunnel_sessions.clone(),
             http_tunnel_sessions: self.http_tunnel_sessions.clone(),
+            port_forward_runtimes: self.port_forward_runtimes.clone(),
+            plugin_security: self.plugin_security.clone(),
             update_state: self.update_state.clone(),
             update_operation_active: self.update_operation_active.clone(),
             pending_tauri_update: self.pending_tauri_update.clone(),
@@ -124,6 +140,7 @@ impl AppState {
 pub(crate) struct ActiveTransfer {
     pub(crate) connection_id: String,
     pub(crate) client_id: Option<String>,
+    pub(crate) resource_key: Option<String>,
 }
 
 #[derive(Clone)]
@@ -154,6 +171,7 @@ pub(crate) struct SshProfile {
     pub(crate) jump: Option<Box<SshProfile>>,
     pub(crate) keepalive_enabled: bool,
     pub(crate) keepalive_interval_ms: u64,
+    pub(crate) connect_timeout_ms: u64,
 }
 
 impl fmt::Debug for SshProfile {
@@ -172,6 +190,7 @@ impl fmt::Debug for SshProfile {
             .field("jump", &self.jump)
             .field("keepalive_enabled", &self.keepalive_enabled)
             .field("keepalive_interval_ms", &self.keepalive_interval_ms)
+            .field("connect_timeout_ms", &self.connect_timeout_ms)
             .finish()
     }
 }

@@ -94,8 +94,10 @@ ShellDesk is useful for:
 ### Hosts and Credentials
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
-- Switch between card and table views, filter hosts by connection state, sort recent activity, paginate large inventories, and inspect connection/system details without leaving the list
-- Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
+- Switch between card and table views, filter hosts by connection state, sort recent activity, paginate and keyboard-navigate large inventories, and inspect connection/system details without leaving the list
+- Migrate MobaXterm bookmarks, Xshell sessions, SecureCRT sessions, or CSV inventories through a preview-first wizard with validation, duplicate policies, secret opt-in, and a guarded one-step undo
+- Supports saved password, private-key, or system SSH Agent login, proxy/jump-host settings, local mode, and credential prompts before connecting; Agent profiles do not persist password or key material
+- Settings provide a global 3–120 second SSH connection timeout, with an optional per-host override for slow or unreliable networks
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint
 - Settings control whether SSH passwords and key passphrases are saved by default, and known-hosts trust decisions are handled by the Rust backend through russh
@@ -114,9 +116,10 @@ ShellDesk is useful for:
 - Remote terminal sessions use russh PTY channels for shell/exec startup, resize, initial command, working directory, and auto-sudo flows
 - Local terminal sessions stay on a separate local-shell path and do not require an SSH loopback host
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
+- Terminal windows can tile right or down as an independent-session workspace; optional host-scoped restore persists metadata only and always requires a manual reconnect from a disconnected placeholder
 - Font selection reads the local system font list instead of bundling font files
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
-- A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, queued concurrent transfers, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, and streamed `russh-sftp` transfers
+- A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, process-owned queued transfers that survive closing the SFTP window, fingerprint-checked resumable staging with atomic final replacement, adaptive pipelined or conservative compatibility transfer profiles, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, streamed `russh-sftp` transfers, and a persistent global transfer center shared by every app window
 - Remote Notepad supports tabs, remote read/write, find, go to line, syntax highlighting, language modes, and unsaved-change prompts
 - Notepad uses a binary extension blacklist to avoid opening images, archives, databases, executables, and other binary files by mistake
 - Code Editor adds a remote project tree, multi-tab editing, remote-change detection, embedded project terminals, and SD-Agent
@@ -127,7 +130,7 @@ ShellDesk is useful for:
 - Database access uses Rust-side SSH tunnels with request timeouts, cleanup for orphaned tunnels, bounded result previews, and sensitive-value redaction in diagnostic paths
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
-- System Monitor keeps live and SQLite-backed history; Process Manager, Service Manager, Supervisor Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener, and Disk Analyzer cover daily checks
+- System Monitor keeps live and SQLite-backed history; Process Manager, Service Manager, Supervisor Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener with saved local/remote/SOCKS5 SSH forwarding, and Disk Analyzer cover daily checks
 - Kubernetes Manager covers contexts, namespaces, workloads, pods, logs, exec, YAML, and nodes; Virtual Machine Manager uses remote `virsh` for lifecycle, create/clone/edit/delete, device attachment, migration, snapshots, networks, storage pools, serial console, and VNC handoff
 - Disk Manager shows physical disks, partitions, and mounts, with mount/unmount, format, partition maintenance, and Linux LVM configuration
 - Git Repository Manager shows remote branch trees, remote branches, changed files, diffs, recent commits, branch create/delete/track, stage/unstage, commit, fetch, pull, push, and checkout
@@ -147,12 +150,12 @@ ShellDesk is useful for:
 - Supports dark, light, and system themes
 - Supports accent color, system fonts, default host view, desktop wallpaper, and remote desktop layout
 - Supports AI provider, API format, base URL, API key, and model discovery settings for the AI Assistant and Code Editor
-- SD-Agent also has a main-window workspace for tasks that span saved hosts, with reusable host context and direct handoff into built-in tools
+- SD-Agent also has a main-window workspace for tasks that span saved hosts, with a searchable virtualized host picker, reusable host context, and direct handoff into built-in tools
 - Can expose saved remote hosts to other local AI clients through a loopback-only MCP service, with a credential-free Skill ZIP export and built-in call examples
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing
 - Config import/export covers hosts, keys, settings, and browser bookmarks
-- WebDAV sync can back up and restore the local vault across machines, and the updater checks GitHub releases through Tauri's update flow
+- WebDAV sync can back up and restore the local vault across machines; uploads are read back and checksum-verified before the local sync baseline advances, while strict format/version invariants prevent ambiguous migrations. The updater checks GitHub releases through Tauri's update flow
 
 ---
 

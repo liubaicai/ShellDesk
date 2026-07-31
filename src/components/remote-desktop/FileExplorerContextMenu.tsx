@@ -10,7 +10,9 @@ import {
   isFileEntry,
   isSqliteFile,
 } from './fileExplorerIcons';
+import { createRemoteScriptLaunchOptions } from './fileExplorerScriptUtils';
 import type { ContextMenuState, RemoteFileEntry } from './fileExplorerTypes';
+import type { RemoteTerminalLaunchOptions } from './terminalTypes';
 
 interface FileExplorerContextMenuProps {
   contextMenu: ContextMenuState | null;
@@ -23,6 +25,7 @@ interface FileExplorerContextMenuProps {
   onOpenFile?: (filePath: string) => void;
   onOpenSqliteFile?: (filePath: string) => void;
   onOpenTerminal?: (directoryPath: string) => void;
+  onRunScript?: (options: RemoteTerminalLaunchOptions) => void;
   onStartRename: (entry: RemoteFileEntry) => void;
   onCopyEntryPath: (entry: RemoteFileEntry) => void;
   onDownloadEntries: (entries: RemoteFileEntry[]) => void;
@@ -62,6 +65,7 @@ function FileExplorerContextMenu({
   onOpenFile,
   onOpenSqliteFile,
   onOpenTerminal,
+  onRunScript,
   onStartRename,
   onCopyEntryPath,
   onDownloadEntries,
@@ -81,6 +85,14 @@ function FileExplorerContextMenu({
 
   const targetEntry = contextMenu.targetEntry;
   const contextTargets = getContextTargets(contextMenu, selectedNames, sortedEntries);
+  const scriptLaunchOptions = targetEntry && isFileEntry(targetEntry)
+    ? createRemoteScriptLaunchOptions(
+        targetEntry.name,
+        joinRemotePath(remotePath, targetEntry.name, isWindowsHost),
+        remotePath,
+        isWindowsHost ? 'windows' : 'linux',
+      )
+    : undefined;
 
   return createPortal(
     <>
@@ -125,6 +137,15 @@ function FileExplorerContextMenu({
                 {t('fileExplorer.open.sqlite', language)}
               </button>
             )}
+            {scriptLaunchOptions && onRunScript ? (
+              <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => {
+                onClose();
+                onRunScript(scriptLaunchOptions);
+              }}>
+                <ContextMenuIcon name="terminal" />
+                {t('fileExplorer.details.runScript', language)}
+              </button>
+            ) : null}
             <button type="button" role="menuitem" className="context-menu-icon-button" onClick={() => onStartRename(targetEntry)}>
               <ContextMenuIcon name="rename" />
               {t('fileExplorer.context.rename', language)}

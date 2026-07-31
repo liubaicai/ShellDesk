@@ -68,6 +68,14 @@ SFTP 普通操作不得回退到 `exec`、系统 `sftp` 或系统 `ssh`。需要
 
 没有 `SshTunnelHandle::OpenSsh`，也没有 `ssh -L` fallback。隧道失败应该返回明确错误，而不是静默回退到系统命令。
 
+端口监听应用还通过 `port_forward.rs` 管理按主机保存的转发：
+
+- 本地转发复用 `direct-tcpip`。
+- 远程转发使用 SSH `tcpip-forward` 与服务端发起的 `forwarded-tcpip` channel。
+- 动态转发在本机监听最小 SOCKS5 CONNECT 服务，再为每个目标打开 `direct-tcpip`。
+- 配置支持自动启动、会话关闭检测和指数退避恢复，连接关闭时统一取消。
+- 非回环监听需要显式确认，避免默认暴露到局域网或公网。
+
 ## 认证与密钥
 
 支持的认证路径：
@@ -78,6 +86,8 @@ SFTP 普通操作不得回退到 `exec`、系统 `sftp` 或系统 `ssh`。需要
 - keyboard-interactive
 
 普通密码 prompt 会优先用已保存密码自动回应；OTP、token、verification code 等交互 prompt 会通过 `ui_prompts.rs` 发到当前 UI 窗口。日志和错误信息不应打印密码、私钥、passphrase 或 `.env` 中的测试凭据。
+
+主机配置可以持久化选择 SSH agent，但该模式会在前端模型和 Vault 规范化层同时清空密码、私钥路径、密钥 ID 与 passphrase。全局 SSH 连接超时在“设置 > 通用”中配置，主机可用 3–120 秒的独立值覆盖；该超时只用于 TCP 连接、代理/跳板通道和 SSH 握手，跳板机与目标主机分别采用自己的配置。
 
 ## 维护规则
 

@@ -1,6 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import type { AgentWorkspaceHost } from '../../src/ai/agentWorkspaceTools';
+import type { Host } from '../../src/appHostModel';
+import AgentHostPicker from '../../src/components/AgentHostPicker';
+import HostImportWizard from '../../src/components/HostImportWizard';
 import HostListPanel from '../../src/components/HostListPanel';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
 import RemoteBackupManager from '../../src/components/remote-desktop/RemoteBackupManager';
@@ -8,13 +12,17 @@ import { DesktopAppIcon } from '../../src/components/remote-desktop/RemoteDeskto
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
+import RemotePortForwarding from '../../src/components/remote-desktop/RemotePortForwarding';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
+import { TerminalRestorePlaceholder } from '../../src/components/remote-desktop/TerminalRestorePlaceholder';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
+import type { RemoteTerminalLaunchOptions } from '../../src/components/remote-desktop/terminalTypes';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
+import GlobalTransferCenter from '../../src/components/transfers/GlobalTransferCenter';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
 import '../../src/styles/critical.scss';
@@ -24,10 +32,12 @@ import '../../src/styles/remote-desktop/_browser.scss';
 import '../../src/styles/remote-desktop/_file-explorer.scss';
 import '../../src/styles/remote-desktop/_monitor.scss';
 import '../../src/styles/remote-desktop/_mysql.scss';
+import '../../src/styles/remote-desktop/_port-manager.scss';
 import '../../src/styles/remote-desktop/_rdp-viewer.scss';
 import '../../src/styles/remote-desktop/_redis.scss';
 import '../../src/styles/remote-desktop/_settings.scss';
 import '../../src/styles/remote-desktop/_supervisor-manager.scss';
+import '../../src/styles/remote-desktop/_terminal.scss';
 import '../../src/styles/remote-desktop/_vm-manager-management.scss';
 import '../../src/styles/remote-desktop/_vm-manager.scss';
 
@@ -42,6 +52,8 @@ if (harnessTheme === 'light' || harnessTheme === 'dark') {
 const connectionId = 'ui-test-connection';
 const hostId = 'ui-test-host';
 const now = new Date('2026-01-01T00:00:00Z').toISOString();
+let lastExplorerTerminalPath = '';
+let lastExplorerScriptLaunch: RemoteTerminalLaunchOptions | undefined;
 const hostListFixtures = [
   {
     id: 'host-wrapped-tags',
@@ -80,6 +92,35 @@ const hostListFixtures = [
     lastConnectionError: '',
   },
 ];
+const largeHostListFixtures = Array.from({ length: 25 }, (_, index) => ({
+  ...hostListFixtures[index % hostListFixtures.length],
+  id: `large-host-${index + 1}`,
+  name: `Large host ${String(index + 1).padStart(2, '0')}`,
+  address: `10.20.${Math.floor(index / 254)}.${(index % 254) + 1}`,
+  tags: index % 2 ? ['large'] : ['large', 'keyboard'],
+}));
+const agentHostFixtures: AgentWorkspaceHost[] = Array.from({ length: 5_000 }, (_, index) => ({
+  id: `agent-host-${String(index + 1).padStart(5, '0')}`,
+  name: `Agent host ${String(index + 1).padStart(5, '0')}`,
+  address: `host-${String(index + 1).padStart(5, '0')}.example.test`,
+  port: 22,
+  username: index % 2 ? 'deploy' : 'root',
+  authMethod: 'password',
+  password: '',
+  keyId: '',
+  keyPath: '',
+  passphrase: '',
+  privilegeMode: 'sudo',
+  rootPassword: '',
+  jumpHostId: '',
+  proxyProfileId: '',
+  keepaliveEnabled: true,
+  keepaliveIntervalMs: 15_000,
+  systemType: 'linux',
+  systemName: 'Linux',
+  group: index % 2 ? 'Production' : 'Development',
+  lastConnectionStatus: 'unknown',
+}));
 const emptyProxyProfiles = new Map<string, ShellDeskProxyProfile>();
 
 function createSftpEntries(prefix: string) {
@@ -225,6 +266,7 @@ function createUserDetail() {
 function installGuiSshMock() {
   const params = new URLSearchParams(window.location.search);
   const scenario = params.get('scenario') ?? '';
+  const componentUnderTest = params.get('component') ?? '';
   const mysqlColumns = [
     { name: 'id', type: 'INT', nullable: false, key: 'PRI', default: null },
     { name: 'name', type: 'VARCHAR(64)', nullable: true, key: '', default: null },
@@ -246,6 +288,7 @@ function installGuiSshMock() {
   let lastVirshCommand = '';
   let lastVirshStdin = '';
   let lastSftpTransferOptions: ShellDeskSftpTransferOptions | undefined;
+  let sftpRuntimeEnqueueCount = 0;
   let lastSupervisorActionCommand = '';
   let backupCreated = false;
   let backupPlanSaved = false;
@@ -256,6 +299,61 @@ function installGuiSshMock() {
   let lastBackupS3Command = '';
   let lastBackupS3Stdin = '';
   let rdpDiagnosticListener: ((payload: ShellDeskRdpDiagnosticPayload) => void) | undefined;
+  let portForwardRecords: ShellDeskPortForwardRecord[] = [
+    {
+      profile: {
+        id: 'forward-postgres',
+        hostId,
+        name: 'PostgreSQL',
+        kind: 'local',
+        bindHost: '127.0.0.1',
+        bindPort: 15432,
+        targetHost: '127.0.0.1',
+        targetPort: 5432,
+        autostart: true,
+        reconnect: true,
+        allowNonLoopback: false,
+      },
+      runtime: { status: 'stopped' },
+    },
+  ];
+  let transferHistoryFixtures: ShellDeskTransferTask[] = [
+    {
+      id: 'transfer-active',
+      queueId: 'queue-active',
+      connectionId,
+      hostId,
+      hostName: 'UI Test Host',
+      type: 'upload',
+      fileName: 'release.zip',
+      label: 'release.zip',
+      sourcePaths: ['D:/build/release.zip'],
+      targetPath: '/srv/releases',
+      transferred: 512,
+      total: 1024,
+      status: 'running',
+      createdAt: new Date(Date.parse(now) - 60_000).toISOString(),
+      updatedAt: now,
+    },
+    {
+      id: 'transfer-completed',
+      queueId: 'queue-completed',
+      connectionId,
+      hostId,
+      hostName: 'UI Test Host',
+      type: 'download',
+      fileName: 'access.log',
+      label: 'access.log',
+      sourcePaths: ['/var/log/access.log'],
+      targetPath: 'D:/logs',
+      transferred: 2048,
+      total: 2048,
+      status: 'completed',
+      createdAt: new Date(Date.parse(now) - 120_000).toISOString(),
+      updatedAt: new Date(Date.parse(now) - 30_000).toISOString(),
+      finishedAt: new Date(Date.parse(now) - 30_000).toISOString(),
+    },
+  ];
 
   window.localStorage.removeItem('shelldesk.monitor.persistencePrompt.v1.ui-test-host');
   Object.defineProperty(window, '__shellDeskUiHarnessMetricsRequestCount', {
@@ -269,6 +367,7 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshCommand', { configurable: true, get: () => lastVirshCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastVirshStdin', { configurable: true, get: () => lastVirshStdin });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSftpTransferOptions', { configurable: true, get: () => lastSftpTransferOptions });
+  Object.defineProperty(window, '__shellDeskUiHarnessSftpRuntimeEnqueueCount', { configurable: true, get: () => sftpRuntimeEnqueueCount });
   Object.defineProperty(window, '__shellDeskUiHarnessLastSupervisorActionCommand', { configurable: true, get: () => lastSupervisorActionCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupCommand', { configurable: true, get: () => lastBackupCommand });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupStdin', { configurable: true, get: () => lastBackupStdin });
@@ -276,12 +375,33 @@ function installGuiSshMock() {
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupDownloadPath', { configurable: true, get: () => lastBackupDownloadPath });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Command', { configurable: true, get: () => lastBackupS3Command });
   Object.defineProperty(window, '__shellDeskUiHarnessLastBackupS3Stdin', { configurable: true, get: () => lastBackupS3Stdin });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastExplorerTerminalPath', { configurable: true, get: () => lastExplorerTerminalPath });
+  Object.defineProperty(window, '__shellDeskUiHarnessLastExplorerScriptLaunch', { configurable: true, get: () => lastExplorerScriptLaunch });
 
   (window as any).guiSSH = {
     platform: 'win32',
     files: {
+      selectHostImportFiles: async () => [
+        {
+          name: 'hosts.csv',
+          parentName: 'migration',
+          content: [
+            'name,host,port,username,password,group',
+            'Existing web,192.168.2.230,22,root,reused-secret,Imported',
+            'New database,db.example.test,2222,deploy,new-secret,Production',
+          ].join('\n'),
+        },
+        {
+          name: 'broken.xsh',
+          parentName: 'migration',
+          content: '[CONNECTION]\nHost=\nPort=22\n[CONNECTION:AUTHENTICATION]\nUserName=demo',
+        },
+      ],
       listLocalDirectory: async (path: string) => {
         const normalizedPath = path.replaceAll('\\', '/');
+        if (normalizedPath === 'D:/configured') {
+          return { path: normalizedPath, entries: createSftpEntries('local') };
+        }
         if (normalizedPath === '/') {
           return { path: '/', entries: [{ name: 'D:', longname: 'drwxr-xr-x D:', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
@@ -301,6 +421,53 @@ function installGuiSshMock() {
       renameLocalPath: async () => true,
     },
     connections: {
+      getInfo: async () => ({
+        id: connectionId,
+        kind: 'ssh' as const,
+        partition: 'persist:ui-test',
+        proxyPort: 0,
+        connectedAt: now,
+        host: {
+          id: hostId,
+          name: 'UI Test Host',
+          address: '127.0.0.1',
+          port: 22,
+          username: 'demo',
+          authMethod: 'password' as const,
+        },
+      }),
+      listPortForwards: async () => structuredClone(portForwardRecords),
+      savePortForward: async (profile: ShellDeskPortForwardProfile) => {
+        const savedProfile = { ...profile, id: profile.id || 'forward-created' };
+        const index = portForwardRecords.findIndex(({ profile: existing }) => existing.id === savedProfile.id);
+        const record: ShellDeskPortForwardRecord = { profile: savedProfile, runtime: { status: 'stopped' } };
+        if (index >= 0) portForwardRecords[index] = record;
+        else portForwardRecords.push(record);
+        return savedProfile;
+      },
+      deletePortForward: async (profileId: string) => {
+        portForwardRecords = portForwardRecords.filter(({ profile }) => profile.id !== profileId);
+        return true;
+      },
+      startPortForward: async (_connectionId: string, profileId: string) => {
+        const record = portForwardRecords.find(({ profile }) => profile.id === profileId);
+        if (record) {
+          record.runtime = {
+            connectionId,
+            status: 'running',
+            bindHost: record.profile.bindHost,
+            bindPort: record.profile.bindPort || 49152,
+            retryAttempt: 0,
+            updatedAt: now,
+          };
+        }
+        return record?.runtime ?? { status: 'error' as const, error: 'missing' };
+      },
+      stopPortForward: async (profileId: string) => {
+        const record = portForwardRecords.find(({ profile }) => profile.id === profileId);
+        if (record) record.runtime = { status: 'stopped' };
+        return true;
+      },
       runCommand: async (_connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => {
         if (command === 'sh -s' && stdin?.includes('for tool in') && stdin.includes('mysqldump')) {
           return createCommandResult('tar\ngzip\nmysqldump\nmysql\npg_dump\npg_restore\nmongodump\nmongorestore\nsqlite3\naws\nmc\ncrontab\n');
@@ -441,6 +608,13 @@ function installGuiSshMock() {
             size: 12,
             modifiedAt: now,
           },
+          {
+            name: 'deploy.sh',
+            longname: '-rwxr-xr-x 1 demo demo 24 Jan 1 00:00 deploy.sh',
+            type: 'file',
+            size: 24,
+            modifiedAt: now,
+          },
         ],
       }),
       statPath: async () => ({
@@ -470,7 +644,19 @@ function installGuiSshMock() {
       selectUploadFiles: async () => null,
       selectUploadFolders: async () => null,
       cancelTransfer: async () => true,
+      listTransfers: async () => componentUnderTest === 'transfer-center' ? transferHistoryFixtures : [],
+      removeTransfer: async (taskId: string) => {
+        const previousLength = transferHistoryFixtures.length;
+        transferHistoryFixtures = transferHistoryFixtures.filter((task) => task.id !== taskId || task.status === 'running');
+        return transferHistoryFixtures.length !== previousLength;
+      },
+      clearFinishedTransfers: async () => {
+        const previousLength = transferHistoryFixtures.length;
+        transferHistoryFixtures = transferHistoryFixtures.filter((task) => task.status === 'running');
+        return previousLength - transferHistoryFixtures.length;
+      },
       sftpListDirectory: async (_connectionId: string, path: string) => {
+        if (path === '/srv/configured') return { path, entries: createSftpEntries('remote') };
         if (path === '/') {
           return { path: '/', entries: [{ name: 'root', longname: 'drwxr-xr-x root', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
@@ -494,6 +680,24 @@ function installGuiSshMock() {
       sftpDownloadPaths: async (_connectionId: string, _remotePaths: string[], _localPath: string, options?: ShellDeskSftpTransferOptions) => {
         lastSftpTransferOptions = options;
         return { canceled: false, size: 0, fileCount: 0, itemCount: 1, skippedCount: 1 };
+      },
+      sftpEnqueueTransfers: async (_connectionId: string, tasks: ShellDeskSftpRuntimeTask[]) => {
+        sftpRuntimeEnqueueCount += 1;
+        const firstTask = tasks[0];
+        lastSftpTransferOptions = firstTask ? {
+          transferClientId: firstTask.id,
+          queueId: firstTask.id,
+          hostId: firstTask.hostId,
+          hostName: firstTask.hostName,
+          label: firstTask.label,
+          sourcePaths: firstTask.sourcePaths,
+          targetPath: firstTask.targetPath,
+          expectedTotal: firstTask.plannedSize,
+          expectedFileCount: firstTask.plannedFileCount,
+          conflictPolicy: firstTask.conflictPolicy,
+          transferProfile: firstTask.transferProfile,
+        } : undefined;
+        return { queuedIds: tasks.map((task) => task.id) };
       },
       compress: async () => true,
       decompress: async () => true,
@@ -639,6 +843,7 @@ function installGuiSshMock() {
       onVaultChanged: () => () => undefined,
       onTransferProgress: () => () => undefined,
       onTransferEnd: () => () => undefined,
+      onTransferTaskChanged: () => () => undefined,
       onRdpDiagnostic: (callback: (payload: ShellDeskRdpDiagnosticPayload) => void) => {
         rdpDiagnosticListener = callback;
         return () => {
@@ -700,6 +905,147 @@ function EditorThemeSubscribersHarness() {
   );
 }
 
+function TerminalRestoreHarness() {
+  const [connected, setConnected] = React.useState(false);
+  return (
+    <main className="remote-desktop-page" style={{ width: '100vw', height: '100vh' }}>
+      <section className="remote-desktop-surface" style={{ display: 'grid', placeItems: 'center', background: '#102637' }}>
+        <div style={{ width: 760, height: 460, overflow: 'hidden', border: '1px solid rgba(139, 164, 195, .25)', borderRadius: 10 }}>
+          {connected ? (
+            <div data-testid="manual-terminal-connected" style={{ display: 'grid', height: '100%', placeItems: 'center', background: '#181a24', color: '#d7e5f2' }}>
+              手动连接已确认
+            </div>
+          ) : (
+            <TerminalRestorePlaceholder
+              language="zh-CN"
+              launchOptions={{ title: 'Operations', workingDirectory: '/srv/app' }}
+              onReconnect={() => setConnected(true)}
+            />
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function HostImportHarness() {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const existingHosts = React.useMemo<Host[]>(() => [{
+    id: 'existing-host',
+    name: 'Existing web',
+    address: '192.168.2.230',
+    port: 22,
+    username: 'root',
+    authMethod: 'password',
+    password: 'existing-secret',
+    keyId: '',
+    keyPath: '',
+    passphrase: '',
+    privilegeMode: 'sudo',
+    rootPassword: '',
+    jumpHostId: '',
+    canBeJumpHost: false,
+    proxyProfileId: '',
+    keepaliveEnabled: true,
+    systemType: 'debian',
+    systemName: 'Debian GNU/Linux',
+    hostInfo: null,
+    group: 'Current',
+    tags: [],
+    note: '',
+    lastConnectionStatus: 'success',
+    lastConnectionAt: now,
+    lastConnectionError: '',
+    createdAt: now,
+    updatedAt: now,
+  }], []);
+
+  return (
+    <main className="app-shell" style={{ width: '100vw', height: '100vh' }}>
+      <button type="button" onClick={() => setIsOpen(true)}>打开主机迁移</button>
+      {isOpen ? (
+        <HostImportWizard
+          language="zh-CN"
+          existingHosts={existingHosts}
+          onClose={() => setIsOpen(false)}
+          onApply={(_candidates, selectedIds, strategy) => ({
+            added: strategy === 'replace' ? Math.max(0, selectedIds.size - 1) : selectedIds.size,
+            replaced: strategy === 'replace' ? 1 : 0,
+            skipped: strategy === 'skip' ? 1 : 0,
+          })}
+        />
+      ) : null}
+    </main>
+  );
+}
+
+function HostListHarness({ large = false }: { large?: boolean }) {
+  const fixtures = large ? largeHostListFixtures : hostListFixtures;
+  const [page, setPage] = React.useState(1);
+  const [selectedHostId, setSelectedHostId] = React.useState<string | null>(null);
+  const [openedHostId, setOpenedHostId] = React.useState('');
+  const pageSize = large ? 10 : fixtures.length;
+  const pageCount = Math.max(1, Math.ceil(fixtures.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedHosts = fixtures.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  return (
+    <div style={{ width: 900, height: 320, padding: 24 }}>
+      <HostListPanel
+        hosts={fixtures}
+        filteredHosts={fixtures}
+        pagedHosts={pagedHosts}
+        isVaultReady
+        appLanguage="zh-CN"
+        hostViewMode="list"
+        selectedHostId={selectedHostId}
+        onSelectHost={setSelectedHostId}
+        onOpenHost={(host) => setOpenedHostId(host.id)}
+        onOpenSftp={() => undefined}
+        onDeleteHost={() => undefined}
+        onEditHost={() => undefined}
+        onQuickAssignGroup={() => undefined}
+        onQuickAddTag={() => undefined}
+        groupOptions={[]}
+        tagOptions={[]}
+        hostPage={currentPage}
+        hostPageCount={pageCount}
+        hostPageNumbers={Array.from({ length: pageCount }, (_, index) => index + 1)}
+        hostPageSize={pageSize}
+        hostPageSizeOptions={[pageSize]}
+        onPageSizeChange={() => undefined}
+        onPageChange={setPage}
+        isHostConnecting={() => false}
+        proxyProfileById={emptyProxyProfiles}
+        closeHostCardMenu={() => undefined}
+        formatRelativeTime={() => '刚刚'}
+        getHostChipClassName={(kind) => `host-chip ${kind}-chip tone-1`}
+        getHostConnectionStateView={() => ({ className: '', title: '已连接' })}
+        getHostSystemLabel={() => 'Debian GNU/Linux'}
+        getProxyConfigTypeLabel={() => ''}
+        renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
+      />
+      <output data-testid="opened-host">{openedHostId}</output>
+    </div>
+  );
+}
+
+function AgentHostPickerHarness() {
+  const [selectedHostId, setSelectedHostId] = React.useState<string | null>(null);
+  return (
+    <div style={{ display: 'flex', width: 280, height: 620, background: 'var(--surface-elevated)' }}>
+      <AgentHostPicker
+        hosts={agentHostFixtures}
+        selectedHostId={selectedHostId}
+        conversationStatuses={{}}
+        language="zh-CN"
+        hostLabel={(host) => host.name}
+        onSelectHost={(host) => setSelectedHostId(host.id)}
+      />
+    </div>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
@@ -736,6 +1082,22 @@ function App() {
     return <EditorThemeSubscribersHarness />;
   }
 
+  if (component === 'terminal-restore') {
+    return <TerminalRestoreHarness />;
+  }
+
+  if (component === 'host-import') {
+    return <HostImportHarness />;
+  }
+
+  if (component === 'port-forwarding') {
+    return (
+      <div className="port-manager" style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemotePortForwarding connectionId={connectionId} />
+      </div>
+    );
+  }
+
   if (component === 'vm-manager') {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
@@ -769,47 +1131,29 @@ function App() {
   }
 
   if (component === 'host-list') {
+    return <HostListHarness />;
+  }
+
+  if (component === 'host-list-keyboard') {
+    return <HostListHarness large />;
+  }
+
+  if (component === 'agent-host-picker') {
+    return <AgentHostPickerHarness />;
+  }
+
+  if (component === 'transfer-center') {
     return (
-      <div style={{ width: 900, height: 320, padding: 24 }}>
-        <HostListPanel
-          hosts={hostListFixtures}
-          filteredHosts={hostListFixtures}
-          pagedHosts={hostListFixtures}
-          isVaultReady
-          appLanguage="zh-CN"
-          hostViewMode="list"
-          selectedHostId={null}
-          onSelectHost={() => undefined}
-          onOpenHost={() => undefined}
-          onOpenSftp={() => undefined}
-          onDeleteHost={() => undefined}
-          onEditHost={() => undefined}
-          onQuickAssignGroup={() => undefined}
-          onQuickAddTag={() => undefined}
-          groupOptions={[]}
-          tagOptions={[]}
-          hostPage={1}
-          hostPageCount={1}
-          hostPageNumbers={[1]}
-          hostPageSize={10}
-          hostPageSizeOptions={[10]}
-          onPageSizeChange={() => undefined}
-          onPageChange={() => undefined}
-          isHostConnecting={() => false}
-          proxyProfileById={emptyProxyProfiles}
-          closeHostCardMenu={() => undefined}
-          formatRelativeTime={() => '刚刚'}
-          getHostChipClassName={(kind) => `host-chip ${kind}-chip tone-1`}
-          getHostConnectionStateView={() => ({ className: '', title: '已连接' })}
-          getHostSystemLabel={() => 'Debian GNU/Linux'}
-          getProxyConfigTypeLabel={() => ''}
-          renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
-        />
-      </div>
+      <main style={{ minHeight: '100vh', padding: 24, background: 'var(--bg)' }}>
+        <div className="titlebar-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <GlobalTransferCenter language="zh-CN" />
+        </div>
+      </main>
     );
   }
 
   if (component === 'sftp-transfer') {
+    const params = new URLSearchParams(window.location.search);
     return (
       <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <SftpTransferWindow
@@ -822,6 +1166,10 @@ function App() {
             host: { name: 'UI Test Host', address: '127.0.0.1', port: 22, username: 'demo', authMethod: 'password' },
           }}
           language="zh-CN"
+          defaultLocalDirectory={params.get('sftpLocal') ?? '/'}
+          defaultRemoteDirectory={params.get('sftpRemote') ?? '.'}
+          localColumns={params.get('sftpColumns') === 'minimal' ? ['name'] : ['name', 'size', 'type', 'modifiedAt']}
+          remoteColumns={params.get('sftpColumns') === 'minimal' ? ['name', 'permissions'] : ['name', 'size', 'permissions', 'modifiedAt']}
         />
       </div>
     );
@@ -865,7 +1213,15 @@ function App() {
   }
 
   if (component === 'file-explorer') {
-    return <RemoteFileExplorer connectionId={connectionId} systemType="ubuntu" initialPath="/tmp" />;
+    return (
+      <RemoteFileExplorer
+        connectionId={connectionId}
+        systemType="ubuntu"
+        initialPath="/tmp"
+        onOpenTerminal={(path) => { lastExplorerTerminalPath = path; }}
+        onRunScript={(options) => { lastExplorerScriptLaunch = options; }}
+      />
+    );
   }
 
   if (component === 'browser') {

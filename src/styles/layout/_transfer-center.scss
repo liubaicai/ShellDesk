@@ -1,0 +1,304 @@
+.titlebar-actions {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.global-transfer-trigger {
+  position: relative;
+  display: inline-grid;
+  width: 32px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.global-transfer-trigger:hover,
+.global-transfer-trigger.active {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+.global-transfer-trigger.attention {
+  color: var(--danger);
+}
+
+.global-transfer-trigger svg {
+  width: 17px;
+  height: 17px;
+}
+
+.global-transfer-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  display: grid;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  place-items: center;
+  border: 2px solid var(--chrome);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.global-transfer-panel {
+  position: fixed;
+  z-index: 20000;
+  top: 38px;
+  right: 10px;
+  display: grid;
+  width: min(520px, calc(100vw - 20px));
+  max-height: min(680px, calc(100vh - 52px));
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--window-border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  color: var(--text);
+}
+
+.global-transfer-panel > header {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--window-divider);
+  background: var(--surface-strong);
+}
+
+.global-transfer-panel > header > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.global-transfer-panel > header strong {
+  font-size: 13px;
+}
+
+.global-transfer-panel > header small,
+.global-transfer-task-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.global-transfer-header-actions,
+.global-transfer-task-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.global-transfer-header-actions button,
+.global-transfer-task-actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--window-divider);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.global-transfer-header-actions button {
+  padding: 0 9px;
+}
+
+.global-transfer-header-actions button.icon-only,
+.global-transfer-task-actions button {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.global-transfer-header-actions button:hover:not(:disabled),
+.global-transfer-task-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--window-divider));
+  color: var(--text);
+}
+
+.global-transfer-header-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.global-transfer-header-actions svg,
+.global-transfer-task-actions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.global-transfer-error,
+.global-transfer-task-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.global-transfer-error {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--window-divider);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.global-transfer-list {
+  min-height: 120px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.global-transfer-empty {
+  display: grid;
+  min-height: 160px;
+  margin: 0;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.global-transfer-task {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 28px;
+  gap: 9px;
+  padding: 12px 12px 11px;
+  border-bottom: 1px solid var(--window-divider);
+}
+
+.global-transfer-direction {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.global-transfer-direction svg {
+  width: 16px;
+  height: 16px;
+}
+
+.global-transfer-task-body {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.global-transfer-task-title,
+.global-transfer-task-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.global-transfer-task-title strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-transfer-task-title > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-strong);
+  font-size: 10px;
+}
+
+.global-transfer-task-title svg {
+  width: 12px;
+  height: 12px;
+}
+
+.global-transfer-task-title svg.spin {
+  animation: global-transfer-spin 1s linear infinite;
+}
+
+.global-transfer-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+.global-transfer-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.global-transfer-task-meta span,
+.global-transfer-task-meta time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-transfer-task details {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.global-transfer-task summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.global-transfer-task code {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted-strong);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.global-transfer-task.status-completed .global-transfer-progress > span {
+  background: var(--text-success);
+}
+
+.global-transfer-task.status-failed .global-transfer-progress > span,
+.global-transfer-task.status-canceled .global-transfer-progress > span {
+  background: var(--danger);
+}
+
+@keyframes global-transfer-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .global-transfer-panel {
+    right: 6px;
+    width: calc(100vw - 12px);
+  }
+
+  .global-transfer-task-meta time {
+    display: none;
+  }
+}

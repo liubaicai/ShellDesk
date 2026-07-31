@@ -97,6 +97,34 @@ fn decrypt_rejects_invalid_format() {
 }
 
 #[test]
+fn decrypt_rejects_future_versions_and_algorithm_downgrades() {
+    for (key, value) in [
+        ("version", json!(2)),
+        ("algorithm", json!("aes-128-cbc")),
+        ("kdf", json!("pbkdf2-sha1")),
+    ] {
+        let mut encrypted = encrypted_fixture();
+        encrypted[key] = value;
+        assert_eq!(
+            decrypt_remote_document(&encrypted, TEST_PASSPHRASE).unwrap_err(),
+            "远端同步加密包版本或算法不受支持。"
+        );
+    }
+}
+
+#[test]
+fn decrypt_rejects_kdf_iterations_outside_the_supported_invariant() {
+    for iterations in [MIN_SYNC_KDF_ITERATIONS - 1, MAX_SYNC_KDF_ITERATIONS + 1] {
+        let mut encrypted = encrypted_fixture();
+        encrypted["iterations"] = json!(iterations);
+        assert_eq!(
+            decrypt_remote_document(&encrypted, TEST_PASSPHRASE).unwrap_err(),
+            DAMAGED_SYNC_DOCUMENT_ERROR
+        );
+    }
+}
+
+#[test]
 fn decrypt_rejects_invalid_salt_iv_and_tag_lengths() {
     let encrypted = encrypted_fixture();
     for (key, lengths) in [

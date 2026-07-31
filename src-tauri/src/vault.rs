@@ -67,6 +67,11 @@ pub(crate) fn default_settings() -> Value {
         },
         "rememberPasswords": true,
         "rememberKeyPassphrases": true,
+        "sshConnectTimeoutSeconds": 15,
+        "sftpDefaultLocalDirectory": "/",
+        "sftpDefaultRemoteDirectory": ".",
+        "sftpLocalColumns": ["name", "size", "type", "modifiedAt"],
+        "sftpRemoteColumns": ["name", "size", "permissions", "modifiedAt"],
         "aiProvider": "openai",
         "aiProviderName": "OpenAI",
         "aiApiFormat": "openai",
@@ -102,6 +107,11 @@ pub(crate) fn default_settings() -> Value {
         "terminalMinimumContrastRatio": 1,
         "terminalScreenReaderMode": false,
         "terminalPreferTmux": false,
+        "terminalRestoreWorkspace": true,
+        "terminalExitPolicy": "keep-open",
+        "terminalLineTimestamps": false,
+        "terminalKeywordHighlightEnabled": false,
+        "terminalHighlightKeywords": "error,warning,failed,denied,exception",
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

@@ -18,6 +18,9 @@ const checkedKeys = [
   'desktopWallpaperName',
   'rememberPasswords',
   'rememberKeyPassphrases',
+  'sshConnectTimeoutSeconds',
+  'sftpDefaultLocalDirectory',
+  'sftpDefaultRemoteDirectory',
   'aiProvider',
   'aiProviderName',
   'aiApiFormat',
@@ -53,6 +56,10 @@ const checkedKeys = [
   'terminalMinimumContrastRatio',
   'terminalScreenReaderMode',
   'terminalPreferTmux',
+  'terminalExitPolicy',
+  'terminalLineTimestamps',
+  'terminalKeywordHighlightEnabled',
+  'terminalHighlightKeywords',
 ];
 
 function readWorkspaceFile(relativePath) {

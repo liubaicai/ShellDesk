@@ -1,7 +1,17 @@
+use futures_util::StreamExt;
+use serde_json::json;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::{error_string, random_id};
+
+pub(super) const MAX_REMOTE_SYNC_BYTES: usize = 25 * 1024 * 1024;
+const WRITE_VERIFY_ATTEMPTS: usize = 3;
+const MAX_WEBDAV_ERROR_BYTES: usize = 64 * 1024;
+const MAX_WEBDAV_URL_LENGTH: usize = 2_048;
+const MAX_WEBDAV_REMOTE_PATH_LENGTH: usize = 1_024;
 
 pub(super) fn normalize_webdav_url(value: &str, required: bool) -> Result<String, String> {
     let trimmed = value.trim();
@@ -11,9 +21,15 @@ pub(super) fn normalize_webdav_url(value: &str, required: bool) -> Result<String
         }
         return Ok(String::new());
     }
+    if trimmed.len() > MAX_WEBDAV_URL_LENGTH {
+        return Err("WebDAV 地址过长。".to_string());
+    }
     let mut parsed = reqwest::Url::parse(trimmed).map_err(|_| "WebDAV 地址无效。".to_string())?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err("WebDAV 地址只支持 http 或 https。".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("WebDAV 地址不能包含用户名或密码，请使用独立凭据字段。".to_string());
     }
     parsed.set_fragment(None);
     Ok(parsed.to_string())
@@ -83,6 +99,9 @@ fn webdav_url(config: &Value, remote_path: &str) -> Result<String, String> {
 }
 
 pub(super) fn normalize_webdav_remote_path(value: &str) -> Result<String, String> {
+    if value.len() > MAX_WEBDAV_REMOTE_PATH_LENGTH {
+        return Err("远程同步文件路径过长。".to_string());
+    }
     let normalized = value.replace('\\', "/").replace("//", "/");
     let path = if normalized.starts_with('/') {
         normalized
@@ -154,7 +173,10 @@ pub(super) fn webdav_test_path(config: &Value) -> String {
 
 pub(super) async fn webdav_response_error(response: reqwest::Response, action: &str) -> String {
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
+    let body = webdav_response_body_limited(response, MAX_WEBDAV_ERROR_BYTES)
+        .await
+        .unwrap_or_default();
+    let body = String::from_utf8_lossy(&body);
     let detail = body.split_whitespace().collect::<Vec<_>>().join(" ");
     if detail.is_empty() {
         format!("{action}失败：{status}")
@@ -164,6 +186,83 @@ pub(super) async fn webdav_response_error(response: reqwest::Response, action: &
             detail.chars().take(180).collect::<String>()
         )
     }
+}
+
+pub(super) async fn webdav_response_body_limited(
+    response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|content_length| content_length > limit as u64)
+    {
+        return Err("远端同步文件超过大小限制。".to_string());
+    }
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(error_string)?;
+        if bytes.len().saturating_add(chunk.len()) > limit {
+            return Err("远端同步文件超过大小限制。".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+pub(super) async fn verify_webdav_write(
+    config: &Value,
+    secrets: &Value,
+    remote_path: &str,
+    expected_body: &str,
+    put_etag: &str,
+) -> Result<Value, String> {
+    let expected_bytes = expected_body.as_bytes();
+    let expected_hash = format!("{:x}", Sha256::digest(expected_bytes));
+    let mut last_etag = String::new();
+    let mut last_status = String::new();
+    let mut last_hash = String::new();
+
+    for attempt in 0..WRITE_VERIFY_ATTEMPTS {
+        match webdav_request(config, secrets, "GET", remote_path, None, None, &[]).await {
+            Ok(response) if response.status().is_success() => {
+                last_etag = response
+                    .headers()
+                    .get("etag")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let bytes = webdav_response_body_limited(response, MAX_REMOTE_SYNC_BYTES).await?;
+                last_hash = format!("{:x}", Sha256::digest(&bytes));
+                if bytes == expected_bytes {
+                    return Ok(json!({
+                        "verified": true,
+                        "etag": if last_etag.is_empty() { put_etag } else { &last_etag },
+                        "sha256": expected_hash,
+                    }));
+                }
+                last_status = "content-mismatch".to_string();
+            }
+            Ok(response) => {
+                last_status = response.status().to_string();
+            }
+            Err(error) => {
+                last_status = error;
+            }
+        }
+        if attempt + 1 < WRITE_VERIFY_ATTEMPTS {
+            sleep(Duration::from_millis(150 * (attempt as u64 + 1))).await;
+        }
+    }
+
+    if !put_etag.is_empty() && !last_etag.is_empty() && put_etag != last_etag {
+        return Err("远端同步文件在写入校验期间被其他设备更新，本次同步基线未推进。".to_string());
+    }
+    Err(format!(
+        "远端同步文件写入后的读回校验失败，本次同步基线未推进（状态：{last_status}，期望摘要：{}，实际摘要：{}）。",
+        &expected_hash[..12],
+        last_hash.get(..12).unwrap_or("unavailable")
+    ))
 }
 
 pub(super) fn webdav_write_precondition_headers(
@@ -176,5 +275,115 @@ pub(super) fn webdav_write_precondition_headers(
         vec![("If-None-Match", "*".to_string())]
     } else {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    #[test]
+    fn webdav_urls_keep_credentials_out_of_the_public_endpoint() {
+        assert_eq!(
+            normalize_webdav_url("https://dav.example.com/root", true).unwrap(),
+            "https://dav.example.com/root"
+        );
+        assert!(
+            normalize_webdav_url("https://user:secret@dav.example.com/root", true)
+                .unwrap_err()
+                .contains("不能包含用户名或密码")
+        );
+    }
+
+    #[test]
+    fn webdav_remote_paths_are_bounded() {
+        assert_eq!(
+            normalize_webdav_remote_path("/ShellDesk/sync.json").unwrap(),
+            "/ShellDesk/sync.json"
+        );
+        assert!(normalize_webdav_remote_path(&format!("/{}", "a".repeat(1_025))).is_err());
+    }
+
+    async fn serve_get_responses(
+        listener: TcpListener,
+        responses: Vec<(String, String)>,
+    ) -> Result<(), String> {
+        for (body, etag) in responses {
+            let (mut stream, _) = listener.accept().await.map_err(error_string)?;
+            let mut request = vec![0u8; 4096];
+            let _ = stream.read(&mut request).await.map_err(error_string)?;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nETag: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                etag,
+                body,
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .map_err(error_string)?;
+            stream.shutdown().await.map_err(error_string)?;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn write_verification_reads_back_exact_bytes_and_prefers_get_etag() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = r#"{"format":"shelldesk-sync-encrypted","ciphertext":"test"}"#.to_string();
+        let server = tokio::spawn(serve_get_responses(
+            listener,
+            vec![(body.clone(), "\"read-etag\"".to_string())],
+        ));
+        let config = json!({
+            "webdavUrl": format!("http://{address}"),
+            "webdavUsername": "test",
+            "ignoreCertificateErrors": false,
+        });
+        let secrets = json!({ "webdavPassword": "test" });
+
+        let verified = verify_webdav_write(&config, &secrets, "/sync.json", &body, "\"put-etag\"")
+            .await
+            .unwrap();
+
+        assert_eq!(verified["verified"], true);
+        assert_eq!(verified["etag"], "\"read-etag\"");
+        assert_eq!(verified["sha256"].as_str().map(str::len), Some(64),);
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn write_verification_rejects_a_concurrent_read_back() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let expected = r#"{"ciphertext":"expected"}"#.to_string();
+        let responses = (0..WRITE_VERIFY_ATTEMPTS)
+            .map(|_| {
+                (
+                    r#"{"ciphertext":"other-device"}"#.to_string(),
+                    "\"other-etag\"".to_string(),
+                )
+            })
+            .collect();
+        let server = tokio::spawn(serve_get_responses(listener, responses));
+        let config = json!({
+            "webdavUrl": format!("http://{address}"),
+            "webdavUsername": "test",
+            "ignoreCertificateErrors": false,
+        });
+        let secrets = json!({ "webdavPassword": "test" });
+
+        let error = verify_webdav_write(&config, &secrets, "/sync.json", &expected, "\"put-etag\"")
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("其他设备更新"));
+        assert!(error.contains("基线未推进"));
+        server.await.unwrap().unwrap();
     }
 }

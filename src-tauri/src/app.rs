@@ -205,10 +205,19 @@ pub(crate) fn open_sftp_transfer_window(
     let window_for_close = window.clone();
     window.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
-            let _ = connection::close_connection_by_id(&state, &connection_id_for_close);
+            let deferred =
+                connection::close_connection_after_transfers(&state, &connection_id_for_close)
+                    .unwrap_or(false);
             let _ = window_for_close.emit(
                 "connection:closed",
-                json!({ "connectionId": connection_id_for_close, "reason": "文件传输窗口已关闭。" }),
+                json!({
+                    "connectionId": connection_id_for_close,
+                    "reason": if deferred {
+                        "文件传输窗口已关闭，后台传输将继续。"
+                    } else {
+                        "文件传输窗口已关闭。"
+                    }
+                }),
             );
         }
     });

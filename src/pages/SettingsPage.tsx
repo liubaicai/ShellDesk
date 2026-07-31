@@ -14,6 +14,9 @@ import {
   loadDesktopWallpaperPresetUrl,
 } from '../assets/desktopWallpapers';
 import { getCurrentAppLocale, t } from '../i18n';
+import { SftpSettingsFields } from '../components/SftpSettingsFields';
+import { TerminalSessionSettingsFields } from '../components/TerminalSessionSettingsFields';
+import { TerminalOutputSettingsFields } from '../components/TerminalOutputSettingsFields';
 import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
@@ -1075,6 +1078,26 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
+                      <strong>{t('settings.general.sshConnectTimeout.label', settings.language)}</strong>
+                      <small>{t('settings.general.sshConnectTimeout.summary', settings.language)}</small>
+                    </span>
+                    <input
+                      className="settings-text-input settings-number-input"
+                      type="number"
+                      min={3}
+                      max={120}
+                      step={1}
+                      value={settings.sshConnectTimeoutSeconds}
+                      aria-label={t('settings.general.sshConnectTimeout.label', settings.language)}
+                      onChange={(event) => updateSetting(
+                        'sshConnectTimeoutSeconds',
+                        Math.max(3, Math.min(120, Number.parseInt(event.target.value, 10) || 15)),
+                      )}
+                    />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
                       <strong>{t('settings.general.minimizeToTrayOnClose.label', settings.language)}</strong>
                       <small>{t('settings.general.minimizeToTrayOnClose.summary', settings.language)}</small>
                     </span>
@@ -1088,6 +1111,11 @@ function SettingsPage({
 
                 </div>
               </section>
+
+              <SftpSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
 
               <section className="settings-section">
                 <h2>{t('settings.general.library.title', settings.language)}</h2>
@@ -1373,23 +1401,15 @@ function SettingsPage({
                 </div>
               </section>
 
-              <section className="settings-section">
-                <h2>{t('settings.terminal.session.title', settings.language)}</h2>
-                <div className="settings-card">
-                  <label className="settings-row">
-                    <span>
-                      <strong>{t('settings.terminal.preferTmux.label', settings.language)}</strong>
-                      <small>{t('settings.terminal.preferTmux.summary', settings.language)}</small>
-                    </span>
-                    <input
-                      className="settings-toggle"
-                      type="checkbox"
-                      checked={settings.terminalPreferTmux}
-                      onChange={(event) => updateSetting('terminalPreferTmux', event.target.checked)}
-                    />
-                  </label>
-                </div>
-              </section>
+              <TerminalSessionSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
+
+              <TerminalOutputSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
 
               <section className="settings-section">
                 <h2>{t('settings.terminal.typography.title', settings.language)}</h2>

@@ -1,4 +1,5 @@
 import type { RemoteSystemType } from './types';
+import type { RemoteTerminalLaunchOptions } from './terminalTypes';
 
 export interface RemoteFileExplorerProps {
   connectionId: string;
@@ -7,6 +8,7 @@ export interface RemoteFileExplorerProps {
   onOpenFile?: (filePath: string) => void;
   onOpenSqliteFile?: (filePath: string) => void;
   onOpenTerminal?: (directoryPath: string) => void;
+  onRunScript?: (options: RemoteTerminalLaunchOptions) => void;
 }
 
 export type RemoteFileEntryType = 'directory' | 'file' | 'symlink';
