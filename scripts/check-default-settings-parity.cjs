@@ -60,6 +60,9 @@ const checkedKeys = [
   'terminalLineTimestamps',
   'terminalKeywordHighlightEnabled',
   'terminalHighlightKeywords',
+  'terminalCommandAutocompleteEnabled',
+  'terminalSafeLinksEnabled',
+  'terminalSuspendRenderingWhenHidden',
 ];
 
 function readWorkspaceFile(relativePath) {

@@ -3,7 +3,13 @@ import { t } from '../i18n';
 interface TerminalOutputSettingsFieldsProps {
   settings: Pick<
     ShellDeskAppSettings,
-    'language' | 'terminalHighlightKeywords' | 'terminalKeywordHighlightEnabled' | 'terminalLineTimestamps'
+    | 'language'
+    | 'terminalCommandAutocompleteEnabled'
+    | 'terminalHighlightKeywords'
+    | 'terminalKeywordHighlightEnabled'
+    | 'terminalLineTimestamps'
+    | 'terminalSafeLinksEnabled'
+    | 'terminalSuspendRenderingWhenHidden'
   >;
   onChange: (patch: Partial<ShellDeskAppSettings>) => void;
 }
@@ -23,6 +29,42 @@ export function TerminalOutputSettingsFields({ settings, onChange }: TerminalOut
             type="checkbox"
             checked={settings.terminalLineTimestamps}
             onChange={(event) => onChange({ terminalLineTimestamps: event.target.checked })}
+          />
+        </label>
+        <label className="settings-row">
+          <span>
+            <strong>{t('settings.terminal.autocomplete.label', settings.language)}</strong>
+            <small>{t('settings.terminal.autocomplete.summary', settings.language)}</small>
+          </span>
+          <input
+            className="settings-toggle"
+            type="checkbox"
+            checked={settings.terminalCommandAutocompleteEnabled}
+            onChange={(event) => onChange({ terminalCommandAutocompleteEnabled: event.target.checked })}
+          />
+        </label>
+        <label className="settings-row">
+          <span>
+            <strong>{t('settings.terminal.safeLinks.label', settings.language)}</strong>
+            <small>{t('settings.terminal.safeLinks.summary', settings.language)}</small>
+          </span>
+          <input
+            className="settings-toggle"
+            type="checkbox"
+            checked={settings.terminalSafeLinksEnabled}
+            onChange={(event) => onChange({ terminalSafeLinksEnabled: event.target.checked })}
+          />
+        </label>
+        <label className="settings-row">
+          <span>
+            <strong>{t('settings.terminal.suspendHidden.label', settings.language)}</strong>
+            <small>{t('settings.terminal.suspendHidden.summary', settings.language)}</small>
+          </span>
+          <input
+            className="settings-toggle"
+            type="checkbox"
+            checked={settings.terminalSuspendRenderingWhenHidden}
+            onChange={(event) => onChange({ terminalSuspendRenderingWhenHidden: event.target.checked })}
           />
         </label>
         <label className="settings-row">

@@ -310,6 +310,9 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalLineTimestamps": read_bool(settings.get("terminalLineTimestamps"), defaults["terminalLineTimestamps"].as_bool().unwrap_or(false)),
         "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
         "terminalHighlightKeywords": terminal_highlight_keywords,
+        "terminalCommandAutocompleteEnabled": read_bool(settings.get("terminalCommandAutocompleteEnabled"), defaults["terminalCommandAutocompleteEnabled"].as_bool().unwrap_or(true)),
+        "terminalSafeLinksEnabled": read_bool(settings.get("terminalSafeLinksEnabled"), defaults["terminalSafeLinksEnabled"].as_bool().unwrap_or(true)),
+        "terminalSuspendRenderingWhenHidden": read_bool(settings.get("terminalSuspendRenderingWhenHidden"), defaults["terminalSuspendRenderingWhenHidden"].as_bool().unwrap_or(true)),
         "terminalSnippets": terminal_snippets
     }))
 }
@@ -1378,6 +1381,9 @@ mod tests {
         let defaults = normalize_app_settings(&json!({})).unwrap();
         assert_eq!(defaults["terminalLineTimestamps"], false);
         assert_eq!(defaults["terminalKeywordHighlightEnabled"], false);
+        assert_eq!(defaults["terminalCommandAutocompleteEnabled"], true);
+        assert_eq!(defaults["terminalSafeLinksEnabled"], true);
+        assert_eq!(defaults["terminalSuspendRenderingWhenHidden"], true);
         assert_eq!(
             defaults["terminalHighlightKeywords"],
             "error,warning,failed,denied,exception"
@@ -1386,12 +1392,18 @@ mod tests {
         let configured = normalize_app_settings(&json!({
             "terminalLineTimestamps": true,
             "terminalKeywordHighlightEnabled": true,
-            "terminalHighlightKeywords": " error, warning "
+            "terminalHighlightKeywords": " error, warning ",
+            "terminalCommandAutocompleteEnabled": false,
+            "terminalSafeLinksEnabled": false,
+            "terminalSuspendRenderingWhenHidden": false
         }))
         .unwrap();
         assert_eq!(configured["terminalLineTimestamps"], true);
         assert_eq!(configured["terminalKeywordHighlightEnabled"], true);
         assert_eq!(configured["terminalHighlightKeywords"], "error, warning");
+        assert_eq!(configured["terminalCommandAutocompleteEnabled"], false);
+        assert_eq!(configured["terminalSafeLinksEnabled"], false);
+        assert_eq!(configured["terminalSuspendRenderingWhenHidden"], false);
 
         let blank = normalize_app_settings(&json!({
             "terminalHighlightKeywords": ""
@@ -1399,7 +1411,6 @@ mod tests {
         .unwrap();
         assert_eq!(blank["terminalHighlightKeywords"], "");
     }
-
     #[test]
     fn settings_normalize_sftp_columns() {
         let defaults = normalize_app_settings(&json!({})).unwrap();

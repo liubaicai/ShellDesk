@@ -45,6 +45,7 @@ interface RemoteCodeEditorProps {
   connectionId: string;
   connectionKind?: 'ssh' | 'local';
   hostId: string;
+  isVisible?: boolean;
   settings: ShellDeskAppSettings;
   systemType?: RemoteSystemType;
   onSettingsChange?: (settings: ShellDeskAppSettings) => void;
@@ -337,6 +338,7 @@ export default function RemoteCodeEditor({
   connectionId,
   connectionKind,
   hostId,
+  isVisible = true,
   settings,
   systemType,
   onSettingsChange,
@@ -1004,6 +1006,7 @@ export default function RemoteCodeEditor({
                     connectionKind={connectionKind}
                     systemType={systemType}
                     launchOptions={{ title: terminalTab.title, workingDirectory: terminalTab.workingDirectory }}
+                    isVisible={isVisible && !terminalCollapsed && terminalTab.id === activeTerminalId}
                     onSessionStateChange={(state) => {
                       setTerminalSessionStates((current) => ({ ...current, [terminalTab.id]: state }));
                     }}

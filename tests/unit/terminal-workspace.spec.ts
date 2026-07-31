@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import type { DesktopWindowState } from '../../src/remoteDesktopWindowModel';
 import {
   createTerminalWorkspaceSnapshot,
+  inheritTerminalSplitWorkingDirectory,
   parseTerminalWorkspaceSnapshot,
   sanitizeTerminalLaunchMetadata,
   splitTerminalWorkspaceFrame,
@@ -95,4 +96,23 @@ test('workspace identity prefers a stable host id and metadata sanitizer drops i
   expect(sanitizeTerminalLaunchMetadata({
     initialCommand: 'never persist me',
   })).toBeUndefined();
+});
+
+test('terminal splits inherit the probed live working directory', () => {
+  expect(inheritTerminalSplitWorkingDirectory({
+    title: 'Logs',
+    shell: '/bin/bash',
+    workingDirectory: '/srv/old',
+  }, ' /srv/live ')).toEqual({
+    title: 'Logs',
+    shell: '/bin/bash',
+    workingDirectory: '/srv/live',
+  });
+  expect(inheritTerminalSplitWorkingDirectory({
+    mode: 'tmux',
+    tmuxSessionName: 'ops',
+  }, '/srv/live')).toEqual({
+    mode: 'tmux',
+    tmuxSessionName: 'ops',
+  });
 });

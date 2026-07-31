@@ -103,6 +103,9 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalLineTimestamps: false,
     terminalKeywordHighlightEnabled: false,
     terminalHighlightKeywords: 'error,warning,failed,denied,exception',
+    terminalCommandAutocompleteEnabled: true,
+    terminalSafeLinksEnabled: true,
+    terminalSuspendRenderingWhenHidden: true,
     terminalSnippets: [],
   };
 }
@@ -388,7 +391,11 @@ async function previewIpc<Channel extends IpcChannel>(
       return { canceled: true } satisfies ShellDeskMcpSkillExportResult as IpcResult<Channel>;
 
     case 'connection:get-ipc-capabilities':
-      return { terminalSessions: false, terminalBinary: false } satisfies ShellDeskIpcCapabilities as IpcResult<Channel>;
+      return {
+        terminalSessions: false,
+        terminalBinary: false,
+        terminalOutputFlow: false,
+      } satisfies ShellDeskIpcCapabilities as IpcResult<Channel>;
 
     case 'connection:get-info':
       return {
@@ -786,12 +793,18 @@ window.guiSSH = {
     respondHostKeyVerification: (payload) => ipc('connection:host-key-response', payload),
     getInfo: (connectionId) => ipc('connection:get-info', connectionId),
     disconnect: (connectionId) => ipc('connection:disconnect', connectionId),
-    getIpcCapabilities: () => ipc('connection:get-ipc-capabilities').catch(() => ({ terminalSessions: false })),
+    getIpcCapabilities: () => ipc('connection:get-ipc-capabilities').catch(() => ({
+      terminalSessions: false,
+      terminalBinary: false,
+      terminalOutputFlow: false,
+    })),
     trustBrowserCertificate: (partition, url) => ipc('connection:trust-browser-certificate', partition, url),
     resolveBrowserUrl: (connectionId, url) => ipc('connection:browser-resolve-url', connectionId, url),
     startTerminal: (connectionId, terminalId, columns, rows, options) => ipc('connection:start-terminal', connectionId, terminalId, columns, rows, options),
     writeTerminal: (connectionId, terminalId, data, options) => ipc('connection:write-terminal', connectionId, terminalId, data, options),
     writeTerminalBytes: (connectionId, terminalId, data) => ipc('connection:write-terminal-binary', connectionId, terminalId, data),
+    acknowledgeTerminalOutput: (connectionId, terminalId, sequence, byteLength) =>
+      ipc('connection:ack-terminal-output', connectionId, terminalId, sequence, byteLength),
     resizeTerminal: (connectionId, terminalId, columns, rows, options) => ipc('connection:resize-terminal', connectionId, terminalId, columns, rows, options),
     closeTerminal: (connectionId, terminalId) => ipc('connection:close-terminal', connectionId, terminalId).catch(() => false),
     listDirectory: (connectionId, remotePath, options) => ipc('connection:list-directory', connectionId, remotePath, options),

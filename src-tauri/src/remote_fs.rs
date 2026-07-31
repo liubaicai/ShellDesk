@@ -26,6 +26,8 @@ mod paths;
 mod remote_io;
 #[path = "remote_fs/sftp.rs"]
 mod sftp;
+#[path = "remote_fs/sftp_download.rs"]
+mod sftp_download;
 #[path = "remote_fs/sftp_resume.rs"]
 mod sftp_resume;
 #[path = "remote_fs/sftp_tuning.rs"]

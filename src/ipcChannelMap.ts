@@ -28,6 +28,7 @@ export const ipcChannelBindings = {
   'config:export': 'files.exportConfig',
   'config:import': 'files.importConfig',
   'config:select-host-import-files': 'files.selectHostImportFiles',
+  'connection:ack-terminal-output': 'connections.acknowledgeTerminalOutput',
   'connection:browser-resolve-url': 'connections.resolveBrowserUrl',
   'connection:cancel-transfer': 'connections.cancelTransfer',
   'connection:check-sftp': 'connections.checkSftp',

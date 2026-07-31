@@ -112,6 +112,9 @@ pub(crate) fn default_settings() -> Value {
         "terminalLineTimestamps": false,
         "terminalKeywordHighlightEnabled": false,
         "terminalHighlightKeywords": "error,warning,failed,denied,exception",
+        "terminalCommandAutocompleteEnabled": true,
+        "terminalSafeLinksEnabled": true,
+        "terminalSuspendRenderingWhenHidden": true,
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

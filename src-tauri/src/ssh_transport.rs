@@ -807,8 +807,58 @@ mod tests {
             Some("shelldesk-live-smoke")
         );
 
+        run_live_pooled_sftp_smoke(&state, profile.clone()).await;
         run_live_remote_file_smoke(&state, profile.clone()).await;
         run_live_sftp_probe_smoke(&state, profile).await;
+    }
+
+    async fn run_live_pooled_sftp_smoke(state: &AppState, profile: SshProfile) {
+        use crate::ssh_transport_pool::SshTransportLeaseKind;
+        use russh_sftp::client::SftpSession;
+
+        let (terminal_lease, terminal_channel) = state
+            .ssh_transports
+            .open_session_channel(
+                state.clone(),
+                None,
+                "live-pool-smoke",
+                profile.clone(),
+                SshTransportLeaseKind::Terminal,
+            )
+            .await
+            .expect("live terminal channel should open from the pooled transport");
+        let (sftp_lease, sftp_channel) = state
+            .ssh_transports
+            .open_session_channel(
+                state.clone(),
+                None,
+                "live-pool-smoke",
+                profile,
+                SshTransportLeaseKind::SftpBrowse,
+            )
+            .await
+            .expect("live SFTP channel should open from the pooled transport");
+        assert!(
+            terminal_lease.shares_transport_with(&sftp_lease),
+            "terminal and SFTP leases should reuse the authenticated transport"
+        );
+        sftp_channel
+            .request_subsystem(true, "sftp")
+            .await
+            .expect("live pooled SFTP subsystem should start");
+        let sftp = SftpSession::new(sftp_channel.into_stream())
+            .await
+            .expect("live pooled SFTP session should initialize");
+        sftp.read_dir(".")
+            .await
+            .expect("live pooled SFTP session should list the home directory");
+        sftp.close()
+            .await
+            .expect("live pooled SFTP session should close");
+        let _ = terminal_channel.close().await;
+        drop(sftp_lease);
+        drop(terminal_lease);
+        state.ssh_transports.invalidate("live-pool-smoke");
     }
 
     async fn run_live_remote_file_smoke(state: &AppState, profile: SshProfile) {

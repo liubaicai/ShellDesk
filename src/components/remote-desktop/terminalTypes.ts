@@ -36,6 +36,8 @@ export interface RemoteTerminalCommandRequest {
   source?: 'snippet' | 'deployment' | 'external';
 }
 
+export type RemoteTerminalSplitDirection = 'right' | 'down';
+
 export type RemoteTerminalToolAction =
   | 'new-terminal'
   | 'search'
@@ -43,7 +45,9 @@ export type RemoteTerminalToolAction =
   | 'toggle-follow'
   | 'scroll-bottom'
   | 'restart'
-  | 'settings';
+  | 'settings'
+  | 'split-right'
+  | 'split-down';
 
 export interface RemoteTerminalToolRequest {
   id: string;
@@ -83,9 +87,11 @@ export interface RemoteTerminalProps {
   launchOptions?: RemoteTerminalLaunchOptions;
   commandRequest?: RemoteTerminalCommandRequest | null;
   toolRequest?: RemoteTerminalToolRequest | null;
+  isVisible?: boolean;
   onChromeChange?: (payload: RemoteTerminalChromePayload) => void;
   onCommandRequestHandled?: (requestId: string) => void;
   onToolRequestHandled?: (requestId: string) => void;
+  onSplitTerminal?: (direction: RemoteTerminalSplitDirection, workingDirectory: string) => void;
   onOpenTerminal?: (options?: RemoteTerminalLaunchOptions) => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
   onCommandIntercept?: (command: string) => boolean;

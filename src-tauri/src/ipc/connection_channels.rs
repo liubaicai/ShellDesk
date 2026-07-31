@@ -46,9 +46,11 @@ pub(crate) async fn dispatch(
         "connection:browser-resolve-url" => {
             browser_proxy::browser_resolve_url(state.clone(), window.clone(), args).await
         }
-        "connection:get-ipc-capabilities" => {
-            Ok(json!({ "terminalSessions": true, "terminalBinary": true }))
-        }
+        "connection:get-ipc-capabilities" => Ok(json!({
+            "terminalSessions": true,
+            "terminalBinary": true,
+            "terminalOutputFlow": true
+        })),
         "connection:disconnect" => connection::disconnect_connection(&state, &window, args),
         "connection:get-info" => connection::get_connection_info(&state, args),
         "connection:get-status" => dispatch_monitor(state.clone(), channel.clone(), args).await,
@@ -65,6 +67,7 @@ pub(crate) async fn dispatch(
         "connection:start-terminal" => terminal::start_terminal(state.clone(), window, args).await,
         "connection:write-terminal" => terminal::write_terminal(&state, args),
         "connection:write-terminal-binary" => terminal::write_terminal_bytes(&state, args),
+        "connection:ack-terminal-output" => terminal::acknowledge_terminal_output(&state, args),
         "connection:resize-terminal" => terminal::resize_terminal(&state, args),
         "connection:close-terminal" => terminal::close_terminal(&state, args),
         "connection:run-command" => {

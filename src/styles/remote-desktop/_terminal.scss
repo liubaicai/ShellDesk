@@ -189,12 +189,49 @@
 }
 
 .terminal-host-shell {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--terminal-background, #181a24);
+}
+
+.terminal-command-suggestion {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  max-width: min(72%, 720px);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(112, 159, 224, 0.28);
+  border-radius: 7px;
+  padding: 5px 7px 5px 9px;
+  background: rgba(18, 24, 36, 0.92);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+  color: rgba(225, 235, 248, 0.78);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 10.5px;
+  pointer-events: none;
+}
+
+.terminal-command-suggestion span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-command-suggestion kbd {
+  flex: 0 0 auto;
+  border: 1px solid rgba(147, 178, 220, 0.32);
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(117, 153, 204, 0.12);
+  color: rgba(218, 231, 248, 0.82);
+  font: inherit;
 }
 
 .terminal-host-shell .terminal-host {
@@ -276,6 +313,33 @@
   gap: 10px;
 }
 
+.terminal-link-dialog {
+  display: grid;
+  gap: 10px;
+}
+
+.terminal-link-dialog p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.terminal-link-dialog-url {
+  max-height: 132px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .terminal-launch-dialog label,
 .terminal-settings-dialog > label {
   display: grid;
@@ -339,4 +403,17 @@
 [data-theme="light"] .terminal-searchbar input {
   border-color: rgba(20, 42, 68, 0.14);
   background: rgba(255, 255, 255, 0.68);
+}
+
+[data-theme="light"] .terminal-command-suggestion {
+  border-color: rgba(35, 94, 166, 0.2);
+  background: rgba(248, 251, 255, 0.94);
+  box-shadow: 0 8px 22px rgba(26, 55, 92, 0.14);
+  color: rgba(22, 50, 84, 0.78);
+}
+
+[data-theme="light"] .terminal-command-suggestion kbd {
+  border-color: rgba(35, 94, 166, 0.22);
+  background: rgba(35, 94, 166, 0.08);
+  color: rgba(22, 50, 84, 0.82);
 }

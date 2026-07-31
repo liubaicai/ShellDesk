@@ -220,6 +220,30 @@ export function TerminalSettingsDialogPortal({
               onChange={(event) => onSettingChange('terminalKeywordHighlightEnabled', event.target.checked)}
             />
           </label>
+          <label>
+            <span>{t('settings.terminal.autocomplete.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalCommandAutocompleteEnabled}
+              onChange={(event) => onSettingChange('terminalCommandAutocompleteEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.safeLinks.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalSafeLinksEnabled}
+              onChange={(event) => onSettingChange('terminalSafeLinksEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.suspendHidden.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalSuspendRenderingWhenHidden}
+              onChange={(event) => onSettingChange('terminalSuspendRenderingWhenHidden', event.target.checked)}
+            />
+          </label>
         </div>
         <label>
           <span>{t('settings.terminal.highlightKeywords.label', settings.language)}</span>
@@ -232,6 +256,47 @@ export function TerminalSettingsDialogPortal({
         </label>
         <div className="notepad-modal-actions">
           <button type="button" className="notepad-modal-btn primary" onClick={onClose}>{t('terminal.settingsDialog.done', settings.language)}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function TerminalLinkDialogPortal({
+  link,
+  language,
+  onCancel,
+  onOpen,
+}: {
+  link: string;
+  language: ShellDeskAppSettings['language'];
+  onCancel: () => void;
+  onOpen: () => void;
+}) {
+  if (!link) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="notepad-modal-overlay" role="presentation" onClick={onCancel}>
+      <div
+        className="notepad-modal terminal-link-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="terminal-link-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id="terminal-link-dialog-title">{t('terminal.linkDialog.title', language)}</h3>
+        <p>{t('terminal.linkDialog.summary', language)}</p>
+        <code className="terminal-link-dialog-url">{link}</code>
+        <div className="notepad-modal-actions">
+          <button type="button" className="notepad-modal-btn" onClick={onCancel}>
+            {t('common.cancel', language)}
+          </button>
+          <button type="button" className="notepad-modal-btn primary" onClick={onOpen}>
+            {t('terminal.linkDialog.open', language)}
+          </button>
         </div>
       </div>
     </div>,

@@ -3,6 +3,7 @@ use serde_json::Value;
 
 const BALANCED_PACKET_BYTES: u32 = 256 * 1024;
 const BALANCED_CONCURRENT_WRITES: usize = 16;
+const BALANCED_CONCURRENT_READS: usize = 8;
 const COMPATIBILITY_PACKET_BYTES: u32 = 32 * 1024;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const SMALL_FILE_BYTES: u64 = 512 * 1024;
@@ -62,6 +63,13 @@ impl SftpTransferProfile {
     pub(super) fn runtime_concurrency_cap(self) -> usize {
         match self {
             Self::Balanced => 4,
+            Self::Compatibility => 1,
+        }
+    }
+
+    pub(super) fn download_request_concurrency(self, file_concurrency: usize) -> usize {
+        match self {
+            Self::Balanced => (BALANCED_CONCURRENT_READS / file_concurrency.max(1)).max(1),
             Self::Compatibility => 1,
         }
     }
@@ -191,6 +199,9 @@ mod tests {
             32 * 1024 * 1024
         );
         assert_eq!(profile.file_concurrency(256 * 1024 * 1024, 4), 2);
+        assert_eq!(profile.download_request_concurrency(1), 8);
+        assert_eq!(profile.download_request_concurrency(2), 4);
+        assert_eq!(profile.download_request_concurrency(8), 1);
     }
 
     #[test]
@@ -201,6 +212,7 @@ mod tests {
         assert_eq!(config.max_concurrent_writes, 1);
         assert_eq!(profile.file_concurrency(u64::MAX, 10_000), 1);
         assert_eq!(profile.runtime_concurrency_cap(), 1);
+        assert_eq!(profile.download_request_concurrency(1), 1);
     }
 
     #[tokio::test]
