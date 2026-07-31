@@ -56,6 +56,7 @@ pub(crate) async fn dispatch(
         "files:rename-local-path" => local_fs::rename_local_path(local_fs_args(args))?,
         "config:export" => config::export_config(&state).await?,
         "config:import" => config::import_config(&state, &window).await?,
+        "config:select-host-import-files" => config::select_host_import_files(&state)?,
 
         "system:list-fonts" => list_system_fonts().await?,
         "system:read-known-hosts" => read_known_hosts()?,

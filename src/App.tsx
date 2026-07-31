@@ -21,6 +21,8 @@ import {
 import appIconUrl from './assets/images/icon.png';
 import DismissibleAlert from './components/DismissibleAlert';
 import HostListPanel from './components/HostListPanel';
+import HostImportWizard from './components/HostImportWizard';
+import HostImportMenuActions from './components/HostImportMenuActions';
 import HostMetadataFields, { useHostMetadataOptions } from './components/HostMetadataFields';
 import GlobalTransferCenter from './components/transfers/GlobalTransferCenter';
 import {
@@ -110,6 +112,7 @@ import {
   validateKeyForm,
   type VaultCollectionsSavePayload,
 } from './appHostModel';
+import { useHostImportWorkflow } from './features/hosts/useHostImportWorkflow';
 import { HostSystemIcon, ShellDeskNavIcon } from './components/AppNavigationIcons';
 import type { NavIconName } from './components/navigation/NavIcon';
 import type { RemoteConnectionInfo } from './components/remote-desktop/types';
@@ -1635,21 +1638,17 @@ function App() {
   const updateSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
   }, [commitCollectionsState]);
-
   const updateSettingsAndPersist = useCallback(async (settingsUpdate: SettingsUpdate) => {
     const nextSettings = typeof settingsUpdate === 'function'
       ? settingsUpdate(settingsRef.current)
       : settingsUpdate;
-
     commitCollectionsState(hostsRef.current, sshKeysRef.current, nextSettings);
     await persistCurrentCollections();
   }, [commitCollectionsState, persistCurrentCollections]);
-
   const updateRemoteDesktopSettings = useCallback((nextSettings: ShellDeskAppSettings) => {
     persistRemoteDesktopLayoutShadow(nextSettings.remoteDesktopLayout);
     void updateSettingsAndPersist(nextSettings);
   }, [updateSettingsAndPersist]);
-
   const addLog = (category: LogCategory, level: LogLevel, message: string, detail = '', hostMeta: LogHostMeta = {}) => {
     const entry: LogEntry = {
       id: createId(),
@@ -1660,7 +1659,6 @@ function App() {
       detail,
       ...hostMeta,
     };
-
     setLogs((current) => {
       const next = [entry, ...current];
       return next.length > maxRenderedLogEntries ? next.slice(0, maxRenderedLogEntries) : next;
@@ -1669,6 +1667,14 @@ function App() {
     void window.guiSSH?.logs?.appendEntry(entry as unknown as ShellDeskLogEntry).catch(() => undefined);
   };
 
+  const hostImport = useHostImportWorkflow({
+    language: appLanguage,
+    readHosts: () => hostsRef.current,
+    commitHosts: (nextHosts) => commitCollectionsState(nextHosts, sshKeysRef.current, settingsRef.current),
+    createId,
+    setStatusMessage,
+    addLog,
+  });
   const clearLogs = () => {
     setLogs([]);
     void window.guiSSH?.logs?.clearEntries().catch(() => undefined);
@@ -3038,6 +3044,7 @@ function App() {
       </header>
 
       {statusMessage ? <div className="status-toast no-drag" role="status">{statusMessage}</div> : null}
+      {hostImport.isOpen ? <HostImportWizard language={appLanguage} existingHosts={hosts} onApply={hostImport.apply} onClose={hostImport.close} /> : null}
       {connectionErrorNotice ? createPortal(
         <div className="connection-error-overlay no-drag" role="presentation">
           <div className="connection-error-dialog" role="alertdialog" aria-modal="false" aria-labelledby="connection-error-title">
@@ -3477,6 +3484,13 @@ function App() {
                               {t(hostListSortModeLabelIds[sortMode], appLanguage)}
                             </button>
                           ))}
+                          <HostImportMenuActions
+                            language={appLanguage}
+                            rollbackCount={hostImport.rollback ? hostImport.rollback.added + hostImport.rollback.replaced : 0}
+                            onOpen={hostImport.open}
+                            onUndo={hostImport.undo}
+                            onCloseMenu={closeNearestDetailsMenu}
+                          />
                         </div>
                       </details>
                     </div>

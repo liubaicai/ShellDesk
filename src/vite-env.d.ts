@@ -171,6 +171,7 @@ interface ShellDeskFileControls {
   selectPublicKeyFile: () => Promise<string>;
   importConfig: () => Promise<ShellDeskConfigImportResult | null>;
   exportConfig: () => Promise<string>;
+  selectHostImportFiles: () => Promise<Array<{ name: string; parentName: string; content: string }>>;
   saveTextFile: (payload: {
     title?: string;
     defaultFileName?: string;

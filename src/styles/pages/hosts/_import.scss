@@ -1,0 +1,397 @@
+.host-import-backdrop {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 8, 15, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.host-import-dialog {
+  display: flex;
+  width: min(1040px, calc(100vw - 48px));
+  max-height: min(860px, calc(100vh - 48px));
+  min-height: 540px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(143, 169, 205, 0.22);
+  border-radius: 14px;
+  background: #0d1724;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.48);
+  color: #edf5ff;
+}
+
+.host-import-header,
+.host-import-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-color: rgba(143, 169, 205, 0.16);
+  background: rgba(17, 29, 43, 0.94);
+}
+
+.host-import-header {
+  border-bottom: 1px solid rgba(143, 169, 205, 0.16);
+  padding: 14px 16px;
+}
+
+.host-import-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.host-import-header strong {
+  font-size: 15px;
+}
+
+.host-import-header span,
+.host-import-source span,
+.host-import-result span,
+.host-import-result p {
+  color: #93a7c0;
+  font-size: 12px;
+}
+
+.host-import-header button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid rgba(143, 169, 205, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #b9c8dc;
+  cursor: pointer;
+}
+
+.host-import-header button svg {
+  width: 16px;
+}
+
+.host-import-alert {
+  margin: 10px 14px 0;
+}
+
+.host-import-source {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.host-import-source > div {
+  display: grid;
+  gap: 4px;
+}
+
+.host-import-source button,
+.host-import-controls button,
+.host-import-footer button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(143, 169, 205, 0.2);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #c7d5e8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 730;
+}
+
+.host-import-source button.primary,
+.host-import-footer button.primary {
+  border-color: rgba(73, 207, 168, 0.34);
+  background: rgba(73, 207, 168, 0.14);
+  color: #dffbf1;
+}
+
+.host-import-source button svg {
+  width: 15px;
+}
+
+.host-import-file-reports {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.host-import-file-reports span,
+.host-import-summary span {
+  border: 1px solid rgba(143, 169, 205, 0.15);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #96a9c1;
+  font-size: 10.5px;
+}
+
+.host-import-file-reports span.error,
+.host-import-summary span.warning {
+  border-color: rgba(255, 187, 92, 0.3);
+  color: #ffd18e;
+}
+
+.host-import-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: end;
+  gap: 8px;
+  border-top: 1px solid rgba(143, 169, 205, 0.12);
+  padding: 10px 16px;
+}
+
+.host-import-controls > input {
+  width: min(320px, 34vw);
+}
+
+.host-import-controls > label {
+  display: grid;
+  gap: 4px;
+}
+
+.host-import-controls label span {
+  color: #8fa2ba;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.host-import-controls input,
+.host-import-controls select {
+  height: 32px;
+  border: 1px solid rgba(143, 169, 205, 0.18);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: rgba(5, 11, 19, 0.5);
+  color: #eaf2fd;
+  font: inherit;
+  font-size: 12px;
+}
+
+.host-import-summary {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 8px;
+}
+
+.host-import-preview {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  border-block: 1px solid rgba(143, 169, 205, 0.13);
+  background: rgba(5, 11, 19, 0.34);
+}
+
+.host-import-preview-spacer {
+  position: relative;
+}
+
+.host-import-row {
+  position: absolute;
+  inset: 0 0 auto;
+  display: grid;
+  height: 82px;
+  grid-template-columns: 22px 78px minmax(260px, 1fr) minmax(190px, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(143, 169, 205, 0.1);
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.host-import-row:hover {
+  background: rgba(105, 181, 255, 0.055);
+}
+
+.host-import-row.invalid {
+  opacity: 0.66;
+  cursor: not-allowed;
+}
+
+.host-import-source-badge {
+  overflow: hidden;
+  border: 1px solid rgba(105, 181, 255, 0.25);
+  border-radius: 999px;
+  padding: 4px 6px;
+  color: #8cc8ff;
+  font-size: 10px;
+  font-weight: 780;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+.host-import-main,
+.host-import-state {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.host-import-main strong,
+.host-import-main small,
+.host-import-main em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-import-main strong {
+  color: #edf5ff;
+  font-size: 12.5px;
+}
+
+.host-import-main small {
+  color: #b7c6da;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.host-import-main em,
+.host-import-state small {
+  color: #7f93ac;
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.host-import-state > span {
+  color: #75dbb9;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.host-import-state > span.warning {
+  color: #ffd18e;
+}
+
+.host-import-state > span.error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #ff9aab;
+}
+
+.host-import-state svg {
+  width: 13px;
+}
+
+.host-import-password-option {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  color: #ffd18e;
+  font-size: 11.5px;
+}
+
+.host-import-footer {
+  border-top: 1px solid rgba(143, 169, 205, 0.16);
+  justify-content: flex-end;
+  padding: 11px 16px;
+}
+
+.host-import-result {
+  display: grid;
+  flex: 1 1 auto;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  padding: 32px;
+  text-align: center;
+}
+
+.host-import-result svg {
+  width: 48px;
+  height: 48px;
+  color: #68d8b4;
+}
+
+.host-import-result strong {
+  font-size: 18px;
+}
+
+.host-import-result p {
+  max-width: 520px;
+  margin: 4px 0 0;
+  line-height: 1.6;
+}
+
+[data-theme="light"] .host-import-backdrop {
+  background: rgba(36, 50, 70, 0.42);
+}
+
+[data-theme="light"] .host-import-dialog {
+  border-color: rgba(70, 90, 120, 0.2);
+  background: #f5f8fc;
+  color: #172033;
+  box-shadow: 0 28px 80px rgba(35, 52, 76, 0.28);
+}
+
+[data-theme="light"] .host-import-header,
+[data-theme="light"] .host-import-footer {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+[data-theme="light"] .host-import-header span,
+[data-theme="light"] .host-import-source span,
+[data-theme="light"] .host-import-result span,
+[data-theme="light"] .host-import-result p,
+[data-theme="light"] .host-import-main em,
+[data-theme="light"] .host-import-state small {
+  color: #66758c;
+}
+
+[data-theme="light"] .host-import-controls input,
+[data-theme="light"] .host-import-controls select,
+[data-theme="light"] .host-import-preview {
+  background: rgba(255, 255, 255, 0.82);
+  color: #172033;
+}
+
+[data-theme="light"] .host-import-main strong {
+  color: #172033;
+}
+
+[data-theme="light"] .host-import-main small {
+  color: #40516a;
+}
+
+@media (max-width: 780px) {
+  .host-import-backdrop {
+    padding: 10px;
+  }
+
+  .host-import-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .host-import-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .host-import-controls > input {
+    width: 100%;
+  }
+
+  .host-import-row {
+    grid-template-columns: 22px 68px minmax(0, 1fr);
+  }
+
+  .host-import-state {
+    display: none;
+  }
+}

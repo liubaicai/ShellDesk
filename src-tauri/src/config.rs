@@ -12,6 +12,9 @@ const CONFIG_BUNDLE_FORMAT: &str = "shelldesk-config";
 const CONFIG_BUNDLE_VERSION: i64 = 2;
 const MAX_CONFIG_IMPORT_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_TEXT_FILE_BYTES: usize = 50_000_000;
+const MAX_HOST_IMPORT_FILES: usize = 500;
+const MAX_HOST_IMPORT_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_HOST_IMPORT_TOTAL_BYTES: u64 = 20 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 struct TextFileFilter {
@@ -316,6 +319,123 @@ pub(crate) async fn import_config(
     })?;
     let _ = window.emit("vault:changed", json!({ "kind": "vault" }));
     Ok(snapshot)
+}
+
+pub(crate) fn select_host_import_files(state: &AppState) -> Result<Value, String> {
+    let language = dialog_language_from_store(&read_store(state)?);
+    let (title, session_filter, all_files_filter) = match language {
+        DialogLanguage::ZhCn => ("选择主机迁移文件", "SSH 客户端会话", "所有文件"),
+        DialogLanguage::EnUs => (
+            "Select host migration files",
+            "SSH client sessions",
+            "All Files",
+        ),
+    };
+    let Some(paths) = rfd::FileDialog::new()
+        .set_title(title)
+        .add_filter(
+            session_filter,
+            &["csv", "ini", "xsh", "xml", "txt", "session"],
+        )
+        .add_filter(all_files_filter, &["*"])
+        .pick_files()
+    else {
+        return Ok(json!([]));
+    };
+    if paths.len() > MAX_HOST_IMPORT_FILES {
+        return Err(match language {
+            DialogLanguage::ZhCn => {
+                format!("一次最多选择 {MAX_HOST_IMPORT_FILES} 个主机迁移文件。")
+            }
+            DialogLanguage::EnUs => {
+                format!("Select at most {MAX_HOST_IMPORT_FILES} host migration files at a time.")
+            }
+        });
+    }
+    let mut total_bytes = 0_u64;
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        let metadata = fs::metadata(&path).map_err(error_string)?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_HOST_IMPORT_FILE_BYTES
+        {
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown");
+            return Err(match language {
+                DialogLanguage::ZhCn => {
+                    format!("主机迁移文件为空或超过 2 MiB：{file_name}")
+                }
+                DialogLanguage::EnUs => {
+                    format!("The host migration file is empty or larger than 2 MiB: {file_name}")
+                }
+            });
+        }
+        total_bytes = total_bytes.saturating_add(metadata.len());
+        if total_bytes > MAX_HOST_IMPORT_TOTAL_BYTES {
+            return Err(match language {
+                DialogLanguage::ZhCn => "主机迁移文件总大小不能超过 20 MiB。",
+                DialogLanguage::EnUs => {
+                    "The combined host migration file size cannot exceed 20 MiB."
+                }
+            }
+            .to_string());
+        }
+        let bytes = fs::read(&path).map_err(error_string)?;
+        let content = decode_host_import_text(&bytes, language)?;
+        files.push(json!({
+            "name": path.file_name().and_then(|name| name.to_str()).unwrap_or("session"),
+            "parentName": path.parent()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .unwrap_or(""),
+            "content": content
+        }));
+    }
+    Ok(Value::Array(files))
+}
+
+fn decode_host_import_text(bytes: &[u8], language: DialogLanguage) -> Result<String, String> {
+    if let Some(content) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+        return String::from_utf8(content.to_vec()).map_err(error_string);
+    }
+    if let Some(content) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        if content.len() % 2 != 0 {
+            return Err(match language {
+                DialogLanguage::ZhCn => "UTF-16LE 主机迁移文件长度无效。",
+                DialogLanguage::EnUs => "The UTF-16LE host migration file has an invalid length.",
+            }
+            .to_string());
+        }
+        let words = content
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&words).map_err(error_string);
+    }
+    if let Some(content) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        if content.len() % 2 != 0 {
+            return Err(match language {
+                DialogLanguage::ZhCn => "UTF-16BE 主机迁移文件长度无效。",
+                DialogLanguage::EnUs => "The UTF-16BE host migration file has an invalid length.",
+            }
+            .to_string());
+        }
+        let words = content
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&words).map_err(error_string);
+    }
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
+        match language {
+            DialogLanguage::ZhCn => "主机迁移文件编码不受支持，请使用 UTF-8 或带 BOM 的 UTF-16。",
+            DialogLanguage::EnUs => {
+                "Unsupported host migration encoding; use UTF-8 or BOM-marked UTF-16."
+            }
+        }
+        .to_string()
+    })
 }
 
 fn validate_config_import_file(path: &Path, language: DialogLanguage) -> Result<(), String> {
@@ -639,6 +759,38 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn host_import_text_decoder_supports_utf8_and_utf16_bom() {
+        assert_eq!(
+            decode_host_import_text(
+                b"\xef\xbb\xbfHost,Port\nexample.com,22",
+                DialogLanguage::EnUs
+            )
+            .unwrap(),
+            "Host,Port\nexample.com,22"
+        );
+        let utf16le = [
+            0xff, 0xfe, b'H', 0, b'o', 0, b's', 0, b't', 0, b'\n', 0, b'x', 0,
+        ];
+        assert_eq!(
+            decode_host_import_text(&utf16le, DialogLanguage::EnUs).unwrap(),
+            "Host\nx"
+        );
+        let utf16be = [
+            0xfe, 0xff, 0, b'H', 0, b'o', 0, b's', 0, b't', 0, b'\n', 0, b'x',
+        ];
+        assert_eq!(
+            decode_host_import_text(&utf16be, DialogLanguage::EnUs).unwrap(),
+            "Host\nx"
+        );
+    }
+
+    #[test]
+    fn host_import_text_decoder_rejects_invalid_encoding() {
+        assert!(decode_host_import_text(&[0xff, 0xfe, 0x41], DialogLanguage::ZhCn).is_err());
+        assert!(decode_host_import_text(&[0x80, 0x81], DialogLanguage::EnUs).is_err());
     }
 
     #[test]

@@ -35,6 +35,8 @@ The unit gate first type-checks `tests/unit` with `tsconfig.unit.json`, then use
 
 `tests/unit/database-import-draft.spec.ts` covers the shared MySQL/PostgreSQL/ClickHouse import-draft state transitions: fresh reset state, independent CSV/JSON drafts, case-insensitive JSON file-extension selection, transient status clearing, and preservation of execution errors while preview data is applied or cleared.
 
+`tests/unit/host-import.spec.ts` covers MobaXterm, Xshell, SecureCRT, and CSV parsing, malformed rows, duplicate detection, all three duplicate policies, secret opt-in, and SecureCRT multi-session XML. The UI smoke suite also exercises the migration preview and apply result with a mocked native file picker.
+
 ## Build Verification
 
 ```bash

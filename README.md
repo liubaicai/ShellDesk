@@ -95,6 +95,7 @@ ShellDesk is useful for:
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
 - Switch between card and table views, filter hosts by connection state, sort recent activity, paginate large inventories, and inspect connection/system details without leaving the list
+- Migrate MobaXterm bookmarks, Xshell sessions, SecureCRT sessions, or CSV inventories through a preview-first wizard with validation, duplicate policies, secret opt-in, and a guarded one-step undo
 - Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
 - The Keys page can import key pairs, generate RSA keys, copy public keys, and search by name, algorithm, or fingerprint

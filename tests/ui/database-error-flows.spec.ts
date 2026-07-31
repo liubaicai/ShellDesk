@@ -403,6 +403,47 @@ test('host table keeps every cell border aligned when tags wrap', async ({ page 
   expect(new Set(cellMetrics.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
 });
 
+test('host migration previews duplicates and applies the selected strategy', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await gotoHarness(page, 'component=host-import&theme=dark');
+
+  const openButton = page.getByRole('button', { name: '打开主机迁移' });
+  await openButton.click();
+  const dialog = page.getByRole('dialog', { name: '迁移外部 SSH 主机' });
+  await expect(dialog).toBeVisible();
+  const selectFilesButton = dialog.getByRole('button', { name: '选择迁移文件' });
+  await expect(selectFilesButton).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(openButton).toBeFocused();
+  await openButton.click();
+  await expect(dialog).toBeVisible();
+  await expect(selectFilesButton).toBeFocused();
+  await selectFilesButton.click();
+  await expect(dialog.getByText('已选择 2 个文件')).toBeVisible();
+  await expect(dialog.getByText('识别 3 台')).toBeVisible();
+  await expect(dialog.getByText('已选 2 台')).toBeVisible();
+  await expect(dialog.getByText('重复 1 台')).toBeVisible();
+  await expect(dialog.getByText('Existing web', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('New database', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('缺少主机地址。')).toBeVisible();
+  await expect(dialog.getByText('导入 CSV 中发现的 2 个明文密码（默认关闭）')).toBeVisible();
+
+  await dialog.getByLabel('重复项处理').selectOption('replace');
+  await dialog.getByRole('button', { name: '导入 2 台' }).click();
+  await expect(dialog.getByText('主机迁移已应用')).toBeVisible();
+  await expect(dialog.getByText('新增 1 台，替换 1 台，跳过 0 台。')).toBeVisible();
+  await dialog.getByRole('button', { name: '完成' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(openButton).toBeFocused();
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('global transfer center keeps active work while clearing finished history', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('console', (message) => {

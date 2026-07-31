@@ -708,6 +708,7 @@ window.guiSSH = {
     selectPublicKeyFile: () => ipc('dialog:select-public-key'),
     importConfig: () => ipc('config:import'),
     exportConfig: () => ipc('config:export'),
+    selectHostImportFiles: () => ipc('config:select-host-import-files'),
     saveTextFile: (payload) => ipc('dialog:save-text-file', payload),
     listLocalDirectory: (path) => ipc('files:list-local-directory', path),
     statLocalPath: (path) => ipc('files:stat-local-path', path),

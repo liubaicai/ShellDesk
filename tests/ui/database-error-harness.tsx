@@ -1,6 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import type { Host } from '../../src/appHostModel';
+import HostImportWizard from '../../src/components/HostImportWizard';
 import HostListPanel from '../../src/components/HostListPanel';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
 import RemoteBackupManager from '../../src/components/remote-desktop/RemoteBackupManager';
@@ -343,6 +345,22 @@ function installGuiSshMock() {
   (window as any).guiSSH = {
     platform: 'win32',
     files: {
+      selectHostImportFiles: async () => [
+        {
+          name: 'hosts.csv',
+          parentName: 'migration',
+          content: [
+            'name,host,port,username,password,group',
+            'Existing web,192.168.2.230,22,root,reused-secret,Imported',
+            'New database,db.example.test,2222,deploy,new-secret,Production',
+          ].join('\n'),
+        },
+        {
+          name: 'broken.xsh',
+          parentName: 'migration',
+          content: '[CONNECTION]\nHost=\nPort=22\n[CONNECTION:AUTHENTICATION]\nUserName=demo',
+        },
+      ],
       listLocalDirectory: async (path: string) => {
         const normalizedPath = path.replaceAll('\\', '/');
         if (normalizedPath === '/') {
@@ -863,6 +881,57 @@ function TerminalRestoreHarness() {
   );
 }
 
+function HostImportHarness() {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const existingHosts = React.useMemo<Host[]>(() => [{
+    id: 'existing-host',
+    name: 'Existing web',
+    address: '192.168.2.230',
+    port: 22,
+    username: 'root',
+    authMethod: 'password',
+    password: 'existing-secret',
+    keyId: '',
+    keyPath: '',
+    passphrase: '',
+    privilegeMode: 'sudo',
+    rootPassword: '',
+    jumpHostId: '',
+    canBeJumpHost: false,
+    proxyProfileId: '',
+    keepaliveEnabled: true,
+    systemType: 'debian',
+    systemName: 'Debian GNU/Linux',
+    hostInfo: null,
+    group: 'Current',
+    tags: [],
+    note: '',
+    lastConnectionStatus: 'success',
+    lastConnectionAt: now,
+    lastConnectionError: '',
+    createdAt: now,
+    updatedAt: now,
+  }], []);
+
+  return (
+    <main className="app-shell" style={{ width: '100vw', height: '100vh' }}>
+      <button type="button" onClick={() => setIsOpen(true)}>打开主机迁移</button>
+      {isOpen ? (
+        <HostImportWizard
+          language="zh-CN"
+          existingHosts={existingHosts}
+          onClose={() => setIsOpen(false)}
+          onApply={(_candidates, selectedIds, strategy) => ({
+            added: strategy === 'replace' ? Math.max(0, selectedIds.size - 1) : selectedIds.size,
+            replaced: strategy === 'replace' ? 1 : 0,
+            skipped: strategy === 'skip' ? 1 : 0,
+          })}
+        />
+      ) : null}
+    </main>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
@@ -901,6 +970,10 @@ function App() {
 
   if (component === 'terminal-restore') {
     return <TerminalRestoreHarness />;
+  }
+
+  if (component === 'host-import') {
+    return <HostImportHarness />;
   }
 
   if (component === 'port-forwarding') {

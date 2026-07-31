@@ -27,6 +27,7 @@ export const ipcChannelBindings = {
   'app:show-main-window': 'app.showMainWindow',
   'config:export': 'files.exportConfig',
   'config:import': 'files.importConfig',
+  'config:select-host-import-files': 'files.selectHostImportFiles',
   'connection:browser-resolve-url': 'connections.resolveBrowserUrl',
   'connection:cancel-transfer': 'connections.cancelTransfer',
   'connection:check-sftp': 'connections.checkSftp',
