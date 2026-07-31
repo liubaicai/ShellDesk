@@ -60,10 +60,13 @@ export function useTerminalWorkspacePersistence({
   );
 
   useEffect(() => {
+    if (!enabled) {
+      hydratedKeyRef.current = '';
+      return;
+    }
     if (hydratedKeyRef.current === storageKey) return;
     hydratedKeyRef.current = storageKey;
     skipNextSaveRef.current = true;
-    if (!enabled) return;
     const snapshot = readTerminalWorkspace(window.localStorage, storageKey);
     if (!snapshot?.windows.length) return;
 
