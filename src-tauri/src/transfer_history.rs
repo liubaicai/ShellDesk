@@ -14,6 +14,7 @@ const MAX_TRANSFER_HISTORY: usize = 200;
 pub(crate) struct TransferHistory {
     path: PathBuf,
     tasks: Arc<Mutex<Vec<Value>>>,
+    persist_lock: Arc<Mutex<()>>,
 }
 
 impl TransferHistory {
@@ -31,6 +32,7 @@ impl TransferHistory {
         let history = Self {
             path,
             tasks: Arc::new(Mutex::new(tasks)),
+            persist_lock: Arc::new(Mutex::new(())),
         };
         let _ = history.persist();
         history
@@ -205,6 +207,7 @@ impl TransferHistory {
     }
 
     fn persist(&self) -> Result<(), String> {
+        let _persist_guard = self.persist_lock.lock().map_err(error_string)?;
         let mut tasks = self.tasks.lock().map_err(error_string)?.clone();
         prune_tasks(&mut tasks);
         write_json_file_private(&self.path, &json!(tasks))
@@ -327,7 +330,7 @@ mod tests {
     use super::TransferHistory;
     use crate::random_id;
     use serde_json::json;
-    use std::fs;
+    use std::{fs, thread, time::Duration};
 
     #[test]
     fn transfer_history_persists_and_recovers_interrupted_tasks() {
@@ -402,5 +405,61 @@ mod tests {
         assert_eq!(task["errorCode"], "interrupted-on-exit");
         assert!(restored.remove("queue-1").unwrap());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn concurrent_persistence_cannot_write_an_older_task_snapshot_last() {
+        let directory = std::env::temp_dir().join(random_id("transfer-history-test"));
+        fs::create_dir_all(&directory).unwrap();
+        let history = TransferHistory::new(&directory);
+        history
+            .record_queued(&json!({
+                "queueId": "queue-1",
+                "connectionId": "connection-1",
+                "type": "download",
+                "fileName": "archive.tar",
+                "transferred": 0,
+                "total": 100,
+            }))
+            .unwrap();
+
+        let persist_guard = history.persist_lock.lock().unwrap();
+        let progress_history = history.clone();
+        let progress_thread = thread::spawn(move || {
+            progress_history.record_progress(
+                &json!({
+                    "queueId": "queue-1",
+                    "transferred": 50,
+                    "total": 100,
+                }),
+                true,
+            )
+        });
+        wait_for_status(&history, "running");
+
+        let completed_history = history.clone();
+        let completed_thread = thread::spawn(move || {
+            completed_history.record_terminal_status("queue-1", "completed", None)
+        });
+        wait_for_status(&history, "completed");
+
+        drop(persist_guard);
+        progress_thread.join().unwrap().unwrap();
+        completed_thread.join().unwrap().unwrap();
+
+        let restored = TransferHistory::new(&directory).list();
+        assert_eq!(restored[0]["status"], "completed");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn wait_for_status(history: &TransferHistory, expected: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if history.list()[0]["status"] == expected {
+                return;
+            }
+            thread::yield_now();
+        }
+        panic!("transfer history did not reach status {expected}");
     }
 }
