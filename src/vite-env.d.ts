@@ -432,6 +432,9 @@ interface ShellDeskAppSettings {
   terminalPreferTmux: boolean;
   terminalRestoreWorkspace: boolean;
   terminalExitPolicy: 'keep-open' | 'close-success' | 'close-always';
+  terminalLineTimestamps: boolean;
+  terminalKeywordHighlightEnabled: boolean;
+  terminalHighlightKeywords: string;
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 

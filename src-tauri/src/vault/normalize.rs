@@ -233,6 +233,15 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         true,
         true,
     )?;
+    let terminal_highlight_keywords = match settings.get("terminalHighlightKeywords") {
+        Some(value) => {
+            read_optional_bounded_string(Some(value), "终端高亮关键字", 512, true, true)?
+        }
+        None => defaults["terminalHighlightKeywords"]
+            .as_str()
+            .unwrap_or("error,warning,failed,denied,exception")
+            .to_string(),
+    };
 
     Ok(json!({
         "language": language,
@@ -294,6 +303,9 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalPreferTmux": read_bool(settings.get("terminalPreferTmux"), defaults["terminalPreferTmux"].as_bool().unwrap_or(false)),
         "terminalRestoreWorkspace": read_bool(settings.get("terminalRestoreWorkspace"), defaults["terminalRestoreWorkspace"].as_bool().unwrap_or(true)),
         "terminalExitPolicy": read_choice(settings.get("terminalExitPolicy"), &["keep-open", "close-success", "close-always"], defaults["terminalExitPolicy"].as_str().unwrap_or("keep-open")),
+        "terminalLineTimestamps": read_bool(settings.get("terminalLineTimestamps"), defaults["terminalLineTimestamps"].as_bool().unwrap_or(false)),
+        "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
+        "terminalHighlightKeywords": terminal_highlight_keywords,
         "terminalSnippets": terminal_snippets
     }))
 }
@@ -1342,5 +1354,32 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(invalid["terminalExitPolicy"], "keep-open");
+    }
+
+    #[test]
+    fn settings_normalize_terminal_output_aids() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["terminalLineTimestamps"], false);
+        assert_eq!(defaults["terminalKeywordHighlightEnabled"], false);
+        assert_eq!(
+            defaults["terminalHighlightKeywords"],
+            "error,warning,failed,denied,exception"
+        );
+
+        let configured = normalize_app_settings(&json!({
+            "terminalLineTimestamps": true,
+            "terminalKeywordHighlightEnabled": true,
+            "terminalHighlightKeywords": " error, warning "
+        }))
+        .unwrap();
+        assert_eq!(configured["terminalLineTimestamps"], true);
+        assert_eq!(configured["terminalKeywordHighlightEnabled"], true);
+        assert_eq!(configured["terminalHighlightKeywords"], "error, warning");
+
+        let blank = normalize_app_settings(&json!({
+            "terminalHighlightKeywords": ""
+        }))
+        .unwrap();
+        assert_eq!(blank["terminalHighlightKeywords"], "");
     }
 }

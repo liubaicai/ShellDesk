@@ -98,6 +98,9 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalPreferTmux: false,
     terminalRestoreWorkspace: true,
     terminalExitPolicy: 'keep-open',
+    terminalLineTimestamps: false,
+    terminalKeywordHighlightEnabled: false,
+    terminalHighlightKeywords: 'error,warning,failed,denied,exception',
     terminalSnippets: [],
   };
 }

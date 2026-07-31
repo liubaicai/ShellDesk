@@ -20,6 +20,7 @@ import { isWindowsSystem } from './remoteSystem';
 import { collectSubmittedCommands, isLikelyForegroundCommand, readForegroundTaskSignal, summarizeTerminalOutput } from './terminalCommands';
 import { applyTerminalOptions, buildTerminalOptions, getLocalWindowsPtyOption, getShellChoices, getTerminalChromeTone, getTerminalSessionTitle, getTerminalStatusLabel, sftpProbeCacheMs, terminalSearchOptions } from './terminalCore';
 import { createTerminalCwdProbeController } from './terminalCwd';
+import { createTerminalOutputDecorationController, type TerminalOutputDecorationController } from './terminalOutputDecorations';
 import { createSftpProgressHandlers, createSftpTransferRunner } from './terminalTransfer';
 import type { ForegroundTaskSource, RemoteTerminalProps, RemoteTerminalSessionEvent, RemoteTerminalSessionEventInput, RemoteTerminalSessionStatus, TerminalContextMenuState, TerminalCwdProbeState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
 import { TerminalPaneView } from './TerminalPaneView';
@@ -65,6 +66,7 @@ function RemoteTerminal({
   onSettingsChange,
 }: RemoteTerminalProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
+  const timestampGutterRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -102,6 +104,7 @@ function RemoteTerminal({
   const onSessionEventRef = useRef(onSessionEvent);
   const onSessionStateChangeRef = useRef(onSessionStateChange);
   const onSessionExitRef = useRef(onSessionExit);
+  const outputDecorationControllerRef = useRef<TerminalOutputDecorationController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sessionStatus, setSessionStatus] = useState<RemoteTerminalSessionStatus>('idle');
   const [sessionError, setSessionError] = useState('');
@@ -255,6 +258,7 @@ function RemoteTerminal({
 
   useEffect(() => {
     settingsRef.current = settings;
+    outputDecorationControllerRef.current?.refresh();
     const terminal = terminalRef.current;
 
     if (!terminal) {
@@ -363,6 +367,13 @@ function RemoteTerminal({
     terminal.loadAddon(searchAddon);
     terminal.loadAddon(unicodeGraphemesAddon);
     terminal.open(host);
+    if (timestampGutterRef.current) {
+      outputDecorationControllerRef.current = createTerminalOutputDecorationController(
+        terminal,
+        timestampGutterRef.current,
+        settingsRef,
+      );
+    }
     terminal.focus();
     setSessionStatus('idle');
     setSessionError('');
@@ -949,6 +960,8 @@ function RemoteTerminal({
       zmodemSessionRef.current?.abort?.();
       zmodemSessionRef.current = null;
       zmodemSentryRef.current = null;
+      outputDecorationControllerRef.current?.dispose();
+      outputDecorationControllerRef.current = null;
       titleDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
@@ -986,6 +999,7 @@ function RemoteTerminal({
     <TerminalPaneView
       terminalPaneStyle={terminalPaneStyle}
       terminalHostRef={terminalHostRef}
+      timestampGutterRef={timestampGutterRef}
       settings={settings}
       showSearch={showSearch}
       searchInputRef={searchInputRef}

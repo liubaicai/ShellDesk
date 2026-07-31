@@ -188,6 +188,54 @@
   background: var(--terminal-background, #181a24);
 }
 
+.terminal-host-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--terminal-background, #181a24);
+}
+
+.terminal-host-shell .terminal-host {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.terminal-timestamp-gutter {
+  position: relative;
+  display: none;
+  width: 58px;
+  flex: 0 0 58px;
+  overflow: hidden;
+  border-right: 1px solid rgba(139, 164, 195, 0.12);
+  background: color-mix(in srgb, var(--terminal-background, #181a24) 92%, #ffffff);
+  color: rgba(186, 205, 225, 0.58);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}
+
+.terminal-host-shell.with-timestamps .terminal-timestamp-gutter {
+  display: block;
+}
+
+.terminal-timestamp-gutter span {
+  position: absolute;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+[data-theme="light"] .terminal-timestamp-gutter {
+  border-right-color: rgba(20, 42, 68, 0.12);
+  background: color-mix(in srgb, var(--terminal-background, #f8fbfd) 94%, #000000);
+  color: rgba(38, 68, 98, 0.62);
+}
+
 .terminal-host .xterm {
   box-sizing: border-box;
   width: 100%;

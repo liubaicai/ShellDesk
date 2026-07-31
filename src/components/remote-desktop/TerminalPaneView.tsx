@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 interface TerminalPaneViewProps {
   terminalPaneStyle: CSSProperties;
   terminalHostRef: RefObject<HTMLDivElement | null>;
+  timestampGutterRef: RefObject<HTMLDivElement | null>;
   settings: ShellDeskAppSettings;
   showSearch: boolean;
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -37,6 +38,7 @@ interface TerminalPaneViewProps {
 export function TerminalPaneView({
   terminalPaneStyle,
   terminalHostRef,
+  timestampGutterRef,
   settings,
   showSearch,
   searchInputRef,
@@ -81,7 +83,10 @@ export function TerminalPaneView({
         </div>
       ) : null}
 
-      <div ref={terminalHostRef} className="terminal-host" />
+      <div className={`terminal-host-shell ${settings.terminalLineTimestamps ? 'with-timestamps' : ''}`}>
+        <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
+        <div ref={terminalHostRef} className="terminal-host" />
+      </div>
 
       <TerminalContextMenuPortal
         contextMenu={contextMenu}

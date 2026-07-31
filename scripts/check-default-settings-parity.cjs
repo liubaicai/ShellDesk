@@ -57,6 +57,9 @@ const checkedKeys = [
   'terminalScreenReaderMode',
   'terminalPreferTmux',
   'terminalExitPolicy',
+  'terminalLineTimestamps',
+  'terminalKeywordHighlightEnabled',
+  'terminalHighlightKeywords',
 ];
 
 function readWorkspaceFile(relativePath) {
