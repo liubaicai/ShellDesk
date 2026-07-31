@@ -431,6 +431,7 @@ interface ShellDeskAppSettings {
   terminalScreenReaderMode: boolean;
   terminalPreferTmux: boolean;
   terminalRestoreWorkspace: boolean;
+  terminalExitPolicy: 'keep-open' | 'close-success' | 'close-always';
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 

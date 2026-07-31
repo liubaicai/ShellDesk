@@ -2,15 +2,7 @@ import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEve
 import { createPortal } from 'react-dom';
 
 import type { RemoteProcessManagerLaunchOptions } from './components/remote-desktop/RemoteProcessManager';
-import type {
-  RemoteTerminalChromePayload,
-  RemoteTerminalCommandRequest,
-  RemoteTerminalLaunchOptions,
-  RemoteTerminalSessionEvent,
-  RemoteTerminalSessionState,
-  RemoteTerminalToolAction,
-  RemoteTerminalToolRequest,
-} from './components/remote-desktop/RemoteTerminal';
+import type { RemoteTerminalChromePayload, RemoteTerminalCommandRequest, RemoteTerminalExitResult, RemoteTerminalLaunchOptions, RemoteTerminalSessionEvent, RemoteTerminalSessionState, RemoteTerminalToolAction, RemoteTerminalToolRequest } from './components/remote-desktop/RemoteTerminal';
 import type { SettingsTab } from './components/remote-desktop/settingsTypes';
 import { getRemoteConnectionProfileHostId } from './components/remote-desktop/remoteConnectionProfiles';
 import { getErrorMessage } from './components/remote-desktop/desktopUtils';
@@ -60,6 +52,7 @@ import {
 } from './features/remote-desktop/desktopKeyboardNavigation';
 import { useDesktopCapabilities } from './features/remote-desktop/useDesktopCapabilities';
 import { useTerminalWorkspacePersistence } from './features/remote-desktop/useTerminalWorkspacePersistence';
+import { shouldCloseTerminalAfterExit } from './components/remote-desktop/terminalExitPolicy';
 import {
   RemoteAiChat,
   RemoteApacheManager,
@@ -1799,6 +1792,10 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     });
   };
 
+  const handleTerminalSessionExit = (windowId: string, result: RemoteTerminalExitResult) => {
+    if (shouldCloseTerminalAfterExit(settings.terminalExitPolicy, result)) removeDesktopWindow(windowId);
+  };
+
   const requestTerminalTool = (windowId: string, action: RemoteTerminalToolAction) => {
     terminalToolRequestSequenceRef.current += 1;
     const terminalToolRequest: RemoteTerminalToolRequest = {
@@ -1882,6 +1879,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onCommandIntercept={interceptTerminalCommand}
           onSessionEvent={handleTerminalSessionEvent}
           onSessionStateChange={(payload) => updateTerminalSessionState(desktopWindow.id, payload)}
+          onSessionExit={(result) => handleTerminalSessionExit(desktopWindow.id, result)}
           onSettingsChange={onSettingsChange}
         />
       );

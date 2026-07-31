@@ -32,6 +32,7 @@ import { t } from '../../i18n';
 export type {
   RemoteTerminalChromePayload,
   RemoteTerminalCommandRequest,
+  RemoteTerminalExitResult,
   RemoteTerminalLaunchOptions,
   RemoteTerminalSessionEvent,
   RemoteTerminalSessionState,
@@ -60,6 +61,7 @@ function RemoteTerminal({
   onCommandIntercept,
   onSessionEvent,
   onSessionStateChange,
+  onSessionExit,
   onSettingsChange,
 }: RemoteTerminalProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
@@ -99,6 +101,7 @@ function RemoteTerminal({
   const onCommandInterceptRef = useRef(onCommandIntercept);
   const onSessionEventRef = useRef(onSessionEvent);
   const onSessionStateChangeRef = useRef(onSessionStateChange);
+  const onSessionExitRef = useRef(onSessionExit);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sessionStatus, setSessionStatus] = useState<RemoteTerminalSessionStatus>('idle');
   const [sessionError, setSessionError] = useState('');
@@ -283,6 +286,10 @@ function RemoteTerminal({
   useEffect(() => {
     onSessionStateChangeRef.current = onSessionStateChange;
   }, [onSessionStateChange]);
+
+  useEffect(() => {
+    onSessionExitRef.current = onSessionExit;
+  }, [onSessionExit]);
 
   useEffect(() => {
     launchOptionsRef.current = launchOptions;
@@ -748,6 +755,10 @@ function RemoteTerminal({
       const hasExitStatus = payload.code !== undefined && payload.code !== null;
       const hasExitSignal = typeof payload.signal === 'string' && payload.signal.trim() !== '';
       const isUnexpectedSshTerminalClose = connectionKind !== 'local' && !hasExitStatus && !hasExitSignal;
+      const exitResult = {
+        code: Number.isInteger(payload.code) ? payload.code ?? null : null,
+        signal: hasExitSignal ? payload.signal?.trim() ?? null : null,
+      };
 
       isTerminalReadyRef.current = false;
       disconnectedRef.current = true;
@@ -761,7 +772,7 @@ function RemoteTerminal({
       sftpTransferQueueIdRef.current = '';
       sftpTransferEndedRef.current = false;
       sftpProgressLineLengthRef.current = 0;
-      setLastExitCode(Number.isInteger(payload.code) ? payload.code ?? null : null);
+      setLastExitCode(exitResult.code);
 
       if (isUnexpectedSshTerminalClose) {
         setSessionStatus('disconnected');
@@ -773,6 +784,7 @@ function RemoteTerminal({
 
       setSessionStatus('exited');
       terminal.writeln(`\r\n${t('terminal.message.sessionEnded', settings.language)}`);
+      onSessionExitRef.current?.(exitResult);
     });
     const removeConnectionClosed = api.events.onConnectionClosed((payload) => {
       if (payload.connectionId !== connectionId) {

@@ -15,6 +15,7 @@ import {
 } from '../assets/desktopWallpapers';
 import { getCurrentAppLocale, t } from '../i18n';
 import { SftpSettingsFields } from '../components/SftpSettingsFields';
+import { TerminalSessionSettingsFields } from '../components/TerminalSessionSettingsFields';
 import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
@@ -1399,35 +1400,10 @@ function SettingsPage({
                 </div>
               </section>
 
-              <section className="settings-section">
-                <h2>{t('settings.terminal.session.title', settings.language)}</h2>
-                <div className="settings-card">
-                  <label className="settings-row">
-                    <span>
-                      <strong>{t('settings.terminal.preferTmux.label', settings.language)}</strong>
-                      <small>{t('settings.terminal.preferTmux.summary', settings.language)}</small>
-                    </span>
-                    <input
-                      className="settings-toggle"
-                      type="checkbox"
-                      checked={settings.terminalPreferTmux}
-                      onChange={(event) => updateSetting('terminalPreferTmux', event.target.checked)}
-                    />
-                  </label>
-                  <label className="settings-row">
-                    <span>
-                      <strong>{t('settings.terminal.restoreWorkspace.label', settings.language)}</strong>
-                      <small>{t('settings.terminal.restoreWorkspace.summary', settings.language)}</small>
-                    </span>
-                    <input
-                      className="settings-toggle"
-                      type="checkbox"
-                      checked={settings.terminalRestoreWorkspace}
-                      onChange={(event) => updateSetting('terminalRestoreWorkspace', event.target.checked)}
-                    />
-                  </label>
-                </div>
-              </section>
+              <TerminalSessionSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
 
               <section className="settings-section">
                 <h2>{t('settings.terminal.typography.title', settings.language)}</h2>

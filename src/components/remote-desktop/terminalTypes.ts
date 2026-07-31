@@ -24,6 +24,11 @@ export interface RemoteTerminalSessionState {
   hasForegroundTask: boolean;
 }
 
+export interface RemoteTerminalExitResult {
+  code: number | null;
+  signal: string | null;
+}
+
 export interface RemoteTerminalCommandRequest {
   id: string;
   command: string;
@@ -86,6 +91,7 @@ export interface RemoteTerminalProps {
   onCommandIntercept?: (command: string) => boolean;
   onSessionEvent?: (event: RemoteTerminalSessionEvent) => void;
   onSessionStateChange?: (state: RemoteTerminalSessionState) => void;
+  onSessionExit?: (result: RemoteTerminalExitResult) => void;
   onSettingsChange?: (settings: ShellDeskAppSettings) => void;
 }
 

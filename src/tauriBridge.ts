@@ -97,6 +97,7 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalScreenReaderMode: false,
     terminalPreferTmux: false,
     terminalRestoreWorkspace: true,
+    terminalExitPolicy: 'keep-open',
     terminalSnippets: [],
   };
 }

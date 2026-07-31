@@ -56,6 +56,7 @@ const checkedKeys = [
   'terminalMinimumContrastRatio',
   'terminalScreenReaderMode',
   'terminalPreferTmux',
+  'terminalExitPolicy',
 ];
 
 function readWorkspaceFile(relativePath) {

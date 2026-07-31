@@ -106,6 +106,7 @@ pub(crate) fn default_settings() -> Value {
         "terminalScreenReaderMode": false,
         "terminalPreferTmux": false,
         "terminalRestoreWorkspace": true,
+        "terminalExitPolicy": "keep-open",
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

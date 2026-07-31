@@ -97,6 +97,7 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   terminalScreenReaderMode: false,
   terminalPreferTmux: false,
   terminalRestoreWorkspace: true,
+  terminalExitPolicy: 'keep-open',
   terminalSnippets: createDefaultTerminalSnippets(defaultAppLanguage),
 };
 

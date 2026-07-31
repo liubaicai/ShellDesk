@@ -293,6 +293,7 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalScreenReaderMode": read_bool(settings.get("terminalScreenReaderMode"), defaults["terminalScreenReaderMode"].as_bool().unwrap_or(false)),
         "terminalPreferTmux": read_bool(settings.get("terminalPreferTmux"), defaults["terminalPreferTmux"].as_bool().unwrap_or(false)),
         "terminalRestoreWorkspace": read_bool(settings.get("terminalRestoreWorkspace"), defaults["terminalRestoreWorkspace"].as_bool().unwrap_or(true)),
+        "terminalExitPolicy": read_choice(settings.get("terminalExitPolicy"), &["keep-open", "close-success", "close-always"], defaults["terminalExitPolicy"].as_str().unwrap_or("keep-open")),
         "terminalSnippets": terminal_snippets
     }))
 }
@@ -1321,5 +1322,25 @@ mod tests {
         .unwrap();
         assert_eq!(blank["sftpDefaultLocalDirectory"], "/");
         assert_eq!(blank["sftpDefaultRemoteDirectory"], ".");
+    }
+
+    #[test]
+    fn settings_normalize_terminal_exit_policy() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["terminalExitPolicy"], "keep-open");
+
+        for policy in ["keep-open", "close-success", "close-always"] {
+            let normalized = normalize_app_settings(&json!({
+                "terminalExitPolicy": policy
+            }))
+            .unwrap();
+            assert_eq!(normalized["terminalExitPolicy"], policy);
+        }
+
+        let invalid = normalize_app_settings(&json!({
+            "terminalExitPolicy": "close-disconnected"
+        }))
+        .unwrap();
+        assert_eq!(invalid["terminalExitPolicy"], "keep-open");
     }
 }
