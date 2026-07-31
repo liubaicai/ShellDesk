@@ -286,7 +286,11 @@ async fn dispatch_remote_fs(
             .enable_all()
             .build()
             .map_err(crate::error_string)?;
-        runtime.block_on(async move {
+        // Keep the large remote-filesystem dispatch future off Tokio's worker stack.
+        // SFTP upload/download futures make this match substantially larger in debug
+        // builds, and constructing it directly in `block_on` can overflow the default
+        // Windows worker stack before a lightweight list operation is even selected.
+        runtime.block_on(Box::pin(async move {
             match channel.as_str() {
                 "connection:list-directory" => {
                     remote_fs::list_connection_directory(state, args).await
@@ -374,7 +378,7 @@ async fn dispatch_remote_fs(
                 }
                 _ => Err(format!("Unsupported file IPC channel: {channel}")),
             }
-        })
+        }))
     })
     .await
     .map_err(crate::error_string)?
