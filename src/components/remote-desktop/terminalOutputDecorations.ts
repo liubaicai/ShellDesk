@@ -4,6 +4,8 @@ import type { MutableRefObject } from 'react';
 interface TerminalLineEntry {
   marker: IMarker;
   timestamp: string;
+  decorations: IDecoration[];
+  markerDisposeListener?: IDisposable;
 }
 
 export interface TerminalOutputDecorationController {
@@ -59,7 +61,6 @@ export function createTerminalOutputDecorationController(
   settingsRef: MutableRefObject<ShellDeskAppSettings>,
 ): TerminalOutputDecorationController {
   let entries: TerminalLineEntry[] = [];
-  let keywordDecorations: IDecoration[] = [];
   let keywordSignature = '';
 
   const renderTimestamps = () => {
@@ -88,6 +89,8 @@ export function createTerminalOutputDecorationController(
   };
 
   const decorateEntry = (entry: TerminalLineEntry) => {
+    entry.decorations.forEach((decoration) => decoration.dispose());
+    entry.decorations = [];
     const settings = settingsRef.current;
     if (!settings.terminalKeywordHighlightEnabled) return;
     const line = terminal.buffer.active.getLine(entry.marker.line)?.translateToString(true) ?? '';
@@ -100,7 +103,7 @@ export function createTerminalOutputDecorationController(
         foregroundColor: '#fff2a8',
         layer: 'bottom',
       });
-      if (decoration) keywordDecorations.push(decoration);
+      if (decoration) entry.decorations.push(decoration);
     });
   };
 
@@ -110,10 +113,8 @@ export function createTerminalOutputDecorationController(
       ? settings.terminalHighlightKeywords
       : '';
     if (nextKeywordSignature !== keywordSignature) {
-      keywordDecorations.forEach((decoration) => decoration.dispose());
-      keywordDecorations = [];
       keywordSignature = nextKeywordSignature;
-      if (keywordSignature) entries.forEach(decorateEntry);
+      entries.forEach(decorateEntry);
     }
     renderTimestamps();
   };
@@ -130,7 +131,16 @@ export function createTerminalOutputDecorationController(
       ) return;
       const marker = terminal.registerMarker(-1);
       if (!marker) return;
-      const entry = { marker, timestamp: formatTerminalLineTimestamp(new Date()) };
+      const entry: TerminalLineEntry = {
+        marker,
+        timestamp: formatTerminalLineTimestamp(new Date()),
+        decorations: [],
+      };
+      entry.markerDisposeListener = marker.onDispose(() => {
+        entry.decorations.forEach((decoration) => decoration.dispose());
+        entry.decorations = [];
+        entries = entries.filter((candidate) => candidate !== entry);
+      });
       entries.push(entry);
       decorateEntry(entry);
       renderTimestamps();
@@ -145,10 +155,12 @@ export function createTerminalOutputDecorationController(
     refresh,
     dispose: () => {
       disposables.forEach((disposable) => disposable.dispose());
-      keywordDecorations.forEach((decoration) => decoration.dispose());
-      entries.forEach(({ marker }) => marker.dispose());
+      entries.forEach(({ decorations, marker, markerDisposeListener }) => {
+        markerDisposeListener?.dispose();
+        decorations.forEach((decoration) => decoration.dispose());
+        marker.dispose();
+      });
       entries = [];
-      keywordDecorations = [];
       gutter.replaceChildren();
     },
   };
