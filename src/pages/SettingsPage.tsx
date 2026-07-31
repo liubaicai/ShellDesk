@@ -14,6 +14,7 @@ import {
   loadDesktopWallpaperPresetUrl,
 } from '../assets/desktopWallpapers';
 import { getCurrentAppLocale, t } from '../i18n';
+import { SftpSettingsFields } from '../components/SftpSettingsFields';
 import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
@@ -1108,6 +1109,11 @@ function SettingsPage({
 
                 </div>
               </section>
+
+              <SftpSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
 
               <section className="settings-section">
                 <h2>{t('settings.general.library.title', settings.language)}</h2>

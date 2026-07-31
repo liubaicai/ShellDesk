@@ -577,6 +577,17 @@ test('SFTP directory trees stay rooted and activate the current folder', async (
   expect(runtimeErrors).toEqual([]);
 });
 
+test('SFTP workspace opens at the configured local and remote directories', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHarness(
+    page,
+    'component=sftp-transfer&theme=light&sftpLocal=D%3A%5Cconfigured&sftpRemote=%2Fsrv%2Fconfigured',
+  );
+
+  await expect(page.locator('.sftp-file-pane.local .sftp-path-form input')).toHaveValue('D:/configured');
+  await expect(page.locator('.sftp-file-pane.remote .sftp-path-form input')).toHaveValue('/srv/configured');
+});
+
 test('SFTP transfer queue toolbar button toggles the queue and releases its space', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoHarness(page, 'component=sftp-transfer&theme=light');

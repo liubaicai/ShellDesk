@@ -19,6 +19,8 @@ const checkedKeys = [
   'rememberPasswords',
   'rememberKeyPassphrases',
   'sshConnectTimeoutSeconds',
+  'sftpDefaultLocalDirectory',
+  'sftpDefaultRemoteDirectory',
   'aiProvider',
   'aiProviderName',
   'aiApiFormat',

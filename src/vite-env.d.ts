@@ -385,6 +385,8 @@ interface ShellDeskAppSettings {
   rememberPasswords: boolean;
   rememberKeyPassphrases: boolean;
   sshConnectTimeoutSeconds: number;
+  sftpDefaultLocalDirectory: string;
+  sftpDefaultRemoteDirectory: string;
   aiProvider: ShellDeskAiProvider;
   aiProviderName: string;
   aiApiFormat: ShellDeskAiApiFormat;

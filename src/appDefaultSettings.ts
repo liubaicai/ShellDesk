@@ -59,6 +59,8 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   rememberPasswords: true,
   rememberKeyPassphrases: true,
   sshConnectTimeoutSeconds: 15,
+  sftpDefaultLocalDirectory: '/',
+  sftpDefaultRemoteDirectory: '.',
   aiProvider: 'openai',
   aiProviderName: 'OpenAI',
   aiApiFormat: 'openai',

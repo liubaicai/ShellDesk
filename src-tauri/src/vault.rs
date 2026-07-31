@@ -68,6 +68,8 @@ pub(crate) fn default_settings() -> Value {
         "rememberPasswords": true,
         "rememberKeyPassphrases": true,
         "sshConnectTimeoutSeconds": 15,
+        "sftpDefaultLocalDirectory": "/",
+        "sftpDefaultRemoteDirectory": ".",
         "aiProvider": "openai",
         "aiProviderName": "OpenAI",
         "aiApiFormat": "openai",

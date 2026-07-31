@@ -219,6 +219,20 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
             .cloned()
             .unwrap_or_else(|| default_terminal_snippets(&language)),
     )?;
+    let sftp_default_local_directory = read_optional_bounded_string(
+        settings.get("sftpDefaultLocalDirectory"),
+        "SFTP 本地起始目录",
+        1024,
+        true,
+        true,
+    )?;
+    let sftp_default_remote_directory = read_optional_bounded_string(
+        settings.get("sftpDefaultRemoteDirectory"),
+        "SFTP 远端起始目录",
+        1024,
+        true,
+        true,
+    )?;
 
     Ok(json!({
         "language": language,
@@ -241,6 +255,8 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "rememberPasswords": read_bool(settings.get("rememberPasswords"), defaults["rememberPasswords"].as_bool().unwrap_or(true)),
         "rememberKeyPassphrases": read_bool(settings.get("rememberKeyPassphrases"), defaults["rememberKeyPassphrases"].as_bool().unwrap_or(true)),
         "sshConnectTimeoutSeconds": read_i64_range(settings.get("sshConnectTimeoutSeconds"), 3, 120, defaults["sshConnectTimeoutSeconds"].as_i64().unwrap_or(15)),
+        "sftpDefaultLocalDirectory": if sftp_default_local_directory.is_empty() { defaults["sftpDefaultLocalDirectory"].as_str().unwrap_or("/") } else { &sftp_default_local_directory },
+        "sftpDefaultRemoteDirectory": if sftp_default_remote_directory.is_empty() { defaults["sftpDefaultRemoteDirectory"].as_str().unwrap_or(".") } else { &sftp_default_remote_directory },
         "aiProvider": ai_provider,
         "aiProviderName": ai_provider_name,
         "aiApiFormat": ai_api_format,
@@ -1282,5 +1298,28 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(invalid["sshConnectTimeoutSeconds"], 15);
+    }
+
+    #[test]
+    fn settings_normalize_sftp_start_directories() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["sftpDefaultLocalDirectory"], "/");
+        assert_eq!(defaults["sftpDefaultRemoteDirectory"], ".");
+
+        let configured = normalize_app_settings(&json!({
+            "sftpDefaultLocalDirectory": "  D:\\Transfers  ",
+            "sftpDefaultRemoteDirectory": "  /srv/releases  "
+        }))
+        .unwrap();
+        assert_eq!(configured["sftpDefaultLocalDirectory"], "D:\\Transfers");
+        assert_eq!(configured["sftpDefaultRemoteDirectory"], "/srv/releases");
+
+        let blank = normalize_app_settings(&json!({
+            "sftpDefaultLocalDirectory": "",
+            "sftpDefaultRemoteDirectory": " "
+        }))
+        .unwrap();
+        assert_eq!(blank["sftpDefaultLocalDirectory"], "/");
+        assert_eq!(blank["sftpDefaultRemoteDirectory"], ".");
     }
 }

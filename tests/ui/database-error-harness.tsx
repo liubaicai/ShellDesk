@@ -394,6 +394,9 @@ function installGuiSshMock() {
       ],
       listLocalDirectory: async (path: string) => {
         const normalizedPath = path.replaceAll('\\', '/');
+        if (normalizedPath === 'D:/configured') {
+          return { path: normalizedPath, entries: createSftpEntries('local') };
+        }
         if (normalizedPath === '/') {
           return { path: '/', entries: [{ name: 'D:', longname: 'drwxr-xr-x D:', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
@@ -641,6 +644,7 @@ function installGuiSshMock() {
         return previousLength - transferHistoryFixtures.length;
       },
       sftpListDirectory: async (_connectionId: string, path: string) => {
+        if (path === '/srv/configured') return { path, entries: createSftpEntries('remote') };
         if (path === '/') {
           return { path: '/', entries: [{ name: 'root', longname: 'drwxr-xr-x root', type: 'directory' as const, size: 0, modifiedAt: now }] };
         }
@@ -1137,6 +1141,7 @@ function App() {
   }
 
   if (component === 'sftp-transfer') {
+    const params = new URLSearchParams(window.location.search);
     return (
       <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <SftpTransferWindow
@@ -1149,6 +1154,8 @@ function App() {
             host: { name: 'UI Test Host', address: '127.0.0.1', port: 22, username: 'demo', authMethod: 'password' },
           }}
           language="zh-CN"
+          defaultLocalDirectory={params.get('sftpLocal') ?? '/'}
+          defaultRemoteDirectory={params.get('sftpRemote') ?? '.'}
         />
       </div>
     );

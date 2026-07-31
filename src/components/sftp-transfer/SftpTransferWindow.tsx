@@ -27,6 +27,7 @@ import FilePane from './FilePane';
 import TransferQueue from './TransferQueue';
 import { getSftpMessages } from './messages';
 import { isWindowsPlatform, joinPanePath } from './pathUtils';
+import { resolveSftpInitialDirectories } from './settings';
 import type { FileOperationDialog, SftpTransferConflictDialog, TransferFileEntry, TransferPaneKind } from './types';
 import { useFilePane } from './useFilePane';
 import { useTransferQueue } from './useTransferQueue';
@@ -34,14 +35,22 @@ import { useTransferQueue } from './useTransferQueue';
 interface SftpTransferWindowProps {
   connection: RemoteConnectionInfo;
   language: AppLanguage;
+  defaultLocalDirectory: string;
+  defaultRemoteDirectory: string;
 }
 
 function topLevelDifferenceNames(paths: string[]) {
   return new Set(paths.map((path) => path.replaceAll('\\', '/').split('/')[0]).filter(Boolean));
 }
 
-export default function SftpTransferWindow({ connection, language }: SftpTransferWindowProps) {
+export default function SftpTransferWindow({
+  connection,
+  language,
+  defaultLocalDirectory,
+  defaultRemoteDirectory,
+}: SftpTransferWindowProps) {
   const t = useMemo(() => getSftpMessages(language), [language]);
+  const [initialDirectories] = useState(() => resolveSftpInitialDirectories(defaultLocalDirectory, defaultRemoteDirectory));
   const windowsLocal = isWindowsPlatform(window.guiSSH?.platform);
   const [activePane, setActivePane] = useState<TransferPaneKind>('local');
   const [showHidden, setShowHidden] = useState(false);
@@ -67,8 +76,8 @@ export default function SftpTransferWindow({ connection, language }: SftpTransfe
     return window.guiSSH.connections.sftpListDirectory(connection.id, path);
   }, [connection.id, t]);
 
-  const localPane = useFilePane({ kind: 'local', initialPath: '/', loadDirectory: loadLocalDirectory });
-  const remotePane = useFilePane({ kind: 'remote', initialPath: '.', loadDirectory: loadRemoteDirectory });
+  const localPane = useFilePane({ kind: 'local', initialPath: initialDirectories.local, loadDirectory: loadLocalDirectory });
+  const remotePane = useFilePane({ kind: 'remote', initialPath: initialDirectories.remote, loadDirectory: loadRemoteDirectory });
   const refreshBoth = useCallback(() => {
     void Promise.allSettled([localPane.refresh(), remotePane.refresh()]);
   }, [localPane.refresh, remotePane.refresh]);
