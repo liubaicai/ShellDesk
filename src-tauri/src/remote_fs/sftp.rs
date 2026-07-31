@@ -1,5 +1,12 @@
 use super::{
-    commands::join_remote_path, paths::sanitize_local_file_name, transfer::TransferReporter,
+    commands::join_remote_path,
+    paths::sanitize_local_file_name,
+    sftp_resume::{
+        local_source_fingerprint, prepare_local_download_staging, remote_source_fingerprint,
+        remote_upload_staging_path, remove_local_file_if_exists, replace_local_download,
+        replace_remote_file, resume_prefix_matches, TransferSourceFingerprint,
+    },
+    transfer::TransferReporter,
 };
 use crate::{
     error_string, get_connection,
@@ -10,17 +17,18 @@ use chrono::{DateTime, Utc};
 use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::{
     client::SftpSession,
-    protocol::{FileAttributes, FileType},
+    protocol::{FileAttributes, FileType, OpenFlags},
 };
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::SeekFrom,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const TRANSFER_CHUNK_BYTES: usize = 256 * 1024;
 const SFTP_FILE_CONCURRENCY: usize = 8;
@@ -633,6 +641,7 @@ struct RemoteDownloadItem {
     remote_path: String,
     relative_path: PathBuf,
     size: u64,
+    fingerprint: TransferSourceFingerprint,
 }
 
 async fn download_remote_file(
@@ -649,14 +658,42 @@ async fn download_remote_file(
         .unwrap_or_else(|| "download".to_string());
     transfer.start_parallel_file(&file_name);
     let local_path = local_dir.join(&item.relative_path);
+    let (part_path, checkpoint_path, mut resume_offset) =
+        prepare_local_download_staging(&local_path, &item.fingerprint)?;
+    if resume_offset > 0
+        && !resume_prefix_matches(sftp, &item.remote_path, &part_path, resume_offset).await?
+    {
+        remove_local_file_if_exists(&part_path)?;
+        resume_offset = 0;
+    }
     let mut remote_file = sftp
-        .open(item.remote_path)
+        .open(item.remote_path.clone())
         .await
         .map_err(|error| format!("SFTP 打开下载文件失败：{error}"))?;
-    let mut local_file = tokio::fs::File::create(&local_path)
+    let mut local_file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&part_path)
         .await
         .map_err(error_string)?;
-    let mut transferred = 0_u64;
+    local_file
+        .set_len(resume_offset)
+        .await
+        .map_err(error_string)?;
+    if resume_offset > 0 {
+        remote_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        local_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        transfer.add_parallel_bytes(resume_offset);
+    }
+    let mut transferred = resume_offset;
     let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
     loop {
         transfer.check_canceled()?;
@@ -672,8 +709,25 @@ async fn download_remote_file(
         transferred = transferred.saturating_add(read as u64);
     }
     local_file.flush().await.map_err(error_string)?;
+    local_file.sync_all().await.map_err(error_string)?;
+    drop(local_file);
+    if transferred != item.size {
+        return Err(format!(
+            "SFTP 下载文件大小不完整：预期 {} 字节，实际 {} 字节。",
+            item.size, transferred
+        ));
+    }
+    let final_metadata = sftp
+        .symlink_metadata(item.remote_path.clone())
+        .await
+        .map_err(|error| format!("SFTP 校验下载源文件失败：{error}"))?;
+    if remote_source_fingerprint(&item.remote_path, &final_metadata) != item.fingerprint {
+        return Err("下载期间远端源文件发生变化，已保留临时文件但不会替换目标文件。".to_string());
+    }
+    replace_local_download(&part_path, &local_path)?;
+    remove_local_file_if_exists(&checkpoint_path)?;
     transfer.complete_file();
-    Ok(transferred)
+    Ok(item.size)
 }
 
 async fn collect_remote_download_plan(
@@ -731,20 +785,24 @@ async fn collect_remote_download_plan(
                     if child_metadata.is_dir() {
                         stack.push((child_remote, child_relative));
                     } else {
+                        let fingerprint = remote_source_fingerprint(&child_remote, &child_metadata);
                         files.push(RemoteDownloadItem {
                             remote_path: child_remote,
                             relative_path: child_relative,
                             size: child_metadata.size.unwrap_or(0),
+                            fingerprint,
                         });
                         transfer.discover_file();
                     }
                 }
             }
         } else {
+            let fingerprint = remote_source_fingerprint(root, &metadata);
             files.push(RemoteDownloadItem {
                 remote_path: root.clone(),
                 relative_path: PathBuf::from(name),
                 size: metadata.size.unwrap_or(0),
+                fingerprint,
             });
             transfer.discover_file();
         }
@@ -875,11 +933,15 @@ struct LocalUploadItem {
     local_path: PathBuf,
     remote_path: String,
     size: u64,
+    fingerprint: TransferSourceFingerprint,
 }
 
 enum LocalUploadPathKind {
     Directory,
-    File(u64),
+    File {
+        size: u64,
+        fingerprint: TransferSourceFingerprint,
+    },
     Symlink,
     Other,
 }
@@ -940,7 +1002,10 @@ async fn inspect_local_upload_path(
         } else if metadata.is_dir() {
             LocalUploadPathKind::Directory
         } else if metadata.is_file() {
-            LocalUploadPathKind::File(metadata.len())
+            LocalUploadPathKind::File {
+                size: metadata.len(),
+                fingerprint: local_source_fingerprint(&operation_path, &metadata),
+            }
         } else {
             LocalUploadPathKind::Other
         })
@@ -966,7 +1031,11 @@ async fn read_local_upload_directory(
             } else if file_type.is_dir() {
                 LocalUploadPathKind::Directory
             } else if file_type.is_file() {
-                LocalUploadPathKind::File(entry.metadata().map_err(error_string)?.len())
+                let metadata = entry.metadata().map_err(error_string)?;
+                LocalUploadPathKind::File {
+                    size: metadata.len(),
+                    fingerprint: local_source_fingerprint(&path, &metadata),
+                }
             } else {
                 LocalUploadPathKind::Other
             };
@@ -992,11 +1061,48 @@ async fn upload_local_file(
     let mut local_file = tokio::fs::File::open(&item.local_path)
         .await
         .map_err(error_string)?;
-    let mut remote_file = sftp
-        .create(item.remote_path)
+    let staging_path = remote_upload_staging_path(&item.remote_path, &item.fingerprint);
+    let mut resume_offset = 0_u64;
+    if sftp
+        .try_exists(staging_path.clone())
         .await
-        .map_err(|error| format!("SFTP 打开上传文件失败：{error}"))?;
-    let mut transferred = 0_u64;
+        .map_err(|error| format!("SFTP 检查上传临时文件失败：{error}"))?
+    {
+        let metadata = sftp
+            .symlink_metadata(staging_path.clone())
+            .await
+            .map_err(|error| format!("SFTP 读取上传临时文件失败：{error}"))?;
+        if metadata.is_regular() && metadata.size.unwrap_or(0) <= item.size {
+            resume_offset = metadata.size.unwrap_or(0);
+        } else {
+            let entry_type = file_type(&metadata);
+            remove_sftp_tree(sftp, staging_path.clone(), entry_type).await?;
+        }
+    }
+    if resume_offset > 0
+        && !resume_prefix_matches(sftp, &staging_path, &item.local_path, resume_offset).await?
+    {
+        sftp.remove_file(staging_path.clone())
+            .await
+            .map_err(|error| format!("SFTP 清理无效上传断点失败：{error}"))?;
+        resume_offset = 0;
+    }
+    let mut remote_file = sftp
+        .open_with_flags(staging_path.clone(), OpenFlags::CREATE | OpenFlags::WRITE)
+        .await
+        .map_err(|error| format!("SFTP 打开上传临时文件失败：{error}"))?;
+    if resume_offset > 0 {
+        local_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        remote_file
+            .seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(error_string)?;
+        transfer.add_parallel_bytes(resume_offset);
+    }
+    let mut transferred = resume_offset;
     let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
     loop {
         transfer.check_canceled()?;
@@ -1013,8 +1119,21 @@ async fn upload_local_file(
     }
     remote_file.flush().await.map_err(error_string)?;
     remote_file.shutdown().await.map_err(error_string)?;
+    if transferred != item.size {
+        return Err(format!(
+            "SFTP 上传文件大小不完整：预期 {} 字节，实际 {} 字节。",
+            item.size, transferred
+        ));
+    }
+    let final_local_metadata = tokio::fs::metadata(&item.local_path)
+        .await
+        .map_err(error_string)?;
+    if local_source_fingerprint(&item.local_path, &final_local_metadata) != item.fingerprint {
+        return Err("上传期间本地源文件发生变化，已保留临时文件但不会替换远端目标。".to_string());
+    }
+    replace_remote_file(sftp, &staging_path, &item.remote_path).await?;
     transfer.complete_file();
-    Ok(transferred)
+    Ok(item.size)
 }
 
 async fn collect_local_upload_plan(
@@ -1060,11 +1179,12 @@ async fn collect_local_upload_plan(
                             LocalUploadPathKind::Directory => {
                                 stack.push((child_path, child_target))
                             }
-                            LocalUploadPathKind::File(size) => {
+                            LocalUploadPathKind::File { size, fingerprint } => {
                                 files.push(LocalUploadItem {
                                     local_path: child_path,
                                     remote_path: child_target,
                                     size,
+                                    fingerprint,
                                 });
                                 transfer.discover_file();
                             }
@@ -1073,11 +1193,12 @@ async fn collect_local_upload_plan(
                     }
                 }
             }
-            LocalUploadPathKind::File(size) => {
+            LocalUploadPathKind::File { size, fingerprint } => {
                 files.push(LocalUploadItem {
                     local_path,
                     remote_path: target,
                     size,
+                    fingerprint,
                 });
                 transfer.discover_file();
             }
