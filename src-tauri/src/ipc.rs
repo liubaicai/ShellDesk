@@ -16,31 +16,41 @@ pub(crate) async fn dispatch(
     channel: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
-    if let Some(value) = app_channels::dispatch(
+    if let Some(value) = Box::pin(app_channels::dispatch(
         app.clone(),
         window.clone(),
         state.clone(),
         channel.clone(),
         &args,
-    )
+    ))
     .await?
     {
         return Ok(value);
     }
-    if let Some(value) =
-        vault_channels::dispatch(state.clone(), window.clone(), channel.clone(), &args).await?
+    if let Some(value) = Box::pin(vault_channels::dispatch(
+        state.clone(),
+        window.clone(),
+        channel.clone(),
+        &args,
+    ))
+    .await?
     {
         return Ok(value);
     }
-    if let Some(value) =
-        utility_channels::dispatch(app, window.clone(), state.clone(), channel.clone(), &args)
-            .await?
+    if let Some(value) = Box::pin(utility_channels::dispatch(
+        app,
+        window.clone(),
+        state.clone(),
+        channel.clone(),
+        &args,
+    ))
+    .await?
     {
         return Ok(value);
     }
     if channel.starts_with("connection:") {
         let missing_channel = channel.clone();
-        connection_channels::dispatch(state, window, channel, args)
+        Box::pin(connection_channels::dispatch(state, window, channel, args))
             .await
             .unwrap_or_else(|| {
                 Err(format!(

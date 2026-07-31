@@ -12,6 +12,7 @@ use tauri::Manager;
 use tokio::sync::{mpsc, oneshot};
 
 const DATABASE_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
+const REMOTE_FS_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 type DatabaseJobFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
 type DatabaseJob = Box<dyn FnOnce() -> DatabaseJobFuture + Send + 'static>;
@@ -21,6 +22,15 @@ struct DatabaseRuntimeDispatcher {
 }
 
 static DATABASE_RUNTIME: OnceLock<Result<DatabaseRuntimeDispatcher, String>> = OnceLock::new();
+
+type RemoteFsJobFuture = Pin<Box<dyn Future<Output = ()> + 'static>>;
+type RemoteFsJob = Box<dyn FnOnce() -> RemoteFsJobFuture + Send + 'static>;
+
+struct RemoteFsRuntimeDispatcher {
+    sender: mpsc::UnboundedSender<RemoteFsJob>,
+}
+
+static REMOTE_FS_RUNTIME: OnceLock<Result<RemoteFsRuntimeDispatcher, String>> = OnceLock::new();
 
 pub(crate) async fn dispatch(
     state: AppState,
@@ -64,7 +74,9 @@ pub(crate) async fn dispatch(
         | "connection:set-monitor-thresholds" => {
             dispatch_monitor(state.clone(), channel.clone(), args).await
         }
-        "connection:start-terminal" => terminal::start_terminal(state.clone(), window, args).await,
+        "connection:start-terminal" => {
+            Box::pin(terminal::start_terminal(state.clone(), window, args)).await
+        }
         "connection:write-terminal" => terminal::write_terminal(&state, args),
         "connection:write-terminal-binary" => terminal::write_terminal_bytes(&state, args),
         "connection:ack-terminal-output" => terminal::acknowledge_terminal_output(&state, args),
@@ -284,105 +296,145 @@ async fn dispatch_remote_fs(
     channel: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
-    tokio::task::spawn_blocking(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(crate::error_string)?;
-        // Keep the large remote-filesystem dispatch future off Tokio's worker stack.
-        // SFTP upload/download futures make this match substantially larger in debug
-        // builds, and constructing it directly in `block_on` can overflow the default
-        // Windows worker stack before a lightweight list operation is even selected.
-        runtime.block_on(Box::pin(async move {
-            match channel.as_str() {
-                "connection:list-directory" => {
-                    remote_fs::list_connection_directory(state, args).await
+    let sender = remote_fs_runtime_sender()?;
+    let (result_sender, result_receiver) = oneshot::channel();
+    let job: RemoteFsJob = Box::new(move || {
+        Box::pin(async move {
+            let result = dispatch_remote_fs_job(state, window, channel, args).await;
+            let _ = result_sender.send(result);
+        })
+    });
+
+    sender
+        .send(job)
+        .map_err(|_| "文件传输运行时不可用。".to_string())?;
+    result_receiver.await.map_err(crate::error_string)?
+}
+
+fn remote_fs_runtime_sender() -> Result<mpsc::UnboundedSender<RemoteFsJob>, String> {
+    REMOTE_FS_RUNTIME
+        .get_or_init(start_remote_fs_runtime)
+        .as_ref()
+        .map(|dispatcher| dispatcher.sender.clone())
+        .map_err(Clone::clone)
+}
+
+fn start_remote_fs_runtime() -> Result<RemoteFsRuntimeDispatcher, String> {
+    let (sender, mut receiver) = mpsc::unbounded_channel::<RemoteFsJob>();
+    std::thread::Builder::new()
+        .name("shelldesk-remote-fs-runtime".to_string())
+        .stack_size(REMOTE_FS_RUNTIME_STACK_SIZE)
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    eprintln!("[remote-fs-runtime] failed to start: {error}");
+                    return;
                 }
-                "connection:sftp-list-directory" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::list_sftp_directory(state, window, args).await
+            };
+            let local_set = tokio::task::LocalSet::new();
+            local_set.block_on(&runtime, async move {
+                while let Some(job) = receiver.recv().await {
+                    // Construct and poll the large remote-filesystem future only on
+                    // this dedicated large-stack thread. Detached local tasks keep
+                    // directory navigation responsive during long file transfers.
+                    std::mem::drop(tokio::task::spawn_local(job()));
                 }
-                "connection:sftp-compare-directory" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::compare_sftp_directory(state, window, args).await
-                }
-                "connection:sftp-stat-path" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::stat_sftp_path(state, window, args).await
-                }
-                "connection:sftp-create-directory" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::create_sftp_directory(state, window, args).await
-                }
-                "connection:sftp-create-file" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::create_sftp_file(state, window, args).await
-                }
-                "connection:sftp-delete-path" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::delete_sftp_path(state, window, args).await
-                }
-                "connection:sftp-rename-path" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::rename_sftp_path(state, window, args).await
-                }
-                "connection:sftp-set-path-permissions" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::set_sftp_path_permissions(state, window, args).await
-                }
-                "connection:stat-path" => remote_fs::stat_connection_path(state, args).await,
-                "connection:read-file" => remote_fs::read_connection_file(state, args).await,
-                "connection:write-file" => remote_fs::write_connection_file(state, args).await,
-                "connection:create-directory" => {
-                    remote_fs::create_connection_directory(state, args).await
-                }
-                "connection:create-file" => remote_fs::create_connection_file(state, args).await,
-                "connection:delete-path" => remote_fs::delete_connection_path(state, args).await,
-                "connection:rename-path" => remote_fs::rename_connection_path(state, args).await,
-                "connection:set-path-permissions" => {
-                    remote_fs::set_connection_path_permissions(state, args).await
-                }
-                "connection:check-sftp" => remote_fs::check_connection_sftp(state, args).await,
-                "connection:compress" => remote_fs::compress_connection_paths(state, args).await,
-                "connection:decompress" => {
-                    remote_fs::decompress_connection_archive(state, args).await
-                }
-                "connection:download-file" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::download_connection_file(state, window, args).await
-                }
-                "connection:download-paths" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::download_connection_paths(state, window, args).await
-                }
-                "connection:sftp-download-paths" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::download_sftp_paths(state, window, args).await
-                }
-                "connection:sftp-upload-local-paths" => {
-                    let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
-                    remote_fs::upload_sftp_paths(state, window, args).await
-                }
-                "connection:upload-local-paths" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::upload_connection_paths(state, window, args).await
-                }
-                "connection:upload-file" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::upload_selected_paths(state, window, args, false, false).await
-                }
-                "connection:upload-files" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::upload_selected_paths(state, window, args, false, true).await
-                }
-                "connection:upload-paths" => {
-                    let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
-                    remote_fs::upload_selected_paths(state, window, args, true, true).await
-                }
-                _ => Err(format!("Unsupported file IPC channel: {channel}")),
-            }
-        }))
-    })
-    .await
-    .map_err(crate::error_string)?
+            });
+        })
+        .map_err(crate::error_string)?;
+
+    Ok(RemoteFsRuntimeDispatcher { sender })
+}
+
+async fn dispatch_remote_fs_job(
+    state: AppState,
+    window: Option<tauri::Window>,
+    channel: String,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    match channel.as_str() {
+        "connection:list-directory" => remote_fs::list_connection_directory(state, args).await,
+        "connection:sftp-list-directory" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::list_sftp_directory(state, window, args).await
+        }
+        "connection:sftp-compare-directory" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::compare_sftp_directory(state, window, args).await
+        }
+        "connection:sftp-stat-path" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::stat_sftp_path(state, window, args).await
+        }
+        "connection:sftp-create-directory" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::create_sftp_directory(state, window, args).await
+        }
+        "connection:sftp-create-file" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::create_sftp_file(state, window, args).await
+        }
+        "connection:sftp-delete-path" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::delete_sftp_path(state, window, args).await
+        }
+        "connection:sftp-rename-path" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::rename_sftp_path(state, window, args).await
+        }
+        "connection:sftp-set-path-permissions" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::set_sftp_path_permissions(state, window, args).await
+        }
+        "connection:stat-path" => remote_fs::stat_connection_path(state, args).await,
+        "connection:read-file" => remote_fs::read_connection_file(state, args).await,
+        "connection:write-file" => remote_fs::write_connection_file(state, args).await,
+        "connection:create-directory" => remote_fs::create_connection_directory(state, args).await,
+        "connection:create-file" => remote_fs::create_connection_file(state, args).await,
+        "connection:delete-path" => remote_fs::delete_connection_path(state, args).await,
+        "connection:rename-path" => remote_fs::rename_connection_path(state, args).await,
+        "connection:set-path-permissions" => {
+            remote_fs::set_connection_path_permissions(state, args).await
+        }
+        "connection:check-sftp" => remote_fs::check_connection_sftp(state, args).await,
+        "connection:compress" => remote_fs::compress_connection_paths(state, args).await,
+        "connection:decompress" => remote_fs::decompress_connection_archive(state, args).await,
+        "connection:download-file" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::download_connection_file(state, window, args).await
+        }
+        "connection:download-paths" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::download_connection_paths(state, window, args).await
+        }
+        "connection:sftp-download-paths" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::download_sftp_paths(state, window, args).await
+        }
+        "connection:sftp-upload-local-paths" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::upload_sftp_paths(state, window, args).await
+        }
+        "connection:upload-local-paths" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::upload_connection_paths(state, window, args).await
+        }
+        "connection:upload-file" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::upload_selected_paths(state, window, args, false, false).await
+        }
+        "connection:upload-files" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::upload_selected_paths(state, window, args, false, true).await
+        }
+        "connection:upload-paths" => {
+            let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
+            remote_fs::upload_selected_paths(state, window, args, true, true).await
+        }
+        _ => Err(format!("Unsupported file IPC channel: {channel}")),
+    }
 }

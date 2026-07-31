@@ -16,7 +16,11 @@ async fn ipc_dispatch(
 ) -> Result<Value, String> {
     remember_ui_window(&state, &window);
     let state = state.inner().clone();
-    ipc::dispatch(app, window, state, channel, args).await
+    // Keep the complete IPC dispatcher future on the heap. Individual async
+    // branches (notably terminal startup and SFTP transfers) can be large in
+    // Windows debug builds, and Tauri otherwise expands the largest branch on
+    // a Tokio worker stack even when a lightweight channel was selected.
+    Box::pin(ipc::dispatch(app, window, state, channel, args)).await
 }
 
 pub(crate) fn run() {

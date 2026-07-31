@@ -36,6 +36,9 @@ const buildWrapper = readText('scripts/run-tauri-build.cjs');
 const updaterSource = readText('src-tauri/src/updater.rs');
 const versionSyncScript = readText('scripts/set-release-version.cjs');
 const tauriMainSource = readText('src-tauri/src/main.rs');
+const tauriBootstrapSource = readText('src-tauri/src/bootstrap.rs');
+const ipcSource = readText('src-tauri/src/ipc.rs');
+const connectionIpcSource = readText('src-tauri/src/ipc/connection_channels.rs');
 const rustCoverageScript = readText('scripts/check-rust-coverage.cjs');
 
 assert.equal(packageJson.name, 'shelldesk');
@@ -145,6 +148,38 @@ assert.match(readText('src-tauri/src/app.rs'), /open_connection_window/);
 assert.match(readText('src-tauri/src/app.rs'), /background_color\(Color\(14, 19, 28, 255\)\)/);
 assert.match(readText('src/tauriBridge.ts'), /app:open-connection-window/);
 assert.match(tauriMainSource, /windows_subsystem = "windows"/);
+assert.match(
+  tauriBootstrapSource,
+  /Box::pin\(ipc::dispatch\(app, window, state, channel, args\)\)\.await/,
+  'Tauri IPC dispatch must stay heap-pinned to protect Windows debug worker stacks',
+);
+for (const dispatcher of ['app_channels', 'vault_channels', 'utility_channels', 'connection_channels']) {
+  assert.match(
+    ipcSource,
+    new RegExp(`Box::pin\\(${dispatcher}::dispatch\\(`),
+    `${dispatcher} IPC future must stay heap-pinned`,
+  );
+}
+assert.match(
+  connectionIpcSource,
+  /Box::pin\(terminal::start_terminal\(/,
+  'terminal startup future must stay heap-pinned inside the connection dispatcher',
+);
+assert.match(
+  connectionIpcSource,
+  /\.name\("shelldesk-remote-fs-runtime"\.to_string\(\)\)/,
+  'remote filesystem futures must be constructed on a dedicated runtime thread',
+);
+assert.match(
+  connectionIpcSource,
+  /\.stack_size\(REMOTE_FS_RUNTIME_STACK_SIZE\)/,
+  'the remote filesystem runtime must retain its large Windows debug stack',
+);
+assert.match(
+  connectionIpcSource,
+  /tokio::task::spawn_local\(job\(\)\)/,
+  'remote filesystem jobs must stay concurrent on the dedicated runtime',
+);
 assertFile('src/assets/images/icon.png');
 assertFile('scripts/check-tauri-dev-start.cjs');
 assertFile('scripts/check-live-ssh-smoke.cjs');
