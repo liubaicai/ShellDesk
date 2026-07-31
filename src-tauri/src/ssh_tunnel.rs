@@ -31,6 +31,8 @@ use crate::{
 };
 use serde_json::Value;
 
+const FORWARD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SshTunnelConfig {
@@ -298,21 +300,23 @@ impl SshForwardRuntime {
 
     pub(crate) async fn shutdown(self) {
         self.cancellation.cancel();
+        self.worker.abort();
         if let Some((host, port)) = self.remote_request {
-            let _ = self
-                .session
-                .cancel_tcpip_forward(host, u32::from(port))
-                .await;
+            let _ = tokio::time::timeout(
+                FORWARD_SHUTDOWN_TIMEOUT,
+                self.session.cancel_tcpip_forward(host, u32::from(port)),
+            )
+            .await;
         }
-        let _ = self
-            .session
-            .disconnect(
+        let _ = tokio::time::timeout(
+            FORWARD_SHUTDOWN_TIMEOUT,
+            self.session.disconnect(
                 russh::Disconnect::ByApplication,
                 "ShellDesk forwarding stopped",
                 "en",
-            )
-            .await;
-        self.worker.abort();
+            ),
+        )
+        .await;
     }
 }
 
@@ -322,6 +326,7 @@ struct TunnelHandler {
     known_hosts_path: Option<String>,
     remote_forward_target: Option<(String, u16)>,
     forwarding_cancellation: Option<CancellationToken>,
+    forward_connect_timeout: Duration,
 }
 
 impl client::Handler for TunnelHandler {
@@ -379,18 +384,31 @@ impl client::Handler for TunnelHandler {
             return Ok(());
         };
         let cancellation = self.forwarding_cancellation.clone().unwrap_or_default();
+        let connect_timeout = self.forward_connect_timeout;
         tokio::spawn(async move {
-            let mut local_stream =
-                match TcpStream::connect((target_host.as_str(), target_port)).await {
-                    Ok(stream) => stream,
-                    Err(error) => {
+            let mut local_stream = tokio::select! {
+                _ = cancellation.cancelled() => return,
+                result = tokio::time::timeout(
+                    connect_timeout,
+                    TcpStream::connect((target_host.as_str(), target_port)),
+                ) => match result {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(error)) => {
                         eprintln!(
                             "[ssh-tunnel] remote forwarding target {}:{} failed: {}",
                             target_host, target_port, error
                         );
                         return;
                     }
-                };
+                    Err(_) => {
+                        eprintln!(
+                            "[ssh-tunnel] remote forwarding target {}:{} timed out",
+                            target_host, target_port
+                        );
+                        return;
+                    }
+                }
+            };
             let mut ssh_stream = channel.into_stream();
             tokio::select! {
                 result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
@@ -429,6 +447,7 @@ pub(crate) async fn create_tunnel(
     let remote_host = config.remote_host.clone();
     let remote_port = config.remote_port;
     let accept_cancellation_token = cancellation_token.clone();
+    let forward_connect_timeout = timeout;
 
     let accept_task = tokio::spawn(async move {
         loop {
@@ -443,7 +462,14 @@ pub(crate) async fn create_tunnel(
                             let remote_host = remote_host.clone();
                             let cancellation_token = accept_cancellation_token.child_token();
                             tokio::spawn(async move {
-                                if let Err(error) = forward_one(session, local_stream, remote_host, remote_port, cancellation_token).await {
+                                if let Err(error) = forward_one(
+                                    session,
+                                    local_stream,
+                                    remote_host,
+                                    remote_port,
+                                    cancellation_token,
+                                    forward_connect_timeout,
+                                ).await {
                                     eprintln!("[ssh-tunnel] {}", error.user_message());
                                 }
                             });
@@ -535,6 +561,7 @@ pub(crate) async fn create_managed_forward(
                     target_host,
                     target_port,
                     worker_cancellation,
+                    timeout,
                 )
                 .await;
             });
@@ -558,7 +585,13 @@ pub(crate) async fn create_managed_forward(
             let worker_session = Arc::clone(&session);
             let worker_cancellation = cancellation.clone();
             let worker = tokio::spawn(async move {
-                run_dynamic_forward_listener(listener, worker_session, worker_cancellation).await;
+                run_dynamic_forward_listener(
+                    listener,
+                    worker_session,
+                    worker_cancellation,
+                    timeout,
+                )
+                .await;
             });
             Ok(SshForwardRuntime {
                 bind_host: local_addr.ip().to_string(),
@@ -609,6 +642,7 @@ async fn run_local_forward_listener(
     target_host: String,
     target_port: u16,
     cancellation: CancellationToken,
+    connect_timeout: Duration,
 ) {
     loop {
         tokio::select! {
@@ -626,6 +660,7 @@ async fn run_local_forward_listener(
                             target_port,
                             peer,
                             stream_cancellation,
+                            connect_timeout,
                         ).await {
                             eprintln!("[ssh-tunnel] {}", error.user_message());
                         }
@@ -644,6 +679,7 @@ async fn run_dynamic_forward_listener(
     listener: TcpListener,
     session: Arc<client::Handle<TunnelHandler>>,
     cancellation: CancellationToken,
+    connect_timeout: Duration,
 ) {
     loop {
         tokio::select! {
@@ -654,7 +690,13 @@ async fn run_dynamic_forward_listener(
                     let stream_cancellation = cancellation.child_token();
                     tokio::spawn(async move {
                         if let Err(error) =
-                            forward_socks5(session, stream, peer, stream_cancellation).await
+                            forward_socks5(
+                                session,
+                                stream,
+                                peer,
+                                stream_cancellation,
+                                connect_timeout,
+                            ).await
                         {
                             eprintln!("[ssh-tunnel] {}", error.user_message());
                         }
@@ -674,7 +716,35 @@ async fn forward_socks5(
     mut local_stream: TcpStream,
     peer: SocketAddr,
     cancellation: CancellationToken,
+    connect_timeout: Duration,
 ) -> Result<(), SshTunnelError> {
+    let channel = tokio::select! {
+        _ = cancellation.cancelled() => return Ok(()),
+        result = tokio::time::timeout(
+            connect_timeout,
+            open_socks5_channel(&session, &mut local_stream, peer),
+        ) => {
+            result
+                .map_err(|_| SshTunnelError::InvalidSocksRequest(
+                    "SOCKS5 握手或目标连接超时。".to_string(),
+                ))??
+        }
+    };
+    let mut ssh_stream = channel.into_stream();
+    tokio::select! {
+        result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
+            result.map_err(SshTunnelError::Forward)?;
+        }
+        _ = cancellation.cancelled() => {}
+    }
+    Ok(())
+}
+
+async fn open_socks5_channel(
+    session: &client::Handle<TunnelHandler>,
+    local_stream: &mut TcpStream,
+    peer: SocketAddr,
+) -> Result<russh::Channel<client::Msg>, SshTunnelError> {
     let mut greeting = [0_u8; 2];
     local_stream
         .read_exact(&mut greeting)
@@ -717,7 +787,7 @@ async fn forward_socks5(
             "仅支持 SOCKS5 CONNECT 请求。".to_string(),
         ));
     }
-    let target_host = read_socks5_host(&mut local_stream, request[3]).await?;
+    let target_host = read_socks5_host(local_stream, request[3]).await?;
     let mut port_bytes = [0_u8; 2];
     local_stream
         .read_exact(&mut port_bytes)
@@ -751,14 +821,7 @@ async fn forward_socks5(
         .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
         .await
         .map_err(SshTunnelError::Forward)?;
-    let mut ssh_stream = channel.into_stream();
-    tokio::select! {
-        result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
-            result.map_err(SshTunnelError::Forward)?;
-        }
-        _ = cancellation.cancelled() => {}
-    }
-    Ok(())
+    Ok(channel)
 }
 
 async fn read_socks5_host(
@@ -811,16 +874,24 @@ async fn forward_one_with_origin(
     remote_port: u16,
     peer: SocketAddr,
     cancellation_token: CancellationToken,
+    connect_timeout: Duration,
 ) -> Result<(), SshTunnelError> {
-    let channel = session
-        .channel_open_direct_tcpip(
-            remote_host.as_str(),
-            u32::from(remote_port),
-            peer.ip().to_string(),
-            u32::from(peer.port()),
-        )
-        .await
-        .map_err(|error| SshTunnelError::OpenChannel(error.to_string()))?;
+    let channel = tokio::select! {
+        _ = cancellation_token.cancelled() => return Ok(()),
+        result = tokio::time::timeout(
+            connect_timeout,
+            session.channel_open_direct_tcpip(
+                remote_host.as_str(),
+                u32::from(remote_port),
+                peer.ip().to_string(),
+                u32::from(peer.port()),
+            ),
+        ) => {
+            result
+                .map_err(|_| SshTunnelError::OpenChannel("目标连接超时。".to_string()))?
+                .map_err(|error| SshTunnelError::OpenChannel(error.to_string()))?
+        }
+    };
     let mut ssh_stream = channel.into_stream();
     tokio::select! {
         result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
@@ -878,6 +949,7 @@ async fn connect_profile_with_handler(
         known_hosts_path: config.known_hosts_path.clone(),
         remote_forward_target,
         forwarding_cancellation,
+        forward_connect_timeout: timeout,
     };
 
     let transport = open_transport(config, timeout, state, window).await?;
@@ -1171,11 +1243,24 @@ async fn forward_one(
     remote_host: String,
     remote_port: u16,
     cancellation_token: CancellationToken,
+    connect_timeout: Duration,
 ) -> Result<(), SshTunnelError> {
-    let channel = session
-        .channel_open_direct_tcpip(remote_host.as_str(), u32::from(remote_port), "127.0.0.1", 0)
-        .await
-        .map_err(|error| SshTunnelError::OpenChannel(error.to_string()))?;
+    let channel = tokio::select! {
+        _ = cancellation_token.cancelled() => return Ok(()),
+        result = tokio::time::timeout(
+            connect_timeout,
+            session.channel_open_direct_tcpip(
+                remote_host.as_str(),
+                u32::from(remote_port),
+                "127.0.0.1",
+                0,
+            ),
+        ) => {
+            result
+                .map_err(|_| SshTunnelError::OpenChannel("目标连接超时。".to_string()))?
+                .map_err(|error| SshTunnelError::OpenChannel(error.to_string()))?
+        }
+    };
 
     let mut ssh_stream = channel.into_stream();
     tokio::select! {
