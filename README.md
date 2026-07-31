@@ -114,6 +114,7 @@ ShellDesk is useful for:
 - Remote terminal sessions use russh PTY channels for shell/exec startup, resize, initial command, working directory, and auto-sudo flows
 - Local terminal sessions stay on a separate local-shell path and do not require an SSH loopback host
 - Terminal font family, size, weight, ligatures, line height, cursor, scrolling behavior, and contrast are configurable
+- Terminal windows can tile right or down as an independent-session workspace; optional host-scoped restore persists metadata only and always requires a manual reconnect from a disconnected placeholder
 - Font selection reads the local system font list instead of bundling font files
 - SFTP file manager supports browsing, upload, download, transfer cancellation, create, delete, rename, compress, extract, permission edits, protected-write fallbacks, and copy path
 - A dedicated native dual-pane SFTP workspace opens directly from a host and adds local/remote trees, process-owned queued transfers that survive closing the SFTP window, fingerprint-checked resumable staging with atomic final replacement, adaptive pipelined or conservative compatibility transfer profiles, pause/retry/cancel, recursive comparison, one-way sync, conflict handling, streamed `russh-sftp` transfers, and a persistent global transfer center shared by every app window

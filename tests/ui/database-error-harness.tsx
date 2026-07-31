@@ -12,6 +12,7 @@ import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
+import { TerminalRestorePlaceholder } from '../../src/components/remote-desktop/TerminalRestorePlaceholder';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
 import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferWindow';
@@ -29,6 +30,7 @@ import '../../src/styles/remote-desktop/_rdp-viewer.scss';
 import '../../src/styles/remote-desktop/_redis.scss';
 import '../../src/styles/remote-desktop/_settings.scss';
 import '../../src/styles/remote-desktop/_supervisor-manager.scss';
+import '../../src/styles/remote-desktop/_terminal.scss';
 import '../../src/styles/remote-desktop/_vm-manager-management.scss';
 import '../../src/styles/remote-desktop/_vm-manager.scss';
 
@@ -771,6 +773,29 @@ function EditorThemeSubscribersHarness() {
   );
 }
 
+function TerminalRestoreHarness() {
+  const [connected, setConnected] = React.useState(false);
+  return (
+    <main className="remote-desktop-page" style={{ width: '100vw', height: '100vh' }}>
+      <section className="remote-desktop-surface" style={{ display: 'grid', placeItems: 'center', background: '#102637' }}>
+        <div style={{ width: 760, height: 460, overflow: 'hidden', border: '1px solid rgba(139, 164, 195, .25)', borderRadius: 10 }}>
+          {connected ? (
+            <div data-testid="manual-terminal-connected" style={{ display: 'grid', height: '100%', placeItems: 'center', background: '#181a24', color: '#d7e5f2' }}>
+              手动连接已确认
+            </div>
+          ) : (
+            <TerminalRestorePlaceholder
+              language="zh-CN"
+              launchOptions={{ title: 'Operations', workingDirectory: '/srv/app' }}
+              onReconnect={() => setConnected(true)}
+            />
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
@@ -805,6 +830,10 @@ function App() {
 
   if (component === 'editor-theme-subscribers') {
     return <EditorThemeSubscribersHarness />;
+  }
+
+  if (component === 'terminal-restore') {
+    return <TerminalRestoreHarness />;
   }
 
   if (component === 'vm-manager') {

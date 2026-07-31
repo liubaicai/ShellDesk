@@ -102,6 +102,7 @@ pub(crate) fn default_settings() -> Value {
         "terminalMinimumContrastRatio": 1,
         "terminalScreenReaderMode": false,
         "terminalPreferTmux": false,
+        "terminalRestoreWorkspace": true,
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

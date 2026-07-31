@@ -93,6 +93,7 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalMinimumContrastRatio: 1,
     terminalScreenReaderMode: false,
     terminalPreferTmux: false,
+    terminalRestoreWorkspace: true,
     terminalSnippets: [],
   };
 }

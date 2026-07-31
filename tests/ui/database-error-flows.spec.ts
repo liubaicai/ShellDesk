@@ -515,6 +515,20 @@ test('SFTP transfer queue toolbar button toggles the queue and releases its spac
   await expect(page.locator('.sftp-transfer-workspace')).not.toHaveClass(/queue-hidden/);
 });
 
+test('restored terminal workspace stays disconnected until the manual reconnect action', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await gotoHarness(page, 'component=terminal-restore&theme=dark');
+
+  const placeholder = page.getByRole('region', { name: '已恢复的终端位置' });
+  await expect(placeholder).toContainText('ShellDesk 只恢复了安全元数据');
+  await expect(placeholder.getByText('/srv/app', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('manual-terminal-connected')).toHaveCount(0);
+
+  await placeholder.getByRole('button', { name: '手动重新连接' }).click();
+  await expect(page.getByTestId('manual-terminal-connected')).toBeVisible();
+  await expect(placeholder).toHaveCount(0);
+});
+
 test('SFTP directory tree dividers resize both panes independently', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });

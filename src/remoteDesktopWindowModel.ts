@@ -101,6 +101,7 @@ export interface DesktopWindowState {
   zIndex: number;
   terminalId?: string;
   terminalLaunchOptions?: RemoteTerminalLaunchOptions;
+  terminalRestorePending?: boolean;
   terminalStatus?: RemoteTerminalSessionStatus;
   terminalHasForegroundTask?: boolean;
   terminalToolRequest?: RemoteTerminalToolRequest;

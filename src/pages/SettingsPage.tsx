@@ -1388,6 +1388,18 @@ function SettingsPage({
                       onChange={(event) => updateSetting('terminalPreferTmux', event.target.checked)}
                     />
                   </label>
+                  <label className="settings-row">
+                    <span>
+                      <strong>{t('settings.terminal.restoreWorkspace.label', settings.language)}</strong>
+                      <small>{t('settings.terminal.restoreWorkspace.summary', settings.language)}</small>
+                    </span>
+                    <input
+                      className="settings-toggle"
+                      type="checkbox"
+                      checked={settings.terminalRestoreWorkspace}
+                      onChange={(event) => updateSetting('terminalRestoreWorkspace', event.target.checked)}
+                    />
+                  </label>
                 </div>
               </section>
 

@@ -426,6 +426,7 @@ interface ShellDeskAppSettings {
   terminalMinimumContrastRatio: number;
   terminalScreenReaderMode: boolean;
   terminalPreferTmux: boolean;
+  terminalRestoreWorkspace: boolean;
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 
