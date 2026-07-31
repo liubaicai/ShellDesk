@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DismissibleAlert from './DismissibleAlert';
+import RemotePortForwarding from './RemotePortForwarding';
 
 import { getErrorMessage, getShellDeskLocale } from './desktopUtils';
 import { isWindowsSystem, powershellStdinCommand } from './remoteSystem';
@@ -702,6 +703,7 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [refreshedAt, setRefreshedAt] = useState('');
+  const [activeView, setActiveView] = useState<'listeners' | 'forwarding'>('listeners');
 
   const selectedEntry = useMemo(() => {
     return entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
@@ -850,6 +852,16 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
 
   return (
     <section className="port-manager">
+      <nav className="port-manager-tabs" aria-label={tCurrent('portForward.workspaceLabel')}>
+        <button type="button" className={activeView === 'listeners' ? 'active' : ''} onClick={() => setActiveView('listeners')}>
+          {tCurrent('portForward.listenersTab')}
+        </button>
+        <button type="button" className={activeView === 'forwarding' ? 'active' : ''} onClick={() => setActiveView('forwarding')}>
+          {tCurrent('portForward.forwardingTab')}
+        </button>
+      </nav>
+      {activeView === 'forwarding' ? <RemotePortForwarding connectionId={connectionId} /> : (
+        <>
       <header className="port-toolbar">
         <div className="port-toolbar-left">
           <button type="button" className="port-tool-button primary" onClick={refreshPorts} disabled={loading}>
@@ -996,6 +1008,8 @@ function RemotePortManager({ connectionId, systemType, onOpenProcessManager }: R
         </aside>
       </div>
       {sudoPrompt}
+        </>
+      )}
     </section>
   );
 }

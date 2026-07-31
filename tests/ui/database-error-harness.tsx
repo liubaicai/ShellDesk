@@ -8,6 +8,7 @@ import { DesktopAppIcon } from '../../src/components/remote-desktop/RemoteDeskto
 import RemoteFileExplorer from '../../src/components/remote-desktop/RemoteFileExplorer';
 import RemoteMySQL from '../../src/components/remote-desktop/RemoteMySQL';
 import RemoteMonitor from '../../src/components/remote-desktop/RemoteMonitor';
+import RemotePortForwarding from '../../src/components/remote-desktop/RemotePortForwarding';
 import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
@@ -26,6 +27,7 @@ import '../../src/styles/remote-desktop/_browser.scss';
 import '../../src/styles/remote-desktop/_file-explorer.scss';
 import '../../src/styles/remote-desktop/_monitor.scss';
 import '../../src/styles/remote-desktop/_mysql.scss';
+import '../../src/styles/remote-desktop/_port-manager.scss';
 import '../../src/styles/remote-desktop/_rdp-viewer.scss';
 import '../../src/styles/remote-desktop/_redis.scss';
 import '../../src/styles/remote-desktop/_settings.scss';
@@ -261,6 +263,24 @@ function installGuiSshMock() {
   let lastBackupS3Command = '';
   let lastBackupS3Stdin = '';
   let rdpDiagnosticListener: ((payload: ShellDeskRdpDiagnosticPayload) => void) | undefined;
+  let portForwardRecords: ShellDeskPortForwardRecord[] = [
+    {
+      profile: {
+        id: 'forward-postgres',
+        hostId,
+        name: 'PostgreSQL',
+        kind: 'local',
+        bindHost: '127.0.0.1',
+        bindPort: 15432,
+        targetHost: '127.0.0.1',
+        targetPort: 5432,
+        autostart: true,
+        reconnect: true,
+        allowNonLoopback: false,
+      },
+      runtime: { status: 'stopped' },
+    },
+  ];
   let transferHistoryFixtures: ShellDeskTransferTask[] = [
     {
       id: 'transfer-active',
@@ -344,6 +364,53 @@ function installGuiSshMock() {
       renameLocalPath: async () => true,
     },
     connections: {
+      getInfo: async () => ({
+        id: connectionId,
+        kind: 'ssh' as const,
+        partition: 'persist:ui-test',
+        proxyPort: 0,
+        connectedAt: now,
+        host: {
+          id: hostId,
+          name: 'UI Test Host',
+          address: '127.0.0.1',
+          port: 22,
+          username: 'demo',
+          authMethod: 'password' as const,
+        },
+      }),
+      listPortForwards: async () => structuredClone(portForwardRecords),
+      savePortForward: async (profile: ShellDeskPortForwardProfile) => {
+        const savedProfile = { ...profile, id: profile.id || 'forward-created' };
+        const index = portForwardRecords.findIndex(({ profile: existing }) => existing.id === savedProfile.id);
+        const record: ShellDeskPortForwardRecord = { profile: savedProfile, runtime: { status: 'stopped' } };
+        if (index >= 0) portForwardRecords[index] = record;
+        else portForwardRecords.push(record);
+        return savedProfile;
+      },
+      deletePortForward: async (profileId: string) => {
+        portForwardRecords = portForwardRecords.filter(({ profile }) => profile.id !== profileId);
+        return true;
+      },
+      startPortForward: async (_connectionId: string, profileId: string) => {
+        const record = portForwardRecords.find(({ profile }) => profile.id === profileId);
+        if (record) {
+          record.runtime = {
+            connectionId,
+            status: 'running',
+            bindHost: record.profile.bindHost,
+            bindPort: record.profile.bindPort || 49152,
+            retryAttempt: 0,
+            updatedAt: now,
+          };
+        }
+        return record?.runtime ?? { status: 'error' as const, error: 'missing' };
+      },
+      stopPortForward: async (profileId: string) => {
+        const record = portForwardRecords.find(({ profile }) => profile.id === profileId);
+        if (record) record.runtime = { status: 'stopped' };
+        return true;
+      },
       runCommand: async (_connectionId: string, command: string, stdin?: string, options?: { sudoPassword?: string }) => {
         if (command === 'sh -s' && stdin?.includes('for tool in') && stdin.includes('mysqldump')) {
           return createCommandResult('tar\ngzip\nmysqldump\nmysql\npg_dump\npg_restore\nmongodump\nmongorestore\nsqlite3\naws\nmc\ncrontab\n');
@@ -834,6 +901,14 @@ function App() {
 
   if (component === 'terminal-restore') {
     return <TerminalRestoreHarness />;
+  }
+
+  if (component === 'port-forwarding') {
+    return (
+      <div className="port-manager" style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        <RemotePortForwarding connectionId={connectionId} />
+      </div>
+    );
   }
 
   if (component === 'vm-manager') {

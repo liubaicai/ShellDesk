@@ -128,7 +128,7 @@ ShellDesk is useful for:
 - Database access uses Rust-side SSH tunnels with request timeouts, cleanup for orphaned tunnels, bounded result previews, and sensitive-value redaction in diagnostic paths
 - Elasticsearch / OpenSearch panel shows cluster health, indices, shards, and basic `_search` results
 - RabbitMQ / Kafka panel shows queues, topics, consumer group lag, and raw diagnostic output
-- System Monitor keeps live and SQLite-backed history; Process Manager, Service Manager, Supervisor Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener, and Disk Analyzer cover daily checks
+- System Monitor keeps live and SQLite-backed history; Process Manager, Service Manager, Supervisor Manager, Container Manager, Kubernetes Manager, Virtual Machine Manager, Port Listener with saved local/remote/SOCKS5 SSH forwarding, and Disk Analyzer cover daily checks
 - Kubernetes Manager covers contexts, namespaces, workloads, pods, logs, exec, YAML, and nodes; Virtual Machine Manager uses remote `virsh` for lifecycle, create/clone/edit/delete, device attachment, migration, snapshots, networks, storage pools, serial console, and VNC handoff
 - Disk Manager shows physical disks, partitions, and mounts, with mount/unmount, format, partition maintenance, and Linux LVM configuration
 - Git Repository Manager shows remote branch trees, remote branches, changed files, diffs, recent commits, branch create/delete/track, stage/unstage, commit, fetch, pull, push, and checkout

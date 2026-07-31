@@ -22,6 +22,281 @@
   color: var(--port-text);
 }
 
+.port-manager-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  border-bottom: 1px solid var(--port-border);
+  padding: 7px 10px 0;
+  background: var(--port-panel-strong);
+}
+
+.port-manager-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 7px 12px 8px;
+  background: transparent;
+  color: var(--port-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.port-manager-tabs button.active {
+  border-bottom-color: var(--port-accent);
+  color: var(--port-text);
+}
+
+.port-forwarding {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.port-forwarding-toolbar {
+  display: flex;
+  min-height: 54px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--port-border);
+  padding: 8px 12px;
+  background: var(--port-panel);
+}
+
+.port-forwarding-toolbar > div,
+.port-forward-editor-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.port-forwarding-toolbar strong,
+.port-forward-editor-heading strong {
+  color: var(--port-text);
+  font-size: 13px;
+}
+
+.port-forwarding-toolbar span,
+.port-forward-editor-heading span {
+  color: var(--port-muted);
+  font-size: 11.5px;
+}
+
+.port-forward-editor {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  border-bottom: 1px solid var(--port-border-strong);
+  padding: 12px;
+  background: rgba(5, 10, 16, 0.52);
+}
+
+.port-forward-editor-heading {
+  grid-column: 1 / -1;
+}
+
+.port-forward-editor label:not(.port-forward-check) {
+  display: grid;
+  gap: 5px;
+}
+
+.port-forward-editor label > span {
+  color: var(--port-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.port-forward-editor input,
+.port-forward-editor select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--port-border);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(5, 10, 16, 0.45);
+  color: var(--port-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.port-forward-check {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  color: var(--port-muted-strong);
+  font-size: 11.5px;
+}
+
+.port-forward-check.warning {
+  color: var(--port-warning);
+}
+
+.port-forward-editor-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.port-forward-editor-actions button,
+.port-forward-card-actions button {
+  min-height: 30px;
+  border: 1px solid var(--port-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--port-muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 760;
+}
+
+.port-forward-editor-actions button.primary {
+  border-color: rgba(103, 212, 178, 0.34);
+  background: rgba(103, 212, 178, 0.14);
+  color: #dffbef;
+}
+
+.port-forward-card-actions button.danger {
+  border-color: rgba(255, 143, 163, 0.42);
+  color: var(--port-danger);
+}
+
+.port-forward-list {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 9px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.port-forward-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--port-border);
+  border-radius: 9px;
+  padding: 11px 12px;
+  background: var(--port-panel);
+}
+
+.port-forward-card.status-running {
+  border-color: rgba(103, 212, 178, 0.3);
+}
+
+.port-forward-card.status-error {
+  border-color: rgba(255, 143, 163, 0.3);
+}
+
+.port-forward-card-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.port-forward-card-main > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.port-forward-card-main strong {
+  overflow: hidden;
+  color: var(--port-text);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-forward-card-main div > span {
+  overflow: hidden;
+  color: var(--port-muted);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-forward-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(142, 160, 184, 0.12);
+  color: var(--port-muted-strong);
+  font-size: 10.5px;
+  font-weight: 820;
+}
+
+.port-forward-status.status-running {
+  background: rgba(103, 212, 178, 0.13);
+  color: var(--port-accent);
+}
+
+.port-forward-status.status-recovering,
+.port-forward-status.status-starting {
+  background: rgba(255, 211, 107, 0.12);
+  color: var(--port-warning);
+}
+
+.port-forward-status.status-error {
+  background: rgba(255, 143, 163, 0.12);
+  color: var(--port-danger);
+}
+
+.port-forward-card-flags,
+.port-forward-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.port-forward-card-flags span {
+  border: 1px solid var(--port-border);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: var(--port-muted);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.port-forward-error {
+  grid-column: 1 / -1;
+  margin: -3px 0 0 42px;
+  color: var(--port-danger);
+  font-size: 11px;
+}
+
+.port-forward-empty {
+  display: grid;
+  min-height: 180px;
+  place-content: center;
+  gap: 5px;
+  color: var(--port-muted);
+  text-align: center;
+}
+
+.port-forward-empty strong {
+  color: var(--port-muted-strong);
+  font-size: 13px;
+}
+
+.port-forward-empty span {
+  max-width: 420px;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
 .port-toolbar {
   display: flex;
   min-height: 48px;
@@ -451,6 +726,19 @@
   .port-layout {
     grid-template-columns: 1fr;
   }
+
+  .port-forward-editor {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .port-forward-card {
+    grid-template-columns: 1fr;
+  }
+
+  .port-forward-card-flags,
+  .port-forward-card-actions {
+    flex-wrap: wrap;
+  }
 }
 
 [data-theme="light"] .port-manager {
@@ -477,6 +765,12 @@
 
 [data-theme="light"] .port-search,
 [data-theme="light"] .port-select,
-[data-theme="light"] .port-diagnostic pre {
+[data-theme="light"] .port-diagnostic pre,
+[data-theme="light"] .port-forward-editor input,
+[data-theme="light"] .port-forward-editor select {
   background: rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="light"] .port-forward-editor {
+  background: rgba(244, 247, 250, 0.92);
 }

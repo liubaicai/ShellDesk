@@ -2,9 +2,9 @@
 mod database_channels;
 
 use crate::{
-    browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, rdp,
-    remote_fs, run_connection_command, run_connection_command_stream, terminal, transfer_history,
-    vnc, zmodem, AppState,
+    browser_proxy, connection, connection_monitor, http_tunnel, monitor_persistence, port_forward,
+    rdp, remote_fs, run_connection_command, run_connection_command_stream, terminal,
+    transfer_history, vnc, zmodem, AppState,
 };
 use serde_json::{json, Value};
 use std::{future::Future, pin::Pin, sync::OnceLock};
@@ -81,6 +81,11 @@ pub(crate) async fn dispatch(
         "connection:http-tunnel-delete" => {
             http_tunnel::delete(state.clone(), window.clone(), args).await
         }
+        "connection:port-forward-list" => port_forward::list(&state, args),
+        "connection:port-forward-save" => port_forward::save(&state, args),
+        "connection:port-forward-delete" => port_forward::delete(&state, args),
+        "connection:port-forward-start" => port_forward::start(state, window, args),
+        "connection:port-forward-stop" => port_forward::stop(&state, args),
         "connection:list-directory"
         | "connection:stat-path"
         | "connection:read-file"

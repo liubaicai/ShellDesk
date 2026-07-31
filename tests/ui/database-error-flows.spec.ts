@@ -529,6 +529,28 @@ test('restored terminal workspace stays disconnected until the manual reconnect 
   await expect(placeholder).toHaveCount(0);
 });
 
+test('saved SSH forwarding can be created, started, and deleted with confirmation', async ({ page }) => {
+  await gotoHarness(page, 'component=port-forwarding&theme=dark');
+
+  await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '启动', exact: true }).click();
+  await expect(page.getByText('运行中', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '新建转发' }).click();
+  await page.getByLabel('名称').fill('Internal SOCKS');
+  await page.getByLabel('转发类型').selectOption('dynamic');
+  await page.getByLabel('监听端口（0 为自动）').fill('0');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByText('Internal SOCKS', { exact: true })).toBeVisible();
+  await expect(page.getByText(/动态 SOCKS5/)).toBeVisible();
+
+  const createdCard = page.locator('.port-forward-card').filter({ hasText: 'Internal SOCKS' });
+  await createdCard.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(createdCard.getByRole('button', { name: '再次点击确认删除' })).toBeVisible();
+  await createdCard.getByRole('button', { name: '再次点击确认删除' }).click();
+  await expect(page.getByText('Internal SOCKS', { exact: true })).toHaveCount(0);
+});
+
 test('SFTP directory tree dividers resize both panes independently', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });

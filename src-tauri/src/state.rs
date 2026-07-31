@@ -1,7 +1,7 @@
 use crate::{
     browser_proxy, database::tunnel::DatabaseTunnelSession, http_tunnel::HttpTunnelSession,
-    proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle, terminal,
-    transfer_history::TransferHistory, updater::update_status, zmodem,
+    port_forward::PortForwardRuntimeEntry, proxy::SshProxyConfig, ssh_tunnel::SshTunnelHandle,
+    terminal, transfer_history::TransferHistory, updater::update_status, zmodem,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -30,6 +30,7 @@ pub(crate) struct AppState {
     pub(crate) database_sessions: Arc<Mutex<HashMap<String, Value>>>,
     pub(crate) database_tunnel_sessions: Arc<Mutex<HashMap<String, DatabaseTunnelSession>>>,
     pub(crate) http_tunnel_sessions: Arc<Mutex<HashMap<String, HttpTunnelSession>>>,
+    pub(crate) port_forward_runtimes: Arc<Mutex<HashMap<String, PortForwardRuntimeEntry>>>,
     pub(crate) update_state: Arc<Mutex<Value>>,
     pub(crate) update_operation_active: Arc<AtomicBool>,
     pub(crate) pending_tauri_update: Arc<Mutex<Option<tauri_plugin_updater::Update>>>,
@@ -90,6 +91,7 @@ impl AppState {
             database_sessions: Arc::new(Mutex::new(HashMap::new())),
             database_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
             http_tunnel_sessions: Arc::new(Mutex::new(HashMap::new())),
+            port_forward_runtimes: Arc::new(crate::port_forward::new_runtime_map()),
             sync_schedule_generation: Arc::new(Mutex::new(0)),
             ui_window: Arc::new(Mutex::new(None)),
             host_key_responses: Arc::new(Mutex::new(HashMap::new())),
@@ -115,6 +117,7 @@ impl AppState {
             database_sessions: self.database_sessions.clone(),
             database_tunnel_sessions: self.database_tunnel_sessions.clone(),
             http_tunnel_sessions: self.http_tunnel_sessions.clone(),
+            port_forward_runtimes: self.port_forward_runtimes.clone(),
             update_state: self.update_state.clone(),
             update_operation_active: self.update_operation_active.clone(),
             pending_tauri_update: self.pending_tauri_update.clone(),

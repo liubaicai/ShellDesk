@@ -9,7 +9,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    io,
+    io::{self, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::mpsc,
     task::JoinHandle,
@@ -134,6 +134,10 @@ pub(crate) enum SshTunnelError {
     OpenChannel(String),
     #[error("隧道转发失败：{0}")]
     Forward(#[source] std::io::Error),
+    #[error("动态 SOCKS 请求无效：{0}")]
+    InvalidSocksRequest(String),
+    #[error("请求远程端口转发失败：{0}")]
+    RemoteForward(String),
 }
 
 pub(crate) struct SshTunnelGuard {
@@ -208,6 +212,35 @@ pub(crate) struct SshTunnel {
     accept_task: JoinHandle<()>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum SshForwardMode {
+    Local {
+        bind_host: String,
+        bind_port: u16,
+        target_host: String,
+        target_port: u16,
+    },
+    Remote {
+        bind_host: String,
+        bind_port: u16,
+        target_host: String,
+        target_port: u16,
+    },
+    Dynamic {
+        bind_host: String,
+        bind_port: u16,
+    },
+}
+
+pub(crate) struct SshForwardRuntime {
+    bind_host: String,
+    bind_port: u16,
+    session: Arc<client::Handle<TunnelHandler>>,
+    cancellation: CancellationToken,
+    worker: JoinHandle<()>,
+    remote_request: Option<(String, u16)>,
+}
+
 pub(crate) enum SshTunnelHandle {
     Native(SshTunnel),
 }
@@ -250,10 +283,45 @@ impl SshTunnel {
     }
 }
 
+impl SshForwardRuntime {
+    pub(crate) fn bind_host(&self) -> &str {
+        &self.bind_host
+    }
+
+    pub(crate) fn bind_port(&self) -> u16 {
+        self.bind_port
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        self.session.is_closed() || self.worker.is_finished()
+    }
+
+    pub(crate) async fn shutdown(self) {
+        self.cancellation.cancel();
+        if let Some((host, port)) = self.remote_request {
+            let _ = self
+                .session
+                .cancel_tcpip_forward(host, u32::from(port))
+                .await;
+        }
+        let _ = self
+            .session
+            .disconnect(
+                russh::Disconnect::ByApplication,
+                "ShellDesk forwarding stopped",
+                "en",
+            )
+            .await;
+        self.worker.abort();
+    }
+}
+
 struct TunnelHandler {
     host: String,
     port: u16,
     known_hosts_path: Option<String>,
+    remote_forward_target: Option<(String, u16)>,
+    forwarding_cancellation: Option<CancellationToken>,
 }
 
 impl client::Handler for TunnelHandler {
@@ -296,6 +364,44 @@ impl client::Handler for TunnelHandler {
         }
 
         Ok(false)
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        _connected_address: &str,
+        _connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let Some((target_host, target_port)) = self.remote_forward_target.clone() else {
+            return Ok(());
+        };
+        let cancellation = self.forwarding_cancellation.clone().unwrap_or_default();
+        tokio::spawn(async move {
+            let mut local_stream =
+                match TcpStream::connect((target_host.as_str(), target_port)).await {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        eprintln!(
+                            "[ssh-tunnel] remote forwarding target {}:{} failed: {}",
+                            target_host, target_port, error
+                        );
+                        return;
+                    }
+                };
+            let mut ssh_stream = channel.into_stream();
+            tokio::select! {
+                result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
+                    if let Err(error) = result {
+                        eprintln!("[ssh-tunnel] remote forwarding stream failed: {error}");
+                    }
+                }
+                _ = cancellation.cancelled() => {}
+            }
+        });
+        Ok(())
     }
 }
 
@@ -376,6 +482,355 @@ pub(crate) async fn create_tunnel_for_connection(
     Ok((SshTunnelHandle::Native(tunnel), addr))
 }
 
+pub(crate) async fn create_managed_forward(
+    config: SshTunnelConfig,
+    mode: SshForwardMode,
+    state: AppState,
+    window: UiWindowRef,
+) -> Result<SshForwardRuntime, SshTunnelError> {
+    config.validate()?;
+    let cancellation = CancellationToken::new();
+    let remote_target = match &mode {
+        SshForwardMode::Remote {
+            target_host,
+            target_port,
+            ..
+        } => Some((target_host.clone(), *target_port)),
+        _ => None,
+    };
+    let timeout = Duration::from_millis(config.connect_timeout_ms.max(1_000));
+    let mut session = connect_profile_with_handler(
+        &config,
+        timeout,
+        "SSH",
+        &state,
+        &window,
+        remote_target,
+        Some(cancellation.clone()),
+    )
+    .await?;
+    let auth_profile = authentication_profile_from_config(&config);
+    authenticate_profile(&mut session, auth_profile, Some(state), Some(window))
+        .await
+        .map_err(SshTunnelError::SshAuth)?;
+    let session = Arc::new(session);
+
+    match mode {
+        SshForwardMode::Local {
+            bind_host,
+            bind_port,
+            target_host,
+            target_port,
+        } => {
+            let listener = TcpListener::bind((bind_host.as_str(), bind_port))
+                .await
+                .map_err(SshTunnelError::BindLocal)?;
+            let local_addr = listener.local_addr().map_err(SshTunnelError::LocalAddr)?;
+            let worker_session = Arc::clone(&session);
+            let worker_cancellation = cancellation.clone();
+            let worker = tokio::spawn(async move {
+                run_local_forward_listener(
+                    listener,
+                    worker_session,
+                    target_host,
+                    target_port,
+                    worker_cancellation,
+                )
+                .await;
+            });
+            Ok(SshForwardRuntime {
+                bind_host: local_addr.ip().to_string(),
+                bind_port: local_addr.port(),
+                session,
+                cancellation,
+                worker,
+                remote_request: None,
+            })
+        }
+        SshForwardMode::Dynamic {
+            bind_host,
+            bind_port,
+        } => {
+            let listener = TcpListener::bind((bind_host.as_str(), bind_port))
+                .await
+                .map_err(SshTunnelError::BindLocal)?;
+            let local_addr = listener.local_addr().map_err(SshTunnelError::LocalAddr)?;
+            let worker_session = Arc::clone(&session);
+            let worker_cancellation = cancellation.clone();
+            let worker = tokio::spawn(async move {
+                run_dynamic_forward_listener(listener, worker_session, worker_cancellation).await;
+            });
+            Ok(SshForwardRuntime {
+                bind_host: local_addr.ip().to_string(),
+                bind_port: local_addr.port(),
+                session,
+                cancellation,
+                worker,
+                remote_request: None,
+            })
+        }
+        SshForwardMode::Remote {
+            bind_host,
+            bind_port,
+            ..
+        } => {
+            let assigned_port = session
+                .tcpip_forward(bind_host.clone(), u32::from(bind_port))
+                .await
+                .map_err(|error| SshTunnelError::RemoteForward(error.to_string()))?;
+            let effective_port = if bind_port == 0 {
+                u16::try_from(assigned_port).map_err(|_| {
+                    SshTunnelError::RemoteForward(
+                        "SSH 服务端返回了无效的远程监听端口。".to_string(),
+                    )
+                })?
+            } else {
+                bind_port
+            };
+            let worker_cancellation = cancellation.clone();
+            let worker = tokio::spawn(async move {
+                worker_cancellation.cancelled().await;
+            });
+            Ok(SshForwardRuntime {
+                bind_host: bind_host.clone(),
+                bind_port: effective_port,
+                session,
+                cancellation,
+                worker,
+                remote_request: Some((bind_host, effective_port)),
+            })
+        }
+    }
+}
+
+async fn run_local_forward_listener(
+    listener: TcpListener,
+    session: Arc<client::Handle<TunnelHandler>>,
+    target_host: String,
+    target_port: u16,
+    cancellation: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => break,
+            accepted = listener.accept() => match accepted {
+                Ok((stream, peer)) => {
+                    let session = Arc::clone(&session);
+                    let target_host = target_host.clone();
+                    let stream_cancellation = cancellation.child_token();
+                    tokio::spawn(async move {
+                        if let Err(error) = forward_one_with_origin(
+                            session,
+                            stream,
+                            target_host,
+                            target_port,
+                            peer,
+                            stream_cancellation,
+                        ).await {
+                            eprintln!("[ssh-tunnel] {}", error.user_message());
+                        }
+                    });
+                }
+                Err(error) => {
+                    eprintln!("[ssh-tunnel] managed local accept failed: {error}");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn run_dynamic_forward_listener(
+    listener: TcpListener,
+    session: Arc<client::Handle<TunnelHandler>>,
+    cancellation: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => break,
+            accepted = listener.accept() => match accepted {
+                Ok((stream, peer)) => {
+                    let session = Arc::clone(&session);
+                    let stream_cancellation = cancellation.child_token();
+                    tokio::spawn(async move {
+                        if let Err(error) =
+                            forward_socks5(session, stream, peer, stream_cancellation).await
+                        {
+                            eprintln!("[ssh-tunnel] {}", error.user_message());
+                        }
+                    });
+                }
+                Err(error) => {
+                    eprintln!("[ssh-tunnel] managed SOCKS accept failed: {error}");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn forward_socks5(
+    session: Arc<client::Handle<TunnelHandler>>,
+    mut local_stream: TcpStream,
+    peer: SocketAddr,
+    cancellation: CancellationToken,
+) -> Result<(), SshTunnelError> {
+    let mut greeting = [0_u8; 2];
+    local_stream
+        .read_exact(&mut greeting)
+        .await
+        .map_err(SshTunnelError::Forward)?;
+    if greeting[0] != 5 || greeting[1] == 0 {
+        return Err(SshTunnelError::InvalidSocksRequest(
+            "仅支持 SOCKS5。".to_string(),
+        ));
+    }
+    let mut methods = vec![0_u8; usize::from(greeting[1])];
+    local_stream
+        .read_exact(&mut methods)
+        .await
+        .map_err(SshTunnelError::Forward)?;
+    if !methods.contains(&0) {
+        local_stream
+            .write_all(&[5, 0xff])
+            .await
+            .map_err(SshTunnelError::Forward)?;
+        return Err(SshTunnelError::InvalidSocksRequest(
+            "客户端未提供无需认证的方法。".to_string(),
+        ));
+    }
+    local_stream
+        .write_all(&[5, 0])
+        .await
+        .map_err(SshTunnelError::Forward)?;
+
+    let mut request = [0_u8; 4];
+    local_stream
+        .read_exact(&mut request)
+        .await
+        .map_err(SshTunnelError::Forward)?;
+    if request[0] != 5 || request[1] != 1 {
+        let _ = local_stream
+            .write_all(&[5, 7, 0, 1, 0, 0, 0, 0, 0, 0])
+            .await;
+        return Err(SshTunnelError::InvalidSocksRequest(
+            "仅支持 SOCKS5 CONNECT 请求。".to_string(),
+        ));
+    }
+    let target_host = read_socks5_host(&mut local_stream, request[3]).await?;
+    let mut port_bytes = [0_u8; 2];
+    local_stream
+        .read_exact(&mut port_bytes)
+        .await
+        .map_err(SshTunnelError::Forward)?;
+    let target_port = u16::from_be_bytes(port_bytes);
+    if target_port == 0 {
+        return Err(SshTunnelError::InvalidSocksRequest(
+            "目标端口不能为 0。".to_string(),
+        ));
+    }
+
+    let channel = match session
+        .channel_open_direct_tcpip(
+            target_host.as_str(),
+            u32::from(target_port),
+            peer.ip().to_string(),
+            u32::from(peer.port()),
+        )
+        .await
+    {
+        Ok(channel) => channel,
+        Err(error) => {
+            let _ = local_stream
+                .write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0])
+                .await;
+            return Err(SshTunnelError::OpenChannel(error.to_string()));
+        }
+    };
+    local_stream
+        .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+        .await
+        .map_err(SshTunnelError::Forward)?;
+    let mut ssh_stream = channel.into_stream();
+    tokio::select! {
+        result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
+            result.map_err(SshTunnelError::Forward)?;
+        }
+        _ = cancellation.cancelled() => {}
+    }
+    Ok(())
+}
+
+async fn read_socks5_host(
+    stream: &mut TcpStream,
+    address_type: u8,
+) -> Result<String, SshTunnelError> {
+    match address_type {
+        1 => {
+            let mut bytes = [0_u8; 4];
+            stream
+                .read_exact(&mut bytes)
+                .await
+                .map_err(SshTunnelError::Forward)?;
+            Ok(std::net::Ipv4Addr::from(bytes).to_string())
+        }
+        3 => {
+            let length = stream.read_u8().await.map_err(SshTunnelError::Forward)?;
+            if length == 0 {
+                return Err(SshTunnelError::InvalidSocksRequest(
+                    "目标主机名不能为空。".to_string(),
+                ));
+            }
+            let mut bytes = vec![0_u8; usize::from(length)];
+            stream
+                .read_exact(&mut bytes)
+                .await
+                .map_err(SshTunnelError::Forward)?;
+            String::from_utf8(bytes).map_err(|_| {
+                SshTunnelError::InvalidSocksRequest("目标主机名不是 UTF-8。".to_string())
+            })
+        }
+        4 => {
+            let mut bytes = [0_u8; 16];
+            stream
+                .read_exact(&mut bytes)
+                .await
+                .map_err(SshTunnelError::Forward)?;
+            Ok(std::net::Ipv6Addr::from(bytes).to_string())
+        }
+        _ => Err(SshTunnelError::InvalidSocksRequest(
+            "不支持的目标地址类型。".to_string(),
+        )),
+    }
+}
+
+async fn forward_one_with_origin(
+    session: Arc<client::Handle<TunnelHandler>>,
+    mut local_stream: TcpStream,
+    remote_host: String,
+    remote_port: u16,
+    peer: SocketAddr,
+    cancellation_token: CancellationToken,
+) -> Result<(), SshTunnelError> {
+    let channel = session
+        .channel_open_direct_tcpip(
+            remote_host.as_str(),
+            u32::from(remote_port),
+            peer.ip().to_string(),
+            u32::from(peer.port()),
+        )
+        .await
+        .map_err(|error| SshTunnelError::OpenChannel(error.to_string()))?;
+    let mut ssh_stream = channel.into_stream();
+    tokio::select! {
+        result = io::copy_bidirectional(&mut local_stream, &mut ssh_stream) => {
+            result.map_err(SshTunnelError::Forward)?;
+        }
+        _ = cancellation_token.cancelled() => {}
+    }
+    Ok(())
+}
+
 pub(crate) fn spawn_tunnel_shutdown(label: impl Into<String>, tunnel: SshTunnelHandle) {
     let label = label.into();
     tauri::async_runtime::spawn(async move {
@@ -393,6 +848,18 @@ async fn connect_profile(
     state: &AppState,
     window: &UiWindowRef,
 ) -> Result<client::Handle<TunnelHandler>, SshTunnelError> {
+    connect_profile_with_handler(config, timeout, label, state, window, None, None).await
+}
+
+async fn connect_profile_with_handler(
+    config: &SshTunnelConfig,
+    timeout: Duration,
+    label: &str,
+    state: &AppState,
+    window: &UiWindowRef,
+    remote_forward_target: Option<(String, u16)>,
+    forwarding_cancellation: Option<CancellationToken>,
+) -> Result<client::Handle<TunnelHandler>, SshTunnelError> {
     let ssh_config = Arc::new(client::Config {
         inactivity_timeout: if config.keepalive_enabled {
             None
@@ -409,6 +876,8 @@ async fn connect_profile(
         host: config.ssh_host.clone(),
         port: config.ssh_port,
         known_hosts_path: config.known_hosts_path.clone(),
+        remote_forward_target,
+        forwarding_cancellation,
     };
 
     let transport = open_transport(config, timeout, state, window).await?;

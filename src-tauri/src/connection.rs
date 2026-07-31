@@ -2,8 +2,8 @@ use crate::proxy::SshProxyConfig;
 use crate::ssh_tunnel::spawn_tunnel_shutdown;
 use crate::vault::read_store;
 use crate::{
-    error_string, https_url_origin, now, prevent_process_window, random_id, read_string_field,
-    read_u16_field, remote_fs,
+    error_string, https_url_origin, now, port_forward, prevent_process_window, random_id,
+    read_string_field, read_u16_field, remote_fs,
     russh_client::{is_key_auth_method, run_exec_command},
     sanitize_file_name, string_arg, terminal, unavailable_password_auth_error, whoami,
     ActiveConnection, AppState, ConnectionKind, DesktopProxySession, PrivilegeConfig, SshProfile,
@@ -627,8 +627,20 @@ pub(crate) async fn connect_ssh(
         .connections
         .lock()
         .map_err(error_string)?
-        .insert(id, connection);
+        .insert(id.clone(), connection);
     temp_key_guard.disarm();
+    if let Some(host_id) = raw_host
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    {
+        port_forward::autostart_for_connection(
+            state.clone(),
+            window,
+            id.clone(),
+            host_id.to_string(),
+        );
+    }
 
     Ok(json!({
         "ok": true,
@@ -716,6 +728,7 @@ pub(crate) fn close_connection_by_id(state: &AppState, connection_id: &str) -> R
     }
     let _ = remote_fs::cancel_transfers_for_connection(state, connection_id)?;
     let _ = terminal::close_terminals_for_connection(state, connection_id)?;
+    port_forward::close_for_connection(state, connection_id)?;
     close_desktop_proxies(&state.vnc_proxies, connection_id, "vnc")?;
     close_desktop_proxies(&state.rdp_proxies, connection_id, "rdp")?;
     let mut browser_proxies = state.browser_proxies.lock().map_err(error_string)?;

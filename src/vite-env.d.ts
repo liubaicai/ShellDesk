@@ -876,6 +876,38 @@ interface ShellDeskSftpRuntimeTask {
   hostName?: string;
 }
 
+type ShellDeskPortForwardKind = 'local' | 'remote' | 'dynamic';
+type ShellDeskPortForwardStatus = 'stopped' | 'starting' | 'running' | 'recovering' | 'error';
+
+interface ShellDeskPortForwardProfile {
+  id?: string;
+  hostId: string;
+  name: string;
+  kind: ShellDeskPortForwardKind;
+  bindHost: string;
+  bindPort: number;
+  targetHost: string;
+  targetPort: number;
+  autostart: boolean;
+  reconnect: boolean;
+  allowNonLoopback: boolean;
+}
+
+interface ShellDeskPortForwardRuntime {
+  connectionId?: string;
+  status: ShellDeskPortForwardStatus;
+  bindHost?: string;
+  bindPort?: number;
+  retryAttempt?: number;
+  error?: string;
+  updatedAt?: string;
+}
+
+interface ShellDeskPortForwardRecord {
+  profile: ShellDeskPortForwardProfile & { id: string };
+  runtime: ShellDeskPortForwardRuntime;
+}
+
 interface ShellDeskConnectionControls {
   connect: (host: ShellDeskHostConnectionRequest) => Promise<ShellDeskConnectionInfo>;
   openLocal: () => Promise<ShellDeskConnectionInfo>;
@@ -970,6 +1002,11 @@ interface ShellDeskConnectionControls {
   httpTunnelPost: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
   httpTunnelPut: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
   httpTunnelDelete: (request: ShellDeskHttpTunnelRequest) => Promise<unknown>;
+  listPortForwards: (connectionId: string) => Promise<ShellDeskPortForwardRecord[]>;
+  savePortForward: (profile: ShellDeskPortForwardProfile) => Promise<ShellDeskPortForwardProfile & { id: string }>;
+  deletePortForward: (profileId: string) => Promise<boolean>;
+  startPortForward: (connectionId: string, profileId: string) => Promise<ShellDeskPortForwardRuntime>;
+  stopPortForward: (profileId: string) => Promise<boolean>;
   mysqlConnect: (connectionId: string, config: ShellDeskMysqlConnectConfig) => Promise<ShellDeskMysqlConnectResult>;
   mysqlDisconnect: (connectionId: string, mysqlId: string) => Promise<boolean>;
   mysqlDatabases: (connectionId: string, mysqlId: string) => Promise<string[]>;
