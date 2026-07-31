@@ -9,6 +9,9 @@ use crate::{error_string, random_id};
 
 pub(super) const MAX_REMOTE_SYNC_BYTES: usize = 25 * 1024 * 1024;
 const WRITE_VERIFY_ATTEMPTS: usize = 3;
+const MAX_WEBDAV_ERROR_BYTES: usize = 64 * 1024;
+const MAX_WEBDAV_URL_LENGTH: usize = 2_048;
+const MAX_WEBDAV_REMOTE_PATH_LENGTH: usize = 1_024;
 
 pub(super) fn normalize_webdav_url(value: &str, required: bool) -> Result<String, String> {
     let trimmed = value.trim();
@@ -18,9 +21,15 @@ pub(super) fn normalize_webdav_url(value: &str, required: bool) -> Result<String
         }
         return Ok(String::new());
     }
+    if trimmed.len() > MAX_WEBDAV_URL_LENGTH {
+        return Err("WebDAV 地址过长。".to_string());
+    }
     let mut parsed = reqwest::Url::parse(trimmed).map_err(|_| "WebDAV 地址无效。".to_string())?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err("WebDAV 地址只支持 http 或 https。".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("WebDAV 地址不能包含用户名或密码，请使用独立凭据字段。".to_string());
     }
     parsed.set_fragment(None);
     Ok(parsed.to_string())
@@ -90,6 +99,9 @@ fn webdav_url(config: &Value, remote_path: &str) -> Result<String, String> {
 }
 
 pub(super) fn normalize_webdav_remote_path(value: &str) -> Result<String, String> {
+    if value.len() > MAX_WEBDAV_REMOTE_PATH_LENGTH {
+        return Err("远程同步文件路径过长。".to_string());
+    }
     let normalized = value.replace('\\', "/").replace("//", "/");
     let path = if normalized.starts_with('/') {
         normalized
@@ -161,7 +173,10 @@ pub(super) fn webdav_test_path(config: &Value) -> String {
 
 pub(super) async fn webdav_response_error(response: reqwest::Response, action: &str) -> String {
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
+    let body = webdav_response_body_limited(response, MAX_WEBDAV_ERROR_BYTES)
+        .await
+        .unwrap_or_default();
+    let body = String::from_utf8_lossy(&body);
     let detail = body.split_whitespace().collect::<Vec<_>>().join(" ");
     if detail.is_empty() {
         format!("{action}失败：{status}")
@@ -270,6 +285,28 @@ mod tests {
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+
+    #[test]
+    fn webdav_urls_keep_credentials_out_of_the_public_endpoint() {
+        assert_eq!(
+            normalize_webdav_url("https://dav.example.com/root", true).unwrap(),
+            "https://dav.example.com/root"
+        );
+        assert!(
+            normalize_webdav_url("https://user:secret@dav.example.com/root", true)
+                .unwrap_err()
+                .contains("不能包含用户名或密码")
+        );
+    }
+
+    #[test]
+    fn webdav_remote_paths_are_bounded() {
+        assert_eq!(
+            normalize_webdav_remote_path("/ShellDesk/sync.json").unwrap(),
+            "/ShellDesk/sync.json"
+        );
+        assert!(normalize_webdav_remote_path(&format!("/{}", "a".repeat(1_025))).is_err());
+    }
 
     async fn serve_get_responses(
         listener: TcpListener,

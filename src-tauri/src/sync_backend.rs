@@ -266,6 +266,37 @@ pub(crate) fn save_sync_config(state: &AppState, incoming: Value) -> Result<Valu
     let incoming_object = incoming
         .as_object()
         .ok_or_else(|| "同步设置无效。".to_string())?;
+    let enabled = incoming_object
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| {
+            fallback_config
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        });
+    if let Some(webdav_url) = incoming_object.get("webdavUrl").and_then(Value::as_str) {
+        normalize_webdav_url(webdav_url, enabled)?;
+    }
+    if let Some(remote_path) = incoming_object
+        .get("webdavRemotePath")
+        .and_then(Value::as_str)
+    {
+        normalize_webdav_remote_path(remote_path)?;
+    }
+    for (key, label) in [
+        ("webdavUsername", "WebDAV 用户名"),
+        ("webdavPassword", "WebDAV 密码"),
+        ("syncPassphrase", "同步密码"),
+    ] {
+        if incoming_object
+            .get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.len() > 4_096 || value.chars().any(char::is_control))
+        {
+            return Err(format!("{label}过长或包含控制字符。"));
+        }
+    }
     let next_config = normalize_sync_config(&incoming, &fallback_config);
     let current_secrets = current.get("secrets").cloned().unwrap_or_else(|| json!({}));
     let next_secrets = json!({
