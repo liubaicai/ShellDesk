@@ -1114,7 +1114,14 @@ fn config_from_profile(
     let connect_timeout_ms = overrides
         .and_then(|value| value.get("connectTimeoutMs"))
         .and_then(Value::as_u64)
-        .unwrap_or(15_000);
+        .filter(|value| (3_000..=120_000).contains(value))
+        .unwrap_or_else(|| {
+            if profile.connect_timeout_ms == 0 {
+                default_connect_timeout_ms()
+            } else {
+                profile.connect_timeout_ms.clamp(3_000, 120_000)
+            }
+        });
     let keepalive_enabled = overrides
         .and_then(|value| value.get("keepaliveEnabled"))
         .and_then(Value::as_bool)
@@ -1408,6 +1415,31 @@ mod tests {
         assert_eq!(config.ssh_key_path, None);
         assert_eq!(config.ssh_key_passphrase, None);
         config.validate().unwrap();
+    }
+
+    #[test]
+    fn profile_mapping_preserves_connection_timeout_unless_explicitly_overridden() {
+        let mut profile = base_profile("agent");
+        profile.connect_timeout_ms = 42_000;
+
+        let inherited = config_from_profile(&profile, "127.0.0.1", 5900, None);
+        assert_eq!(inherited.connect_timeout_ms, 42_000);
+
+        let overridden = config_from_profile(
+            &profile,
+            "127.0.0.1",
+            5900,
+            Some(&serde_json::json!({ "connectTimeoutMs": 9_000 })),
+        );
+        assert_eq!(overridden.connect_timeout_ms, 9_000);
+
+        let invalid_override = config_from_profile(
+            &profile,
+            "127.0.0.1",
+            5900,
+            Some(&serde_json::json!({ "connectTimeoutMs": 1 })),
+        );
+        assert_eq!(invalid_override.connect_timeout_ms, 42_000);
     }
 
     #[test]
