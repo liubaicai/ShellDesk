@@ -654,6 +654,32 @@ struct RemoteDownloadItem {
     fingerprint: TransferSourceFingerprint,
 }
 
+fn local_download_target_key(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    {
+        normalized.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        normalized
+    }
+}
+
+fn reserve_transfer_target(
+    targets: &mut BTreeSet<String>,
+    target: String,
+    source: &str,
+) -> Result<(), String> {
+    if targets.insert(target.clone()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "多个传输源会写入同一目标 '{target}'，已拒绝可能覆盖数据的传输计划：{source}"
+        ))
+    }
+}
+
 async fn download_remote_file(
     sftp: &SftpSession,
     local_dir: &Path,
@@ -749,6 +775,7 @@ async fn collect_remote_download_plan(
     let mut directories = Vec::new();
     let mut files = Vec::new();
     let mut visited_directories = BTreeSet::new();
+    let mut planned_targets = BTreeSet::new();
     let mut processed_entries = 0_usize;
     for root in roots {
         transfer.check_canceled()?;
@@ -765,6 +792,11 @@ async fn collect_remote_download_plan(
             .map_err(|error| format!("SFTP 读取下载项失败：{error}"))?;
         if metadata.is_dir() {
             let root_relative = PathBuf::from(&name);
+            reserve_transfer_target(
+                &mut planned_targets,
+                local_download_target_key(&root_relative),
+                root,
+            )?;
             let mut stack = vec![(root.clone(), root_relative.clone())];
             while let Some((remote_dir, relative_dir)) = stack.pop() {
                 transfer.check_canceled()?;
@@ -793,6 +825,11 @@ async fn collect_remote_download_plan(
                     let child_remote = join_remote_path(&remote_dir, &remote_name);
                     let child_relative = relative_dir.join(child_name);
                     let child_metadata = entry.metadata();
+                    reserve_transfer_target(
+                        &mut planned_targets,
+                        local_download_target_key(&child_relative),
+                        &child_remote,
+                    )?;
                     if child_metadata.is_dir() {
                         stack.push((child_remote, child_relative));
                     } else {
@@ -808,6 +845,11 @@ async fn collect_remote_download_plan(
                 }
             }
         } else {
+            reserve_transfer_target(
+                &mut planned_targets,
+                local_download_target_key(Path::new(&name)),
+                root,
+            )?;
             let fingerprint = remote_source_fingerprint(root, &metadata);
             files.push(RemoteDownloadItem {
                 remote_path: root.clone(),
@@ -1166,6 +1208,7 @@ async fn collect_local_upload_plan(
 ) -> Result<(Vec<String>, Vec<LocalUploadItem>), String> {
     let mut directories = Vec::new();
     let mut files = Vec::new();
+    let mut planned_targets = BTreeSet::new();
     for item in items {
         transfer.check_canceled()?;
         let local_path = PathBuf::from(item.get("path").and_then(Value::as_str).unwrap_or(""));
@@ -1186,6 +1229,11 @@ async fn collect_local_upload_plan(
         let target = join_remote_path(remote_dir, &remote_name);
         match inspect_local_upload_path(local_path.clone(), transfer).await? {
             LocalUploadPathKind::Directory => {
+                reserve_transfer_target(
+                    &mut planned_targets,
+                    target.clone(),
+                    &local_path.to_string_lossy(),
+                )?;
                 let mut stack = vec![(local_path, target)];
                 while let Some((local_dir, remote_target)) = stack.pop() {
                     transfer.check_canceled()?;
@@ -1200,9 +1248,19 @@ async fn collect_local_upload_plan(
                         );
                         match entry.kind {
                             LocalUploadPathKind::Directory => {
+                                reserve_transfer_target(
+                                    &mut planned_targets,
+                                    child_target.clone(),
+                                    &child_path.to_string_lossy(),
+                                )?;
                                 stack.push((child_path, child_target))
                             }
                             LocalUploadPathKind::File { size, fingerprint } => {
+                                reserve_transfer_target(
+                                    &mut planned_targets,
+                                    child_target.clone(),
+                                    &child_path.to_string_lossy(),
+                                )?;
                                 files.push(LocalUploadItem {
                                     local_path: child_path,
                                     remote_path: child_target,
@@ -1217,6 +1275,11 @@ async fn collect_local_upload_plan(
                 }
             }
             LocalUploadPathKind::File { size, fingerprint } => {
+                reserve_transfer_target(
+                    &mut planned_targets,
+                    target.clone(),
+                    &local_path.to_string_lossy(),
+                )?;
                 files.push(LocalUploadItem {
                     local_path,
                     remote_path: target,
@@ -1387,12 +1450,18 @@ pub(crate) async fn upload_sftp_paths(
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_tree_snapshots, is_dot_directory, remote_path_is_within,
-        remove_local_overwrite_target, top_level_transfer_summaries, transfer_conflict_policy,
-        TransferConflictPolicy, TreeSnapshotEntry,
+        compare_tree_snapshots, is_dot_directory, local_download_target_key, remote_path_is_within,
+        remove_local_overwrite_target, reserve_transfer_target, sanitize_local_file_name,
+        top_level_transfer_summaries, transfer_conflict_policy, TransferConflictPolicy,
+        TreeSnapshotEntry,
     };
     use serde_json::json;
-    use std::{collections::BTreeMap, fs, time::SystemTime};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+        path::Path,
+        time::SystemTime,
+    };
 
     fn entry(kind: &'static str, size: u64) -> TreeSnapshotEntry {
         TreeSnapshotEntry { kind, size }
@@ -1404,6 +1473,19 @@ mod tests {
         assert!(is_dot_directory(".."));
         assert!(!is_dot_directory(".config"));
         assert!(!is_dot_directory("folder"));
+    }
+
+    #[test]
+    fn transfer_plans_reject_two_sources_that_normalize_to_one_target() {
+        let mut targets = BTreeSet::new();
+        let first_name = sanitize_local_file_name("a:b.txt", "download");
+        let second_name = sanitize_local_file_name("a?b.txt", "download");
+        let first = local_download_target_key(Path::new("release").join(first_name).as_path());
+        let second = local_download_target_key(Path::new("release").join(second_name).as_path());
+
+        reserve_transfer_target(&mut targets, first, "/srv/a:b.txt").unwrap();
+        let error = reserve_transfer_target(&mut targets, second, "/srv/a?b.txt").unwrap_err();
+        assert!(error.contains("同一目标"));
     }
 
     #[test]
