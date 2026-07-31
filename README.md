@@ -155,7 +155,7 @@ ShellDesk is useful for:
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing
 - Config import/export covers hosts, keys, settings, and browser bookmarks
-- WebDAV sync can back up and restore the local vault across machines, and the updater checks GitHub releases through Tauri's update flow
+- WebDAV sync can back up and restore the local vault across machines; uploads are read back and checksum-verified before the local sync baseline advances, while strict format/version invariants prevent ambiguous migrations. The updater checks GitHub releases through Tauri's update flow
 
 ---
 

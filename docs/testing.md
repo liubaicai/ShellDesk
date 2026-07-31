@@ -87,7 +87,7 @@ This runs:
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo test`
 
-Rust tests include shared fixtures from `src-tauri/src/test_helpers.rs`, async database tunnel contract coverage, IPC database channel classification, and HTTP tunnel parameter/timeout validation.
+Rust tests include shared fixtures from `src-tauri/src/test_helpers.rs`, async database tunnel contract coverage, IPC database channel classification, HTTP tunnel parameter/timeout validation, WebDAV write/read-back verification, and property-based sync merge/migration invariants.
 
 ## Coverage
 

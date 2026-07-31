@@ -56,6 +56,12 @@ pub(super) fn decrypt_remote_document(wrapper: &Value, passphrase: &str) -> Resu
     if wrapper.get("format").and_then(Value::as_str) != Some("shelldesk-sync-encrypted") {
         return Err("远端同步文件不是 ShellDesk 加密同步包。".to_string());
     }
+    if wrapper.get("version").and_then(Value::as_u64) != Some(1)
+        || wrapper.get("algorithm").and_then(Value::as_str) != Some("aes-256-gcm")
+        || wrapper.get("kdf").and_then(Value::as_str) != Some("pbkdf2-sha256")
+    {
+        return Err("远端同步加密包版本或算法不受支持。".to_string());
+    }
     let decode = |key: &str| -> Result<Vec<u8>, String> {
         base64::engine::general_purpose::STANDARD
             .decode(wrapper.get(key).and_then(Value::as_str).unwrap_or(""))
@@ -72,8 +78,10 @@ pub(super) fn decrypt_remote_document(wrapper: &Value, passphrase: &str) -> Resu
     let iterations = wrapper
         .get("iterations")
         .and_then(Value::as_u64)
-        .unwrap_or(u64::from(SYNC_KDF_ITERATIONS))
-        .clamp(MIN_SYNC_KDF_ITERATIONS, MAX_SYNC_KDF_ITERATIONS) as u32;
+        .filter(|iterations| {
+            (MIN_SYNC_KDF_ITERATIONS..=MAX_SYNC_KDF_ITERATIONS).contains(iterations)
+        })
+        .ok_or_else(|| DAMAGED_SYNC_DOCUMENT_ERROR.to_string())? as u32;
     ciphertext.extend(tag);
     let key = derive_sync_key(passphrase, &salt, iterations);
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(error_string)?;

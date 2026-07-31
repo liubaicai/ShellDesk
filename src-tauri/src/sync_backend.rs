@@ -16,6 +16,9 @@ mod crypto;
 mod merge;
 #[path = "sync_backend/records.rs"]
 mod records;
+#[cfg(test)]
+#[path = "sync_backend/store_tests.rs"]
+mod store_tests;
 #[path = "sync_backend/webdav.rs"]
 mod webdav;
 
@@ -31,8 +34,9 @@ use records::{
     sync_summary,
 };
 use webdav::{
-    ensure_webdav_directories, normalize_webdav_remote_path, normalize_webdav_url, webdav_request,
-    webdav_response_error, webdav_test_path, webdav_write_precondition_headers,
+    ensure_webdav_directories, normalize_webdav_remote_path, normalize_webdav_url,
+    verify_webdav_write, webdav_request, webdav_response_body_limited, webdav_response_error,
+    webdav_test_path, webdav_write_precondition_headers, MAX_REMOTE_SYNC_BYTES,
 };
 
 fn sync_path(state: &AppState) -> PathBuf {
@@ -83,6 +87,9 @@ fn read_sync_store(state: &AppState) -> Result<Value, String> {
         .and_then(Value::as_str)
         .is_some_and(|value| value == "shelldesk-sync-settings")
     {
+        if raw.get("version").and_then(Value::as_u64) != Some(1) {
+            return Err("本地同步设置版本不受支持，已拒绝按旧格式迁移。".to_string());
+        }
         if raw
             .get("protected")
             .and_then(Value::as_bool)
@@ -91,6 +98,9 @@ fn read_sync_store(state: &AppState) -> Result<Value, String> {
             return normalize_electron_protected_sync_store(raw);
         }
         return Ok(normalize_sync_store(raw));
+    }
+    if raw.get("format").is_some() {
+        return Err("本地同步设置格式不受支持，已拒绝隐式迁移。".to_string());
     }
     Ok(normalize_legacy_sync_store(raw))
 }
@@ -938,12 +948,12 @@ async fn read_remote_sync_document(config: &Value, secrets: &Value) -> Result<Va
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let text = response.text().await.map_err(error_string)?;
-    if text.is_empty() || text.len() > 25 * 1024 * 1024 {
+    let bytes = webdav_response_body_limited(response, MAX_REMOTE_SYNC_BYTES).await?;
+    if bytes.is_empty() {
         return Err("远端同步文件为空或超过大小限制。".to_string());
     }
     let raw: Value =
-        serde_json::from_str(&text).map_err(|_| "远端同步文件内容无效。".to_string())?;
+        serde_json::from_slice(&bytes).map_err(|_| "远端同步文件内容无效。".to_string())?;
     let passphrase = secrets
         .get("syncPassphrase")
         .and_then(Value::as_str)
@@ -955,7 +965,7 @@ async fn read_remote_sync_document(config: &Value, secrets: &Value) -> Result<Va
         raw
     };
     Ok(json!({
-        "document": sanitize_remote_document(decrypted),
+        "document": sanitize_remote_document(decrypted)?,
         "etag": etag,
         "exists": true
     }))
@@ -983,7 +993,7 @@ async fn write_remote_sync_document(
         secrets,
         "PUT",
         remote_path,
-        Some(body),
+        Some(body.clone()),
         Some("application/json; charset=utf-8"),
         &webdav_write_precondition_headers(etag, exists),
     )
@@ -1000,7 +1010,13 @@ async fn write_remote_sync_document(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_string();
-    Ok(json!({ "preconditionFailed": false, "etag": next_etag }))
+    let verified = verify_webdav_write(config, secrets, remote_path, &body, &next_etag).await?;
+    Ok(json!({
+        "preconditionFailed": false,
+        "etag": verified.get("etag").and_then(Value::as_str).unwrap_or(""),
+        "verified": true,
+        "verifiedSha256": verified.get("sha256").and_then(Value::as_str).unwrap_or("")
+    }))
 }
 
 fn base_sync_result(
