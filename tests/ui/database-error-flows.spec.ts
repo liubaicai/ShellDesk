@@ -403,6 +403,54 @@ test('host table keeps every cell border aligned when tags wrap', async ({ page 
   expect(new Set(cellMetrics.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
 });
 
+test('host inventory keyboard navigation crosses pages and opens the selected host', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 420 });
+  await gotoHarness(page, 'component=host-list-keyboard&theme=dark');
+
+  const hostList = page.locator('.host-table-frame');
+  await hostList.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-host-id="large-host-1"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('PageDown');
+  await expect(page.getByRole('button', { name: '2', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-host-id="large-host-11"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('button', { name: '3', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-host-id="large-host-25"]')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('opened-host')).toHaveText('large-host-25');
+});
+
+test('SD-Agent host picker virtualizes 5000 hosts and supports keyboard search', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  await page.setViewportSize({ width: 420, height: 700 });
+  await gotoHarness(page, 'component=agent-host-picker&theme=dark');
+  expect(runtimeErrors).toEqual([]);
+
+  const listbox = page.getByRole('listbox', { name: 'SD-Agent 主机列表' });
+  await expect(listbox).toBeVisible();
+  const renderedOptionCount = await listbox.getByRole('option').count();
+  expect(renderedOptionCount).toBeGreaterThan(5);
+  expect(renderedOptionCount).toBeLessThan(40);
+  await listbox.focus();
+  await page.keyboard.press('End');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', 'agent-host-option-agent-host-05000');
+  await expect(listbox.getByRole('option', { name: /Agent host 05000/ })).toBeVisible();
+
+  const search = page.getByRole('searchbox', { name: '搜索 SD-Agent 主机' });
+  await search.fill('host-04200.example.test');
+  await expect(listbox.getByRole('option')).toHaveCount(1);
+  await listbox.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', 'agent-host-option-agent-host-04200');
+  await expect(page.getByText('1/5000')).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('host migration previews duplicates and applies the selected strategy', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('console', (message) => {

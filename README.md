@@ -94,7 +94,7 @@ ShellDesk is useful for:
 ### Hosts and Credentials
 
 - Create, edit, delete, search, group, tag, annotate, and detect system types for SSH hosts
-- Switch between card and table views, filter hosts by connection state, sort recent activity, paginate large inventories, and inspect connection/system details without leaving the list
+- Switch between card and table views, filter hosts by connection state, sort recent activity, paginate and keyboard-navigate large inventories, and inspect connection/system details without leaving the list
 - Migrate MobaXterm bookmarks, Xshell sessions, SecureCRT sessions, or CSV inventories through a preview-first wizard with validation, duplicate policies, secret opt-in, and a guarded one-step undo
 - Supports password login, private-key login, SSH agent login, proxy/jump-host settings, local mode, and credential prompts before connecting
 - Quick connect parses inputs such as `ssh user@example.com -p 2222`
@@ -149,7 +149,7 @@ ShellDesk is useful for:
 - Supports dark, light, and system themes
 - Supports accent color, system fonts, default host view, desktop wallpaper, and remote desktop layout
 - Supports AI provider, API format, base URL, API key, and model discovery settings for the AI Assistant and Code Editor
-- SD-Agent also has a main-window workspace for tasks that span saved hosts, with reusable host context and direct handoff into built-in tools
+- SD-Agent also has a main-window workspace for tasks that span saved hosts, with a searchable virtualized host picker, reusable host context, and direct handoff into built-in tools
 - Can expose saved remote hosts to other local AI clients through a loopback-only MCP service, with a credential-free Skill ZIP export and built-in call examples
 - UI language supports English and Simplified Chinese; first launch follows the system language
 - Logs record connection, host, key, config, and system operations with search, filters, and clearing

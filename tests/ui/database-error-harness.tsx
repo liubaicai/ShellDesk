@@ -1,7 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import type { AgentWorkspaceHost } from '../../src/ai/agentWorkspaceTools';
 import type { Host } from '../../src/appHostModel';
+import AgentHostPicker from '../../src/components/AgentHostPicker';
 import HostImportWizard from '../../src/components/HostImportWizard';
 import HostListPanel from '../../src/components/HostListPanel';
 import RemoteBrowser from '../../src/components/remote-desktop/RemoteBrowser';
@@ -87,6 +89,35 @@ const hostListFixtures = [
     lastConnectionError: '',
   },
 ];
+const largeHostListFixtures = Array.from({ length: 25 }, (_, index) => ({
+  ...hostListFixtures[index % hostListFixtures.length],
+  id: `large-host-${index + 1}`,
+  name: `Large host ${String(index + 1).padStart(2, '0')}`,
+  address: `10.20.${Math.floor(index / 254)}.${(index % 254) + 1}`,
+  tags: index % 2 ? ['large'] : ['large', 'keyboard'],
+}));
+const agentHostFixtures: AgentWorkspaceHost[] = Array.from({ length: 5_000 }, (_, index) => ({
+  id: `agent-host-${String(index + 1).padStart(5, '0')}`,
+  name: `Agent host ${String(index + 1).padStart(5, '0')}`,
+  address: `host-${String(index + 1).padStart(5, '0')}.example.test`,
+  port: 22,
+  username: index % 2 ? 'deploy' : 'root',
+  authMethod: 'password',
+  password: '',
+  keyId: '',
+  keyPath: '',
+  passphrase: '',
+  privilegeMode: 'sudo',
+  rootPassword: '',
+  jumpHostId: '',
+  proxyProfileId: '',
+  keepaliveEnabled: true,
+  keepaliveIntervalMs: 15_000,
+  systemType: 'linux',
+  systemName: 'Linux',
+  group: index % 2 ? 'Production' : 'Development',
+  lastConnectionStatus: 'unknown',
+}));
 const emptyProxyProfiles = new Map<string, ShellDeskProxyProfile>();
 
 function createSftpEntries(prefix: string) {
@@ -932,6 +963,73 @@ function HostImportHarness() {
   );
 }
 
+function HostListHarness({ large = false }: { large?: boolean }) {
+  const fixtures = large ? largeHostListFixtures : hostListFixtures;
+  const [page, setPage] = React.useState(1);
+  const [selectedHostId, setSelectedHostId] = React.useState<string | null>(null);
+  const [openedHostId, setOpenedHostId] = React.useState('');
+  const pageSize = large ? 10 : fixtures.length;
+  const pageCount = Math.max(1, Math.ceil(fixtures.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedHosts = fixtures.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  return (
+    <div style={{ width: 900, height: 320, padding: 24 }}>
+      <HostListPanel
+        hosts={fixtures}
+        filteredHosts={fixtures}
+        pagedHosts={pagedHosts}
+        isVaultReady
+        appLanguage="zh-CN"
+        hostViewMode="list"
+        selectedHostId={selectedHostId}
+        onSelectHost={setSelectedHostId}
+        onOpenHost={(host) => setOpenedHostId(host.id)}
+        onOpenSftp={() => undefined}
+        onDeleteHost={() => undefined}
+        onEditHost={() => undefined}
+        onQuickAssignGroup={() => undefined}
+        onQuickAddTag={() => undefined}
+        groupOptions={[]}
+        tagOptions={[]}
+        hostPage={currentPage}
+        hostPageCount={pageCount}
+        hostPageNumbers={Array.from({ length: pageCount }, (_, index) => index + 1)}
+        hostPageSize={pageSize}
+        hostPageSizeOptions={[pageSize]}
+        onPageSizeChange={() => undefined}
+        onPageChange={setPage}
+        isHostConnecting={() => false}
+        proxyProfileById={emptyProxyProfiles}
+        closeHostCardMenu={() => undefined}
+        formatRelativeTime={() => '刚刚'}
+        getHostChipClassName={(kind) => `host-chip ${kind}-chip tone-1`}
+        getHostConnectionStateView={() => ({ className: '', title: '已连接' })}
+        getHostSystemLabel={() => 'Debian GNU/Linux'}
+        getProxyConfigTypeLabel={() => ''}
+        renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
+      />
+      <output data-testid="opened-host">{openedHostId}</output>
+    </div>
+  );
+}
+
+function AgentHostPickerHarness() {
+  const [selectedHostId, setSelectedHostId] = React.useState<string | null>(null);
+  return (
+    <div style={{ display: 'flex', width: 280, height: 620, background: 'var(--surface-elevated)' }}>
+      <AgentHostPicker
+        hosts={agentHostFixtures}
+        selectedHostId={selectedHostId}
+        conversationStatuses={{}}
+        language="zh-CN"
+        hostLabel={(host) => host.name}
+        onSelectHost={(host) => setSelectedHostId(host.id)}
+      />
+    </div>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(window.location.search);
   const component = params.get('component') ?? 'mysql';
@@ -1017,44 +1115,15 @@ function App() {
   }
 
   if (component === 'host-list') {
-    return (
-      <div style={{ width: 900, height: 320, padding: 24 }}>
-        <HostListPanel
-          hosts={hostListFixtures}
-          filteredHosts={hostListFixtures}
-          pagedHosts={hostListFixtures}
-          isVaultReady
-          appLanguage="zh-CN"
-          hostViewMode="list"
-          selectedHostId={null}
-          onSelectHost={() => undefined}
-          onOpenHost={() => undefined}
-          onOpenSftp={() => undefined}
-          onDeleteHost={() => undefined}
-          onEditHost={() => undefined}
-          onQuickAssignGroup={() => undefined}
-          onQuickAddTag={() => undefined}
-          groupOptions={[]}
-          tagOptions={[]}
-          hostPage={1}
-          hostPageCount={1}
-          hostPageNumbers={[1]}
-          hostPageSize={10}
-          hostPageSizeOptions={[10]}
-          onPageSizeChange={() => undefined}
-          onPageChange={() => undefined}
-          isHostConnecting={() => false}
-          proxyProfileById={emptyProxyProfiles}
-          closeHostCardMenu={() => undefined}
-          formatRelativeTime={() => '刚刚'}
-          getHostChipClassName={(kind) => `host-chip ${kind}-chip tone-1`}
-          getHostConnectionStateView={() => ({ className: '', title: '已连接' })}
-          getHostSystemLabel={() => 'Debian GNU/Linux'}
-          getProxyConfigTypeLabel={() => ''}
-          renderHostSystemIcon={() => <span className="host-avatar host-system-icon host-system-unknown">D</span>}
-        />
-      </div>
-    );
+    return <HostListHarness />;
+  }
+
+  if (component === 'host-list-keyboard') {
+    return <HostListHarness large />;
+  }
+
+  if (component === 'agent-host-picker') {
+    return <AgentHostPickerHarness />;
   }
 
   if (component === 'transfer-center') {

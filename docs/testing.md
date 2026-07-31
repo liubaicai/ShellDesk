@@ -37,6 +37,8 @@ The unit gate first type-checks `tests/unit` with `tsconfig.unit.json`, then use
 
 `tests/unit/host-import.spec.ts` covers MobaXterm, Xshell, SecureCRT, and CSV parsing, malformed rows, duplicate detection, all three duplicate policies, secret opt-in, and SecureCRT multi-session XML. The UI smoke suite also exercises the migration preview and apply result with a mocked native file picker.
 
+`tests/unit/host-large-list.spec.ts` locks host-list and virtual-picker index navigation at page boundaries. The UI smoke suite crosses inventory pages with the keyboard and verifies that the SD-Agent picker renders only a small visible window from a 5,000-host fixture while preserving search and active selection.
+
 ## Build Verification
 
 ```bash

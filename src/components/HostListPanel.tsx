@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -38,6 +38,31 @@ interface HostListPanelHost {
 interface HostConnectionStateView {
   className: string;
   title: string;
+}
+
+export function getNextHostListIndex(
+  key: string,
+  currentIndex: number,
+  itemCount: number,
+  pageSize: number,
+) {
+  if (!itemCount) return -1;
+  switch (key) {
+    case 'ArrowUp':
+      return currentIndex < 0 ? itemCount - 1 : Math.max(0, currentIndex - 1);
+    case 'ArrowDown':
+      return Math.min(itemCount - 1, currentIndex < 0 ? 0 : currentIndex + 1);
+    case 'Home':
+      return 0;
+    case 'End':
+      return itemCount - 1;
+    case 'PageUp':
+      return Math.max(0, (currentIndex < 0 ? 0 : currentIndex) - pageSize);
+    case 'PageDown':
+      return Math.min(itemCount - 1, (currentIndex < 0 ? 0 : currentIndex) + pageSize);
+    default:
+      return currentIndex;
+  }
 }
 
 function getHostRouteLabels(appLanguage: AppLanguage) {
@@ -187,8 +212,62 @@ function HostListPanel<THost extends HostListPanelHost>({
   getProxyConfigTypeLabel,
   renderHostSystemIcon,
 }: HostListPanelProps<THost>) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const keyboardHelpId = 'host-list-keyboard-help';
+
+  useEffect(() => {
+    if (!selectedHostId) return;
+    const selectedElement = [...(panelRef.current?.querySelectorAll<HTMLElement>('[data-host-id]') ?? [])]
+      .find((element) => element.dataset.hostId === selectedHostId);
+    selectedElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [pagedHosts, selectedHostId]);
+
+  const selectHost = (hostId: string) => {
+    onSelectHost(hostId);
+    panelRef.current?.focus({ preventScroll: true });
+  };
+
+  const handleKeyboardNavigation = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const selectedIndex = selectedHostId
+      ? filteredHosts.findIndex((host) => host.id === selectedHostId)
+      : -1;
+    if (event.key === 'Enter') {
+      const selectedHost = selectedIndex >= 0 ? filteredHosts[selectedIndex] : null;
+      if (selectedHost) {
+        event.preventDefault();
+        onOpenHost(selectedHost);
+      }
+      return;
+    }
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = getNextHostListIndex(
+      event.key,
+      selectedIndex,
+      filteredHosts.length,
+      hostPageSize,
+    );
+    const nextHost = filteredHosts[nextIndex];
+    if (!nextHost) return;
+    onPageChange(Math.floor(nextIndex / hostPageSize) + 1);
+    onSelectHost(nextHost.id);
+  };
+
   return (
-    <div className={`host-table-frame ${hostViewMode === 'grid' ? 'card-mode' : 'table-mode'}`}>
+    <div
+      ref={panelRef}
+      className={`host-table-frame ${hostViewMode === 'grid' ? 'card-mode' : 'table-mode'}`}
+      tabIndex={filteredHosts.length ? 0 : -1}
+      aria-label={appLanguage === 'zh-CN' ? '主机列表' : 'Host list'}
+      aria-describedby={keyboardHelpId}
+      onKeyDown={handleKeyboardNavigation}
+    >
+      <span id={keyboardHelpId} className="sr-only">
+        {appLanguage === 'zh-CN'
+          ? '使用方向键、Home、End、PageUp 和 PageDown 选择主机，按 Enter 连接。'
+          : 'Use arrow keys, Home, End, Page Up, and Page Down to select a host. Press Enter to connect.'}
+      </span>
       {!isVaultReady ? (
         <div className="empty-state">
           <span>LOADING</span>
@@ -209,11 +288,12 @@ function HostListPanel<THost extends HostListPanelHost>({
                   return (
                     <article
                       key={host.id}
+                      data-host-id={host.id}
                       className={`host-list-card ${isSelected ? 'selected' : ''} ${isConnecting ? 'connecting' : ''}`}
                       role="listitem"
                       aria-selected={isSelected}
                       aria-busy={isConnecting}
-                      onClick={() => onSelectHost(host.id)}
+                      onClick={() => selectHost(host.id)}
                       onDoubleClick={() => onOpenHost(host)}
                     >
                       {isConnecting ? (
@@ -336,10 +416,11 @@ function HostListPanel<THost extends HostListPanelHost>({
                     return (
                       <tr
                         key={host.id}
+                        data-host-id={host.id}
                         className={`${isSelected ? 'selected' : ''} ${isConnecting ? 'connecting' : ''}`}
                         aria-selected={isSelected}
                         aria-busy={isConnecting}
-                        onClick={() => onSelectHost(host.id)}
+                        onClick={() => selectHost(host.id)}
                         onDoubleClick={() => onOpenHost(host)}
                       >
                         <td className="host-name-cell">
