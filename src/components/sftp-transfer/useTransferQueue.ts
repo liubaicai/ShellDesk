@@ -236,8 +236,25 @@ export function useTransferQueue({ connectionId, hostId, hostName, onTransferFin
     void submitTasks([restarted]);
   }, [patchTask, submitTasks]);
 
-  const remove = useCallback((id: string) => setTasks((current) => current.filter((task) => task.id !== id)), []);
-  const clearFinished = useCallback(() => setTasks((current) => current.filter((task) => ['queued', 'running', 'paused'].includes(task.status))), []);
+  const remove = useCallback(async (id: string) => {
+    const removed = await window.guiSSH?.connections.removeTransfer(id).catch(() => false);
+    if (removed) {
+      setTasks((current) => current.filter((task) => task.id !== id));
+    }
+  }, []);
+  const clearFinished = useCallback(async () => {
+    const finishedIds = tasksRef.current
+      .filter((task) => !['queued', 'running', 'paused'].includes(task.status))
+      .map((task) => task.id);
+    const removedIds = new Set(
+      (await Promise.all(finishedIds.map(async (id) => (
+        await window.guiSSH?.connections.removeTransfer(id).catch(() => false) ? id : ''
+      )))).filter(Boolean),
+    );
+    if (removedIds.size) {
+      setTasks((current) => current.filter((task) => !removedIds.has(task.id)));
+    }
+  }, []);
 
   return {
     tasks,
