@@ -364,6 +364,8 @@ interface ShellDeskMcpSkillExportResult {
   path?: string;
 }
 
+type ShellDeskSftpFileColumn = 'name' | 'size' | 'type' | 'permissions' | 'modifiedAt';
+
 interface ShellDeskAppSettings {
   language: 'zh-CN' | 'en-US';
   interfaceFont: string;
@@ -387,6 +389,8 @@ interface ShellDeskAppSettings {
   sshConnectTimeoutSeconds: number;
   sftpDefaultLocalDirectory: string;
   sftpDefaultRemoteDirectory: string;
+  sftpLocalColumns: ShellDeskSftpFileColumn[];
+  sftpRemoteColumns: ShellDeskSftpFileColumn[];
   aiProvider: ShellDeskAiProvider;
   aiProviderName: string;
   aiApiFormat: ShellDeskAiApiFormat;

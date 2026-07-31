@@ -154,10 +154,12 @@
 .sftp-file-table th { cursor: pointer; }
 .sftp-file-table th span { display: inline-block; vertical-align: middle; }
 .sftp-file-table th svg { width: 12px; height: 12px; margin-left: 4px; vertical-align: middle; }
-.sftp-file-table th:first-child { width: 42%; }
-.sftp-file-table th:nth-child(2) { width: 14%; }
-.sftp-file-table th:nth-child(3) { width: 18%; }
-.sftp-file-table th:nth-child(4) { width: 22%; }
+.sftp-file-table .name-column { width: 42%; }
+.sftp-file-table .size-column { width: 14%; }
+.sftp-file-table .type-column { width: 18%; }
+.sftp-file-table .permissions-column { width: 16%; }
+.sftp-file-table th.permissions-column { cursor: default; }
+.sftp-file-table .modified-at-column { width: 22%; }
 .sftp-file-table th.actions-column { width: 34px; text-align: center; cursor: default; }
 .sftp-file-table td { height: 32px; overflow: hidden; border-bottom: 1px solid rgba(148, 170, 199, .07); padding: 0 9px; color: #aebccc; text-overflow: ellipsis; white-space: nowrap; content-visibility: auto; }
 .sftp-file-table tbody tr { cursor: default; }

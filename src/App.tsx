@@ -3316,7 +3316,7 @@ function App() {
         </Suspense>
       ) : connection && isSftpTransferWorkspace ? (
         <Suspense fallback={<LazyContentFallback language={appLanguage} />}>
-          <SftpTransferWindow connection={connection} language={appLanguage} defaultLocalDirectory={settings.sftpDefaultLocalDirectory} defaultRemoteDirectory={settings.sftpDefaultRemoteDirectory} />
+          <SftpTransferWindow connection={connection} language={appLanguage} defaultLocalDirectory={settings.sftpDefaultLocalDirectory} defaultRemoteDirectory={settings.sftpDefaultRemoteDirectory} localColumns={settings.sftpLocalColumns} remoteColumns={settings.sftpRemoteColumns} />
         </Suspense>
       ) : connection ? (
         <Suspense fallback={<RemoteDesktopLoadingFallback language={appLanguage} />}>

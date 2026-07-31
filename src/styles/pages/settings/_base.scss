@@ -220,6 +220,44 @@
   text-align: right;
 }
 
+.settings-column-picker {
+  display: flex;
+  max-width: 460px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.settings-column-picker label {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--surface-control);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-column-picker label.selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.settings-column-picker input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-column-picker input:disabled {
+  opacity: 0.7;
+}
+
 .settings-secret-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

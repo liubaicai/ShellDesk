@@ -61,6 +61,8 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   sshConnectTimeoutSeconds: 15,
   sftpDefaultLocalDirectory: '/',
   sftpDefaultRemoteDirectory: '.',
+  sftpLocalColumns: ['name', 'size', 'type', 'modifiedAt'],
+  sftpRemoteColumns: ['name', 'size', 'permissions', 'modifiedAt'],
   aiProvider: 'openai',
   aiProviderName: 'OpenAI',
   aiApiFormat: 'openai',

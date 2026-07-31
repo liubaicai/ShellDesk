@@ -70,6 +70,8 @@ pub(crate) fn default_settings() -> Value {
         "sshConnectTimeoutSeconds": 15,
         "sftpDefaultLocalDirectory": "/",
         "sftpDefaultRemoteDirectory": ".",
+        "sftpLocalColumns": ["name", "size", "type", "modifiedAt"],
+        "sftpRemoteColumns": ["name", "size", "permissions", "modifiedAt"],
         "aiProvider": "openai",
         "aiProviderName": "OpenAI",
         "aiApiFormat": "openai",

@@ -37,6 +37,8 @@ interface SftpTransferWindowProps {
   language: AppLanguage;
   defaultLocalDirectory: string;
   defaultRemoteDirectory: string;
+  localColumns: ShellDeskSftpFileColumn[];
+  remoteColumns: ShellDeskSftpFileColumn[];
 }
 
 function topLevelDifferenceNames(paths: string[]) {
@@ -48,6 +50,8 @@ export default function SftpTransferWindow({
   language,
   defaultLocalDirectory,
   defaultRemoteDirectory,
+  localColumns,
+  remoteColumns,
 }: SftpTransferWindowProps) {
   const t = useMemo(() => getSftpMessages(language), [language]);
   const [initialDirectories] = useState(() => resolveSftpInitialDirectories(defaultLocalDirectory, defaultRemoteDirectory));
@@ -333,14 +337,14 @@ export default function SftpTransferWindow({
       {notice ? <div className="sftp-inline-notice"><CheckCircle2 aria-hidden="true" />{notice}<button type="button" onClick={() => setNotice('')}><X aria-hidden="true" /></button></div> : null}
 
       <section className="sftp-dual-pane">
-        <FilePane kind="local" controller={localPane} windowsLocal={windowsLocal} differences={localDifferences} showHidden={showHidden} isActive={activePane === 'local'} t={t} onActivate={() => setActivePane('local')} onNewFolder={() => void openDialog('new-folder', 'local')} onNewFile={() => void openDialog('new-file', 'local')} onRename={(entry) => void openDialog('rename', 'local', [entry])} onDelete={(entries) => void openDialog('delete', 'local', entries)} onProperties={(entry) => void openDialog('properties', 'local', [entry])} onTransfer={enqueueUpload} />
+        <FilePane kind="local" controller={localPane} windowsLocal={windowsLocal} differences={localDifferences} showHidden={showHidden} columns={localColumns} isActive={activePane === 'local'} t={t} onActivate={() => setActivePane('local')} onNewFolder={() => void openDialog('new-folder', 'local')} onNewFile={() => void openDialog('new-file', 'local')} onRename={(entry) => void openDialog('rename', 'local', [entry])} onDelete={(entries) => void openDialog('delete', 'local', entries)} onProperties={(entry) => void openDialog('properties', 'local', [entry])} onTransfer={enqueueUpload} />
         <aside className="sftp-transfer-rail">
           <button type="button" onClick={() => enqueueUpload(uploadEntries)} disabled={!uploadEntries.length} title={t('uploadArrow')}><ArrowRight aria-hidden="true" /><span>{t('upload')}</span></button>
           <button type="button" onClick={() => enqueueDownload(downloadEntries)} disabled={!downloadEntries.length} title={t('downloadArrow')}><ArrowLeft aria-hidden="true" /><span>{t('download')}</span></button>
           <i />
           <button type="button" onClick={() => void compareDirectories().catch((error) => setNotice(getErrorMessage(error)))} disabled={comparing}><Columns3 className={comparing ? 'spin' : ''} aria-hidden="true" /><span>{t('compare')}</span></button>
         </aside>
-        <FilePane kind="remote" controller={remotePane} windowsLocal={windowsLocal} differences={remoteDifferences} showHidden={showHidden} isActive={activePane === 'remote'} t={t} onActivate={() => setActivePane('remote')} onNewFolder={() => void openDialog('new-folder', 'remote')} onNewFile={() => void openDialog('new-file', 'remote')} onRename={(entry) => void openDialog('rename', 'remote', [entry])} onDelete={(entries) => void openDialog('delete', 'remote', entries)} onProperties={(entry) => void openDialog('properties', 'remote', [entry])} onTransfer={enqueueDownload} />
+        <FilePane kind="remote" controller={remotePane} windowsLocal={windowsLocal} differences={remoteDifferences} showHidden={showHidden} columns={remoteColumns} isActive={activePane === 'remote'} t={t} onActivate={() => setActivePane('remote')} onNewFolder={() => void openDialog('new-folder', 'remote')} onNewFile={() => void openDialog('new-file', 'remote')} onRename={(entry) => void openDialog('rename', 'remote', [entry])} onDelete={(entries) => void openDialog('delete', 'remote', entries)} onProperties={(entry) => void openDialog('properties', 'remote', [entry])} onTransfer={enqueueDownload} />
       </section>
 
       {queueVisible ? <TransferQueue tasks={transferQueue.tasks} filter={queueFilter} onFilterChange={setQueueFilter} concurrency={transferQueue.concurrency} onConcurrencyChange={transferQueue.setConcurrency} transferProfile={transferQueue.transferProfile} onTransferProfileChange={transferQueue.setTransferProfile} onCancel={(id) => void transferQueue.cancel(id)} onPause={(id) => void transferQueue.pause(id)} onResume={transferQueue.resume} onRetry={transferQueue.retry} onRemove={transferQueue.remove} onClearFinished={transferQueue.clearFinished} t={t} /> : null}

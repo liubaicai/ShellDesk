@@ -57,6 +57,8 @@ const TERMINAL_SNIPPET_LANGUAGE_CHOICES: &[&str] = &[
 ];
 const AI_API_FORMAT_CHOICES: &[&str] = &["openai", "anthropic"];
 const WEB_SEARCH_PROVIDER_CHOICES: &[&str] = &["tavily", "exa", "zhipu"];
+const SFTP_LOCAL_COLUMN_CHOICES: &[&str] = &["name", "size", "type", "modifiedAt"];
+const SFTP_REMOTE_COLUMN_CHOICES: &[&str] = &["name", "size", "type", "permissions", "modifiedAt"];
 const REMOTE_DESKTOP_DOCK_POSITION_CHOICES: &[&str] = &["bottom", "left", "right", "top"];
 const REMOTE_DESKTOP_DOCK_SIZE_CHOICES: &[&str] = &["small", "medium", "large"];
 const REMOTE_DESKTOP_DOCK_AUTO_HIDE_CHOICES: &[&str] = &["never", "always", "maximized"];
@@ -266,6 +268,8 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "sshConnectTimeoutSeconds": read_i64_range(settings.get("sshConnectTimeoutSeconds"), 3, 120, defaults["sshConnectTimeoutSeconds"].as_i64().unwrap_or(15)),
         "sftpDefaultLocalDirectory": if sftp_default_local_directory.is_empty() { defaults["sftpDefaultLocalDirectory"].as_str().unwrap_or("/") } else { &sftp_default_local_directory },
         "sftpDefaultRemoteDirectory": if sftp_default_remote_directory.is_empty() { defaults["sftpDefaultRemoteDirectory"].as_str().unwrap_or(".") } else { &sftp_default_remote_directory },
+        "sftpLocalColumns": read_sftp_columns(settings.get("sftpLocalColumns"), SFTP_LOCAL_COLUMN_CHOICES, defaults.get("sftpLocalColumns").cloned().unwrap_or_else(|| json!(SFTP_LOCAL_COLUMN_CHOICES))),
+        "sftpRemoteColumns": read_sftp_columns(settings.get("sftpRemoteColumns"), SFTP_REMOTE_COLUMN_CHOICES, defaults.get("sftpRemoteColumns").cloned().unwrap_or_else(|| json!(["name", "size", "permissions", "modifiedAt"]))),
         "aiProvider": ai_provider,
         "aiProviderName": ai_provider_name,
         "aiApiFormat": ai_api_format,
@@ -316,6 +320,19 @@ fn read_choice(value: Option<&Value>, choices: &[&str], fallback: &str) -> Strin
         .filter(|value| choices.contains(value))
         .unwrap_or(fallback)
         .to_string()
+}
+
+fn read_sftp_columns(value: Option<&Value>, choices: &[&str], fallback: Value) -> Value {
+    let Some(columns) = value.and_then(Value::as_array) else {
+        return fallback;
+    };
+    let configured = columns.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+    json!(choices
+        .iter()
+        .filter(|column| {
+            **column == "name" || configured.iter().any(|configured| configured == *column)
+        })
+        .collect::<Vec<_>>())
 }
 
 fn read_ai_provider(value: Option<&Value>, fallback: &str) -> String {
@@ -1381,5 +1398,32 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(blank["terminalHighlightKeywords"], "");
+    }
+
+    #[test]
+    fn settings_normalize_sftp_columns() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(
+            defaults["sftpLocalColumns"],
+            json!(["name", "size", "type", "modifiedAt"])
+        );
+        assert_eq!(
+            defaults["sftpRemoteColumns"],
+            json!(["name", "size", "permissions", "modifiedAt"])
+        );
+
+        let configured = normalize_app_settings(&json!({
+            "sftpLocalColumns": ["permissions", "modifiedAt"],
+            "sftpRemoteColumns": ["permissions", "type", "permissions", "unknown"]
+        }))
+        .unwrap();
+        assert_eq!(
+            configured["sftpLocalColumns"],
+            json!(["name", "modifiedAt"])
+        );
+        assert_eq!(
+            configured["sftpRemoteColumns"],
+            json!(["name", "type", "permissions"])
+        );
     }
 }

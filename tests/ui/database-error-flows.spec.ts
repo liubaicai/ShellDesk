@@ -588,6 +588,20 @@ test('SFTP workspace opens at the configured local and remote directories', asyn
   await expect(page.locator('.sftp-file-pane.remote .sftp-path-form input')).toHaveValue('/srv/configured');
 });
 
+test('SFTP workspace renders the persisted pane-specific column selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoHarness(page, 'component=sftp-transfer&theme=light&sftpColumns=minimal');
+
+  const localHeaders = page.locator('.sftp-file-pane.local .sftp-file-table thead');
+  const remoteHeaders = page.locator('.sftp-file-pane.remote .sftp-file-table thead');
+  await expect(localHeaders.getByText('名称', { exact: true })).toBeVisible();
+  await expect(localHeaders.getByText('大小', { exact: true })).toHaveCount(0);
+  await expect(localHeaders.getByText('修改时间', { exact: true })).toHaveCount(0);
+  await expect(remoteHeaders.getByText('名称', { exact: true })).toBeVisible();
+  await expect(remoteHeaders.getByText('权限', { exact: true })).toBeVisible();
+  await expect(remoteHeaders.getByText('修改时间', { exact: true })).toHaveCount(0);
+});
+
 test('SFTP transfer queue toolbar button toggles the queue and releases its space', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoHarness(page, 'component=sftp-transfer&theme=light');

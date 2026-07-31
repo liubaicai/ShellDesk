@@ -1168,6 +1168,8 @@ function App() {
           language="zh-CN"
           defaultLocalDirectory={params.get('sftpLocal') ?? '/'}
           defaultRemoteDirectory={params.get('sftpRemote') ?? '.'}
+          localColumns={params.get('sftpColumns') === 'minimal' ? ['name'] : ['name', 'size', 'type', 'modifiedAt']}
+          remoteColumns={params.get('sftpColumns') === 'minimal' ? ['name', 'permissions'] : ['name', 'size', 'permissions', 'modifiedAt']}
         />
       </div>
     );

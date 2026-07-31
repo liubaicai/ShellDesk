@@ -44,6 +44,7 @@ import {
 import type { FilePaneController } from './useFilePane';
 import type { SftpMessageKey } from './messages';
 import type { TransferFileEntry, TransferPaneKind } from './types';
+import { normalizeSftpColumns } from './columns';
 
 interface FilePaneProps {
   kind: TransferPaneKind;
@@ -51,6 +52,7 @@ interface FilePaneProps {
   windowsLocal: boolean;
   differences: Set<string>;
   showHidden: boolean;
+  columns: ShellDeskSftpFileColumn[];
   isActive: boolean;
   t: (key: SftpMessageKey, params?: Record<string, string | number>) => string;
   onNewFolder: () => void;
@@ -142,12 +144,17 @@ function entryTypeLabel(entry: TransferFileEntry, t: FilePaneProps['t']) {
   return extension ? `${extension} ${t('fileType')}` : t('fileType');
 }
 
+function columnClassName(column: ShellDeskSftpFileColumn) {
+  return column === 'modifiedAt' ? 'modified-at' : column;
+}
+
 function FilePane({
   kind,
   controller,
   windowsLocal,
   differences,
   showHidden,
+  columns,
   isActive,
   t,
   onNewFolder,
@@ -183,9 +190,7 @@ function FilePane({
     size: 0,
     modifiedAt: '',
   }), [treeRootPath]);
-  const columns: Array<'name' | 'size' | 'type' | 'permissions' | 'modifiedAt'> = isLocal
-    ? ['name', 'size', 'type', 'modifiedAt']
-    : ['name', 'size', 'permissions', 'modifiedAt'];
+  const visibleColumns = useMemo(() => normalizeSftpColumns(kind, columns), [columns, kind]);
   const virtualWindow = useMemo(() => {
     const visibleRowCount = viewportHeight > 0
       ? Math.ceil(viewportHeight / FILE_TABLE_ROW_HEIGHT) + FILE_TABLE_OVERSCAN_ROWS * 2
@@ -419,17 +424,20 @@ function FilePane({
           <table className="sftp-file-table" aria-rowcount={displayEntries.length}>
             <thead>
               <tr>
-                {columns.map((field) => (
-                  <th key={field} onClick={() => controller.setSort(field === 'permissions' ? 'type' : field)}>
+                {visibleColumns.map((field) => {
+                  const sortField = field === 'permissions' ? null : field;
+                  return (
+                  <th key={field} className={`${columnClassName(field)}-column`} onClick={sortField ? () => controller.setSort(sortField) : undefined}>
                     <span>{field === 'name' ? t('name') : field === 'size' ? t('size') : field === 'modifiedAt' ? t('modified') : field === 'permissions' ? t('permission') : t('type')}</span>
-                    {state.sortField === (field === 'permissions' ? 'type' : field) ? <ArrowDownAZ aria-hidden="true" /> : null}
+                    {sortField && state.sortField === sortField ? <ArrowDownAZ aria-hidden="true" /> : null}
                   </th>
-                ))}
+                  );
+                })}
                 <th className="actions-column"><MoreHorizontal aria-hidden="true" /></th>
               </tr>
             </thead>
             <tbody>
-              {virtualWindow.topHeight > 0 ? <tr className="virtual-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: virtualWindow.topHeight }} /></tr> : null}
+              {virtualWindow.topHeight > 0 ? <tr className="virtual-spacer" aria-hidden="true"><td colSpan={visibleColumns.length + 1} style={{ height: virtualWindow.topHeight }} /></tr> : null}
               {virtualWindow.entries.map((entry, virtualIndex) => {
                 const selected = state.selectedNames.has(entry.name);
                 return (
@@ -441,15 +449,24 @@ function FilePane({
                     onDoubleClick={() => openEntry(entry)}
                     onContextMenu={(event) => openContextMenu(event, entry)}
                   >
-                    <td className="name-cell"><FileIcon entry={entry} /><span>{entry.name}</span></td>
-                    <td className="size-cell">{entry.type === 'directory' ? '—' : formatBytes(entry.size)}</td>
-                    <td>{isLocal ? entryTypeLabel(entry, t) : entry.permissions || entry.longname.split(/\s+/)[0] || '—'}</td>
-                    <td>{entry.modifiedAt ? formatDateTime(entry.modifiedAt) : '—'}</td>
+                    {visibleColumns.map((field) => (
+                      <td key={field} className={`${columnClassName(field)}-cell`}>
+                        {field === 'name'
+                          ? <><FileIcon entry={entry} /><span>{entry.name}</span></>
+                          : field === 'size'
+                            ? entry.type === 'directory' ? '—' : formatBytes(entry.size)
+                            : field === 'type'
+                              ? entryTypeLabel(entry, t)
+                              : field === 'permissions'
+                                ? entry.permissions || entry.longname.split(/\s+/)[0] || '—'
+                                : entry.modifiedAt ? formatDateTime(entry.modifiedAt) : '—'}
+                      </td>
+                    ))}
                     <td className="row-actions"><button type="button" onClick={(event) => { event.stopPropagation(); onProperties(entry); }}><MoreHorizontal aria-hidden="true" /></button></td>
                   </tr>
                 );
               })}
-              {virtualWindow.bottomHeight > 0 ? <tr className="virtual-spacer" aria-hidden="true"><td colSpan={columns.length + 1} style={{ height: virtualWindow.bottomHeight }} /></tr> : null}
+              {virtualWindow.bottomHeight > 0 ? <tr className="virtual-spacer" aria-hidden="true"><td colSpan={visibleColumns.length + 1} style={{ height: virtualWindow.bottomHeight }} /></tr> : null}
             </tbody>
           </table>
           {state.loading ? <div className="sftp-pane-overlay"><RefreshCw className="spin" aria-hidden="true" /><span>{t('loading')}</span></div> : null}
@@ -486,6 +503,7 @@ export default memo(FilePane, (previous, next) => (
   && previous.windowsLocal === next.windowsLocal
   && previous.differences === next.differences
   && previous.showHidden === next.showHidden
+  && previous.columns === next.columns
   && previous.isActive === next.isActive
   && previous.t === next.t
   && previous.onTransfer === next.onTransfer
