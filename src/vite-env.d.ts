@@ -858,6 +858,7 @@ interface ShellDeskSftpTransferOptions {
   expectedTotal?: number;
   expectedFileCount?: number;
   conflictPolicy?: 'overwrite' | 'skip';
+  transferProfile?: 'balanced' | 'compatibility';
 }
 
 interface ShellDeskSftpRuntimeTask {
@@ -869,6 +870,7 @@ interface ShellDeskSftpRuntimeTask {
   plannedSize?: number;
   plannedFileCount?: number;
   conflictPolicy?: 'overwrite' | 'skip';
+  transferProfile?: 'balanced' | 'compatibility';
   hostId?: string;
   hostName?: string;
 }
@@ -1625,6 +1627,7 @@ interface ShellDeskTransferTask extends ShellDeskTransferProgress {
   label?: string;
   sourcePaths?: string[];
   targetPath?: string;
+  transferProfile?: 'balanced' | 'compatibility';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled' | 'paused';
   createdAt: string;
   updatedAt: string;

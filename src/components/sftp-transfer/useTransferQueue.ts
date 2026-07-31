@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getErrorMessage } from '../remote-desktop/desktopUtils';
-import type { SftpTransferTask, TransferTaskStatus } from './types';
+import type { SftpTransferProfile, SftpTransferTask, TransferTaskStatus } from './types';
+
+const TRANSFER_PROFILE_STORAGE_KEY = 'shelldesk.sftp-transfer-profile';
+
+function readTransferProfile(): SftpTransferProfile {
+  try {
+    return window.localStorage.getItem(TRANSFER_PROFILE_STORAGE_KEY) === 'compatibility'
+      ? 'compatibility'
+      : 'balanced';
+  } catch {
+    return 'balanced';
+  }
+}
 
 interface UseTransferQueueOptions {
   connectionId: string;
@@ -24,6 +36,7 @@ function historyTaskToQueueTask(task: ShellDeskTransferTask): SftpTransferTask |
     targetPath: task.targetPath,
     plannedSize: task.total,
     plannedFileCount: task.totalFiles,
+    transferProfile: task.transferProfile,
     status: historyStatus(task.status),
     createdAt: Date.parse(task.createdAt) || Date.now(),
     startedAt: task.status === 'running' ? Date.parse(task.updatedAt) || Date.now() : undefined,
@@ -36,6 +49,7 @@ function historyTaskToQueueTask(task: ShellDeskTransferTask): SftpTransferTask |
 export function useTransferQueue({ connectionId, hostId, hostName, onTransferFinished }: UseTransferQueueOptions) {
   const [tasks, setTasks] = useState<SftpTransferTask[]>([]);
   const [concurrency, setConcurrency] = useState(2);
+  const [transferProfile, setTransferProfile] = useState<SftpTransferProfile>(readTransferProfile);
   const tasksRef = useRef(tasks);
   const pauseRequestedRef = useRef(new Set<string>());
   const completedTaskIdsRef = useRef(new Set<string>());
@@ -44,6 +58,13 @@ export function useTransferQueue({ connectionId, hostId, hostName, onTransferFin
   const progressFrameRef = useRef<number | null>(null);
 
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TRANSFER_PROFILE_STORAGE_KEY, transferProfile);
+    } catch {
+      // A locked-down WebView can disable local storage; the in-memory choice still applies.
+    }
+  }, [transferProfile]);
 
   const patchTask = useCallback((id: string, patch: Partial<SftpTransferTask>) => {
     setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
@@ -149,6 +170,7 @@ export function useTransferQueue({ connectionId, hostId, hostName, onTransferFin
           plannedSize: task.plannedSize,
           plannedFileCount: task.plannedFileCount,
           conflictPolicy: task.conflictPolicy,
+          transferProfile: task.transferProfile,
           hostId,
           hostName,
         })),
@@ -167,13 +189,14 @@ export function useTransferQueue({ connectionId, hostId, hostName, onTransferFin
     const now = Date.now();
     const createdTasks = tasksToAdd.map((task, index) => ({
       ...task,
+      transferProfile: task.transferProfile ?? transferProfile,
       id: `sftp-${now}-${index}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: now + index,
       status: 'queued' as const,
     }));
     setTasks((current) => [...current, ...createdTasks]);
     void submitTasks(createdTasks);
-  }, [submitTasks]);
+  }, [submitTasks, transferProfile]);
 
   const cancel = useCallback(async (id: string) => {
     const task = tasksRef.current.find((item) => item.id === id);
@@ -220,6 +243,8 @@ export function useTransferQueue({ connectionId, hostId, hostName, onTransferFin
     tasks,
     concurrency,
     setConcurrency,
+    transferProfile,
+    setTransferProfile,
     enqueue,
     cancel,
     pause,

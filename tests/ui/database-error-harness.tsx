@@ -561,6 +561,7 @@ function installGuiSshMock() {
           expectedTotal: firstTask.plannedSize,
           expectedFileCount: firstTask.plannedFileCount,
           conflictPolicy: firstTask.conflictPolicy,
+          transferProfile: firstTask.transferProfile,
         } : undefined;
         return { queuedIds: tasks.map((task) => task.id) };
       },

@@ -28,6 +28,8 @@ mod remote_io;
 mod sftp;
 #[path = "remote_fs/sftp_resume.rs"]
 mod sftp_resume;
+#[path = "remote_fs/sftp_tuning.rs"]
+mod sftp_tuning;
 #[path = "remote_fs/transfer.rs"]
 mod transfer;
 #[path = "remote_fs/transfer_runtime.rs"]

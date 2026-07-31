@@ -238,6 +238,7 @@ fn merge_transfer_payload(task: &mut Value, payload: &Value) {
         "fileName",
         "sourcePaths",
         "targetPath",
+        "transferProfile",
         "transferred",
         "total",
         "currentFileTransferred",

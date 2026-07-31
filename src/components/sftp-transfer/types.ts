@@ -1,5 +1,6 @@
 export type TransferPaneKind = 'local' | 'remote';
 export type TransferTaskStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'canceled';
+export type SftpTransferProfile = 'balanced' | 'compatibility';
 
 export interface TransferFileEntry extends ShellDeskRemoteFileEntry {
   mode?: number;
@@ -31,6 +32,7 @@ export interface SftpTransferTask {
   plannedSize?: number;
   plannedFileCount?: number;
   conflictPolicy?: 'overwrite' | 'skip';
+  transferProfile?: SftpTransferProfile;
   status: TransferTaskStatus;
   createdAt: number;
   startedAt?: number;

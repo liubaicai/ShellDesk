@@ -613,9 +613,17 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(transferButtons).toHaveCount(3);
   await expect(transferButtons.nth(0)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   const queueSelects = page.locator('.sftp-queue-footer select');
-  await expect(queueSelects).toHaveCount(2);
+  await expect(queueSelects).toHaveCount(3);
   await expect(queueSelects.nth(0)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(queueSelects.nth(1)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(queueSelects.nth(2)).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  const profileSelect = page.getByLabel('传输模式');
+  const concurrencySelect = page.getByLabel('并行任务');
+  await expect(profileSelect).toHaveValue('balanced');
+  await profileSelect.selectOption('compatibility');
+  await expect(concurrencySelect).toBeDisabled();
+  await expect(concurrencySelect).toHaveValue('1');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('shelldesk.sftp-transfer-profile'))).toBe('compatibility');
   await commandToolbar.getByRole('button', { name: '传输队列', exact: true }).click();
   await expect(page.locator('#sftp-transfer-queue')).toHaveCount(0);
 
@@ -645,6 +653,7 @@ test('SFTP toolbar keeps transfers in the middle rail and recursive skip reaches
   await expect(conflictDialog).toContainText('跳过会继续遍历同名文件夹');
   await conflictDialog.getByRole('button', { name: '跳过已存在项' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastSftpTransferOptions?.conflictPolicy)).toBe('skip');
+  await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessLastSftpTransferOptions?.transferProfile)).toBe('compatibility');
   await expect.poll(() => page.evaluate(() => (window as any).__shellDeskUiHarnessSftpRuntimeEnqueueCount)).toBe(1);
   await expect(page.locator('#sftp-transfer-queue')).toBeVisible();
   expect(runtimeErrors).toEqual([]);

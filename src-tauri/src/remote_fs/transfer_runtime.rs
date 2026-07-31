@@ -1,4 +1,4 @@
-use super::{download_sftp_paths, upload_sftp_paths};
+use super::{download_sftp_paths, sftp_tuning::SftpTransferProfile, upload_sftp_paths};
 use crate::{
     connection, error_string, get_connection, string_arg, ActiveTransfer, AppState, ConnectionKind,
 };
@@ -29,11 +29,14 @@ pub(crate) fn enqueue_sftp_transfers(
     if connection.kind == ConnectionKind::Local {
         return Err("后台 SFTP 传输需要远程 SSH 连接。".to_string());
     }
-    let concurrency = transfer_concurrency(args.get(2));
+    let requested_concurrency = transfer_concurrency(args.get(2));
     let jobs = parse_jobs(&connection_id, args.get(1).and_then(Value::as_array))?;
     if jobs.is_empty() {
         return Ok(json!({ "queuedIds": [] }));
     }
+    let concurrency = jobs.iter().fold(requested_concurrency, |current, job| {
+        current.min(SftpTransferProfile::from_options(Some(&job.options)).runtime_concurrency_cap())
+    });
     register_jobs(&state, &connection_id, &jobs)?;
     let queued_ids = jobs.iter().map(|job| job.id.clone()).collect::<Vec<_>>();
     for job in &jobs {
@@ -204,6 +207,7 @@ fn parse_jobs(
             ("plannedSize", "expectedTotal"),
             ("plannedFileCount", "expectedFileCount"),
             ("conflictPolicy", "conflictPolicy"),
+            ("transferProfile", "transferProfile"),
         ] {
             if let Some(option) = value.get(source_key).filter(|option| !option.is_null()) {
                 options.insert(target_key.to_string(), option.clone());
@@ -260,6 +264,7 @@ fn emit_queued_task(
         "label": job.options.get("label").cloned().unwrap_or(Value::Null),
         "sourcePaths": job.source_paths,
         "targetPath": job.target_path,
+        "transferProfile": job.options.get("transferProfile").cloned().unwrap_or_else(|| json!("balanced")),
         "fileName": job.options.get("label").cloned().unwrap_or_else(|| json!(job.direction)),
         "transferred": 0,
         "total": job.options.get("expectedTotal").and_then(Value::as_u64).unwrap_or(0),
@@ -346,6 +351,7 @@ mod tests {
                 "plannedSize": 1024,
                 "plannedFileCount": 1,
                 "conflictPolicy": "skip",
+                "transferProfile": "compatibility",
                 "hostId": "host-1",
                 "hostName": "Production",
             })]),
@@ -357,6 +363,7 @@ mod tests {
         assert_eq!(jobs[0].options["queueId"], "queue-1");
         assert_eq!(jobs[0].options["expectedTotal"], 1024);
         assert_eq!(jobs[0].options["conflictPolicy"], "skip");
+        assert_eq!(jobs[0].options["transferProfile"], "compatibility");
     }
 
     #[test]

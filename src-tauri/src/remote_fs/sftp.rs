@@ -6,6 +6,7 @@ use super::{
         remote_upload_staging_path, remove_local_file_if_exists, replace_local_download,
         replace_remote_file, resume_prefix_matches, TransferSourceFingerprint,
     },
+    sftp_tuning::SftpTransferProfile,
     transfer::TransferReporter,
 };
 use crate::{
@@ -30,10 +31,9 @@ use std::{
 };
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-const TRANSFER_CHUNK_BYTES: usize = 256 * 1024;
-const SFTP_FILE_CONCURRENCY: usize = 8;
 const LOCAL_SCAN_IO_TIMEOUT: Duration = Duration::from_secs(20);
 const LOCAL_SCAN_CANCEL_POLL: Duration = Duration::from_millis(200);
+const SFTP_OPERATION_CONCURRENCY: usize = 8;
 const MAX_COMPARE_ENTRIES: usize = 50_000;
 const MAX_RECURSIVE_SFTP_ENTRIES: usize = 100_000;
 const SFTP_SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -96,17 +96,27 @@ async fn open_sftp_session(
     window: &tauri::Window,
     connection_id: &str,
 ) -> Result<OpenSftpSession, String> {
+    open_sftp_session_with_profile(state, window, connection_id, SftpTransferProfile::Balanced)
+        .await
+}
+
+async fn open_sftp_session_with_profile(
+    state: &AppState,
+    window: &tauri::Window,
+    connection_id: &str,
+    transfer_profile: SftpTransferProfile,
+) -> Result<OpenSftpSession, String> {
     let connection = get_connection(state, connection_id)?;
     if connection.kind == ConnectionKind::Local {
         return Err("本地连接不需要 SFTP 会话。".to_string());
     }
-    let profile = connection
+    let ssh_profile = connection
         .ssh
         .ok_or_else(|| "SSH profile is unavailable.".to_string())?;
     let ssh = connect_authenticated(
         Some(state.clone()),
         Some(UiWindowRef::from_window(window)),
-        profile,
+        ssh_profile,
     )
     .await?;
     let channel = ssh
@@ -118,10 +128,10 @@ async fn open_sftp_session(
         .request_subsystem(true, "sftp")
         .await
         .map_err(|error| format!("SSH 服务器拒绝 SFTP 子系统：{error}"))?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| format!("SFTP 初始化失败：{error}"))?;
-    sftp.set_timeout(30);
+    let sftp =
+        SftpSession::new_with_config(channel.into_stream(), transfer_profile.client_config())
+            .await
+            .map_err(|error| format!("SFTP 初始化失败：{error}"))?;
     Ok(OpenSftpSession { ssh, sftp })
 }
 
@@ -536,7 +546,7 @@ async fn remove_sftp_tree(
                 .await
                 .map_err(|error| format!("SFTP 删除文件失败：{error}"))
         })
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .buffer_unordered(SFTP_OPERATION_CONCURRENCY)
         .try_collect::<Vec<_>>()
         .await?;
     for directory in discovered.into_iter().rev() {
@@ -648,6 +658,7 @@ async fn download_remote_file(
     sftp: &SftpSession,
     local_dir: &Path,
     item: RemoteDownloadItem,
+    profile: SftpTransferProfile,
     transfer: &TransferReporter,
 ) -> Result<u64, String> {
     transfer.check_canceled()?;
@@ -694,7 +705,7 @@ async fn download_remote_file(
         transfer.add_parallel_bytes(resume_offset);
     }
     let mut transferred = resume_offset;
-    let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+    let mut buffer = vec![0_u8; profile.buffer_bytes()];
     loop {
         transfer.check_canceled()?;
         let read = remote_file.read(&mut buffer).await.map_err(error_string)?;
@@ -829,6 +840,7 @@ pub(crate) async fn download_sftp_paths(
         .unwrap_or_default();
     let local_dir = PathBuf::from(string_arg(&args, 2)?);
     let conflict_policy = transfer_conflict_policy(args.get(3));
+    let transfer_profile = SftpTransferProfile::from_options(args.get(3));
     let transfer = Arc::new(TransferReporter::new(
         &state,
         &window,
@@ -838,7 +850,8 @@ pub(crate) async fn download_sftp_paths(
         "download".to_string(),
     ));
     transfer.start_preparing(0);
-    let session = open_sftp_session(&state, &window, &connection_id).await?;
+    let session =
+        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
     transfer.start_planning();
     let (directories, mut files) =
         collect_remote_download_plan(&session.sftp, &remote_paths, &transfer).await?;
@@ -909,9 +922,18 @@ pub(crate) async fn download_sftp_paths(
     }
     let total = files.iter().map(|item| item.size).sum();
     transfer.set_totals(total, files.len() as u64, files.len() as u64);
+    let file_concurrency = transfer_profile.file_concurrency(total, files.len());
     let transferred = stream::iter(files.iter().cloned())
-        .map(|item| download_remote_file(&session.sftp, &local_dir, item, transfer.as_ref()))
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .map(|item| {
+            download_remote_file(
+                &session.sftp,
+                &local_dir,
+                item,
+                transfer_profile,
+                transfer.as_ref(),
+            )
+        })
+        .buffer_unordered(file_concurrency)
         .try_fold(0_u64, |total, size| async move {
             Ok(total.saturating_add(size))
         })
@@ -1049,6 +1071,7 @@ async fn read_local_upload_directory(
 async fn upload_local_file(
     sftp: &SftpSession,
     item: LocalUploadItem,
+    profile: SftpTransferProfile,
     transfer: &TransferReporter,
 ) -> Result<u64, String> {
     transfer.check_canceled()?;
@@ -1103,7 +1126,7 @@ async fn upload_local_file(
         transfer.add_parallel_bytes(resume_offset);
     }
     let mut transferred = resume_offset;
-    let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+    let mut buffer = vec![0_u8; profile.buffer_bytes()];
     loop {
         transfer.check_canceled()?;
         let read = local_file.read(&mut buffer).await.map_err(error_string)?;
@@ -1221,6 +1244,7 @@ pub(crate) async fn upload_sftp_paths(
         .cloned()
         .unwrap_or_default();
     let conflict_policy = transfer_conflict_policy(args.get(3));
+    let transfer_profile = SftpTransferProfile::from_options(args.get(3));
     let transfer = Arc::new(TransferReporter::new(
         &state,
         &window,
@@ -1240,7 +1264,8 @@ pub(crate) async fn upload_sftp_paths(
             }
         };
     transfer.start_preparing(directories.len() as u64);
-    let session = open_sftp_session(&state, &window, &connection_id).await?;
+    let session =
+        open_sftp_session_with_profile(&state, &window, &connection_id, transfer_profile).await?;
     let mut skipped_count = 0_u64;
     let mut blocked_directories = Vec::<String>::new();
     for directory in directories {
@@ -1334,9 +1359,10 @@ pub(crate) async fn upload_sftp_paths(
     }
     let total = files.iter().map(|item| item.size).sum();
     transfer.set_totals(total, files.len() as u64, files.len() as u64);
+    let file_concurrency = transfer_profile.file_concurrency(total, files.len());
     let transferred = stream::iter(files.iter().cloned())
-        .map(|item| upload_local_file(&session.sftp, item, transfer.as_ref()))
-        .buffer_unordered(SFTP_FILE_CONCURRENCY)
+        .map(|item| upload_local_file(&session.sftp, item, transfer_profile, transfer.as_ref()))
+        .buffer_unordered(file_concurrency)
         .try_fold(0_u64, |total, size| async move {
             Ok(total.saturating_add(size))
         })

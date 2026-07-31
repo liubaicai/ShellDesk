@@ -3,7 +3,7 @@ import { Ban, CheckCircle2, CirclePause, CirclePlay, Clock3, RotateCcw, Trash2, 
 import { formatBytes } from '../remote-desktop/fileExplorerUtils';
 import type { SftpMessageKey } from './messages';
 import { getPathName } from './pathUtils';
-import type { SftpTransferTask, TransferTaskStatus } from './types';
+import type { SftpTransferProfile, SftpTransferTask, TransferTaskStatus } from './types';
 
 interface TransferQueueProps {
   tasks: SftpTransferTask[];
@@ -11,6 +11,8 @@ interface TransferQueueProps {
   onFilterChange: (filter: TransferQueueProps['filter']) => void;
   concurrency: number;
   onConcurrencyChange: (value: number) => void;
+  transferProfile: SftpTransferProfile;
+  onTransferProfileChange: (value: SftpTransferProfile) => void;
   onCancel: (id: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
@@ -131,7 +133,8 @@ export default function TransferQueue(props: TransferQueueProps) {
       </div>
       <footer className="sftp-queue-footer">
         <button type="button" onClick={props.onClearFinished}><Trash2 aria-hidden="true" />{t('clearFinished')}</button>
-        <label><span>{t('concurrency')}</span><select value={props.concurrency} onChange={(event) => props.onConcurrencyChange(Number(event.target.value))}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label>
+        <label title={props.transferProfile === 'compatibility' ? t('compatibilityProfileHint') : t('balancedProfileHint')}><span>{t('transferProfile')}</span><select value={props.transferProfile} onChange={(event) => props.onTransferProfileChange(event.target.value as SftpTransferProfile)}><option value="balanced">{t('balancedProfile')}</option><option value="compatibility">{t('compatibilityProfile')}</option></select></label>
+        <label><span>{t('concurrency')}</span><select value={props.transferProfile === 'compatibility' ? 1 : props.concurrency} disabled={props.transferProfile === 'compatibility'} onChange={(event) => props.onConcurrencyChange(Number(event.target.value))}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label>
         <label><span>{t('afterComplete')}</span><select><option>{t('doNothing')}</option></select></label>
       </footer>
     </section>
