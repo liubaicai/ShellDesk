@@ -32,6 +32,8 @@ mod sftp_download;
 mod sftp_resume;
 #[path = "remote_fs/sftp_tuning.rs"]
 mod sftp_tuning;
+#[path = "remote_fs/terminal_upload.rs"]
+mod terminal_upload;
 #[path = "remote_fs/transfer.rs"]
 mod transfer;
 #[path = "remote_fs/transfer_runtime.rs"]
@@ -68,6 +70,7 @@ pub(crate) use sftp::{
     download_sftp_paths, list_sftp_directory, rename_sftp_path, set_sftp_path_permissions,
     stat_sftp_path, upload_sftp_paths,
 };
+pub(crate) use terminal_upload::upload_sftp_bytes;
 use transfer::TransferReporter;
 pub(crate) use transfer::{cancel_transfer, cancel_transfers_for_connection};
 pub(crate) use transfer_runtime::enqueue_sftp_transfers;

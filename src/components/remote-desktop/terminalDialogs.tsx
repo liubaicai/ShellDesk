@@ -14,6 +14,7 @@ interface TerminalContextMenuPortalProps {
   language: ShellDeskAppSettings['language'];
   onClose: () => void;
   onCopy: (text: string) => void;
+  onSelectionAi?: (selection: string, action: 'explain' | 'fix') => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
 }
 
@@ -22,6 +23,7 @@ export function TerminalContextMenuPortal({
   language,
   onClose,
   onCopy,
+  onSelectionAi,
   onOpenNote,
 }: TerminalContextMenuPortalProps) {
   if (!contextMenu) {
@@ -48,6 +50,17 @@ export function TerminalContextMenuPortal({
           }}>
             {t('terminal.context.sendToNotepad', language)}
           </button>
+        ) : null}
+        {onSelectionAi ? (
+          <>
+            <div className="context-menu-sep" />
+            <button type="button" role="menuitem" onClick={() => { onSelectionAi(contextMenu.selection, 'explain'); onClose(); }}>
+              {t('terminal.context.explainWithAi', language)}
+            </button>
+            <button type="button" role="menuitem" onClick={() => { onSelectionAi(contextMenu.selection, 'fix'); onClose(); }}>
+              {t('terminal.context.fixWithAi', language)}
+            </button>
+          </>
         ) : null}
       </div>
     </>,
@@ -179,6 +192,18 @@ export function TerminalSettingsDialogPortal({
             ))}
           </select>
         </label>
+        <label>
+          <span>{t('settings.terminal.renderer.label', settings.language)}</span>
+          <select
+            className="notepad-modal-input"
+            value={settings.terminalRenderer}
+            onChange={(event) => onSettingChange('terminalRenderer', event.target.value as ShellDeskAppSettings['terminalRenderer'])}
+          >
+            <option value="auto">{t('settings.terminal.renderer.auto', settings.language)}</option>
+            <option value="dom">{t('settings.terminal.renderer.dom', settings.language)}</option>
+            <option value="webgl">WebGL</option>
+          </select>
+        </label>
         <div className="terminal-settings-toggles">
           <label>
             <span>{t('terminal.settingsDialog.copyOnSelect', settings.language)}</span>
@@ -244,6 +269,48 @@ export function TerminalSettingsDialogPortal({
               onChange={(event) => onSettingChange('terminalSuspendRenderingWhenHidden', event.target.checked)}
             />
           </label>
+          <label>
+            <span>{t('settings.terminal.hibernate.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalHibernateEnabled}
+              disabled={!settings.terminalSuspendRenderingWhenHidden}
+              onChange={(event) => onSettingChange('terminalHibernateEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.remotePathAutocomplete.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalRemotePathAutocompleteEnabled}
+              disabled={!settings.terminalCommandAutocompleteEnabled}
+              onChange={(event) => onSettingChange('terminalRemotePathAutocompleteEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.dropUpload.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalDropUploadEnabled}
+              onChange={(event) => onSettingChange('terminalDropUploadEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.kittyKeyboard.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalKittyKeyboardEnabled}
+              onChange={(event) => onSettingChange('terminalKittyKeyboardEnabled', event.target.checked)}
+            />
+          </label>
+          <label>
+            <span>{t('settings.terminal.inlineImages.label', settings.language)}</span>
+            <input
+              type="checkbox"
+              checked={settings.terminalInlineImagesEnabled}
+              onChange={(event) => onSettingChange('terminalInlineImagesEnabled', event.target.checked)}
+            />
+          </label>
         </div>
         <label>
           <span>{t('settings.terminal.highlightKeywords.label', settings.language)}</span>
@@ -297,6 +364,33 @@ export function TerminalLinkDialogPortal({
           <button type="button" className="notepad-modal-btn primary" onClick={onOpen}>
             {t('terminal.linkDialog.open', language)}
           </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function TerminalOsc52ReadDialogPortal({
+  open,
+  language,
+  onCancel,
+  onAllow,
+}: {
+  open: boolean;
+  language: ShellDeskAppSettings['language'];
+  onCancel: () => void;
+  onAllow: () => void;
+}) {
+  if (!open) return null;
+  return createPortal(
+    <div className="notepad-modal-overlay" role="presentation" onClick={onCancel}>
+      <div className="notepad-modal terminal-link-dialog" role="alertdialog" aria-modal="true" aria-labelledby="terminal-osc52-dialog-title" onClick={(event) => event.stopPropagation()}>
+        <h3 id="terminal-osc52-dialog-title">{t('terminal.osc52Dialog.title', language)}</h3>
+        <p>{t('terminal.osc52Dialog.summary', language)}</p>
+        <div className="notepad-modal-actions">
+          <button type="button" className="notepad-modal-btn" onClick={onCancel}>{t('common.cancel', language)}</button>
+          <button type="button" className="notepad-modal-btn primary" onClick={onAllow}>{t('terminal.osc52Dialog.allow', language)}</button>
         </div>
       </div>
     </div>,

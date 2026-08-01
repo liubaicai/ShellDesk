@@ -124,6 +124,7 @@ export const ipcChannelBindings = {
   'connection:sftp-rename-path': 'connections.sftpRenamePath',
   'connection:sftp-set-path-permissions': 'connections.sftpSetPathPermissions',
   'connection:sftp-stat-path': 'connections.sftpStatPath',
+  'connection:sftp-upload-bytes': 'connections.sftpUploadBytes',
   'connection:sftp-upload-local-paths': 'connections.sftpUploadLocalPaths',
   'connection:sqlite-close': 'connections.sqliteClose',
   'connection:sqlite-columns': 'connections.sqliteColumns',

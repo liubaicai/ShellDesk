@@ -419,6 +419,10 @@ async fn dispatch_remote_fs_job(
             let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
             remote_fs::upload_sftp_paths(state, window, args).await
         }
+        "connection:sftp-upload-bytes" => {
+            let window = window.ok_or_else(|| "SFTP 窗口不可用。".to_string())?;
+            remote_fs::upload_sftp_bytes(state, window, args).await
+        }
         "connection:upload-local-paths" => {
             let window = window.ok_or_else(|| "文件传输窗口不可用。".to_string())?;
             remote_fs::upload_connection_paths(state, window, args).await

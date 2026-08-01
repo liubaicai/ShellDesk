@@ -43,6 +43,7 @@ enum TerminalControl {
 }
 
 struct TerminalLaunchOptions {
+    term: String,
     shell: String,
     initial_command: String,
     working_directory: String,
@@ -305,7 +306,7 @@ async fn start_ssh_terminal_session(
     channel
         .request_pty(
             true,
-            "xterm-256color",
+            &launch_options.term,
             u32::from(columns),
             u32::from(rows),
             0,
@@ -445,7 +446,7 @@ async fn start_local_terminal_session(
 ) -> Result<TerminalSession, String> {
     let startup_plan = create_terminal_startup_plan(&connection, &launch_options);
     let mut command = local_terminal_command(&launch_options);
-    command.env("TERM", "xterm-256color");
+    command.env("TERM", &launch_options.term);
     command.env("COLORTERM", "truecolor");
     command.current_dir(local_terminal_working_directory(&launch_options));
     command
@@ -600,6 +601,7 @@ fn read_terminal_launch_options(
 ) -> Result<TerminalLaunchOptions, String> {
     let Some(raw_options) = raw_options.and_then(Value::as_object) else {
         return Ok(TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: String::new(),
             initial_command: String::new(),
             working_directory: String::new(),
@@ -607,6 +609,7 @@ fn read_terminal_launch_options(
     };
 
     Ok(TerminalLaunchOptions {
+        term: read_terminal_term(raw_options.get("term"))?,
         shell: read_optional_terminal_launch_text(
             raw_options.get("shell"),
             "终端 Shell",
@@ -626,6 +629,17 @@ fn read_terminal_launch_options(
             false,
         )?,
     })
+}
+
+fn read_terminal_term(raw_value: Option<&Value>) -> Result<String, String> {
+    let value = raw_value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("xterm-256color");
+    match value {
+        "xterm-256color" | "xterm-16color" | "xterm" => Ok(value.to_string()),
+        _ => Err("终端 TERM 类型无效。".to_string()),
+    }
 }
 
 fn read_optional_terminal_launch_text(
@@ -1043,6 +1057,7 @@ mod tests {
     fn creates_remote_terminal_startup_input() {
         let connection = ssh_connection("linux", None);
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: "bash".to_string(),
             initial_command: "echo one\necho two".to_string(),
             working_directory: "/var/log/app's".to_string(),
@@ -1057,6 +1072,7 @@ mod tests {
     #[test]
     fn creates_ssh_remote_shell_command_for_working_directory() {
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: "bash".to_string(),
             initial_command: String::new(),
             working_directory: "/var/log/app's".to_string(),
@@ -1072,6 +1088,7 @@ mod tests {
     fn keeps_windows_remote_startup_input() {
         let connection = ssh_connection("windows", None);
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: "powershell".to_string(),
             initial_command: "Write-Host ok".to_string(),
             working_directory: r#"C:\Users\root"#.to_string(),
@@ -1086,6 +1103,7 @@ mod tests {
     #[test]
     fn local_terminal_defaults_to_the_user_home_directory() {
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: String::new(),
             initial_command: String::new(),
             working_directory: String::new(),
@@ -1101,6 +1119,7 @@ mod tests {
     #[test]
     fn local_terminal_preserves_an_explicit_working_directory() {
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: String::new(),
             initial_command: String::new(),
             working_directory: r"D:\workspace".to_string(),
@@ -1137,6 +1156,7 @@ mod tests {
             }),
         );
         let launch_options = TerminalLaunchOptions {
+            term: "xterm-256color".to_string(),
             shell: String::new(),
             initial_command: "whoami".to_string(),
             working_directory: String::new(),
@@ -1153,6 +1173,15 @@ mod tests {
     fn rejects_invalid_terminal_launch_options() {
         let options = json!({ "shell": "bash\nzsh" });
         assert!(read_terminal_launch_options(Some(&options)).is_err());
+
+        let options = json!({ "term": "screen-256color" });
+        assert!(read_terminal_launch_options(Some(&options)).is_err());
+
+        let options = json!({ "term": "xterm-16color" });
+        assert_eq!(
+            read_terminal_launch_options(Some(&options)).unwrap().term,
+            "xterm-16color"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ import { getCurrentAppLocale, t } from '../i18n';
 import { SftpSettingsFields } from '../components/SftpSettingsFields';
 import { TerminalSessionSettingsFields } from '../components/TerminalSessionSettingsFields';
 import { TerminalOutputSettingsFields } from '../components/TerminalOutputSettingsFields';
+import { TerminalAdvancedSettingsFields } from '../components/TerminalAdvancedSettingsFields';
 import { SettingsAboutSection } from './SettingsAboutSection';
 import {
   settingsSections,
@@ -1407,6 +1408,11 @@ function SettingsPage({
               />
 
               <TerminalOutputSettingsFields
+                settings={settings}
+                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+              />
+
+              <TerminalAdvancedSettingsFields
                 settings={settings}
                 onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
               />

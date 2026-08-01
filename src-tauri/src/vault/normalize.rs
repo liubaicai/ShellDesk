@@ -283,6 +283,7 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "webSearchApiBaseUrl": web_search_api_base_url,
         "webSearchMaxResults": read_i64_range(settings.get("webSearchMaxResults"), 1, 20, defaults["webSearchMaxResults"].as_i64().unwrap_or(5)),
         "terminalFontSize": read_i64_range(settings.get("terminalFontSize"), 11, 20, defaults["terminalFontSize"].as_i64().unwrap_or(13)),
+        "terminalTermType": read_choice(settings.get("terminalTermType"), &["xterm-256color", "xterm-16color", "xterm"], defaults["terminalTermType"].as_str().unwrap_or("xterm-256color")),
         "terminalFontFamily": read_font_family(settings.get("terminalFontFamily"), defaults["terminalFontFamily"].as_str().unwrap_or("Cascadia Mono")),
         "terminalFontWeight": read_i64_range(settings.get("terminalFontWeight"), 300, 600, defaults["terminalFontWeight"].as_i64().unwrap_or(400)),
         "terminalFontWeightBold": read_i64_range(settings.get("terminalFontWeightBold"), 600, 800, defaults["terminalFontWeightBold"].as_i64().unwrap_or(700)),
@@ -293,7 +294,11 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalCursorBlink": read_bool(settings.get("terminalCursorBlink"), defaults["terminalCursorBlink"].as_bool().unwrap_or(true)),
         "terminalCursorStyle": terminal_cursor_style,
         "terminalCursorInactiveStyle": read_choice(settings.get("terminalCursorInactiveStyle"), TERMINAL_CURSOR_INACTIVE_STYLE_CHOICES, defaults["terminalCursorInactiveStyle"].as_str().unwrap_or("outline")),
+        "terminalDrawBoldInBrightColors": read_bool(settings.get("terminalDrawBoldInBrightColors"), defaults["terminalDrawBoldInBrightColors"].as_bool().unwrap_or(true)),
+        "terminalCursorLineHighlight": read_bool(settings.get("terminalCursorLineHighlight"), defaults["terminalCursorLineHighlight"].as_bool().unwrap_or(false)),
         "terminalScrollback": read_i64_range(settings.get("terminalScrollback"), 1000, 50000, defaults["terminalScrollback"].as_i64().unwrap_or(10000)),
+        "terminalSmoothScrolling": read_bool(settings.get("terminalSmoothScrolling"), defaults["terminalSmoothScrolling"].as_bool().unwrap_or(true)),
+        "terminalScrollOnOutput": read_bool(settings.get("terminalScrollOnOutput"), defaults["terminalScrollOnOutput"].as_bool().unwrap_or(true)),
         "terminalScrollSensitivity": read_f64_range(settings.get("terminalScrollSensitivity"), 0.5, 5.0, defaults["terminalScrollSensitivity"].as_f64().unwrap_or(1.0)),
         "terminalFastScrollSensitivity": read_i64_range(settings.get("terminalFastScrollSensitivity"), 2, 20, defaults["terminalFastScrollSensitivity"].as_i64().unwrap_or(5)),
         "terminalScrollOnUserInput": read_bool(settings.get("terminalScrollOnUserInput"), defaults["terminalScrollOnUserInput"].as_bool().unwrap_or(true)),
@@ -302,17 +307,35 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalRightClickPaste": read_bool(settings.get("terminalRightClickPaste"), defaults["terminalRightClickPaste"].as_bool().unwrap_or(true)),
         "terminalAltClickMovesCursor": read_bool(settings.get("terminalAltClickMovesCursor"), defaults["terminalAltClickMovesCursor"].as_bool().unwrap_or(true)),
         "terminalBracketedPasteMode": read_bool(settings.get("terminalBracketedPasteMode"), defaults["terminalBracketedPasteMode"].as_bool().unwrap_or(true)),
+        "terminalWordSeparators": read_terminal_word_separators(settings.get("terminalWordSeparators"), defaults["terminalWordSeparators"].as_str().unwrap_or(" ()[]{}'\"`,;:@$=<>|&")),
+        "terminalLinkModifier": read_choice(settings.get("terminalLinkModifier"), &["none", "ctrl", "alt", "meta"], defaults["terminalLinkModifier"].as_str().unwrap_or("ctrl")),
+        "terminalOptionArrowWordJump": read_bool(settings.get("terminalOptionArrowWordJump"), defaults["terminalOptionArrowWordJump"].as_bool().unwrap_or(true)),
+        "terminalShiftEnterNewlineEnabled": read_bool(settings.get("terminalShiftEnterNewlineEnabled"), defaults["terminalShiftEnterNewlineEnabled"].as_bool().unwrap_or(true)),
+        "terminalShiftEnterNewlineText": read_terminal_shift_enter_text(settings.get("terminalShiftEnterNewlineText"), defaults["terminalShiftEnterNewlineText"].as_str().unwrap_or("\\n")),
+        "terminalMiddleClickBehavior": read_choice(settings.get("terminalMiddleClickBehavior"), &["context-menu", "paste", "disabled"], defaults["terminalMiddleClickBehavior"].as_str().unwrap_or("paste")),
+        "terminalNormalizeCopiedText": read_bool(settings.get("terminalNormalizeCopiedText"), defaults["terminalNormalizeCopiedText"].as_bool().unwrap_or(true)),
         "terminalMinimumContrastRatio": read_f64_range(settings.get("terminalMinimumContrastRatio"), 1.0, 7.0, defaults["terminalMinimumContrastRatio"].as_f64().unwrap_or(1.0)),
         "terminalScreenReaderMode": read_bool(settings.get("terminalScreenReaderMode"), defaults["terminalScreenReaderMode"].as_bool().unwrap_or(false)),
         "terminalPreferTmux": read_bool(settings.get("terminalPreferTmux"), defaults["terminalPreferTmux"].as_bool().unwrap_or(false)),
         "terminalRestoreWorkspace": read_bool(settings.get("terminalRestoreWorkspace"), defaults["terminalRestoreWorkspace"].as_bool().unwrap_or(true)),
         "terminalExitPolicy": read_choice(settings.get("terminalExitPolicy"), &["keep-open", "close-success", "close-always"], defaults["terminalExitPolicy"].as_str().unwrap_or("keep-open")),
+        "terminalDynamicTitle": read_choice(settings.get("terminalDynamicTitle"), &["off", "tmux", "all"], defaults["terminalDynamicTitle"].as_str().unwrap_or("tmux")),
         "terminalLineTimestamps": read_bool(settings.get("terminalLineTimestamps"), defaults["terminalLineTimestamps"].as_bool().unwrap_or(false)),
         "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
         "terminalHighlightKeywords": terminal_highlight_keywords,
         "terminalCommandAutocompleteEnabled": read_bool(settings.get("terminalCommandAutocompleteEnabled"), defaults["terminalCommandAutocompleteEnabled"].as_bool().unwrap_or(true)),
+        "terminalRemotePathAutocompleteEnabled": read_bool(settings.get("terminalRemotePathAutocompleteEnabled"), defaults["terminalRemotePathAutocompleteEnabled"].as_bool().unwrap_or(true)),
         "terminalSafeLinksEnabled": read_bool(settings.get("terminalSafeLinksEnabled"), defaults["terminalSafeLinksEnabled"].as_bool().unwrap_or(true)),
+        "terminalOsc52Mode": read_choice(settings.get("terminalOsc52Mode"), &["off", "write-only", "prompt", "read-write"], defaults["terminalOsc52Mode"].as_str().unwrap_or("off")),
+        "terminalClearWipesScrollback": read_bool(settings.get("terminalClearWipesScrollback"), defaults["terminalClearWipesScrollback"].as_bool().unwrap_or(false)),
         "terminalSuspendRenderingWhenHidden": read_bool(settings.get("terminalSuspendRenderingWhenHidden"), defaults["terminalSuspendRenderingWhenHidden"].as_bool().unwrap_or(true)),
+        "terminalRenderer": read_choice(settings.get("terminalRenderer"), &["auto", "dom", "webgl"], defaults["terminalRenderer"].as_str().unwrap_or("auto")),
+        "terminalHibernateEnabled": read_bool(settings.get("terminalHibernateEnabled"), defaults["terminalHibernateEnabled"].as_bool().unwrap_or(true)),
+        "terminalHibernateDelaySeconds": read_i64_range(settings.get("terminalHibernateDelaySeconds"), 30, 900, defaults["terminalHibernateDelaySeconds"].as_i64().unwrap_or(120)),
+        "terminalDropUploadEnabled": read_bool(settings.get("terminalDropUploadEnabled"), defaults["terminalDropUploadEnabled"].as_bool().unwrap_or(true)),
+        "terminalKittyKeyboardEnabled": read_bool(settings.get("terminalKittyKeyboardEnabled"), defaults["terminalKittyKeyboardEnabled"].as_bool().unwrap_or(true)),
+        "terminalInlineImagesEnabled": read_bool(settings.get("terminalInlineImagesEnabled"), defaults["terminalInlineImagesEnabled"].as_bool().unwrap_or(false)),
+        "terminalSessionLogFormat": read_choice(settings.get("terminalSessionLogFormat"), &["text", "ansi"], defaults["terminalSessionLogFormat"].as_str().unwrap_or("text")),
         "terminalSnippets": terminal_snippets
     }))
 }
@@ -321,6 +344,24 @@ fn read_choice(value: Option<&Value>, choices: &[&str], fallback: &str) -> Strin
     value
         .and_then(Value::as_str)
         .filter(|value| choices.contains(value))
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn read_terminal_word_separators(value: Option<&Value>, fallback: &str) -> String {
+    value
+        .and_then(Value::as_str)
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
+        })
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn read_terminal_shift_enter_text(value: Option<&Value>, fallback: &str) -> String {
+    value
+        .and_then(Value::as_str)
+        .filter(|value| value.len() <= 32 && !value.contains('\0') && !value.contains(['\r', '\n']))
         .unwrap_or(fallback)
         .to_string()
 }
@@ -1374,6 +1415,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(invalid["terminalExitPolicy"], "keep-open");
+    }
+
+    #[test]
+    fn settings_normalize_terminal_compatibility_controls() {
+        let defaults = normalize_app_settings(&json!({})).unwrap();
+        assert_eq!(defaults["terminalTermType"], "xterm-256color");
+        assert_eq!(defaults["terminalOsc52Mode"], "off");
+        assert_eq!(defaults["terminalClearWipesScrollback"], false);
+
+        let invalid = normalize_app_settings(&json!({
+            "terminalTermType": "screen-256color",
+            "terminalOsc52Mode": "always",
+            "terminalMiddleClickBehavior": "execute"
+        }))
+        .unwrap();
+        assert_eq!(invalid["terminalTermType"], "xterm-256color");
+        assert_eq!(invalid["terminalOsc52Mode"], "off");
+        assert_eq!(invalid["terminalMiddleClickBehavior"], "paste");
     }
 
     #[test]

@@ -1,12 +1,15 @@
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
+import { memo, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import {
   TerminalContextMenuPortal,
   TerminalLaunchDialogPortal,
   TerminalLinkDialogPortal,
+  TerminalOsc52ReadDialogPortal,
   TerminalSettingsDialogPortal,
 } from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
+import type { TerminalCompletionCandidate } from './terminalCompletionEngine';
+import { TerminalSelectionAiPortal, type TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import type { RemoteSystemType } from './types';
 import { t } from '../../i18n';
 
@@ -21,7 +24,14 @@ interface TerminalPaneViewProps {
   searchResults: TerminalSearchResultState;
   contextMenu: TerminalContextMenuState | null;
   commandSuggestion: string;
+  completionCandidates: TerminalCompletionCandidate[];
   pendingTerminalLink: string;
+  pendingOsc52Read: boolean;
+  selectionAiState: TerminalSelectionAiState | null;
+  sessionLogRecording: boolean;
+  showComposer: boolean;
+  composeText: string;
+  composeCanRun: boolean;
   isLaunchDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
   launchDraft: TerminalLaunchDraft;
@@ -34,8 +44,16 @@ interface TerminalPaneViewProps {
   onSearchClose: () => void;
   onContextMenuClose: () => void;
   onContextMenuCopy: (text: string) => void;
+  onSelectionAi: (selection: string, action: 'explain' | 'fix') => void;
+  onSelectionAiClose: () => void;
+  onCompletionAccept: (value: string) => void;
   onTerminalLinkCancel: () => void;
   onTerminalLinkOpen: () => void;
+  onOsc52ReadCancel: () => void;
+  onOsc52ReadAllow: () => void;
+  onComposeTextChange: (text: string) => void;
+  onComposeClose: () => void;
+  onComposeRun: () => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
   onLaunchDialogClose: () => void;
   onLaunchSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -44,7 +62,22 @@ interface TerminalPaneViewProps {
   onSettingChange: <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => void;
 }
 
-export function TerminalPaneView({
+const TerminalHostCanvas = memo(function TerminalHostCanvas({
+  terminalHostRef,
+  timestampGutterRef,
+}: {
+  terminalHostRef: RefObject<HTMLDivElement | null>;
+  timestampGutterRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <>
+      <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
+      <div ref={terminalHostRef} className="terminal-host" />
+    </>
+  );
+});
+
+export const TerminalPaneView = memo(function TerminalPaneView({
   terminalPaneStyle,
   terminalHostRef,
   timestampGutterRef,
@@ -55,7 +88,14 @@ export function TerminalPaneView({
   searchResults,
   contextMenu,
   commandSuggestion,
+  completionCandidates,
   pendingTerminalLink,
+  pendingOsc52Read,
+  selectionAiState,
+  sessionLogRecording,
+  showComposer,
+  composeText,
+  composeCanRun,
   isLaunchDialogOpen,
   isSettingsDialogOpen,
   launchDraft,
@@ -68,8 +108,16 @@ export function TerminalPaneView({
   onSearchClose,
   onContextMenuClose,
   onContextMenuCopy,
+  onSelectionAi,
+  onSelectionAiClose,
+  onCompletionAccept,
   onTerminalLinkCancel,
   onTerminalLinkOpen,
+  onOsc52ReadCancel,
+  onOsc52ReadAllow,
+  onComposeTextChange,
+  onComposeClose,
+  onComposeRun,
   onOpenNote,
   onLaunchDialogClose,
   onLaunchSubmit,
@@ -97,12 +145,57 @@ export function TerminalPaneView({
       ) : null}
 
       <div className={`terminal-host-shell ${settings.terminalLineTimestamps ? 'with-timestamps' : ''}`}>
-        <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
-        <div ref={terminalHostRef} className="terminal-host" />
+        <TerminalHostCanvas terminalHostRef={terminalHostRef} timestampGutterRef={timestampGutterRef} />
         {commandSuggestion ? (
           <div className="terminal-command-suggestion" aria-live="polite">
             <span>{commandSuggestion}</span>
             <kbd>{t('terminal.autocomplete.hint', settings.language)}</kbd>
+          </div>
+        ) : null}
+        {completionCandidates.length ? (
+          <div className="terminal-completion-menu" role="listbox" aria-label={t('terminal.autocomplete.results', settings.language)}>
+            {completionCandidates.slice(0, 8).map((candidate, index) => (
+              <button
+                key={`${candidate.source}:${candidate.value}`}
+                type="button"
+                role="option"
+                aria-selected={index === 0}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onCompletionAccept(candidate.value)}
+              >
+                <span>{candidate.label}</span>
+                <small>{candidate.detail}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {sessionLogRecording ? (
+          <div className="terminal-session-log-indicator" role="status">
+            <span aria-hidden="true" />{t('terminal.sessionLog.recording', settings.language)}
+          </div>
+        ) : null}
+        {showComposer ? (
+          <div className="terminal-compose-bar">
+            <textarea
+              autoFocus
+              value={composeText}
+              maxLength={32768}
+              spellCheck={false}
+              placeholder={t('terminal.compose.placeholder', settings.language)}
+              onChange={(event) => onComposeTextChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') onComposeClose();
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  onComposeRun();
+                }
+              }}
+            />
+            <div>
+              <span>{t('terminal.compose.hint', settings.language)}</span>
+              <button type="button" onClick={onComposeClose}>{t('common.cancel', settings.language)}</button>
+              <button type="button" className="primary" disabled={!composeCanRun || !composeText.trim()} onClick={onComposeRun}>{t('terminal.compose.run', settings.language)}</button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -112,6 +205,7 @@ export function TerminalPaneView({
         language={settings.language}
         onClose={onContextMenuClose}
         onCopy={onContextMenuCopy}
+        onSelectionAi={onSelectionAi}
         onOpenNote={onOpenNote}
       />
 
@@ -139,6 +233,20 @@ export function TerminalPaneView({
         onCancel={onTerminalLinkCancel}
         onOpen={onTerminalLinkOpen}
       />
+
+      <TerminalOsc52ReadDialogPortal
+        open={pendingOsc52Read}
+        language={settings.language}
+        onCancel={onOsc52ReadCancel}
+        onAllow={onOsc52ReadAllow}
+      />
+
+      <TerminalSelectionAiPortal
+        state={selectionAiState}
+        language={settings.language}
+        onClose={onSelectionAiClose}
+        onCopy={onContextMenuCopy}
+      />
     </div>
   );
-}
+});

@@ -76,6 +76,7 @@ function createPreviewSettings(): ShellDeskAppSettings {
     webSearchApiBaseUrl: 'https://api.tavily.com',
     webSearchMaxResults: 5,
     terminalFontSize: 13,
+    terminalTermType: 'xterm-256color',
     terminalFontFamily: 'Cascadia Mono',
     terminalFontWeight: 400,
     terminalFontWeightBold: 700,
@@ -86,7 +87,11 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalCursorBlink: true,
     terminalCursorStyle: 'block',
     terminalCursorInactiveStyle: 'outline',
+    terminalDrawBoldInBrightColors: true,
+    terminalCursorLineHighlight: false,
     terminalScrollback: 10000,
+    terminalSmoothScrolling: true,
+    terminalScrollOnOutput: true,
     terminalScrollSensitivity: 1,
     terminalFastScrollSensitivity: 5,
     terminalScrollOnUserInput: true,
@@ -95,17 +100,35 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalRightClickPaste: true,
     terminalAltClickMovesCursor: true,
     terminalBracketedPasteMode: true,
+    terminalWordSeparators: ' ()[]{}\'"`,;:@$=<>|&',
+    terminalLinkModifier: 'ctrl',
+    terminalOptionArrowWordJump: true,
+    terminalShiftEnterNewlineEnabled: true,
+    terminalShiftEnterNewlineText: '\\n',
+    terminalMiddleClickBehavior: 'paste',
+    terminalNormalizeCopiedText: true,
     terminalMinimumContrastRatio: 1,
     terminalScreenReaderMode: false,
     terminalPreferTmux: false,
     terminalRestoreWorkspace: true,
     terminalExitPolicy: 'keep-open',
+    terminalDynamicTitle: 'tmux',
     terminalLineTimestamps: false,
     terminalKeywordHighlightEnabled: false,
     terminalHighlightKeywords: 'error,warning,failed,denied,exception',
     terminalCommandAutocompleteEnabled: true,
+    terminalRemotePathAutocompleteEnabled: true,
     terminalSafeLinksEnabled: true,
+    terminalOsc52Mode: 'off',
+    terminalClearWipesScrollback: false,
     terminalSuspendRenderingWhenHidden: true,
+    terminalRenderer: 'auto',
+    terminalHibernateEnabled: true,
+    terminalHibernateDelaySeconds: 120,
+    terminalDropUploadEnabled: true,
+    terminalKittyKeyboardEnabled: true,
+    terminalInlineImagesEnabled: false,
+    terminalSessionLogFormat: 'text',
     terminalSnippets: [],
   };
 }
@@ -465,10 +488,18 @@ async function previewIpc<Channel extends IpcChannel>(
       return true as IpcResult<Channel>;
 
     case 'connection:sftp-download-paths':
-    case 'connection:sftp-upload-local-paths': {
-      const options = (args[3] ?? {}) as ShellDeskSftpTransferOptions;
-      const total = Math.max(1, options.expectedTotal ?? 8_388_608);
-      const totalFiles = Math.max(1, options.expectedFileCount ?? 4);
+    case 'connection:sftp-upload-local-paths':
+    case 'connection:sftp-upload-bytes': {
+      const byteUpload = channel === 'connection:sftp-upload-bytes';
+      const options = (byteUpload ? {} : (args[3] ?? {})) as ShellDeskSftpTransferOptions;
+      const uploadData = byteUpload ? args[3] : undefined;
+      const uploadByteLength = ArrayBuffer.isView(uploadData)
+        ? uploadData.byteLength
+        : uploadData instanceof ArrayBuffer
+          ? uploadData.byteLength
+          : Array.isArray(uploadData) ? uploadData.length : 0;
+      const total = Math.max(1, byteUpload ? uploadByteLength : (options.expectedTotal ?? 8_388_608));
+      const totalFiles = Math.max(1, byteUpload ? 1 : (options.expectedFileCount ?? 4));
       const clientId = options.transferClientId;
       if (options.expectedFileCount === undefined) {
         emitPreviewEvent<ShellDeskTransferProgress>('transfer:progress', {
@@ -534,11 +565,15 @@ async function previewIpc<Channel extends IpcChannel>(
         });
         if (ratio < 1) await new Promise((resolve) => window.setTimeout(resolve, 800));
       }
+      const remoteDirectory = typeof args[1] === 'string' ? args[1].replace(/[\\/]+$/u, '') : '.';
+      const remoteName = typeof args[2] === 'string' ? args[2] : 'shelldesk-paste.png';
       return {
         canceled: false,
         size: total,
         fileCount: totalFiles,
         itemCount: totalFiles,
+        remotePath: byteUpload ? `${remoteDirectory}/${remoteName}` : undefined,
+        remotePaths: byteUpload ? [`${remoteDirectory}/${remoteName}`] : undefined,
       } as IpcResult<Channel>;
     }
 
@@ -609,6 +644,33 @@ function onTauriEvent<T = unknown>(channel: string, callback: EventCallback<T>) 
   return () => {
     disposed = true;
     dispose?.();
+  };
+}
+
+function onTauriFileDrop(callback: (payload: { type: 'enter' | 'over' | 'drop' | 'leave'; paths?: string[]; position?: { x: number; y: number } }) => void) {
+  let disposed = false;
+  let unlisten: (() => void) | undefined;
+  if (!isTauriRuntime()) return () => undefined;
+  void Promise.all([
+    import('@tauri-apps/api/webview'),
+    import('@tauri-apps/api/window'),
+  ]).then(async ([{ getCurrentWebview }, { getCurrentWindow }]) => {
+    const scaleFactor = await getCurrentWindow().scaleFactor();
+    const remove = await getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === 'leave') {
+        callback({ type: 'leave' });
+        return;
+      }
+      const position = payload.position.toLogical(scaleFactor);
+      callback({ type: payload.type, position, paths: 'paths' in payload ? payload.paths : undefined });
+    });
+    if (disposed) remove();
+    else unlisten = remove;
+  }).catch(() => undefined);
+  return () => {
+    disposed = true;
+    unlisten?.();
   };
 }
 
@@ -818,6 +880,7 @@ window.guiSSH = {
     sftpSetPathPermissions: (connectionId, remotePath, options) => ipc('connection:sftp-set-path-permissions', connectionId, remotePath, options),
     sftpDownloadPaths: (connectionId, remotePaths, localDirectory, options) => ipc('connection:sftp-download-paths', connectionId, remotePaths, localDirectory, options),
     sftpUploadLocalPaths: (connectionId, remotePath, items, options) => ipc('connection:sftp-upload-local-paths', connectionId, remotePath, items, options),
+    sftpUploadBytes: (connectionId, remotePath, fileName, data) => ipc('connection:sftp-upload-bytes', connectionId, remotePath, fileName, data),
     sftpEnqueueTransfers: (connectionId, tasks, concurrency) => ipc('connection:sftp-enqueue-transfers', connectionId, tasks, concurrency),
     createDirectory: (connectionId, remotePath, options) => ipc('connection:create-directory', connectionId, remotePath, options),
     deletePath: (connectionId, remotePath, entryType, options) => ipc('connection:delete-path', connectionId, remotePath, entryType, options),
@@ -919,6 +982,7 @@ window.guiSSH = {
       ipc('connection:sqlite-update-cell', connectionId, sqliteId, table, column, newValue, target, options),
   },
   events: {
+    onFileDrop: (callback) => onTauriFileDrop(callback),
     onTerminalData: (callback) => onTauriEvent('terminal:data', callback),
     onTerminalExit: (callback) => onTauriEvent('terminal:exit', callback),
     onVncDiagnostic: (callback) => onTauriEvent('vnc:diagnostic', callback),

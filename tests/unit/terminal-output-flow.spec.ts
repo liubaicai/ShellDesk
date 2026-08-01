@@ -7,6 +7,7 @@ function createScheduler() {
   const animationFrames = new Map<number, () => void>();
   const timers = new Map<number, () => void>();
   let sequence = 0;
+  let now = 0;
   return {
     scheduler: {
       queueMicrotask: (callback: () => void) => microtasks.push(callback),
@@ -22,12 +23,14 @@ function createScheduler() {
         return sequence;
       },
       clearTimeout: (handle: number) => timers.delete(handle),
+      now: () => now,
     },
     runMicrotask: () => microtasks.shift()?.(),
     runAnimationFrame: () => animationFrames.values().next().value?.(),
     runTimer: () => timers.values().next().value?.(),
     pendingAnimationFrames: () => animationFrames.size,
     pendingTimers: () => timers.size,
+    advance: (milliseconds: number) => { now += milliseconds; },
   };
 }
 
@@ -50,6 +53,37 @@ test('coalesces output and acknowledges only after the xterm write completes', (
 
   writes[0].done();
   expect(acknowledgements).toEqual([[2, 11]]);
+  controller.dispose();
+});
+
+test('compacts flood queues and yields after the drain time budget', () => {
+  const fake = createScheduler();
+  const writes: Array<{ data: string; done: () => void }> = [];
+  const acknowledgements: Array<[number, number]> = [];
+  const controller = createTerminalOutputFlowController({
+    scheduler: fake.scheduler,
+    maxBatchBytes: 2,
+    floodBatchBytes: 2,
+    floodThresholdBytes: 100,
+    maxQueueItems: 4,
+    drainTimeBudgetMs: 5,
+    write: (data, done) => writes.push({ data, done }),
+    acknowledge: (sequence, byteLength) => acknowledgements.push([sequence, byteLength]),
+  });
+
+  for (let index = 1; index <= 12; index += 1) {
+    controller.enqueue({ data: String(index % 10), sequence: index, byteLength: 1 });
+  }
+  expect(controller.pendingBytes()).toBe(12);
+  fake.runMicrotask();
+  expect(writes[0].data.length).toBeGreaterThanOrEqual(2);
+  fake.advance(6);
+  writes[0].done();
+  expect(fake.pendingTimers()).toBe(1);
+  fake.runTimer();
+  expect(writes).toHaveLength(2);
+  writes[1].done();
+  expect(acknowledgements.at(-1)?.[0]).toBeGreaterThan(0);
   controller.dispose();
 });
 
