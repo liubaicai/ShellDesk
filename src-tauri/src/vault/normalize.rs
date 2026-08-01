@@ -311,8 +311,16 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
         "terminalHighlightKeywords": terminal_highlight_keywords,
         "terminalCommandAutocompleteEnabled": read_bool(settings.get("terminalCommandAutocompleteEnabled"), defaults["terminalCommandAutocompleteEnabled"].as_bool().unwrap_or(true)),
+        "terminalRemotePathAutocompleteEnabled": read_bool(settings.get("terminalRemotePathAutocompleteEnabled"), defaults["terminalRemotePathAutocompleteEnabled"].as_bool().unwrap_or(true)),
         "terminalSafeLinksEnabled": read_bool(settings.get("terminalSafeLinksEnabled"), defaults["terminalSafeLinksEnabled"].as_bool().unwrap_or(true)),
         "terminalSuspendRenderingWhenHidden": read_bool(settings.get("terminalSuspendRenderingWhenHidden"), defaults["terminalSuspendRenderingWhenHidden"].as_bool().unwrap_or(true)),
+        "terminalRenderer": read_choice(settings.get("terminalRenderer"), &["auto", "dom", "webgl"], defaults["terminalRenderer"].as_str().unwrap_or("auto")),
+        "terminalHibernateEnabled": read_bool(settings.get("terminalHibernateEnabled"), defaults["terminalHibernateEnabled"].as_bool().unwrap_or(true)),
+        "terminalHibernateDelaySeconds": read_i64_range(settings.get("terminalHibernateDelaySeconds"), 30, 900, defaults["terminalHibernateDelaySeconds"].as_i64().unwrap_or(120)),
+        "terminalDropUploadEnabled": read_bool(settings.get("terminalDropUploadEnabled"), defaults["terminalDropUploadEnabled"].as_bool().unwrap_or(true)),
+        "terminalKittyKeyboardEnabled": read_bool(settings.get("terminalKittyKeyboardEnabled"), defaults["terminalKittyKeyboardEnabled"].as_bool().unwrap_or(true)),
+        "terminalInlineImagesEnabled": read_bool(settings.get("terminalInlineImagesEnabled"), defaults["terminalInlineImagesEnabled"].as_bool().unwrap_or(false)),
+        "terminalSessionLogFormat": read_choice(settings.get("terminalSessionLogFormat"), &["text", "ansi"], defaults["terminalSessionLogFormat"].as_str().unwrap_or("text")),
         "terminalSnippets": terminal_snippets
     }))
 }

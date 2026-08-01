@@ -10,6 +10,7 @@ interface TerminalOutputScheduler {
   cancelAnimationFrame: (handle: number) => void;
   setTimeout: (callback: () => void, delayMs: number) => number;
   clearTimeout: (handle: number) => void;
+  now: () => number;
 }
 
 interface TerminalOutputFlowOptions {
@@ -17,6 +18,10 @@ interface TerminalOutputFlowOptions {
   acknowledge: (sequence: number, byteLength: number) => void;
   scheduler?: TerminalOutputScheduler;
   maxBatchBytes?: number;
+  floodBatchBytes?: number;
+  floodThresholdBytes?: number;
+  maxQueueItems?: number;
+  drainTimeBudgetMs?: number;
   animationFrameFallbackMs?: number;
   initiallyVisible?: boolean;
 }
@@ -31,6 +36,10 @@ export interface TerminalOutputFlowController {
 }
 
 const defaultMaxBatchBytes = 128 * 1024;
+const defaultFloodBatchBytes = 512 * 1024;
+const defaultFloodThresholdBytes = 512 * 1024;
+const defaultMaxQueueItems = 32;
+const defaultDrainTimeBudgetMs = 10;
 const defaultAnimationFrameFallbackMs = 50;
 const outputEncoder = new TextEncoder();
 
@@ -41,6 +50,7 @@ function createBrowserScheduler(): TerminalOutputScheduler {
     cancelAnimationFrame: (handle) => window.cancelAnimationFrame(handle),
     setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
     clearTimeout: (handle) => window.clearTimeout(handle),
+    now: () => globalThis.performance?.now?.() ?? Date.now(),
   };
 }
 
@@ -49,6 +59,10 @@ export function createTerminalOutputFlowController({
   acknowledge,
   scheduler = createBrowserScheduler(),
   maxBatchBytes = defaultMaxBatchBytes,
+  floodBatchBytes = defaultFloodBatchBytes,
+  floodThresholdBytes = defaultFloodThresholdBytes,
+  maxQueueItems = defaultMaxQueueItems,
+  drainTimeBudgetMs = defaultDrainTimeBudgetMs,
   animationFrameFallbackMs = defaultAnimationFrameFallbackMs,
   initiallyVisible = true,
 }: TerminalOutputFlowOptions): TerminalOutputFlowController {
@@ -62,6 +76,7 @@ export function createTerminalOutputFlowController({
   let animationFrame: number | null = null;
   let fallbackTimer: number | null = null;
   let drainCallbacks: Array<() => void> = [];
+  let drainTurnStartedAt = 0;
 
   const notifyDrained = () => {
     if (disposed || writing || queue.length || scheduled || !drainCallbacks.length) {
@@ -83,13 +98,35 @@ export function createTerminalOutputFlowController({
     }
   };
 
+  const compactQueue = () => {
+    if (queue.length <= maxQueueItems) {
+      return;
+    }
+    const compacted: TerminalOutputChunk[] = [];
+    const targetItems = Math.max(1, Math.floor(maxQueueItems / 2));
+    const groupSize = Math.max(2, Math.ceil(queue.length / targetItems));
+    for (let index = 0; index < queue.length; index += groupSize) {
+      const group = queue.slice(index, index + groupSize);
+      const sequenced = group.filter((chunk) => Number.isSafeInteger(chunk.sequence));
+      compacted.push({
+        data: group.map((chunk) => chunk.data).join(''),
+        sequence: sequenced.at(-1)?.sequence,
+        byteLength: group.reduce((total, chunk) => total + Math.max(chunk.byteLength ?? 0, 0), 0),
+      });
+    }
+    queue = compacted;
+  };
+
   const takeBatch = () => {
     const chunks: TerminalOutputChunk[] = [];
     let bytes = 0;
+    const batchLimit = queuedBytes >= floodThresholdBytes
+      ? Math.max(maxBatchBytes, floodBatchBytes)
+      : maxBatchBytes;
     while (queue.length) {
       const next = queue[0];
       const nextBytes = Math.max(next.byteLength ?? outputEncoder.encode(next.data).byteLength, 0);
-      if (chunks.length && bytes + nextBytes > maxBatchBytes) {
+      if (chunks.length && bytes + nextBytes > batchLimit) {
         break;
       }
       queue.shift();
@@ -100,7 +137,7 @@ export function createTerminalOutputFlowController({
     return chunks;
   };
 
-  const schedule = () => {
+  const schedule = (yieldToEventLoop = false) => {
     if (disposed || scheduled || writing || !visible || !queue.length) {
       return;
     }
@@ -114,6 +151,9 @@ export function createTerminalOutputFlowController({
       clearScheduledHandles();
       if (disposed || writing || !visible || !queue.length) {
         return;
+      }
+      if (!drainTurnStartedAt) {
+        drainTurnStartedAt = scheduler.now();
       }
 
       const chunks = takeBatch();
@@ -140,7 +180,11 @@ export function createTerminalOutputFlowController({
         if (sequence !== undefined && acknowledgedBytes > 0) {
           acknowledge(sequence, acknowledgedBytes);
         }
-        schedule();
+        const shouldYield = scheduler.now() - drainTurnStartedAt >= drainTimeBudgetMs;
+        if (shouldYield) {
+          drainTurnStartedAt = 0;
+        }
+        schedule(shouldYield);
         notifyDrained();
       };
 
@@ -154,6 +198,11 @@ export function createTerminalOutputFlowController({
         done();
       }
     };
+
+    if (yieldToEventLoop) {
+      fallbackTimer = scheduler.setTimeout(run, 0);
+      return;
+    }
 
     if (!alternateScreen) {
       scheduler.queueMicrotask(run);
@@ -182,6 +231,7 @@ export function createTerminalOutputFlowController({
       );
       queue.push({ ...chunk, byteLength });
       queuedBytes += byteLength;
+      compactQueue();
       schedule();
     },
     whenDrained: (callback) => {
@@ -214,6 +264,7 @@ export function createTerminalOutputFlowController({
       clearScheduledHandles();
       queue = [];
       queuedBytes = 0;
+      drainTurnStartedAt = 0;
       drainCallbacks = [];
     },
   };

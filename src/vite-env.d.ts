@@ -440,8 +440,16 @@ interface ShellDeskAppSettings {
   terminalKeywordHighlightEnabled: boolean;
   terminalHighlightKeywords: string;
   terminalCommandAutocompleteEnabled: boolean;
+  terminalRemotePathAutocompleteEnabled: boolean;
   terminalSafeLinksEnabled: boolean;
   terminalSuspendRenderingWhenHidden: boolean;
+  terminalRenderer: 'auto' | 'dom' | 'webgl';
+  terminalHibernateEnabled: boolean;
+  terminalHibernateDelaySeconds: number;
+  terminalDropUploadEnabled: boolean;
+  terminalKittyKeyboardEnabled: boolean;
+  terminalInlineImagesEnabled: boolean;
+  terminalSessionLogFormat: 'text' | 'ansi';
   terminalSnippets: ShellDeskTerminalSnippet[];
 }
 
@@ -974,6 +982,7 @@ interface ShellDeskConnectionControls {
   sftpSetPathPermissions: (connectionId: string, remotePath: string, options: ShellDeskRemotePathPermissionOptions) => Promise<boolean>;
   sftpDownloadPaths: (connectionId: string, remotePaths: string[], localDirectory: string, options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; directoryPath?: string; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
   sftpUploadLocalPaths: (connectionId: string, remotePath: string, items: ShellDeskLocalUploadItem[], options?: ShellDeskSftpTransferOptions) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
+  sftpUploadBytes: (connectionId: string, remotePath: string, fileName: string, data: ArrayBuffer | ArrayBufferView | number[]) => Promise<{ canceled: boolean; remotePath?: string; remotePaths?: string[]; size?: number; fileCount?: number; itemCount?: number; skippedCount?: number }>;
   sftpEnqueueTransfers: (connectionId: string, tasks: ShellDeskSftpRuntimeTask[], concurrency: number) => Promise<{ queuedIds: string[] }>;
   createDirectory: (connectionId: string, remotePath: string, options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
   deletePath: (connectionId: string, remotePath: string, entryType: 'directory' | 'file' | 'symlink', options?: ShellDeskSudoPasswordOptions) => Promise<boolean>;
@@ -1648,20 +1657,17 @@ interface ShellDeskSyncResult {
   snapshot: ShellDeskVaultSnapshot | null;
   config: ShellDeskSyncPublicConfig;
 }
-
 interface ShellDeskWebDavTestResult {
   ok: boolean;
   checkedAt: string;
   message: string;
 }
-
 interface ShellDeskSyncControls {
   getConfig: () => Promise<ShellDeskSyncPublicConfig>;
   saveConfig: (config: ShellDeskSyncConfigInput) => Promise<ShellDeskSyncPublicConfig>;
   testWebDav: (config: ShellDeskSyncConfigInput) => Promise<ShellDeskWebDavTestResult>;
   runNow: (config?: ShellDeskSyncRunInput) => Promise<ShellDeskSyncResult>;
 }
-
 interface ShellDeskTransferProgress {
   connectionId?: string;
   queueId?: string;
@@ -1682,7 +1688,6 @@ interface ShellDeskTransferProgress {
   preparedDirectories?: number;
   totalDirectories?: number;
 }
-
 interface ShellDeskTransferTask extends ShellDeskTransferProgress {
   id: string;
   hostId?: string;
@@ -1698,7 +1703,6 @@ interface ShellDeskTransferTask extends ShellDeskTransferProgress {
   error?: string;
   errorCode?: 'interrupted-on-exit';
 }
-
 interface ShellDeskTransferEndPayload {
   connectionId?: string;
   queueId?: string;
@@ -1716,7 +1720,6 @@ interface ShellDeskTransferEndPayload {
   success: boolean;
   error?: string;
 }
-
 interface ShellDeskDatabaseTunnelIdleTimeoutPayload {
   key: string;
   kind: 'mysql' | 'postgres' | 'redis' | 'clickhouse' | 'mongo' | string;
@@ -1724,8 +1727,8 @@ interface ShellDeskDatabaseTunnelIdleTimeoutPayload {
   sessionId: string;
   idleMinutes: number;
 }
-
 interface ShellDeskEventControls {
+  onFileDrop: (callback: (payload: { type: 'enter' | 'over' | 'drop' | 'leave'; paths?: string[]; position?: { x: number; y: number } }) => void) => () => void;
   onTerminalData: (callback: (payload: { connectionId: string; terminalId?: string; data: string; bytes?: ArrayBuffer | ArrayBufferView | number[]; sequence?: number; byteLength?: number }) => void) => () => void;
   onTerminalExit: (callback: (payload: { connectionId: string; terminalId?: string; code?: number | null; signal?: string | null }) => void) => () => void;
   onVncDiagnostic: (callback: (payload: ShellDeskVncDiagnosticPayload) => void) => () => void;
@@ -1753,7 +1756,6 @@ interface ShellDeskEventControls {
   onUpdateDownloaded: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
   onUpdateError: (callback: (payload: ShellDeskUpdateStatus) => void) => () => void;
 }
-
 interface ShellDeskApi {
   appName: string;
   platform: NodeJS.Platform;
@@ -1776,7 +1778,6 @@ interface ShellDeskApi {
       webview: WebviewProps;
     }
   }
-
   interface Window {
     guiSSH?: ShellDeskApi;
     __shellDeskLogContext?: {
@@ -1786,7 +1787,6 @@ interface ShellDeskApi {
     };
   }
 }
-
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -1794,5 +1794,4 @@ declare module 'react' {
     }
   }
 }
-
 export {};

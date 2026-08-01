@@ -61,8 +61,16 @@ const checkedKeys = [
   'terminalKeywordHighlightEnabled',
   'terminalHighlightKeywords',
   'terminalCommandAutocompleteEnabled',
+  'terminalRemotePathAutocompleteEnabled',
   'terminalSafeLinksEnabled',
   'terminalSuspendRenderingWhenHidden',
+  'terminalRenderer',
+  'terminalHibernateEnabled',
+  'terminalHibernateDelaySeconds',
+  'terminalDropUploadEnabled',
+  'terminalKittyKeyboardEnabled',
+  'terminalInlineImagesEnabled',
+  'terminalSessionLogFormat',
 ];
 
 function readWorkspaceFile(relativePath) {

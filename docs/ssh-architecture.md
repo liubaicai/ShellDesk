@@ -42,9 +42,10 @@
 2. `terminal.rs` 向 `ssh_transport_pool.rs` 租用当前连接的已认证 transport；首次租用才调用 `russh_client::connect_authenticated`，后续终端和 SFTP 复用认证结果。
 3. 后端在租约上打开独立 session channel，调用 `request_pty("xterm-256color", columns, rows, ...)`。
 4. 后端根据启动参数选择 `request_shell` 或 `exec`，并注入初始命令、工作目录或指定 shell。
-5. xterm 输入通过 control channel 写入 russh channel；远端输出先按 64 KiB / 8 ms 聚合，再通过 `terminal:data` 回到渲染层。渲染层在 xterm 完成写入后调用 `connection:ack-terminal-output`，超过高水位时后端暂停读取，降至低水位后恢复。
+5. xterm 输入通过 control channel 写入 russh channel；远端输出先按 64 KiB / 8 ms 聚合，再通过 `terminal:data` 回到渲染层。渲染层以容量/洪泛批次和单轮时间预算写入 xterm，写入完成后调用 `connection:ack-terminal-output`；超过高水位时后端暂停读取，降至低水位后恢复。隐藏终端停止确认以触发后端回压，长期隐藏时仅在内存中压缩滚屏并释放可重建的 GPU/图片资源。
 6. resize 通过 `connection:resize-terminal` 转成 russh `window_change(columns, rows, 0, 0)`。
 7. su-root 自动化只观察远端 PTY 输出中的密码提示，并把 root 密码写回同一个 PTY channel。
+8. 终端拖放和剪贴板图片复用连接级 SFTP transport；剪贴板二进制在受限临时目录暂存，上传完成或失败后立即删除。
 
 本地模式终端不走 SSH。它使用本地 shell 进程和独立的输入/输出管道，避免为本机工具创建 SSH loopback host。
 

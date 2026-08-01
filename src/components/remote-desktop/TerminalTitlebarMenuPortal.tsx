@@ -92,6 +92,12 @@ export function TerminalTitlebarMenuPortal({
             <button type="button" role="menuitem" onClick={() => onRequestTool('clear')}>
               {t('terminal.titlebar.clear', language)}
             </button>
+            <button type="button" role="menuitem" onClick={() => onRequestTool('toggle-log')}>
+              {t('terminal.titlebar.toggleSessionLog', language)}
+            </button>
+            <button type="button" role="menuitem" onClick={() => onRequestTool('paste-image')}>
+              {t('terminal.titlebar.pasteClipboardImage', language)}
+            </button>
             {systemType !== 'windows' ? (
               <div className="context-menu-item-has-submenu terminal-titlebar-tmux-menu">
                 <button type="button" role="menuitem" aria-haspopup="menu">

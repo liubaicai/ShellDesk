@@ -76,6 +76,10 @@ export function suggestRuntimeTerminalCommand(
   )) ?? '';
 }
 
+export function listRuntimeTerminalCommands(scope: string) {
+  return [...(getRuntimeHistory(scope, false) ?? [])];
+}
+
 export function clearRuntimeTerminalCommandHistory(scope?: string) {
   if (scope) {
     runtimeCommandHistories.delete(scope.trim().slice(0, 256));

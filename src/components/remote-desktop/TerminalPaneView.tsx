@@ -1,4 +1,4 @@
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
+import { memo, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import {
   TerminalContextMenuPortal,
@@ -7,6 +7,8 @@ import {
   TerminalSettingsDialogPortal,
 } from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
+import type { TerminalCompletionCandidate } from './terminalCompletionEngine';
+import { TerminalSelectionAiPortal, type TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import type { RemoteSystemType } from './types';
 import { t } from '../../i18n';
 
@@ -21,7 +23,10 @@ interface TerminalPaneViewProps {
   searchResults: TerminalSearchResultState;
   contextMenu: TerminalContextMenuState | null;
   commandSuggestion: string;
+  completionCandidates: TerminalCompletionCandidate[];
   pendingTerminalLink: string;
+  selectionAiState: TerminalSelectionAiState | null;
+  sessionLogRecording: boolean;
   isLaunchDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
   launchDraft: TerminalLaunchDraft;
@@ -34,6 +39,9 @@ interface TerminalPaneViewProps {
   onSearchClose: () => void;
   onContextMenuClose: () => void;
   onContextMenuCopy: (text: string) => void;
+  onSelectionAi: (selection: string, action: 'explain' | 'fix') => void;
+  onSelectionAiClose: () => void;
+  onCompletionAccept: (value: string) => void;
   onTerminalLinkCancel: () => void;
   onTerminalLinkOpen: () => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
@@ -44,7 +52,22 @@ interface TerminalPaneViewProps {
   onSettingChange: <Field extends keyof ShellDeskAppSettings>(field: Field, value: ShellDeskAppSettings[Field]) => void;
 }
 
-export function TerminalPaneView({
+const TerminalHostCanvas = memo(function TerminalHostCanvas({
+  terminalHostRef,
+  timestampGutterRef,
+}: {
+  terminalHostRef: RefObject<HTMLDivElement | null>;
+  timestampGutterRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <>
+      <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
+      <div ref={terminalHostRef} className="terminal-host" />
+    </>
+  );
+});
+
+export const TerminalPaneView = memo(function TerminalPaneView({
   terminalPaneStyle,
   terminalHostRef,
   timestampGutterRef,
@@ -55,7 +78,10 @@ export function TerminalPaneView({
   searchResults,
   contextMenu,
   commandSuggestion,
+  completionCandidates,
   pendingTerminalLink,
+  selectionAiState,
+  sessionLogRecording,
   isLaunchDialogOpen,
   isSettingsDialogOpen,
   launchDraft,
@@ -68,6 +94,9 @@ export function TerminalPaneView({
   onSearchClose,
   onContextMenuClose,
   onContextMenuCopy,
+  onSelectionAi,
+  onSelectionAiClose,
+  onCompletionAccept,
   onTerminalLinkCancel,
   onTerminalLinkOpen,
   onOpenNote,
@@ -97,12 +126,33 @@ export function TerminalPaneView({
       ) : null}
 
       <div className={`terminal-host-shell ${settings.terminalLineTimestamps ? 'with-timestamps' : ''}`}>
-        <div ref={timestampGutterRef} className="terminal-timestamp-gutter" aria-hidden="true" />
-        <div ref={terminalHostRef} className="terminal-host" />
+        <TerminalHostCanvas terminalHostRef={terminalHostRef} timestampGutterRef={timestampGutterRef} />
         {commandSuggestion ? (
           <div className="terminal-command-suggestion" aria-live="polite">
             <span>{commandSuggestion}</span>
             <kbd>{t('terminal.autocomplete.hint', settings.language)}</kbd>
+          </div>
+        ) : null}
+        {completionCandidates.length ? (
+          <div className="terminal-completion-menu" role="listbox" aria-label={t('terminal.autocomplete.results', settings.language)}>
+            {completionCandidates.slice(0, 8).map((candidate, index) => (
+              <button
+                key={`${candidate.source}:${candidate.value}`}
+                type="button"
+                role="option"
+                aria-selected={index === 0}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onCompletionAccept(candidate.value)}
+              >
+                <span>{candidate.label}</span>
+                <small>{candidate.detail}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {sessionLogRecording ? (
+          <div className="terminal-session-log-indicator" role="status">
+            <span aria-hidden="true" />{t('terminal.sessionLog.recording', settings.language)}
           </div>
         ) : null}
       </div>
@@ -112,6 +162,7 @@ export function TerminalPaneView({
         language={settings.language}
         onClose={onContextMenuClose}
         onCopy={onContextMenuCopy}
+        onSelectionAi={onSelectionAi}
         onOpenNote={onOpenNote}
       />
 
@@ -139,6 +190,13 @@ export function TerminalPaneView({
         onCancel={onTerminalLinkCancel}
         onOpen={onTerminalLinkOpen}
       />
+
+      <TerminalSelectionAiPortal
+        state={selectionAiState}
+        language={settings.language}
+        onClose={onSelectionAiClose}
+        onCopy={onContextMenuCopy}
+      />
     </div>
   );
-}
+});

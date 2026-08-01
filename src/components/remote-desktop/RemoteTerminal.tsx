@@ -22,9 +22,20 @@ import { collectSubmittedCommands, isLikelyForegroundCommand, readForegroundTask
 import { applyTerminalOptions, buildTerminalOptions, getLocalWindowsPtyOption, getShellChoices, getTerminalChromeTone, getTerminalSessionTitle, getTerminalStatusLabel, sftpProbeCacheMs, terminalSearchOptions } from './terminalCore';
 import { createTerminalCwdProbeController } from './terminalCwd';
 import { rememberRuntimeTerminalCommand, suggestRuntimeTerminalCommand } from './terminalCommandHistory';
+import {
+  collectRemotePathCompletionCandidates,
+  collectTerminalCompletionCandidates,
+  type TerminalCompletionCandidate,
+} from './terminalCompletionEngine';
 import { normalizeSafeTerminalLink } from './terminalLinks';
 import { createTerminalOutputDecorationController, type TerminalOutputDecorationController } from './terminalOutputDecorations';
 import { createTerminalOutputFlowController, type TerminalOutputFlowController } from './terminalOutputFlow';
+import { createTerminalHibernateRuntime, type TerminalHibernateRuntime } from './terminalHibernateRuntime';
+import { createTerminalRendererRuntime, type TerminalRendererRuntime } from './terminalRendererRuntime';
+import { attachTerminalDropUpload, pasteClipboardImageToTerminal } from './terminalDropUpload';
+import { createTerminalSessionLogController, type TerminalSessionLogController } from './terminalSessionLog';
+import { createTerminalKittyKeyboardRuntime } from './terminalKittyKeyboard';
+import type { TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import { createSftpProgressHandlers, createSftpTransferRunner } from './terminalTransfer';
 import type { ForegroundTaskSource, RemoteTerminalProps, RemoteTerminalSessionEvent, RemoteTerminalSessionEventInput, RemoteTerminalSessionStatus, TerminalContextMenuState, TerminalCwdProbeState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
 import { TerminalPaneView } from './TerminalPaneView';
@@ -103,6 +114,10 @@ function RemoteTerminal({
   const commandBufferRef = useRef('');
   const commandBufferUnsafeRef = useRef(false);
   const commandSuggestionRef = useRef('');
+  const acceptCompletionRef = useRef<((value: string) => void) | null>(null);
+  const completionGenerationRef = useRef(0);
+  const completionTimerRef = useRef<number | null>(null);
+  const currentWorkingDirectoryRef = useRef(launchOptions?.workingDirectory?.trim() || '.');
   const foregroundSequenceBufferRef = useRef('');
   const foregroundTaskSourceRef = useRef<ForegroundTaskSource | null>(null);
   const handledCommandRequestRef = useRef('');
@@ -114,6 +129,13 @@ function RemoteTerminal({
   const onSessionExitRef = useRef(onSessionExit);
   const outputDecorationControllerRef = useRef<TerminalOutputDecorationController | null>(null);
   const outputFlowControllerRef = useRef<TerminalOutputFlowController | null>(null);
+  const rendererRuntimeRef = useRef<TerminalRendererRuntime | null>(null);
+  const hibernateRuntimeRef = useRef<TerminalHibernateRuntime | null>(null);
+  const sessionLogControllerRef = useRef<TerminalSessionLogController | null>(null);
+  const toggleSessionLogRef = useRef<(() => void) | null>(null);
+  const pasteClipboardImageRef = useRef<(() => void) | null>(null);
+  const selectionAiGenerationRef = useRef(0);
+  const selectionAiAbortRef = useRef<AbortController | null>(null);
   const isVisibleRef = useRef(isVisible);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sessionStatus, setSessionStatus] = useState<RemoteTerminalSessionStatus>('idle');
@@ -127,6 +149,9 @@ function RemoteTerminal({
   const [searchResults, setSearchResults] = useState<TerminalSearchResultState>({ index: -1, count: 0 });
   const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(null);
   const [commandSuggestion, setCommandSuggestion] = useState('');
+  const [completionCandidates, setCompletionCandidates] = useState<TerminalCompletionCandidate[]>([]);
+  const [sessionLogRecording, setSessionLogRecording] = useState(false);
+  const [selectionAiState, setSelectionAiState] = useState<TerminalSelectionAiState | null>(null);
   const [pendingTerminalLink, setPendingTerminalLink] = useState('');
   const [isLaunchDialogOpen, setIsLaunchDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
@@ -168,6 +193,40 @@ function RemoteTerminal({
       terminalRef.current?.writeln(`\r\n${t('terminal.error.copyFailed', settings.language, { error: getErrorMessage(error) })}`);
     });
   }, [settings.language]);
+
+  const requestSelectionAi = useCallback((selection: string, action: 'explain' | 'fix') => {
+    const trimmedSelection = selection.trim().slice(0, 8_000);
+    if (!trimmedSelection) return;
+    const generation = selectionAiGenerationRef.current + 1;
+    selectionAiGenerationRef.current = generation;
+    selectionAiAbortRef.current?.abort();
+    const abortController = new AbortController();
+    selectionAiAbortRef.current = abortController;
+    setSelectionAiState({ selection: trimmedSelection, action, result: '', error: '', loading: true });
+    const systemPrompt = action === 'fix'
+      ? t('terminal.selectionAi.fixPrompt', settings.language)
+      : t('terminal.selectionAi.explainPrompt', settings.language);
+    void import('../../ai').then(({ completeAiRequest, isAiConfigured }) => {
+      if (!isAiConfigured(settings)) {
+        throw new Error(t('terminal.selectionAi.notConfigured', settings.language));
+      }
+      return completeAiRequest(settings, {
+        systemPrompt,
+        messages: [{ role: 'user', content: trimmedSelection }],
+        temperature: 0.1,
+      }, { signal: abortController.signal, timeoutMs: 60_000, maxRetries: 1 });
+    }).then((result) => {
+      if (generation !== selectionAiGenerationRef.current) return;
+      selectionAiAbortRef.current = null;
+      setSelectionAiState((current) => current ? { ...current, loading: false, result: result.trim() } : current);
+    }).catch((error: unknown) => {
+      if (generation !== selectionAiGenerationRef.current) return;
+      selectionAiAbortRef.current = null;
+      setSelectionAiState((current) => current
+        ? { ...current, loading: false, error: getErrorMessage(error) }
+        : current);
+    });
+  }, [settings]);
 
   const openPendingTerminalLink = useCallback(() => {
     const link = normalizeSafeTerminalLink(pendingTerminalLink);
@@ -286,6 +345,7 @@ function RemoteTerminal({
     if (!settings.terminalCommandAutocompleteEnabled) {
       commandSuggestionRef.current = '';
       setCommandSuggestion('');
+      setCompletionCandidates([]);
     }
     if (!settings.terminalSafeLinksEnabled) {
       setPendingTerminalLink('');
@@ -293,6 +353,11 @@ function RemoteTerminal({
     outputFlowControllerRef.current?.setVisible(
       !settings.terminalSuspendRenderingWhenHidden
       || (isVisibleRef.current && (typeof document === 'undefined' || document.visibilityState !== 'hidden')),
+    );
+    rendererRuntimeRef.current?.update(settings.terminalRenderer, settings.terminalInlineImagesEnabled);
+    hibernateRuntimeRef.current?.update(
+      settings.terminalHibernateEnabled && settings.terminalSuspendRenderingWhenHidden,
+      settings.terminalHibernateDelaySeconds,
     );
     outputDecorationControllerRef.current?.refresh();
     const terminal = terminalRef.current;
@@ -341,10 +406,13 @@ function RemoteTerminal({
 
   useEffect(() => {
     isVisibleRef.current = isVisible;
+    const visible = isVisible && (typeof document === 'undefined' || document.visibilityState !== 'hidden');
     outputFlowControllerRef.current?.setVisible(
       !settingsRef.current.terminalSuspendRenderingWhenHidden
-      || (isVisible && (typeof document === 'undefined' || document.visibilityState !== 'hidden')),
+      || visible,
     );
+    rendererRuntimeRef.current?.setVisible(visible);
+    hibernateRuntimeRef.current?.setVisible(visible);
   }, [isVisible]);
 
   useEffect(() => {
@@ -420,6 +488,20 @@ function RemoteTerminal({
         setTerminalReportedTitle(title.trim());
       }
     });
+    const cwdDisposable = terminal.parser.registerOscHandler(7, (value) => {
+      try {
+        const parsed = new URL(value);
+        if (parsed.protocol === 'file:') {
+          const decoded = decodeURIComponent(parsed.pathname);
+          currentWorkingDirectoryRef.current = isWindowsSystem(systemType)
+            ? decoded.replace(/^\/([a-z]:)/iu, '$1').replace(/\//gu, '\\')
+            : decoded || '/';
+        }
+      } catch {
+        // Ignore malformed or non-URL OSC 7 payloads.
+      }
+      return true;
+    });
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
     terminal.loadAddon(fitAddon);
@@ -427,6 +509,21 @@ function RemoteTerminal({
     terminal.loadAddon(unicodeGraphemesAddon);
     terminal.loadAddon(webLinksAddon);
     terminal.open(host);
+    const sessionLogController = createTerminalSessionLogController({
+      api,
+      title: sessionTitle,
+      format: () => settingsRef.current.terminalSessionLogFormat,
+    });
+    sessionLogControllerRef.current = sessionLogController;
+    const rendererRuntime = createTerminalRendererRuntime(
+      terminal,
+      settingsRef.current.terminalRenderer,
+      settingsRef.current.terminalInlineImagesEnabled,
+    );
+    rendererRuntimeRef.current = rendererRuntime;
+    rendererRuntime.setVisible(
+      isVisibleRef.current && (typeof document === 'undefined' || document.visibilityState !== 'hidden'),
+    );
     if (timestampGutterRef.current) {
       outputDecorationControllerRef.current = createTerminalOutputDecorationController(
         terminal,
@@ -442,6 +539,11 @@ function RemoteTerminal({
     foregroundSequenceBufferRef.current = '';
     foregroundTaskSourceRef.current = null;
 
+    const kittyKeyboardRuntime = createTerminalKittyKeyboardRuntime({
+      terminal,
+      enabled: () => settingsRef.current.terminalKittyKeyboardEnabled,
+      writeInput: (data) => sendInputRef.current?.(data),
+    });
     const detachTerminalInteractions = attachTerminalInteractions({
       host,
       terminal,
@@ -452,6 +554,7 @@ function RemoteTerminal({
       setShowSearch,
       setContextMenu,
       setSearchResults,
+      handleKittyKeyEvent: kittyKeyboardRuntime.handleKeyEvent,
     });
 
     const getTerminalSize = () => {
@@ -523,6 +626,23 @@ function RemoteTerminal({
       if (followOutputRef.current) {
         terminal.scrollToBottom();
       }
+    };
+
+    toggleSessionLogRef.current = () => {
+      if (sessionLogController.isRecording()) {
+        setSessionLogRecording(false);
+        void sessionLogController.stopAndSave().then((path) => {
+          writeTerminalNotice(path
+            ? t('terminal.sessionLog.saved', settingsRef.current.language, { path })
+            : t('terminal.sessionLog.canceled', settingsRef.current.language));
+        }).catch((error: unknown) => {
+          writeTerminalNotice(t('terminal.sessionLog.failed', settingsRef.current.language, { error: getErrorMessage(error) }));
+        });
+        return;
+      }
+      sessionLogController.start();
+      setSessionLogRecording(true);
+      writeTerminalNotice(t('terminal.sessionLog.started', settingsRef.current.language));
     };
 
     const clearReconnectTimer = () => {
@@ -621,14 +741,54 @@ function RemoteTerminal({
       writeSftpProgressLine,
     });
 
-    const { processTerminalCwdProbeOutput, resolveTerminalWorkingDirectory } = createTerminalCwdProbeController({
+    const { processTerminalCwdProbeOutput, resolveTerminalWorkingDirectory: probeTerminalWorkingDirectory } = createTerminalCwdProbeController({
       terminalCwdProbeRef,
       launchOptionsRef,
       isTerminalReadyRef,
       systemType,
       writeTerminalInputAsync,
     });
+    const resolveTerminalWorkingDirectory = async () => {
+      const directory = await probeTerminalWorkingDirectory();
+      if (directory) {
+        currentWorkingDirectoryRef.current = directory;
+      }
+      return directory;
+    };
     resolveWorkingDirectoryRef.current = resolveTerminalWorkingDirectory;
+    pasteClipboardImageRef.current = () => {
+      if (connectionKind === 'local') {
+        writeTerminalNotice(t('terminal.clipboardImage.sshOnly', settingsRef.current.language));
+        return;
+      }
+      void pasteClipboardImageToTerminal({
+        api,
+        connectionId,
+        windows: isWindowsSystem(systemType),
+        language: settingsRef.current.language,
+        resolveWorkingDirectory: resolveTerminalWorkingDirectory,
+        writeInput: writeTerminalInput,
+      }).then((path) => {
+        writeTerminalNotice(t('terminal.clipboardImage.uploaded', settingsRef.current.language, { path }));
+      }).catch((error: unknown) => {
+        writeTerminalNotice(t('terminal.clipboardImage.failedWithReason', settingsRef.current.language, { error: getErrorMessage(error) }));
+      });
+    };
+    let detachDropUpload: (() => void) | null = null;
+    void attachTerminalDropUpload({
+      host,
+      api,
+      connectionId,
+      connectionKind,
+      windows: isWindowsSystem(systemType),
+      settingsRef,
+      resolveWorkingDirectory: resolveTerminalWorkingDirectory,
+      writeInput: writeTerminalInput,
+      writeNotice: writeTerminalNotice,
+    }).then((detach) => {
+      if (disposed) detach();
+      else detachDropUpload = detach;
+    });
 
     const checkSftpAvailability = async () => {
       const cached = sftpAvailabilityRef.current;
@@ -682,18 +842,58 @@ function RemoteTerminal({
     zmodemSentryRef.current = zmodemSentry;
 
     const updateCommandSuggestion = (buffer: string) => {
-      const suggestion = settingsRef.current.terminalCommandAutocompleteEnabled
+      completionGenerationRef.current += 1;
+      const generation = completionGenerationRef.current;
+      if (completionTimerRef.current !== null) {
+        window.clearTimeout(completionTimerRef.current);
+        completionTimerRef.current = null;
+      }
+      const canComplete = settingsRef.current.terminalCommandAutocompleteEnabled
         && !commandBufferUnsafeRef.current
         && !foregroundTaskSourceRef.current
         && !zmodemSessionRef.current
-        && launchOptionsRef.current?.mode !== 'tmux'
-        ? suggestRuntimeTerminalCommand(connectionId, buffer, settingsRef.current.terminalSnippets ?? [])
-        : '';
+        && launchOptionsRef.current?.mode !== 'tmux';
+      const candidates = canComplete
+        ? collectTerminalCompletionCandidates(connectionId, buffer, settingsRef.current.terminalSnippets ?? [])
+        : [];
+      const suggestion = candidates[0]?.value
+        ?? (canComplete ? suggestRuntimeTerminalCommand(connectionId, buffer, settingsRef.current.terminalSnippets ?? []) : '');
+      setCompletionCandidates(candidates);
       if (commandSuggestionRef.current === suggestion) {
+        // The candidate details may still have changed.
+      } else {
+        commandSuggestionRef.current = suggestion;
+        setCommandSuggestion(suggestion);
+      }
+      if (
+        !canComplete
+        || !settingsRef.current.terminalRemotePathAutocompleteEnabled
+        || connectionKind === 'local'
+        || !buffer.trim()
+      ) {
         return;
       }
-      commandSuggestionRef.current = suggestion;
-      setCommandSuggestion(suggestion);
+      completionTimerRef.current = window.setTimeout(() => {
+        completionTimerRef.current = null;
+        void collectRemotePathCompletionCandidates({
+          api,
+          connectionId,
+          input: buffer,
+          workingDirectory: currentWorkingDirectoryRef.current,
+          windows: isWindowsSystem(systemType),
+        }).then((pathCandidates) => {
+          if (disposed || generation !== completionGenerationRef.current || !pathCandidates.length) {
+            return;
+          }
+          const merged = [
+            ...pathCandidates,
+            ...candidates.filter((candidate) => !pathCandidates.some((pathCandidate) => pathCandidate.value === candidate.value)),
+          ].slice(0, 12);
+          setCompletionCandidates(merged);
+          commandSuggestionRef.current = merged[0]?.value ?? '';
+          setCommandSuggestion(merged[0]?.value ?? '');
+        }).catch(() => undefined);
+      }, 120);
     };
 
     const outputFlowController = createTerminalOutputFlowController({
@@ -750,11 +950,24 @@ function RemoteTerminal({
       },
     });
     outputFlowControllerRef.current = outputFlowController;
+    const hibernateRuntime = createTerminalHibernateRuntime({
+      terminal,
+      renderer: rendererRuntime,
+      enabled: settingsRef.current.terminalHibernateEnabled
+        && settingsRef.current.terminalSuspendRenderingWhenHidden,
+      delaySeconds: settingsRef.current.terminalHibernateDelaySeconds,
+      canHibernate: () => !activeSftpTransferRef.current && outputFlowController.pendingBytes() === 0,
+      onStateChange: (hibernated) => host.classList.toggle('terminal-host-hibernated', hibernated),
+    });
+    hibernateRuntimeRef.current = hibernateRuntime;
+    hibernateRuntime.setVisible(
+      isVisibleRef.current && document.visibilityState !== 'hidden',
+    );
     const handleDocumentVisibility = () => {
-      outputFlowController.setVisible(
-        !settingsRef.current.terminalSuspendRenderingWhenHidden
-        || (isVisibleRef.current && document.visibilityState !== 'hidden'),
-      );
+      const visible = isVisibleRef.current && document.visibilityState !== 'hidden';
+      outputFlowController.setVisible(!settingsRef.current.terminalSuspendRenderingWhenHidden || visible);
+      rendererRuntime.setVisible(visible);
+      hibernateRuntime.setVisible(visible);
     };
     document.addEventListener('visibilitychange', handleDocumentVisibility);
 
@@ -839,6 +1052,20 @@ function RemoteTerminal({
 
     fitAndSyncSizeRef.current = fitAndSyncSize;
     sendInputRef.current = writeTerminalInput;
+    acceptCompletionRef.current = (value) => {
+      const current = commandBufferRef.current;
+      if (!value || commandBufferUnsafeRef.current) {
+        return;
+      }
+      if (value.toLocaleLowerCase().startsWith(current.toLocaleLowerCase())) {
+        writeTerminalInput(value.slice(current.length));
+      } else {
+        writeTerminalInput(`\x15${value}`);
+      }
+      commandBufferRef.current = value;
+      updateCommandSuggestion('');
+      terminal.focus();
+    };
     restartTerminalRef.current = () => {
       if (disposed) {
         return;
@@ -860,6 +1087,9 @@ function RemoteTerminal({
         useLegacyTerminalIpcRef.current = true;
       }
       const isCwdProbeOutput = processTerminalCwdProbeOutput(payload.data);
+      if (!isCwdProbeOutput && !zmodemSessionRef.current) {
+        sessionLogController.append(payload.data);
+      }
       outputFlowController.enqueue({
         data: isCwdProbeOutput ? '' : payload.data,
         sequence: payload.sequence,
@@ -966,17 +1196,12 @@ function RemoteTerminal({
       }
 
       const suggestion = commandSuggestionRef.current;
-      const acceptsSuggestion = Boolean(
-        suggestion
-        && !commandBufferUnsafeRef.current
-        && (data === '\t' || data === '\x1b[C')
-        && suggestion.toLocaleLowerCase().startsWith(commandBufferRef.current.toLocaleLowerCase()),
-      );
+      const acceptsSuggestion = Boolean(suggestion && !commandBufferUnsafeRef.current && (
+        data === '\t'
+        || (data === '\x1b[C' && suggestion.toLocaleLowerCase().startsWith(commandBufferRef.current.toLocaleLowerCase()))
+      ));
       if (acceptsSuggestion) {
-        const suffix = suggestion.slice(commandBufferRef.current.length);
-        writeTerminalInput(suffix);
-        commandBufferRef.current = suggestion;
-        updateCommandSuggestion('');
+        acceptCompletionRef.current?.(suggestion);
         return;
       }
 
@@ -1062,6 +1287,13 @@ function RemoteTerminal({
           command,
           source: 'keyboard',
         });
+        if (/^\s*(?:cd|pushd|popd)(?:\s|$)/iu.test(command)) {
+          window.setTimeout(() => {
+            if (!disposed && isTerminalReadyRef.current) {
+              void resolveTerminalWorkingDirectory();
+            }
+          }, 350);
+        }
       });
       updateCommandSuggestion(commandState.buffer);
     });
@@ -1074,14 +1306,23 @@ function RemoteTerminal({
 
     return () => {
       disposed = true;
+      selectionAiGenerationRef.current += 1;
+      selectionAiAbortRef.current?.abort();
+      selectionAiAbortRef.current = null;
       isTerminalReadyRef.current = false;
       disconnectedRef.current = false;
       window.clearTimeout(startWarningTimer);
+      if (completionTimerRef.current !== null) {
+        window.clearTimeout(completionTimerRef.current);
+        completionTimerRef.current = null;
+      }
       resetAutoReconnect();
       window.cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
       inputDisposable.dispose();
       detachTerminalInteractions();
+      kittyKeyboardRuntime.dispose();
+      detachDropUpload?.();
       removeTerminalData();
       removeTerminalExit();
       removeConnectionClosed();
@@ -1091,6 +1332,12 @@ function RemoteTerminal({
       document.removeEventListener('visibilitychange', handleDocumentVisibility);
       outputFlowController.dispose();
       outputFlowControllerRef.current = null;
+      hibernateRuntime.dispose();
+      hibernateRuntimeRef.current = null;
+      rendererRuntime.dispose();
+      rendererRuntimeRef.current = null;
+      sessionLogController.dispose();
+      sessionLogControllerRef.current = null;
 
       if (supportsTerminalIpcOptions && !useLegacyTerminalIpcRef.current) {
         api.connections.closeTerminal(connectionId, terminalId).catch(() => undefined);
@@ -1107,6 +1354,7 @@ function RemoteTerminal({
       outputDecorationControllerRef.current?.dispose();
       outputDecorationControllerRef.current = null;
       titleDisposable.dispose();
+      cwdDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -1115,6 +1363,9 @@ function RemoteTerminal({
       restartTerminalRef.current = null;
       sendInputRef.current = null;
       resolveWorkingDirectoryRef.current = null;
+      acceptCompletionRef.current = null;
+      toggleSessionLogRef.current = null;
+      pasteClipboardImageRef.current = null;
     };
   }, [connectionId, emitSessionEvent, localWindowsPty, terminalId]);
 
@@ -1138,6 +1389,8 @@ function RemoteTerminal({
     restartTerminal: () => restartTerminalRef.current?.(),
     openSettingsDialog: () => setIsSettingsDialogOpen(true),
     openSearch: () => setShowSearch(true),
+    toggleSessionLog: () => toggleSessionLogRef.current?.(),
+    pasteClipboardImage: () => pasteClipboardImageRef.current?.(),
     resolveWorkingDirectory: () => resolveWorkingDirectoryRef.current?.() ?? Promise.resolve('.'),
     onSplitTerminal,
   });
@@ -1154,7 +1407,10 @@ function RemoteTerminal({
       searchResults={searchResults}
       contextMenu={contextMenu}
       commandSuggestion={commandSuggestion}
+      completionCandidates={completionCandidates}
       pendingTerminalLink={pendingTerminalLink}
+      selectionAiState={selectionAiState}
+      sessionLogRecording={sessionLogRecording}
       isLaunchDialogOpen={isLaunchDialogOpen}
       isSettingsDialogOpen={isSettingsDialogOpen}
       launchDraft={launchDraft}
@@ -1170,6 +1426,14 @@ function RemoteTerminal({
       onSearchClose={closeSearch}
       onContextMenuClose={() => setContextMenu(null)}
       onContextMenuCopy={writeClipboardText}
+      onSelectionAi={requestSelectionAi}
+      onSelectionAiClose={() => {
+        selectionAiGenerationRef.current += 1;
+        selectionAiAbortRef.current?.abort();
+        selectionAiAbortRef.current = null;
+        setSelectionAiState(null);
+      }}
+      onCompletionAccept={(value) => acceptCompletionRef.current?.(value)}
       onTerminalLinkCancel={() => setPendingTerminalLink('')}
       onTerminalLinkOpen={openPendingTerminalLink}
       onOpenNote={onOpenNote}

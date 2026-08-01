@@ -45,6 +45,8 @@ export type RemoteTerminalToolAction =
   | 'toggle-follow'
   | 'scroll-bottom'
   | 'restart'
+  | 'toggle-log'
+  | 'paste-image'
   | 'settings'
   | 'split-right'
   | 'split-down';

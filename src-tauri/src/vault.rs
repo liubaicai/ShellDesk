@@ -113,8 +113,16 @@ pub(crate) fn default_settings() -> Value {
         "terminalKeywordHighlightEnabled": false,
         "terminalHighlightKeywords": "error,warning,failed,denied,exception",
         "terminalCommandAutocompleteEnabled": true,
+        "terminalRemotePathAutocompleteEnabled": true,
         "terminalSafeLinksEnabled": true,
         "terminalSuspendRenderingWhenHidden": true,
+        "terminalRenderer": "auto",
+        "terminalHibernateEnabled": true,
+        "terminalHibernateDelaySeconds": 120,
+        "terminalDropUploadEnabled": true,
+        "terminalKittyKeyboardEnabled": true,
+        "terminalInlineImagesEnabled": false,
+        "terminalSessionLogFormat": "text",
         "terminalSnippets": default_terminal_snippets(language)
     })
 }

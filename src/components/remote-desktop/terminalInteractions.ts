@@ -17,6 +17,7 @@ export function attachTerminalInteractions({
   setShowSearch,
   setContextMenu,
   setSearchResults,
+  handleKittyKeyEvent,
 }: {
   host: HTMLDivElement;
   terminal: XTerminal;
@@ -27,6 +28,7 @@ export function attachTerminalInteractions({
   setShowSearch: (showSearch: boolean) => void;
   setContextMenu: (contextMenu: TerminalContextMenuState | null) => void;
   setSearchResults: (searchResults: TerminalSearchResultState) => void;
+  handleKittyKeyEvent?: (event: KeyboardEvent) => boolean;
 }) {
   terminal.attachCustomKeyEventHandler((event) => {
     if (event.type === 'keydown' && isTerminalReadyRef.current) {
@@ -46,6 +48,10 @@ export function attachTerminalInteractions({
 
     if (shouldOpenSearch) {
       setShowSearch(true);
+      return false;
+    }
+
+    if (handleKittyKeyEvent && !handleKittyKeyEvent(event)) {
       return false;
     }
 
