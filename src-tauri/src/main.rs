@@ -1,5 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
-#![recursion_limit = "256"]
+// serde_json::json! expands one token-tree layer per default setting; the
+// centralized settings schema intentionally exceeds Rust's default macro limit.
+#![recursion_limit = "512"]
 
 mod modules;
 

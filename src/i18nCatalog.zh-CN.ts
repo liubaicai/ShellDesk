@@ -1,3 +1,5 @@
+import { terminalAdvancedZhCN } from './i18nTerminalAdvanced';
+
 export const zhCN = {
   'settings.section.general.label': '常规',
   'settings.section.general.summary': '语言、字体、视图',
@@ -243,6 +245,7 @@ export const zhCN = {
   'settings.terminal.exitPolicy.closeSuccess': '成功退出时关闭窗口',
   'settings.terminal.exitPolicy.closeAlways': '任意退出时关闭窗口',
   'settings.terminal.output.title': '输出辅助',
+  ...terminalAdvancedZhCN,
   'settings.terminal.timestamps.label': '显示行时间戳',
   'settings.terminal.timestamps.summary': '在终端左侧标记新完成输出行的本地接收时间，不改写 PTY 字节流。',
   'settings.terminal.keywordHighlight.label': '高亮关键字',
@@ -3025,6 +3028,13 @@ checks 必须是 allowlist 中存在的 ID。优先选择能覆盖账号、登�
   'terminal.linkDialog.title': '打开终端链接？',
   'terminal.linkDialog.summary': '此地址来自远端终端输出。请确认完整地址后再使用系统浏览器打开。',
   'terminal.linkDialog.open': '确认打开',
+  'terminal.titlebar.compose': '多行命令编辑器',
+  'terminal.compose.placeholder': '在这里编辑多行命令…',
+  'terminal.compose.hint': 'Ctrl/Cmd + Enter 执行 · Esc 关闭',
+  'terminal.compose.run': '执行',
+  'terminal.osc52Dialog.title': '允许远端读取剪贴板？',
+  'terminal.osc52Dialog.summary': '远端程序请求读取本机剪贴板内容。内容可能包含密码或令牌，仅在信任当前会话时允许。',
+  'terminal.osc52Dialog.allow': '允许本次读取',
   'terminal.autocomplete.hint': 'Tab / → 接受',
   'terminal.autocomplete.results': '终端补全候选',
   'terminal.dropUpload.completed': '已上传 {count} 个项目，并插入远程路径。',

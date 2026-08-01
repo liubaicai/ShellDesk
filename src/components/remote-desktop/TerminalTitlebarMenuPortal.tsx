@@ -92,6 +92,9 @@ export function TerminalTitlebarMenuPortal({
             <button type="button" role="menuitem" onClick={() => onRequestTool('clear')}>
               {t('terminal.titlebar.clear', language)}
             </button>
+            <button type="button" role="menuitem" onClick={() => onRequestTool('compose')}>
+              {t('terminal.titlebar.compose', language)}
+            </button>
             <button type="button" role="menuitem" onClick={() => onRequestTool('toggle-log')}>
               {t('terminal.titlebar.toggleSessionLog', language)}
             </button>

@@ -33,6 +33,7 @@ interface TerminalExternalRequestsOptions {
   openSearch: () => void;
   toggleSessionLog: () => void;
   pasteClipboardImage: () => void;
+  toggleCompose: () => void;
   resolveWorkingDirectory: () => Promise<string>;
   onSplitTerminal?: (direction: RemoteTerminalSplitDirection, workingDirectory: string) => void;
 }
@@ -59,6 +60,7 @@ export function useTerminalExternalRequests({
   openSearch,
   toggleSessionLog,
   pasteClipboardImage,
+  toggleCompose,
   resolveWorkingDirectory,
   onSplitTerminal,
 }: TerminalExternalRequestsOptions) {
@@ -138,6 +140,9 @@ export function useTerminalExternalRequests({
       case 'paste-image':
         pasteClipboardImage();
         break;
+      case 'compose':
+        toggleCompose();
+        break;
       case 'settings':
         openSettingsDialog();
         break;
@@ -165,6 +170,7 @@ export function useTerminalExternalRequests({
     restartTerminal,
     scrollTerminalToBottom,
     toggleFollowOutput,
+    toggleCompose,
     toggleSessionLog,
     toolRequest,
   ]);

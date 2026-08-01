@@ -1,3 +1,5 @@
+import { terminalAdvancedEnUS } from './i18nTerminalAdvanced';
+
 export const enUS = {
   'settings.section.general.label': 'General',
   'settings.section.general.summary': 'Language, fonts, views',
@@ -243,6 +245,7 @@ export const enUS = {
   'settings.terminal.exitPolicy.closeSuccess': 'Close after a successful exit',
   'settings.terminal.exitPolicy.closeAlways': 'Close after any exit',
   'settings.terminal.output.title': 'Output Aids',
+  ...terminalAdvancedEnUS,
   'settings.terminal.timestamps.label': 'Show line timestamps',
   'settings.terminal.timestamps.summary': 'Marks newly completed output lines with their local receive time without rewriting PTY bytes.',
   'settings.terminal.keywordHighlight.label': 'Highlight keywords',
@@ -3025,6 +3028,13 @@ Rules:
   'terminal.linkDialog.title': 'Open terminal link?',
   'terminal.linkDialog.summary': 'This address came from remote terminal output. Verify the full address before opening it in your system browser.',
   'terminal.linkDialog.open': 'Open link',
+  'terminal.titlebar.compose': 'Multiline command composer',
+  'terminal.compose.placeholder': 'Edit a multiline command here…',
+  'terminal.compose.hint': 'Ctrl/Cmd + Enter to run · Esc to close',
+  'terminal.compose.run': 'Run',
+  'terminal.osc52Dialog.title': 'Allow remote clipboard read?',
+  'terminal.osc52Dialog.summary': 'A remote program requested your local clipboard, which may contain passwords or tokens. Allow only if you trust this session.',
+  'terminal.osc52Dialog.allow': 'Allow this read',
   'terminal.autocomplete.hint': 'Tab / → to accept',
   'terminal.autocomplete.results': 'Terminal completion candidates',
   'terminal.dropUpload.completed': 'Uploaded {count} item(s) and inserted their remote paths.',

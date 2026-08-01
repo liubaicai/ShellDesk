@@ -370,3 +370,30 @@ export function TerminalLinkDialogPortal({
     document.body,
   );
 }
+
+export function TerminalOsc52ReadDialogPortal({
+  open,
+  language,
+  onCancel,
+  onAllow,
+}: {
+  open: boolean;
+  language: ShellDeskAppSettings['language'];
+  onCancel: () => void;
+  onAllow: () => void;
+}) {
+  if (!open) return null;
+  return createPortal(
+    <div className="notepad-modal-overlay" role="presentation" onClick={onCancel}>
+      <div className="notepad-modal terminal-link-dialog" role="alertdialog" aria-modal="true" aria-labelledby="terminal-osc52-dialog-title" onClick={(event) => event.stopPropagation()}>
+        <h3 id="terminal-osc52-dialog-title">{t('terminal.osc52Dialog.title', language)}</h3>
+        <p>{t('terminal.osc52Dialog.summary', language)}</p>
+        <div className="notepad-modal-actions">
+          <button type="button" className="notepad-modal-btn" onClick={onCancel}>{t('common.cancel', language)}</button>
+          <button type="button" className="notepad-modal-btn primary" onClick={onAllow}>{t('terminal.osc52Dialog.allow', language)}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}

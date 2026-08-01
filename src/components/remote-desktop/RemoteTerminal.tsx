@@ -43,6 +43,9 @@ import { createZmodemSentry, readSubmittedTransferCommand, readTerminalPayloadBy
 import { getTerminalTheme } from './terminalPresets';
 import { attachTerminalInteractions } from './terminalInteractions';
 import { useTerminalExternalRequests } from './terminalRequests';
+import { TerminalCursorLineHighlighter } from './terminalCursorLine';
+import { attachTerminalOsc52 } from './terminalOsc52';
+import { TerminalOutputProtocolFilter } from './terminalOutputProtocol';
 import { t } from '../../i18n';
 
 export type {
@@ -59,6 +62,13 @@ export type {
 
 const RECONNECT_MAX_RETRIES = 5;
 const RECONNECT_INITIAL_DELAY_MS = 3000;
+
+function matchesTerminalLinkModifier(event: MouseEvent, modifier: ShellDeskAppSettings['terminalLinkModifier']) {
+  if (modifier === 'none') return true;
+  if (modifier === 'ctrl') return event.ctrlKey;
+  if (modifier === 'alt') return event.altKey;
+  return event.metaKey;
+}
 
 function RemoteTerminal({
   connectionId,
@@ -110,7 +120,7 @@ function RemoteTerminal({
   const zmodemSessionRef = useRef<Zmodem.ZmodemSession | null>(null);
   const settingsRef = useRef(settings);
   const launchOptionsRef = useRef(launchOptions);
-  const followOutputRef = useRef(true);
+  const followOutputRef = useRef(settings.terminalScrollOnOutput);
   const commandBufferRef = useRef('');
   const commandBufferUnsafeRef = useRef(false);
   const commandSuggestionRef = useRef('');
@@ -128,12 +138,14 @@ function RemoteTerminal({
   const onSessionStateChangeRef = useRef(onSessionStateChange);
   const onSessionExitRef = useRef(onSessionExit);
   const outputDecorationControllerRef = useRef<TerminalOutputDecorationController | null>(null);
+  const cursorLineHighlighterRef = useRef<TerminalCursorLineHighlighter | null>(null);
   const outputFlowControllerRef = useRef<TerminalOutputFlowController | null>(null);
   const rendererRuntimeRef = useRef<TerminalRendererRuntime | null>(null);
   const hibernateRuntimeRef = useRef<TerminalHibernateRuntime | null>(null);
   const sessionLogControllerRef = useRef<TerminalSessionLogController | null>(null);
   const toggleSessionLogRef = useRef<(() => void) | null>(null);
   const pasteClipboardImageRef = useRef<(() => void) | null>(null);
+  const respondOsc52ReadRef = useRef<(() => void) | null>(null);
   const selectionAiGenerationRef = useRef(0);
   const selectionAiAbortRef = useRef<AbortController | null>(null);
   const isVisibleRef = useRef(isVisible);
@@ -143,7 +155,7 @@ function RemoteTerminal({
   const [terminalReportedTitle, setTerminalReportedTitle] = useState('');
   const [lastExitCode, setLastExitCode] = useState<number | null>(null);
   const [hasForegroundTask, setHasForegroundTask] = useState(false);
-  const [followOutput, setFollowOutput] = useState(true);
+  const [followOutput, setFollowOutput] = useState(settings.terminalScrollOnOutput);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TerminalSearchResultState>({ index: -1, count: 0 });
@@ -153,6 +165,9 @@ function RemoteTerminal({
   const [sessionLogRecording, setSessionLogRecording] = useState(false);
   const [selectionAiState, setSelectionAiState] = useState<TerminalSelectionAiState | null>(null);
   const [pendingTerminalLink, setPendingTerminalLink] = useState('');
+  const [pendingOsc52Read, setPendingOsc52Read] = useState(false);
+  const [showComposer, setShowComposer] = useState(false);
+  const [composeText, setComposeText] = useState('');
   const [isLaunchDialogOpen, setIsLaunchDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [launchDraft, setLaunchDraft] = useState<TerminalLaunchDraft>({
@@ -350,6 +365,13 @@ function RemoteTerminal({
     if (!settings.terminalSafeLinksEnabled) {
       setPendingTerminalLink('');
     }
+    if (settings.terminalDynamicTitle === 'off' || (settings.terminalDynamicTitle === 'tmux' && launchOptionsRef.current?.mode !== 'tmux')) {
+      setTerminalReportedTitle('');
+    }
+    if (settings.terminalOsc52Mode !== 'prompt') {
+      respondOsc52ReadRef.current = null;
+      setPendingOsc52Read(false);
+    }
     outputFlowControllerRef.current?.setVisible(
       !settings.terminalSuspendRenderingWhenHidden
       || (isVisibleRef.current && (typeof document === 'undefined' || document.visibilityState !== 'hidden')),
@@ -360,6 +382,10 @@ function RemoteTerminal({
       settings.terminalHibernateDelaySeconds,
     );
     outputDecorationControllerRef.current?.refresh();
+    cursorLineHighlighterRef.current?.update(
+      settings.terminalCursorLineHighlight,
+      getTerminalTheme(settings.terminalTheme).selectionInactiveBackground ?? '#263449',
+    );
     const terminal = terminalRef.current;
 
     if (!terminal) {
@@ -466,25 +492,27 @@ function RemoteTerminal({
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon({ highlightLimit: 500 });
     const unicodeGraphemesAddon = new UnicodeGraphemesAddon();
-    const requestSafeTerminalLink = (value: string) => {
+    const requestSafeTerminalLink = (value: string, event?: MouseEvent) => {
       if (!settingsRef.current.terminalSafeLinksEnabled) {
         return;
       }
+      if (event && !matchesTerminalLinkModifier(event, settingsRef.current.terminalLinkModifier)) return;
       const link = normalizeSafeTerminalLink(value);
       if (link) {
         setPendingTerminalLink(link);
       }
     };
-    const webLinksAddon = new WebLinksAddon((_event, uri) => requestSafeTerminalLink(uri));
+    const webLinksAddon = new WebLinksAddon((event, uri) => requestSafeTerminalLink(uri, event));
     terminal.options.linkHandler = {
       allowNonHttpProtocols: false,
-      activate: (_event, text) => requestSafeTerminalLink(text),
+      activate: (event, text) => requestSafeTerminalLink(text, event),
     };
 
     isTerminalReadyRef.current = false;
     terminalRef.current = terminal;
     const titleDisposable = terminal.onTitleChange((title) => {
-      if (launchOptionsRef.current?.mode === 'tmux') {
+      const mode = settingsRef.current.terminalDynamicTitle;
+      if (mode === 'all' || (mode === 'tmux' && launchOptionsRef.current?.mode === 'tmux')) {
         setTerminalReportedTitle(title.trim());
       }
     });
@@ -509,6 +537,12 @@ function RemoteTerminal({
     terminal.loadAddon(unicodeGraphemesAddon);
     terminal.loadAddon(webLinksAddon);
     terminal.open(host);
+    const cursorLineHighlighter = new TerminalCursorLineHighlighter(terminal);
+    cursorLineHighlighter.update(
+      settingsRef.current.terminalCursorLineHighlight,
+      getTerminalTheme(settingsRef.current.terminalTheme).selectionInactiveBackground ?? '#263449',
+    );
+    cursorLineHighlighterRef.current = cursorLineHighlighter;
     const sessionLogController = createTerminalSessionLogController({
       api,
       title: sessionTitle,
@@ -555,6 +589,8 @@ function RemoteTerminal({
       setContextMenu,
       setSearchResults,
       handleKittyKeyEvent: kittyKeyboardRuntime.handleKeyEvent,
+      sendInput: (data) => sendInputRef.current?.(data),
+      fitTerminal: () => fitAndSyncSizeRef.current?.(),
     });
 
     const getTerminalSize = () => {
@@ -627,6 +663,18 @@ function RemoteTerminal({
         terminal.scrollToBottom();
       }
     };
+
+    setPendingOsc52Read(false);
+    respondOsc52ReadRef.current = null;
+    const osc52Disposable = attachTerminalOsc52({
+      terminal,
+      mode: () => settingsRef.current.terminalOsc52Mode,
+      writeInput: writeTerminalInput,
+      onReadRequest: (respond) => {
+        respondOsc52ReadRef.current = respond;
+        setPendingOsc52Read(true);
+      },
+    });
 
     toggleSessionLogRef.current = () => {
       if (sessionLogController.isRecording()) {
@@ -896,6 +944,10 @@ function RemoteTerminal({
       }, 120);
     };
 
+    const outputProtocolFilter = new TerminalOutputProtocolFilter(
+      terminal,
+      () => settingsRef.current.terminalClearWipesScrollback,
+    );
     const outputFlowController = createTerminalOutputFlowController({
       initiallyVisible: !settingsRef.current.terminalSuspendRenderingWhenHidden
         || (isVisibleRef.current && document.visibilityState !== 'hidden'),
@@ -908,6 +960,7 @@ function RemoteTerminal({
           .catch(() => undefined);
       },
       write: (data, done) => {
+        const displayData = zmodemSessionRef.current ? data : outputProtocolFilter.filter(data);
         const foregroundSignal = readForegroundTaskSignal(foregroundSequenceBufferRef.current, data);
         foregroundSequenceBufferRef.current = foregroundSignal.buffer;
         if (foregroundSignal.hasForegroundTask !== null) {
@@ -929,7 +982,7 @@ function RemoteTerminal({
         }
 
         try {
-          zmodemSentry.consume(readTerminalPayloadBytes({ data }));
+          zmodemSentry.consume(readTerminalPayloadBytes({ data: displayData }));
           terminal.write('', () => {
             if (followOutputRef.current) {
               terminal.scrollToBottom();
@@ -940,7 +993,7 @@ function RemoteTerminal({
           writeTerminalNotice(t('terminal.transfer.zmodemFailed', settingsRef.current.language, {
             error: getErrorMessage(error),
           }));
-          terminal.write(data, () => {
+          terminal.write(displayData, () => {
             if (followOutputRef.current) {
               terminal.scrollToBottom();
             }
@@ -1015,6 +1068,7 @@ function RemoteTerminal({
         if (supportsTerminalIpcOptions) {
           await api.connections.startTerminal(connectionId, terminalId, columns, rows, {
             ...launchOptionsRef.current,
+            term: settingsRef.current.terminalTermType,
             legacy: useLegacyTerminalIpcRef.current,
           });
         } else {
@@ -1110,6 +1164,8 @@ function RemoteTerminal({
       };
 
       isTerminalReadyRef.current = false;
+      respondOsc52ReadRef.current = null;
+      setPendingOsc52Read(false);
       disconnectedRef.current = true;
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
@@ -1151,6 +1207,8 @@ function RemoteTerminal({
       }
 
       isTerminalReadyRef.current = false;
+      respondOsc52ReadRef.current = null;
+      setPendingOsc52Read(false);
       setHasForegroundTask(false);
       foregroundSequenceBufferRef.current = '';
       foregroundTaskSourceRef.current = null;
@@ -1353,6 +1411,10 @@ function RemoteTerminal({
       zmodemSentryRef.current = null;
       outputDecorationControllerRef.current?.dispose();
       outputDecorationControllerRef.current = null;
+      cursorLineHighlighter.dispose();
+      cursorLineHighlighterRef.current = null;
+      osc52Disposable.dispose();
+      respondOsc52ReadRef.current = null;
       titleDisposable.dispose();
       cwdDisposable.dispose();
       terminal.dispose();
@@ -1391,6 +1453,7 @@ function RemoteTerminal({
     openSearch: () => setShowSearch(true),
     toggleSessionLog: () => toggleSessionLogRef.current?.(),
     pasteClipboardImage: () => pasteClipboardImageRef.current?.(),
+    toggleCompose: () => setShowComposer((current) => !current),
     resolveWorkingDirectory: () => resolveWorkingDirectoryRef.current?.() ?? Promise.resolve('.'),
     onSplitTerminal,
   });
@@ -1409,8 +1472,12 @@ function RemoteTerminal({
       commandSuggestion={commandSuggestion}
       completionCandidates={completionCandidates}
       pendingTerminalLink={pendingTerminalLink}
+      pendingOsc52Read={pendingOsc52Read}
       selectionAiState={selectionAiState}
       sessionLogRecording={sessionLogRecording}
+      showComposer={showComposer}
+      composeText={composeText}
+      composeCanRun={sessionStatus === 'running'}
       isLaunchDialogOpen={isLaunchDialogOpen}
       isSettingsDialogOpen={isSettingsDialogOpen}
       launchDraft={launchDraft}
@@ -1436,6 +1503,36 @@ function RemoteTerminal({
       onCompletionAccept={(value) => acceptCompletionRef.current?.(value)}
       onTerminalLinkCancel={() => setPendingTerminalLink('')}
       onTerminalLinkOpen={openPendingTerminalLink}
+      onOsc52ReadCancel={() => {
+        respondOsc52ReadRef.current = null;
+        setPendingOsc52Read(false);
+      }}
+      onOsc52ReadAllow={() => {
+        const respond = respondOsc52ReadRef.current;
+        respondOsc52ReadRef.current = null;
+        setPendingOsc52Read(false);
+        respond?.();
+      }}
+      onComposeTextChange={setComposeText}
+      onComposeClose={() => {
+        setShowComposer(false);
+        focusTerminal();
+      }}
+      onComposeRun={() => {
+        if (sessionStatus !== 'running' || !composeText.trim()) return;
+        const command = composeText.replace(/\r?\n/gu, '\r');
+        sendInputRef.current?.(`${command}\r`);
+        commandBufferRef.current = '';
+        commandBufferUnsafeRef.current = false;
+        commandSuggestionRef.current = '';
+        setCommandSuggestion('');
+        setCompletionCandidates([]);
+        rememberRuntimeTerminalCommand(connectionId, composeText);
+        emitSessionEvent({ type: 'terminal-command', command: composeText, source: 'keyboard' });
+        setComposeText('');
+        setShowComposer(false);
+        focusTerminal();
+      }}
       onOpenNote={onOpenNote}
       onLaunchDialogClose={() => setIsLaunchDialogOpen(false)}
       onLaunchSubmit={submitLaunchDialog}

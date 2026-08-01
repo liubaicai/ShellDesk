@@ -4,6 +4,7 @@ import {
   TerminalContextMenuPortal,
   TerminalLaunchDialogPortal,
   TerminalLinkDialogPortal,
+  TerminalOsc52ReadDialogPortal,
   TerminalSettingsDialogPortal,
 } from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
@@ -25,8 +26,12 @@ interface TerminalPaneViewProps {
   commandSuggestion: string;
   completionCandidates: TerminalCompletionCandidate[];
   pendingTerminalLink: string;
+  pendingOsc52Read: boolean;
   selectionAiState: TerminalSelectionAiState | null;
   sessionLogRecording: boolean;
+  showComposer: boolean;
+  composeText: string;
+  composeCanRun: boolean;
   isLaunchDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
   launchDraft: TerminalLaunchDraft;
@@ -44,6 +49,11 @@ interface TerminalPaneViewProps {
   onCompletionAccept: (value: string) => void;
   onTerminalLinkCancel: () => void;
   onTerminalLinkOpen: () => void;
+  onOsc52ReadCancel: () => void;
+  onOsc52ReadAllow: () => void;
+  onComposeTextChange: (text: string) => void;
+  onComposeClose: () => void;
+  onComposeRun: () => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
   onLaunchDialogClose: () => void;
   onLaunchSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -80,8 +90,12 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   commandSuggestion,
   completionCandidates,
   pendingTerminalLink,
+  pendingOsc52Read,
   selectionAiState,
   sessionLogRecording,
+  showComposer,
+  composeText,
+  composeCanRun,
   isLaunchDialogOpen,
   isSettingsDialogOpen,
   launchDraft,
@@ -99,6 +113,11 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   onCompletionAccept,
   onTerminalLinkCancel,
   onTerminalLinkOpen,
+  onOsc52ReadCancel,
+  onOsc52ReadAllow,
+  onComposeTextChange,
+  onComposeClose,
+  onComposeRun,
   onOpenNote,
   onLaunchDialogClose,
   onLaunchSubmit,
@@ -155,6 +174,30 @@ export const TerminalPaneView = memo(function TerminalPaneView({
             <span aria-hidden="true" />{t('terminal.sessionLog.recording', settings.language)}
           </div>
         ) : null}
+        {showComposer ? (
+          <div className="terminal-compose-bar">
+            <textarea
+              autoFocus
+              value={composeText}
+              maxLength={32768}
+              spellCheck={false}
+              placeholder={t('terminal.compose.placeholder', settings.language)}
+              onChange={(event) => onComposeTextChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') onComposeClose();
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  onComposeRun();
+                }
+              }}
+            />
+            <div>
+              <span>{t('terminal.compose.hint', settings.language)}</span>
+              <button type="button" onClick={onComposeClose}>{t('common.cancel', settings.language)}</button>
+              <button type="button" className="primary" disabled={!composeCanRun || !composeText.trim()} onClick={onComposeRun}>{t('terminal.compose.run', settings.language)}</button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <TerminalContextMenuPortal
@@ -189,6 +232,13 @@ export const TerminalPaneView = memo(function TerminalPaneView({
         language={settings.language}
         onCancel={onTerminalLinkCancel}
         onOpen={onTerminalLinkOpen}
+      />
+
+      <TerminalOsc52ReadDialogPortal
+        open={pendingOsc52Read}
+        language={settings.language}
+        onCancel={onOsc52ReadCancel}
+        onAllow={onOsc52ReadAllow}
       />
 
       <TerminalSelectionAiPortal

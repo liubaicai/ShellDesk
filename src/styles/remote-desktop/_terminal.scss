@@ -523,6 +523,61 @@
   accent-color: var(--accent);
 }
 
+.terminal-compose-bar {
+  position: absolute;
+  z-index: 8;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.terminal-compose-bar textarea {
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  outline: none;
+  background: var(--surface-input);
+  color: var(--text);
+  font-family: var(--terminal-font-family, "Cascadia Mono", Consolas, monospace);
+}
+
+.terminal-compose-bar > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.terminal-compose-bar span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.terminal-compose-bar button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.terminal-compose-bar button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
 [data-theme="light"] .terminal-searchbar {
   border-color: rgba(20, 42, 68, 0.12);
   color: #18263a;

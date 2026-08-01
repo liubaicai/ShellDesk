@@ -842,6 +842,7 @@ interface ShellDeskHostKeyVerificationResponse {
 
 interface ShellDeskTerminalIpcOptions {
   legacy?: boolean;
+  term?: 'xterm-256color' | 'xterm-16color' | 'xterm';
   title?: string;
   shell?: string;
   initialCommand?: string;
