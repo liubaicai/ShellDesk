@@ -1581,10 +1581,12 @@ function RemoteTerminal({
     if (
       !broadcastRequest
       || handledBroadcastRequestRef.current === broadcastRequest.id
-      || sessionStatus !== 'running'
     ) return;
     handledBroadcastRequestRef.current = broadcastRequest.id;
-    if (canBroadcastTerminalInput(broadcastRequest.data, sensitivePromptRef.current).allowed) {
+    if (
+      sessionStatus === 'running'
+      && canBroadcastTerminalInput(broadcastRequest.data, sensitivePromptRef.current).allowed
+    ) {
       sendInputRef.current?.(broadcastRequest.data);
     }
     onBroadcastRequestHandled?.(broadcastRequest.id);

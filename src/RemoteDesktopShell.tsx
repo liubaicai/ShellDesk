@@ -1860,7 +1860,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           launchOptions={desktopWindow.terminalLaunchOptions}
           commandRequest={desktopWindow.terminalCommandRequest}
           toolRequest={desktopWindow.terminalToolRequest}
-          broadcastRequest={desktopWindow.terminalBroadcastRequest}
+          broadcastRequest={desktopWindow.terminalBroadcastRequests?.[0]}
           broadcastInputEnabled={terminalBroadcastEnabled}
           isVisible={!desktopWindow.isMinimized}
           onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}

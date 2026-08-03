@@ -107,7 +107,7 @@ export interface DesktopWindowState {
   terminalWorkingDirectory?: string;
   terminalToolRequest?: RemoteTerminalToolRequest;
   terminalCommandRequest?: RemoteTerminalCommandRequest;
-  terminalBroadcastRequest?: import('./components/remote-desktop/terminalTypes').RemoteTerminalBroadcastRequest;
+  terminalBroadcastRequests?: import('./components/remote-desktop/terminalTypes').RemoteTerminalBroadcastRequest[];
   chromeTitle?: string;
   chromeStatus?: string;
   chromeTone?: 'idle' | 'loading' | 'error';

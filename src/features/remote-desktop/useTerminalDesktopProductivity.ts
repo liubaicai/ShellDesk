@@ -2,6 +2,10 @@ import { useRef, useState, type Dispatch, type MutableRefObject, type RefObject,
 
 import type { RemoteTerminalBroadcastRequest } from '../../components/remote-desktop/terminalTypes';
 import {
+  completeTerminalBroadcastRequest as removeTerminalBroadcastRequest,
+  enqueueTerminalBroadcastRequest,
+} from '../../components/remote-desktop/terminalBroadcast';
+import {
   createDesktopWindow,
   getDesktopWindowWorkspace,
   getTopDesktopWindow,
@@ -88,16 +92,27 @@ export function useTerminalDesktopProductivity({
         sourceTerminalId,
         data,
       };
-      return { ...window, terminalBroadcastRequest };
+      const terminalBroadcastRequests = enqueueTerminalBroadcastRequest(
+        window.terminalBroadcastRequests,
+        terminalBroadcastRequest,
+      );
+      return terminalBroadcastRequests === window.terminalBroadcastRequests
+        ? window
+        : { ...window, terminalBroadcastRequests };
     }));
   };
 
   const completeTerminalBroadcastRequest = (windowId: string, requestId: string) => {
-    setDesktopWindows((current) => current.map((window) => (
-      window.id === windowId && window.terminalBroadcastRequest?.id === requestId
-        ? { ...window, terminalBroadcastRequest: undefined }
-        : window
-    )));
+    setDesktopWindows((current) => current.map((window) => {
+      if (window.id !== windowId) return window;
+      const terminalBroadcastRequests = removeTerminalBroadcastRequest(
+        window.terminalBroadcastRequests,
+        requestId,
+      );
+      return terminalBroadcastRequests === window.terminalBroadcastRequests
+        ? window
+        : { ...window, terminalBroadcastRequests };
+    }));
   };
 
   return {
