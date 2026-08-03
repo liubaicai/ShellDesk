@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { memo, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import {
   TerminalContextMenuPortal,
@@ -8,7 +8,7 @@ import {
   TerminalSettingsDialogPortal,
 } from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
-import type { TerminalCompletionCandidate } from './terminalCompletionEngine';
+import type { TerminalUiStore } from './terminalUiStore';
 import { TerminalSelectionAiPortal, type TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import type { RemoteSystemType } from './types';
 import { t } from '../../i18n';
@@ -23,12 +23,12 @@ interface TerminalPaneViewProps {
   searchQuery: string;
   searchResults: TerminalSearchResultState;
   contextMenu: TerminalContextMenuState | null;
-  commandSuggestion: string;
-  completionCandidates: TerminalCompletionCandidate[];
+  terminalUiStore: TerminalUiStore;
   pendingTerminalLink: string;
   pendingOsc52Read: boolean;
   selectionAiState: TerminalSelectionAiState | null;
   sessionLogRecording: boolean;
+  broadcastInputEnabled: boolean;
   showComposer: boolean;
   composeText: string;
   composeCanRun: boolean;
@@ -44,6 +44,7 @@ interface TerminalPaneViewProps {
   onSearchClose: () => void;
   onContextMenuClose: () => void;
   onContextMenuCopy: (text: string) => void;
+  onContextMenuPaste: () => void;
   onSelectionAi: (selection: string, action: 'explain' | 'fix') => void;
   onSelectionAiClose: () => void;
   onCompletionAccept: (value: string) => void;
@@ -77,6 +78,45 @@ const TerminalHostCanvas = memo(function TerminalHostCanvas({
   );
 });
 
+const TerminalCompletionOverlay = memo(function TerminalCompletionOverlay({
+  store,
+  language,
+  onCompletionAccept,
+}: {
+  store: TerminalUiStore;
+  language: ShellDeskAppSettings['language'];
+  onCompletionAccept: (value: string) => void;
+}) {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  return (
+    <>
+      {snapshot.commandSuggestion ? (
+        <div className="terminal-command-suggestion" aria-live="polite">
+          <span>{snapshot.commandSuggestion}</span>
+          <kbd>{t('terminal.autocomplete.hint', language)}</kbd>
+        </div>
+      ) : null}
+      {snapshot.completionCandidates.length ? (
+        <div className="terminal-completion-menu" role="listbox" aria-label={t('terminal.autocomplete.results', language)}>
+          {snapshot.completionCandidates.slice(0, 8).map((candidate, index) => (
+            <button
+              key={`${candidate.source}:${candidate.value}`}
+              type="button"
+              role="option"
+              aria-selected={index === 0}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onCompletionAccept(candidate.value)}
+            >
+              <span>{candidate.label}</span>
+              <small>{candidate.detail}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+});
+
 export const TerminalPaneView = memo(function TerminalPaneView({
   terminalPaneStyle,
   terminalHostRef,
@@ -87,12 +127,12 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   searchQuery,
   searchResults,
   contextMenu,
-  commandSuggestion,
-  completionCandidates,
+  terminalUiStore,
   pendingTerminalLink,
   pendingOsc52Read,
   selectionAiState,
   sessionLogRecording,
+  broadcastInputEnabled,
   showComposer,
   composeText,
   composeCanRun,
@@ -108,6 +148,7 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   onSearchClose,
   onContextMenuClose,
   onContextMenuCopy,
+  onContextMenuPaste,
   onSelectionAi,
   onSelectionAiClose,
   onCompletionAccept,
@@ -146,29 +187,12 @@ export const TerminalPaneView = memo(function TerminalPaneView({
 
       <div className={`terminal-host-shell ${settings.terminalLineTimestamps ? 'with-timestamps' : ''}`}>
         <TerminalHostCanvas terminalHostRef={terminalHostRef} timestampGutterRef={timestampGutterRef} />
-        {commandSuggestion ? (
-          <div className="terminal-command-suggestion" aria-live="polite">
-            <span>{commandSuggestion}</span>
-            <kbd>{t('terminal.autocomplete.hint', settings.language)}</kbd>
+        {broadcastInputEnabled ? (
+          <div className="terminal-broadcast-indicator" role="status" title={t('terminal.broadcast.summary', settings.language)}>
+            <span aria-hidden="true" />{t('terminal.broadcast.enabled', settings.language)}
           </div>
         ) : null}
-        {completionCandidates.length ? (
-          <div className="terminal-completion-menu" role="listbox" aria-label={t('terminal.autocomplete.results', settings.language)}>
-            {completionCandidates.slice(0, 8).map((candidate, index) => (
-              <button
-                key={`${candidate.source}:${candidate.value}`}
-                type="button"
-                role="option"
-                aria-selected={index === 0}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onCompletionAccept(candidate.value)}
-              >
-                <span>{candidate.label}</span>
-                <small>{candidate.detail}</small>
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <TerminalCompletionOverlay store={terminalUiStore} language={settings.language} onCompletionAccept={onCompletionAccept} />
         {sessionLogRecording ? (
           <div className="terminal-session-log-indicator" role="status">
             <span aria-hidden="true" />{t('terminal.sessionLog.recording', settings.language)}
@@ -205,6 +229,7 @@ export const TerminalPaneView = memo(function TerminalPaneView({
         language={settings.language}
         onClose={onContextMenuClose}
         onCopy={onContextMenuCopy}
+        onPaste={onContextMenuPaste}
         onSelectionAi={onSelectionAi}
         onOpenNote={onOpenNote}
       />

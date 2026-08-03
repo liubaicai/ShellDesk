@@ -55,5 +55,9 @@ export const RemoteBackupManager = lazyWithStyle(() => import('../../components/
 export const RemoteSettings = lazyWithStyle(() => import('../../components/remote-desktop/RemoteSettings'), () => import('../../styles/remote-desktop/_settings.scss'));
 export const RemoteSqlite = lazyWithStyle(() => import('../../components/remote-desktop/RemoteSqlite'), () => import('../../styles/remote-desktop/_sqlite.scss'));
 export const RemoteTerminal = lazyWithStyle(() => import('../../components/remote-desktop/RemoteTerminal'), () => import('../../styles/remote-desktop/_terminal.scss'));
+export const TerminalRestorePlaceholder = lazyWithStyle(
+  () => import('../../components/remote-desktop/TerminalRestorePlaceholder').then((module) => ({ default: module.TerminalRestorePlaceholder })),
+  () => import('../../styles/remote-desktop/_terminal.scss'),
+);
 export const RemoteVncViewer = lazyWithStyle(() => import('../../components/remote-desktop/RemoteVncViewer'), () => import('../../styles/remote-desktop/_vnc.scss'));
 export const RemoteRdpViewer = lazyWithStyle(() => import('../../components/remote-desktop/RemoteRdpViewer'), () => import('../../styles/remote-desktop/_rdp-viewer.scss'));

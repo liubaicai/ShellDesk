@@ -48,6 +48,8 @@ export type RemoteTerminalToolAction =
   | 'toggle-log'
   | 'paste-image'
   | 'compose'
+  | 'command-center'
+  | 'open-files-here'
   | 'settings'
   | 'split-right'
   | 'split-down';
@@ -55,6 +57,12 @@ export type RemoteTerminalToolAction =
 export interface RemoteTerminalToolRequest {
   id: string;
   action: RemoteTerminalToolAction;
+}
+
+export interface RemoteTerminalBroadcastRequest {
+  id: string;
+  sourceTerminalId: string;
+  data: string;
 }
 
 export type RemoteTerminalSessionEvent =
@@ -90,10 +98,14 @@ export interface RemoteTerminalProps {
   launchOptions?: RemoteTerminalLaunchOptions;
   commandRequest?: RemoteTerminalCommandRequest | null;
   toolRequest?: RemoteTerminalToolRequest | null;
+  broadcastRequest?: RemoteTerminalBroadcastRequest | null;
+  broadcastInputEnabled?: boolean;
   isVisible?: boolean;
   onChromeChange?: (payload: RemoteTerminalChromePayload) => void;
   onCommandRequestHandled?: (requestId: string) => void;
   onToolRequestHandled?: (requestId: string) => void;
+  onBroadcastRequestHandled?: (requestId: string) => void;
+  onBroadcastInput?: (terminalId: string, data: string) => void;
   onSplitTerminal?: (direction: RemoteTerminalSplitDirection, workingDirectory: string) => void;
   onOpenTerminal?: (options?: RemoteTerminalLaunchOptions) => void;
   onOpenNote?: (note: { title: string; content: string }) => void;
@@ -101,6 +113,8 @@ export interface RemoteTerminalProps {
   onSessionEvent?: (event: RemoteTerminalSessionEvent) => void;
   onSessionStateChange?: (state: RemoteTerminalSessionState) => void;
   onSessionExit?: (result: RemoteTerminalExitResult) => void;
+  onWorkingDirectoryChange?: (workingDirectory: string) => void;
+  onOpenFileManager?: (workingDirectory: string) => void;
   onSettingsChange?: (settings: ShellDeskAppSettings) => void;
 }
 

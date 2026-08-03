@@ -305,6 +305,32 @@
   box-shadow: 0 0 0 3px rgba(255, 83, 102, 0.16);
 }
 
+.terminal-broadcast-indicator {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 83, 102, 0.42);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(86, 12, 24, 0.94);
+  color: #ffe4e8;
+  font-size: 10px;
+  font-weight: 720;
+  pointer-events: none;
+}
+
+.terminal-broadcast-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5366;
+  box-shadow: 0 0 0 3px rgba(255, 83, 102, 0.18);
+}
+
 .terminal-host.terminal-drop-active::after {
   position: absolute;
   z-index: 10;
@@ -521,6 +547,480 @@
 
 .terminal-settings-toggles input {
   accent-color: var(--accent);
+}
+
+.terminal-settings-overlay {
+  place-items: stretch end;
+  background: rgba(3, 8, 16, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.terminal-settings-dialog.notepad-modal {
+  box-sizing: border-box;
+  width: min(520px, 100vw);
+  height: 100vh;
+  max-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.terminal-settings-header,
+.terminal-settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+}
+
+.terminal-command-center.notepad-modal {
+  width: min(820px, calc(100vw - 40px));
+  max-height: min(720px, calc(100vh - 40px));
+  display: grid;
+  grid-template-rows: auto auto minmax(180px, 1fr) auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.terminal-command-center > header,
+.terminal-command-center > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.terminal-command-center > header {
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-command-center > header > span,
+.terminal-command-center > footer > span,
+.terminal-command-center-list article > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.terminal-command-center > header strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.terminal-command-center > header small,
+.terminal-command-center > footer small,
+.terminal-command-center-list small {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.terminal-command-center > header > button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 19px;
+}
+
+.terminal-command-center-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+}
+
+.terminal-command-center-toolbar [role="tablist"] {
+  display: flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.terminal-command-center-toolbar button,
+.terminal-command-center-list button,
+.terminal-command-center > footer button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.terminal-command-center-toolbar button[aria-selected="true"],
+.terminal-command-center-list button.primary {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.terminal-command-center-toolbar input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  outline: none;
+  background: var(--surface-input);
+  color: var(--text);
+}
+
+.terminal-command-center-list {
+  overflow: auto;
+  padding: 8px 14px 14px;
+}
+
+.terminal-command-center-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.terminal-command-center-list code {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-command-center-list article > div {
+  display: flex;
+  gap: 6px;
+}
+
+.terminal-command-center-list > p {
+  margin: 28px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.terminal-command-center > footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.terminal-command-center > footer > span:last-child {
+  grid-auto-flow: column;
+}
+
+.terminal-command-center > footer button.danger {
+  border-color: rgba(255, 83, 102, 0.42);
+  background: rgba(255, 83, 102, 0.12);
+  color: #ff9cab;
+}
+
+@media (max-width: 680px) {
+  .terminal-command-center-toolbar,
+  .terminal-command-center-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-command-center-list article {
+    padding: 8px 0;
+  }
+
+  .terminal-command-center > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.terminal-settings-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-settings-header > span,
+.terminal-settings-section-title > span,
+.terminal-settings-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.terminal-settings-header strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 760;
+}
+
+.terminal-settings-header small,
+.terminal-settings-section-title small,
+.terminal-settings-row small,
+.terminal-settings-footer small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+.terminal-settings-header > button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.terminal-settings-header > button:hover,
+.terminal-settings-header > button:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.terminal-settings-scroll {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 14px 16px 22px;
+}
+
+.terminal-settings-section {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.terminal-settings-section-title {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 11px 13px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+button.terminal-settings-section-title {
+  cursor: pointer;
+}
+
+.terminal-settings-section-title strong,
+.terminal-settings-row strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.terminal-settings-section-title > span:last-child:not(:first-child) {
+  color: var(--muted);
+  font-size: 16px;
+  transition: transform 150ms ease;
+}
+
+.terminal-settings-section.is-open > .terminal-settings-section-title > span:last-child:not(:first-child) {
+  transform: rotate(180deg);
+}
+
+.terminal-settings-select-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.55fr);
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+}
+
+.terminal-settings-select-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.terminal-settings-select-grid select,
+.terminal-settings-select-row select,
+.terminal-highlight-rule input:not([type="color"]),
+.terminal-highlight-rule select {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 9px;
+  outline: none;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+}
+
+.terminal-settings-select-grid select:focus,
+.terminal-settings-select-row select:focus,
+.terminal-highlight-rule input:focus,
+.terminal-highlight-rule select:focus {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.terminal-settings-rows {
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+
+.terminal-settings-row {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.terminal-settings-row:last-child {
+  border-bottom: 0;
+}
+
+.terminal-settings-row.is-dependent {
+  padding-left: 26px;
+}
+
+.terminal-settings-row.is-disabled {
+  opacity: 0.5;
+}
+
+.terminal-settings-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--surface-control);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.terminal-settings-switch > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted-strong);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.terminal-settings-switch.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 78%, #0b253f);
+}
+
+.terminal-settings-switch.is-on > span {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.terminal-settings-switch:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.terminal-settings-inline-action,
+.terminal-settings-add-rule {
+  justify-self: start;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.terminal-highlight-rule-editor {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: color-mix(in srgb, var(--surface-input) 62%, transparent);
+}
+
+.terminal-highlight-rule {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 0.7fr) 78px minmax(140px, 1.4fr) 34px 34px 28px;
+  align-items: center;
+  gap: 6px;
+}
+
+.terminal-highlight-rule input[type="color"] {
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  background: var(--surface-input);
+}
+
+.terminal-highlight-rule-remove {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.terminal-highlight-rule-remove:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.terminal-settings-footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface-panel);
+}
+
+@media (max-width: 620px) {
+  .terminal-settings-dialog.notepad-modal {
+    width: 100vw;
+  }
+
+  .terminal-settings-select-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-highlight-rule {
+    grid-template-columns: auto minmax(0, 1fr) 78px 34px 28px;
+  }
+
+  .terminal-highlight-rule-pattern {
+    grid-column: 2 / -1;
+  }
 }
 
 .terminal-compose-bar {

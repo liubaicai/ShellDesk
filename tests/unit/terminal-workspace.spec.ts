@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import type { DesktopWindowState } from '../../src/remoteDesktopWindowModel';
 import {
+  createTerminalWorkspaceCloneEntries,
   createTerminalWorkspaceSnapshot,
   inheritTerminalSplitWorkingDirectory,
   parseTerminalWorkspaceSnapshot,
@@ -41,6 +42,23 @@ test('terminal workspace snapshots never persist commands or output state', () =
   expect(serialized).not.toContain('must-not-persist');
   expect(serialized).not.toContain('deploy --token');
   expect(serialized).not.toContain('terminalHasForegroundTask');
+});
+
+test('workspace clones preserve every pane layout and its live working directory', () => {
+  const window = {
+    id: 'terminal-live',
+    appKey: 'terminal',
+    frame: { x: 80, y: 50, width: 700, height: 460 },
+    isMaximized: false,
+    isMinimized: false,
+    zIndex: 1,
+    terminalLaunchOptions: { title: 'API', workingDirectory: '/srv/old' },
+    terminalWorkingDirectory: '/srv/live',
+  } satisfies DesktopWindowState;
+  const entries = createTerminalWorkspaceCloneEntries([window], { x: 0, y: 0, width: 1200, height: 800 });
+  expect(entries).toHaveLength(1);
+  expect(entries[0].frame.x).toBeGreaterThan(window.frame.x);
+  expect(entries[0].launchOptions?.workingDirectory).toBe('/srv/live');
 });
 
 test('workspace restore validation rejects malformed frames and caps restored windows', () => {

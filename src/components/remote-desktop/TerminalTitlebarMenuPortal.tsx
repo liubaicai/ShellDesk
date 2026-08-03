@@ -26,6 +26,9 @@ interface TerminalTitlebarMenuPortalProps {
   onReconnect: () => void;
   onNewWindow: () => void;
   onSplit: (direction: TerminalWorkspaceSplitDirection) => void;
+  onCloneWorkspace: () => void;
+  broadcastEnabled: boolean;
+  onToggleBroadcast: () => void;
   onRequestTool: (action: RemoteTerminalToolAction) => void;
   onNewTmux: () => void;
   onRefreshTmux: () => void;
@@ -46,6 +49,9 @@ export function TerminalTitlebarMenuPortal({
   onReconnect,
   onNewWindow,
   onSplit,
+  onCloneWorkspace,
+  broadcastEnabled,
+  onToggleBroadcast,
   onRequestTool,
   onNewTmux,
   onRefreshTmux,
@@ -83,6 +89,12 @@ export function TerminalTitlebarMenuPortal({
         <button type="button" role="menuitem" onClick={() => onSplit('down')}>
           {t('terminal.workspace.splitDown', language)}
         </button>
+        <button type="button" role="menuitem" onClick={onCloneWorkspace}>
+          {t('terminal.workspace.clone', language)}
+        </button>
+        <button type="button" role="menuitem" className={broadcastEnabled ? 'terminal-broadcast-menu-active' : undefined} onClick={onToggleBroadcast}>
+          {broadcastEnabled ? t('terminal.broadcast.disable', language) : t('terminal.broadcast.enable', language)}
+        </button>
 
         {!desktopWindow.terminalRestorePending ? (
           <>
@@ -94,6 +106,12 @@ export function TerminalTitlebarMenuPortal({
             </button>
             <button type="button" role="menuitem" onClick={() => onRequestTool('compose')}>
               {t('terminal.titlebar.compose', language)}
+            </button>
+            <button type="button" role="menuitem" onClick={() => onRequestTool('command-center')}>
+              {t('terminal.titlebar.commandCenter', language)}
+            </button>
+            <button type="button" role="menuitem" onClick={() => onRequestTool('open-files-here')}>
+              {t('terminal.titlebar.openFilesHere', language)}
             </button>
             <button type="button" role="menuitem" onClick={() => onRequestTool('toggle-log')}>
               {t('terminal.titlebar.toggleSessionLog', language)}

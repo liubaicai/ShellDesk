@@ -10,7 +10,6 @@ import { loadDesktopWallpaperPresetUrl } from './assets/desktopWallpapers';
 import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
 import { TerminalCloseConfirmPortal } from './components/remote-desktop/TerminalCloseConfirmPortal';
-import { TerminalRestorePlaceholder } from './components/remote-desktop/TerminalRestorePlaceholder';
 import { TerminalTitlebarMenuPortal } from './components/remote-desktop/TerminalTitlebarMenuPortal';
 import {
   addAppToFolder,
@@ -53,52 +52,19 @@ import {
 } from './features/remote-desktop/desktopKeyboardNavigation';
 import { useDesktopCapabilities } from './features/remote-desktop/useDesktopCapabilities';
 import { useTerminalWorkspacePersistence } from './features/remote-desktop/useTerminalWorkspacePersistence';
+import { useTerminalDesktopProductivity } from './features/remote-desktop/useTerminalDesktopProductivity';
 import { shouldCloseTerminalAfterExit } from './components/remote-desktop/terminalExitPolicy';
 import {
-  RemoteAiChat,
-  RemoteApacheManager,
-  RemoteApiDebugger,
-  RemoteBackupManager,
-  RemoteBrowser,
-  RemoteCaddyManager,
-  RemoteCertManager,
-  RemoteClickHouse,
-  RemoteCodeEditor,
-  RemoteContainerManager,
-  RemoteDiskAnalyzer,
-  RemoteDiskManager,
-  RemoteFileExplorer,
-  RemoteFirewallManager,
-  RemoteFrpManager,
-  RemoteFrpsManager,
-  RemoteGitManager,
-  RemoteIptablesManager,
-  RemoteK8sManager,
-  RemoteLogViewer,
-  RemoteMessageQueuePanel,
-  RemoteMonitor,
-  RemoteMongo,
-  RemoteMySQL,
-  RemoteNetworkDiagnostics,
-  RemoteNginxManager,
-  RemoteNotepad,
-  RemotePackageManager,
-  RemotePortManager,
-  RemotePostgres,
-  RemoteProcessManager,
-  RemoteRdpViewer,
-  RemoteRedis,
-  RemoteS3Browser,
-  RemoteScheduledTasks,
-  RemoteSearchCluster,
-  RemoteSecurityAudit,
-  RemoteServiceManager,
-  RemoteSettings,
-  RemoteSqlite,
-  RemoteSupervisorManager,
-  RemoteTerminal,
-  RemoteVirtualMachineManager,
-  RemoteVncViewer,
+  RemoteAiChat, RemoteApacheManager, RemoteApiDebugger, RemoteBackupManager, RemoteBrowser,
+  RemoteCaddyManager, RemoteCertManager, RemoteClickHouse, RemoteCodeEditor, RemoteContainerManager,
+  RemoteDiskAnalyzer, RemoteDiskManager, RemoteFileExplorer, RemoteFirewallManager, RemoteFrpManager,
+  RemoteFrpsManager, RemoteGitManager, RemoteIptablesManager, RemoteK8sManager, RemoteLogViewer,
+  RemoteMessageQueuePanel, RemoteMonitor, RemoteMongo, RemoteMySQL, RemoteNetworkDiagnostics,
+  RemoteNginxManager, RemoteNotepad, RemotePackageManager, RemotePortManager, RemotePostgres,
+  RemoteProcessManager, RemoteRdpViewer, RemoteRedis, RemoteS3Browser, RemoteScheduledTasks,
+  RemoteSearchCluster, RemoteSecurityAudit, RemoteServiceManager, RemoteSettings, RemoteSqlite,
+  RemoteSupervisorManager, RemoteTerminal, RemoteVirtualMachineManager, RemoteVncViewer,
+  TerminalRestorePlaceholder,
 } from './features/remote-desktop/desktopAppLoaders';
 import { AllAppsIcon, DesktopAppIcon } from './components/remote-desktop/RemoteDesktopAppIcon';
 import {
@@ -228,6 +194,27 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const shouldReserveDockSpace = (isMaximized: boolean) => (
     dockAutoHide === 'never' || (dockAutoHide === 'maximized' && !isMaximized)
   );
+  const {
+    terminalBroadcastEnabled,
+    setTerminalBroadcastEnabled,
+    cloneTerminalWorkspace,
+    handleTerminalWorkingDirectoryChange,
+    broadcastTerminalInput,
+    completeTerminalBroadcastRequest,
+  } = useTerminalDesktopProductivity({
+    language: settings.language,
+    dockPosition,
+    dockSize,
+    reserveDockSpace: shouldReserveDockSpace(false),
+    sftpFollowCwd: settings.terminalSftpFollowCwd,
+    desktopSurfaceRef,
+    desktopWindowsRef,
+    windowSequenceRef,
+    zIndexRef,
+    setDesktopWindows,
+    setFocusedWindowId,
+    setTerminalTitlebarMenu,
+  });
   useTerminalWorkspacePersistence({
     host: connection.host,
     language: settings.language,
@@ -1873,10 +1860,14 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           launchOptions={desktopWindow.terminalLaunchOptions}
           commandRequest={desktopWindow.terminalCommandRequest}
           toolRequest={desktopWindow.terminalToolRequest}
+          broadcastRequest={desktopWindow.terminalBroadcastRequests?.[0]}
+          broadcastInputEnabled={terminalBroadcastEnabled}
           isVisible={!desktopWindow.isMinimized}
           onChromeChange={(payload) => updateWindowChrome(desktopWindow.id, payload)}
           onCommandRequestHandled={(requestId) => completeTerminalCommandRequest(desktopWindow.id, requestId)}
           onToolRequestHandled={(requestId) => completeTerminalToolRequest(desktopWindow.id, requestId)}
+          onBroadcastRequestHandled={(requestId) => completeTerminalBroadcastRequest(desktopWindow.id, requestId)}
+          onBroadcastInput={broadcastTerminalInput}
           onSplitTerminal={(direction, workingDirectory) => (
             splitTerminalWindow(desktopWindow.id, direction, workingDirectory)
           )}
@@ -1886,6 +1877,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
           onSessionEvent={handleTerminalSessionEvent}
           onSessionStateChange={(payload) => updateTerminalSessionState(desktopWindow.id, payload)}
           onSessionExit={(result) => handleTerminalSessionExit(desktopWindow.id, result)}
+          onWorkingDirectoryChange={(workingDirectory) => handleTerminalWorkingDirectoryChange(desktopWindow.id, workingDirectory)}
+          onOpenFileManager={openFileManagerAtPath}
           onSettingsChange={onSettingsChange}
         />
       );
@@ -2814,6 +2807,9 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
             requestTerminalTool(terminalTitlebarMenuWindow.id, `split-${direction}`);
           }
         }}
+        onCloneWorkspace={cloneTerminalWorkspace}
+        broadcastEnabled={terminalBroadcastEnabled}
+        onToggleBroadcast={() => setTerminalBroadcastEnabled((enabled) => !enabled)}
         onRequestTool={(action) => requestTerminalTool(terminalTitlebarMenuWindow.id, action)}
         onNewTmux={openNewTmuxTerminal}
         onRefreshTmux={() => void refreshTmuxSessions()}

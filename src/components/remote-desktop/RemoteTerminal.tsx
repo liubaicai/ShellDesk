@@ -21,11 +21,10 @@ import { isWindowsSystem } from './remoteSystem';
 import { collectSubmittedCommands, isLikelyForegroundCommand, readForegroundTaskSignal, summarizeTerminalOutput } from './terminalCommands';
 import { applyTerminalOptions, buildTerminalOptions, getLocalWindowsPtyOption, getShellChoices, getTerminalChromeTone, getTerminalSessionTitle, getTerminalStatusLabel, sftpProbeCacheMs, terminalSearchOptions } from './terminalCore';
 import { createTerminalCwdProbeController } from './terminalCwd';
-import { rememberRuntimeTerminalCommand, suggestRuntimeTerminalCommand } from './terminalCommandHistory';
+import { clearRuntimeTerminalCommandHistory, isSafeRuntimeTerminalCommand, listAllRuntimeTerminalCommands, listRuntimeTerminalCommands, rememberRuntimeTerminalCommand, suggestRuntimeTerminalCommand } from './terminalCommandHistory';
 import {
   collectRemotePathCompletionCandidates,
   collectTerminalCompletionCandidates,
-  type TerminalCompletionCandidate,
 } from './terminalCompletionEngine';
 import { normalizeSafeTerminalLink } from './terminalLinks';
 import { createTerminalOutputDecorationController, type TerminalOutputDecorationController } from './terminalOutputDecorations';
@@ -39,9 +38,12 @@ import type { TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import { createSftpProgressHandlers, createSftpTransferRunner } from './terminalTransfer';
 import type { ForegroundTaskSource, RemoteTerminalProps, RemoteTerminalSessionEvent, RemoteTerminalSessionEventInput, RemoteTerminalSessionStatus, TerminalContextMenuState, TerminalCwdProbeState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
 import { TerminalPaneView } from './TerminalPaneView';
+import { TerminalCommandCenterPortal } from './TerminalCommandCenterPortal';
+import { createTerminalUiStore } from './terminalUiStore';
 import { createZmodemSentry, readSubmittedTransferCommand, readTerminalPayloadBytes, readVisibleSubmittedTransferCommand } from './terminalZmodem';
 import { getTerminalTheme } from './terminalPresets';
 import { attachTerminalInteractions } from './terminalInteractions';
+import { canBroadcastTerminalInput, isSensitiveTerminalPrompt } from './terminalBroadcast';
 import { useTerminalExternalRequests } from './terminalRequests';
 import { TerminalCursorLineHighlighter } from './terminalCursorLine';
 import { attachTerminalOsc52 } from './terminalOsc52';
@@ -50,6 +52,7 @@ import { t } from '../../i18n';
 
 export type {
   RemoteTerminalChromePayload,
+  RemoteTerminalBroadcastRequest,
   RemoteTerminalCommandRequest,
   RemoteTerminalExitResult,
   RemoteTerminalLaunchOptions,
@@ -79,10 +82,14 @@ function RemoteTerminal({
   launchOptions,
   commandRequest,
   toolRequest,
+  broadcastRequest,
+  broadcastInputEnabled = false,
   isVisible = true,
   onChromeChange,
   onCommandRequestHandled,
   onToolRequestHandled,
+  onBroadcastRequestHandled,
+  onBroadcastInput,
   onSplitTerminal,
   onOpenTerminal,
   onOpenNote,
@@ -90,6 +97,8 @@ function RemoteTerminal({
   onSessionEvent,
   onSessionStateChange,
   onSessionExit,
+  onWorkingDirectoryChange,
+  onOpenFileManager,
   onSettingsChange,
 }: RemoteTerminalProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
@@ -124,6 +133,9 @@ function RemoteTerminal({
   const commandBufferRef = useRef('');
   const commandBufferUnsafeRef = useRef(false);
   const commandSuggestionRef = useRef('');
+  const terminalUiStoreRef = useRef<ReturnType<typeof createTerminalUiStore> | null>(null);
+  terminalUiStoreRef.current ??= createTerminalUiStore();
+  const terminalUiStore = terminalUiStoreRef.current;
   const acceptCompletionRef = useRef<((value: string) => void) | null>(null);
   const completionGenerationRef = useRef(0);
   const completionTimerRef = useRef<number | null>(null);
@@ -132,11 +144,19 @@ function RemoteTerminal({
   const foregroundTaskSourceRef = useRef<ForegroundTaskSource | null>(null);
   const handledCommandRequestRef = useRef('');
   const handledToolRequestRef = useRef('');
+  const handledBroadcastRequestRef = useRef('');
+  const sensitivePromptRef = useRef(false);
+  const sensitivePromptBufferRef = useRef('');
+  const commandRecordingRef = useRef(false);
+  const recordedCommandsRef = useRef<string[]>([]);
+  const broadcastInputEnabledRef = useRef(broadcastInputEnabled);
+  const onBroadcastInputRef = useRef(onBroadcastInput);
   const onChromeChangeRef = useRef(onChromeChange);
   const onCommandInterceptRef = useRef(onCommandIntercept);
   const onSessionEventRef = useRef(onSessionEvent);
   const onSessionStateChangeRef = useRef(onSessionStateChange);
   const onSessionExitRef = useRef(onSessionExit);
+  const onWorkingDirectoryChangeRef = useRef(onWorkingDirectoryChange);
   const outputDecorationControllerRef = useRef<TerminalOutputDecorationController | null>(null);
   const cursorLineHighlighterRef = useRef<TerminalCursorLineHighlighter | null>(null);
   const outputFlowControllerRef = useRef<TerminalOutputFlowController | null>(null);
@@ -160,8 +180,6 @@ function RemoteTerminal({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TerminalSearchResultState>({ index: -1, count: 0 });
   const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(null);
-  const [commandSuggestion, setCommandSuggestion] = useState('');
-  const [completionCandidates, setCompletionCandidates] = useState<TerminalCompletionCandidate[]>([]);
   const [sessionLogRecording, setSessionLogRecording] = useState(false);
   const [selectionAiState, setSelectionAiState] = useState<TerminalSelectionAiState | null>(null);
   const [pendingTerminalLink, setPendingTerminalLink] = useState('');
@@ -170,6 +188,10 @@ function RemoteTerminal({
   const [composeText, setComposeText] = useState('');
   const [isLaunchDialogOpen, setIsLaunchDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+  const [isCommandCenterOpen, setIsCommandCenterOpen] = useState(false);
+  const [isCommandRecording, setIsCommandRecording] = useState(false);
+  const [recordedCommands, setRecordedCommands] = useState<string[]>([]);
+  const [, setCommandHistoryVersion] = useState(0);
   const [launchDraft, setLaunchDraft] = useState<TerminalLaunchDraft>({
     title: '',
     shell: '',
@@ -208,6 +230,14 @@ function RemoteTerminal({
       terminalRef.current?.writeln(`\r\n${t('terminal.error.copyFailed', settings.language, { error: getErrorMessage(error) })}`);
     });
   }, [settings.language]);
+
+  const pasteClipboardText = useCallback(() => {
+    navigator.clipboard.readText().then((text) => {
+      if (!text) return;
+      terminalRef.current?.focus();
+      terminalRef.current?.paste(text);
+    }).catch(() => undefined);
+  }, []);
 
   const requestSelectionAi = useCallback((selection: string, action: 'explain' | 'fix') => {
     const trimmedSelection = selection.trim().slice(0, 8_000);
@@ -332,6 +362,68 @@ function RemoteTerminal({
     setIsLaunchDialogOpen(false);
   }, [launchDraft, onOpenTerminal]);
 
+  const recordTerminalCommand = useCallback((command: string) => {
+    if (!commandRecordingRef.current || !isSafeRuntimeTerminalCommand(command)) return;
+    setRecordedCommands((current) => {
+      const next = [...current, command].slice(-500);
+      recordedCommandsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const runCommandCenterCommand = useCallback((command: string, mode: 'insert' | 'run') => {
+    if (!isSafeRuntimeTerminalCommand(command)) return;
+    if (mode === 'insert') {
+      terminalRef.current?.focus();
+      terminalRef.current?.paste(command);
+    } else {
+      sendInputRef.current?.(`${command}\r`);
+      rememberRuntimeTerminalCommand(connectionId, command);
+      emitSessionEvent({ type: 'terminal-command', command, source: 'external' });
+      recordTerminalCommand(command);
+    }
+    setIsCommandCenterOpen(false);
+  }, [connectionId, emitSessionEvent, recordTerminalCommand]);
+
+  const saveCommandCenterSnippet = useCallback((command: string) => {
+    if (!onSettingsChange || !isSafeRuntimeTerminalCommand(command)) return;
+    const now = new Date().toISOString();
+    const label = command.replace(/\s+/gu, ' ').slice(0, 56);
+    onSettingsChange({
+      ...settings,
+      terminalSnippets: [
+        ...(settings.terminalSnippets ?? []),
+        {
+          id: `history:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          label,
+          command,
+          group: t('terminal.commandCenter.snippetGroup', settings.language),
+          language: isWindowsSystem(systemType) ? 'powershell' : 'bash',
+          shortcut: '',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+  }, [onSettingsChange, settings, systemType]);
+
+  const exportRecordedCommandScript = useCallback(() => {
+    const commands = recordedCommandsRef.current;
+    const files = window.guiSSH?.files;
+    if (!commands.length || !files) return;
+    const windows = isWindowsSystem(systemType);
+    const extension = windows ? 'ps1' : 'sh';
+    const header = windows
+      ? `# ShellDesk recorded commands\r\n# Exported ${new Date().toISOString()}\r\n\r\n`
+      : `#!/usr/bin/env bash\nset -euo pipefail\n# ShellDesk recorded commands\n# Exported ${new Date().toISOString()}\n\n`;
+    void files.saveTextFile({
+      title: t('terminal.commandCenter.exportScript', settings.language),
+      defaultFileName: `shelldesk-commands-${Date.now()}.${extension}`,
+      content: `${header}${commands.join(windows ? '\r\n' : '\n')}${windows ? '\r\n' : '\n'}`,
+      filters: [{ name: windows ? 'PowerShell' : 'Shell script', extensions: [extension] }],
+    }).catch(() => undefined);
+  }, [settings.language, systemType]);
+
   const handleSearchKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -359,8 +451,7 @@ function RemoteTerminal({
     settingsRef.current = settings;
     if (!settings.terminalCommandAutocompleteEnabled) {
       commandSuggestionRef.current = '';
-      setCommandSuggestion('');
-      setCompletionCandidates([]);
+      terminalUiStore.clearCompletion();
     }
     if (!settings.terminalSafeLinksEnabled) {
       setPendingTerminalLink('');
@@ -421,6 +512,15 @@ function RemoteTerminal({
   useEffect(() => {
     onSessionExitRef.current = onSessionExit;
   }, [onSessionExit]);
+
+  useEffect(() => {
+    broadcastInputEnabledRef.current = broadcastInputEnabled;
+    onBroadcastInputRef.current = onBroadcastInput;
+  }, [broadcastInputEnabled, onBroadcastInput]);
+
+  useEffect(() => {
+    onWorkingDirectoryChangeRef.current = onWorkingDirectoryChange;
+  }, [onWorkingDirectoryChange]);
 
   useEffect(() => {
     launchOptionsRef.current = launchOptions;
@@ -521,9 +621,11 @@ function RemoteTerminal({
         const parsed = new URL(value);
         if (parsed.protocol === 'file:') {
           const decoded = decodeURIComponent(parsed.pathname);
-          currentWorkingDirectoryRef.current = isWindowsSystem(systemType)
+          const workingDirectory = isWindowsSystem(systemType)
             ? decoded.replace(/^\/([a-z]:)/iu, '$1').replace(/\//gu, '\\')
             : decoded || '/';
+          currentWorkingDirectoryRef.current = workingDirectory;
+          onWorkingDirectoryChangeRef.current?.(workingDirectory);
         }
       } catch {
         // Ignore malformed or non-URL OSC 7 payloads.
@@ -638,6 +740,8 @@ function RemoteTerminal({
       if (!isTerminalReadyRef.current) {
         return Promise.resolve(false);
       }
+
+      outputFlowControllerRef.current?.prioritizeInput(data);
 
       const writePromise = supportsTerminalIpcOptions
         ? api.connections.writeTerminal(connectionId, terminalId, data, { legacy: useLegacyTerminalIpcRef.current })
@@ -800,6 +904,7 @@ function RemoteTerminal({
       const directory = await probeTerminalWorkingDirectory();
       if (directory) {
         currentWorkingDirectoryRef.current = directory;
+        onWorkingDirectoryChangeRef.current?.(directory);
       }
       return directory;
     };
@@ -906,13 +1011,12 @@ function RemoteTerminal({
         : [];
       const suggestion = candidates[0]?.value
         ?? (canComplete ? suggestRuntimeTerminalCommand(connectionId, buffer, settingsRef.current.terminalSnippets ?? []) : '');
-      setCompletionCandidates(candidates);
       if (commandSuggestionRef.current === suggestion) {
         // The candidate details may still have changed.
       } else {
         commandSuggestionRef.current = suggestion;
-        setCommandSuggestion(suggestion);
       }
+      terminalUiStore.setCompletion(suggestion, candidates);
       if (
         !canComplete
         || !settingsRef.current.terminalRemotePathAutocompleteEnabled
@@ -937,9 +1041,8 @@ function RemoteTerminal({
             ...pathCandidates,
             ...candidates.filter((candidate) => !pathCandidates.some((pathCandidate) => pathCandidate.value === candidate.value)),
           ].slice(0, 12);
-          setCompletionCandidates(merged);
           commandSuggestionRef.current = merged[0]?.value ?? '';
-          setCommandSuggestion(merged[0]?.value ?? '');
+          terminalUiStore.setCompletion(merged[0]?.value ?? '', merged);
         }).catch(() => undefined);
       }, 120);
     };
@@ -959,7 +1062,13 @@ function RemoteTerminal({
           .acknowledgeTerminalOutput(connectionId, terminalId, sequence, byteLength)
           .catch(() => undefined);
       },
+      onPressureChange: (pressure) => {
+        outputDecorationControllerRef.current?.setPressure(pressure);
+        host.dataset.outputPressure = pressure;
+      },
       write: (data, done) => {
+        sensitivePromptBufferRef.current = `${sensitivePromptBufferRef.current}${data}`.slice(-512);
+        sensitivePromptRef.current = isSensitiveTerminalPrompt(sensitivePromptBufferRef.current);
         const displayData = zmodemSessionRef.current ? data : outputProtocolFilter.filter(data);
         const foregroundSignal = readForegroundTaskSignal(foregroundSequenceBufferRef.current, data);
         foregroundSequenceBufferRef.current = foregroundSignal.buffer;
@@ -1311,7 +1420,14 @@ function RemoteTerminal({
         }
       }
 
+      if (broadcastInputEnabledRef.current && canBroadcastTerminalInput(data, sensitivePromptRef.current).allowed) {
+        onBroadcastInputRef.current?.(terminalId, data);
+      }
       writeTerminalInput(data);
+      if (sensitivePromptRef.current && /[\r\n]/u.test(data)) {
+        sensitivePromptRef.current = false;
+        sensitivePromptBufferRef.current = '';
+      }
       if (
         data.includes('\x03') ||
         data.includes('\x04') ||
@@ -1335,6 +1451,7 @@ function RemoteTerminal({
       }
       commandState.commands.forEach((command) => {
         rememberRuntimeTerminalCommand(connectionId, command);
+        recordTerminalCommand(command);
         if (isLikelyForegroundCommand(command)) {
           foregroundTaskSourceRef.current = 'command';
           setHasForegroundTask(true);
@@ -1454,12 +1571,30 @@ function RemoteTerminal({
     toggleSessionLog: () => toggleSessionLogRef.current?.(),
     pasteClipboardImage: () => pasteClipboardImageRef.current?.(),
     toggleCompose: () => setShowComposer((current) => !current),
+    openCommandCenter: () => setIsCommandCenterOpen(true),
     resolveWorkingDirectory: () => resolveWorkingDirectoryRef.current?.() ?? Promise.resolve('.'),
+    onOpenFileManager,
     onSplitTerminal,
   });
 
+  useEffect(() => {
+    if (
+      !broadcastRequest
+      || handledBroadcastRequestRef.current === broadcastRequest.id
+    ) return;
+    handledBroadcastRequestRef.current = broadcastRequest.id;
+    if (
+      sessionStatus === 'running'
+      && canBroadcastTerminalInput(broadcastRequest.data, sensitivePromptRef.current).allowed
+    ) {
+      sendInputRef.current?.(broadcastRequest.data);
+    }
+    onBroadcastRequestHandled?.(broadcastRequest.id);
+  }, [broadcastRequest, onBroadcastRequestHandled, sessionStatus]);
+
   return (
-    <TerminalPaneView
+    <>
+      <TerminalPaneView
       terminalPaneStyle={terminalPaneStyle}
       terminalHostRef={terminalHostRef}
       timestampGutterRef={timestampGutterRef}
@@ -1469,12 +1604,12 @@ function RemoteTerminal({
       searchQuery={searchQuery}
       searchResults={searchResults}
       contextMenu={contextMenu}
-      commandSuggestion={commandSuggestion}
-      completionCandidates={completionCandidates}
+      terminalUiStore={terminalUiStore}
       pendingTerminalLink={pendingTerminalLink}
       pendingOsc52Read={pendingOsc52Read}
       selectionAiState={selectionAiState}
       sessionLogRecording={sessionLogRecording}
+      broadcastInputEnabled={broadcastInputEnabled}
       showComposer={showComposer}
       composeText={composeText}
       composeCanRun={sessionStatus === 'running'}
@@ -1493,6 +1628,7 @@ function RemoteTerminal({
       onSearchClose={closeSearch}
       onContextMenuClose={() => setContextMenu(null)}
       onContextMenuCopy={writeClipboardText}
+      onContextMenuPaste={pasteClipboardText}
       onSelectionAi={requestSelectionAi}
       onSelectionAiClose={() => {
         selectionAiGenerationRef.current += 1;
@@ -1525,8 +1661,7 @@ function RemoteTerminal({
         commandBufferRef.current = '';
         commandBufferUnsafeRef.current = false;
         commandSuggestionRef.current = '';
-        setCommandSuggestion('');
-        setCompletionCandidates([]);
+        terminalUiStore.clearCompletion();
         rememberRuntimeTerminalCommand(connectionId, composeText);
         emitSessionEvent({ type: 'terminal-command', command: composeText, source: 'keyboard' });
         setComposeText('');
@@ -1539,7 +1674,35 @@ function RemoteTerminal({
       onLaunchDraftChange={setLaunchDraft}
       onSettingsDialogClose={() => setIsSettingsDialogOpen(false)}
       onSettingChange={updateTerminalSetting}
-    />
+      />
+      <TerminalCommandCenterPortal
+        open={isCommandCenterOpen}
+        language={settings.language}
+        currentScope={connectionId}
+        currentCommands={listRuntimeTerminalCommands(connectionId)}
+        allCommands={listAllRuntimeTerminalCommands()}
+        recordedCommands={recordedCommands}
+        recording={isCommandRecording}
+        onClose={() => setIsCommandCenterOpen(false)}
+        onInsert={(command) => runCommandCenterCommand(command, 'insert')}
+        onRun={(command) => runCommandCenterCommand(command, 'run')}
+        onSaveSnippet={saveCommandCenterSnippet}
+        onClearHistory={() => {
+          clearRuntimeTerminalCommandHistory();
+          setCommandHistoryVersion((version) => version + 1);
+        }}
+        onToggleRecording={() => {
+          const next = !commandRecordingRef.current;
+          commandRecordingRef.current = next;
+          setIsCommandRecording(next);
+          if (next) {
+            recordedCommandsRef.current = [];
+            setRecordedCommands([]);
+          }
+        }}
+        onExportScript={exportRecordedCommandScript}
+      />
+    </>
   );
 }
 

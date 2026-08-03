@@ -1,5 +1,6 @@
 import { getSystemLanguage, type AppLanguage } from './i18n';
 import { createDefaultRemoteDesktopLayout } from './remoteDesktopLayout';
+import { cloneDefaultTerminalHighlightRules } from './terminalHighlightRules';
 import { readPreloadThemePreference } from './theme/appearance';
 
 function createDefaultTerminalSnippets(language: AppLanguage): ShellDeskTerminalSnippet[] {
@@ -116,8 +117,11 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   terminalLineTimestamps: false,
   terminalKeywordHighlightEnabled: false,
   terminalHighlightKeywords: 'error,warning,failed,denied,exception',
+  terminalHighlightRules: cloneDefaultTerminalHighlightRules(),
   terminalCommandAutocompleteEnabled: true,
   terminalRemotePathAutocompleteEnabled: true,
+  terminalSftpFollowCwd: false,
+  terminalContextMenuInAlternateScreen: false,
   terminalSafeLinksEnabled: true,
   terminalOsc52Mode: 'off',
   terminalClearWipesScrollback: false,

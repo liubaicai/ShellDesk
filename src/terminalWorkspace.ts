@@ -23,6 +23,12 @@ export interface TerminalWorkspaceSnapshot {
   windows: TerminalWorkspaceEntry[];
 }
 
+export interface TerminalWorkspaceCloneEntry {
+  sourceWindowId: string;
+  frame: DesktopWindowFrame;
+  launchOptions?: RemoteTerminalLaunchOptions;
+}
+
 function finiteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -129,9 +135,41 @@ export function createTerminalWorkspaceSnapshot(
         frame: { ...(desktopWindow.isMaximized ? desktopWindow.previousFrame ?? desktopWindow.frame : desktopWindow.frame) },
         isMaximized: desktopWindow.isMaximized,
         isMinimized: desktopWindow.isMinimized,
-        launchOptions: sanitizeTerminalLaunchMetadata(desktopWindow.terminalLaunchOptions),
+        launchOptions: inheritTerminalSplitWorkingDirectory(
+          sanitizeTerminalLaunchMetadata(desktopWindow.terminalLaunchOptions),
+          desktopWindow.terminalWorkingDirectory ?? '',
+        ),
       })),
   };
+}
+
+export function createTerminalWorkspaceCloneEntries(
+  desktopWindows: readonly DesktopWindowState[],
+  workspace: DesktopWindowWorkspace,
+): TerminalWorkspaceCloneEntry[] {
+  const terminalWindows = desktopWindows.filter((desktopWindow) => desktopWindow.appKey === 'terminal');
+  const cloneCount = Math.max(0, TERMINAL_WORKSPACE_MAX_WINDOWS - terminalWindows.length);
+  return terminalWindows.slice(0, cloneCount).map((desktopWindow, index) => {
+    const baseFrame = desktopWindow.isMaximized
+      ? desktopWindow.previousFrame ?? desktopWindow.frame
+      : desktopWindow.frame;
+    const offset = 22 + (index % 3) * 8;
+    const width = Math.min(baseFrame.width, workspace.width);
+    const height = Math.min(baseFrame.height, workspace.height);
+    return {
+      sourceWindowId: desktopWindow.id,
+      frame: {
+        x: Math.min(Math.max(workspace.x, baseFrame.x + offset), workspace.x + workspace.width - width),
+        y: Math.min(Math.max(workspace.y, baseFrame.y + offset), workspace.y + workspace.height - height),
+        width,
+        height,
+      },
+      launchOptions: inheritTerminalSplitWorkingDirectory(
+        sanitizeTerminalLaunchMetadata(desktopWindow.terminalLaunchOptions),
+        desktopWindow.terminalWorkingDirectory ?? '',
+      ),
+    };
+  });
 }
 
 export function terminalWorkspaceStorageKey(host: {

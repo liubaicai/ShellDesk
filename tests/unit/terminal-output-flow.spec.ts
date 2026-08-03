@@ -153,3 +153,56 @@ test('keeps acknowledgements ordered when an internal chunk is hidden', () => {
   expect(acknowledgements).toEqual([[1, 5], [2, 20]]);
   controller.dispose();
 });
+
+test('prioritizes Ctrl+C by dropping and acknowledging stale normal-buffer output', () => {
+  const fake = createScheduler();
+  const acknowledgements: Array<[number, number]> = [];
+  const pressure: string[] = [];
+  const controller = createTerminalOutputFlowController({
+    scheduler: fake.scheduler,
+    initiallyVisible: false,
+    write: () => undefined,
+    acknowledge: (sequence, byteLength) => acknowledgements.push([sequence, byteLength]),
+    onPressureChange: (value) => pressure.push(value),
+  });
+  controller.enqueue({ data: 'a'.repeat(140_000), sequence: 1, byteLength: 140_000 });
+  controller.enqueue({ data: 'b'.repeat(140_000), sequence: 2, byteLength: 140_000 });
+  expect(controller.pressure()).toBe('saturated');
+  expect(controller.prioritizeInput('\x03')).toEqual({ droppedBytes: 280_000, droppedChunks: 2 });
+  expect(controller.pendingBytes()).toBe(0);
+  expect(acknowledgements).toEqual([[2, 280_000]]);
+  expect(pressure).toEqual(['saturated', 'normal']);
+  controller.dispose();
+});
+
+test('does not discard alternate-screen frames while prioritizing input', () => {
+  const fake = createScheduler();
+  const controller = createTerminalOutputFlowController({
+    scheduler: fake.scheduler,
+    initiallyVisible: false,
+    write: () => undefined,
+    acknowledge: () => undefined,
+  });
+  controller.setAlternateScreen(true);
+  controller.enqueue({ data: 'x'.repeat(150_000), sequence: 1, byteLength: 150_000 });
+  expect(controller.prioritizeInput('\x03')).toEqual({ droppedBytes: 0, droppedChunks: 0 });
+  expect(controller.pendingBytes()).toBe(150_000);
+  controller.dispose();
+});
+
+test('does not discard queued terminal control sequences while prioritizing input', () => {
+  const fake = createScheduler();
+  const acknowledgements: Array<[number, number]> = [];
+  const controller = createTerminalOutputFlowController({
+    scheduler: fake.scheduler,
+    maxBatchBytes: 64,
+    write: (_data, done) => done(),
+    acknowledge: (sequence, byteLength) => acknowledgements.push([sequence, byteLength]),
+  });
+  controller.setVisible(false);
+  controller.enqueue({ data: `\x1b[31m${'x'.repeat(140 * 1024)}`, sequence: 1, byteLength: 140 * 1024 + 5 });
+
+  expect(controller.prioritizeInput('\x03')).toEqual({ droppedBytes: 0, droppedChunks: 0 });
+  expect(controller.pendingBytes()).toBe(140 * 1024 + 5);
+  expect(acknowledgements).toEqual([]);
+});

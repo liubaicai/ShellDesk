@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { createDefaultRemoteDesktopLayout } from './remoteDesktopLayout';
+import { cloneDefaultTerminalHighlightRules } from './terminalHighlightRules';
 import type { IpcArgs, IpcChannel, IpcResult } from './ipcChannelMap';
 
 type EventCallback<T = unknown> = (payload: T) => void;
@@ -116,8 +117,11 @@ function createPreviewSettings(): ShellDeskAppSettings {
     terminalLineTimestamps: false,
     terminalKeywordHighlightEnabled: false,
     terminalHighlightKeywords: 'error,warning,failed,denied,exception',
+    terminalHighlightRules: cloneDefaultTerminalHighlightRules(),
     terminalCommandAutocompleteEnabled: true,
     terminalRemotePathAutocompleteEnabled: true,
+    terminalSftpFollowCwd: false,
+    terminalContextMenuInAlternateScreen: false,
     terminalSafeLinksEnabled: true,
     terminalOsc52Mode: 'off',
     terminalClearWipesScrollback: false,

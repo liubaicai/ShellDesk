@@ -2,7 +2,7 @@ const maximumRuntimeHistoryEntries = 200;
 const maximumRuntimeHistoryScopes = 32;
 const maximumRuntimeCommandLength = 2048;
 const runtimeCommandHistories = new Map<string, string[]>();
-const sensitiveCommandPattern = /(?:^|\s)(?:sshpass|(?:password|passwd|passphrase|secret|token|api[_-]?key|authorization)\s*[:=]|--(?:password|passphrase|secret|token|api-key)(?:=|\s)|(?:-u|--user)\s+\S+:\S+|[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)/iu;
+const sensitiveCommandPattern = /(?:^|\s)(?:sshpass|--(?:password|passphrase|secret|token|api-key)(?:=|\s)|(?:-u|--user)\s+\S+:\S+|[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)|\b(?:mysql|mysqldump)\b[^\r\n]*\s-p(?:\S+|\s+\S+)|(?:password|passwd|passphrase|secret|token|api[_-]?key|authorization)\s*[:=]|\b[a-z0-9_]*(?:password|passwd|passphrase|secret|token|api[_-]?key|authorization)[a-z0-9_]*\s*=/iu;
 
 function normalizeRuntimeCommand(command: string) {
   const normalized = command.trim();
@@ -16,6 +16,10 @@ function normalizeRuntimeCommand(command: string) {
     return '';
   }
   return normalized;
+}
+
+export function isSafeRuntimeTerminalCommand(command: string) {
+  return Boolean(normalizeRuntimeCommand(command));
 }
 
 function getRuntimeHistory(scope: string, create: boolean) {
@@ -78,6 +82,12 @@ export function suggestRuntimeTerminalCommand(
 
 export function listRuntimeTerminalCommands(scope: string) {
   return [...(getRuntimeHistory(scope, false) ?? [])];
+}
+
+export function listAllRuntimeTerminalCommands() {
+  return [...runtimeCommandHistories.entries()].flatMap(([scope, commands]) => (
+    commands.map((command) => ({ scope, command }))
+  ));
 }
 
 export function clearRuntimeTerminalCommandHistory(scope?: string) {

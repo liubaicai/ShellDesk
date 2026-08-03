@@ -3,7 +3,9 @@ use serde_json::{json, Value};
 
 use super::{
     default_settings, default_terminal_snippets, merge_private_key_fields, now, random_id,
-    read_bounded_string, read_bounded_string_value, MAX_PRIVATE_KEY_BYTES, REMOTE_DESKTOP_APP_KEYS,
+    read_bounded_string, read_bounded_string_value,
+    terminal_settings::read_terminal_highlight_settings, MAX_PRIVATE_KEY_BYTES,
+    REMOTE_DESKTOP_APP_KEYS,
 };
 const DESKTOP_WALLPAPER_PRESET_IDS: &[&str] = &[
     "default",
@@ -235,15 +237,8 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         true,
         true,
     )?;
-    let terminal_highlight_keywords = match settings.get("terminalHighlightKeywords") {
-        Some(value) => {
-            read_optional_bounded_string(Some(value), "终端高亮关键字", 512, true, true)?
-        }
-        None => defaults["terminalHighlightKeywords"]
-            .as_str()
-            .unwrap_or("error,warning,failed,denied,exception")
-            .to_string(),
-    };
+    let (terminal_highlight_keywords, terminal_highlight_rules) =
+        read_terminal_highlight_settings(settings, &defaults)?;
 
     Ok(json!({
         "language": language,
@@ -323,8 +318,11 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalLineTimestamps": read_bool(settings.get("terminalLineTimestamps"), defaults["terminalLineTimestamps"].as_bool().unwrap_or(false)),
         "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
         "terminalHighlightKeywords": terminal_highlight_keywords,
+        "terminalHighlightRules": terminal_highlight_rules,
         "terminalCommandAutocompleteEnabled": read_bool(settings.get("terminalCommandAutocompleteEnabled"), defaults["terminalCommandAutocompleteEnabled"].as_bool().unwrap_or(true)),
         "terminalRemotePathAutocompleteEnabled": read_bool(settings.get("terminalRemotePathAutocompleteEnabled"), defaults["terminalRemotePathAutocompleteEnabled"].as_bool().unwrap_or(true)),
+        "terminalSftpFollowCwd": read_bool(settings.get("terminalSftpFollowCwd"), defaults["terminalSftpFollowCwd"].as_bool().unwrap_or(false)),
+        "terminalContextMenuInAlternateScreen": read_bool(settings.get("terminalContextMenuInAlternateScreen"), defaults["terminalContextMenuInAlternateScreen"].as_bool().unwrap_or(false)),
         "terminalSafeLinksEnabled": read_bool(settings.get("terminalSafeLinksEnabled"), defaults["terminalSafeLinksEnabled"].as_bool().unwrap_or(true)),
         "terminalOsc52Mode": read_choice(settings.get("terminalOsc52Mode"), &["off", "write-only", "prompt", "read-write"], defaults["terminalOsc52Mode"].as_str().unwrap_or("off")),
         "terminalClearWipesScrollback": read_bool(settings.get("terminalClearWipesScrollback"), defaults["terminalClearWipesScrollback"].as_bool().unwrap_or(false)),

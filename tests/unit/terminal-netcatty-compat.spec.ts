@@ -3,6 +3,7 @@ import type { Terminal as XTerminal } from '@xterm/xterm';
 
 import { decodeTerminalTextEscapes, optionArrowWordJumpSequence } from '../../src/components/remote-desktop/terminalInteractions';
 import { TerminalOutputProtocolFilter } from '../../src/components/remote-desktop/terminalOutputProtocol';
+import { shouldEnableTerminalWebglRenderer } from '../../src/components/remote-desktop/terminalRendererRuntime';
 import { getTerminalSelectionForClipboard } from '../../src/components/remote-desktop/terminalSelection';
 import { resolveTerminalOsc52Action } from '../../src/components/remote-desktop/terminalOsc52';
 
@@ -24,6 +25,15 @@ test('decodes configured Shift+Enter text and maps macOS Option word jumps', () 
   expect(optionArrowWordJumpSequence(keyboardEvent({ key: 'ArrowLeft', altKey: true }), true, true)).toBe('\x1bb');
   expect(optionArrowWordJumpSequence(keyboardEvent({ key: 'ArrowRight', altKey: true }), true, true)).toBe('\x1bf');
   expect(optionArrowWordJumpSequence(keyboardEvent({ key: 'ArrowLeft', altKey: true }), true, false)).toBeNull();
+});
+
+test('keeps automatic terminal rendering on DOM inside Windows Tauri WebView2', () => {
+  const windowsTauri = { isTauri: true, isWindows: true };
+  expect(shouldEnableTerminalWebglRenderer('auto', windowsTauri)).toBe(false);
+  expect(shouldEnableTerminalWebglRenderer('webgl', windowsTauri)).toBe(true);
+  expect(shouldEnableTerminalWebglRenderer('dom', windowsTauri)).toBe(false);
+  expect(shouldEnableTerminalWebglRenderer('auto', { isTauri: false, isWindows: true })).toBe(true);
+  expect(shouldEnableTerminalWebglRenderer('auto', { isTauri: true, isWindows: false })).toBe(true);
 });
 
 test('protects a scrolled viewport from synchronized full-screen clears', () => {

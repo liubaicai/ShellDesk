@@ -34,7 +34,9 @@ interface TerminalExternalRequestsOptions {
   toggleSessionLog: () => void;
   pasteClipboardImage: () => void;
   toggleCompose: () => void;
+  openCommandCenter: () => void;
   resolveWorkingDirectory: () => Promise<string>;
+  onOpenFileManager?: (workingDirectory: string) => void;
   onSplitTerminal?: (direction: RemoteTerminalSplitDirection, workingDirectory: string) => void;
 }
 
@@ -61,7 +63,9 @@ export function useTerminalExternalRequests({
   toggleSessionLog,
   pasteClipboardImage,
   toggleCompose,
+  openCommandCenter,
   resolveWorkingDirectory,
+  onOpenFileManager,
   onSplitTerminal,
 }: TerminalExternalRequestsOptions) {
   useEffect(() => {
@@ -143,8 +147,16 @@ export function useTerminalExternalRequests({
       case 'compose':
         toggleCompose();
         break;
+      case 'command-center':
+        openCommandCenter();
+        break;
       case 'settings':
         openSettingsDialog();
+        break;
+      case 'open-files-here':
+        void resolveWorkingDirectory().then((workingDirectory) => {
+          onOpenFileManager?.(workingDirectory);
+        });
         break;
       case 'split-right':
       case 'split-down': {
@@ -166,11 +178,13 @@ export function useTerminalExternalRequests({
     openSettingsDialog,
     pasteClipboardImage,
     onSplitTerminal,
+    onOpenFileManager,
     resolveWorkingDirectory,
     restartTerminal,
     scrollTerminalToBottom,
     toggleFollowOutput,
     toggleCompose,
+    openCommandCenter,
     toggleSessionLog,
     toolRequest,
   ]);

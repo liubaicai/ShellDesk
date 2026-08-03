@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isSafeTerminalHighlightPattern } from '../terminalHighlightRules';
 
 interface TerminalOutputSettingsFieldsProps {
   settings: Pick<
@@ -6,7 +7,10 @@ interface TerminalOutputSettingsFieldsProps {
     | 'language'
     | 'terminalCommandAutocompleteEnabled'
     | 'terminalRemotePathAutocompleteEnabled'
+    | 'terminalSftpFollowCwd'
+    | 'terminalContextMenuInAlternateScreen'
     | 'terminalHighlightKeywords'
+    | 'terminalHighlightRules'
     | 'terminalKeywordHighlightEnabled'
     | 'terminalLineTimestamps'
     | 'terminalSafeLinksEnabled'
@@ -74,6 +78,13 @@ export function TerminalOutputSettingsFields({ settings, onChange }: TerminalOut
             <option value="dom">{t('settings.terminal.renderer.dom', settings.language)}</option>
             <option value="webgl">WebGL</option>
           </select>
+        </label>
+        <label className="settings-row">
+          <span>
+            <strong>{t('settings.terminal.sftpFollowCwd.label', settings.language)}</strong>
+            <small>{t('settings.terminal.sftpFollowCwd.summary', settings.language)}</small>
+          </span>
+          <input className="settings-toggle" type="checkbox" checked={settings.terminalSftpFollowCwd} onChange={(event) => onChange({ terminalSftpFollowCwd: event.target.checked })} />
         </label>
         <label className="settings-row">
           <span>
@@ -160,16 +171,35 @@ export function TerminalOutputSettingsFields({ settings, onChange }: TerminalOut
         </label>
         <label className="settings-row">
           <span>
-            <strong>{t('settings.terminal.highlightKeywords.label', settings.language)}</strong>
+            <strong>{t('settings.terminal.fullscreenContextMenu.label', settings.language)}</strong>
+            <small>{t('settings.terminal.fullscreenContextMenu.summary', settings.language)}</small>
+          </span>
+          <input className="settings-toggle" type="checkbox" checked={settings.terminalContextMenuInAlternateScreen} onChange={(event) => onChange({ terminalContextMenuInAlternateScreen: event.target.checked })} />
+        </label>
+        <div className="settings-row settings-terminal-highlight-rules-row">
+          <span>
+            <strong>{t('terminal.settingsDialog.rules.manage', settings.language, { count: settings.terminalHighlightRules.length })}</strong>
             <small>{t('settings.terminal.highlightKeywords.summary', settings.language)}</small>
           </span>
-          <input
-            className="settings-text-input"
-            value={settings.terminalHighlightKeywords}
-            disabled={!settings.terminalKeywordHighlightEnabled}
-            onChange={(event) => onChange({ terminalHighlightKeywords: event.target.value })}
-          />
-        </label>
+          <div className="settings-terminal-highlight-rules">
+            {settings.terminalHighlightRules.map((rule) => {
+              const validPattern = isSafeTerminalHighlightPattern(rule.pattern, rule.mode);
+              return <div key={rule.id}>
+                <input type="checkbox" checked={rule.enabled} disabled={!settings.terminalKeywordHighlightEnabled} aria-label={rule.label} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, enabled: event.target.checked } : candidate) })} />
+                <input value={rule.label} maxLength={80} disabled={!settings.terminalKeywordHighlightEnabled} aria-label={t('terminal.settingsDialog.rules.name', settings.language)} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, label: event.target.value, builtin: false } : candidate) })} />
+                <select value={rule.mode} disabled={!settings.terminalKeywordHighlightEnabled} aria-label={t('terminal.settingsDialog.rules.mode', settings.language)} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, mode: event.target.value as ShellDeskTerminalHighlightRule['mode'], builtin: false } : candidate) })}>
+                  <option value="literal">{t('terminal.settingsDialog.rules.literal', settings.language)}</option>
+                  <option value="regex">Regex</option>
+                </select>
+                <input value={rule.pattern} maxLength={512} disabled={!settings.terminalKeywordHighlightEnabled} spellCheck={false} aria-invalid={!validPattern} title={validPattern ? undefined : t('terminal.settingsDialog.rules.invalid', settings.language)} aria-label={t('terminal.settingsDialog.rules.pattern', settings.language)} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, pattern: event.target.value, builtin: false } : candidate) })} />
+                <input type="color" value={rule.foreground} disabled={!settings.terminalKeywordHighlightEnabled} aria-label={t('terminal.settingsDialog.rules.foreground', settings.language)} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, foreground: event.target.value, builtin: false } : candidate) })} />
+                <input type="color" value={rule.background} disabled={!settings.terminalKeywordHighlightEnabled} aria-label={t('terminal.settingsDialog.rules.background', settings.language)} onChange={(event) => onChange({ terminalHighlightRules: settings.terminalHighlightRules.map((candidate) => candidate.id === rule.id ? { ...candidate, background: event.target.value, builtin: false } : candidate) })} />
+                <button type="button" disabled={!settings.terminalKeywordHighlightEnabled} aria-label={t('common.delete', settings.language)} onClick={() => onChange({ terminalHighlightRules: settings.terminalHighlightRules.filter((candidate) => candidate.id !== rule.id) })}>×</button>
+              </div>
+            })}
+            <button type="button" disabled={!settings.terminalKeywordHighlightEnabled} onClick={() => onChange({ terminalHighlightRules: [...settings.terminalHighlightRules, { id: `rule:${Date.now().toString(36)}`, label: t('terminal.settingsDialog.rules.newRule', settings.language), pattern: 'keyword', mode: 'literal', foreground: '#fff2a8', background: '#6a4f12', enabled: true }] })}>{t('terminal.settingsDialog.rules.add', settings.language)}</button>
+          </div>
+        </div>
       </div>
     </section>
   );
