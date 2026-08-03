@@ -11,6 +11,30 @@ export interface TerminalRendererRuntime {
 const webglRecoveryWindowMs = 60_000;
 const webglRecoveryLimit = 2;
 
+export interface TerminalRendererEnvironment {
+  isTauri: boolean;
+  isWindows: boolean;
+}
+
+function readTerminalRendererEnvironment(): TerminalRendererEnvironment {
+  return {
+    isTauri: typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window,
+    isWindows: typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent),
+  };
+}
+
+export function shouldEnableTerminalWebglRenderer(
+  renderer: ShellDeskAppSettings['terminalRenderer'],
+  environment = readTerminalRendererEnvironment(),
+) {
+  if (renderer === 'dom') return false;
+  if (renderer === 'webgl') return true;
+
+  // WebGL can initialize successfully in WebView2 while leaving xterm's canvas blank.
+  // Keep explicit WebGL available, but make automatic selection compatibility-safe.
+  return !(environment.isTauri && environment.isWindows);
+}
+
 export function createTerminalRendererRuntime(
   terminal: XTerminal,
   initialRenderer: ShellDeskAppSettings['terminalRenderer'],
@@ -45,7 +69,7 @@ export function createTerminalRendererRuntime(
     !disposed
     && !hibernated
     && visible
-    && renderer !== 'dom'
+    && shouldEnableTerminalWebglRenderer(renderer)
     && !webglCircuitOpen
   );
 
@@ -66,6 +90,7 @@ export function createTerminalRendererRuntime(
         return;
       }
       webglAddon = addon;
+      terminal.refresh(0, Math.max(0, terminal.rows - 1));
       webglContextLossDisposable = addon.onContextLoss(() => {
         const now = Date.now();
         webglRecoveryTimes = webglRecoveryTimes.filter((time) => now - time <= webglRecoveryWindowMs);

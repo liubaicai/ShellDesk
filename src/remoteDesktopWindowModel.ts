@@ -104,8 +104,10 @@ export interface DesktopWindowState {
   terminalRestorePending?: boolean;
   terminalStatus?: RemoteTerminalSessionStatus;
   terminalHasForegroundTask?: boolean;
+  terminalWorkingDirectory?: string;
   terminalToolRequest?: RemoteTerminalToolRequest;
   terminalCommandRequest?: RemoteTerminalCommandRequest;
+  terminalBroadcastRequest?: import('./components/remote-desktop/terminalTypes').RemoteTerminalBroadcastRequest;
   chromeTitle?: string;
   chromeStatus?: string;
   chromeTone?: 'idle' | 'loading' | 'error';

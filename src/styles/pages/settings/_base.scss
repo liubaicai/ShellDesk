@@ -1440,3 +1440,64 @@ button:disabled {
     max-width: 100%;
   }
 }
+.settings-terminal-highlight-rules-row {
+  align-items: start;
+}
+
+.settings-terminal-highlight-rules {
+  width: min(620px, 100%);
+  display: grid;
+  gap: 7px;
+}
+
+.settings-terminal-highlight-rules > div {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 0.7fr) 84px minmax(140px, 1.4fr) 36px 36px 30px;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-terminal-highlight-rules input:not([type="checkbox"]):not([type="color"]),
+.settings-terminal-highlight-rules select {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: var(--surface-input);
+  color: var(--text);
+}
+
+.settings-terminal-highlight-rules input[type="color"] {
+  width: 36px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  background: var(--surface-input);
+}
+
+.settings-terminal-highlight-rules button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: var(--surface-control);
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.settings-terminal-highlight-rules > button {
+  justify-self: start;
+}
+
+@media (max-width: 860px) {
+  .settings-terminal-highlight-rules > div {
+    grid-template-columns: auto minmax(0, 1fr) 84px 36px 36px 30px;
+  }
+
+  .settings-terminal-highlight-rules > div > input:nth-of-type(3) {
+    grid-column: 2 / -1;
+  }
+}

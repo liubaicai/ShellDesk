@@ -1,3 +1,5 @@
+import { measureTerminalLongestLine, resolveTerminalOutputPressure, type TerminalOutputPressure } from './terminalOutputPressure';
+
 export interface TerminalOutputChunk {
   data: string;
   sequence?: number;
@@ -24,6 +26,12 @@ interface TerminalOutputFlowOptions {
   drainTimeBudgetMs?: number;
   animationFrameFallbackMs?: number;
   initiallyVisible?: boolean;
+  onPressureChange?: (pressure: TerminalOutputPressure) => void;
+}
+
+export interface TerminalInputPriorityResult {
+  droppedBytes: number;
+  droppedChunks: number;
 }
 
 export interface TerminalOutputFlowController {
@@ -32,6 +40,8 @@ export interface TerminalOutputFlowController {
   setAlternateScreen: (active: boolean) => void;
   setVisible: (visible: boolean) => void;
   pendingBytes: () => number;
+  pressure: () => TerminalOutputPressure;
+  prioritizeInput: (data: string) => TerminalInputPriorityResult;
   dispose: () => void;
 }
 
@@ -42,6 +52,10 @@ const defaultMaxQueueItems = 32;
 const defaultDrainTimeBudgetMs = 10;
 const defaultAnimationFrameFallbackMs = 50;
 const outputEncoder = new TextEncoder();
+
+function containsStatefulTerminalControl(data: string) {
+  return /[^\x08\x09\x0a\x0d\x20-\uffff]/u.test(data);
+}
 
 function createBrowserScheduler(): TerminalOutputScheduler {
   return {
@@ -65,6 +79,7 @@ export function createTerminalOutputFlowController({
   drainTimeBudgetMs = defaultDrainTimeBudgetMs,
   animationFrameFallbackMs = defaultAnimationFrameFallbackMs,
   initiallyVisible = true,
+  onPressureChange,
 }: TerminalOutputFlowOptions): TerminalOutputFlowController {
   let queue: TerminalOutputChunk[] = [];
   let queuedBytes = 0;
@@ -77,6 +92,45 @@ export function createTerminalOutputFlowController({
   let fallbackTimer: number | null = null;
   let drainCallbacks: Array<() => void> = [];
   let drainTurnStartedAt = 0;
+  let pressure: TerminalOutputPressure = 'normal';
+  let pressureWindowStartedAt = scheduler.now();
+  let recentBytes = 0;
+  let largestChunkBytes = 0;
+  let longestLineCharacters = 0;
+
+  const updatePressure = (forceNormal = false) => {
+    const nextPressure = forceNormal
+      ? 'normal'
+      : resolveTerminalOutputPressure({ queuedBytes, recentBytes, largestChunkBytes, longestLineCharacters });
+    if (nextPressure === pressure) return;
+    pressure = nextPressure;
+    onPressureChange?.(pressure);
+  };
+
+  const recordPressureSample = (data: string, byteLength: number) => {
+    const now = scheduler.now();
+    if (now - pressureWindowStartedAt >= 1000) {
+      pressureWindowStartedAt = now;
+      recentBytes = 0;
+      largestChunkBytes = 0;
+      longestLineCharacters = 0;
+    }
+    recentBytes += byteLength;
+    largestChunkBytes = Math.max(largestChunkBytes, byteLength);
+    longestLineCharacters = Math.max(longestLineCharacters, measureTerminalLongestLine(data));
+    updatePressure();
+  };
+
+  const acknowledgeChunks = (chunks: TerminalOutputChunk[]) => {
+    const sequenced = chunks.filter((chunk) => (
+      Number.isSafeInteger(chunk.sequence)
+      && typeof chunk.byteLength === 'number'
+      && chunk.byteLength > 0
+    ));
+    const sequence = sequenced.at(-1)?.sequence;
+    const byteLength = sequenced.reduce((total, chunk) => total + Math.max(chunk.byteLength ?? 0, 0), 0);
+    if (sequence !== undefined && byteLength > 0) acknowledge(sequence, byteLength);
+  };
 
   const notifyDrained = () => {
     if (disposed || writing || queue.length || scheduled || !drainCallbacks.length) {
@@ -185,6 +239,14 @@ export function createTerminalOutputFlowController({
           drainTurnStartedAt = 0;
         }
         schedule(shouldYield);
+        if (!queue.length) {
+          recentBytes = 0;
+          largestChunkBytes = 0;
+          longestLineCharacters = 0;
+          updatePressure(true);
+        } else {
+          updatePressure();
+        }
         notifyDrained();
       };
 
@@ -231,6 +293,7 @@ export function createTerminalOutputFlowController({
       );
       queue.push({ ...chunk, byteLength });
       queuedBytes += byteLength;
+      recordPressureSample(chunk.data, byteLength);
       compactQueue();
       schedule();
     },
@@ -258,6 +321,31 @@ export function createTerminalOutputFlowController({
       schedule();
     },
     pendingBytes: () => queuedBytes,
+    pressure: () => pressure,
+    prioritizeInput: (data) => {
+      if (
+        !data.includes('\x03')
+        || alternateScreen
+        || queuedBytes < 128 * 1024
+        || !queue.length
+        || queue.some((chunk) => containsStatefulTerminalControl(chunk.data))
+      ) {
+        return { droppedBytes: 0, droppedChunks: 0 };
+      }
+      const dropped = queue;
+      const droppedBytes = queuedBytes;
+      queue = [];
+      queuedBytes = 0;
+      scheduled = false;
+      clearScheduledHandles();
+      acknowledgeChunks(dropped);
+      recentBytes = 0;
+      largestChunkBytes = 0;
+      longestLineCharacters = 0;
+      updatePressure(true);
+      notifyDrained();
+      return { droppedBytes, droppedChunks: dropped.length };
+    },
     dispose: () => {
       disposed = true;
       scheduled = false;
@@ -266,6 +354,7 @@ export function createTerminalOutputFlowController({
       queuedBytes = 0;
       drainTurnStartedAt = 0;
       drainCallbacks = [];
+      updatePressure(true);
     },
   };
 }

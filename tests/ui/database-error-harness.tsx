@@ -17,7 +17,6 @@ import RemoteRedis from '../../src/components/remote-desktop/RemoteRedis';
 import RemoteRdpViewer from '../../src/components/remote-desktop/RemoteRdpViewer';
 import RemoteSettings from '../../src/components/remote-desktop/RemoteSettings';
 import RemoteSupervisorManager from '../../src/components/remote-desktop/RemoteSupervisorManager';
-import { TerminalRestorePlaceholder } from '../../src/components/remote-desktop/TerminalRestorePlaceholder';
 import RemoteVirtualMachineManager from '../../src/components/remote-desktop/RemoteVirtualMachineManager';
 import { useShellDeskEditorTheme } from '../../src/components/remote-desktop/useShellDeskEditorTheme';
 import type { RemoteTerminalLaunchOptions } from '../../src/components/remote-desktop/terminalTypes';
@@ -25,6 +24,7 @@ import SftpTransferWindow from '../../src/components/sftp-transfer/SftpTransferW
 import GlobalTransferCenter from '../../src/components/transfers/GlobalTransferCenter';
 import { loadFullMessageCatalog } from '../../src/i18n';
 import type { DesktopAppKey } from '../../src/remoteDesktopCatalog';
+import { TerminalRestorePlaceholder } from '../../src/features/remote-desktop/desktopAppLoaders';
 import '../../src/styles/critical.scss';
 import '../../src/styles/deferred.scss';
 import '../../src/styles/remote-desktop/_backup-manager.scss';
@@ -37,7 +37,6 @@ import '../../src/styles/remote-desktop/_rdp-viewer.scss';
 import '../../src/styles/remote-desktop/_redis.scss';
 import '../../src/styles/remote-desktop/_settings.scss';
 import '../../src/styles/remote-desktop/_supervisor-manager.scss';
-import '../../src/styles/remote-desktop/_terminal.scss';
 import '../../src/styles/remote-desktop/_vm-manager-management.scss';
 import '../../src/styles/remote-desktop/_vm-manager.scss';
 
@@ -916,11 +915,13 @@ function TerminalRestoreHarness() {
               手动连接已确认
             </div>
           ) : (
-            <TerminalRestorePlaceholder
-              language="zh-CN"
-              launchOptions={{ title: 'Operations', workingDirectory: '/srv/app' }}
-              onReconnect={() => setConnected(true)}
-            />
+            <React.Suspense fallback={<div data-testid="terminal-restore-loading">Loading terminal workspace…</div>}>
+              <TerminalRestorePlaceholder
+                language="zh-CN"
+                launchOptions={{ title: 'Operations', workingDirectory: '/srv/app' }}
+                onReconnect={() => setConnected(true)}
+              />
+            </React.Suspense>
           )}
         </div>
       </section>

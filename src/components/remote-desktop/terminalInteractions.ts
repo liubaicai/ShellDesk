@@ -131,7 +131,23 @@ export function attachTerminalInteractions({
       });
   };
 
+  const handleAlternateScreenContextMenu = (event: MouseEvent) => {
+    if (
+      !settingsRef.current.terminalContextMenuInAlternateScreen
+      || terminal.buffer.active.type !== 'alternate'
+    ) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      selection: getTerminalSelectionForClipboard(terminal, settingsRef.current.terminalNormalizeCopiedText),
+    });
+    terminal.focus();
+  };
+
   host.addEventListener('contextmenu', handleTerminalContextMenu);
+  host.addEventListener('contextmenu', handleAlternateScreenContextMenu, true);
 
   const handleMiddleClick = (event: MouseEvent) => {
     if (event.button !== 1 || settingsRef.current.terminalMiddleClickBehavior === 'disabled') return;
@@ -191,6 +207,7 @@ export function attachTerminalInteractions({
     selectionDisposable.dispose();
     searchResultDisposable.dispose();
     host.removeEventListener('contextmenu', handleTerminalContextMenu);
+    host.removeEventListener('contextmenu', handleAlternateScreenContextMenu, true);
     host.removeEventListener('mousedown', handleMiddleClick, true);
     host.removeEventListener('auxclick', preventMiddleAuxClick, true);
     host.removeEventListener('wheel', handleFontZoomWheel, true);

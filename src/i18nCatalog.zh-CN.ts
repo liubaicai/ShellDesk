@@ -1,4 +1,5 @@
 import { terminalAdvancedZhCN } from './i18nTerminalAdvanced';
+import { terminalProductivityZhCN } from './i18nTerminalProductivity';
 
 export const zhCN = {
   'settings.section.general.label': '常规',
@@ -246,6 +247,7 @@ export const zhCN = {
   'settings.terminal.exitPolicy.closeAlways': '任意退出时关闭窗口',
   'settings.terminal.output.title': '输出辅助',
   ...terminalAdvancedZhCN,
+  ...terminalProductivityZhCN,
   'settings.terminal.timestamps.label': '显示行时间戳',
   'settings.terminal.timestamps.summary': '在终端左侧标记新完成输出行的本地接收时间，不改写 PTY 字节流。',
   'settings.terminal.keywordHighlight.label': '高亮关键字',

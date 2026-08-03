@@ -125,8 +125,11 @@ pub(crate) fn default_settings() -> Value {
         "terminalLineTimestamps": false,
         "terminalKeywordHighlightEnabled": false,
         "terminalHighlightKeywords": "error,warning,failed,denied,exception",
+        "terminalHighlightRules": default_terminal_highlight_rules(),
         "terminalCommandAutocompleteEnabled": true,
         "terminalRemotePathAutocompleteEnabled": true,
+        "terminalSftpFollowCwd": false,
+        "terminalContextMenuInAlternateScreen": false,
         "terminalSafeLinksEnabled": true,
         "terminalOsc52Mode": "off",
         "terminalClearWipesScrollback": false,
@@ -191,6 +194,41 @@ fn default_terminal_snippets(language: &str) -> Value {
             })
             .collect(),
     )
+}
+
+pub(crate) fn default_terminal_highlight_rules() -> Value {
+    json!([
+        {
+            "id": "builtin:error",
+            "label": "Error",
+            "pattern": "error|failed|failure|denied|exception|fatal",
+            "mode": "regex",
+            "foreground": "#fff1f2",
+            "background": "#7f1d1d",
+            "enabled": true,
+            "builtin": true
+        },
+        {
+            "id": "builtin:warning",
+            "label": "Warning",
+            "pattern": "warning|warn|deprecated|timeout",
+            "mode": "regex",
+            "foreground": "#fff7d6",
+            "background": "#713f12",
+            "enabled": true,
+            "builtin": true
+        },
+        {
+            "id": "builtin:success",
+            "label": "Success",
+            "pattern": "success|succeeded|passed|completed|healthy",
+            "mode": "regex",
+            "foreground": "#ecfdf5",
+            "background": "#14532d",
+            "enabled": true,
+            "builtin": true
+        }
+    ])
 }
 
 fn default_language() -> &'static str {
@@ -437,6 +475,8 @@ mod preferences;
 mod remote_profiles;
 #[path = "vault/ssh_keys.rs"]
 mod ssh_keys;
+#[path = "vault/terminal_settings.rs"]
+mod terminal_settings;
 #[path = "vault/validation.rs"]
 mod validation;
 

@@ -636,6 +636,9 @@ test('restored terminal workspace stays disconnected until the manual reconnect 
   const placeholder = page.getByRole('region', { name: '已恢复的终端位置' });
   await expect(placeholder).toContainText('ShellDesk 只恢复了安全元数据');
   await expect(placeholder.getByText('/srv/app', { exact: true })).toBeVisible();
+  await expect(placeholder).toHaveCSS('display', 'grid');
+  await expect(placeholder).toHaveCSS('text-align', 'center');
+  await expect(placeholder.getByRole('button', { name: '手动重新连接' })).toHaveCSS('height', '34px');
   await expect(page.getByTestId('manual-terminal-connected')).toHaveCount(0);
 
   await placeholder.getByRole('button', { name: '手动重新连接' }).click();

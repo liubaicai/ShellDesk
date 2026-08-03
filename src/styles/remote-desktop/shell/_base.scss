@@ -988,6 +988,11 @@
   min-width: 210px;
 }
 
+.context-menu .terminal-broadcast-menu-active {
+  background: rgba(255, 70, 92, 0.14);
+  color: #ffb5bf;
+}
+
 .terminal-titlebar-snippets-submenu {
   right: 100%;
   left: auto;

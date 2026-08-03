@@ -1,4 +1,5 @@
 import { terminalAdvancedEnUS } from './i18nTerminalAdvanced';
+import { terminalProductivityEnUS } from './i18nTerminalProductivity';
 
 export const enUS = {
   'settings.section.general.label': 'General',
@@ -246,6 +247,7 @@ export const enUS = {
   'settings.terminal.exitPolicy.closeAlways': 'Close after any exit',
   'settings.terminal.output.title': 'Output Aids',
   ...terminalAdvancedEnUS,
+  ...terminalProductivityEnUS,
   'settings.terminal.timestamps.label': 'Show line timestamps',
   'settings.terminal.timestamps.summary': 'Marks newly completed output lines with their local receive time without rewriting PTY bytes.',
   'settings.terminal.keywordHighlight.label': 'Highlight keywords',

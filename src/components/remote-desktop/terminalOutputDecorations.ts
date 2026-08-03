@@ -1,5 +1,7 @@
 import type { IDecoration, IDisposable, IMarker, Terminal as XTerminal } from '@xterm/xterm';
 import type { MutableRefObject } from 'react';
+import { isSafeTerminalHighlightPattern } from '../../terminalHighlightRules';
+import type { TerminalOutputPressure } from './terminalOutputPressure';
 
 interface TerminalLineEntry {
   marker: IMarker;
@@ -12,7 +14,15 @@ interface TerminalLineEntry {
 
 export interface TerminalOutputDecorationController {
   refresh: () => void;
+  setPressure: (pressure: TerminalOutputPressure) => void;
   dispose: () => void;
+}
+
+interface CompiledTerminalHighlightRule {
+  id: string;
+  pattern: RegExp;
+  foreground: string;
+  background: string;
 }
 
 export function parseTerminalHighlightKeywords(value: string) {
@@ -51,6 +61,41 @@ export function findTerminalKeywordRanges(line: string, keywords: string) {
     }, []);
 }
 
+function escapeRegularExpression(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+export function compileTerminalHighlightRules(
+  rules: readonly ShellDeskTerminalHighlightRule[],
+  legacyKeywords = '',
+) {
+  const sourceRules = rules.length
+    ? rules
+    : parseTerminalHighlightKeywords(legacyKeywords).map((keyword, index) => ({
+        id: `legacy:${index}`,
+        label: keyword,
+        pattern: keyword,
+        mode: 'literal' as const,
+        foreground: '#fff2a8',
+        background: '#6a4f12',
+        enabled: true,
+      }));
+  return sourceRules.flatMap((rule): CompiledTerminalHighlightRule[] => {
+    if (!rule.enabled || !isSafeTerminalHighlightPattern(rule.pattern, rule.mode)) return [];
+    try {
+      const source = rule.mode === 'regex' ? rule.pattern : escapeRegularExpression(rule.pattern);
+      return [{
+        id: rule.id,
+        pattern: new RegExp(source, 'giu'),
+        foreground: rule.foreground,
+        background: rule.background,
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export function formatTerminalLineTimestamp(date: Date) {
   return [date.getHours(), date.getMinutes(), date.getSeconds()]
     .map((part) => String(part).padStart(2, '0'))
@@ -64,7 +109,8 @@ export function createTerminalOutputDecorationController(
 ): TerminalOutputDecorationController {
   let entries: TerminalLineEntry[] = [];
   let keywordSignature = '';
-  let compiledKeywords: string[] = [];
+  let compiledRules: CompiledTerminalHighlightRule[] = [];
+  let outputPressure: TerminalOutputPressure = 'normal';
   let visualFrame: number | null = null;
   let decorationFrame: number | null = null;
   let decorationQueue: TerminalLineEntry[] = [];
@@ -98,6 +144,7 @@ export function createTerminalOutputDecorationController(
     gutter.replaceChildren();
     if (
       !settingsRef.current.terminalLineTimestamps
+      || outputPressure === 'saturated'
       || !terminal.rows
       || terminal.buffer.active.type !== 'normal'
     ) return;
@@ -120,21 +167,27 @@ export function createTerminalOutputDecorationController(
   };
 
   const findCompiledKeywordRanges = (line: string) => {
-    const normalizedLine = line.toLocaleLowerCase();
-    const candidates: Array<{ start: number; length: number }> = [];
-    for (const keyword of compiledKeywords) {
-      let start = 0;
-      while (candidates.length < 200) {
-        const index = normalizedLine.indexOf(keyword, start);
-        if (index < 0) break;
-        candidates.push({ start: index, length: keyword.length });
-        start = index + keyword.length;
+    const candidates: Array<{ start: number; length: number; foreground: string; background: string }> = [];
+    for (const rule of compiledRules) {
+      rule.pattern.lastIndex = 0;
+      let match = rule.pattern.exec(line);
+      while (match && candidates.length < 200) {
+        if (match[0].length > 0) {
+          candidates.push({
+            start: match.index,
+            length: match[0].length,
+            foreground: rule.foreground,
+            background: rule.background,
+          });
+        }
+        if (!match[0].length) rule.pattern.lastIndex += 1;
+        match = rule.pattern.exec(line);
       }
       if (candidates.length >= 200) break;
     }
     return candidates
       .sort((left, right) => left.start - right.start || right.length - left.length)
-      .reduce<Array<{ start: number; length: number }>>((ranges, range) => {
+      .reduce<Array<{ start: number; length: number; foreground: string; background: string }>>((ranges, range) => {
         const previous = ranges.at(-1);
         if (!previous || range.start >= previous.start + previous.length) ranges.push(range);
         return ranges;
@@ -152,7 +205,7 @@ export function createTerminalOutputDecorationController(
     disposeEntryDecorations(entry, false);
     entry.cachedLine = line;
     entry.cachedKeywordSignature = keywordSignature;
-    findCompiledKeywordRanges(line).forEach(({ start, length }) => {
+    findCompiledKeywordRanges(line).forEach(({ start, length, foreground, background }) => {
       if (activeDecorationCount >= maximumActiveDecorations) {
         return;
       }
@@ -160,8 +213,8 @@ export function createTerminalOutputDecorationController(
         marker: entry.marker,
         x: start,
         width: length,
-        backgroundColor: '#6a4f12',
-        foregroundColor: '#fff2a8',
+        backgroundColor: background,
+        foregroundColor: foreground,
         layer: 'bottom',
       });
       if (decoration) {
@@ -193,8 +246,9 @@ export function createTerminalOutputDecorationController(
     const settings = settingsRef.current;
     if (
       terminal.buffer.active.type !== 'normal'
+      || outputPressure !== 'normal'
       || !settings.terminalKeywordHighlightEnabled
-      || !compiledKeywords.length
+      || !compiledRules.length
     ) {
       entries.forEach((entry) => disposeEntryDecorations(entry));
       decorationQueue = [];
@@ -233,12 +287,16 @@ export function createTerminalOutputDecorationController(
 
   const refresh = () => {
     const settings = settingsRef.current;
+    const configuredRules = settings.terminalHighlightRules ?? [];
     const nextKeywordSignature = settings.terminalKeywordHighlightEnabled
-      ? settings.terminalHighlightKeywords
+      ? configuredRules.length ? JSON.stringify(configuredRules) : settings.terminalHighlightKeywords
       : '';
     if (nextKeywordSignature !== keywordSignature) {
       keywordSignature = nextKeywordSignature;
-      compiledKeywords = parseTerminalHighlightKeywords(nextKeywordSignature);
+      compiledRules = compileTerminalHighlightRules(
+        configuredRules,
+        settings.terminalHighlightKeywords,
+      );
       entries.forEach((entry) => disposeEntryDecorations(entry));
     }
     scheduleVisualRefresh();
@@ -249,7 +307,8 @@ export function createTerminalOutputDecorationController(
       const settings = settingsRef.current;
       if (
         terminal.buffer.active.type !== 'normal'
-        || (!settings.terminalLineTimestamps && !compiledKeywords.length)
+        || outputPressure === 'saturated'
+        || (!settings.terminalLineTimestamps && !compiledRules.length)
       ) return;
       const marker = terminal.registerMarker(-1);
       if (!marker) return;
@@ -279,6 +338,15 @@ export function createTerminalOutputDecorationController(
   refresh();
   return {
     refresh,
+    setPressure: (nextPressure) => {
+      if (nextPressure === outputPressure) return;
+      outputPressure = nextPressure;
+      if (outputPressure !== 'normal') {
+        decorationQueue = [];
+        entries.forEach((entry) => disposeEntryDecorations(entry));
+      }
+      scheduleVisualRefresh();
+    },
     dispose: () => {
       disposed = true;
       if (visualFrame !== null) {
