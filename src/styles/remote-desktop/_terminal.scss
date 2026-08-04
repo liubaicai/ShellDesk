@@ -793,6 +793,7 @@
 
 .terminal-settings-scroll {
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 10px;
   overflow: auto;

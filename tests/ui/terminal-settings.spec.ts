@@ -1,4 +1,21 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
+
+async function expectExpandedSectionToFit(section: Locator) {
+  const metrics = await section.evaluate((element) => {
+    const lastRow = element.querySelector<HTMLElement>('.terminal-settings-row:last-child');
+    const sectionBounds = element.getBoundingClientRect();
+    const lastRowBounds = lastRow?.getBoundingClientRect();
+    return {
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      sectionBottom: sectionBounds.bottom,
+      lastRowBottom: lastRowBounds?.bottom ?? sectionBounds.bottom,
+    };
+  });
+
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+  expect(metrics.lastRowBottom).toBeLessThanOrEqual(metrics.sectionBottom + 1);
+}
 
 test('terminal settings drawer groups controls and edits structured highlight rules', async ({ page }) => {
   await page.goto('/tests/ui/terminal-settings-harness.html');
@@ -8,6 +25,11 @@ test('terminal settings drawer groups controls and edits structured highlight ru
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('外观', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: /性能与兼容/ })).toHaveAttribute('aria-expanded', 'false');
+
+  const quickSection = dialog.getByRole('button', { name: /^常用/ }).locator('..');
+  const featuresSection = dialog.getByRole('button', { name: /^功能/ }).locator('..');
+  await expectExpandedSectionToFit(quickSection);
+  await expectExpandedSectionToFit(featuresSection);
 
   await dialog.getByRole('button', { name: '管理规则（3）' }).click();
   await expect(dialog.getByLabel('规则名称')).toHaveCount(3);
