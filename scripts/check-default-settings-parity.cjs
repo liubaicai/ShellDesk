@@ -61,8 +61,6 @@ const checkedKeys = [
   'terminalKeywordHighlightEnabled',
   'terminalHighlightKeywords',
   'terminalHighlightRules',
-  'terminalCommandAutocompleteEnabled',
-  'terminalRemotePathAutocompleteEnabled',
   'terminalSftpFollowCwd',
   'terminalContextMenuInAlternateScreen',
   'terminalSafeLinksEnabled',

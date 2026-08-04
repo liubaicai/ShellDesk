@@ -5,8 +5,6 @@ interface TerminalOutputSettingsFieldsProps {
   settings: Pick<
     ShellDeskAppSettings,
     | 'language'
-    | 'terminalCommandAutocompleteEnabled'
-    | 'terminalRemotePathAutocompleteEnabled'
     | 'terminalSftpFollowCwd'
     | 'terminalContextMenuInAlternateScreen'
     | 'terminalHighlightKeywords'
@@ -41,31 +39,6 @@ export function TerminalOutputSettingsFields({ settings, onChange }: TerminalOut
             type="checkbox"
             checked={settings.terminalLineTimestamps}
             onChange={(event) => onChange({ terminalLineTimestamps: event.target.checked })}
-          />
-        </label>
-        <label className="settings-row">
-          <span>
-            <strong>{t('settings.terminal.autocomplete.label', settings.language)}</strong>
-            <small>{t('settings.terminal.autocomplete.summary', settings.language)}</small>
-          </span>
-          <input
-            className="settings-toggle"
-            type="checkbox"
-            checked={settings.terminalCommandAutocompleteEnabled}
-            onChange={(event) => onChange({ terminalCommandAutocompleteEnabled: event.target.checked })}
-          />
-        </label>
-        <label className="settings-row">
-          <span>
-            <strong>{t('settings.terminal.remotePathAutocomplete.label', settings.language)}</strong>
-            <small>{t('settings.terminal.remotePathAutocomplete.summary', settings.language)}</small>
-          </span>
-          <input
-            className="settings-toggle"
-            type="checkbox"
-            checked={settings.terminalRemotePathAutocompleteEnabled}
-            disabled={!settings.terminalCommandAutocompleteEnabled}
-            onChange={(event) => onChange({ terminalRemotePathAutocompleteEnabled: event.target.checked })}
           />
         </label>
         <label className="settings-row">

@@ -319,8 +319,6 @@ pub(crate) fn normalize_app_settings(raw_settings: &Value) -> Result<Value, Stri
         "terminalKeywordHighlightEnabled": read_bool(settings.get("terminalKeywordHighlightEnabled"), defaults["terminalKeywordHighlightEnabled"].as_bool().unwrap_or(false)),
         "terminalHighlightKeywords": terminal_highlight_keywords,
         "terminalHighlightRules": terminal_highlight_rules,
-        "terminalCommandAutocompleteEnabled": read_bool(settings.get("terminalCommandAutocompleteEnabled"), defaults["terminalCommandAutocompleteEnabled"].as_bool().unwrap_or(true)),
-        "terminalRemotePathAutocompleteEnabled": read_bool(settings.get("terminalRemotePathAutocompleteEnabled"), defaults["terminalRemotePathAutocompleteEnabled"].as_bool().unwrap_or(true)),
         "terminalSftpFollowCwd": read_bool(settings.get("terminalSftpFollowCwd"), defaults["terminalSftpFollowCwd"].as_bool().unwrap_or(false)),
         "terminalContextMenuInAlternateScreen": read_bool(settings.get("terminalContextMenuInAlternateScreen"), defaults["terminalContextMenuInAlternateScreen"].as_bool().unwrap_or(false)),
         "terminalSafeLinksEnabled": read_bool(settings.get("terminalSafeLinksEnabled"), defaults["terminalSafeLinksEnabled"].as_bool().unwrap_or(true)),
@@ -1438,7 +1436,6 @@ mod tests {
         let defaults = normalize_app_settings(&json!({})).unwrap();
         assert_eq!(defaults["terminalLineTimestamps"], false);
         assert_eq!(defaults["terminalKeywordHighlightEnabled"], false);
-        assert_eq!(defaults["terminalCommandAutocompleteEnabled"], true);
         assert_eq!(defaults["terminalSafeLinksEnabled"], true);
         assert_eq!(defaults["terminalSuspendRenderingWhenHidden"], true);
         assert_eq!(
@@ -1450,7 +1447,6 @@ mod tests {
             "terminalLineTimestamps": true,
             "terminalKeywordHighlightEnabled": true,
             "terminalHighlightKeywords": " error, warning ",
-            "terminalCommandAutocompleteEnabled": false,
             "terminalSafeLinksEnabled": false,
             "terminalSuspendRenderingWhenHidden": false
         }))
@@ -1458,7 +1454,6 @@ mod tests {
         assert_eq!(configured["terminalLineTimestamps"], true);
         assert_eq!(configured["terminalKeywordHighlightEnabled"], true);
         assert_eq!(configured["terminalHighlightKeywords"], "error, warning");
-        assert_eq!(configured["terminalCommandAutocompleteEnabled"], false);
         assert_eq!(configured["terminalSafeLinksEnabled"], false);
         assert_eq!(configured["terminalSuspendRenderingWhenHidden"], false);
 

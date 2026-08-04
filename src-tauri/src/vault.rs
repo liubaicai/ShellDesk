@@ -126,8 +126,6 @@ pub(crate) fn default_settings() -> Value {
         "terminalKeywordHighlightEnabled": false,
         "terminalHighlightKeywords": "error,warning,failed,denied,exception",
         "terminalHighlightRules": default_terminal_highlight_rules(),
-        "terminalCommandAutocompleteEnabled": true,
-        "terminalRemotePathAutocompleteEnabled": true,
         "terminalSftpFollowCwd": false,
         "terminalContextMenuInAlternateScreen": false,
         "terminalSafeLinksEnabled": true,

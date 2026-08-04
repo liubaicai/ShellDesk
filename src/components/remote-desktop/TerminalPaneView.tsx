@@ -1,4 +1,4 @@
-import { memo, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { memo, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import {
   TerminalContextMenuPortal,
@@ -8,7 +8,6 @@ import {
   TerminalSettingsDialogPortal,
 } from './terminalDialogs';
 import type { TerminalContextMenuState, TerminalLaunchDraft, TerminalSearchResultState } from './terminalTypes';
-import type { TerminalUiStore } from './terminalUiStore';
 import { TerminalSelectionAiPortal, type TerminalSelectionAiState } from './TerminalSelectionAiPortal';
 import type { RemoteSystemType } from './types';
 import { t } from '../../i18n';
@@ -23,7 +22,6 @@ interface TerminalPaneViewProps {
   searchQuery: string;
   searchResults: TerminalSearchResultState;
   contextMenu: TerminalContextMenuState | null;
-  terminalUiStore: TerminalUiStore;
   pendingTerminalLink: string;
   pendingOsc52Read: boolean;
   selectionAiState: TerminalSelectionAiState | null;
@@ -47,7 +45,6 @@ interface TerminalPaneViewProps {
   onContextMenuPaste: () => void;
   onSelectionAi: (selection: string, action: 'explain' | 'fix') => void;
   onSelectionAiClose: () => void;
-  onCompletionAccept: (value: string) => void;
   onTerminalLinkCancel: () => void;
   onTerminalLinkOpen: () => void;
   onOsc52ReadCancel: () => void;
@@ -78,45 +75,6 @@ const TerminalHostCanvas = memo(function TerminalHostCanvas({
   );
 });
 
-const TerminalCompletionOverlay = memo(function TerminalCompletionOverlay({
-  store,
-  language,
-  onCompletionAccept,
-}: {
-  store: TerminalUiStore;
-  language: ShellDeskAppSettings['language'];
-  onCompletionAccept: (value: string) => void;
-}) {
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  return (
-    <>
-      {snapshot.commandSuggestion ? (
-        <div className="terminal-command-suggestion" aria-live="polite">
-          <span>{snapshot.commandSuggestion}</span>
-          <kbd>{t('terminal.autocomplete.hint', language)}</kbd>
-        </div>
-      ) : null}
-      {snapshot.completionCandidates.length ? (
-        <div className="terminal-completion-menu" role="listbox" aria-label={t('terminal.autocomplete.results', language)}>
-          {snapshot.completionCandidates.slice(0, 8).map((candidate, index) => (
-            <button
-              key={`${candidate.source}:${candidate.value}`}
-              type="button"
-              role="option"
-              aria-selected={index === 0}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onCompletionAccept(candidate.value)}
-            >
-              <span>{candidate.label}</span>
-              <small>{candidate.detail}</small>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </>
-  );
-});
-
 export const TerminalPaneView = memo(function TerminalPaneView({
   terminalPaneStyle,
   terminalHostRef,
@@ -127,7 +85,6 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   searchQuery,
   searchResults,
   contextMenu,
-  terminalUiStore,
   pendingTerminalLink,
   pendingOsc52Read,
   selectionAiState,
@@ -151,7 +108,6 @@ export const TerminalPaneView = memo(function TerminalPaneView({
   onContextMenuPaste,
   onSelectionAi,
   onSelectionAiClose,
-  onCompletionAccept,
   onTerminalLinkCancel,
   onTerminalLinkOpen,
   onOsc52ReadCancel,
@@ -192,7 +148,6 @@ export const TerminalPaneView = memo(function TerminalPaneView({
             <span aria-hidden="true" />{t('terminal.broadcast.enabled', settings.language)}
           </div>
         ) : null}
-        <TerminalCompletionOverlay store={terminalUiStore} language={settings.language} onCompletionAccept={onCompletionAccept} />
         {sessionLogRecording ? (
           <div className="terminal-session-log-indicator" role="status">
             <span aria-hidden="true" />{t('terminal.sessionLog.recording', settings.language)}

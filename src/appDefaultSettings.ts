@@ -118,8 +118,6 @@ export const defaultAppSettings: ShellDeskAppSettings = {
   terminalKeywordHighlightEnabled: false,
   terminalHighlightKeywords: 'error,warning,failed,denied,exception',
   terminalHighlightRules: cloneDefaultTerminalHighlightRules(),
-  terminalCommandAutocompleteEnabled: true,
-  terminalRemotePathAutocompleteEnabled: true,
   terminalSftpFollowCwd: false,
   terminalContextMenuInAlternateScreen: false,
   terminalSafeLinksEnabled: true,

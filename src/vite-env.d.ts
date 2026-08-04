@@ -439,8 +439,6 @@ interface ShellDeskAppSettings {
   terminalLineTimestamps: boolean;
   terminalKeywordHighlightEnabled: boolean;
   terminalHighlightKeywords: string;
-  terminalCommandAutocompleteEnabled: boolean;
-  terminalRemotePathAutocompleteEnabled: boolean;
   terminalSafeLinksEnabled: boolean;
   terminalSuspendRenderingWhenHidden: boolean;
   terminalRenderer: 'auto' | 'dom' | 'webgl';

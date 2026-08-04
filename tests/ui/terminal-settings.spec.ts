@@ -30,6 +30,8 @@ test('terminal settings drawer groups controls and edits structured highlight ru
   const featuresSection = dialog.getByRole('button', { name: /^功能/ }).locator('..');
   await expectExpandedSectionToFit(quickSection);
   await expectExpandedSectionToFit(featuresSection);
+  await expect(dialog.getByText('命令历史自动补全', { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText('远程路径补全', { exact: true })).toHaveCount(0);
 
   await dialog.getByRole('button', { name: '管理规则（3）' }).click();
   await expect(dialog.getByLabel('规则名称')).toHaveCount(3);
@@ -38,8 +40,6 @@ test('terminal settings drawer groups controls and edits structured highlight ru
   await expect(dialog.getByLabel('匹配内容').last()).toHaveValue('keyword');
   await expect(page.getByTestId('highlight-rule-count')).toHaveText('4');
 
-  await dialog.getByRole('switch', { name: '命令历史自动补全' }).click();
-  await expect(dialog.getByRole('switch', { name: '远程路径补全' })).toBeDisabled();
   await dialog.getByRole('button', { name: /性能与兼容/ }).click();
   await expect(dialog.getByLabel('终端渲染器')).toBeVisible();
 

@@ -60,26 +60,6 @@ export function rememberRuntimeTerminalCommand(scope: string, command: string) {
   runtimeCommandHistory.splice(maximumRuntimeHistoryEntries);
 }
 
-export function suggestRuntimeTerminalCommand(
-  scope: string,
-  input: string,
-  snippets: ShellDeskTerminalSnippet[] = [],
-) {
-  const prefix = input.trimStart();
-  if (!prefix || prefix.length > maximumRuntimeCommandLength) {
-    return '';
-  }
-  const normalizedPrefix = prefix.toLocaleLowerCase();
-  const candidates = [
-    ...(getRuntimeHistory(scope, false) ?? []),
-    ...snippets.map((snippet) => normalizeRuntimeCommand(snippet.command)).filter(Boolean),
-  ];
-  return candidates.find((candidate) => (
-    candidate.length > prefix.length
-    && candidate.toLocaleLowerCase().startsWith(normalizedPrefix)
-  )) ?? '';
-}
-
 export function listRuntimeTerminalCommands(scope: string) {
   return [...(getRuntimeHistory(scope, false) ?? [])];
 }

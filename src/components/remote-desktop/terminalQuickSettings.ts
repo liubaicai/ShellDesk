@@ -36,8 +36,6 @@ export const terminalQuickSettingGroups: readonly TerminalQuickSettingGroup[] = 
     labelId: 'terminal.settingsDialog.group.features',
     summaryId: 'terminal.settingsDialog.group.features.summary',
     items: [
-      { field: 'terminalCommandAutocompleteEnabled', labelId: 'settings.terminal.autocomplete.label', summaryId: 'settings.terminal.autocomplete.summary' },
-      { field: 'terminalRemotePathAutocompleteEnabled', labelId: 'settings.terminal.remotePathAutocomplete.label', summaryId: 'settings.terminal.remotePathAutocomplete.summary', dependsOn: 'terminalCommandAutocompleteEnabled' },
       { field: 'terminalKeywordHighlightEnabled', labelId: 'settings.terminal.keywordHighlight.label', summaryId: 'settings.terminal.keywordHighlight.summary', action: 'highlight-rules' },
       { field: 'terminalSafeLinksEnabled', labelId: 'settings.terminal.safeLinks.label', summaryId: 'settings.terminal.safeLinks.summary' },
       { field: 'terminalDropUploadEnabled', labelId: 'settings.terminal.dropUpload.label', summaryId: 'settings.terminal.dropUpload.summary' },
