@@ -435,10 +435,20 @@ export function quotePosixShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+const tmuxSessionFieldSeparator = ':';
+
 export function createTmuxListCommand() {
+  const format = [
+    '#{session_name}',
+    '#{session_windows}',
+    '#{session_attached}',
+    '#{session_created}',
+    '#{session_last_attached}',
+  ].join(tmuxSessionFieldSeparator);
+
   return [
     'if ! command -v tmux >/dev/null 2>&1; then exit 127; fi',
-    `tmux list-sessions -F ${quotePosixShellArg('#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_created}\t#{session_last_attached}')} 2>/dev/null || true`,
+    `tmux list-sessions -F ${quotePosixShellArg(format)} 2>/dev/null || true`,
   ].join('; ');
 }
 
@@ -460,7 +470,7 @@ export function parseTmuxSessions(output: string): TmuxSessionInfo[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [name = '', windows = '0', attached = '0', createdAt = '', lastAttachedAt = ''] = line.split('\t');
+      const [name = '', windows = '0', attached = '0', createdAt = '', lastAttachedAt = ''] = line.split(tmuxSessionFieldSeparator);
       return {
         name,
         windows: Number.parseInt(windows, 10) || 0,
@@ -477,9 +487,24 @@ export function parseTmuxSessions(output: string): TmuxSessionInfo[] {
     });
 }
 
-export function createTmuxSessionName() {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/u, '').replace('T', '-');
-  return `shelldesk-${stamp}`;
+export function createTmuxSessionName(existingSessionNames: readonly string[] = []) {
+  const usedSequences = new Set<number>();
+
+  existingSessionNames.forEach((sessionName) => {
+    const match = /^shelldesk-(\d+)$/u.exec(sessionName);
+    const sequence = match ? Number.parseInt(match[1], 10) : 0;
+
+    if (Number.isSafeInteger(sequence) && sequence > 0 && sequence <= existingSessionNames.length + 1) {
+      usedSequences.add(sequence);
+    }
+  });
+
+  let sequence = 1;
+  while (usedSequences.has(sequence)) {
+    sequence += 1;
+  }
+
+  return `shelldesk-${sequence}`;
 }
 
 export function createTmuxLaunchOptions(

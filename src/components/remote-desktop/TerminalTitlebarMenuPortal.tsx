@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type {
@@ -12,6 +13,7 @@ import {
 import type { TerminalWorkspaceSplitDirection } from '../../terminalWorkspace';
 import type { RemoteTerminalToolAction } from './RemoteTerminal';
 import type { RemoteSystemType } from './types';
+import { TmuxSessionNameDialogPortal } from './TmuxSessionNameDialogPortal';
 import { t } from '../../i18n';
 
 interface TerminalTitlebarMenuPortalProps {
@@ -30,7 +32,8 @@ interface TerminalTitlebarMenuPortalProps {
   broadcastEnabled: boolean;
   onToggleBroadcast: () => void;
   onRequestTool: (action: RemoteTerminalToolAction) => void;
-  onNewTmux: () => void;
+  suggestedTmuxSessionName: string;
+  onNewTmux: (sessionName: string) => void;
   onRefreshTmux: () => void;
   onOpenTmux: (sessionName: string) => void;
   onRunSnippet: (command: string) => void;
@@ -53,12 +56,15 @@ export function TerminalTitlebarMenuPortal({
   broadcastEnabled,
   onToggleBroadcast,
   onRequestTool,
+  suggestedTmuxSessionName,
   onNewTmux,
   onRefreshTmux,
   onOpenTmux,
   onRunSnippet,
   onKillTmux,
 }: TerminalTitlebarMenuPortalProps) {
+  const [isTmuxNameDialogOpen, setIsTmuxNameDialogOpen] = useState(false);
+
   return createPortal(
     <>
       <div
@@ -125,7 +131,7 @@ export function TerminalTitlebarMenuPortal({
                   {t('terminal.tmux.menu', language)}
                 </button>
                 <div className="context-submenu terminal-titlebar-tmux-submenu" role="menu" aria-label={t('terminal.tmux.menu', language)}>
-                  <button type="button" role="menuitem" onClick={onNewTmux}>
+                  <button type="button" role="menuitem" onClick={() => setIsTmuxNameDialogOpen(true)}>
                     {t('terminal.tmux.newSession', language)}
                   </button>
                   <button type="button" role="menuitem" onClick={(event) => {
@@ -243,6 +249,17 @@ export function TerminalTitlebarMenuPortal({
           </>
         ) : null}
       </div>
+      {isTmuxNameDialogOpen ? (
+        <TmuxSessionNameDialogPortal
+          language={language}
+          suggestedName={suggestedTmuxSessionName}
+          onCancel={() => setIsTmuxNameDialogOpen(false)}
+          onConfirm={(sessionName) => {
+            setIsTmuxNameDialogOpen(false);
+            onNewTmux(sessionName);
+          }}
+        />
+      ) : null}
     </>,
     document.body,
   );

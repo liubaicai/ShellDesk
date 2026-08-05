@@ -40,7 +40,7 @@
 
 | 编号 | appKey | 组件 | 文档 | 当前设计重点 |
 | --- | --- | --- | --- | --- |
-| 01 | `terminal` | 终端 | [终端组件重设计](./remote-desktop-components/01-terminal-redesign.md) | 输入优先与输出压力降级、分组设置/结构化高亮、实时目录拆分与 SFTP 跟随、工作区克隆、安全广播、命令中心、路径补全、安全链接/OSC 52、WebGL 熔断与隐藏休眠 |
+| 01 | `terminal` | 终端 | [终端组件重设计](./remote-desktop-components/01-terminal-redesign.md) | 输入优先与输出压力降级、分组设置/结构化高亮、实时目录拆分与 SFTP 跟随、工作区克隆、可命名 tmux 任务与真实会话列表、安全广播、命令中心、路径补全、安全链接/OSC 52、WebGL 熔断与隐藏休眠 |
 | 02 | `files` | 文件管理器 | [文件管理器组件重设计](./remote-desktop-components/02-file-explorer-redesign.md) | SFTP 导航、传输、压缩解压、权限、打开方式、终端/脚本路径联动和样式隔离 |
 | 03 | `browser` | 浏览器 | [浏览器组件重设计](./remote-desktop-components/03-browser-redesign.md) | Tauri 代理、远程网络上下文、书签、错误诊断、页面主题兼容 |
 | 04 | `notepad` | 记事本 | [记事本组件重设计](./remote-desktop-components/04-notepad-redesign.md) | 远程文本编辑、多标签、语法高亮、冲突提示、自定义模态 |

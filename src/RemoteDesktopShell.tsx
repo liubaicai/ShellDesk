@@ -1271,10 +1271,6 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
     }, 900);
   };
 
-  const openNewTmuxTerminal = () => {
-    openTmuxTerminal(createTmuxSessionName(), 'new');
-  };
-
   const interceptTerminalCommand = (command: string) => {
     const tmuxLaunch = parseTmuxLaunchCommand(command);
 
@@ -2811,7 +2807,8 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         broadcastEnabled={terminalBroadcastEnabled}
         onToggleBroadcast={() => setTerminalBroadcastEnabled((enabled) => !enabled)}
         onRequestTool={(action) => requestTerminalTool(terminalTitlebarMenuWindow.id, action)}
-        onNewTmux={openNewTmuxTerminal}
+        suggestedTmuxSessionName={createTmuxSessionName(tmuxMenuState.sessions.map((session) => session.name))}
+        onNewTmux={(sessionName) => openTmuxTerminal(sessionName, 'new')}
         onRefreshTmux={() => void refreshTmuxSessions()}
         onOpenTmux={(sessionName) => openTmuxTerminal(sessionName, 'attach')}
         onRunSnippet={(command) => requestTerminalCommand(terminalTitlebarMenuWindow.id, command, 'snippet')}
