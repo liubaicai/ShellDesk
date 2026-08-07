@@ -122,6 +122,7 @@ import {
   createLatestWinsSingleFlightQueue,
   isCollectionsSnapshotCurrent,
   type LatestWinsSingleFlightQueue,
+  type SaveQueueStatus,
 } from './features/vault/latestSaveQueue';
 import { getAppLocale, getCurrentAppLanguage, loadFullMessageCatalog, preloadFullMessageCatalog, t, useShellDeskI18n, type AppLanguage } from './i18n';
 import { useRuntimeAppearance } from './theme/useRuntimeAppearance';
@@ -511,6 +512,7 @@ function App() {
   const windowControls = window.guiSSH?.window;
   const vaultControls = window.guiSSH?.vault;
   const vaultControlsRef = useRef(vaultControls);
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<SaveQueueStatus>('idle');
   // This queue owns broad collections payloads; knownHosts-only writes remain independent.
   const collectionsSaveQueueRef = useRef<LatestWinsSingleFlightQueue<VaultCollectionsSaveRequest> | null>(null);
   if (!collectionsSaveQueueRef.current) {
@@ -536,6 +538,7 @@ function App() {
           error: getErrorMessage(error, currentLanguage),
         }));
       },
+      onStatusChange: setSettingsSaveStatus,
     });
   }
   const collectionsSaveQueue = collectionsSaveQueueRef.current;
@@ -3762,6 +3765,8 @@ function App() {
                 sectionRequestId={settingsSectionRequest?.id}
                 onInitialSectionApplied={() => setSettingsSectionRequest(null)}
                 onSettingsChange={updateSettings}
+                onSaveSettings={persistCurrentCollections}
+                settingsSaveStatus={settingsSaveStatus}
                 onImportConfig={importConfig}
                 onExportConfig={exportConfig}
               />

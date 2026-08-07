@@ -63,6 +63,7 @@ import {
   fetchRemoteAiModels,
   getBuiltinAiModels,
 } from './settingsPageModel';
+import type { SaveQueueStatus } from '../features/vault/latestSaveQueue';
 
 interface SettingsPageProps {
   hostCount: number;
@@ -76,6 +77,8 @@ interface SettingsPageProps {
   sectionRequestId?: number;
   onInitialSectionApplied?: () => void;
   onSettingsChange: (settings: ShellDeskAppSettings) => void;
+  onSaveSettings: () => Promise<void> | void;
+  settingsSaveStatus: SaveQueueStatus;
   onImportConfig: () => void;
   onExportConfig: () => void;
 }
@@ -92,6 +95,14 @@ type SyncPendingAction =
   | 'allow-shrink'
   | '';
 
+const settingsSaveStatusLabelId = {
+  idle: 'settings.ai.save.status.idle',
+  pending: 'settings.ai.save.status.pending',
+  saving: 'settings.ai.save.status.saving',
+  succeeded: 'settings.ai.save.status.succeeded',
+  failed: 'settings.ai.save.status.failed',
+} as const;
+
 function SettingsPage({
   hostCount,
   keyCount,
@@ -104,6 +115,8 @@ function SettingsPage({
   sectionRequestId,
   onInitialSectionApplied,
   onSettingsChange,
+  onSaveSettings,
+  settingsSaveStatus,
   onImportConfig,
   onExportConfig,
 }: SettingsPageProps) {
@@ -1721,6 +1734,31 @@ function SettingsPage({
 
           {activeSection === 'ai' ? (
             <>
+              <section className="settings-section">
+                <h2>{t('settings.ai.save.title', settings.language)}</h2>
+                <div className="settings-card">
+                  <div className="settings-row settings-save-row">
+                    <span>
+                      <strong>{t('settings.ai.save.autosave.label', settings.language)}</strong>
+                      <small>{t('settings.ai.save.summary', settings.language)}</small>
+                    </span>
+                    <div className="settings-save-control">
+                      <span className={`settings-save-chip settings-save-chip-${settingsSaveStatus}`}>
+                        {t(settingsSaveStatusLabelId[settingsSaveStatus], settings.language)}
+                      </span>
+                      <button
+                        type="button"
+                        className="command-button settings-save-button"
+                        disabled={settingsSaveStatus === 'saving'}
+                        onClick={() => void onSaveSettings()}
+                      >
+                        {t('settings.ai.save.button', settings.language)}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               <section className="settings-section settings-mcp-section">
                 <h2>{t('settings.ai.mcp.title', settings.language)}</h2>
                 <div className="settings-card settings-mcp-card">

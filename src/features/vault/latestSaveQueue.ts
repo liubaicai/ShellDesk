@@ -1,7 +1,10 @@
+export type SaveQueueStatus = 'idle' | 'pending' | 'saving' | 'succeeded' | 'failed';
+
 export interface LatestWinsSingleFlightQueueOptions<T> {
   getKey: (value: T) => string;
   save: (value: T) => Promise<void>;
   onError?: (error: unknown, value: T) => void;
+  onStatusChange?: (status: SaveQueueStatus) => void;
 }
 
 export interface LatestWinsSingleFlightQueue<T> {
@@ -53,6 +56,37 @@ export function createLatestWinsSingleFlightQueue<T>(
   let inFlight: QueueEntry<T> | null = null;
   let latest: QueueEntry<T> | null = null;
   let runPromise: Promise<void> | null = null;
+  let currentStatus: SaveQueueStatus = 'idle';
+
+  const computeStatus = (): SaveQueueStatus => {
+    if (inFlight) {
+      return 'saving';
+    }
+    if (pending) {
+      return 'pending';
+    }
+    if (!latest) {
+      return 'idle';
+    }
+    if (latest.outcome === 'succeeded') {
+      return 'succeeded';
+    }
+    if (latest.outcome === 'failed') {
+      return 'failed';
+    }
+    return 'idle';
+  };
+
+  const emitStatus = () => {
+    if (!options.onStatusChange) {
+      return;
+    }
+    const next = computeStatus();
+    if (next !== currentStatus) {
+      currentStatus = next;
+      options.onStatusChange(currentStatus);
+    }
+  };
 
   const runPending = async () => {
     while (pending) {
@@ -60,6 +94,7 @@ export function createLatestWinsSingleFlightQueue<T>(
       pending = null;
       inFlight = entry;
       entry.outcome = 'in-flight';
+      emitStatus();
 
       try {
         await options.save(entry.value);
@@ -75,6 +110,7 @@ export function createLatestWinsSingleFlightQueue<T>(
         }
       } finally {
         inFlight = null;
+        emitStatus();
       }
     }
   };
@@ -116,6 +152,7 @@ export function createLatestWinsSingleFlightQueue<T>(
       outcome: 'pending',
     };
     latest = pending;
+    emitStatus();
     ensureRun();
   };
 

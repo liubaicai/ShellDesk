@@ -389,6 +389,79 @@
   white-space: nowrap;
 }
 
+.settings-save-row {
+  align-items: center;
+}
+
+.settings-save-control {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-save-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-pill);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.settings-save-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.settings-save-chip-idle,
+.settings-save-chip-succeeded {
+  border-color: var(--surface-success-border);
+  background: var(--surface-success-soft);
+  color: var(--text-success);
+}
+
+.settings-save-chip-pending,
+.settings-save-chip-saving {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.settings-save-chip-saving::before {
+  animation: settings-save-pulse 1s ease-in-out infinite;
+}
+
+.settings-save-chip-failed {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+}
+
+.settings-save-button {
+  min-height: 34px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+@keyframes settings-save-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
 .settings-example-modal-overlay {
   position: fixed;
   z-index: 12000;
