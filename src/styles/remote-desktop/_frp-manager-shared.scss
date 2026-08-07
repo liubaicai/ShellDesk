@@ -7,21 +7,21 @@
   $action-cell-requires-button
 ) {
   .#{$namespace}-manager {
-    --#{$namespace}-bg: #0f1118;
-    --#{$namespace}-panel: rgba(24, 27, 38, 0.92);
-    --#{$namespace}-border: rgba(154, 174, 206, 0.18);
-    --#{$namespace}-text: #eef4ff;
-    --#{$namespace}-muted: #9daabe;
+    --#{$namespace}-bg: var(--bg);
+    --#{$namespace}-panel: var(--surface-panel);
+    --#{$namespace}-border: var(--border);
+    --#{$namespace}-text: var(--text);
+    --#{$namespace}-muted: var(--muted);
     --#{$namespace}-accent: #6ec6a6;
     --#{$namespace}-blue: #7bb7ff;
-    --#{$namespace}-danger: #ff8fa3;
+    --#{$namespace}-danger: var(--danger);
     display: flex;
     height: 100%;
     min-height: 0;
     flex-direction: column;
     overflow: hidden;
     background: linear-gradient(180deg, rgba(16, 20, 30, 0.98), rgba(9, 12, 18, 0.98)), var(--#{$namespace}-bg);
-    color: var(--#{$namespace}-text);
+    color: var(--text);
   }
 
   .#{$namespace}-toolbar,
@@ -83,7 +83,7 @@
     border-radius: 6px;
     padding: 0 11px;
     background: rgba(255, 255, 255, 0.045);
-    color: #dce7f8;
+    color: var(--muted-strong);
     cursor: pointer;
     font: inherit;
     font-size: 11.5px;
@@ -401,7 +401,7 @@
 
   .#{$namespace}-modal-backdrop {
     position: fixed;
-    z-index: 10000;
+    z-index: var(--z-modal);
     inset: 0;
     display: grid;
     place-items: center;

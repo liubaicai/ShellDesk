@@ -1,6 +1,6 @@
 .host-import-backdrop {
   position: fixed;
-  z-index: 1300;
+  z-index: var(--z-overlay);
   inset: 0;
   display: grid;
   place-items: center;

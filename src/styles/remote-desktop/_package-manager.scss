@@ -530,7 +530,7 @@
 
 .package-modal-backdrop {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: center;

@@ -54,7 +54,7 @@
 
 .global-transfer-panel {
   position: fixed;
-  z-index: 20000;
+  z-index: var(--z-modal-high);
   top: 38px;
   right: 10px;
   display: grid;

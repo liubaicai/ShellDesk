@@ -3,14 +3,14 @@
   min-height: 0;
   flex: 1;
   grid-template-rows: minmax(0, 1fr);
-  background: #0b111a;
+  background: var(--bg);
 }
 
 .browser-toolbar button,
 .mac-dock button,
 .desktop-icon-button {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--border);
+  background: var(--chrome-hover);
   color: var(--text);
   cursor: pointer;
 }
@@ -270,23 +270,23 @@
 }
 
 .desktop-icons strong {
-  color: #ffffff;
+  color: var(--text);
   text-align: center;
 }
 
 .desktop-pointer-drag-preview {
   position: fixed;
-  z-index: 10020;
+  z-index: var(--z-modal-raised);
   display: grid;
   min-width: 72px;
   justify-items: center;
   gap: 4px;
   padding: 6px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--window-border);
   border-radius: 8px;
   background: rgba(15, 23, 35, 0.72);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
-  color: #ffffff;
+  box-shadow: var(--shadow-float);
+  color: var(--text);
   pointer-events: none;
   text-align: center;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
@@ -372,7 +372,7 @@
 .desktop-folder-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 36px;
@@ -396,10 +396,10 @@
   max-height: min(660px, calc(100vh - 72px));
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(14, 20, 30, 0.78);
-  box-shadow: 0 28px 86px rgba(0, 0, 0, 0.46);
+  box-shadow: var(--shadow-panel-strong);
   transform-origin: bottom center;
   animation: launchpad-panel-enter 180ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
   will-change: opacity, transform;
@@ -419,7 +419,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--window-divider);
   padding: 18px 20px;
 }
 
@@ -435,13 +435,13 @@
 
 .launchpad-header span {
   display: block;
-  color: rgba(238, 244, 255, 0.62);
+  color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
 .launchpad-header strong {
-  color: #eef4ff;
+  color: var(--text);
   font-size: 18px;
   font-weight: 860;
 }
@@ -454,17 +454,17 @@
   flex: 1 1 280px;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border);
   border-radius: 9px;
   padding: 0 10px;
   background: rgba(5, 8, 14, 0.34);
-  color: rgba(238, 244, 255, 0.68);
+  color: var(--text-secondary);
 }
 
 .launchpad-search:focus-within {
   border-color: rgba(107, 193, 255, 0.5);
   background: rgba(5, 8, 14, 0.48);
-  color: #eef4ff;
+  color: var(--text);
 }
 
 .launchpad-search input {
@@ -473,14 +473,14 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #eef4ff;
+  color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 720;
 }
 
 .launchpad-search input::placeholder {
-  color: rgba(238, 244, 255, 0.48);
+  color: var(--muted);
 }
 
 .launchpad-close {
@@ -488,10 +488,10 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eef4ff;
+  background: var(--surface-hover);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -500,10 +500,10 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eef4ff;
+  background: var(--surface-hover);
+  color: var(--text);
   cursor: pointer;
   font-size: 18px;
 }
@@ -518,11 +518,11 @@
 
 .launchpad-capability-filters button {
   flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--window-divider);
   border-radius: 999px;
   padding: 5px 10px;
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(238, 244, 255, 0.68);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: 11px;
@@ -532,7 +532,7 @@
 .launchpad-capability-filters button.active {
   border-color: color-mix(in srgb, var(--accent) 48%, transparent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: #ffffff;
+  color: var(--text);
 }
 
 .launchpad-groups {
@@ -565,14 +565,14 @@
 
 .launchpad-group-header h2 {
   margin: 0;
-  color: #eef4ff;
+  color: var(--text);
   font-size: 13px;
   font-weight: 860;
   line-height: 1.25;
 }
 
 .launchpad-group-header span {
-  color: rgba(238, 244, 255, 0.5);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 760;
 }
@@ -588,7 +588,7 @@
   min-height: 180px;
   grid-column: 1 / -1;
   place-items: center;
-  color: rgba(238, 244, 255, 0.58);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 760;
 }
@@ -602,7 +602,7 @@
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  color: #eef4ff;
+  color: var(--text);
   cursor: pointer;
   text-align: center;
   -webkit-user-select: none;
@@ -665,7 +665,7 @@
   border-radius: 999px;
   padding: 2px 5px;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--text);
   font-size: 8px;
   font-weight: 860;
   line-height: 1.2;
@@ -681,15 +681,15 @@
 
 .launchpad-tooltip {
   position: fixed;
-  z-index: 10002;
+  z-index: var(--z-modal-content);
   width: max-content;
   max-width: 220px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 9px;
   background: rgba(10, 15, 23, 0.94);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-  color: rgba(238, 244, 255, 0.9);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
   font-size: 11px;
   font-weight: 720;
   line-height: 1.35;
@@ -710,8 +710,8 @@
 
 .launchpad-app-button:hover,
 .desktop-folder-app-button:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--border);
+  background: var(--chrome-hover);
 }
 
 .launchpad-app-button .desktop-app-icon-shell {
@@ -722,7 +722,7 @@
 .launchpad-app-button strong,
 .desktop-folder-app-button strong {
   overflow-wrap: anywhere;
-  color: #ffffff;
+  color: var(--text);
   font-size: 11px;
   font-weight: 820;
   line-height: 1.25;
@@ -791,7 +791,7 @@
   max-height: min(520px, calc(100vh - 56px));
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--border);
   transform-origin: center center;
   animation: launchpad-panel-enter 180ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
   will-change: opacity, transform;
@@ -839,9 +839,9 @@
   width: 100%;
   min-height: 180px;
   place-items: center;
-  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border: 1px dashed var(--border-strong);
   border-radius: 14px;
-  color: rgba(238, 244, 255, 0.58);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 780;
 }
@@ -859,7 +859,7 @@
   min-width: 360px;
   min-height: 260px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--window-border);
   will-change: transform, width, height;
 }
 
@@ -885,7 +885,7 @@
   align-items: center;
   box-sizing: border-box;
   gap: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+  border-bottom: 1px solid var(--window-divider);
   padding: 0;
   cursor: grab;
   touch-action: none;
@@ -915,18 +915,18 @@
 }
 
 .win-titlebar-controls .win-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--chrome-hover);
+  color: var(--text);
 }
 
 .win-titlebar-controls .win-btn.terminal-tools.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--chrome-hover);
+  color: var(--text);
 }
 
 .win-titlebar-controls .win-btn.close:hover {
   background: #e81123;
-  color: #fff;
+  color: var(--text);
 }
 
 .win-titlebar-controls .win-btn svg {
@@ -1029,7 +1029,7 @@
 }
 
 .terminal-titlebar-tmux-session-text small {
-  color: rgba(244, 247, 251, 0.58);
+  color: var(--muted);
   font-size: 10.5px;
 }
 
@@ -1046,8 +1046,8 @@
   margin-left: 6px;
   padding: 0 5px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(244, 247, 251, 0.72);
+  background: var(--chrome-hover);
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -1344,7 +1344,7 @@
 .remote-desktop-connection-overlay {
   position: absolute;
   inset: 0;
-  z-index: 1200;
+  z-index: var(--z-overlay);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1358,12 +1358,12 @@
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 14px;
   width: min(460px, calc(100vw - 48px));
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px;
-  background: rgba(18, 24, 35, 0.96);
+  background: var(--surface-panel);
   color: var(--text);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+  box-shadow: var(--shadow-panel-strong);
 }
 
 .remote-desktop-connection-mark {
@@ -1371,10 +1371,10 @@
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1px solid rgba(255, 111, 143, 0.42);
+  border: 1px solid var(--danger-border);
   border-radius: 50%;
-  background: rgba(255, 111, 143, 0.14);
-  color: #ffd3dc;
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
   font-size: 20px;
   font-weight: 800;
 }

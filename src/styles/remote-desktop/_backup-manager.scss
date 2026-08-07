@@ -985,7 +985,7 @@
 
 .backup-confirm-overlay {
   position: fixed;
-  z-index: 10090;
+  z-index: var(--z-modal-raised);
   inset: 0;
   display: grid;
   place-items: center;

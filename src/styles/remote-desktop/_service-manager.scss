@@ -1,5 +1,7 @@
 /* ─── Service Manager ────────────────────────────────────────────────────── */
 
+@use "./shared" as *;
+
 .service-manager {
   --service-bg: #091018;
   --service-panel: rgba(16, 24, 35, 0.84);
@@ -58,15 +60,10 @@
 .service-action-btn,
 .service-tabs button,
 .service-modal-btn {
-  height: 30px;
-  border: 1px solid var(--service-border);
-  border-radius: 6px;
-  padding: 0 11px;
+  @extend .rd-btn;
+  border-color: var(--service-border);
   background: rgba(255, 255, 255, 0.045);
   color: var(--service-muted-strong);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
   font-weight: 780;
   letter-spacing: 0;
   transition:
@@ -85,22 +82,16 @@
   color: var(--service-text);
 }
 
-.service-tool-button:disabled,
-.service-copy-btn:disabled,
-.service-action-btn:disabled,
-.service-modal-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .service-tool-button.primary,
 .service-action-btn.primary {
+  @extend .rd-btn.primary;
   border-color: rgba(94, 199, 165, 0.34);
   background: rgba(94, 199, 165, 0.13);
   color: #dffbed;
 }
 
 .service-action-btn.danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.28);
   background: rgba(255, 143, 163, 0.09);
   color: var(--service-danger);
@@ -352,19 +343,10 @@
 
 .service-enabled-tag,
 .service-state-tag {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
+  @extend .rd-state-tag;
   justify-content: center;
-  overflow: hidden;
-  border-radius: 5px;
-  padding: 3px 7px;
-  font-size: 10px;
   font-weight: 840;
-  letter-spacing: 0;
   line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .service-enabled-tag.enabled,
@@ -559,7 +541,7 @@
 .service-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -625,6 +607,7 @@
 }
 
 .service-modal-btn.danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.32);
   background: rgba(255, 143, 163, 0.12);
   color: var(--service-danger);

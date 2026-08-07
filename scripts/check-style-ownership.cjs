@@ -111,6 +111,7 @@ const deferredRemoteDesktopUses = [
 ].map((match) => match[1]);
 const allowedSharedDeferredStyles = new Set([
   'shell',
+  'shared',
   'dismissible-alert',
   'sudo-prompt',
   'context-menu',

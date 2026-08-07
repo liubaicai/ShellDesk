@@ -183,7 +183,7 @@
   top: calc(100% + 8px);
   right: 0;
   left: auto;
-  z-index: 10020;
+  z-index: var(--z-modal-raised);
   display: grid;
   width: min(320px, calc(100vw - 48px));
   gap: 10px;
@@ -422,7 +422,7 @@
 }
 
 .browser-bookmark-menu-panel-floating {
-  z-index: 10000;
+  z-index: var(--z-modal);
 }
 
 .browser-bookmark-menu-panel button {
@@ -687,7 +687,7 @@
 
 .browser-toolbar-menu-panel {
   position: fixed;
-  z-index: 10030;
+  z-index: var(--z-modal-raised);
   display: grid;
   width: 186px;
   gap: 4px;

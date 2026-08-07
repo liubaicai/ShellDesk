@@ -1,12 +1,12 @@
 .context-menu-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9998;
+  z-index: var(--z-context-menu);
 }
 
 .context-menu {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-context-menu);
   display: grid;
   min-width: 196px;
   gap: 0;

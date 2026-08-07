@@ -274,7 +274,7 @@
   --login-danger: #ff8fa3;
   --login-ok: #75e4aa;
   position: fixed;
-  z-index: 10040;
+  z-index: var(--z-modal-raised);
   inset: 0;
   display: grid;
   place-items: center;

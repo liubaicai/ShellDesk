@@ -2,7 +2,7 @@
   position: fixed;
   top: 62px;
   right: 18px;
-  z-index: 6000;
+  z-index: var(--z-alert);
   display: flex;
   width: min(460px, calc(100vw - 36px));
   max-height: calc(100vh - 86px);

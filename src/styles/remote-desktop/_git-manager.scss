@@ -1,3 +1,5 @@
+@use "./shared" as *;
+
 .git-manager {
   --git-bg: #111a28;
   --git-sidebar: #263245;
@@ -44,14 +46,12 @@
 }
 
 .git-toolbar-actions-main button {
-  height: 30px;
-  border: 1px solid rgba(150, 177, 210, 0.18);
+  @extend .rd-btn;
+  border-color: rgba(150, 177, 210, 0.18);
   border-radius: 3px;
   padding: 0 12px;
   background: rgba(15, 26, 40, 0.38);
   color: var(--git-muted-strong);
-  cursor: pointer;
-  font: inherit;
   font-size: 12px;
   font-weight: 760;
 }
@@ -73,7 +73,6 @@
 .git-diff-actions button:disabled,
 .git-confirm-actions button:disabled {
   opacity: 0.48;
-  cursor: not-allowed;
 }
 
 .git-repo-picker {
@@ -119,15 +118,12 @@
 .git-pane-head button,
 .git-track-remote-btn,
 .git-confirm-actions button {
-  height: 30px;
-  border: 1px solid var(--git-border);
+  @extend .rd-btn;
+  border-color: var(--git-border);
   border-radius: 3px;
   padding: 0 10px;
   background: #1c293b;
   color: var(--git-muted-strong);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
   font-weight: 780;
 }
 
@@ -966,13 +962,11 @@
 }
 
 .git-file-status {
-  display: inline-flex;
-  align-items: center;
+  @extend .rd-state-tag;
   justify-content: center;
   min-width: 54px;
   border-radius: 3px;
   padding: 3px 6px;
-  font-size: 10px;
   font-weight: 900;
 }
 
@@ -983,7 +977,7 @@
 
 .git-modal-backdrop {
   position: fixed;
-  z-index: 10000;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: center;

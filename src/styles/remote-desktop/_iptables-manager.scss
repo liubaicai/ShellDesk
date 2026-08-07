@@ -457,7 +457,7 @@
 
 .iptables-modal-backdrop {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: center;
@@ -530,7 +530,7 @@
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 760px) {
   .iptables-filters {
     grid-template-columns: 1fr;
   }

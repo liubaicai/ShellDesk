@@ -431,7 +431,7 @@
 
 .settings-example-modal-overlay {
   position: fixed;
-  z-index: 12000;
+  z-index: var(--z-modal-high);
   inset: 0;
   display: grid;
   place-items: center;

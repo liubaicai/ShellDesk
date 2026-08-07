@@ -382,7 +382,7 @@
 
 .mysql-context-menu {
   position: fixed;
-  z-index: 12000;
+  z-index: var(--z-modal-high);
   width: 210px;
   padding: 6px;
   border: 1px solid var(--border-strong);
@@ -1103,7 +1103,7 @@
 .mysql-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;

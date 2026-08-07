@@ -1,3 +1,5 @@
+@use "./shared" as *;
+
 .firewall-manager {
   --firewall-bg: #0b1017;
   --firewall-panel: rgba(17, 24, 34, 0.9);
@@ -100,18 +102,11 @@
 .firewall-table button,
 .firewall-add-button,
 .firewall-confirm-actions button {
-  height: 30px;
-  border: 1px solid var(--firewall-border);
-  border-radius: 6px;
+  @extend .rd-btn;
   flex: 0 0 auto;
   min-height: 30px;
-  padding: 0 11px;
-  background: rgba(255, 255, 255, 0.045);
+  border-color: var(--firewall-border);
   color: var(--firewall-muted-strong);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 800;
   line-height: 1;
   white-space: nowrap;
 }
@@ -162,7 +157,6 @@
 .firewall-add-button:disabled,
 .firewall-confirm-actions button:disabled {
   opacity: 0.52;
-  cursor: not-allowed;
 }
 
 .firewall-alert {
@@ -454,7 +448,7 @@
 
 .firewall-modal-backdrop {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: center;

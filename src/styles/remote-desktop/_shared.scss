@@ -1,0 +1,191 @@
+// 远程桌面应用公共样式
+// 解决 30+ 个 manager 组件间的样式复制粘贴问题。
+//
+// 使用方式：在组件 TSX 中直接使用这些类名，或在各 manager SCSS 中 @extend。
+// 新增 manager 时优先使用这些公共类，只在差异化样式中写自定义规则。
+//
+// 后续迁移：现有 manager 可逐步用 @extend 或替换类名来消费这些公共样式。
+// 迁移优先级：按钮集合（~850 行）> 状态标签（~300 行）> 表格表头（~350 行）。
+
+// ── 公共按钮 ─────────────────────────────────────────────
+// 替代各 manager 中 height:30px; border-radius:6px; padding:0 11px 的重复按钮块。
+.rd-btn {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.rd-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+.rd-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rd-btn.primary {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.rd-btn.primary:hover:not(:disabled) {
+  border-color: var(--accent-strong-border);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.rd-btn.danger {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-text-soft);
+}
+
+.rd-btn.danger:hover:not(:disabled) {
+  background: var(--danger-hover-bg);
+  color: var(--danger-hover-text);
+}
+
+// ── 公共状态标签 ─────────────────────────────────────────
+// 替代 container-state-tag / proc-stat-tag / service-state-tag 等逐字雷同的标签块。
+.rd-state-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 820;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.rd-state-tag.is-running,
+.rd-state-tag.is-success {
+  background: var(--surface-success-soft);
+  border: 1px solid var(--surface-success-border);
+  color: var(--text-success);
+}
+
+.rd-state-tag.is-warning {
+  background: color-mix(in srgb, #ffb347 14%, transparent);
+  border: 1px solid color-mix(in srgb, #ffb347 30%, transparent);
+  color: #ffd9a0;
+}
+
+.rd-state-tag.is-muted,
+.rd-state-tag.is-stopped {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.rd-state-tag.is-danger,
+.rd-state-tag.is-error {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text-soft);
+}
+
+// ── 公共工具栏 ───────────────────────────────────────────
+// 替代各 manager 中 display:flex; min-height:46-58px; border-bottom 的工具栏块。
+.rd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  background: var(--surface-hover);
+}
+
+// ── 公共表格表头 ─────────────────────────────────────────
+// 替代各 manager thead position:sticky + th 渐变背景的重复块。
+.rd-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+
+  th {
+    height: 34px;
+    border-bottom: 1px solid var(--border-strong);
+    background: var(--surface-panel);
+    font-size: 10.5px;
+    font-weight: 820;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--muted);
+    text-align: left;
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+}
+
+// ── 公共输入框 ───────────────────────────────────────────
+.rd-input {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rd-input:focus {
+  outline: 0;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.rd-input::placeholder {
+  color: var(--muted);
+}
+
+// ── 公共分页器 ───────────────────────────────────────────
+.rd-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.rd-pagination button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 10px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.rd-pagination button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+.rd-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

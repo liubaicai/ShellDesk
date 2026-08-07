@@ -51,6 +51,14 @@
   --accent-contrast: #ffffff;
   --danger: #ff6f8f;
   --shadow: rgba(0, 0, 0, 0.34);
+  /* Z-index 层级体系 */
+  --z-context-menu: 1000;
+  --z-overlay: 1200;
+  --z-alert: 6000;
+  --z-modal: 10000;
+  --z-modal-content: 10001;
+  --z-modal-raised: 10090;
+  --z-modal-high: 12000;
   font-family: var(--interface-font-family);
 }
 

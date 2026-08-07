@@ -1,3 +1,5 @@
+@use "./shared" as *;
+
 .supervisor-manager {
   --supervisor-bg: #0b111b;
   --supervisor-panel: rgba(20, 29, 43, 0.92);
@@ -162,20 +164,19 @@
 }
 
 .supervisor-button {
+  @extend .rd-btn;
   display: inline-flex;
   min-height: 34px;
   align-items: center;
   justify-content: center;
   gap: 7px;
   padding: 7px 11px;
-  border: 1px solid var(--supervisor-border-strong);
+  border-color: var(--supervisor-border-strong);
   border-radius: 9px;
   color: var(--supervisor-text);
   background: var(--supervisor-panel-soft);
-  font: inherit;
   font-size: 11px;
   font-weight: 630;
-  cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
 
   svg {
@@ -783,11 +784,9 @@
 }
 
 .supervisor-state-tag {
-  display: inline-flex;
-  align-items: center;
+  @extend .rd-state-tag;
   gap: 6px;
   color: var(--supervisor-muted);
-  font-size: 10px;
   font-weight: 630;
 
   i {
@@ -976,7 +975,7 @@
 
 .supervisor-modal-overlay {
   position: fixed;
-  z-index: 2147483200;
+  z-index: var(--z-modal-high);
   inset: 0;
   display: grid;
   place-items: center;

@@ -260,7 +260,7 @@
 
 .monitor-modal-backdrop {
   position: fixed;
-  z-index: 2147483000;
+  z-index: var(--z-modal-high);
   inset: 0;
   display: grid;
   place-items: center;
@@ -554,7 +554,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 700px), (max-height: 470px) {
+@media (max-width: 760px), (max-height: 470px) {
   .monitor-shell {
     overflow: auto;
   }

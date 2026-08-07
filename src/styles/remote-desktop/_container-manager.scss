@@ -1,5 +1,7 @@
 /* ─── Container Manager ─────────────────────────────────────────────────── */
 
+@use "./shared" as *;
+
 .container-manager,
 .container-run-modal-overlay,
 .container-modal-overlay {
@@ -66,22 +68,11 @@
 .container-modal-btn,
 .container-table-action,
 .container-table-danger {
-  height: 30px;
-  border: 1px solid var(--container-border);
-  border-radius: 6px;
-  padding: 0 11px;
-  background: rgba(255, 255, 255, 0.045);
+  @extend .rd-btn;
   color: var(--container-muted-strong);
-  cursor: pointer;
   white-space: nowrap;
-  font: inherit;
-  font-size: 11.5px;
   font-weight: 780;
   letter-spacing: 0;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
 }
 
 .container-tool-button {
@@ -101,25 +92,16 @@
   color: var(--container-text);
 }
 
-.container-tool-button:disabled,
-.container-action-btn:disabled,
-.container-copy-btn:disabled,
-.container-tabs button:disabled,
-.container-modal-btn:disabled,
-.container-table-action:disabled,
-.container-table-danger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .container-tool-button.primary,
 .container-action-btn.primary {
+  @extend .rd-btn.primary;
   border-color: rgba(76, 196, 154, 0.34);
   background: rgba(76, 196, 154, 0.13);
   color: #dffbed;
 }
 
 .container-tool-button.danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.28);
   background: rgba(255, 143, 163, 0.08);
   color: var(--container-danger);
@@ -132,6 +114,7 @@
 
 .container-action-btn.danger,
 .container-table-danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.28);
   background: rgba(255, 143, 163, 0.09);
   color: var(--container-danger);
@@ -202,14 +185,11 @@
 .container-resource-workbench textarea,
 .container-config-form input,
 .container-config-form select {
-  height: 30px;
+  @extend .rd-input;
   min-width: 0;
-  border: 1px solid var(--container-border);
   border-radius: 7px;
   background: rgba(5, 10, 16, 0.36);
   color: var(--container-text);
-  font: inherit;
-  font-size: 12px;
   font-weight: 650;
   outline: none;
 }
@@ -364,7 +344,7 @@
   position: fixed;
   top: 50%;
   left: 50%;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: grid;
   width: min(760px, calc(100vw - 36px));
   max-height: calc(100vh - 36px);
@@ -475,7 +455,7 @@
 .container-run-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -791,19 +771,10 @@
 }
 
 .container-state-tag {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
+  @extend .rd-state-tag;
   justify-content: center;
-  overflow: hidden;
-  border-radius: 5px;
-  padding: 3px 7px;
-  font-size: 10px;
-  font-weight: 840;
-  letter-spacing: 0;
   line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 840;
 }
 
 .container-state-tag.running {
@@ -1189,24 +1160,17 @@
 }
 
 .container-image-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  @extend .rd-table-head;
 }
 
 .container-image-table th {
-  height: 34px;
   border-bottom: 1px solid var(--container-border);
   padding: 0 8px;
   background:
     linear-gradient(180deg, rgba(7, 12, 18, 0.96), rgba(10, 16, 24, 0.94)),
     var(--container-panel-strong);
   color: var(--container-muted);
-  font-size: 10.5px;
-  font-weight: 820;
   letter-spacing: 0;
-  text-align: left;
-  text-transform: uppercase;
 }
 
 .container-image-table td {
@@ -1356,7 +1320,7 @@
 .container-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -1481,6 +1445,7 @@
 }
 
 .container-modal-btn.danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.32);
   background: rgba(255, 143, 163, 0.12);
   color: var(--container-danger);

@@ -1,0 +1,33 @@
+// 断点体系：统一管理响应式断点，避免散落的魔数。
+//
+// 使用方式（新代码推荐）：
+//   @use "../breakpoints" as *;
+//   @include narrow { .my-grid { grid-template-columns: 1fr; } }
+//
+// @media 用于应用窗口级响应式，@container 用于面板/组件级响应式。
+// 各文件如有 @use 依赖，只需在顶部加一行 @use "./breakpoints" as *;
+
+// ── 档位定义 ──────────────────────────────────────────────
+
+// 超窄屏（极小窗口 / 窄分屏）
+$bp-ultra-narrow: 620px;
+
+// 窄屏（单列折叠点，桌面应用的主响应式断点）
+$bp-narrow: 760px;
+
+// 中屏（多列→少列过渡）
+$bp-medium: 980px;
+
+// ── @media mixin（窗口级） ───────────────────────────────
+
+@mixin ultra-narrow {
+  @media (max-width: $bp-ultra-narrow) { @content; }
+}
+
+@mixin narrow {
+  @media (max-width: $bp-narrow) { @content; }
+}
+
+@mixin medium {
+  @media (max-width: $bp-medium) { @content; }
+}

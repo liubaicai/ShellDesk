@@ -1,5 +1,7 @@
 /* ─── K8s Manager ───────────────────────────────────────────────────────── */
 
+@use "./shared" as *;
+
 .k8s-manager-container,
 .k8s-manager-modal-overlay {
   --k8s-bg: #081018;
@@ -86,17 +88,9 @@
   white-space: nowrap;
 }
 
-.k8s-manager-toolbar button,
 .k8s-manager-toolbar select,
 .k8s-manager-searchbar input,
-.k8s-manager-modal-field input,
-.k8s-manager-filters button,
-.k8s-manager-tabs button,
-.k8s-manager-sub-tabs button,
-.k8s-manager-row-actions button,
-.k8s-manager-key-values button,
-.k8s-manager-pod-detail button,
-.k8s-manager-modal button {
+.k8s-manager-modal-field input {
   height: 30px;
   min-width: 0;
   border: 1px solid var(--k8s-border);
@@ -117,13 +111,15 @@
 .k8s-manager-key-values button,
 .k8s-manager-pod-detail button,
 .k8s-manager-modal button {
-  padding: 0 11px;
-  cursor: pointer;
+  @extend .rd-btn;
+  min-width: 0;
+  border-color: var(--k8s-border);
+  border-radius: 7px;
+  background: rgba(5, 10, 16, 0.36);
+  color: var(--k8s-muted-strong);
+  font-weight: 760;
+  outline: none;
   white-space: nowrap;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
 }
 
 .k8s-manager-toolbar button:hover:not(:disabled),
@@ -137,13 +133,6 @@
   border-color: rgba(90, 167, 255, 0.34);
   background: var(--k8s-panel-hover);
   color: var(--k8s-text);
-}
-
-.k8s-manager-toolbar button:disabled,
-.k8s-manager-pod-detail button:disabled,
-.k8s-manager-modal button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .k8s-manager-toolbar select {
@@ -561,6 +550,7 @@ td.k8s-manager-empty {
 
 .k8s-manager-pod-detail button.danger,
 .k8s-manager-modal button.danger {
+  @extend .rd-btn.danger;
   border-color: rgba(255, 143, 163, 0.3);
   background: var(--k8s-danger-soft);
   color: var(--k8s-danger);
@@ -585,7 +575,7 @@ td.k8s-manager-empty {
 .k8s-manager-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
