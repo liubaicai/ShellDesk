@@ -224,7 +224,6 @@ export const zhCN = {
   'settings.appearance.accent.summary': '用于按钮、选中态、焦点边框和终端高亮',
   'settings.appearance.accent.aria': '强调色',
   'settings.appearance.accent.choose': '选择颜色 {color}',
-  'settings.wallpaper.title': '虚拟桌面壁纸',
   'settings.wallpaper.background.label': '连接桌面背景',
   'settings.wallpaper.background.summary': '作为连接服务器后的虚拟桌面壁纸；不设置时使用默认背景',
   'settings.wallpaper.presets.aria': '预置壁纸',

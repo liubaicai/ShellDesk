@@ -1204,7 +1204,6 @@ function SettingsPage({
               </section>
 
               <section className="settings-section">
-                <h2>{t('settings.wallpaper.title', settings.language)}</h2>
                 <div className="settings-card desktop-wallpaper-card">
                   <div className="settings-row desktop-wallpaper-row">
                     <span>

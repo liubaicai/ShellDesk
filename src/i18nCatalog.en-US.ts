@@ -224,7 +224,6 @@ export const enUS = {
   'settings.appearance.accent.summary': 'Used for buttons, selections, focus rings, and terminal highlights',
   'settings.appearance.accent.aria': 'Accent color',
   'settings.appearance.accent.choose': 'Choose color {color}',
-  'settings.wallpaper.title': 'Virtual Desktop Wallpaper',
   'settings.wallpaper.background.label': 'Connection desktop background',
   'settings.wallpaper.background.summary': 'Used as the virtual desktop wallpaper after connecting; the default background is used when unset',
   'settings.wallpaper.presets.aria': 'Preset wallpapers',
