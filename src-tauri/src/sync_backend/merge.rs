@@ -3,7 +3,9 @@ use std::collections::HashSet;
 
 use crate::{escape_pointer, node_platform};
 
-use super::records::{compare_time, count_records_by_type, sum_counts, synced_content_type};
+use super::records::{
+    compare_time, count_records_by_type, hash_payload, sum_counts, synced_content_type,
+};
 
 fn conflict_name(record: &Value) -> String {
     let payload = record.get("payload").unwrap_or(&Value::Null);
@@ -315,20 +317,105 @@ pub(super) fn merge_sync_documents(
             "lastSeenAt": now_value
         }),
     );
+    let mut document = json!({
+        "format": "shelldesk-sync-webdav",
+        "version": 1,
+        "updatedAt": now_value,
+        "devices": Value::Object(devices),
+        "records": Value::Object(merged_records),
+        "tombstones": Value::Object(merged_tombstones)
+    });
+    reconcile_settings_credentials(&mut document, local_records, remote_document);
     json!({
-        "document": {
-            "format": "shelldesk-sync-webdav",
-            "version": 1,
-            "updatedAt": now_value,
-            "devices": Value::Object(devices),
-            "records": Value::Object(merged_records),
-            "tombstones": Value::Object(merged_tombstones)
-        },
+        "document": document,
         "conflicts": conflicts,
         "uploaded": uploaded,
         "downloaded": downloaded,
         "deleted": deleted
     })
+}
+
+/// AI and web-search API keys live inside the `settings:app` record payload.
+/// Because settings merge as one blob (last-write-wins over the whole payload),
+/// an unrelated settings change on a device that never configured a credential
+/// would otherwise overwrite a real key with an empty string on every sync.
+/// Reconcile so a non-empty credential on either side survives a merge that
+/// produced an empty one, and keep the record hash consistent with the result.
+fn reconcile_settings_credentials(
+    document: &mut Value,
+    local_records: &Value,
+    remote_document: &Value,
+) {
+    const CREDENTIAL_FIELDS: [&str; 2] = ["aiApiKey", "webSearchApiKey"];
+
+    let local_settings = local_records.pointer("/settings:app/payload");
+    let remote_settings = remote_document.pointer("/records/settings:app/payload");
+    let local_updated_at = local_records
+        .pointer("/settings:app/updatedAt")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let remote_updated_at = remote_document
+        .pointer("/records/settings:app/updatedAt")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    let adopted: Vec<(&'static str, String)> = {
+        let Some(merged_settings) = document.pointer("/records/settings:app/payload") else {
+            return;
+        };
+        CREDENTIAL_FIELDS
+            .iter()
+            .filter_map(|field| {
+                let merged_value = merged_settings
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !merged_value.is_empty() {
+                    return None;
+                }
+                let local_value = local_settings
+                    .and_then(|settings| settings.get(*field))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let remote_value = remote_settings
+                    .and_then(|settings| settings.get(*field))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let value = match (!local_value.is_empty(), !remote_value.is_empty()) {
+                    (true, false) => Some(local_value),
+                    (false, true) => Some(remote_value),
+                    (true, true) => {
+                        if compare_time(local_updated_at, remote_updated_at) >= 0 {
+                            Some(local_value)
+                        } else {
+                            Some(remote_value)
+                        }
+                    }
+                    _ => None,
+                };
+                value.map(|value| (*field, value.to_string()))
+            })
+            .collect()
+    };
+
+    if adopted.is_empty() {
+        return;
+    }
+
+    if let Some(merged_settings) = document
+        .pointer_mut("/records/settings:app/payload")
+        .and_then(Value::as_object_mut)
+    {
+        for (field, value) in &adopted {
+            merged_settings.insert(field.to_string(), json!(value));
+        }
+    }
+
+    if let Some(record) = document.pointer_mut("/records/settings:app") {
+        if let Some(payload) = record.get("payload").cloned() {
+            record["hash"] = json!(hash_payload(&payload));
+        }
+    }
 }
 
 pub(super) fn detect_suspicious_shrink(
@@ -656,6 +743,113 @@ mod tests {
             Some(&json!("2026-01-02T00:00:00Z"))
         );
         assert_eq!(state["lastRemoteEtag"], json!("\"etag-1\""));
+    }
+
+    fn settings_record(hash: &str, updated_at: &str, ai_key: &str, web_key: &str) -> Value {
+        json!({
+            "id": "settings:app",
+            "type": "settings",
+            "hash": hash,
+            "updatedAt": updated_at,
+            "payload": {
+                "aiApiKey": ai_key,
+                "webSearchApiKey": web_key
+            }
+        })
+    }
+
+    #[test]
+    fn merge_preserves_non_empty_api_key_when_remote_wins_with_empty_key() {
+        let local = settings_record(
+            "local-hash",
+            "2026-01-01T00:00:00.000Z",
+            "sk-real",
+            "tvly-real",
+        );
+        let remote = settings_record("remote-hash", "2026-01-02T00:00:00.000Z", "", "");
+        let result = merge_sync_documents(
+            &json!({ "records": { "settings:app": remote }, "tombstones": {} }),
+            &json!({ "settings:app": local }),
+            &json!({}),
+            &json!({
+                "deviceId": "device-a",
+                "lastRecords": {
+                    "settings:app": {
+                        "type": "settings",
+                        "hash": "local-hash",
+                        "updatedAt": "2026-01-01T00:00:00.000Z"
+                    }
+                }
+            }),
+            "2026-01-03T00:00:00.000Z",
+            "",
+        );
+
+        let merged = result
+            .pointer("/document/records/settings:app/payload")
+            .expect("settings record should be present");
+        assert_eq!(merged["aiApiKey"], "sk-real");
+        assert_eq!(merged["webSearchApiKey"], "tvly-real");
+    }
+
+    #[test]
+    fn merge_preserves_remote_api_key_when_local_wins_with_empty_key() {
+        let local = settings_record("local-hash", "2026-01-03T00:00:00.000Z", "", "");
+        let remote = settings_record("remote-hash", "2026-01-02T00:00:00.000Z", "sk-real", "");
+        let result = merge_sync_documents(
+            &json!({ "records": { "settings:app": remote }, "tombstones": {} }),
+            &json!({ "settings:app": local }),
+            &json!({}),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-04T00:00:00.000Z",
+            "",
+        );
+
+        let merged = result
+            .pointer("/document/records/settings:app/payload")
+            .expect("settings record should be present");
+        assert_eq!(merged["aiApiKey"], "sk-real");
+        assert_eq!(merged["webSearchApiKey"], "");
+    }
+
+    #[test]
+    fn merge_leaves_api_key_empty_when_both_sides_empty() {
+        let local = settings_record("local-hash", "2026-01-01T00:00:00.000Z", "", "");
+        let remote = settings_record("remote-hash", "2026-01-02T00:00:00.000Z", "", "");
+        let result = merge_sync_documents(
+            &json!({ "records": { "settings:app": remote }, "tombstones": {} }),
+            &json!({ "settings:app": local }),
+            &json!({}),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-03T00:00:00.000Z",
+            "",
+        );
+
+        let merged = result
+            .pointer("/document/records/settings:app/payload")
+            .expect("settings record should be present");
+        assert_eq!(merged["aiApiKey"], "");
+        assert_eq!(merged["webSearchApiKey"], "");
+    }
+
+    #[test]
+    fn merge_recomputes_settings_hash_when_credential_is_preserved() {
+        let local = settings_record("local-hash", "2026-01-01T00:00:00.000Z", "sk-real", "");
+        let remote = settings_record("remote-hash", "2026-01-02T00:00:00.000Z", "", "");
+        let result = merge_sync_documents(
+            &json!({ "records": { "settings:app": remote }, "tombstones": {} }),
+            &json!({ "settings:app": local }),
+            &json!({}),
+            &json!({ "deviceId": "device-a" }),
+            "2026-01-03T00:00:00.000Z",
+            "",
+        );
+
+        let record = result
+            .pointer("/document/records/settings:app")
+            .expect("settings record should be present");
+        let expected_payload = json!({ "aiApiKey": "sk-real", "webSearchApiKey": "" });
+        assert_eq!(record["hash"], json!(hash_payload(&expected_payload)));
     }
 
     proptest! {

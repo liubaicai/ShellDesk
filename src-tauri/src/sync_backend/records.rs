@@ -53,7 +53,7 @@ fn stable_json(value: &Value) -> String {
     }
 }
 
-fn hash_payload(payload: &Value) -> String {
+pub(super) fn hash_payload(payload: &Value) -> String {
     format!("{:x}", Sha256::digest(stable_json(payload).as_bytes()))
 }
 
