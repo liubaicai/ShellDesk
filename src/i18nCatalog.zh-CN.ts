@@ -3076,6 +3076,8 @@ checks 必须是 allowlist 中存在的 ID。优先选择能覆盖账号、登�
   'terminal.snippets.labelPlaceholder': '例如：查看 Nginx 状态',
   'terminal.snippets.groupPlaceholder': '例如：Web 服务',
   'terminal.snippets.shortcutPlaceholder': '点击后按下快捷键',
+  'terminal.snippets.searchPlaceholder': '搜索代码片段…',
+  'terminal.snippets.hintNavigate': '选择',
   'terminal.snippets.clearShortcut': '清除',
   'terminal.snippets.error.labelRequired': '请输入片段名称。',
   'terminal.snippets.error.commandRequired': '请输入要插入的命令。',

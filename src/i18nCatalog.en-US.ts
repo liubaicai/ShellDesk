@@ -3076,6 +3076,8 @@ Rules:
   'terminal.snippets.labelPlaceholder': 'For example: Check Nginx status',
   'terminal.snippets.groupPlaceholder': 'For example: Web services',
   'terminal.snippets.shortcutPlaceholder': 'Click, then press a shortcut',
+  'terminal.snippets.searchPlaceholder': 'Search code snippets…',
+  'terminal.snippets.hintNavigate': 'Select',
   'terminal.snippets.clearShortcut': 'Clear',
   'terminal.snippets.error.labelRequired': 'Enter a snippet name.',
   'terminal.snippets.error.commandRequired': 'Enter the command to insert.',

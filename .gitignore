@@ -20,3 +20,5 @@ Thumbs.db
 .vscode/
 test-results
 .workbuddy
+.claude
+.codex

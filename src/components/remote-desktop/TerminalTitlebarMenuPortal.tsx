@@ -6,10 +6,6 @@ import type {
   TerminalTitlebarMenuState,
   TmuxMenuState,
 } from '../../remoteDesktopWindowModel';
-import {
-  getTerminalSnippetGroups,
-  getTerminalSnippetPreview,
-} from '../../remoteDesktopWindowModel';
 import type { TerminalWorkspaceSplitDirection } from '../../terminalWorkspace';
 import type { RemoteTerminalToolAction } from './RemoteTerminal';
 import type { RemoteSystemType } from './types';
@@ -36,7 +32,7 @@ interface TerminalTitlebarMenuPortalProps {
   onNewTmux: (sessionName: string) => void;
   onRefreshTmux: () => void;
   onOpenTmux: (sessionName: string) => void;
-  onRunSnippet: (command: string) => void;
+  onOpenSnippetPicker: () => void;
   onKillTmux: () => void;
 }
 
@@ -60,7 +56,7 @@ export function TerminalTitlebarMenuPortal({
   onNewTmux,
   onRefreshTmux,
   onOpenTmux,
-  onRunSnippet,
+  onOpenSnippetPicker,
   onKillTmux,
 }: TerminalTitlebarMenuPortalProps) {
   const [isTmuxNameDialogOpen, setIsTmuxNameDialogOpen] = useState(false);
@@ -179,40 +175,16 @@ export function TerminalTitlebarMenuPortal({
                 </div>
               </div>
             ) : null}
-            {snippets.length ? (
-              <div className="context-menu-item-has-submenu terminal-titlebar-snippets-menu">
-                <button type="button" role="menuitem" aria-haspopup="menu">
-                  {t('terminal.titlebar.snippets', language)}
-                </button>
-                <div className="context-submenu terminal-titlebar-snippets-submenu" role="menu" aria-label={t('terminal.titlebar.snippets', language)}>
-                  {getTerminalSnippetGroups(snippets, language).map((group) => (
-                    <div key={group.label} className="terminal-titlebar-snippet-group" role="presentation">
-                      <div className="terminal-titlebar-snippet-group-label">{group.label}</div>
-                      {group.snippets.map((snippet) => (
-                        <button
-                          key={snippet.id}
-                          type="button"
-                          role="menuitem"
-                          className="terminal-titlebar-snippet-button"
-                          title={snippet.command}
-                          onClick={() => onRunSnippet(snippet.command)}
-                        >
-                          <span className="terminal-titlebar-snippet-text">
-                            <strong>{snippet.label}</strong>
-                            <small>{getTerminalSnippetPreview(snippet)}</small>
-                          </span>
-                          {snippet.shortcut ? <kbd>{snippet.shortcut}</kbd> : null}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <button type="button" role="menuitem" disabled>
-                {t('terminal.titlebar.noSnippets', language)}
-              </button>
-            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={onOpenSnippetPicker}
+            >
+              {t('terminal.titlebar.snippets', language)}
+              {snippets.length ? (
+                <span className="terminal-titlebar-snippet-badge">{snippets.length}</span>
+              ) : null}
+            </button>
             <div className="context-menu-sep" />
             <button type="button" role="menuitem" onClick={() => onRequestTool('toggle-follow')}>
               {t('terminal.titlebar.toggleFollow', language)}

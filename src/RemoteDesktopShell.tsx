@@ -11,6 +11,7 @@ import ContextMenuIcon from './components/remote-desktop/ContextMenuIcon';
 import RemoteDesktopWindow from './components/remote-desktop/RemoteDesktopWindow';
 import { TerminalCloseConfirmPortal } from './components/remote-desktop/TerminalCloseConfirmPortal';
 import { TerminalTitlebarMenuPortal } from './components/remote-desktop/TerminalTitlebarMenuPortal';
+import { TerminalSnippetPickerPortal } from './components/remote-desktop/TerminalSnippetPickerPortal';
 import {
   addAppToFolder,
   acknowledgeDesktopAppCatalog,
@@ -168,6 +169,7 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
   const [renameFolderDialog, setRenameFolderDialog] = useState<FolderRenameDialogState | null>(null);
   const [desktopPointerDragPreview, setDesktopPointerDragPreview] = useState<DesktopPointerDragPreviewState | null>(null);
   const [terminalTitlebarMenu, setTerminalTitlebarMenu] = useState<TerminalTitlebarMenuState | null>(null);
+  const [terminalSnippetPickerWindowId, setTerminalSnippetPickerWindowId] = useState<string | null>(null);
   const [tmuxMenuState, setTmuxMenuState] = useState<TmuxMenuState>({ status: 'idle', sessions: [] });
   const [pendingCloseWindowId, setPendingCloseWindowId] = useState('');
   const [connectionGate, setConnectionGate] = useState<DesktopConnectionGateState>(() => (
@@ -2811,8 +2813,24 @@ function RemoteDesktopShell({ connection, settings, onSettingsChange, onTerminal
         onNewTmux={(sessionName) => openTmuxTerminal(sessionName, 'new')}
         onRefreshTmux={() => void refreshTmuxSessions()}
         onOpenTmux={(sessionName) => openTmuxTerminal(sessionName, 'attach')}
-        onRunSnippet={(command) => requestTerminalCommand(terminalTitlebarMenuWindow.id, command, 'snippet')}
+        onOpenSnippetPicker={() => {
+          const windowId = terminalTitlebarMenu?.windowId;
+          setTerminalTitlebarMenu(null);
+          if (windowId) setTerminalSnippetPickerWindowId(windowId);
+        }}
         onKillTmux={() => void killTmuxSession(terminalTitlebarMenuWindow)}
+      />
+    ) : null}
+
+    {terminalSnippetPickerWindowId ? (
+      <TerminalSnippetPickerPortal
+        language={settings.language}
+        snippets={settings.terminalSnippets ?? []}
+        onCancel={() => setTerminalSnippetPickerWindowId(null)}
+        onPick={(command) => {
+          requestTerminalCommand(terminalSnippetPickerWindowId, command, 'snippet');
+          setTerminalSnippetPickerWindowId(null);
+        }}
       />
     ) : null}
 
