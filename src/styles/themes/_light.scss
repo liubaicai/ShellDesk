@@ -361,8 +361,7 @@
 }
 
 [data-theme="light"] .settings-row select,
-[data-theme="light"] .settings-row .settings-text-input,
-[data-theme="light"] .settings-secret-toggle {
+[data-theme="light"] .settings-row .settings-text-input {
   border-color: rgba(16, 32, 51, 0.14);
   background: var(--surface-input);
 }

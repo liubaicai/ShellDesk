@@ -131,7 +131,8 @@ function SettingsPage({
   const [aiModelsMessage, setAiModelsMessage] = useState('');
   const [aiModelsError, setAiModelsError] = useState('');
   const [isAiModelListOpen, setIsAiModelListOpen] = useState(false);
-  const [showWebSearchApiKey, setShowWebSearchApiKey] = useState(false);
+  const [aiApiKeyDraft, setAiApiKeyDraft] = useState('');
+  const [webSearchApiKeyDraft, setWebSearchApiKeyDraft] = useState('');
   const [mcpServerStatus, setMcpServerStatus] = useState<ShellDeskMcpServerStatus | null>(null);
   const [isMcpServerPending, setIsMcpServerPending] = useState(false);
   const [isMcpSkillExporting, setIsMcpSkillExporting] = useState(false);
@@ -229,6 +230,8 @@ function SettingsPage({
     ? aiModelOptions
     : [{ id: settings.aiModel, name: settings.aiModel }, ...aiModelOptions];
   const selectedAiModelOption = visibleAiModelOptions.find((model) => model.id === settings.aiModel) ?? null;
+  const hasAiApiKey = Boolean(settings.aiApiKey);
+  const hasWebSearchApiKey = Boolean(settings.webSearchApiKey);
   const aiModelStatus = aiModelsError || aiModelsMessage || (
     aiModelOptions.length
       ? t('settings.ai.model.loaded', settings.language, { count: String(aiModelOptions.length) })
@@ -373,6 +376,7 @@ function SettingsPage({
   const updateWebSearchProvider = (provider: ShellDeskWebSearchProvider) => {
     const providerChoice = webSearchProviderChoices.find((choice) => choice.value === provider) ?? webSearchProviderChoices[0];
 
+    setWebSearchApiKeyDraft('');
     onSettingsChange({
       ...settings,
       webSearchProvider: providerChoice.value,
@@ -1076,22 +1080,6 @@ function SettingsPage({
 
                   <label className="settings-row">
                     <span>
-                      <strong>{t('settings.general.interfaceFont.label', settings.language)}</strong>
-                      <small>{fontListStatus}</small>
-                    </span>
-                    <select
-                      className="settings-font-select"
-                      value={settings.interfaceFont}
-                      onChange={(event) => updateSetting('interfaceFont', event.target.value as ShellDeskAppSettings['interfaceFont'])}
-                    >
-                      {interfaceFontOptions.map((fontChoice) => (
-                        <option key={fontChoice} value={fontChoice}>{fontChoice}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="settings-row">
-                    <span>
                       <strong>{t('settings.general.sshConnectTimeout.label', settings.language)}</strong>
                       <small>{t('settings.general.sshConnectTimeout.summary', settings.language)}</small>
                     </span>
@@ -1126,10 +1114,30 @@ function SettingsPage({
                 </div>
               </section>
 
-              <SftpSettingsFields
-                settings={settings}
-                onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
-              />
+              <section className="settings-section">
+                <h2>{t('settings.ai.save.title', settings.language)}</h2>
+                <div className="settings-card">
+                  <div className="settings-row settings-save-row">
+                    <span>
+                      <strong>{t('settings.ai.save.autosave.label', settings.language)}</strong>
+                      <small>{t('settings.ai.save.summary', settings.language)}</small>
+                    </span>
+                    <div className="settings-save-control">
+                      <span className={`settings-save-chip settings-save-chip-${settingsSaveStatus}`}>
+                        {t(settingsSaveStatusLabelId[settingsSaveStatus], settings.language)}
+                      </span>
+                      <button
+                        type="button"
+                        className="command-button settings-save-button"
+                        disabled={settingsSaveStatus === 'saving'}
+                        onClick={() => void onSaveSettings()}
+                      >
+                        {t('settings.ai.save.button', settings.language)}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
               <section className="settings-section">
                 <h2>{t('settings.general.library.title', settings.language)}</h2>
@@ -1163,6 +1171,107 @@ function SettingsPage({
           {activeSection === 'appearance' ? (
             <>
               <section className="settings-section">
+                <h2>{t('settings.desktop.dock.title', settings.language)}</h2>
+                <div className="settings-card">
+                  <div className="settings-row">
+                    <span>
+                      <strong>{t('settings.desktop.dock.position.label', settings.language)}</strong>
+                      <small>{t('settings.desktop.dock.position.summary', settings.language)}</small>
+                    </span>
+                    <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.position.label', settings.language)}>
+                      {desktopDockPositionChoices.map((positionChoice) => (
+                        <button
+                          key={positionChoice.value}
+                          type="button"
+                          className={settings.remoteDesktopDockPosition === positionChoice.value ? 'active' : ''}
+                          onClick={() => updateSetting('remoteDesktopDockPosition', positionChoice.value)}
+                        >
+                          {t(positionChoice.labelId, settings.language)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>{t('settings.desktop.dock.size.label', settings.language)}</strong>
+                      <small>{t('settings.desktop.dock.size.summary', settings.language)}</small>
+                    </span>
+                    <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.size.label', settings.language)}>
+                      {desktopDockSizeChoices.map((sizeChoice) => (
+                        <button
+                          key={sizeChoice.value}
+                          type="button"
+                          className={settings.remoteDesktopDockSize === sizeChoice.value ? 'active' : ''}
+                          onClick={() => updateSetting('remoteDesktopDockSize', sizeChoice.value)}
+                        >
+                          {t(sizeChoice.labelId, settings.language)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <span>
+                      <strong>{t('settings.desktop.dock.autoHide.label', settings.language)}</strong>
+                      <small>{t('settings.desktop.dock.autoHide.summary', settings.language)}</small>
+                    </span>
+                    <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.autoHide.label', settings.language)}>
+                      {desktopDockAutoHideChoices.map((autoHideChoice) => (
+                        <button
+                          key={autoHideChoice.value}
+                          type="button"
+                          className={settings.remoteDesktopDockAutoHide === autoHideChoice.value ? 'active' : ''}
+                          onClick={() => updateSetting('remoteDesktopDockAutoHide', autoHideChoice.value)}
+                        >
+                          {t(autoHideChoice.labelId, settings.language)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-row desktop-dock-pinned-row">
+                    <span>
+                      <strong>{t('settings.desktop.dock.pinnedApps.label', settings.language)}</strong>
+                      <small>{t('settings.desktop.dock.pinnedApps.summary', settings.language)}</small>
+                    </span>
+                    <details className="desktop-dock-pinned-picker">
+                      <summary>
+                        <span className="desktop-dock-pinned-summary-copy">
+                          <strong>{t('settings.desktop.dock.pinnedApps.count', settings.language, { count: pinnedDockAppLabels.length })}</strong>
+                          <span>
+                            {pinnedDockAppPreviewLabels.length > 0
+                              ? pinnedDockAppPreviewLabels.join(' / ')
+                              : t('settings.desktop.dock.pinnedApps.none', settings.language)}
+                            {pinnedDockAppMoreCount > 0
+                              ? ` +${pinnedDockAppMoreCount}`
+                              : ''}
+                          </span>
+                        </span>
+                        <span className="desktop-dock-pinned-summary-caret" aria-hidden="true" />
+                      </summary>
+                      <div className="desktop-dock-pinned-panel" aria-label={t('settings.desktop.dock.pinnedApps.label', settings.language)}>
+                        {desktopDockPinnedAppChoices.map((appChoice) => {
+                          const isPinned = settings.remoteDesktopDockPinnedApps.includes(appChoice.key);
+
+                          return (
+                            <label key={appChoice.key} className={`desktop-dock-pinned-choice ${isPinned ? 'selected' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={isPinned}
+                                onChange={(event) => updateDockPinnedApp(appChoice.key, event.target.checked)}
+                              />
+                              <span>{t(appChoice.labelId, settings.language)}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-section">
                 <h2>{t('settings.appearance.theme.title', settings.language)}</h2>
                 <div className="settings-card">
                   <div className="settings-row">
@@ -1176,12 +1285,23 @@ function SettingsPage({
                       <button type="button" className={settings.theme === 'dark' ? 'active' : ''} onClick={() => updateSetting('theme', 'dark')}>{t('settings.appearance.theme.dark', settings.language)}</button>
                     </div>
                   </div>
-                </div>
-              </section>
 
-              <section className="settings-section">
-                <h2>{t('settings.appearance.accent.title', settings.language)}</h2>
-                <div className="settings-card color-card">
+                  <label className="settings-row">
+                    <span>
+                      <strong>{t('settings.general.interfaceFont.label', settings.language)}</strong>
+                      <small>{fontListStatus}</small>
+                    </span>
+                    <select
+                      className="settings-font-select"
+                      value={settings.interfaceFont}
+                      onChange={(event) => updateSetting('interfaceFont', event.target.value as ShellDeskAppSettings['interfaceFont'])}
+                    >
+                      {interfaceFontOptions.map((fontChoice) => (
+                        <option key={fontChoice} value={fontChoice}>{fontChoice}</option>
+                      ))}
+                    </select>
+                  </label>
+
                   <div className="settings-row">
                     <span>
                       <strong>{t('settings.appearance.accent.label', settings.language)}</strong>
@@ -1268,109 +1388,6 @@ function SettingsPage({
                 </div>
               </section>
             </>
-          ) : null}
-
-          {activeSection === 'desktop' ? (
-            <section className="settings-section">
-              <h2>{t('settings.desktop.dock.title', settings.language)}</h2>
-              <div className="settings-card">
-                <div className="settings-row">
-                  <span>
-                    <strong>{t('settings.desktop.dock.position.label', settings.language)}</strong>
-                    <small>{t('settings.desktop.dock.position.summary', settings.language)}</small>
-                  </span>
-                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.position.label', settings.language)}>
-                    {desktopDockPositionChoices.map((positionChoice) => (
-                      <button
-                        key={positionChoice.value}
-                        type="button"
-                        className={settings.remoteDesktopDockPosition === positionChoice.value ? 'active' : ''}
-                        onClick={() => updateSetting('remoteDesktopDockPosition', positionChoice.value)}
-                      >
-                        {t(positionChoice.labelId, settings.language)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="settings-row">
-                  <span>
-                    <strong>{t('settings.desktop.dock.size.label', settings.language)}</strong>
-                    <small>{t('settings.desktop.dock.size.summary', settings.language)}</small>
-                  </span>
-                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.size.label', settings.language)}>
-                    {desktopDockSizeChoices.map((sizeChoice) => (
-                      <button
-                        key={sizeChoice.value}
-                        type="button"
-                        className={settings.remoteDesktopDockSize === sizeChoice.value ? 'active' : ''}
-                        onClick={() => updateSetting('remoteDesktopDockSize', sizeChoice.value)}
-                      >
-                        {t(sizeChoice.labelId, settings.language)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="settings-row">
-                  <span>
-                    <strong>{t('settings.desktop.dock.autoHide.label', settings.language)}</strong>
-                    <small>{t('settings.desktop.dock.autoHide.summary', settings.language)}</small>
-                  </span>
-                  <div className="theme-switch" role="group" aria-label={t('settings.desktop.dock.autoHide.label', settings.language)}>
-                    {desktopDockAutoHideChoices.map((autoHideChoice) => (
-                      <button
-                        key={autoHideChoice.value}
-                        type="button"
-                        className={settings.remoteDesktopDockAutoHide === autoHideChoice.value ? 'active' : ''}
-                        onClick={() => updateSetting('remoteDesktopDockAutoHide', autoHideChoice.value)}
-                      >
-                        {t(autoHideChoice.labelId, settings.language)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="settings-row desktop-dock-pinned-row">
-                  <span>
-                    <strong>{t('settings.desktop.dock.pinnedApps.label', settings.language)}</strong>
-                    <small>{t('settings.desktop.dock.pinnedApps.summary', settings.language)}</small>
-                  </span>
-                  <details className="desktop-dock-pinned-picker">
-                    <summary>
-                      <span className="desktop-dock-pinned-summary-copy">
-                        <strong>{t('settings.desktop.dock.pinnedApps.count', settings.language, { count: pinnedDockAppLabels.length })}</strong>
-                        <span>
-                          {pinnedDockAppPreviewLabels.length > 0
-                            ? pinnedDockAppPreviewLabels.join(' / ')
-                            : t('settings.desktop.dock.pinnedApps.none', settings.language)}
-                          {pinnedDockAppMoreCount > 0
-                            ? ` +${pinnedDockAppMoreCount}`
-                            : ''}
-                        </span>
-                      </span>
-                      <span className="desktop-dock-pinned-summary-caret" aria-hidden="true" />
-                    </summary>
-                    <div className="desktop-dock-pinned-panel" aria-label={t('settings.desktop.dock.pinnedApps.label', settings.language)}>
-                      {desktopDockPinnedAppChoices.map((appChoice) => {
-                        const isPinned = settings.remoteDesktopDockPinnedApps.includes(appChoice.key);
-
-                        return (
-                          <label key={appChoice.key} className={`desktop-dock-pinned-choice ${isPinned ? 'selected' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={isPinned}
-                              onChange={(event) => updateDockPinnedApp(appChoice.key, event.target.checked)}
-                            />
-                            <span>{t(appChoice.labelId, settings.language)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </details>
-                </div>
-              </div>
-            </section>
           ) : null}
 
           {activeSection === 'terminal' ? (
@@ -1698,7 +1715,12 @@ function SettingsPage({
                       onChange={(event) => updateSetting('terminalBracketedPasteMode', event.target.checked)}
                     />
                   </label>
+                </div>
+              </section>
 
+              <section className="settings-section">
+                <h2>{t('settings.terminal.accessibility.title', settings.language)}</h2>
+                <div className="settings-card">
                   <label className="settings-row">
                     <span>
                       <strong>{t('settings.terminal.minimumContrast.label', settings.language)}</strong>
@@ -1731,33 +1753,15 @@ function SettingsPage({
             </>
           ) : null}
 
+          {activeSection === 'sftp' ? (
+            <SftpSettingsFields
+              settings={settings}
+              onChange={(patch) => onSettingsChange({ ...settings, ...patch })}
+            />
+          ) : null}
+
           {activeSection === 'ai' ? (
             <>
-              <section className="settings-section">
-                <h2>{t('settings.ai.save.title', settings.language)}</h2>
-                <div className="settings-card">
-                  <div className="settings-row settings-save-row">
-                    <span>
-                      <strong>{t('settings.ai.save.autosave.label', settings.language)}</strong>
-                      <small>{t('settings.ai.save.summary', settings.language)}</small>
-                    </span>
-                    <div className="settings-save-control">
-                      <span className={`settings-save-chip settings-save-chip-${settingsSaveStatus}`}>
-                        {t(settingsSaveStatusLabelId[settingsSaveStatus], settings.language)}
-                      </span>
-                      <button
-                        type="button"
-                        className="command-button settings-save-button"
-                        disabled={settingsSaveStatus === 'saving'}
-                        onClick={() => void onSaveSettings()}
-                      >
-                        {t('settings.ai.save.button', settings.language)}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
               <section className="settings-section settings-mcp-section">
                 <h2>{t('settings.ai.mcp.title', settings.language)}</h2>
                 <div className="settings-card settings-mcp-card">
@@ -1903,14 +1907,19 @@ function SettingsPage({
                   <label className="settings-row">
                     <span>
                       <strong>{t('settings.ai.apiKey.label', settings.language)}</strong>
-                      <small>{t('settings.ai.apiKey.summary', settings.language)}</small>
+                      <small>{hasAiApiKey ? t('settings.ai.apiKey.savedSummary', settings.language) : t('settings.ai.apiKey.summary', settings.language)}</small>
                     </span>
                     <input
                       className="settings-text-input settings-secret-input"
                       type="password"
-                      value={settings.aiApiKey}
-                      onChange={(event) => updateSetting('aiApiKey', event.target.value)}
-                      placeholder="sk-..."
+                      value={aiApiKeyDraft}
+                      onChange={(event) => {
+                        setAiApiKeyDraft(event.target.value);
+                        if (event.target.value) {
+                          updateSetting('aiApiKey', event.target.value);
+                        }
+                      }}
+                      placeholder={hasAiApiKey ? t('settings.ai.apiKey.savedPlaceholder', settings.language) : 'sk-...'}
                     />
                   </label>
                 </div>
@@ -2036,25 +2045,20 @@ function SettingsPage({
                   <label className="settings-row">
                     <span>
                       <strong>{t('settings.ai.webSearch.apiKey.label', settings.language)}</strong>
-                      <small>{t('settings.ai.webSearch.apiKey.summary', settings.language)}</small>
+                      <small>{hasWebSearchApiKey ? t('settings.ai.webSearch.apiKey.savedSummary', settings.language) : t('settings.ai.webSearch.apiKey.summary', settings.language)}</small>
                     </span>
-                    <span className="settings-secret-control">
-                      <input
-                        className="settings-text-input settings-secret-input"
-                        type={showWebSearchApiKey ? 'text' : 'password'}
-                        value={settings.webSearchApiKey}
-                        onChange={(event) => updateSetting('webSearchApiKey', event.target.value)}
-                        placeholder={t('settings.ai.webSearch.apiKey.placeholder', settings.language)}
-                      />
-                      <button
-                        type="button"
-                        className="settings-secret-toggle"
-                        onClick={() => setShowWebSearchApiKey((value) => !value)}
-                        aria-label={t(showWebSearchApiKey ? 'settings.ai.webSearch.apiKey.hide' : 'settings.ai.webSearch.apiKey.show', settings.language)}
-                      >
-                        {t(showWebSearchApiKey ? 'settings.ai.webSearch.apiKey.hide' : 'settings.ai.webSearch.apiKey.show', settings.language)}
-                      </button>
-                    </span>
+                    <input
+                      className="settings-text-input settings-secret-input"
+                      type="password"
+                      value={webSearchApiKeyDraft}
+                      onChange={(event) => {
+                        setWebSearchApiKeyDraft(event.target.value);
+                        if (event.target.value) {
+                          updateSetting('webSearchApiKey', event.target.value);
+                        }
+                      }}
+                      placeholder={hasWebSearchApiKey ? t('settings.ai.webSearch.apiKey.savedPlaceholder', settings.language) : t('settings.ai.webSearch.apiKey.placeholder', settings.language)}
+                    />
                   </label>
 
                   <label className="settings-row">

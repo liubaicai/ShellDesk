@@ -95,7 +95,6 @@
 
 .settings-row select,
 .settings-row .settings-text-input,
-.settings-secret-toggle,
 .ai-model-control .command-button,
 .settings-mcp-actions .command-button {
   height: 36px;
@@ -170,10 +169,6 @@
   .settings-page .settings-section-nav-index {
     width: 28px;
     height: 28px;
-  }
-
-  .settings-section-nav-about {
-    margin-top: 0;
   }
 
   .settings-content {

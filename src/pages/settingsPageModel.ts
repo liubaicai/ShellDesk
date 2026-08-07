@@ -5,8 +5,8 @@ import { getCurrentAppLocale, t, type MessageId } from '../i18n';
 export const settingsSections = [
   { key: 'general', labelId: 'settings.section.general.label', summaryId: 'settings.section.general.summary' },
   { key: 'appearance', labelId: 'settings.section.appearance.label', summaryId: 'settings.section.appearance.summary' },
-  { key: 'desktop', labelId: 'settings.section.desktop.label', summaryId: 'settings.section.desktop.summary' },
   { key: 'terminal', labelId: 'settings.section.terminal.label', summaryId: 'settings.section.terminal.summary' },
+  { key: 'sftp', labelId: 'settings.section.sftp.label', summaryId: 'settings.section.sftp.summary' },
   { key: 'ai', labelId: 'settings.section.ai.label', summaryId: 'settings.section.ai.summary' },
   { key: 'security', labelId: 'settings.section.security.label', summaryId: 'settings.section.security.summary' },
   { key: 'backup', labelId: 'settings.section.backup.label', summaryId: 'settings.section.backup.summary' },
@@ -304,7 +304,6 @@ export function formatDateTime(value: string | null | undefined) {
 export function getSettingsSectionNavClass(sectionKey: (typeof settingsSections)[number]['key'], activeSection: (typeof settingsSections)[number]['key']) {
   return [
     'settings-section-nav-item',
-    sectionKey === 'about' ? 'settings-section-nav-about' : '',
     activeSection === sectionKey ? 'active' : '',
   ].filter(Boolean).join(' ');
 }

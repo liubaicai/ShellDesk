@@ -99,10 +99,6 @@
 }
 
 
-.settings-section-nav-about {
-  margin-top: auto;
-}
-
 .settings-content {
   container: settings-content / inline-size;
   display: grid;
@@ -256,35 +252,6 @@
 
 .settings-column-picker input:disabled {
   opacity: 0.7;
-}
-
-.settings-secret-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  width: min(520px, 100%);
-}
-
-.settings-secret-control .settings-secret-input {
-  width: 100%;
-  min-width: 0;
-}
-
-.settings-secret-toggle {
-  height: 38px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0 12px;
-  background: var(--surface-control);
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.settings-secret-toggle:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
 }
 
 .settings-row .settings-text-input::placeholder {
@@ -1066,11 +1033,6 @@
   transform: translateX(16px);
 }
 
-.color-card .settings-row {
-  min-height: 52px;
-  padding-block: 11px;
-}
-
 .color-picker-row {
   display: flex;
   flex-wrap: wrap;
@@ -1394,8 +1356,7 @@ button:disabled {
   }
 
   .settings-row select,
-  .settings-row .settings-text-input,
-  .settings-secret-control {
+  .settings-row .settings-text-input {
     width: 100%;
     min-width: 0;
   }
@@ -1499,8 +1460,7 @@ button:disabled {
 @container settings-content (max-width: 680px) {
 
   .settings-row select,
-  .settings-row .settings-text-input,
-  .settings-secret-control {
+  .settings-row .settings-text-input {
     width: 100%;
     min-width: 0;
   }
